@@ -1,0 +1,22 @@
+{
+  "name": "repurposeai",
+  "version": "1.0.0",
+  "description": "RepurposeAI â AI Content Repurposing SaaS Platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "sql.js": "^1.14.1",
+    "stripe": "^14.14.0",
+    "uuid": "^9.0.0"
+  }
+}
