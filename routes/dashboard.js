@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', requireAuth, (req, res) => {
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
