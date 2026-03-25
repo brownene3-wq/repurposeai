@@ -84,9 +84,9 @@ router.get('/', requireAuth, (req, res) => {
       <a href="/" class="sidebar-logo">&#x26A1; RepurposeAI</a>
       <nav class="sidebar-nav">
         <a href="/dashboard" class="active">&#x1F3AC; Dashboard</a>
-        <a href="/dashboard">&#x1F504; Repurpose</a>
-        <a href="/dashboard">&#x1F4CA; Analytics</a>
-        <a href="/dashboard">&#x23F0; Scheduled</a>
+        <a href="/repurpose">&#x1F504; Repurpose</a>
+        <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
+        <a href="/dashboard/scheduled">&#x23F0; Scheduled</a>
         <a href="/billing">&#x1F4B3; Billing</a>
         <a href="/contact">&#x1F4E7; Support</a>
       </nav>
