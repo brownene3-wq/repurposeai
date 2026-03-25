@@ -11,7 +11,7 @@ async function getYouTubeInfo(url) {
     const data = await response.json();
     
     // Extract video ID
-    const videoId = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+    const videoId = url.match(/(?:v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/)?.[1];
     
     return {
       title: data.title,
@@ -81,7 +81,7 @@ router.post('/process', requireAuth, async (req, res) => {
     }
     
     // Validate YouTube URL
-    const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[a-zA-Z0-9_-]{11}/;
+    const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)[a-zA-Z0-9_-]{11}/;
     if (!ytRegex.test(url)) {
       return res.status(400).json({ error: 'Please provide a valid YouTube URL' });
     }
