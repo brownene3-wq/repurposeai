@@ -1,22 +1,29 @@
 {
-  "name": "repurposeai",
+  "name": "content-repurpose-saas",
   "version": "1.0.0",
-  "description": "RepurposeAI â AI Content Repurposing SaaS Platform",
+  "description": "Premium AI content repurposing SaaS application",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "nodemon server.js"
   },
+  "keywords": ["saas", "ai", "content", "repurpose"],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "cookie-parser": "^1.4.6",
-    "dotenv": "^16.4.1",
     "express": "^4.18.2",
-    "express-rate-limit": "^7.1.5",
-    "helmet": "^7.1.0",
-    "jsonwebtoken": "^9.0.2",
-    "pg": "^8.13.0",
-    "stripe": "^14.14.0",
-    "uuid": "^9.0.0"
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.1.2",
+    "stripe": "^14.8.0",
+    "cors": "^2.8.5",
+    "openai": "^4.26.0",
+    "youtube-transcript": "^1.0.6",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
   }
 }
