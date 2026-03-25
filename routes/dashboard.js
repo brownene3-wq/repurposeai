@@ -205,8 +205,8 @@ router.get('/', requireAuth, (req, res) => {
           '<textarea class="content-textarea" id="textarea-' + key + '">' + platform.caption.replace(/</g, '&lt;') + '</textarea>' +
           '<div class="char-count"><span id="chars-' + key + '">' + platform.caption.length + '</span> / ' + platform.charLimit + ' characters</div>' +
           '<div class="content-actions">' +
-          '<button class="btn btn-primary btn-sm" onclick="copyContent(\'' + key + '\')">&#x1F4CB; Copy</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="downloadContent(\'' + key + '\')">&#x2B07; Download</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="copyContent(\\'' + key + '\\')">&#x1F4CB; Copy</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="downloadContent(\\'' + key + '\\')">&#x2B07; Download</button>' +
           '</div>';
         contents.appendChild(div);
 
