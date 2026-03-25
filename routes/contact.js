@@ -8,6 +8,10 @@ router.get('/', optionalAuth, (req, res) => {
 });
 
 router.post('/submit', async (req, res) => {
+  if (!FORMSPREE_ID) {
+    console.log('Contact form submission (no Formspree configured):', req.body);
+    return res.json({ success: true, message: 'Message received! We will get back to you soon.' });
+  }
   try {
     const { name, email, subject, message } = req.body;
     if (!name || !email || !message) {
@@ -165,7 +169,7 @@ async function handleContact(e) {
 
     // Also try Formspree if configured
     const formspreeEndpoint = '${process.env.FORMSPREE_ENDPOINT || ''}';
-    if (formspreeEndpoint && !formspreeEndpoint.includes('YOUR_FORM_ID')) {
+    if (formspreeEndpoint && !formspreeEndpoint.includes('' + FORMSPREE_ID + '')) {
       fetch(formspreeEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
