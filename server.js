@@ -1,7 +1,7 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
-const { initDatabase } = require('./database');
+const { initDatabase } = require('./db/database');
 
 const app = express();
 

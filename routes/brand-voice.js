@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const requireAuth = require('../middleware/auth');
-const { brandVoiceOps } = require('../database');
+const { brandVoiceOps } = require('../db/database');
 
 // GET - Brand voice management page
 router.get('/', requireAuth, (req, res) => {
