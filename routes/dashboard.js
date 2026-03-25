@@ -13,8 +13,9 @@ router.get('/', requireAuth, (req, res) => {
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     :root{--primary:#6C3AED;--primary-light:#8B5CF6;--dark:#0F0F1A;--dark-2:#1A1A2E;--surface:#1E1E32;--surface-light:#2A2A40;--text:#FFF;--text-muted:#A0AEC0;--text-dim:#718096;--gradient-1:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);--border-subtle:1px solid rgba(255,255,255,0.06);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
+ [data-theme="light"]{--dark:#F8F9FC;--dark-2:#EDF0F7;--surface:#FFFFFF;--surface-light:#F1F5F9;--text:#1A1A2E;--text-muted:#4A5568;--text-dim:#718096;--border-subtle:1px solid rgba(0,0,0,0.08);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Inter',sans-serif;background:var(--dark);color:var(--text);min-height:100vh}
+    body{font-family:'Inter',sans-serif;background:var(--dark);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
     .dashboard{display:flex;min-height:100vh}
     .sidebar{width:260px;background:var(--dark-2);border-right:var(--border-subtle);padding:1.5rem;display:flex;flex-direction:column;position:fixed;top:0;bottom:0}
     .sidebar-logo{font-size:1.4rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;margin-bottom:2rem;display:block}
@@ -72,11 +73,13 @@ router.get('/', requireAuth, (req, res) => {
     .stat-card .stat-label{font-size:.8rem;color:var(--text-dim);margin-top:.3rem}
     .toast{position:fixed;bottom:2rem;right:2rem;background:var(--success);color:#fff;padding:1rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:500;display:none;z-index:9999;animation:slideUp .3s ease}
     @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
-    @media(max-width:768px){.sidebar{display:none}.main-content{margin-left:0}.stats-grid{grid-template-columns:repeat(2,1fr)}.input-group{flex-direction:column}.video-info{flex-direction:column}.video-thumb{width:100%;height:auto}}
+    [data-theme="light"] .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}[data-theme="light"] .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}.theme-toggle{position:fixed;top:1.5rem;right:1.5rem;z-index:1001;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50px;padding:.5rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--text-muted);transition:all .3s;font-family:'Inter',sans-serif}[data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{width:44px;height:24px;background:var(--dark-2);border-radius:12px;position:relative;transition:background .3s}[data-theme="light"] .theme-toggle .toggle-track{background:#D1D5DB}.theme-toggle .toggle-thumb{width:20px;height:20px;background:var(--gradient-1);border-radius:50%;position:absolute;top:2px;left:2px;transition:transform .3s}[data-theme="light"] .theme-toggle .toggle-thumb{transform:translateX(20px)}
+ @media(max-width:768px){.sidebar{display:none}.main-content{margin-left:0}.stats-grid{grid-template-columns:repeat(2,1fr)}.input-group{flex-direction:column}.video-info{flex-direction:column}.video-thumb{width:100%;height:auto}}
   </style>
 </head>
 <body>
-  <div class="dashboard">
+  <button class="theme-toggle" onclick="toggleTheme()"><span>&#x1F319;</span><div class="toggle-track"><div class="toggle-thumb"></div></div><span>&#x2600;&#xFE0F;</span></button>
+ <div class="dashboard">
     <aside class="sidebar">
       <a href="/" class="sidebar-logo">&#x26A1; RepurposeAI</a>
       <nav class="sidebar-nav">
@@ -140,7 +143,8 @@ router.get('/', requireAuth, (req, res) => {
   <div class="toast" id="toast">Copied to clipboard!</div>
 
   <script>
-    let currentContent = null;
+    function toggleTheme(){const h=document.documentElement;const c=h.getAttribute("data-theme");const n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){const s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
+ let currentContent = null;
     let currentVideo = null;
 
     async function processVideo() {
