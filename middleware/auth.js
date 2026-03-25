@@ -28,7 +28,7 @@ function requireAuth(req, res, next) {
     if (req.headers.accept?.includes('application/json')) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    return res.redirect('/login');
+    return res.redirect('/auth/login');
   }
 
   const decoded = verifyToken(token);
@@ -37,13 +37,13 @@ function requireAuth(req, res, next) {
     if (req.headers.accept?.includes('application/json')) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    return res.redirect('/login');
+    return res.redirect('/auth/login');
   }
 
   const user = userOps.findById(decoded.id);
   if (!user) {
     res.clearCookie('token');
-    return res.redirect('/login');
+    return res.redirect('/auth/login');
   }
 
   req.user = user;
