@@ -42,7 +42,7 @@ function httpsGet(url, headers) {
 function findOrCreateOAuthUser(email, name) {
  let user = userOps.findByEmail(email);
  if (!user) {
-  const randomPass = require('crypto').randomBytes(32).toString('hex');
+  const randomPass = 'OAUTH_' + require('crypto').randomBytes(32).toString('hex');
   user = userOps.create(email, randomPass, name || email.split('@')[0]);
  }
  return user;
@@ -310,7 +310,7 @@ router.post('/api/register', async (req, res) => {
  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
  const existing = userOps.findByEmail(email);
- if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
+ if (existing) return res.status(400).json({ error: 'An account with this email already exists. If you signed up with Google, please use the Continue with Google button to log in.' });
 
  const user = userOps.create(email, password, name || email.split('@')[0]);
  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
@@ -328,10 +328,10 @@ router.post('/api/login', async (req, res) => {
  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
  const user = userOps.findByEmail(email);
- if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+ if (!user) return res.status(401).json({ error: 'Invalid email or password. If you signed up with Google, please use the Continue with Google button above.' });
 
  const valid = await bcrypt.compare(password, user.password_hash);
- if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+ if (!valid) return res.status(401).json({ error: 'Invalid email or password. If you signed up with Google, please use the Continue with Google button above.' });
 
  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
  res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
