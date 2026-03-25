@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 
 const STRIPE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || '';
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
 
-router.get('/', authenticateToken, (req, res) => {
+router.get('/', requireAuth, (req, res) => {
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -138,7 +138,7 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 // Create Stripe Checkout Session
-router.post('/create-checkout', authenticateToken, async (req, res) => {
+router.post('/create-checkout', requireAuth, async (req, res) => {
   try {
     const { plan } = req.body;
     
