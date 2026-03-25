@@ -37,6 +37,9 @@ app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
 app.use('/repurpose', repurposeRouter);
 
+// Redirect /pricing to /billing
+app.get('/pricing', (req, res) => res.redirect('/billing'));
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', version: '2.0.0', service: 'RepurposeAI' });
