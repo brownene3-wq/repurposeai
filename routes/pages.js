@@ -58,7 +58,7 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .price-card .price-desc{color:var(--text-muted);font-size:.9rem;margin-bottom:1.5rem}
 .price-features{list-style:none;margin-bottom:2rem}
 .price-features li{padding:.5rem 0;color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;gap:.7rem}
-.price-features li::before{content:'\2713';color:var(--primary-light);font-weight:700}
+.price-features li::before{content:'✓';color:var(--primary-light);font-weight:700}
 .price-card .btn{width:100%;justify-content:center}
 .testimonials-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem}
 .testimonial-card{background:var(--surface);border-radius:16px;padding:2rem;border:var(--border-subtle)}
