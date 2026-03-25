@@ -3,11 +3,11 @@ const router = express.Router();
 const { optionalAuth } = require('../middleware/auth');
 const { contactOps } = require('../db/database');
 
-router.get('/contact', optionalAuth, (req, res) => {
+router.get('/', optionalAuth, (req, res) => {
   res.send(renderContactPage(req.user));
 });
 
-router.post('/api/contact', async (req, res) => {
+router.post('/submit', async (req, res) => {
   try {
     const { name, email, subject, message } = req.body;
     if (!name || !email || !message) {
@@ -155,7 +155,7 @@ async function handleContact(e) {
 
   try {
     // Send to our API (saves to DB)
-    const res = await fetch('/api/contact', {
+    const res = await fetch('/contact/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
