@@ -9,6 +9,7 @@ const dashboardRouter = require('./routes/dashboard');
 const billingRouter = require('./routes/billing');
 const contactRouter = require('./routes/contact');
 const repurposeRouter = require('./routes/repurpose');
+const pricingRouter = require('./routes/pricing');
 const { initializeDatabase } = require('./db/database');
 
 const app = express();
@@ -37,8 +38,7 @@ app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
 app.use('/repurpose', repurposeRouter);
 
-// Redirect /pricing to /billing
-app.get('/pricing', (req, res) => res.redirect('/billing'));
+app.use(pricingRouter);
 
 // Health check
 app.get('/health', (req, res) => {
