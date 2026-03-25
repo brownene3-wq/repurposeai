@@ -1,271 +1,263 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
-const DB_PATH = path.join(__dirname, 'repurposeai.db');
-
-let db = null;
-let SQL = null;
-
-async function getDb() {
-  if (db) return db;
-
-  SQL = await initSqlJs();
-
-  try {
-    if (fs.existsSync(DB_PATH)) {
-      const buffer = fs.readFileSync(DB_PATH);
-      db = new SQL.Database(buffer);
-    } else {
-      db = new SQL.Database();
-    }
-  } catch {
-    db = new SQL.Database();
-  }
-
-  return db;
-}
-
-function saveDb() {
-  if (db) {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_PATH, buffer);
-  }
-}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
 async function initializeDatabase() {
-  const db = await getDb();
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT,
+        name TEXT,
+        plan TEXT DEFAULT 'free',
+        google_id TEXT,
+        microsoft_id TEXT,
+        avatar TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      name TEXT NOT NULL,
-      plan TEXT DEFAULT 'starter',
-      stripe_customer_id TEXT,
-      stripe_subscription_id TEXT,
-      avatar_color TEXT DEFAULT '#7c3aed',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS content_items (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        title TEXT NOT NULL,
+        original_content TEXT,
+        content_type TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS content_items (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      source_type TEXT NOT NULL,
-      source_content TEXT,
-      source_url TEXT,
-      status TEXT DEFAULT 'processing',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    )
-  `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS generated_outputs (
+        id TEXT PRIMARY KEY,
+        content_id TEXT NOT NULL REFERENCES content_items(id),
+        user_id TEXT NOT NULL REFERENCES users(id),
+        output_type TEXT NOT NULL,
+        generated_content TEXT,
+        platform TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS generated_outputs (
-      id TEXT PRIMARY KEY,
-      content_item_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      platform TEXT NOT NULL,
-      format TEXT NOT NULL,
-      content TEXT NOT NULL,
-      status TEXT DEFAULT 'draft',
-      scheduled_at DATETIME,
-      published_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (content_item_id) REFERENCES content_items(id),
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    )
-  `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS contact_messages (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        subject TEXT,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS contact_messages (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      subject TEXT,
-      message TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  saveDb();
-  console.log('Database initialized successfully');
-}
-
-// Helper to run a query and get all rows as objects
-function allRows(sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
+    console.log('Database tables initialized successfully');
+  } finally {
+    client.release();
   }
-  stmt.free();
-  return rows;
 }
 
-// Helper to get one row
-function oneRow(sql, params = []) {
-  const rows = allRows(sql, params);
-  return rows.length > 0 ? rows[0] : null;
-}
-
-// Helper to run a statement (INSERT/UPDATE/DELETE)
-function runStmt(sql, params = []) {
-  db.run(sql, params);
-  saveDb();
-}
-
-// User operations
 const userOps = {
-  create(email, password, name) {
-    const id = uuidv4();
-    const passwordHash = bcrypt.hashSync(password, 12);
-    const colors = ['#7c3aed', '#06b6d4', '#f472b6', '#f59e0b', '#34d399', '#ef4444'];
-    const avatarColor = colors[Math.floor(Math.random() * colors.length)];
-
-    runStmt(
-      `INSERT INTO users (id, email, password_hash, name, avatar_color) VALUES (?, ?, ?, ?, ?)`,
-      [id, email.toLowerCase(), passwordHash, name, avatarColor]
+  async create({ email, password, name }) {
+    const id = crypto.randomUUID();
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'INSERT INTO users (id, email, password, name) VALUES ($1, $2, $3, $4) RETURNING *',
+      [id, email, hashedPassword, name]
     );
-    return userOps.findById(id);
+    const user = result.rows[0];
+    delete user.password;
+    return user;
   },
 
-  findByEmail(email) {
-    return oneRow('SELECT * FROM users WHERE email = ?', [email.toLowerCase()]);
+  async findByEmail(email) {
+    const result = await pool.query('SELECT id, email, name, plan, avatar, created_at FROM users WHERE email = $1', [email]);
+    return result.rows[0] || null;
   },
 
-  findById(id) {
-    const user = oneRow('SELECT * FROM users WHERE id = ?', [id]);
-    if (user) {
-      const { password_hash, ...safeUser } = user;
-      return safeUser;
+  async findById(id) {
+    const result = await pool.query('SELECT id, email, name, plan, avatar, created_at FROM users WHERE id = $1', [id]);
+    return result.rows[0] || null;
+  },
+
+  async findByIdWithPassword(id) {
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    return result.rows[0] || null;
+  },
+
+  async verifyPassword(user, password) {
+    const fullUser = await this.findByIdWithPassword(user.id);
+    if (!fullUser || !fullUser.password) return false;
+    return bcrypt.compare(password, fullUser.password);
+  },
+
+  async updatePlan(id, plan) {
+    const result = await pool.query(
+      'UPDATE users SET plan = $1, updated_at = NOW() WHERE id = $2 RETURNING id, email, name, plan, avatar, created_at',
+      [plan, id]
+    );
+    return result.rows[0] || null;
+  },
+
+  async updateProfile(id, updates) {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    for (const [key, value] of Object.entries(updates)) {
+      if (['name', 'email', 'avatar'].includes(key)) {
+        fields.push(key + ' = $' + idx);
+        values.push(value);
+        idx++;
+      }
     }
-    return null;
-  },
-
-  findByIdWithPassword(id) {
-    return oneRow('SELECT * FROM users WHERE id = ?', [id]);
-  },
-
-  verifyPassword(user, password) {
-    return bcrypt.compareSync(password, user.password_hash);
-  },
-
-  updatePlan(userId, plan, stripeCustomerId, stripeSubscriptionId) {
-    runStmt(
-      `UPDATE users SET plan = ?, stripe_customer_id = ?, stripe_subscription_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [plan, stripeCustomerId, stripeSubscriptionId, userId]
+    if (fields.length === 0) return this.findById(id);
+    fields.push('updated_at = NOW()');
+    values.push(id);
+    const result = await pool.query(
+      'UPDATE users SET ' + fields.join(', ') + ' WHERE id = $' + idx + ' RETURNING id, email, name, plan, avatar, created_at',
+      values
     );
-    return userOps.findById(userId);
+    return result.rows[0] || null;
   },
 
-  updateProfile(userId, name) {
-    runStmt('UPDATE users SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [name, userId]);
-    return userOps.findById(userId);
+  async findOrCreateGoogle({ googleId, email, name, avatar }) {
+    let result = await pool.query('SELECT id, email, name, plan, avatar, created_at FROM users WHERE google_id = $1', [googleId]);
+    if (result.rows[0]) return result.rows[0];
+    result = await pool.query('SELECT id, email, name, plan, avatar, created_at FROM users WHERE email = $1', [email]);
+    if (result.rows[0]) {
+      await pool.query('UPDATE users SET google_id = $1, avatar = $2, updated_at = NOW() WHERE id = $3', [googleId, avatar, result.rows[0].id]);
+      return { ...result.rows[0], avatar };
+    }
+    const id = crypto.randomUUID();
+    result = await pool.query(
+      'INSERT INTO users (id, email, name, google_id, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, name, plan, avatar, created_at',
+      [id, email, name, googleId, avatar]
+    );
+    return result.rows[0];
+  },
+
+  async findOrCreateMicrosoft({ microsoftId, email, name, avatar }) {
+    let result = await pool.query('SELECT id, email, name, plan, avatar, created_at FROM users WHERE microsoft_id = $1', [microsoftId]);
+    if (result.rows[0]) return result.rows[0];
+    result = await pool.query('SELECT id, email, name, plan, avatar, created_at FROM users WHERE email = $1', [email]);
+    if (result.rows[0]) {
+      await pool.query('UPDATE users SET microsoft_id = $1, avatar = $2, updated_at = NOW() WHERE id = $3', [microsoftId, avatar, result.rows[0].id]);
+      return { ...result.rows[0], avatar };
+    }
+    const id = crypto.randomUUID();
+    result = await pool.query(
+      'INSERT INTO users (id, email, name, microsoft_id, avatar) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, name, plan, avatar, created_at',
+      [id, email, name, microsoftId, avatar]
+    );
+    return result.rows[0];
   }
 };
 
-// Content operations
 const contentOps = {
-  create(userId, title, sourceType, sourceContent, sourceUrl) {
-    const id = uuidv4();
-    runStmt(
-      `INSERT INTO content_items (id, user_id, title, source_type, source_content, source_url) VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, userId, title, sourceType, sourceContent || null, sourceUrl || null]
+  async create({ userId, title, originalContent, contentType }) {
+    const id = crypto.randomUUID();
+    const result = await pool.query(
+      'INSERT INTO content_items (id, user_id, title, original_content, content_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [id, userId, title, originalContent, contentType]
     );
-    return contentOps.findById(id);
+    return result.rows[0];
   },
 
-  findById(id) {
-    return oneRow('SELECT * FROM content_items WHERE id = ?', [id]);
+  async findById(id) {
+    const result = await pool.query('SELECT * FROM content_items WHERE id = $1', [id]);
+    return result.rows[0] || null;
   },
 
-  findByUser(userId, limit = 20, offset = 0) {
-    return allRows('SELECT * FROM content_items WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?', [userId, limit, offset]);
+  async findByUser(userId) {
+    const result = await pool.query('SELECT * FROM content_items WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
+    return result.rows;
   },
 
-  updateStatus(id, status) {
-    runStmt('UPDATE content_items SET status = ? WHERE id = ?', [status, id]);
+  async updateStatus(id, status) {
+    const result = await pool.query(
+      'UPDATE content_items SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+    return result.rows[0] || null;
   },
 
-  countByUser(userId) {
-    const row = oneRow('SELECT COUNT(*) as count FROM content_items WHERE user_id = ?', [userId]);
-    return row ? row.count : 0;
+  async countByUser(userId) {
+    const result = await pool.query('SELECT COUNT(*) as count FROM content_items WHERE user_id = $1', [userId]);
+    return parseInt(result.rows[0].count);
   },
 
-  delete(id, userId) {
-    runStmt('DELETE FROM generated_outputs WHERE content_item_id = ? AND user_id = ?', [id, userId]);
-    runStmt('DELETE FROM content_items WHERE id = ? AND user_id = ?', [id, userId]);
+  async delete(id) {
+    await pool.query('DELETE FROM generated_outputs WHERE content_id = $1', [id]);
+    const result = await pool.query('DELETE FROM content_items WHERE id = $1 RETURNING *', [id]);
+    return result.rows[0] || null;
   }
 };
 
-// Output operations
 const outputOps = {
-  create(contentItemId, userId, platform, format, content) {
-    const id = uuidv4();
-    runStmt(
-      `INSERT INTO generated_outputs (id, content_item_id, user_id, platform, format, content) VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, contentItemId, userId, platform, format, content]
+  async create({ contentId, userId, outputType, generatedContent, platform }) {
+    const id = crypto.randomUUID();
+    const result = await pool.query(
+      'INSERT INTO generated_outputs (id, content_id, user_id, output_type, generated_content, platform) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [id, contentId, userId, outputType, generatedContent, platform]
     );
-    return outputOps.findById(id);
+    return result.rows[0];
   },
 
-  findById(id) {
-    return oneRow('SELECT * FROM generated_outputs WHERE id = ?', [id]);
+  async findById(id) {
+    const result = await pool.query('SELECT * FROM generated_outputs WHERE id = $1', [id]);
+    return result.rows[0] || null;
   },
 
-  findByContent(contentItemId) {
-    return allRows('SELECT * FROM generated_outputs WHERE content_item_id = ? ORDER BY created_at DESC', [contentItemId]);
+  async findByContent(contentId) {
+    const result = await pool.query('SELECT * FROM generated_outputs WHERE content_id = $1 ORDER BY created_at DESC', [contentId]);
+    return result.rows;
   },
 
-  findByUser(userId, limit = 50) {
-    return allRows(
-      `SELECT go.*, ci.title as source_title FROM generated_outputs go JOIN content_items ci ON go.content_item_id = ci.id WHERE go.user_id = ? ORDER BY go.created_at DESC LIMIT ?`,
-      [userId, limit]
+  async findByUser(userId) {
+    const result = await pool.query('SELECT * FROM generated_outputs WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
+    return result.rows;
+  },
+
+  async updateContent(id, content) {
+    const result = await pool.query(
+      'UPDATE generated_outputs SET generated_content = $1 WHERE id = $2 RETURNING *',
+      [content, id]
     );
-  },
-
-  updateContent(id, userId, content) {
-    runStmt('UPDATE generated_outputs SET content = ? WHERE id = ? AND user_id = ?', [content, id, userId]);
-  },
-
-  updateStatus(id, userId, status) {
-    runStmt('UPDATE generated_outputs SET status = ? WHERE id = ? AND user_id = ?', [status, id, userId]);
-  },
-
-  countByUser(userId) {
-    const row = oneRow('SELECT COUNT(*) as count FROM generated_outputs WHERE user_id = ?', [userId]);
-    return row ? row.count : 0;
-  },
-
-  getStats(userId) {
-    const total = (oneRow('SELECT COUNT(*) as count FROM generated_outputs WHERE user_id = ?', [userId]) || {}).count || 0;
-    const published = (oneRow("SELECT COUNT(*) as count FROM generated_outputs WHERE user_id = ? AND status = 'published'", [userId]) || {}).count || 0;
-    const drafts = (oneRow("SELECT COUNT(*) as count FROM generated_outputs WHERE user_id = ? AND status = 'draft'", [userId]) || {}).count || 0;
-    const platforms = allRows('SELECT DISTINCT platform FROM generated_outputs WHERE user_id = ?', [userId]);
-    return { total, published, drafts, platforms: platforms.map(p => p.platform) };
+    return result.rows[0] || null;
   }
 };
 
-// Contact operations
 const contactOps = {
-  create(name, email, subject, message) {
-    const id = uuidv4();
-    runStmt(
-      `INSERT INTO contact_messages (id, name, email, subject, message) VALUES (?, ?, ?, ?, ?)`,
+  async create({ name, email, subject, message }) {
+    const id = crypto.randomUUID();
+    const result = await pool.query(
+      'INSERT INTO contact_messages (id, name, email, subject, message) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [id, name, email, subject, message]
     );
-    return { id, name, email, subject, message };
+    return result.rows[0];
+  },
+
+  async findAll() {
+    const result = await pool.query('SELECT * FROM contact_messages ORDER BY created_at DESC');
+    return result.rows;
   }
 };
 
-module.exports = { initializeDatabase, getDb, userOps, contentOps, outputOps, contactOps };
+module.exports = {
+  initializeDatabase,
+  getDb: () => pool,
+  userOps,
+  contentOps,
+  outputOps,
+  contactOps
+};
