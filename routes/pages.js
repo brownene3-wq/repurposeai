@@ -1,371 +1,286 @@
 const express = require('express');
 const router = express.Router();
-const { optionalAuth } = require('../middleware/auth');
 
-router.get('/', optionalAuth, (req, res) => {
-  res.send(renderLandingPage(req.user));
-});
+const BRAND = { name: 'RepurposeAI', tagline: 'Turn One Video Into Unlimited Content' };
 
-function renderLandingPage(user) {
-  return `<!DOCTYPE html>
+function getStyles() {
+  return `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@700;800;900&display=swap');
+:root{--primary:#6C3AED;--primary-light:#8B5CF6;--primary-dark:#5B21B6;--accent:#F59E0B;--dark:#0F0F1A;--dark-2:#1A1A2E;--surface:#1E1E32;--surface-light:#2A2A40;--text:#FFF;--text-muted:#A0AEC0;--text-dim:#718096;--gradient-1:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);--gradient-2:linear-gradient(135deg,#F59E0B 0%,#EF4444 100%);--gradient-3:linear-gradient(135deg,#6C3AED 0%,#3B82F6 50%,#EC4899 100%);--shadow-glow:0 0 60px rgba(108,58,237,0.3);--border-subtle:1px solid rgba(255,255,255,0.06)}
+*{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}
+body{font-family:'Inter',-apple-system,sans-serif;background:var(--dark);color:var(--text);overflow-x:hidden;line-height:1.6}
+.nav{position:fixed;top:0;left:0;right:0;z-index:1000;padding:1.2rem 2rem;background:rgba(15,15,26,0.8);backdrop-filter:blur(20px);border-bottom:var(--border-subtle);transition:all .3s}
+.nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.nav-logo{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none}
+.nav-links{display:flex;align-items:center;gap:2rem}
+.nav-links a{color:var(--text-muted);text-decoration:none;font-size:.9rem;font-weight:500;transition:color .3s}
+.nav-links a:hover{color:var(--text)}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.6rem;border-radius:50px;font-weight:600;font-size:.9rem;text-decoration:none;transition:all .3s;cursor:pointer;border:none}
+.btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 20px rgba(108,58,237,0.4)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 30px rgba(108,58,237,0.5)}
+.btn-outline{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.2)}
+.btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
+.btn-large{padding:1rem 2.4rem;font-size:1rem}
+.hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:8rem 2rem 4rem;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(108,58,237,0.15) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(236,72,153,0.1) 0%,transparent 60%)}
+.hero-grid{position:absolute;inset:0;opacity:.03;background-image:linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px);background-size:60px 60px}
+.hero-content{position:relative;max-width:900px;text-align:center;z-index:2}
+.hero-badge{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem 1.2rem;border-radius:50px;background:rgba(108,58,237,0.15);border:1px solid rgba(108,58,237,0.3);color:var(--primary-light);font-size:.85rem;font-weight:600;margin-bottom:2rem;letter-spacing:.05em}
+.hero h1{font-family:'Playfair Display',serif;font-size:clamp(2.8rem,6vw,4.5rem);font-weight:900;line-height:1.1;margin-bottom:1.5rem}
+.hero h1 .gradient-text{background:var(--gradient-3);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{font-size:1.2rem;color:var(--text-muted);max-width:600px;margin:0 auto 2.5rem;line-height:1.7}
+.hero-cta{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem}
+.hero-stats{display:flex;gap:3rem;justify-content:center;margin-top:3rem;padding-top:3rem;border-top:var(--border-subtle)}
+.hero-stat .number{font-size:2rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-stat .label{font-size:.85rem;color:var(--text-dim);margin-top:.3rem}
+section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
+.section-label{display:inline-block;font-size:.8rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--primary-light);margin-bottom:1rem}
+.section-title{font-family:'Playfair Display',serif;font-size:clamp(2rem,4vw,3rem);font-weight:800;margin-bottom:1rem;line-height:1.2}
+.section-subtitle{font-size:1.1rem;color:var(--text-muted);max-width:600px;line-height:1.7}
+.section-header{text-align:center;margin-bottom:4rem}.section-header .section-subtitle{margin:0 auto}
+.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;margin-top:3rem}
+.step-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .4s}
+.step-card:hover{transform:translateY(-4px);border-color:rgba(108,58,237,0.3)}
+.step-number{width:50px;height:50px;border-radius:15px;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;margin-bottom:1.5rem}
+.step-card h3{font-size:1.2rem;font-weight:700;margin-bottom:.8rem}.step-card p{color:var(--text-muted);font-size:.95rem;line-height:1.6}
+.step-icon{font-size:2rem;margin-bottom:1rem}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.feature-card{background:var(--surface);border-radius:16px;padding:2rem;border:var(--border-subtle);transition:all .3s}
+.feature-card:hover{border-color:rgba(108,58,237,0.3);transform:translateY(-2px)}
+.feature-icon{width:48px;height:48px;border-radius:12px;background:rgba(108,58,237,0.15);display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:1.2rem}
+.feature-card h3{font-size:1.05rem;font-weight:700;margin-bottom:.6rem}.feature-card p{color:var(--text-muted);font-size:.9rem;line-height:1.6}
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;align-items:start}
+.price-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .3s;position:relative}
+.price-card.featured{border-color:var(--primary);box-shadow:var(--shadow-glow);transform:scale(1.02)}
+.price-card.featured::before{content:'MOST POPULAR';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gradient-1);padding:.3rem 1.2rem;border-radius:50px;font-size:.7rem;font-weight:700;letter-spacing:.1em}
+.price-card h3{font-size:1.2rem;font-weight:700;margin-bottom:.5rem}
+.price-card .price{font-size:3rem;font-weight:800;margin:1rem 0}.price-card .price span{font-size:1rem;font-weight:400;color:var(--text-muted)}
+.price-card .price-desc{color:var(--text-muted);font-size:.9rem;margin-bottom:1.5rem}
+.price-features{list-style:none;margin-bottom:2rem}
+.price-features li{padding:.5rem 0;color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;gap:.7rem}
+.price-features li::before{content:'\2713';color:var(--primary-light);font-weight:700}
+.price-card .btn{width:100%;justify-content:center}
+.testimonials-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem}
+.testimonial-card{background:var(--surface);border-radius:16px;padding:2rem;border:var(--border-subtle)}
+.testimonial-stars{color:var(--accent);margin-bottom:1rem;font-size:1.1rem}
+.testimonial-card p{color:var(--text-muted);font-size:.95rem;line-height:1.7;margin-bottom:1.5rem;font-style:italic}
+.testimonial-author{display:flex;align-items:center;gap:.8rem}
+.testimonial-avatar{width:40px;height:40px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem}
+.testimonial-name{font-weight:600;font-size:.9rem}.testimonial-role{font-size:.8rem;color:var(--text-dim)}
+.cta-section{text-align:center;padding:6rem 2rem;background:linear-gradient(180deg,transparent 0%,rgba(108,58,237,0.08) 50%,transparent 100%)}
+.footer{padding:4rem 2rem 2rem;border-top:var(--border-subtle);background:var(--dark-2)}
+.footer-grid{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:3rem;margin-bottom:3rem}
+.footer-brand p{color:var(--text-dim);font-size:.9rem;line-height:1.7;margin-top:1rem}
+.footer h4{font-size:.85rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:1.2rem;color:var(--text-muted)}
+.footer a{display:block;color:var(--text-dim);text-decoration:none;font-size:.9rem;padding:.3rem 0;transition:color .3s}.footer a:hover{color:var(--primary-light)}
+.footer-bottom{max-width:1200px;margin:0 auto;padding-top:2rem;border-top:var(--border-subtle);display:flex;justify-content:space-between;align-items:center;font-size:.85rem;color:var(--text-dim)}
+.demo-preview{max-width:900px;margin:4rem auto 0;background:var(--surface);border-radius:20px;border:var(--border-subtle);overflow:hidden;box-shadow:var(--shadow-glow)}
+.demo-bar{display:flex;align-items:center;gap:.5rem;padding:1rem 1.5rem;background:var(--dark-2);border-bottom:var(--border-subtle)}
+.demo-dot{width:10px;height:10px;border-radius:50%}
+.demo-body{padding:2rem}.demo-input-group{display:flex;gap:1rem;margin-bottom:1.5rem}
+.demo-input{flex:1;padding:1rem 1.2rem;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:var(--text);font-size:.95rem}
+.demo-platforms{display:flex;gap:1rem;flex-wrap:wrap}
+.demo-platform{padding:.8rem 1.2rem;border-radius:10px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);font-size:.85rem;color:var(--primary-light)}
+@media(max-width:768px){.nav-links{display:none}.steps-grid,.features-grid,.pricing-grid,.testimonials-grid{grid-template-columns:1fr}.footer-grid{grid-template-columns:1fr 1fr}.hero-stats{flex-direction:column;gap:1.5rem}.hero h1{font-size:2.2rem}.price-card.featured{transform:none}.demo-input-group{flex-direction:column}}
+`;
+}
+
+router.get('/', (req, res) => {
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RepurposeAI — Transform One Piece of Content Into Dozens</title>
-<meta name="description" content="AI-powered content repurposing platform. Transform blog posts, videos, and podcasts into threads, reels, newsletters, and more in seconds.">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#06060f;--bg2:#0c0c1d;--bg3:#11112a;--bg4:#181842;--a1:#7c3aed;--a2:#06b6d4;--a3:#f472b6;--g1:linear-gradient(135deg,#7c3aed,#06b6d4);--g2:linear-gradient(135deg,#06b6d4,#7c3aed);--g3:linear-gradient(135deg,#f472b6,#7c3aed);--t1:#f0f0ff;--t2:#a0a0c0;--t3:#6a6a8e;--br:rgba(124,58,237,.15);--r:16px;--rs:10px;--rf:9999px}
-html{scroll-behavior:smooth}
-body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--t1);line-height:1.7;overflow-x:hidden;-webkit-font-smoothing:antialiased}
-a{text-decoration:none;color:inherit}ul{list-style:none}
-.container{max-width:1200px;margin:0 auto;padding:0 24px}
-
-.bg-grid{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(124,58,237,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.03) 1px,transparent 1px);background-size:60px 60px}
-.bg-orb{position:fixed;border-radius:50%;filter:blur(120px);opacity:.4;pointer-events:none;z-index:0;animation:orbF 20s ease-in-out infinite}
-.bg-orb--1{width:600px;height:600px;background:var(--a1);top:-200px;right:-200px}
-.bg-orb--2{width:500px;height:500px;background:var(--a2);bottom:-100px;left:-200px;animation-delay:-7s}
-.bg-orb--3{width:400px;height:400px;background:var(--a3);top:50%;left:50%;transform:translate(-50%,-50%);animation-delay:-14s;opacity:.15}
-@keyframes orbF{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(30px,-30px) scale(1.05)}66%{transform:translate(-20px,20px) scale(.95)}}
-
-/* Nav */
-.nav{position:fixed;top:0;left:0;right:0;z-index:1000;padding:16px 0;transition:all .4s}
-.nav.scrolled{background:rgba(6,6,15,.85);backdrop-filter:blur(20px) saturate(180%);border-bottom:1px solid var(--br)}
-.nav__inner{display:flex;align-items:center;justify-content:space-between;max-width:1200px;margin:0 auto;padding:0 24px}
-.nav__logo{font-size:1.5rem;font-weight:800;letter-spacing:-.5px;background:var(--g1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.nav__logo span{font-weight:400;opacity:.7;-webkit-text-fill-color:var(--t2)}
-.nav__links{display:flex;gap:28px;align-items:center}
-.nav__links a{font-size:.9rem;font-weight:500;color:var(--t2);transition:color .3s;position:relative}
-.nav__links a:hover{color:var(--t1)}
-.nav__links a::after{content:'';position:absolute;bottom:-4px;left:0;width:0;height:2px;background:var(--g1);transition:width .3s}
-.nav__links a:hover::after{width:100%}
-
-.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:var(--rf);font-size:.9rem;font-weight:600;border:none;cursor:pointer;transition:all .3s;position:relative;overflow:hidden;font-family:inherit}
-.btn--p{background:var(--g1);color:#fff;box-shadow:0 4px 20px rgba(124,58,237,.4)}
-.btn--p:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(124,58,237,.5)}
-.btn--o{background:transparent;color:var(--t1);border:1px solid var(--br)}
-.btn--o:hover{border-color:var(--a1);background:rgba(124,58,237,.08)}
-.btn--l{padding:16px 36px;font-size:1rem}
-.btn--g{background:transparent;color:var(--a2);padding:12px 20px}
-
-.nav__mob{display:none;background:none;border:none;color:var(--t1);font-size:1.5rem;cursor:pointer}
-
-/* Hero */
-.hero{position:relative;z-index:1;padding:160px 0 100px;text-align:center;min-height:100vh;display:flex;align-items:center}
-.hero__badge{display:inline-flex;align-items:center;gap:8px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.25);padding:8px 20px;border-radius:var(--rf);font-size:.85rem;color:var(--a2);margin-bottom:32px;animation:fU .8s ease}
-.hero__badge .pulse{width:8px;height:8px;background:#34d399;border-radius:50%;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.hero__title{font-size:clamp(2.8rem,6vw,5rem);font-weight:900;line-height:1.1;letter-spacing:-2px;margin-bottom:24px;animation:fU .8s ease .1s both}
-.hero__title .gt{background:var(--g1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.hero__sub{font-size:clamp(1.1rem,2vw,1.3rem);color:var(--t2);max-width:620px;margin:0 auto 40px;line-height:1.8;animation:fU .8s ease .2s both}
-.hero__actions{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;animation:fU .8s ease .3s both}
-.hero__stats{display:flex;gap:48px;justify-content:center;margin-top:64px;animation:fU .8s ease .4s both}
-.hero__stat{text-align:center}
-.hero__stat-val{font-size:2rem;font-weight:800;background:var(--g1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.hero__stat-lbl{font-size:.85rem;color:var(--t3);margin-top:4px}
-
-/* Demo preview */
-.hero__preview{margin-top:64px;position:relative;animation:fU .8s ease .5s both}
-.hero__preview-inner{background:var(--bg3);border:1px solid var(--br);border-radius:20px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,.4)}
-.preview-bar{display:flex;align-items:center;gap:8px;padding:14px 20px;background:rgba(0,0,0,.3);border-bottom:1px solid var(--br)}
-.preview-dot{width:12px;height:12px;border-radius:50%;background:var(--t3);opacity:.3}
-.preview-dot:nth-child(1){background:#f87171}.preview-dot:nth-child(2){background:#f59e0b}.preview-dot:nth-child(3){background:#34d399}
-.preview-body{padding:32px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-.preview-card{background:rgba(255,255,255,.03);border:1px solid var(--br);border-radius:12px;padding:20px}
-.preview-card__head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
-.preview-card__icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.8rem}
-.preview-card__platform{font-size:.8rem;font-weight:600;color:var(--t2)}
-.preview-card__line{height:8px;border-radius:4px;margin-bottom:8px;opacity:.15}
-.preview-card__line:nth-child(1){width:90%;background:var(--a1)}.preview-card__line:nth-child(2){width:70%;background:var(--a2)}.preview-card__line:nth-child(3){width:80%;background:var(--a3)}.preview-card__line:nth-child(4){width:50%;background:var(--a1)}
-
-@keyframes fU{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
-
-/* Logos */
-.logos{position:relative;z-index:1;padding:60px 0;border-top:1px solid var(--br);border-bottom:1px solid var(--br)}
-.logos__lbl{text-align:center;font-size:.8rem;text-transform:uppercase;letter-spacing:3px;color:var(--t3);margin-bottom:32px}
-.logos__grid{display:flex;justify-content:center;align-items:center;gap:48px;flex-wrap:wrap;opacity:.5}
-.logos__item{font-size:1.2rem;font-weight:700;color:var(--t2);letter-spacing:1px}
-
-/* Sections */
-.section{position:relative;z-index:1;padding:120px 0}
-.section__lbl{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;text-transform:uppercase;letter-spacing:3px;color:var(--a2);margin-bottom:16px}
-.section__title{font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-1px;line-height:1.2;margin-bottom:16px}
-.section__sub{font-size:1.1rem;color:var(--t2);max-width:560px;line-height:1.8}
-.section__hdr{text-align:center;margin-bottom:64px}
-.section__hdr .section__sub{margin:0 auto}
-
-/* Features */
-.features__grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
-.fc{background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:36px;transition:all .4s;position:relative;overflow:hidden}
-.fc::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(124,58,237,.05),transparent);opacity:0;transition:opacity .4s}
-.fc:hover{transform:translateY(-4px);border-color:rgba(124,58,237,.3)}.fc:hover::before{opacity:1}
-.fc__icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin-bottom:20px;position:relative;z-index:1}
-.fc__icon--p{background:rgba(124,58,237,.15);color:var(--a1)}
-.fc__icon--c{background:rgba(6,182,212,.15);color:var(--a2)}
-.fc__icon--k{background:rgba(244,114,182,.15);color:var(--a3)}
-.fc__t{font-size:1.15rem;font-weight:700;margin-bottom:10px;position:relative;z-index:1}
-.fc__d{font-size:.95rem;color:var(--t2);line-height:1.7;position:relative;z-index:1}
-
-/* Steps */
-.steps{display:flex;flex-direction:column;gap:0;position:relative}
-.steps::before{content:'';position:absolute;left:32px;top:40px;bottom:40px;width:2px;background:linear-gradient(to bottom,var(--a1),var(--a2),var(--a3));opacity:.3}
-.step{display:flex;gap:32px;align-items:flex-start;padding:32px 0;position:relative}
-.step__num{min-width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:800;position:relative;z-index:2;font-family:'JetBrains Mono',monospace}
-.step:nth-child(1) .step__num{background:rgba(124,58,237,.2);color:var(--a1);border:2px solid rgba(124,58,237,.4)}
-.step:nth-child(2) .step__num{background:rgba(6,182,212,.2);color:var(--a2);border:2px solid rgba(6,182,212,.4)}
-.step:nth-child(3) .step__num{background:rgba(244,114,182,.2);color:var(--a3);border:2px solid rgba(244,114,182,.4)}
-.step__content{padding-top:8px}
-.step__title{font-size:1.3rem;font-weight:700;margin-bottom:8px}
-.step__desc{color:var(--t2);font-size:1rem;line-height:1.8;max-width:500px}
-
-/* Testimonials */
-.test-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
-.tc{background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:32px;transition:all .3s}
-.tc:hover{border-color:rgba(124,58,237,.3)}
-.tc__stars{color:#f59e0b;font-size:.9rem;margin-bottom:16px;letter-spacing:2px}
-.tc__text{font-size:.95rem;color:var(--t2);line-height:1.8;margin-bottom:24px;font-style:italic}
-.tc__author{display:flex;align-items:center;gap:12px}
-.tc__avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem}
-.tc__name{font-size:.9rem;font-weight:600}
-.tc__role{font-size:.8rem;color:var(--t3)}
-
-/* FAQ */
-.faq__list{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
-.fi{background:var(--bg3);border:1px solid var(--br);border-radius:var(--rs);overflow:hidden;transition:border-color .3s}
-.fi.active{border-color:rgba(124,58,237,.4)}
-.fi__q{width:100%;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;background:none;border:none;color:var(--t1);font-size:1rem;font-weight:600;cursor:pointer;font-family:inherit;text-align:left;transition:color .3s}
-.fi__q:hover{color:var(--a2)}
-.fi__icon{font-size:1.2rem;transition:transform .3s;color:var(--a1);flex-shrink:0}
-.fi.active .fi__icon{transform:rotate(45deg)}
-.fi__a{max-height:0;overflow:hidden;transition:max-height .4s ease,padding .4s ease}
-.fi.active .fi__a{max-height:300px}
-.fi__a-inner{padding:0 24px 20px;font-size:.95rem;color:var(--t2);line-height:1.8}
-
-/* CTA */
-.cta{position:relative;z-index:1;padding:120px 0}
-.cta__box{background:linear-gradient(135deg,rgba(124,58,237,.15),rgba(6,182,212,.1));border:1px solid rgba(124,58,237,.25);border-radius:24px;padding:80px 60px;text-align:center;position:relative;overflow:hidden}
-.cta__box::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 50% 0%,rgba(124,58,237,.2),transparent 70%)}
-.cta__title{font-size:clamp(2rem,4vw,2.8rem);font-weight:800;letter-spacing:-1px;margin-bottom:16px;position:relative;z-index:1}
-.cta__sub{font-size:1.1rem;color:var(--t2);margin-bottom:32px;max-width:500px;margin-left:auto;margin-right:auto;position:relative;z-index:1}
-.cta__actions{position:relative;z-index:1;display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
-
-/* Footer */
-.footer{position:relative;z-index:1;padding:60px 0 30px;border-top:1px solid var(--br)}
-.footer__grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:48px;margin-bottom:48px}
-.footer__brand-desc{color:var(--t3);font-size:.9rem;margin-top:12px;max-width:300px;line-height:1.7}
-.footer__col-title{font-size:.8rem;text-transform:uppercase;letter-spacing:2px;color:var(--t3);margin-bottom:20px;font-weight:600}
-.footer__link{display:block;padding:6px 0;font-size:.9rem;color:var(--t2);transition:color .3s}
-.footer__link:hover{color:var(--t1)}
-.footer__bottom{display:flex;justify-content:space-between;align-items:center;padding-top:30px;border-top:1px solid var(--br);font-size:.8rem;color:var(--t3)}
-.footer__socials{display:flex;gap:16px}
-.footer__social{width:36px;height:36px;border-radius:50%;border:1px solid var(--br);display:flex;align-items:center;justify-content:center;font-size:.85rem;color:var(--t2);transition:all .3s}
-.footer__social:hover{border-color:var(--a1);color:var(--a1);background:rgba(124,58,237,.1)}
-
-.reveal{opacity:0;transform:translateY(40px);transition:all .8s cubic-bezier(.16,1,.3,1)}
-.reveal.visible{opacity:1;transform:translateY(0)}
-
-@media(max-width:968px){
-  .features__grid,.test-grid{grid-template-columns:1fr;max-width:480px;margin:0 auto}
-  .footer__grid{grid-template-columns:1fr 1fr;gap:32px}
-  .hero__stats{gap:32px}.nav__links{display:none}.nav__mob{display:block}
-  .nav__links.open{display:flex;flex-direction:column;position:absolute;top:70px;left:16px;right:16px;background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:24px;gap:16px}
-  .preview-body{grid-template-columns:1fr}
-  .steps::before{left:28px}
-}
-@media(max-width:600px){
-  .hero__stats{flex-direction:column;gap:20px}
-  .footer__grid{grid-template-columns:1fr}
-  .footer__bottom{flex-direction:column;gap:16px}
-  .cta__box{padding:48px 24px}
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${BRAND.name} - ${BRAND.tagline}</title>
+  <meta name="description" content="AI-powered content repurposing. Paste a YouTube link, get content for Instagram, TikTok, Facebook, LinkedIn, Twitter.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+  <style>${getStyles()}</style>
 </head>
 <body>
-
-<div class="bg-grid"></div>
-<div class="bg-orb bg-orb--1"></div>
-<div class="bg-orb bg-orb--2"></div>
-<div class="bg-orb bg-orb--3"></div>
-
-<!-- NAV -->
-<nav class="nav" id="nav">
-  <div class="nav__inner">
-    <a href="/" class="nav__logo">Repurpose<span>AI</span></a>
-    <div class="nav__links" id="navLinks">
-      <a href="#features">Features</a>
+  <nav class="nav"><div class="nav-inner">
+    <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
+    <div class="nav-links">
       <a href="#how-it-works">How It Works</a>
-      <a href="/pricing">Pricing</a>
-      <a href="#testimonials">Reviews</a>
-      <a href="/contact">Contact</a>
-      ${user
-        ? `<a href="/dashboard" class="btn btn--p">Dashboard</a>`
-        : `<a href="/login" style="color:var(--a2);font-weight:600">Log In</a><a href="/signup" class="btn btn--p">Get Started Free</a>`}
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="/auth/login" class="btn btn-outline">Log In</a>
+      <a href="/auth/register" class="btn btn-primary">Start Free</a>
     </div>
-    <button class="nav__mob" id="mobToggle" aria-label="Menu">&#9776;</button>
-  </div>
-</nav>
+  </div></nav>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="container">
-    <div class="hero__badge"><span class="pulse"></span>Now powered by GPT-4o & Claude 4</div>
-    <h1 class="hero__title">One Piece of Content.<br><span class="gt">Infinite Possibilities.</span></h1>
-    <p class="hero__sub">Transform a single blog post, video, or podcast into dozens of high-performing assets — threads, reels, newsletters, carousels, and more — in seconds.</p>
-    <div class="hero__actions">
-      <a href="${user ? '/dashboard' : '/signup'}" class="btn btn--p btn--l">Start Repurposing Free &rarr;</a>
-      <a href="#how-it-works" class="btn btn--o btn--l">See How It Works</a>
-    </div>
-    <div class="hero__stats">
-      <div class="hero__stat"><div class="hero__stat-val">12,000+</div><div class="hero__stat-lbl">Creators & Marketers</div></div>
-      <div class="hero__stat"><div class="hero__stat-val">2.4M+</div><div class="hero__stat-lbl">Assets Generated</div></div>
-      <div class="hero__stat"><div class="hero__stat-val">50+</div><div class="hero__stat-lbl">Output Formats</div></div>
-    </div>
-
-    <!-- App Preview -->
-    <div class="hero__preview">
-      <div class="hero__preview-inner">
-        <div class="preview-bar"><span class="preview-dot"></span><span class="preview-dot"></span><span class="preview-dot"></span><span style="flex:1"></span><span style="font-size:.75rem;color:var(--t3)">repurposeai.com/dashboard</span></div>
-        <div class="preview-body">
-          <div class="preview-card">
-            <div class="preview-card__head"><div class="preview-card__icon" style="background:rgba(29,161,242,.15);color:#1da1f2">&#120143;</div><span class="preview-card__platform">X / Twitter Thread</span></div>
-            <div class="preview-card__line"></div><div class="preview-card__line"></div><div class="preview-card__line"></div><div class="preview-card__line"></div>
+  <section class="hero">
+    <div class="hero-bg"></div><div class="hero-grid"></div>
+    <div class="hero-content">
+      <div class="hero-badge">&#x2728; AI-Powered Content Engine</div>
+      <h1>Turn One Video Into<br><span class="gradient-text">Unlimited Content</span></h1>
+      <p>Paste a YouTube link. Our AI instantly creates optimized posts for every major platform. Save hours of work. Grow everywhere.</p>
+      <div class="hero-cta">
+        <a href="/auth/register" class="btn btn-primary btn-large">Get Started Free &#x2192;</a>
+        <a href="#how-it-works" class="btn btn-outline btn-large">See How It Works</a>
+      </div>
+      <div class="demo-preview">
+        <div class="demo-bar">
+          <div class="demo-dot" style="background:#FF5F57"></div>
+          <div class="demo-dot" style="background:#FEBC2E"></div>
+          <div class="demo-dot" style="background:#28C840"></div>
+        </div>
+        <div class="demo-body">
+          <div class="demo-input-group">
+            <input class="demo-input" value="https://youtube.com/watch?v=your-video" readonly>
+            <button class="btn btn-primary">Repurpose &#x26A1;</button>
           </div>
-          <div class="preview-card">
-            <div class="preview-card__head"><div class="preview-card__icon" style="background:rgba(0,119,181,.15);color:#0077b5">in</div><span class="preview-card__platform">LinkedIn Post</span></div>
-            <div class="preview-card__line"></div><div class="preview-card__line"></div><div class="preview-card__line"></div><div class="preview-card__line"></div>
-          </div>
-          <div class="preview-card">
-            <div class="preview-card__head"><div class="preview-card__icon" style="background:rgba(225,48,108,.15);color:#e1306c">&#128247;</div><span class="preview-card__platform">Instagram Caption</span></div>
-            <div class="preview-card__line"></div><div class="preview-card__line"></div><div class="preview-card__line"></div><div class="preview-card__line"></div>
+          <div class="demo-platforms">
+            <div class="demo-platform">&#x1F4F7; Instagram Reel</div>
+            <div class="demo-platform">&#x1F3B5; TikTok</div>
+            <div class="demo-platform">&#x1F4D8; Facebook Post</div>
+            <div class="demo-platform">&#x1F4BC; LinkedIn Article</div>
+            <div class="demo-platform">&#x1F426; Twitter Thread</div>
           </div>
         </div>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- LOGOS -->
-<section class="logos">
-  <div class="container">
-    <p class="logos__lbl">Trusted by teams at</p>
-    <div class="logos__grid">
-      <span class="logos__item">Shopify</span><span class="logos__item">HubSpot</span><span class="logos__item">Notion</span><span class="logos__item">Vercel</span><span class="logos__item">Stripe</span><span class="logos__item">Linear</span>
-    </div>
-  </div>
-</section>
-
-<!-- FEATURES -->
-<section class="section" id="features">
-  <div class="container">
-    <div class="section__hdr reveal">
-      <p class="section__lbl">&#9830; Features</p>
-      <h2 class="section__title">Everything You Need to<br>10x Your Content Output</h2>
-      <p class="section__sub">Powered by the latest AI models, fine-tuned specifically for content repurposing across every major platform.</p>
-    </div>
-    <div class="features__grid">
-      <div class="fc reveal"><div class="fc__icon fc__icon--p">&#9889;</div><h3 class="fc__t">Instant Multi-Format</h3><p class="fc__d">Drop in any content — blog, video transcript, podcast — and get threads, carousels, reels scripts, emails, and more in one click.</p></div>
-      <div class="fc reveal"><div class="fc__icon fc__icon--c">&#127912;</div><h3 class="fc__t">Brand Voice AI</h3><p class="fc__d">Train the AI on your unique tone, vocabulary, and style. Every output sounds authentically you — not like a robot wrote it.</p></div>
-      <div class="fc reveal"><div class="fc__icon fc__icon--k">&#128200;</div><h3 class="fc__t">Platform Optimization</h3><p class="fc__d">Auto-optimized for each platform's algorithm — character limits, hashtags, hooks, and formatting handled automatically.</p></div>
-      <div class="fc reveal"><div class="fc__icon fc__icon--c">&#128197;</div><h3 class="fc__t">Smart Scheduling</h3><p class="fc__d">Built-in scheduler with AI-recommended posting times. Publish across LinkedIn, X, Instagram, TikTok, and newsletters from one dashboard.</p></div>
-      <div class="fc reveal"><div class="fc__icon fc__icon--p">&#128301;</div><h3 class="fc__t">Visual Asset Generator</h3><p class="fc__d">Auto-generate carousel images, quote cards, and video thumbnails that match your brand guidelines and color palette.</p></div>
-      <div class="fc reveal"><div class="fc__icon fc__icon--k">&#128640;</div><h3 class="fc__t">Team Collaboration</h3><p class="fc__d">Invite your team, manage approval workflows, leave comments, and track performance — all in one workspace.</p></div>
-    </div>
-  </div>
-</section>
-
-<!-- HOW IT WORKS -->
-<section class="section" id="how-it-works" style="background:var(--bg2)">
-  <div class="container">
-    <div class="section__hdr reveal">
-      <p class="section__lbl">&#9881; Process</p>
-      <h2 class="section__title">Three Steps. Zero Effort.</h2>
-      <p class="section__sub">Go from one piece of content to a full week's content calendar in under 60 seconds.</p>
-    </div>
-    <div class="steps">
-      <div class="step reveal"><div class="step__num">01</div><div class="step__content"><h3 class="step__title">Drop Your Content</h3><p class="step__desc">Paste a URL, upload a file, or connect your CMS. We support blog posts, YouTube videos, podcast episodes, webinar recordings, and more.</p></div></div>
-      <div class="step reveal"><div class="step__num">02</div><div class="step__content"><h3 class="step__title">Choose Your Formats</h3><p class="step__desc">Select which platforms and formats you want — X threads, LinkedIn posts, Instagram carousels, email newsletters, short-form video scripts, or let AI pick the best mix.</p></div></div>
-      <div class="step reveal"><div class="step__num">03</div><div class="step__content"><h3 class="step__title">Review & Publish</h3><p class="step__desc">Edit in our beautiful visual editor, refine with AI suggestions, then schedule or publish directly. Track engagement across all platforms in one dashboard.</p></div></div>
-    </div>
-  </div>
-</section>
-
-<!-- TESTIMONIALS -->
-<section class="section" id="testimonials" style="background:var(--bg2)">
-  <div class="container">
-    <div class="section__hdr reveal">
-      <p class="section__lbl">&#11088; Testimonials</p>
-      <h2 class="section__title">Loved by 12,000+ Creators</h2>
-      <p class="section__sub">See why content creators and marketing teams are switching to RepurposeAI.</p>
-    </div>
-    <div class="test-grid">
-      <div class="tc reveal"><div class="tc__stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p class="tc__text">"I used to spend 6 hours repurposing a single podcast episode. Now it takes me 5 minutes. RepurposeAI literally gave me my weekends back."</p><div class="tc__author"><div class="tc__avatar" style="background:rgba(124,58,237,.2);color:var(--a1)">SR</div><div><p class="tc__name">Sarah Rodriguez</p><p class="tc__role">Content Strategist, TechFlow</p></div></div></div>
-      <div class="tc reveal"><div class="tc__stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p class="tc__text">"The brand voice feature is insane. Our CEO's LinkedIn posts sound exactly like him — and we're publishing 5x more content than before."</p><div class="tc__author"><div class="tc__avatar" style="background:rgba(6,182,212,.2);color:var(--a2)">MK</div><div><p class="tc__name">Marcus Kim</p><p class="tc__role">Head of Marketing, ScaleUp</p></div></div></div>
-      <div class="tc reveal"><div class="tc__stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p class="tc__text">"We replaced 3 tools and 2 freelancers with RepurposeAI. The ROI is unreal. Best investment our agency has made this year."</p><div class="tc__author"><div class="tc__avatar" style="background:rgba(244,114,182,.2);color:var(--a3)">AL</div><div><p class="tc__name">Aisha Larsson</p><p class="tc__role">Founder, ContentLab Agency</p></div></div></div>
-    </div>
-  </div>
-</section>
-
-<!-- FAQ -->
-<section class="section" id="faq">
-  <div class="container">
-    <div class="section__hdr reveal"><p class="section__lbl">&#10067; FAQ</p><h2 class="section__title">Frequently Asked Questions</h2><p class="section__sub">Everything you need to know about RepurposeAI.</p></div>
-    <div class="faq__list">
-      <div class="fi reveal"><button class="fi__q">What types of content can I repurpose?<span class="fi__icon">+</span></button><div class="fi__a"><div class="fi__a-inner">You can repurpose virtually any content: blog posts, YouTube videos, podcast episodes, webinar recordings, PDF documents, newsletters, and even raw transcripts. Just paste a URL or upload a file and we handle the rest.</div></div></div>
-      <div class="fi reveal"><button class="fi__q">How does the Brand Voice AI work?<span class="fi__icon">+</span></button><div class="fi__a"><div class="fi__a-inner">Upload 3-5 samples of your existing content, and our AI learns your unique tone, vocabulary, sentence structure, and style. Every output is then generated in your voice — so it sounds like you wrote it, not a machine.</div></div></div>
-      <div class="fi reveal"><button class="fi__q">Which platforms are supported?<span class="fi__icon">+</span></button><div class="fi__a"><div class="fi__a-inner">We support over 50 output formats including X/Twitter threads, LinkedIn posts & carousels, Instagram captions & reels scripts, TikTok scripts, YouTube Shorts scripts, email newsletters, blog posts, Facebook posts, Pinterest pins, and more.</div></div></div>
-      <div class="fi reveal"><button class="fi__q">Can I cancel my subscription anytime?<span class="fi__icon">+</span></button><div class="fi__a"><div class="fi__a-inner">Absolutely. No contracts, no commitments. Cancel anytime from your dashboard and you won't be charged again. Your content and settings are saved for 30 days in case you decide to come back.</div></div></div>
-      <div class="fi reveal"><button class="fi__q">Is there an API for developers?<span class="fi__icon">+</span></button><div class="fi__a"><div class="fi__a-inner">Yes! Our Enterprise plan includes full REST API access with comprehensive documentation, SDKs for Python and JavaScript, and webhook support. You can integrate RepurposeAI directly into your existing workflows.</div></div></div>
-    </div>
-  </div>
-</section>
-
-<!-- CTA -->
-<section class="cta" id="cta">
-  <div class="container"><div class="cta__box reveal">
-    <h2 class="cta__title">Ready to 10x Your<br>Content Output?</h2>
-    <p class="cta__sub">Join 12,000+ creators and marketers who are saving 20+ hours every week with RepurposeAI.</p>
-    <div class="cta__actions">
-      <a href="${user ? '/dashboard' : '/signup'}" class="btn btn--p btn--l">Start Your Free Trial &rarr;</a>
-      <a href="/contact" class="btn btn--g btn--l">Book a Demo</a>
-    </div>
-  </div></div>
-</section>
-
-<!-- FOOTER -->
-<footer class="footer">
-  <div class="container">
-    <div class="footer__grid">
-      <div><a href="/" class="nav__logo">Repurpose<span>AI</span></a><p class="footer__brand-desc">Transform one piece of content into dozens of high-performing assets, automatically. Powered by the latest AI.</p></div>
-      <div><p class="footer__col-title">Product</p><a href="#features" class="footer__link">Features</a><a href="/pricing" class="footer__link">Pricing</a><a href="#" class="footer__link">Integrations</a><a href="#" class="footer__link">API Docs</a></div>
-      <div><p class="footer__col-title">Company</p><a href="#" class="footer__link">About</a><a href="#" class="footer__link">Blog</a><a href="/contact" class="footer__link">Contact</a><a href="#" class="footer__link">Careers</a></div>
-      <div><p class="footer__col-title">Legal</p><a href="#" class="footer__link">Privacy Policy</a><a href="#" class="footer__link">Terms of Service</a><a href="#" class="footer__link">Cookie Policy</a></div>
-    </div>
-    <div class="footer__bottom">
-      <p>&copy; 2026 RepurposeAI. All rights reserved.</p>
-      <div class="footer__socials">
-        <a href="#" class="footer__social" aria-label="X">&#120143;</a>
-        <a href="#" class="footer__social" aria-label="LinkedIn">in</a>
-        <a href="#" class="footer__social" aria-label="YouTube">&#9654;</a>
+      <div class="hero-stats">
+        <div class="hero-stat"><div class="number">10K+</div><div class="label">Videos Repurposed</div></div>
+        <div class="hero-stat"><div class="number">50K+</div><div class="label">Posts Generated</div></div>
+        <div class="hero-stat"><div class="number">5</div><div class="label">Platforms Supported</div></div>
       </div>
     </div>
-  </div>
-</footer>
+  </section>
 
-<script>
-const nav=document.getElementById('nav');
-window.addEventListener('scroll',()=>nav.classList.toggle('scrolled',window.scrollY>50));
-const mobToggle=document.getElementById('mobToggle'),navLinks=document.getElementById('navLinks');
-mobToggle.addEventListener('click',()=>navLinks.classList.toggle('open'));
-navLinks.querySelectorAll('a').forEach(l=>l.addEventListener('click',()=>navLinks.classList.remove('open')));
-document.querySelectorAll('a[href^="#"]').forEach(a=>{a.addEventListener('click',function(e){e.preventDefault();const t=document.querySelector(this.getAttribute('href'));if(t)t.scrollIntoView({behavior:'smooth',block:'start'})})});
-const obs=new IntersectionObserver(e=>{e.forEach((en,i)=>{if(en.isIntersecting){setTimeout(()=>en.target.classList.add('visible'),i*80);obs.unobserve(en.target)}})},{threshold:.1,rootMargin:'0px 0px -50px 0px'});
-document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
-document.querySelectorAll('.fi__q').forEach(b=>{b.addEventListener('click',()=>{const i=b.parentElement,a=i.classList.contains('active');document.querySelectorAll('.fi').forEach(x=>x.classList.remove('active'));if(!a)i.classList.add('active')})});
-</script>
+  <section id="how-it-works" style="background:var(--dark-2)">
+    <div class="section-inner">
+      <div class="section-header">
+        <div class="section-label">How It Works</div>
+        <h2 class="section-title">Three Steps to Everywhere</h2>
+        <p class="section-subtitle">From YouTube to every platform in under 60 seconds. No editing skills required.</p>
+      </div>
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-number">1</div><div class="step-icon">&#x1F517;</div>
+          <h3>Paste Your Link</h3>
+          <p>Drop any YouTube video URL into RepurposeAI. We extract transcripts, key moments, and visual context automatically.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">2</div><div class="step-icon">&#x2728;</div>
+          <h3>AI Creates Content</h3>
+          <p>Our AI engine generates platform-optimized content: Instagram captions with hashtags, TikTok scripts, LinkedIn articles, tweet threads, and more.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">3</div><div class="step-icon">&#x1F680;</div>
+          <h3>Publish Everywhere</h3>
+          <p>Review, edit if needed, and download content for all platforms. Schedule posts or copy content for manual posting.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="section-inner">
+      <div class="section-header">
+        <div class="section-label">Features</div>
+        <h2 class="section-title">Everything You Need to Scale</h2>
+        <p class="section-subtitle">Professional-grade tools designed for creators, agencies, and businesses.</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card"><div class="feature-icon">&#x1F9E0;</div><h3>Smart AI Engine</h3><p>Advanced AI understands context, tone, and audience to create platform-perfect content every time.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F3A8;</div><h3>Platform Optimization</h3><p>Content is automatically tailored for each platform's format, character limits, and best practices.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x23F0;</div><h3>Smart Scheduling</h3><p>Schedule content to publish at optimal times for maximum engagement on each platform.</p></div>
+        <div class="feature-card"><div class="feature-icon">#&#xFE0F;&#x20E3;</div><h3>Hashtag Generator</h3><p>AI-generated hashtags tailored to your niche and trending topics for maximum reach.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F4CA;</div><h3>Analytics Dashboard</h3><p>Track performance across all platforms with unified analytics and actionable insights.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F504;</div><h3>Batch Processing</h3><p>Process multiple videos at once. Perfect for agencies managing multiple client accounts.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing" style="background:var(--dark-2)">
+    <div class="section-inner">
+      <div class="section-header">
+        <div class="section-label">Pricing</div>
+        <h2 class="section-title">Simple, Transparent Pricing</h2>
+        <p class="section-subtitle">Start free. Upgrade when you're ready to scale.</p>
+      </div>
+      <div class="pricing-grid">
+        <div class="price-card">
+          <h3>Starter</h3><div class="price">Free</div>
+          <p class="price-desc">Perfect for trying out RepurposeAI</p>
+          <ul class="price-features"><li>3 videos per month</li><li>3 platforms supported</li><li>Basic AI captions</li><li>Download content</li><li>Email support</li></ul>
+          <a href="/auth/register" class="btn btn-outline">Get Started</a>
+        </div>
+        <div class="price-card featured">
+          <h3>Pro</h3><div class="price">$29<span>/month</span></div>
+          <p class="price-desc">For creators serious about growth</p>
+          <ul class="price-features"><li>Unlimited videos</li><li>All 5 platforms</li><li>Advanced AI with tone control</li><li>Smart scheduling</li><li>Hashtag optimization</li><li>Analytics dashboard</li><li>Priority support</li></ul>
+          <a href="/auth/register?plan=pro" class="btn btn-primary">Start Pro Trial</a>
+        </div>
+        <div class="price-card">
+          <h3>Enterprise</h3><div class="price">$99<span>/month</span></div>
+          <p class="price-desc">For agencies and teams</p>
+          <ul class="price-features"><li>Everything in Pro</li><li>Batch processing (50+)</li><li>Team collaboration</li><li>White-label exports</li><li>API access</li><li>Custom AI training</li><li>Dedicated account manager</li></ul>
+          <a href="/auth/register?plan=enterprise" class="btn btn-outline">Contact Sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <div class="section-header">
+        <div class="section-label">Testimonials</div>
+        <h2 class="section-title">Loved by Creators</h2>
+        <p class="section-subtitle">See what our users are saying about RepurposeAI.</p>
+      </div>
+      <div class="testimonials-grid">
+        <div class="testimonial-card">
+          <div class="testimonial-stars">&#x2B50;&#x2B50;&#x2B50;&#x2B50;&#x2B50;</div>
+          <p>"RepurposeAI saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
+          <div class="testimonial-author"><div class="testimonial-avatar">JM</div><div><div class="testimonial-name">Jake Morrison</div><div class="testimonial-role">YouTube Creator, 500K subs</div></div></div>
+        </div>
+        <div class="testimonial-card">
+          <div class="testimonial-stars">&#x2B50;&#x2B50;&#x2B50;&#x2B50;&#x2B50;</div>
+          <p>"Our agency manages 20+ clients. RepurposeAI turned a 3-person job into something one person handles easily."</p>
+          <div class="testimonial-author"><div class="testimonial-avatar">SR</div><div><div class="testimonial-name">Sarah Rodriguez</div><div class="testimonial-role">Digital Agency Owner</div></div></div>
+        </div>
+        <div class="testimonial-card">
+          <div class="testimonial-stars">&#x2B50;&#x2B50;&#x2B50;&#x2B50;&#x2B50;</div>
+          <p>"The AI understands my brand voice perfectly. The captions it generates get more engagement than what I wrote manually."</p>
+          <div class="testimonial-author"><div class="testimonial-avatar">DK</div><div><div class="testimonial-name">David Kim</div><div class="testimonial-role">E-commerce Entrepreneur</div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="section-inner">
+      <h2 class="section-title">Ready to Multiply Your Content?</h2>
+      <p class="section-subtitle" style="margin:1rem auto 2rem">Join thousands of creators who save hours every week with AI-powered content repurposing.</p>
+      <a href="/auth/register" class="btn btn-primary btn-large">Start Free Today &#x2192;</a>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
+        <p>AI-powered content repurposing platform. Turn one YouTube video into optimized content for every major social platform.</p>
+      </div>
+      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a></div>
+      <div><h4>Company</h4><a href="/contact">Contact</a><a href="#">About</a><a href="#">Blog</a><a href="#">Careers</a></div>
+      <div><h4>Legal</h4><a href="#">Privacy Policy</a><a href="#">Terms of Service</a><a href="#">Cookie Policy</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2024 ${BRAND.name}. All rights reserved.</span>
+      <span>Built with &#x2764;&#xFE0F; and AI</span>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => { e.preventDefault(); const t = document.querySelector(a.getAttribute('href')); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); });
+    });
+    window.addEventListener('scroll', () => { document.querySelector('.nav').style.background = window.scrollY > 50 ? 'rgba(15,15,26,0.95)' : 'rgba(15,15,26,0.8)'; });
+  </script>
 </body>
 </html>`;
-}
+  res.send(html);
+});
 
 module.exports = router;
