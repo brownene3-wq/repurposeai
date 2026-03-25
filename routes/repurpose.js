@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 
 // YouTube video info extraction using oEmbed (no API key needed)
 async function getYouTubeInfo(url) {
@@ -72,7 +72,7 @@ function generatePlatformContent(videoInfo) {
 }
 
 // API endpoint: Process YouTube video
-router.post('/process', authenticateToken, async (req, res) => {
+router.post('/process', requireAuth, async (req, res) => {
   try {
     const { url } = req.body;
     
@@ -104,7 +104,7 @@ router.post('/process', authenticateToken, async (req, res) => {
 });
 
 // API endpoint: Regenerate content for a specific platform
-router.post('/regenerate', authenticateToken, async (req, res) => {
+router.post('/regenerate', requireAuth, async (req, res) => {
   try {
     const { videoInfo, platform, tone } = req.body;
     
