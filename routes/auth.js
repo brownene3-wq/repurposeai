@@ -130,8 +130,7 @@ router.post('/api/register', async (req, res) => {
     const existing = userOps.findByEmail(email);
     if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = userOps.create({ name: name || email.split('@')[0], email, password: hashedPassword });
+    const user = userOps.create(email, password, name || email.split('@')[0]);
 
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
@@ -150,7 +149,7 @@ router.post('/api/login', async (req, res) => {
     const user = userOps.findByEmail(email);
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
-    const valid = await bcrypt.compare(password, user.password);
+    const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
 
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
