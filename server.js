@@ -1,8 +1,19 @@
+require('dotenv').config();
 const express = require('express');
-const path = require('path');
 const cookieParser = require('cookie-parser');
+const path = require('path');
+const { initDatabase } = require('./db/database');
 
-// Route imports
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Import routes
 const pagesRouter = require('./routes/pages');
 const authRouter = require('./routes/auth');
 const dashboardRouter = require('./routes/dashboard');
@@ -10,54 +21,33 @@ const billingRouter = require('./routes/billing');
 const contactRouter = require('./routes/contact');
 const repurposeRouter = require('./routes/repurpose');
 const pricingRouter = require('./routes/pricing');
-const { initializeDatabase } = require('./db/database');
+const analyticsRouter = require('./routes/analytics');
+const scheduledRouter = require('./routes/scheduled');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
-
-// CORS for API routes
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
-
-// Routes
+// Routes - analytics and scheduled MUST be mounted before dashboard
 app.use('/', pagesRouter);
 app.use('/auth', authRouter);
+app.use('/dashboard/analytics', analyticsRouter);
+app.use('/dashboard/scheduled', scheduledRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
 app.use('/repurpose', repurposeRouter);
-
 app.use(pricingRouter);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', version: '2.0.0', service: 'RepurposeAI' });
-});
-
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
 // Initialize database and start server
-initializeDatabase().then(() => {
+async function start() {
+  try {
+    await initDatabase();
+    console.log('Database tables initialized successfully');
+  } catch (err) {
+    console.error('Database initialization error:', err.message);
+    console.log('Server will start without database - some features may not work');
+  }
+
   app.listen(PORT, '0.0.0.0', () => {
-    console.log('RepurposeAI v2.0.0 running on port ' + PORT);
-    console.log('Environment: ' + (process.env.NODE_ENV || 'development'));
+    console.log(`Server running on port ${PORT}`);
   });
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
-});
+}
+
+start();
