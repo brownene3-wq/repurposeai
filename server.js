@@ -8,7 +8,7 @@ const path = require('path');
 const { initializeDatabase } = require('./db/database');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000
 
 // ============================================
 // MIDDLEWARE
@@ -67,7 +67,7 @@ app.use(dashboardRouter);
 app.use(billingRouter);
 app.use(contactRouter);
 
-// ============================================
+// ===========================================
 // API: Health Check
 // ============================================
 
@@ -112,7 +112,7 @@ app.use((err, req, res, next) => {
 
 async function start() {
   await initializeDatabase();
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('  ââââââââââââââââââââââââââââââââââââââââââââ');
   console.log('  â                                          â');
