@@ -99,7 +99,8 @@ router.get('/', (req, res) => {
   <style>${getStyles()}</style>
 </head>
 <body>
-  <nav class="nav"><div class="nav-inner">
+ <button class="theme-toggle" onclick="toggleTheme()"><span>&#x1F319;</span><div class="toggle-track"><div class="toggle-thumb"></div></div><span>&#x2600;&#xFE0F;</span></button>
+ <nav class="nav"><div class="nav-inner">
     <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
     <div class="nav-links">
       <a href="#how-it-works">How It Works</a>
@@ -275,11 +276,11 @@ router.get('/', (req, res) => {
   </footer>
 
   <script>
-    document.querySelectorAll('a[href^="#"]').forEach(a => {
+    function toggleTheme(){var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
+ document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => { e.preventDefault(); const t = document.querySelector(a.getAttribute('href')); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); });
     });
-    function toggleTheme(){const h=document.documentElement;const c=h.getAttribute("data-theme");const n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){const s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
- window.addEventListener('scroll', () => { document.querySelector('.nav').style.background = window.scrollY > 50 ? 'rgba(15,15,26,0.95)' : 'rgba(15,15,26,0.8)'; });
+    window.addEventListener('scroll', () => { document.querySelector('.nav').style.background = window.scrollY > 50 ? 'rgba(15,15,26,0.95)' : 'rgba(15,15,26,0.8)'; });
   </script>
 </body>
 </html>`;
