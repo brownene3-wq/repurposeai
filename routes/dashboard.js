@@ -143,7 +143,7 @@ router.get('/', requireAuth, (req, res) => {
   <div class="toast" id="toast">Copied to clipboard!</div>
 
   <script>
-    function toggleTheme(){const h=document.documentElement;const c=h.getAttribute("data-theme");const n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){const s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
+    function toggleTheme(){var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
  let currentContent = null;
     let currentVideo = null;
 
