@@ -9,7 +9,7 @@ const dashboardRouter = require('./routes/dashboard');
 const billingRouter = require('./routes/billing');
 const contactRouter = require('./routes/contact');
 const repurposeRouter = require('./routes/repurpose');
-const { initDatabase } = require('./db/database');
+const { initializeDatabase } = require('./db/database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,7 +49,7 @@ app.use((err, req, res, next) => {
 });
 
 // Initialize database and start server
-initDatabase().then(() => {
+initializeDatabase().then(() => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log('RepurposeAI v2.0.0 running on port ' + PORT);
     console.log('Environment: ' + (process.env.NODE_ENV || 'development'));
