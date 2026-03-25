@@ -969,7 +969,7 @@ async function generatePlatformContent(transcript, platform, tone, brandVoice) {
 
   prompt += `\n\nTone of voice: ${tone}\n\nTranscript:\n${transcript}`;
 
-  const response = await client.messages.create({
+  const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
     max_tokens: 1500,
     messages: [
@@ -980,7 +980,7 @@ async function generatePlatformContent(transcript, platform, tone, brandVoice) {
     ]
   });
 
-  return response.content[0].text;
+  return response.choices[0].message.content;
 }
 
 // POST - Regenerate single platform
