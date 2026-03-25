@@ -115,7 +115,7 @@ router.get('/', requireAuth, (req, res) => {
   </div>
 
   <script>
-    function toggleTheme(){const h=document.documentElement;const c=h.getAttribute("data-theme");const n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){const s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
+    function toggleTheme(){var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
  async function upgradePlan(plan) {
       try {
         const res = await fetch('/billing/create-checkout', {
