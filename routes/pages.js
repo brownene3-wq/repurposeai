@@ -169,8 +169,8 @@ router.get('/', (req, res) => {
         </div>
         <div class="step-card">
           <div class="step-number">3</div><div class="step-icon">&#x1F680;</div>
-          <h3>Publish Everywhere</h3>
-          <p>Review, edit if needed, and download content for all platforms. Schedule posts or copy content for manual posting.</p>
+          <h3>Copy &amp; Share</h3>
+          <p>Review, edit if needed, then copy or share your content directly to Twitter, LinkedIn, Facebook, and more with one click.</p>
         </div>
       </div>
     </div>
@@ -186,10 +186,10 @@ router.get('/', (req, res) => {
       <div class="features-grid">
         <div class="feature-card"><div class="feature-icon">&#x1F9E0;</div><h3>Smart AI Engine</h3><p>Advanced AI understands context, tone, and audience to create platform-perfect content every time.</p></div>
         <div class="feature-card"><div class="feature-icon">&#x1F3A8;</div><h3>Platform Optimization</h3><p>Content is automatically tailored for each platform's format, character limits, and best practices.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x23F0;</div><h3>Smart Scheduling</h3><p>Schedule content to publish at optimal times for maximum engagement on each platform.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F399;</div><h3>Brand Voice</h3><p>Create custom brand voice profiles so every piece of content matches your unique tone and style.</p></div>
         <div class="feature-card"><div class="feature-icon">#&#xFE0F;&#x20E3;</div><h3>Hashtag Generator</h3><p>AI-generated hashtags tailored to your niche and trending topics for maximum reach.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F4CA;</div><h3>Analytics Dashboard</h3><p>Track performance across all platforms with unified analytics and actionable insights.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F504;</div><h3>Batch Processing</h3><p>Process multiple videos at once. Perfect for agencies managing multiple client accounts.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F4CA;</div><h3>Analytics Dashboard</h3><p>Track your content generation across all platforms with analytics and activity history.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F517;</div><h3>One-Click Sharing</h3><p>Share generated content directly to Twitter, LinkedIn, and Facebook, or copy to clipboard for any platform.</p></div>
       </div>
     </div>
   </section>
@@ -205,19 +205,19 @@ router.get('/', (req, res) => {
         <div class="price-card">
           <h3>Starter</h3><div class="price">Free</div>
           <p class="price-desc">Perfect for trying out RepurposeAI</p>
-          <ul class="price-features"><li>3 videos per month</li><li>3 platforms supported</li><li>Basic AI captions</li><li>Download content</li><li>Email support</li></ul>
+          <ul class="price-features"><li>3 videos per month</li><li>All 7 platforms</li><li>AI-generated content</li><li>Copy &amp; share content</li><li>Content library</li></ul>
           <a href="/auth/register" class="btn btn-outline">Get Started</a>
         </div>
         <div class="price-card featured">
           <h3>Pro</h3><div class="price">$29<span>/month</span></div>
           <p class="price-desc">For creators serious about growth</p>
-          <ul class="price-features"><li>Unlimited videos</li><li>All 5 platforms</li><li>Advanced AI with tone control</li><li>Smart scheduling</li><li>Hashtag optimization</li><li>Analytics dashboard</li><li>Priority support</li></ul>
+          <ul class="price-features"><li>Unlimited videos</li><li>All 7 platforms</li><li>Advanced AI with tone control</li><li>Brand voice profiles</li><li>Hashtag optimization</li><li>Analytics dashboard</li><li>Priority support</li></ul>
           <a href="/auth/register?plan=pro" class="btn btn-primary">Start Pro Trial</a>
         </div>
         <div class="price-card">
           <h3>Enterprise</h3><div class="price">$99<span>/month</span></div>
           <p class="price-desc">For agencies and teams</p>
-          <ul class="price-features"><li>Everything in Pro</li><li>Batch processing (50+)</li><li>Team collaboration</li><li>White-label exports</li><li>API access</li><li>Custom AI training</li><li>Dedicated account manager</li></ul>
+          <ul class="price-features"><li>Everything in Pro</li><li>Unlimited brand voices</li><li>Team collaboration</li><li>Content calendar view</li><li>API access</li><li>Custom tone training</li><li>Dedicated account manager</li></ul>
           <a href="/auth/register?plan=enterprise" class="btn btn-outline">Contact Sales</a>
         </div>
       </div>
