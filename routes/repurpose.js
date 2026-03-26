@@ -805,6 +805,24 @@ router.get('/', (req, res) => {
           color: white;
         }
 
+        .tone-option.disabled {
+          opacity: 0.35;
+          cursor: not-allowed;
+          pointer-events: none;
+        }
+
+        .tone-label-disabled {
+          font-size: 12px;
+          color: #6c5ce7;
+          margin-top: 6px;
+          font-style: italic;
+          display: none;
+        }
+
+        .tone-label-disabled.show {
+          display: block;
+        }
+
         .form-group select {
           width: 100%;
           padding: 12px;
@@ -1186,11 +1204,12 @@ router.get('/', (req, res) => {
                     Educational
                   </div>
                 </div>
+                <div class="tone-label-disabled" id="toneDisabledHint">Tone is set by your brand voice</div>
               </div>
 
               <div class="form-group" style="margin-top: 20px;">
                 <label>Brand Voice (Optional)</label>
-                <select id="brandVoice">
+                <select id="brandVoice" onchange="handleBrandVoiceChange()">
                   <option value="">None</option>
                 </select>
               </div>
@@ -1257,6 +1276,7 @@ router.get('/', (req, res) => {
         document.querySelectorAll('.tone-option').forEach(option => {
           option.addEventListener('click', function(e) {
             e.preventDefault();
+            if (this.classList.contains('disabled')) return;
             document.querySelectorAll('.tone-option').forEach(opt => {
               opt.classList.remove('selected');
               opt.querySelector('input').checked = false;
@@ -1266,6 +1286,26 @@ router.get('/', (req, res) => {
             this.classList.add('selected');
           });
         });
+
+        function handleBrandVoiceChange() {
+          const brandVoiceId = document.getElementById('brandVoice').value;
+          const toneOptions = document.querySelectorAll('.tone-option');
+          const hint = document.getElementById('toneDisabledHint');
+
+          if (brandVoiceId) {
+            // Brand voice selected — disable tone options
+            toneOptions.forEach(opt => {
+              opt.classList.add('disabled');
+              opt.classList.remove('selected');
+              opt.querySelector('input').checked = false;
+            });
+            hint.classList.add('show');
+          } else {
+            // No brand voice — re-enable tone options
+            toneOptions.forEach(opt => opt.classList.remove('disabled'));
+            hint.classList.remove('show');
+          }
+        }
 
         async function repurposeContent() {
           const url = document.getElementById('youtubeUrl').value.trim();
@@ -1283,8 +1323,8 @@ router.get('/', (req, res) => {
             return;
           }
 
-          if (!tone) {
-            showError('Please select a tone');
+          if (!tone && !brandVoiceId) {
+            showError('Please select a tone or a brand voice');
             return;
           }
 
@@ -1489,8 +1529,10 @@ router.get('/', (req, res) => {
           document.querySelectorAll('input[name="tone"]').forEach(el => {
             el.checked = false;
             el.parentElement.classList.remove('selected');
+            el.parentElement.classList.remove('disabled');
           });
           document.getElementById('brandVoice').value = '';
+          document.getElementById('toneDisabledHint').classList.remove('show');
           document.getElementById('resultsContainer').classList.remove('show');
           document.getElementById('resultsContent').style.display = 'none';
         }
