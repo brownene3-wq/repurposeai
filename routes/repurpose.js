@@ -784,7 +784,7 @@ router.get('/', (req, res) => {
 
         async function loadBrandVoices() {
           try {
-            const response = await fetch('/api/brand-voices');
+            const response = await fetch('/repurpose/api/brand-voices');
             if (response.ok) {
               brandVoices = await response.json();
               const select = document.getElementById('brandVoice');
