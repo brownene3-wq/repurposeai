@@ -1035,7 +1035,9 @@ router.get('/', (req, res) => {
 // POST - Process and generate content
 router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
   try {
-    const { url, platforms, tone, brandVoiceId } = req.body;
+    const { url, brandVoiceId } = req.body;
+    const platforms = req.body.platforms || ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'];
+    const tone = req.body.tone || 'Professional';
     const userId = req.user.id;
 
     // Validate YouTube URL

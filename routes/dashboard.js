@@ -184,9 +184,16 @@ router.get('/', requireAuth, async (req, res) => {
         const res = await fetch('/repurpose/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url })
+          body: JSON.stringify({ url, platforms: ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'], tone: 'Professional' })
         });
-        const data = await res.json();
+        const contentType = res.headers.get('content-type') || '';
+        let data;
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(text || 'Server error. Please try again in a moment.');
+        }
         if (!res.ok) throw new Error(data.error || 'Processing failed');
 
         currentVideo = data.video;
