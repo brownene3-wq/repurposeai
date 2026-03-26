@@ -35,7 +35,8 @@ router.get('/', requireAuth, (req, res) => {
     .chart-bar .count { width: 40px; text-align: right; font-size: 0.85em; color: #888; margin-left: 10px; }
     .empty-state { text-align: center; padding: 40px; color: #666; }
     .empty-state p { margin-top: 10px; }
-    .theme-toggle { position: fixed; bottom: 20px; right: 20px; background: #222; border: 1px solid #333; color: #fff; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 1.2em; display: flex; align-items: center; justify-content: center; }
+    .sidebar { display: flex; flex-direction: column; }
+    .theme-toggle { background: #222; border: 1px solid #333; color: #fff; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; }
     body.light { background: #f5f5f5; color: #333; }
     body.light .sidebar { background: #fff; border-color: #e0e0e0; }
     body.light .sidebar a { color: #666; }
@@ -49,13 +50,20 @@ router.get('/', requireAuth, (req, res) => {
 <body>
   <div class="layout">
     <div class="sidebar">
-      <div class="logo">Repurpose<span>AI</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+        <div class="logo" style="padding:0;">Repurpose<span>AI</span></div>
+        <button class="theme-toggle" onclick="document.body.classList.toggle('light')">&#x1F319;</button>
+      </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
+      <a href="/repurpose/history">&#x1F4DA; Library</a>
       <a href="/dashboard/analytics" class="active">&#x1F4CA; Analytics</a>
+      <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
       <a href="/dashboard/scheduled">&#x23F0; Scheduled</a>
+      <a href="/brand-voice">&#x1F399; Brand Voice</a>
       <a href="/billing">&#x1F4B3; Billing</a>
       <a href="/contact">&#x1F4E7; Support</a>
+      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding-bottom:20px;">Sign Out</a>
     </div>
     <div class="main">
       <div class="page-title">&#x1F4CA; Analytics</div>
@@ -67,10 +75,12 @@ router.get('/', requireAuth, (req, res) => {
       </div>
       <div class="section">
         <h2>Content by Platform</h2>
+        <div class="chart-bar"><div class="platform">Instagram</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
+        <div class="chart-bar"><div class="platform">TikTok</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
         <div class="chart-bar"><div class="platform">Twitter/X</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
         <div class="chart-bar"><div class="platform">LinkedIn</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
-        <div class="chart-bar"><div class="platform">Instagram</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
         <div class="chart-bar"><div class="platform">Facebook</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
+        <div class="chart-bar"><div class="platform">YouTube</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
         <div class="chart-bar"><div class="platform">Blog</div><div class="bar-bg"><div class="bar-fill" style="width:0%"></div></div><div class="count">0</div></div>
       </div>
       <div class="section">
@@ -79,7 +89,6 @@ router.get('/', requireAuth, (req, res) => {
       </div>
     </div>
   </div>
-  <button class="theme-toggle" onclick="document.body.classList.toggle('light')">&#x1F319;</button>
 </body>
 </html>`;
   res.send(html);
