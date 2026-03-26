@@ -783,7 +783,19 @@ router.get('/', (req, res) => {
               throw new Error(data.error || 'Failed to repurpose content');
             }
 
-            displayResults(data.outputs);
+            // Handle both array format and object format responses
+            if (data.outputs && Array.isArray(data.outputs)) {
+              displayResults(data.outputs);
+            } else if (data.content && typeof data.content === 'object') {
+              const outputs = Object.entries(data.content).map(([key, val]) => ({
+                platform: val.name || key,
+                generated_content: val.caption || val.content || val.text || JSON.stringify(val),
+                content_id: data.contentId || ''
+              }));
+              displayResults(outputs);
+            } else {
+              displayResults(data.outputs || []);
+            }
           } catch (error) {
             showError(error.message);
           }
@@ -796,27 +808,46 @@ router.get('/', (req, res) => {
           const grid = document.getElementById('resultsGrid');
           grid.innerHTML = '';
 
+          if (!outputs || outputs.length === 0) {
+            grid.innerHTML = '<p style="color: var(--text-muted); padding: 2rem;">No content generated. Please try again.</p>';
+            return;
+          }
+
           outputs.forEach(output => {
+            const content = output.generated_content || '';
+            const platform = output.platform || 'Unknown';
+            const contentId = output.content_id || output.id || '';
             const card = document.createElement('div');
             card.className = 'result-card';
             card.innerHTML = \`
               <div class="result-header">
-                <div class="platform-name">\${output.platform}</div>
-                <div class="char-count">\${output.generated_content.length} chars</div>
+                <div class="platform-name">\${platform}</div>
+                <div class="char-count">\${content.length} chars</div>
               </div>
-              <div class="result-content">\${escapeHtml(output.generated_content)}</div>
+              <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
-                <button class="icon-btn" onclick="copyToClipboard('\${escapeHtml(output.generated_content)}')">📋 Copy</button>
-                <button class="icon-btn" onclick="regenerate('\${output.content_id}', '\${output.platform}')">🔄 Regenerate</button>
+                <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
+                <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')">🔄 Regenerate</button>
               </div>
             \`;
             grid.appendChild(card);
           });
+
+          // Attach copy handlers
+          document.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+              const text = decodeURIComponent(escape(atob(this.dataset.content)));
+              navigator.clipboard.writeText(text).then(() => {
+                const feedback = document.getElementById('successFeedback');
+                feedback.classList.add('show');
+                setTimeout(() => feedback.classList.remove('show'), 2000);
+              });
+            });
+          });
         }
 
         function copyToClipboard(text) {
-          const decoded = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
-          navigator.clipboard.writeText(decoded).then(() => {
+          navigator.clipboard.writeText(text).then(() => {
             const feedback = document.getElementById('successFeedback');
             feedback.classList.add('show');
             setTimeout(() => feedback.classList.remove('show'), 2000);
