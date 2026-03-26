@@ -305,6 +305,145 @@ router.get('/', requireAuth, (req, res) => {
           height: 8px;
         }
 
+        /* Modal styles */
+        .modal-overlay {
+          display: none;
+          position: fixed;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(0,0,0,0.7);
+          z-index: 1000;
+          align-items: center;
+          justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+          background: #1a1a1a;
+          border: 1px solid #333;
+          border-radius: 12px;
+          width: 90%;
+          max-width: 700px;
+          max-height: 80vh;
+          overflow-y: auto;
+          padding: 0;
+          animation: modalIn 0.2s ease;
+        }
+        body.light .modal {
+          background: #fff;
+          border: 1px solid #ddd;
+        }
+        @keyframes modalIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 20px 24px;
+          border-bottom: 1px solid #333;
+          position: sticky;
+          top: 0;
+          background: #1a1a1a;
+          border-radius: 12px 12px 0 0;
+          z-index: 1;
+        }
+        body.light .modal-header {
+          background: #fff;
+          border-bottom-color: #e0e0e0;
+        }
+        .modal-header h3 {
+          font-size: 18px;
+          background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        .modal-close {
+          background: none;
+          border: 1px solid #444;
+          color: #aaa;
+          font-size: 20px;
+          cursor: pointer;
+          width: 32px;
+          height: 32px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s;
+        }
+        .modal-close:hover { border-color: #6c5ce7; color: #6c5ce7; }
+        body.light .modal-close { border-color: #ddd; color: #666; }
+        .modal-body { padding: 24px; }
+        .modal-loading {
+          text-align: center;
+          padding: 40px;
+          color: #888;
+        }
+        .modal-empty {
+          text-align: center;
+          padding: 40px;
+          color: #666;
+          font-size: 14px;
+        }
+        .platform-card {
+          background: #111;
+          border: 1px solid #222;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 12px;
+        }
+        body.light .platform-card {
+          background: #f8f8f8;
+          border-color: #e0e0e0;
+        }
+        .platform-card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 10px;
+        }
+        .platform-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #fff;
+        }
+        .platform-badge.instagram { background: #e1306c; }
+        .platform-badge.twitter, .platform-badge.twitterx { background: #1da1f2; }
+        .platform-badge.linkedin { background: #0a66c2; }
+        .platform-badge.tiktok { background: #ff0050; }
+        .platform-badge.facebook { background: #1877f2; }
+        .platform-badge.youtube { background: #ff0000; }
+        .platform-badge.blog { background: #6c5ce7; }
+        .copy-btn {
+          padding: 6px 12px;
+          border: 1px solid #333;
+          background: transparent;
+          color: #aaa;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 12px;
+          transition: all 0.2s;
+        }
+        .copy-btn:hover { border-color: #6c5ce7; color: #6c5ce7; }
+        .copy-btn.copied { border-color: #00b894; color: #00b894; }
+        body.light .copy-btn { border-color: #ddd; color: #666; }
+        .platform-content {
+          font-size: 13px;
+          line-height: 1.6;
+          color: #ccc;
+          white-space: pre-wrap;
+          word-break: break-word;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+        body.light .platform-content { color: #444; }
+
         .twitter-indicator, .twitterx-indicator { background: #1da1f2; }
         .linkedin-indicator { background: #0a66c2; }
         .instagram-indicator { background: #e1306c; }
@@ -538,6 +677,19 @@ router.get('/', requireAuth, (req, res) => {
         </div>
       </div>
 
+      <!-- Content Modal -->
+      <div class="modal-overlay" id="contentModal">
+        <div class="modal">
+          <div class="modal-header">
+            <h3 id="modalTitle">Content</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+          </div>
+          <div class="modal-body" id="modalBody">
+            <div class="modal-loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+
       <script>
         // Force reload if served from browser back-forward cache
         window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
@@ -607,6 +759,8 @@ router.get('/', requireAuth, (req, res) => {
                 indicators.appendChild(indicator);
               });
               cell.appendChild(indicators);
+              cell.onclick = function() { openDateModal(dateKey, date); };
+              cell.style.cursor = 'pointer';
             }
 
             grid.appendChild(cell);
@@ -642,7 +796,7 @@ router.get('/', requireAuth, (req, res) => {
           const todayList = document.getElementById('todayList');
           if (todayContent.length > 0) {
             todayList.innerHTML = todayContent.map(p => \`
-              <div class="content-item">
+              <div class="content-item" onclick="openSingleContent('\${p}', 'Today', '\${todayKey}')">
                 <div class="content-item-title">\${p}</div>
                 <div class="content-item-date">Today</div>
               </div>
@@ -657,7 +811,7 @@ router.get('/', requireAuth, (req, res) => {
             const key = formatDateKey(date);
             if (calendarData[key]) {
               calendarData[key].forEach(p => {
-                weekContent.push({ platform: p, date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) });
+                weekContent.push({ platform: p, date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), dateKey: key });
               });
             }
           }
@@ -665,7 +819,7 @@ router.get('/', requireAuth, (req, res) => {
           const weekList = document.getElementById('weekList');
           if (weekContent.length > 0) {
             weekList.innerHTML = weekContent.map(c => \`
-              <div class="content-item">
+              <div class="content-item" onclick="openSingleContent('\${c.platform}', '\${c.date}', '\${c.dateKey}')">
                 <div class="content-item-title">\${c.platform}</div>
                 <div class="content-item-date">\${c.date}</div>
               </div>
@@ -680,7 +834,7 @@ router.get('/', requireAuth, (req, res) => {
             const key = formatDateKey(date);
             if (calendarData[key]) {
               calendarData[key].forEach(p => {
-                recentContent.push({ platform: p, date: i === 0 ? 'Today' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) });
+                recentContent.push({ platform: p, date: i === 0 ? 'Today' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), dateKey: key });
               });
             }
           }
@@ -688,7 +842,7 @@ router.get('/', requireAuth, (req, res) => {
           const recentList = document.getElementById('recentList');
           if (recentContent.length > 0) {
             recentList.innerHTML = recentContent.slice(0, 5).map(c => \`
-              <div class="content-item">
+              <div class="content-item" onclick="openSingleContent('\${c.platform}', '\${c.date}', '\${c.dateKey}')">
                 <div class="content-item-title">\${c.platform}</div>
                 <div class="content-item-date">\${c.date}</div>
               </div>
@@ -726,6 +880,79 @@ router.get('/', requireAuth, (req, res) => {
           document.querySelector('.theme-toggle').textContent = '☀️';
         }
 
+        // Modal functions
+        function openDateModal(dateKey, date) {
+          var modal = document.getElementById('contentModal');
+          var title = document.getElementById('modalTitle');
+          var body = document.getElementById('modalBody');
+          title.textContent = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+          body.innerHTML = '<div class="modal-loading">Loading content...</div>';
+          modal.classList.add('show');
+          fetchDateContent(dateKey, body);
+        }
+
+        function openSingleContent(platform, dateLabel, dateKey) {
+          var modal = document.getElementById('contentModal');
+          var title = document.getElementById('modalTitle');
+          var body = document.getElementById('modalBody');
+          title.textContent = platform + ' - ' + dateLabel;
+          body.innerHTML = '<div class="modal-loading">Loading content...</div>';
+          modal.classList.add('show');
+          fetchDateContent(dateKey, body, platform);
+        }
+
+        function closeModal() {
+          document.getElementById('contentModal').classList.remove('show');
+        }
+
+        document.getElementById('contentModal').addEventListener('click', function(e) {
+          if (e.target === this) closeModal();
+        });
+
+        async function fetchDateContent(dateKey, container, filterPlatform) {
+          try {
+            var url = '/dashboard/calendar/api/date-content?date=' + encodeURIComponent(dateKey);
+            if (filterPlatform) url += '&platform=' + encodeURIComponent(filterPlatform);
+            var resp = await fetch(url);
+            if (!resp.ok) throw new Error('Failed to load');
+            var items = await resp.json();
+            if (items.length === 0) {
+              container.innerHTML = '<div class="modal-empty">No content found for this date.</div>';
+              return;
+            }
+            var html = '';
+            items.forEach(function(item) {
+              var cssClass = item.platform.toLowerCase().replace(/[^a-z]/g, '');
+              html += '<div class="platform-card">';
+              html += '<div class="platform-card-header">';
+              html += '<span class="platform-badge ' + cssClass + '">' + item.platform + '</span>';
+              html += '<button class="copy-btn" onclick="copyContent(this, ' + "'" + item.id + "'" + ')">Copy</button>';
+              html += '</div>';
+              html += '<div class="platform-content" id="content-' + item.id + '">' + escapeHtml(item.generated_content) + '</div>';
+              html += '</div>';
+            });
+            container.innerHTML = html;
+          } catch (err) {
+            container.innerHTML = '<div class="modal-empty">Error loading content. Please try again.</div>';
+          }
+        }
+
+        function escapeHtml(text) {
+          var div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+        }
+
+        function copyContent(btn, id) {
+          var el = document.getElementById('content-' + id);
+          if (!el) return;
+          navigator.clipboard.writeText(el.textContent).then(function() {
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+          });
+        }
+
         loadCalendarData();
       </script>
     </body>
@@ -761,6 +988,36 @@ router.get('/api/data', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching calendar data:', error);
     res.status(500).json({ error: 'Failed to fetch calendar data' });
+  }
+});
+
+// GET - Content for a specific date
+router.get('/api/date-content', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { date, platform } = req.query;
+    if (!date) return res.status(400).json({ error: 'Date parameter required' });
+
+    // Get outputs for that date
+    const startOfDay = date + 'T00:00:00.000Z';
+    const endOfDay = date + 'T23:59:59.999Z';
+
+    const { pool } = require('../db/database');
+    let query = `SELECT id, platform, generated_content, tone, created_at FROM generated_outputs WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3`;
+    const params = [userId, startOfDay, endOfDay];
+
+    if (platform) {
+      query += ` AND platform = $4`;
+      params.push(platform);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching date content:', error);
+    res.status(500).json({ error: 'Failed to fetch content' });
   }
 });
 

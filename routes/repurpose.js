@@ -1,23 +1,266 @@
 const express = require('express');
 const router = express.Router();
 const https = require('https');
-// youtube-transcript v1.3+ is ESM, import the ESM bundle directly
-let YoutubeTranscript;
-async function getYoutubeTranscript() {
-  if (!YoutubeTranscript) {
-    const mod = await import('youtube-transcript/dist/youtube-transcript.esm.js');
-    YoutubeTranscript = mod.YoutubeTranscript;
-  }
-  return YoutubeTranscript;
+const http = require('http');
+
+// Helper: make an HTTPS request (GET or POST)
+function httpsRequest(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const reqOptions = {
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: options.method || 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        ...(options.headers || {})
+      }
+    };
+    const req = https.request(reqOptions, (res) => {
+      // Follow redirects
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        httpsRequest(res.headers.location, options).then(resolve).catch(reject);
+        return;
+      }
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve({ status: res.statusCode, data }));
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    if (options.body) req.write(options.body);
+    req.end();
+  });
 }
 
-// Fallback: fetch transcript directly from YouTube's timedtext API
+// Decode HTML entities in transcript text
+function decodeEntities(text) {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/\n/g, ' ')
+    .trim();
+}
+
+// Parse transcript XML into text
+function parseTranscriptXml(xml) {
+  const texts = [];
+  // Try <p> format first (newer format)
+  const pRegex = /<p\s+t="\d+"[^>]*>([\s\S]*?)<\/p>/g;
+  let match;
+  while ((match = pRegex.exec(xml)) !== null) {
+    const inner = match[1];
+    // Extract text from <s> tags if present
+    const sTexts = [];
+    const sRegex = /<s[^>]*>([^<]*)<\/s>/g;
+    let sMatch;
+    while ((sMatch = sRegex.exec(inner)) !== null) {
+      sTexts.push(sMatch[1]);
+    }
+    const text = sTexts.length > 0 ? sTexts.join('') : inner.replace(/<[^>]+>/g, '');
+    const decoded = decodeEntities(text);
+    if (decoded) texts.push(decoded);
+  }
+  if (texts.length > 0) return texts.join(' ');
+
+  // Try <text> format (older format)
+  const textRegex = /<text[^>]*>(.*?)<\/text>/gs;
+  while ((match = textRegex.exec(xml)) !== null) {
+    const decoded = decodeEntities(match[1]);
+    if (decoded) texts.push(decoded);
+  }
+  return texts.join(' ');
+}
+
+// Method 1: Fetch transcript via YouTube innertube player API (ANDROID client)
+async function fetchTranscriptViaAndroid(videoId) {
+  console.log('[Transcript] Trying ANDROID innertube for', videoId);
+  const postData = JSON.stringify({
+    context: {
+      client: {
+        clientName: 'ANDROID',
+        clientVersion: '20.10.38'
+      }
+    },
+    videoId: videoId
+  });
+
+  const resp = await httpsRequest('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)'
+    },
+    body: postData
+  });
+
+  if (resp.status !== 200) throw new Error('Innertube player returned ' + resp.status);
+
+  const json = JSON.parse(resp.data);
+  const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!Array.isArray(tracks) || tracks.length === 0) {
+    throw new Error('No caption tracks from ANDROID innertube');
+  }
+
+  // Prefer English
+  const track = tracks.find(t => t.languageCode === 'en') || tracks[0];
+  const captionUrl = track.baseUrl;
+  if (!captionUrl) throw new Error('No baseUrl in caption track');
+
+  const captionResp = await httpsRequest(captionUrl);
+  const transcript = parseTranscriptXml(captionResp.data);
+  if (!transcript) throw new Error('Empty transcript from ANDROID innertube');
+  console.log('[Transcript] ANDROID innertube succeeded for', videoId, '- length:', transcript.length);
+  return transcript;
+}
+
+// Method 2: Fetch transcript via WEB page scraping
+async function fetchTranscriptViaWebPage(videoId) {
+  console.log('[Transcript] Trying WEB page scraping for', videoId);
+  const resp = await httpsRequest('https://www.youtube.com/watch?v=' + videoId, {
+    headers: { 'Cookie': 'CONSENT=PENDING+999' }
+  });
+
+  if (resp.status !== 200) throw new Error('YouTube page returned ' + resp.status);
+
+  // Check for CAPTCHA
+  if (resp.data.includes('class="g-recaptcha"')) {
+    throw new Error('YouTube CAPTCHA triggered');
+  }
+
+  // Extract caption tracks from ytInitialPlayerResponse
+  let captionTracks;
+
+  // Method A: Extract from ytInitialPlayerResponse inline JSON
+  const playerMatch = resp.data.match(/var ytInitialPlayerResponse\s*=\s*(\{.+?\});/s);
+  if (playerMatch) {
+    try {
+      const playerData = JSON.parse(playerMatch[1]);
+      captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    } catch (e) {
+      // JSON parse failed, try next method
+    }
+  }
+
+  // Method B: Extract captionTracks directly
+  if (!captionTracks) {
+    const captionMatch = resp.data.match(/"captionTracks":\s*(\[.*?\])/);
+    if (captionMatch) {
+      try {
+        captionTracks = JSON.parse(captionMatch[1]);
+      } catch (e) {}
+    }
+  }
+
+  if (!Array.isArray(captionTracks) || captionTracks.length === 0) {
+    throw new Error('No caption tracks found on page');
+  }
+
+  const track = captionTracks.find(t => t.languageCode === 'en') || captionTracks[0];
+  let captionUrl = track.baseUrl;
+  if (!captionUrl) throw new Error('No baseUrl in caption track');
+
+  const captionResp = await httpsRequest(captionUrl);
+  const transcript = parseTranscriptXml(captionResp.data);
+  if (!transcript) throw new Error('Empty transcript from web page');
+  console.log('[Transcript] WEB page scraping succeeded for', videoId, '- length:', transcript.length);
+  return transcript;
+}
+
+// Method 3: Fetch transcript via WEB innertube player API
+async function fetchTranscriptViaWebInnertube(videoId) {
+  console.log('[Transcript] Trying WEB innertube for', videoId);
+  const postData = JSON.stringify({
+    context: {
+      client: {
+        clientName: 'WEB',
+        clientVersion: '2.20250101.00.00',
+        hl: 'en',
+        gl: 'US'
+      }
+    },
+    videoId: videoId
+  });
+
+  const resp = await httpsRequest('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: postData
+  });
+
+  if (resp.status !== 200) throw new Error('WEB innertube returned ' + resp.status);
+
+  const json = JSON.parse(resp.data);
+  const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!Array.isArray(tracks) || tracks.length === 0) {
+    throw new Error('No caption tracks from WEB innertube');
+  }
+
+  const track = tracks.find(t => t.languageCode === 'en') || tracks[0];
+  const captionUrl = track.baseUrl;
+  if (!captionUrl) throw new Error('No baseUrl in caption track');
+
+  const captionResp = await httpsRequest(captionUrl);
+  const transcript = parseTranscriptXml(captionResp.data);
+  if (!transcript) throw new Error('Empty transcript from WEB innertube');
+  console.log('[Transcript] WEB innertube succeeded for', videoId, '- length:', transcript.length);
+  return transcript;
+}
+
+// Master function: try all methods
+async function fetchVideoTranscript(videoId) {
+  const methods = [
+    { name: 'ANDROID innertube', fn: fetchTranscriptViaAndroid },
+    { name: 'WEB page scraping', fn: fetchTranscriptViaWebPage },
+    { name: 'WEB innertube', fn: fetchTranscriptViaWebInnertube }
+  ];
+
+  const errors = [];
+  for (const method of methods) {
+    try {
+      const transcript = await method.fn(videoId);
+      if (transcript && transcript.trim().length > 0) {
+        return transcript;
+      }
+    } catch (err) {
+      console.error('[Transcript]', method.name, 'failed for', videoId, ':', err.message);
+      errors.push(method.name + ': ' + err.message);
+    }
+  }
+
+  throw new Error('All transcript methods failed. Details: ' + errors.join(' | '));
+}
+
+// Legacy alias kept for compatibility
 async function fetchTranscriptFallback(videoId) {
   return new Promise((resolve, reject) => {
     const pageUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    https.get(pageUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    }, (res) => {
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Cookie': 'CONSENT=YES+1'
+      }
+    };
+    https.get(pageUrl, options, (res) => {
+      // Follow redirects
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        https.get(res.headers.location, options, handleResponse).on('error', reject);
+        return;
+      }
+      handleResponse(res);
+    }).on('error', reject);
+
+    function handleResponse(res) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -25,19 +268,30 @@ async function fetchTranscriptFallback(videoId) {
           // Extract captions URL from page source
           const captionMatch = data.match(/"captionTracks":\s*(\[.*?\])/);
           if (!captionMatch) {
-            return reject(new Error('No captions found on page'));
+            // Try alternative pattern
+            const altMatch = data.match(/playerCaptionsTracklistRenderer.*?"captionTracks":\s*(\[.*?\])/);
+            if (!altMatch) {
+              return reject(new Error('No captions found on page'));
+            }
+            var tracks = JSON.parse(altMatch[1]);
+          } else {
+            var tracks = JSON.parse(captionMatch[1]);
           }
-          const tracks = JSON.parse(captionMatch[1]);
           if (!tracks || tracks.length === 0) {
             return reject(new Error('No caption tracks available'));
           }
-          // Get first available caption track URL
-          let captionUrl = tracks[0].baseUrl;
+          // Prefer English track
+          let track = tracks.find(t => t.languageCode === 'en') || tracks[0];
+          let captionUrl = track.baseUrl;
           if (!captionUrl) {
             return reject(new Error('No caption URL found'));
           }
+          // Add format parameter for better results
+          if (!captionUrl.includes('fmt=')) {
+            captionUrl += (captionUrl.includes('?') ? '&' : '?') + 'fmt=srv3';
+          }
           // Fetch the actual captions XML
-          https.get(captionUrl, (captionRes) => {
+          https.get(captionUrl, options, (captionRes) => {
             let captionData = '';
             captionRes.on('data', chunk => captionData += chunk);
             captionRes.on('end', () => {
@@ -66,7 +320,61 @@ async function fetchTranscriptFallback(videoId) {
           reject(e);
         }
       });
-    }).on('error', reject);
+    }
+  });
+}
+
+// Second fallback: Use YouTube's innertube API directly
+async function fetchTranscriptInnertube(videoId) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20240101.00.00',
+          hl: 'en',
+          gl: 'US'
+        }
+      },
+      videoId: videoId
+    });
+
+    const options = {
+      hostname: 'www.youtube.com',
+      path: '/youtubei/v1/get_transcript?prettyPrint=false',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const actions = json?.actions;
+          if (!actions) return reject(new Error('No transcript data from innertube'));
+          const transcriptRenderer = actions[0]?.updateEngagementPanelAction?.content?.transcriptRenderer?.content?.transcriptSearchPanelRenderer?.body?.transcriptSegmentListRenderer?.initialSegments;
+          if (!transcriptRenderer || transcriptRenderer.length === 0) {
+            return reject(new Error('No transcript segments from innertube'));
+          }
+          const texts = transcriptRenderer
+            .map(seg => seg?.transcriptSegmentRenderer?.snippet?.runs?.map(r => r.text).join(''))
+            .filter(Boolean);
+          if (texts.length === 0) return reject(new Error('Empty innertube transcript'));
+          resolve(texts.join(' '));
+        } catch (e) {
+          reject(new Error('Failed to parse innertube response: ' + e.message));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
   });
 }
 
@@ -1032,6 +1340,7 @@ router.get('/', (req, res) => {
         }
 
         function showError(message) {
+          document.getElementById('loadingState').classList.remove('show');
           const errorEl = document.getElementById('errorMessage');
           errorEl.textContent = message;
           errorEl.classList.add('show');
@@ -1109,22 +1418,13 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     const videoId = url.match(youtubeRegex)[1];
     let transcript;
     try {
-      const YT = await getYoutubeTranscript();
-      try {
-        const transcripts = await YT.fetchTranscript(videoId);
-        transcript = transcripts.map(t => t.text).join(' ');
-      } catch (libError) {
-        try {
-          transcript = await fetchTranscriptFallback(videoId);
-        } catch (fallbackError) {
-          throw libError;
-        }
-      }
+      transcript = await fetchVideoTranscript(videoId);
       if (!transcript || transcript.trim().length === 0) {
         res.write('data: ' + JSON.stringify({ error: 'Video transcript is empty.' }) + '\n\n');
         return res.end();
       }
     } catch (error) {
+      console.error('All transcript methods failed for', videoId, ':', error.message);
       res.write('data: ' + JSON.stringify({ error: 'Could not fetch transcript. Make sure the video has captions enabled.' }) + '\n\n');
       return res.end();
     }
@@ -1175,29 +1475,12 @@ router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
     const videoId = url.match(youtubeRegex)[1];
     let transcript;
     try {
-      const YT = await getYoutubeTranscript();
-
-      // Try library first, then fallback to direct fetch
-      let transcripts;
-      try {
-        transcripts = await YT.fetchTranscript(videoId);
-        transcript = transcripts.map(t => t.text).join(' ');
-      } catch (libError) {
-        console.log('Library transcript failed for', videoId, ':', libError.message);
-        // Fallback: fetch directly from YouTube
-        try {
-          transcript = await fetchTranscriptFallback(videoId);
-          console.log('Fallback transcript succeeded for', videoId);
-        } catch (fallbackError) {
-          console.log('Fallback also failed:', fallbackError.message);
-          throw libError; // throw original error
-        }
-      }
+      transcript = await fetchVideoTranscript(videoId);
       if (!transcript || transcript.trim().length === 0) {
         return res.status(400).json({ error: 'Video transcript is empty. Please try a video with spoken content and captions enabled.' });
       }
     } catch (error) {
-      console.error('Transcript fetch error for video', videoId, ':', error.message, error.stack);
+      console.error('Transcript fetch error for video', videoId, ':', error.message);
       return res.status(400).json({ error: 'Could not fetch video transcript. Make sure the video has captions/subtitles enabled. YouTube Shorts may not have auto-generated captions — try a regular YouTube video instead.' });
     }
 

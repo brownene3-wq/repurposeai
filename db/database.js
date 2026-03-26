@@ -421,6 +421,7 @@ const contactOps = {
 module.exports = {
   initDatabase,
   getDb,
+  get pool() { return pool; },
   userOps,
   contentOps,
   outputOps,
