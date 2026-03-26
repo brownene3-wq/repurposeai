@@ -850,6 +850,7 @@ router.get('/', (req, res) => {
               <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
                 <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
+                <button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>
                 <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')">🔄 Regenerate</button>
               </div>
             \`;
@@ -867,6 +868,38 @@ router.get('/', (req, res) => {
               });
             });
           });
+        }
+
+        function shareContent(platform, encodedContent) {
+          const text = decodeURIComponent(escape(atob(encodedContent)));
+          const encoded = encodeURIComponent(text);
+          let url = '';
+
+          switch(platform) {
+            case 'Twitter':
+              url = 'https://twitter.com/intent/tweet?text=' + encoded;
+              break;
+            case 'LinkedIn':
+              url = 'https://www.linkedin.com/sharing/share-offsite/?url=&summary=' + encoded;
+              break;
+            case 'Facebook':
+              url = 'https://www.facebook.com/sharer/sharer.php?quote=' + encoded;
+              break;
+            default:
+              // For Instagram, TikTok, YouTube, Blog — copy to clipboard instead
+              navigator.clipboard.writeText(text).then(() => {
+                const feedback = document.getElementById('successFeedback');
+                feedback.textContent = '✓ Copied! Now paste it in ' + platform;
+                feedback.classList.add('show');
+                setTimeout(() => {
+                  feedback.classList.remove('show');
+                  feedback.textContent = '✓ Copied to clipboard!';
+                }, 3000);
+              });
+              return;
+          }
+
+          window.open(url, '_blank', 'width=600,height=500');
         }
 
         function copyToClipboard(text) {
