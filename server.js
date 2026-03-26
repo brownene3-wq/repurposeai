@@ -16,6 +16,19 @@ app.use((req, res, next) => {
 });
 app.use(cookieParser());
 
+// Disable caching on HTML pages so browser refresh always fetches fresh content
+app.disable('etag');
+app.use((req, res, next) => {
+  // Only set no-cache for HTML page requests (not API/JSON or static assets)
+  const isApiRequest = req.path.includes('/api/') || req.path === '/billing/webhook';
+  if (!isApiRequest) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+  next();
+});
+
 // Initialize database
 (async () => {
   try {
