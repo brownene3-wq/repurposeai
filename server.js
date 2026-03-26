@@ -64,6 +64,7 @@ const scheduledRouter = require('./routes/scheduled');
 const brandVoiceRouter = require('./routes/brand-voice');
 const calendarRouter = require('./routes/calendar');
 const chatbotRouter = require('./routes/chatbot');
+const shortsRouter = require('./routes/shorts');
 
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
@@ -78,6 +79,7 @@ app.use('/repurpose', repurposeRouter);
 app.use('/brand-voice', brandVoiceRouter);
 app.use(pricingRouter);
 app.use('/chatbot', chatbotRouter);
+app.use('/shorts', shortsRouter);
 
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {
