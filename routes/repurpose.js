@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const https = require('https');
 // youtube-transcript v1.3+ is ESM, import the ESM bundle directly
 let YoutubeTranscript;
 async function getYoutubeTranscript() {
@@ -9,6 +10,66 @@ async function getYoutubeTranscript() {
   }
   return YoutubeTranscript;
 }
+
+// Fallback: fetch transcript directly from YouTube's timedtext API
+async function fetchTranscriptFallback(videoId) {
+  return new Promise((resolve, reject) => {
+    const pageUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    https.get(pageUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          // Extract captions URL from page source
+          const captionMatch = data.match(/"captionTracks":\s*(\[.*?\])/);
+          if (!captionMatch) {
+            return reject(new Error('No captions found on page'));
+          }
+          const tracks = JSON.parse(captionMatch[1]);
+          if (!tracks || tracks.length === 0) {
+            return reject(new Error('No caption tracks available'));
+          }
+          // Get first available caption track URL
+          let captionUrl = tracks[0].baseUrl;
+          if (!captionUrl) {
+            return reject(new Error('No caption URL found'));
+          }
+          // Fetch the actual captions XML
+          https.get(captionUrl, (captionRes) => {
+            let captionData = '';
+            captionRes.on('data', chunk => captionData += chunk);
+            captionRes.on('end', () => {
+              // Parse XML captions - extract text between <text> tags
+              const texts = [];
+              const textRegex = /<text[^>]*>(.*?)<\/text>/gs;
+              let match;
+              while ((match = textRegex.exec(captionData)) !== null) {
+                let text = match[1]
+                  .replace(/&amp;/g, '&')
+                  .replace(/&lt;/g, '<')
+                  .replace(/&gt;/g, '>')
+                  .replace(/&quot;/g, '"')
+                  .replace(/&#39;/g, "'")
+                  .replace(/\n/g, ' ')
+                  .trim();
+                if (text) texts.push(text);
+              }
+              if (texts.length === 0) {
+                return reject(new Error('No text found in captions'));
+              }
+              resolve(texts.join(' '));
+            });
+          }).on('error', reject);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
@@ -977,13 +1038,28 @@ router.post('/process', requireAuth, async (req, res) => {
     let transcript;
     try {
       const YT = await getYoutubeTranscript();
-      const transcripts = await YT.fetchTranscript(videoId);
-      transcript = transcripts.map(t => t.text).join(' ');
+
+      // Try library first, then fallback to direct fetch
+      let transcripts;
+      try {
+        transcripts = await YT.fetchTranscript(videoId);
+        transcript = transcripts.map(t => t.text).join(' ');
+      } catch (libError) {
+        console.log('Library transcript failed for', videoId, ':', libError.message);
+        // Fallback: fetch directly from YouTube
+        try {
+          transcript = await fetchTranscriptFallback(videoId);
+          console.log('Fallback transcript succeeded for', videoId);
+        } catch (fallbackError) {
+          console.log('Fallback also failed:', fallbackError.message);
+          throw libError; // throw original error
+        }
+      }
       if (!transcript || transcript.trim().length === 0) {
         return res.status(400).json({ error: 'Video transcript is empty. Please try a video with spoken content and captions enabled.' });
       }
     } catch (error) {
-      console.error('Transcript fetch error for video', videoId, ':', error.message);
+      console.error('Transcript fetch error for video', videoId, ':', error.message, error.stack);
       return res.status(400).json({ error: 'Could not fetch video transcript. Make sure the video has captions/subtitles enabled. YouTube Shorts may not have auto-generated captions — try a regular YouTube video instead.' });
     }
 
