@@ -973,9 +973,6 @@ router.get('/', (req, res) => {
           font-size: 13px;
         }
 
-        .tone-option input[type="radio"] {
-          display: none;
-        }
 
         body.light .tone-option {
           background: #f5f5f5;
@@ -1369,25 +1366,21 @@ router.get('/', (req, res) => {
               <h2>Step 3: Tone & Brand Voice</h2>
               <div class="form-group">
                 <label>Tone of Voice</label>
+                <input type="hidden" name="tone" id="toneValue" value="" />
                 <div class="tone-grid">
-                  <div class="tone-option">
-                    <input type="radio" name="tone" value="Professional" />
+                  <div class="tone-option" data-tone="Professional">
                     Professional
                   </div>
-                  <div class="tone-option">
-                    <input type="radio" name="tone" value="Casual" />
+                  <div class="tone-option" data-tone="Casual">
                     Casual
                   </div>
-                  <div class="tone-option">
-                    <input type="radio" name="tone" value="Humorous" />
+                  <div class="tone-option" data-tone="Humorous">
                     Humorous
                   </div>
-                  <div class="tone-option">
-                    <input type="radio" name="tone" value="Inspirational" />
+                  <div class="tone-option" data-tone="Inspirational">
                     Inspirational
                   </div>
-                  <div class="tone-option">
-                    <input type="radio" name="tone" value="Educational" />
+                  <div class="tone-option" data-tone="Educational">
                     Educational
                   </div>
                 </div>
@@ -1461,16 +1454,13 @@ router.get('/', (req, res) => {
         });
 
         document.querySelectorAll('.tone-option').forEach(option => {
-          option.addEventListener('click', function(e) {
-            e.preventDefault();
+          option.addEventListener('click', function() {
             if (this.classList.contains('disabled')) return;
             document.querySelectorAll('.tone-option').forEach(opt => {
               opt.classList.remove('selected');
-              opt.querySelector('input').checked = false;
             });
-            const input = this.querySelector('input');
-            input.checked = true;
             this.classList.add('selected');
+            document.getElementById('toneValue').value = this.getAttribute('data-tone');
           });
         });
 
@@ -1484,8 +1474,8 @@ router.get('/', (req, res) => {
             toneOptions.forEach(opt => {
               opt.classList.add('disabled');
               opt.classList.remove('selected');
-              opt.querySelector('input').checked = false;
             });
+            document.getElementById('toneValue').value = '';
             hint.classList.add('show');
           } else {
             // No brand voice — re-enable tone options
@@ -1497,7 +1487,7 @@ router.get('/', (req, res) => {
         async function repurposeContent() {
           const url = document.getElementById('youtubeUrl').value.trim();
           const platforms = Array.from(document.querySelectorAll('input[name="platform"]:checked')).map(el => el.value);
-          const tone = document.querySelector('input[name="tone"]:checked')?.value;
+          const tone = document.getElementById('toneValue').value || null;
           const brandVoiceId = document.getElementById('brandVoice').value;
 
           if (!url) {
@@ -1713,11 +1703,11 @@ router.get('/', (req, res) => {
             el.checked = false;
             el.parentElement.classList.remove('selected');
           });
-          document.querySelectorAll('input[name="tone"]').forEach(el => {
-            el.checked = false;
-            el.parentElement.classList.remove('selected');
-            el.parentElement.classList.remove('disabled');
+          document.querySelectorAll('.tone-option').forEach(el => {
+            el.classList.remove('selected');
+            el.classList.remove('disabled');
           });
+          document.getElementById('toneValue').value = '';
           document.getElementById('brandVoice').value = '';
           document.getElementById('toneDisabledHint').classList.remove('show');
           document.getElementById('resultsContainer').classList.remove('show');
