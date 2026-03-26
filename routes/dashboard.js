@@ -23,7 +23,7 @@ router.get('/', requireAuth, async (req, res) => {
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
   <style>
     :root{--primary:#6C3AED;--primary-light:#8B5CF6;--dark:#0a0a0a;--dark-2:#111111;--surface:#161616;--surface-light:#1e1e1e;--text:#FFF;--text-muted:#A0AEC0;--text-dim:#718096;--gradient-1:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);--border-subtle:1px solid rgba(255,255,255,0.06);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
- [data-theme="light"]{--dark:#F8F9FC;--dark-2:#EDF0F7;--surface:#FFFFFF;--surface-light:#F1F5F9;--text:#1A1A2E;--text-muted:#4A5568;--text-dim:#718096;--border-subtle:1px solid rgba(0,0,0,0.08);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
+ [data-theme="light"],body.light{--dark:#F8F9FC;--dark-2:#EDF0F7;--surface:#FFFFFF;--surface-light:#F1F5F9;--text:#1A1A2E;--text-muted:#4A5568;--text-dim:#718096;--border-subtle:1px solid rgba(0,0,0,0.08);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;background:var(--dark);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
     .dashboard{display:flex;min-height:100vh}
@@ -84,7 +84,7 @@ router.get('/', requireAuth, async (req, res) => {
     .stat-card .stat-label{font-size:.8rem;color:var(--text-dim);margin-top:.3rem}
     .toast{position:fixed;bottom:2rem;right:2rem;background:var(--success);color:#fff;padding:1rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:500;display:none;z-index:9999;animation:slideUp .3s ease}
     @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
-    [data-theme="light"] .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}[data-theme="light"] .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}
+    [data-theme="light"] .url-input,body.light .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}[data-theme="light"] .content-textarea,body.light .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}
  @media(max-width:768px){.sidebar{display:none}.main-content{margin-left:0}.stats-grid{grid-template-columns:repeat(2,1fr)}.input-group{flex-direction:column}.video-info{flex-direction:column}.video-thumb{width:100%;height:auto}}
   </style>
 </head>
@@ -147,17 +147,18 @@ router.get('/', requireAuth, async (req, res) => {
     window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
 
     function toggleTheme(){
-      document.body.classList.toggle('light');
-      localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+      const isLight = !document.body.classList.contains('light');
+      document.body.classList.toggle('light', isLight);
+      document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+      localStorage.setItem('theme', isLight ? 'light' : 'dark');
       const btn = document.querySelector('.theme-toggle');
-      btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
-      var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)
+      btn.textContent = isLight ? '☀️' : '🌙';
     }
     if (localStorage.getItem('theme') === 'light') {
       document.body.classList.add('light');
+      document.documentElement.setAttribute('data-theme', 'light');
       document.querySelector('.theme-toggle').textContent = '☀️';
     }
-    (function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
 
     async function processVideo() {
       const url = document.getElementById('youtubeUrl').value.trim();

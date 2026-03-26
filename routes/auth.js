@@ -141,7 +141,7 @@ function authStyles() {
  return `
  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap');
  :root{--primary:#6C3AED;--primary-light:#8B5CF6;--dark:#0F0F1A;--dark-2:#1A1A2E;--surface:#1E1E32;--text:#FFF;--text-muted:#A0AEC0;--text-dim:#718096;--gradient-1:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);--border-subtle:1px solid rgba(255,255,255,0.06);--error:#EF4444;--success:#10B981}
- [data-theme="light"]{--dark:#F8F9FC;--dark-2:#EDF0F7;--surface:#FFFFFF;--text:#1A1A2E;--text-muted:#4A5568;--text-dim:#718096;--border-subtle:1px solid rgba(0,0,0,0.08)}
+ [data-theme="light"],body.light{--dark:#F8F9FC;--dark-2:#EDF0F7;--surface:#FFFFFF;--text:#1A1A2E;--text-muted:#4A5568;--text-dim:#718096;--border-subtle:1px solid rgba(0,0,0,0.08)}
  *{margin:0;padding:0;box-sizing:border-box}
  body{font-family:'Inter',sans-serif;background:var(--dark);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;transition:background .3s,color .3s}
  .auth-container{display:flex;width:100%;min-height:100vh}
@@ -158,7 +158,7 @@ function authStyles() {
  .form-group{margin-bottom:1.2rem}
  .form-group label{display:block;font-size:.85rem;font-weight:600;margin-bottom:.5rem;color:var(--text-muted)}
  .form-input{width:100%;padding:.9rem 1rem;background:var(--surface);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:var(--text);font-size:.95rem;font-family:'Inter',sans-serif;outline:none;transition:border-color .3s,background .3s}
- [data-theme="light"] .form-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}
+ [data-theme="light"] .form-input,body.light .form-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}
  .form-input:focus{border-color:var(--primary)}
  .form-input::placeholder{color:var(--text-dim)}
  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:1rem;border-radius:50px;font-weight:600;font-size:1rem;cursor:pointer;border:none;transition:all .3s;font-family:'Inter',sans-serif}
@@ -171,14 +171,14 @@ function authStyles() {
  .error-msg.show{display:block}
  .divider{display:flex;align-items:center;gap:1rem;margin:1.5rem 0;color:var(--text-dim);font-size:.85rem}
  .divider::before,.divider::after{content:'';flex:1;height:1px;background:rgba(255,255,255,0.08)}
- [data-theme="light"] .divider::before,[data-theme="light"] .divider::after{background:rgba(0,0,0,0.1)}
+ [data-theme="light"] .divider::before,[data-theme="light"] .divider::after,body.light .divider::before,body.light .divider::after{background:rgba(0,0,0,0.1)}
  .oauth-buttons{display:flex;flex-direction:column;gap:.8rem;margin-bottom:.5rem}
  .btn-oauth{display:inline-flex;align-items:center;justify-content:center;gap:.8rem;width:100%;padding:.85rem 1rem;border-radius:50px;font-weight:600;font-size:.9rem;cursor:pointer;border:1px solid rgba(255,255,255,0.12);background:var(--surface);color:var(--text);transition:all .3s;font-family:'Inter',sans-serif;text-decoration:none}
- [data-theme="light"] .btn-oauth{border-color:rgba(0,0,0,0.12);background:#fff}
+ [data-theme="light"] .btn-oauth,body.light .btn-oauth{border-color:rgba(0,0,0,0.12);background:#fff}
  .btn-oauth:hover{border-color:var(--primary-light);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
  .btn-oauth svg{width:20px;height:20px;flex-shrink:0}
  .theme-toggle{position:fixed;top:1.5rem;right:1.5rem;z-index:100;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:36px;height:36px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--text-muted);transition:all .3s}
- [data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}
+ [data-theme="light"] .theme-toggle,body.light .theme-toggle{border-color:rgba(0,0,0,0.1)}
  .theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}
  .theme-toggle .toggle-track{display:none}
  .theme-toggle .toggle-thumb{display:none}
@@ -242,17 +242,16 @@ function authPage(type) {
  </div>
  <script>
  function toggleTheme() {
- var h = document.documentElement;
- var c = h.getAttribute('data-theme');
- var n = c === 'light' ? 'dark' : 'light';
- h.setAttribute('data-theme', n);
- localStorage.setItem('repurposeai-theme', n);
+ var isLight = !document.body.classList.contains('light');
+ document.body.classList.toggle('light', isLight);
+ document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+ localStorage.setItem('theme', isLight ? 'light' : 'dark');
  var btn = document.querySelector('.theme-toggle');
- if (btn) btn.textContent = n === 'light' ? '☀️' : '🌙';
+ if (btn) btn.textContent = isLight ? '☀️' : '🌙';
  }
  (function() {
- var s = localStorage.getItem('repurposeai-theme');
- if (s === 'light') { document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
+ var s = localStorage.getItem('theme');
+ if (s === 'light') { document.body.classList.add('light'); document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
  var params = new URLSearchParams(window.location.search);
  var err = params.get('error');
  if (err) { var el = document.getElementById('errorMsg'); el.textContent = decodeURIComponent(err); el.classList.add('show'); }
