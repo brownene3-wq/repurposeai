@@ -25,14 +25,33 @@ const initDatabase = async () => {
 
     // Migrate: add columns that may not exist on older tables
     const migrations = [
+      // Users table migrations
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
+      // Content items table migrations
+      `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS original_content TEXT`,
+      `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS content_type TEXT`,
+      `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS source_url TEXT`,
+      `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'draft'`,
+      `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+      // Generated outputs table migrations
+      `ALTER TABLE generated_outputs ADD COLUMN IF NOT EXISTS user_id TEXT`,
+      `ALTER TABLE generated_outputs ADD COLUMN IF NOT EXISTS output_type TEXT`,
+      `ALTER TABLE generated_outputs ADD COLUMN IF NOT EXISTS generated_content TEXT`,
+      `ALTER TABLE generated_outputs ADD COLUMN IF NOT EXISTS platform TEXT`,
+      `ALTER TABLE generated_outputs ADD COLUMN IF NOT EXISTS tone TEXT`,
+      `ALTER TABLE generated_outputs ADD COLUMN IF NOT EXISTS character_count INTEGER`,
+      // Brand voices table migrations
+      `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS description TEXT`,
+      `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS example_content TEXT`,
+      `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS tone TEXT`,
+      `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false`,
     ];
     for (const sql of migrations) {
-      try { await pool.query(sql); } catch (e) { /* column may already exist */ }
+      try { await pool.query(sql); } catch (e) { /* table or column may not exist yet */ }
     }
 
     // Content items table
