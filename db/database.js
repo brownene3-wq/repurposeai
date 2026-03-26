@@ -114,6 +114,21 @@ const initDatabase = async () => {
       )
     `);
 
+    // Smart Shorts table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS smart_shorts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        video_url TEXT NOT NULL,
+        video_title TEXT,
+        transcript TEXT,
+        moments TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -418,6 +433,52 @@ const contactOps = {
   }
 };
 
+// Smart Shorts operations
+const shortsOps = {
+  async create(userId, videoUrl, videoTitle, transcript) {
+    const id = uuidv4();
+    const result = await pool.query(
+      `INSERT INTO smart_shorts (id, user_id, video_url, video_title, transcript, status)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [id, userId, videoUrl, videoTitle, transcript, 'pending']
+    );
+    return result.rows[0]?.id || id;
+  },
+  async updateMoments(id, moments) {
+    const result = await pool.query(
+      `UPDATE smart_shorts SET moments = $1, status = 'completed' WHERE id = $2 RETURNING *`,
+      [JSON.stringify(moments), id]
+    );
+    return result.rows[0];
+  },
+  async updateStatus(id, status) {
+    const result = await pool.query(
+      `UPDATE smart_shorts SET status = $1 WHERE id = $2 RETURNING *`,
+      [status, id]
+    );
+    return result.rows[0];
+  },
+  async getByUserId(userId, limit = 20, offset = 0) {
+    const result = await pool.query(
+      `SELECT * FROM smart_shorts WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+    return result.rows;
+  },
+  async getById(id) {
+    const result = await pool.query(`SELECT * FROM smart_shorts WHERE id = $1`, [id]);
+    return result.rows[0];
+  },
+  async delete(id) {
+    const result = await pool.query(`DELETE FROM smart_shorts WHERE id = $1 RETURNING *`, [id]);
+    return result.rows[0];
+  },
+  async countByUserId(userId) {
+    const result = await pool.query(`SELECT COUNT(*) FROM smart_shorts WHERE user_id = $1`, [userId]);
+    return parseInt(result.rows[0].count, 10);
+  }
+};
+
 module.exports = {
   initDatabase,
   getDb,
@@ -426,5 +487,6 @@ module.exports = {
   contentOps,
   outputOps,
   brandVoiceOps,
-  contactOps
+  contactOps,
+  shortsOps
 };
