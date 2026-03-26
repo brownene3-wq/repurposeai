@@ -619,6 +619,10 @@ router.get('/', (req, res) => {
                   <input type="checkbox" name="platform" value="Instagram" />
                   <span>📷 Instagram</span>
                 </div>
+                <div class="platform-card" data-platform="TikTok">
+                  <input type="checkbox" name="platform" value="TikTok" />
+                  <span>🎵 TikTok</span>
+                </div>
                 <div class="platform-card" data-platform="Twitter">
                   <input type="checkbox" name="platform" value="Twitter" />
                   <span>𝕏 Twitter/X</span>
@@ -986,9 +990,10 @@ router.post('/process', requireAuth, async (req, res) => {
 // Generate content for specific platform
 async function generatePlatformContent(transcript, platform, tone, brandVoice) {
   const platformPrompts = {
+    'Instagram': `Create an engaging Instagram caption (150-300 words) based on this transcript. Include 8-10 relevant hashtags at the end. Make it engaging and visually descriptive. Suitable for an accompanying image or carousel post. Use emojis naturally.`,
+    'TikTok': `Create a short, punchy TikTok video caption (under 300 characters) based on this transcript. Make it trendy and attention-grabbing. Include 5-7 relevant hashtags. Use Gen-Z friendly language where appropriate.`,
     'Twitter': `Create a viral Twitter/X thread (3-5 tweets) based on this transcript. Keep each tweet under 280 characters. Focus on the most engaging and shareable points. Format as numbered tweets.`,
     'LinkedIn': `Write a professional LinkedIn post (200-300 words) based on this transcript. Include relevant industry insights and a call-to-action. Professional tone emphasizing business value.`,
-    'Instagram': `Create an Instagram caption (100-150 characters) with 5-8 relevant hashtags. Make it engaging and visually descriptive. Suitable for an accompanying image or carousel post.`,
     'Facebook': `Write a Facebook post (150-300 words) that's engaging and encourages discussion. Include a call-to-action and ask a question to boost engagement.`,
     'Blog': `Write a complete blog article (800-1200 words) based on this transcript. Include: H2 headings for each section, 3-4 main sections, introduction and conclusion, and actionable insights.`
   };
