@@ -718,6 +718,7 @@ router.get('/', (req, res) => {
       <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
       <meta http-equiv="Pragma" content="no-cache">
       <meta http-equiv="Expires" content="0">
+      <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
       <title>Repurpose Content - Content Repurpose SaaS</title>
       <style>
         * {
@@ -2010,6 +2011,7 @@ router.get('/history', requireAuth, (req, res) => {
       <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
       <meta http-equiv="Pragma" content="no-cache">
       <meta http-equiv="Expires" content="0">
+      <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
       <title>Content Library - Content Repurpose SaaS</title>
       <style>
         * {

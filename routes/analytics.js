@@ -63,6 +63,7 @@ router.get('/', requireAuth, async (req, res) => {
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
   <title>Analytics - RepurposeAI</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
