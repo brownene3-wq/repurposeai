@@ -597,7 +597,10 @@ router.get('/', (req, res) => {
     <body>
       <div class="container">
         <div class="sidebar" style="display:flex;flex-direction:column;">
-          <div class="logo">🎬 Repurpose</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div class="logo">🎬 Repurpose</div>
+            <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+          </div>
           <a href="/dashboard">Dashboard</a>
           <a href="/repurpose" class="active">Repurpose</a>
           <a href="/repurpose/history">Library</a>
@@ -607,7 +610,6 @@ router.get('/', (req, res) => {
           <a href="/brand-voice">Brand Voice</a>
           <a href="/billing">Billing</a>
           <a href="/contact">Support</a>
-          <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
           <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;">Sign Out</a>
         </div>
 
@@ -1396,8 +1398,11 @@ router.get('/history', requireAuth, (req, res) => {
     </head>
     <body>
       <div class="container">
-        <div class="sidebar">
-          <div class="logo">🎬 Repurpose</div>
+        <div class="sidebar" style="display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div class="logo">🎬 Repurpose</div>
+            <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+          </div>
           <a href="/dashboard">Dashboard</a>
           <a href="/repurpose">Repurpose</a>
           <a href="/repurpose/history" class="active">Library</a>
@@ -1407,7 +1412,7 @@ router.get('/history', requireAuth, (req, res) => {
           <a href="/brand-voice">Brand Voice</a>
           <a href="/billing">Billing</a>
           <a href="/contact">Support</a>
-          <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;">Sign Out</a>
         </div>
 
         <div class="main-content">
