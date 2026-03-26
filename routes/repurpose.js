@@ -468,6 +468,10 @@ router.get('/', (req, res) => {
           border: 1px solid #e0e0e0;
         }
 
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
         @keyframes slideIn {
           from {
             opacity: 0;
@@ -844,9 +848,11 @@ router.get('/', (req, res) => {
           }
 
           showLoading();
+          document.getElementById('resultsGrid').innerHTML = '';
+          let resultCount = 0;
 
           try {
-            const response = await fetch('/repurpose/process', {
+            const response = await fetch('/repurpose/process-stream', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -857,31 +863,44 @@ router.get('/', (req, res) => {
               })
             });
 
-            const contentType = response.headers.get('content-type') || '';
-            let data;
-            if (contentType.includes('application/json')) {
-              data = await response.json();
-            } else {
-              const text = await response.text();
-              throw new Error(text || 'Server returned an unexpected response. Please try again.');
-            }
-
             if (!response.ok) {
-              throw new Error(data.error || 'Failed to repurpose content');
+              const text = await response.text();
+              throw new Error(text || 'Server error. Please try again.');
             }
 
-            // Handle both array format and object format responses
-            if (data.outputs && Array.isArray(data.outputs)) {
-              displayResults(data.outputs);
-            } else if (data.content && typeof data.content === 'object') {
-              const outputs = Object.entries(data.content).map(([key, val]) => ({
-                platform: val.name || key,
-                generated_content: val.caption || val.content || val.text || JSON.stringify(val),
-                content_id: data.contentId || ''
-              }));
-              displayResults(outputs);
-            } else {
-              displayResults(data.outputs || []);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            const NL = String.fromCharCode(10);
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+
+              const parts = buffer.split(NL);
+              buffer = parts.pop();
+
+              for (const line of parts) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('data: ')) {
+                  try {
+                    const data = JSON.parse(trimmed.slice(6));
+                    if (data.error) { showError(data.error); break; }
+                    if (data.done) continue;
+                    if (data.platform) {
+                      document.getElementById('loadingState').classList.remove('show');
+                      document.getElementById('resultsContent').style.display = 'block';
+                      addResult(data);
+                      resultCount++;
+                    }
+                  } catch(e) {}
+                }
+              }
+            }
+
+            if (resultCount === 0) {
+              showError('No content was generated. Try a different video.');
             }
           } catch (error) {
             showError(error.message);
@@ -930,6 +949,37 @@ router.get('/', (req, res) => {
                 feedback.classList.add('show');
                 setTimeout(() => feedback.classList.remove('show'), 2000);
               });
+            });
+          });
+        }
+
+        function addResult(output) {
+          const grid = document.getElementById('resultsGrid');
+          const content = output.generated_content || '';
+          const platform = output.platform || 'Unknown';
+          const contentId = output.id || '';
+          const card = document.createElement('div');
+          card.className = 'result-card';
+          card.style.animation = 'fadeIn 0.3s ease';
+          card.innerHTML = \`
+            <div class="result-header">
+              <div class="platform-name">\${platform}</div>
+              <div class="char-count">\${content.length} chars</div>
+            </div>
+            <div class="result-content">\${escapeHtml(content)}</div>
+            <div class="result-actions">
+              <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
+              <button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>
+            </div>
+          \`;
+          grid.appendChild(card);
+          // Attach copy handler to the new button
+          card.querySelector('.copy-btn').addEventListener('click', function() {
+            const text = decodeURIComponent(escape(atob(this.dataset.content)));
+            navigator.clipboard.writeText(text).then(() => {
+              const feedback = document.getElementById('successFeedback');
+              feedback.classList.add('show');
+              setTimeout(() => feedback.classList.remove('show'), 2000);
             });
           });
         }
