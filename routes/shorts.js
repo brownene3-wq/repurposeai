@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { YoutubeTranscript } = require('youtube-transcript');
+// youtube-transcript is ESM-only, use dynamic import
+let YoutubeTranscript;
 const OpenAI = require('openai');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { shortsOps } = require('../db/database');
@@ -73,6 +74,11 @@ router.get('/', requireAuth, async (req, res) => {
 
 // POST /analyze - Analyze YouTube video
 router.post('/analyze', requireAuth, async (req, res) => {
+  // Lazy load ESM module
+  if (!YoutubeTranscript) {
+    const mod = await import('youtube-transcript');
+    YoutubeTranscript = mod.YoutubeTranscript;
+  }
   try {
     const { videoUrl } = req.body;
     if (!videoUrl) {
