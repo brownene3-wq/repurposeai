@@ -1,6 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { YoutubeTranscript } = require('youtube-transcript');
+// youtube-transcript v1.3+ is ESM, import the ESM bundle directly
+let YoutubeTranscript;
+async function getYoutubeTranscript() {
+  if (!YoutubeTranscript) {
+    const mod = await import('youtube-transcript/dist/youtube-transcript.esm.js');
+    YoutubeTranscript = mod.YoutubeTranscript;
+  }
+  return YoutubeTranscript;
+}
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
@@ -941,7 +949,8 @@ router.post('/process', requireAuth, async (req, res) => {
     const videoId = url.match(youtubeRegex)[1];
     let transcript;
     try {
-      const transcripts = await YoutubeTranscript.fetchTranscript(videoId);
+      const YT = await getYoutubeTranscript();
+      const transcripts = await YT.fetchTranscript(videoId);
       transcript = transcripts.map(t => t.text).join(' ');
       if (!transcript || transcript.trim().length === 0) {
         return res.status(400).json({ error: 'Video transcript is empty. Please try a video with spoken content and captions enabled.' });
