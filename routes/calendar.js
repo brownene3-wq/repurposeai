@@ -20,7 +20,7 @@ router.get('/', requireAuth, (req, res) => {
         }
 
         body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           background: #0a0a0a;
           color: #e0e0e0;
           transition: background 0.3s, color 0.3s;
