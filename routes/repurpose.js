@@ -973,6 +973,10 @@ router.get('/', (req, res) => {
           font-size: 13px;
         }
 
+        .tone-option input[type="radio"] {
+          display: none;
+        }
+
         body.light .tone-option {
           background: #f5f5f5;
           border: 1px solid #ddd;
