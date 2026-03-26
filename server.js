@@ -4,6 +4,7 @@ require('dotenv').config();
 const { initDatabase } = require('./db/database');
 
 const app = express();
+const { injectChatWidget } = require('./middleware/chatWidget');
 
 // Middleware - skip JSON parsing for Stripe webhook (needs raw body)
 app.use((req, res, next) => {
@@ -15,6 +16,13 @@ app.use((req, res, next) => {
   express.urlencoded({ extended: true })(req, res, next);
 });
 app.use(cookieParser());
+
+// Inject chat widget into all HTML pages
+app.use((req, res, next) => {
+  const skip = req.path.includes('/api/') || req.path.includes('/process-stream') || req.path === '/billing/webhook' || req.path.startsWith('/chatbot');
+  if (skip) return next();
+  injectChatWidget(req, res, next);
+});
 
 // Disable caching on HTML pages so browser refresh always fetches fresh content
 app.disable('etag');
@@ -55,6 +63,7 @@ const analyticsRouter = require('./routes/analytics');
 const scheduledRouter = require('./routes/scheduled');
 const brandVoiceRouter = require('./routes/brand-voice');
 const calendarRouter = require('./routes/calendar');
+const chatbotRouter = require('./routes/chatbot');
 
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
@@ -68,6 +77,7 @@ app.use('/contact', contactRouter);
 app.use('/repurpose', repurposeRouter);
 app.use('/brand-voice', brandVoiceRouter);
 app.use(pricingRouter);
+app.use('/chatbot', chatbotRouter);
 
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {
