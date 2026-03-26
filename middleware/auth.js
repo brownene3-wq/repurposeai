@@ -76,28 +76,33 @@ function redirectIfAuth(req, res, next) {
 
 // Plan limits
 const PLAN_LIMITS = {
-  starter: { repurposes: 5, formats: 3, teamMembers: 1, hasVisualGen: false, hasScheduling: false, hasApi: false },
-  pro:     { repurposes: Infinity, formats: 50, teamMembers: 1, hasVisualGen: true, hasScheduling: true, hasApi: false },
-  enterprise: { repurposes: Infinity, formats: 50, teamMembers: Infinity, hasVisualGen: true, hasScheduling: true, hasApi: true }
+  free:       { videosPerMonth: 3, brandVoices: 1, hasAnalytics: false },
+  starter:    { videosPerMonth: 3, brandVoices: 1, hasAnalytics: false },
+  pro:        { videosPerMonth: Infinity, brandVoices: 10, hasAnalytics: true },
+  enterprise: { videosPerMonth: Infinity, brandVoices: Infinity, hasAnalytics: true }
 };
 
 function getPlanLimits(plan) {
-  return PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
+  return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 }
 
-function checkPlanLimit(req, res, next) {
+async function checkPlanLimit(req, res, next) {
   const limits = getPlanLimits(req.user.plan);
   const { contentOps } = require('../db/database');
 
-  // Check monthly repurpose limit
-  if (limits.repurposes !== Infinity) {
-    const count = contentOps.countByUser(req.user.id);
-    if (count >= limits.repurposes) {
-      return res.status(403).json({
-        error: 'Plan limit reached',
-        message: `Your ${req.user.plan} plan allows ${limits.repurposes} repurposes. Upgrade to continue.`,
-        upgrade: true
-      });
+  // Check monthly video limit
+  if (limits.videosPerMonth !== Infinity) {
+    try {
+      const count = await contentOps.countByUserIdThisMonth(req.user.id);
+      if (count >= limits.videosPerMonth) {
+        return res.status(403).json({
+          error: 'Plan limit reached',
+          message: `Your free plan allows ${limits.videosPerMonth} videos per month. Upgrade to Pro for unlimited videos.`,
+          upgrade: true
+        });
+      }
+    } catch (err) {
+      console.error('Error checking plan limit:', err);
     }
   }
   req.planLimits = limits;

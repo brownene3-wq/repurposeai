@@ -89,7 +89,7 @@ router.get('/', requireAuth, (req, res) => {
     <div class="current-plan">
       <div class="plan-info">
         <h3>Current Plan: ${req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free Starter'}</h3>
-        <p>${req.user.plan === 'pro' ? 'Unlimited videos, all platforms' : req.user.plan === 'enterprise' ? 'Everything unlimited + team features' : '3 videos per month, 3 platforms'}</p>
+        <p>${req.user.plan === 'pro' ? 'Unlimited videos, all 7 platforms, analytics' : req.user.plan === 'enterprise' ? 'Everything in Pro, unlimited brand voices' : '3 videos per month, all 7 platforms'}</p>
       </div>
       <span class="plan-badge">Active</span>
     </div>
@@ -103,10 +103,10 @@ router.get('/', requireAuth, (req, res) => {
         <p class="desc">Perfect for getting started</p>
         <ul class="features-list">
           <li>3 videos per month</li>
-          <li>3 platforms</li>
-          <li>Basic AI captions</li>
-          <li>Download content</li>
-          <li>Email support</li>
+          <li>All 7 platforms</li>
+          <li>AI-generated content</li>
+          <li>Copy &amp; share content</li>
+          <li>Content library</li>
         </ul>
         ${req.user.plan === 'free' || !req.user.plan ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-outline" disabled>Free Tier</button>'}
       </div>
@@ -116,29 +116,28 @@ router.get('/', requireAuth, (req, res) => {
         <p class="desc">For creators serious about growth</p>
         <ul class="features-list">
           <li>Unlimited videos</li>
-          <li>All 5 platforms</li>
-          <li>Advanced AI + tone control</li>
-          <li>Smart scheduling</li>
+          <li>All 7 platforms</li>
+          <li>Advanced AI with tone control</li>
+          <li>Up to 10 brand voice profiles</li>
           <li>Hashtag optimization</li>
           <li>Analytics dashboard</li>
-          <li>Priority support</li>
+          <li>Content calendar</li>
         </ul>
         ${req.user.plan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="upgradePlan(\'pro\')">Upgrade to Pro &#x2192;</button>'}
       </div>
       <div class="price-card">
         <h3>Enterprise</h3>
-        <div class="price">$99<span>/month</span></div>
+        <div class="price">Custom</div>
         <p class="desc">For agencies and teams</p>
         <ul class="features-list">
           <li>Everything in Pro</li>
-          <li>Batch processing (50+)</li>
-          <li>Team collaboration</li>
-          <li>White-label exports</li>
-          <li>API access</li>
-          <li>Custom AI training</li>
-          <li>Dedicated manager</li>
+          <li>Unlimited brand voices</li>
+          <li>Unlimited videos</li>
+          <li>Content calendar view</li>
+          <li>Priority email support</li>
+          <li>Custom onboarding</li>
         </ul>
-        ${req.user.plan === 'enterprise' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-outline" onclick="upgradePlan(\'enterprise\')">Upgrade to Enterprise &#x2192;</button>'}
+        ${req.user.plan === 'enterprise' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<a href="/contact" class="btn btn-outline">Contact Sales</a>'}
       </div>
     </div>
   </div>

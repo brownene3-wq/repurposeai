@@ -72,7 +72,7 @@ async function fetchTranscriptFallback(videoId) {
 
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { contentOps, outputOps, brandVoiceOps } = require('../db/database');
 
 let client;
@@ -1026,7 +1026,7 @@ router.get('/', (req, res) => {
 });
 
 // POST - Process and generate content
-router.post('/process', requireAuth, async (req, res) => {
+router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
   try {
     const { url, platforms, tone, brandVoiceId } = req.body;
     const userId = req.user.id;

@@ -1,8 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
+const { contentOps, outputOps } = require('../db/database');
 
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
+  // Fetch real stats
+  let videosProcessed = 0, postsGenerated = 0;
+  try {
+    videosProcessed = await contentOps.countByUserIdThisMonth(req.user.id);
+    postsGenerated = await outputOps.countByUserId(req.user.id);
+  } catch (e) { console.error('Dashboard stats error:', e); }
+  const planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free';
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -104,10 +112,10 @@ router.get('/', requireAuth, (req, res) => {
       </div>
 
       <div class="stats-grid">
-        <div class="stat-card"><div class="stat-value">0</div><div class="stat-label">Videos Processed</div></div>
-        <div class="stat-card"><div class="stat-value">0</div><div class="stat-label">Posts Generated</div></div>
-        <div class="stat-card"><div class="stat-value">5</div><div class="stat-label">Platforms</div></div>
-        <div class="stat-card"><div class="stat-value">Free</div><div class="stat-label">Current Plan</div></div>
+        <div class="stat-card"><div class="stat-value">${videosProcessed}</div><div class="stat-label">Videos This Month</div></div>
+        <div class="stat-card"><div class="stat-value">${postsGenerated}</div><div class="stat-label">Posts Generated</div></div>
+        <div class="stat-card"><div class="stat-value">7</div><div class="stat-label">Platforms</div></div>
+        <div class="stat-card"><div class="stat-value">${planLabel}</div><div class="stat-label">Current Plan</div></div>
       </div>
 
       <div class="repurpose-card">

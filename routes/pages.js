@@ -211,14 +211,14 @@ router.get('/', (req, res) => {
         <div class="price-card featured">
           <h3>Pro</h3><div class="price">$29<span>/month</span></div>
           <p class="price-desc">For creators serious about growth</p>
-          <ul class="price-features"><li>Unlimited videos</li><li>All 7 platforms</li><li>Advanced AI with tone control</li><li>Brand voice profiles</li><li>Hashtag optimization</li><li>Analytics dashboard</li><li>Priority support</li></ul>
+          <ul class="price-features"><li>Unlimited videos</li><li>All 7 platforms</li><li>Advanced AI with tone control</li><li>Up to 10 brand voice profiles</li><li>Hashtag optimization</li><li>Analytics dashboard</li><li>Content calendar</li></ul>
           <a href="/auth/register?plan=pro" class="btn btn-primary">Start Pro Trial</a>
         </div>
         <div class="price-card">
-          <h3>Enterprise</h3><div class="price">$99<span>/month</span></div>
+          <h3>Enterprise</h3><div class="price">Custom</div>
           <p class="price-desc">For agencies and teams</p>
-          <ul class="price-features"><li>Everything in Pro</li><li>Unlimited brand voices</li><li>Team collaboration</li><li>Content calendar view</li><li>API access</li><li>Custom tone training</li><li>Dedicated account manager</li></ul>
-          <a href="/auth/register?plan=enterprise" class="btn btn-outline">Contact Sales</a>
+          <ul class="price-features"><li>Everything in Pro</li><li>Unlimited brand voices</li><li>Unlimited videos</li><li>Content calendar view</li><li>Priority email support</li><li>Custom onboarding</li></ul>
+          <a href="/contact" class="btn btn-outline">Contact Sales</a>
         </div>
       </div>
     </div>
