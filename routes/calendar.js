@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const requireAuth = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 const { contentOps, outputOps } = require('../db/database');
 
 // GET - Content calendar page

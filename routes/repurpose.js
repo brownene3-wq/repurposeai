@@ -3,7 +3,7 @@ const router = express.Router();
 const { getTranscript } = require('youtube-transcript');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
-const requireAuth = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 const { contentOps, outputOps, brandVoiceOps } = require('../db/database');
 
 const client = new OpenAI({
