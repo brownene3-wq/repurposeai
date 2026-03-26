@@ -178,31 +178,38 @@ router.get('/', requireAuth, async (req, res) => {
           body: JSON.stringify({ url, platforms: ['Instagram','Twitter','LinkedIn'], tone: 'Professional' })
         });
 
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || 'Server error');
+        }
+
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        const NL = String.fromCharCode(10);
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          const lines = buffer.split('\\n');
-          buffer = lines.pop();
+          const parts = buffer.split(NL);
+          buffer = parts.pop();
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
               try {
-                const data = JSON.parse(line.slice(6));
+                const data = JSON.parse(trimmed.slice(6));
                 if (data.error) { alert(data.error); break; }
-                if (data.done) break;
+                if (data.done) continue;
                 if (data.platform) {
                   document.getElementById('loading').classList.remove('show');
                   document.getElementById('results').style.display = 'block';
                   addPlatformResult(data, platformCount === 0);
                   platformCount++;
                 }
-              } catch(e) {}
+              } catch(e) { console.log('Parse error:', e); }
             }
           }
         }
