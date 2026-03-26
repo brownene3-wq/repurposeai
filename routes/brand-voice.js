@@ -637,7 +637,7 @@ router.get('/', requireAuth, (req, res) => {
 
         async function loadVoices() {
           try {
-            const response = await fetch('/api/brand-voices');
+            const response = await fetch('/brand-voice/api');
             if (response.ok) {
               allVoices = await response.json();
               renderVoices();
