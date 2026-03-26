@@ -459,7 +459,7 @@ router.get('/', requireAuth, (req, res) => {
       <div class="container">
         <div class="sidebar" style="display:flex;flex-direction:column;">
           <div style="padding:0 20px 20px;">
-            <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
+            <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
           </div>
           <a href="/dashboard">&#x1F3AC; Dashboard</a>
           <a href="/repurpose">&#x1F504; Repurpose</a>

@@ -107,7 +107,7 @@ router.get('/', requireAuth, async (req, res) => {
   <div class="layout">
     <div class="sidebar">
       <div style="padding:0 20px 20px;">
-        <div class="logo" style="padding:0;">Repurpose<span>AI</span></div>
+        <a href="/dashboard" class="logo" style="padding:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
       </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
