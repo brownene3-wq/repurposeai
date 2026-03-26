@@ -303,10 +303,12 @@ router.get('/', requireAuth, (req, res) => {
           height: 8px;
         }
 
-        .twitter-indicator { background: #1da1f2; }
+        .twitter-indicator, .twitterx-indicator { background: #1da1f2; }
         .linkedin-indicator { background: #0a66c2; }
         .instagram-indicator { background: #e1306c; }
+        .tiktok-indicator { background: #ff0050; }
         .facebook-indicator { background: #1877f2; }
+        .youtube-indicator { background: #ff0000; }
         .blog-indicator { background: #6c5ce7; }
 
         .sidebar-content {
@@ -498,26 +500,13 @@ router.get('/', requireAuth, (req, res) => {
               <div class="calendar-grid" id="calendarGrid"></div>
 
               <div class="legend" style="margin-top: 30px;">
-                <div class="legend-item">
-                  <div class="legend-dot twitter-indicator"></div>
-                  <span>Twitter</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot linkedin-indicator"></div>
-                  <span>LinkedIn</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot instagram-indicator"></div>
-                  <span>Instagram</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot facebook-indicator"></div>
-                  <span>Facebook</span>
-                </div>
-                <div class="legend-item">
-                  <div class="legend-dot blog-indicator"></div>
-                  <span>Blog</span>
-                </div>
+                <div class="legend-item"><div class="legend-dot instagram-indicator"></div><span>Instagram</span></div>
+                <div class="legend-item"><div class="legend-dot tiktok-indicator"></div><span>TikTok</span></div>
+                <div class="legend-item"><div class="legend-dot twitter-indicator"></div><span>Twitter/X</span></div>
+                <div class="legend-item"><div class="legend-dot linkedin-indicator"></div><span>LinkedIn</span></div>
+                <div class="legend-item"><div class="legend-dot facebook-indicator"></div><span>Facebook</span></div>
+                <div class="legend-item"><div class="legend-dot youtube-indicator"></div><span>YouTube</span></div>
+                <div class="legend-item"><div class="legend-dot blog-indicator"></div><span>Blog</span></div>
               </div>
             </div>
 
@@ -608,7 +597,8 @@ router.get('/', requireAuth, (req, res) => {
               indicators.className = 'day-content';
               content.forEach(platform => {
                 const indicator = document.createElement('div');
-                indicator.className = \`content-indicator \${platform.toLowerCase()}-indicator\`;
+                const cssClass = platform.toLowerCase().replace(/[^a-z]/g, '');
+                indicator.className = 'content-indicator ' + cssClass + '-indicator';
                 indicator.title = platform;
                 indicators.appendChild(indicator);
               });
@@ -678,15 +668,15 @@ router.get('/', requireAuth, (req, res) => {
             \`).join('');
           }
 
-          // Recent content (last 30 days)
+          // Recent content (last 30 days including today)
           const recentContent = [];
-          for (let i = -30; i < 0; i++) {
+          for (let i = -30; i <= 0; i++) {
             const date = new Date(today);
             date.setDate(today.getDate() + i);
             const key = formatDateKey(date);
             if (calendarData[key]) {
               calendarData[key].forEach(p => {
-                recentContent.push({ platform: p, date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) });
+                recentContent.push({ platform: p, date: i === 0 ? 'Today' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) });
               });
             }
           }
@@ -745,27 +735,23 @@ router.get('/api/data', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get all content for user
-    const contents = await contentOps.getByUserId(userId, 1000, 0);
+    // Get all generated outputs for user
+    const outputs = await outputOps.getByUserId(userId, 500, 0);
 
     const calendarData = {};
 
-    // Build calendar data
-    for (const content of contents) {
-      const date = new Date(content.created_at);
+    for (const output of outputs) {
+      const date = new Date(output.created_at);
       const dateKey = date.toISOString().split('T')[0];
 
       if (!calendarData[dateKey]) {
         calendarData[dateKey] = [];
       }
 
-      // Get outputs for this content
-      const outputs = await outputOps.getByContentId(content.id);
-      outputs.forEach(output => {
-        if (!calendarData[dateKey].includes(output.platform)) {
-          calendarData[dateKey].push(output.platform);
-        }
-      });
+      const platform = output.platform || 'Unknown';
+      if (!calendarData[dateKey].includes(platform)) {
+        calendarData[dateKey].push(platform);
+      }
     }
 
     res.json(calendarData);
