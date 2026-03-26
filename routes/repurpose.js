@@ -104,10 +104,24 @@ async function fetchTranscriptViaAndroid(videoId) {
 
   if (resp.status !== 200) throw new Error('Innertube player returned ' + resp.status);
 
-  const json = JSON.parse(resp.data);
+  let json;
+  try {
+    json = JSON.parse(resp.data);
+  } catch (e) {
+    console.error('[Transcript] ANDROID innertube returned non-JSON:', resp.data.substring(0, 500));
+    throw new Error('ANDROID innertube returned invalid JSON');
+  }
+
+  // Debug: log playability status and available keys
+  const playability = json?.playabilityStatus;
+  if (playability) {
+    console.log('[Transcript] ANDROID playability:', playability.status, playability.reason || '');
+  }
+  console.log('[Transcript] ANDROID captions exists:', !!json?.captions);
+
   const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (!Array.isArray(tracks) || tracks.length === 0) {
-    throw new Error('No caption tracks from ANDROID innertube');
+    throw new Error('No caption tracks from ANDROID innertube (playability: ' + (playability?.status || 'unknown') + ')');
   }
 
   // Prefer English
@@ -131,9 +145,16 @@ async function fetchTranscriptViaWebPage(videoId) {
 
   if (resp.status !== 200) throw new Error('YouTube page returned ' + resp.status);
 
+  console.log('[Transcript] WEB page response length:', resp.data.length);
+
   // Check for CAPTCHA
   if (resp.data.includes('class="g-recaptcha"')) {
     throw new Error('YouTube CAPTCHA triggered');
+  }
+
+  // Check for consent page
+  if (resp.data.includes('consent.youtube.com') || resp.data.includes('CONSENT')) {
+    console.log('[Transcript] WEB page has consent redirect');
   }
 
   // Extract caption tracks from ytInitialPlayerResponse
@@ -144,10 +165,18 @@ async function fetchTranscriptViaWebPage(videoId) {
   if (playerMatch) {
     try {
       const playerData = JSON.parse(playerMatch[1]);
+      const playStatus = playerData?.playabilityStatus;
+      console.log('[Transcript] WEB page playability:', playStatus?.status, playStatus?.reason || '');
+      console.log('[Transcript] WEB page captions exists:', !!playerData?.captions);
       captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     } catch (e) {
-      // JSON parse failed, try next method
+      console.log('[Transcript] WEB page ytInitialPlayerResponse JSON parse failed');
     }
+  } else {
+    console.log('[Transcript] WEB page: no ytInitialPlayerResponse found');
+    // Check if page has the video at all
+    console.log('[Transcript] WEB page has playabilityStatus:', resp.data.includes('playabilityStatus'));
+    console.log('[Transcript] WEB page has captionTracks string:', resp.data.includes('captionTracks'));
   }
 
   // Method B: Extract captionTracks directly
@@ -156,6 +185,7 @@ async function fetchTranscriptViaWebPage(videoId) {
     if (captionMatch) {
       try {
         captionTracks = JSON.parse(captionMatch[1]);
+        console.log('[Transcript] WEB page method B found', captionTracks.length, 'tracks');
       } catch (e) {}
     }
   }
@@ -198,10 +228,23 @@ async function fetchTranscriptViaWebInnertube(videoId) {
 
   if (resp.status !== 200) throw new Error('WEB innertube returned ' + resp.status);
 
-  const json = JSON.parse(resp.data);
+  let json;
+  try {
+    json = JSON.parse(resp.data);
+  } catch (e) {
+    console.error('[Transcript] WEB innertube returned non-JSON:', resp.data.substring(0, 500));
+    throw new Error('WEB innertube returned invalid JSON');
+  }
+
+  const playability = json?.playabilityStatus;
+  if (playability) {
+    console.log('[Transcript] WEB innertube playability:', playability.status, playability.reason || '');
+  }
+  console.log('[Transcript] WEB innertube captions exists:', !!json?.captions);
+
   const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (!Array.isArray(tracks) || tracks.length === 0) {
-    throw new Error('No caption tracks from WEB innertube');
+    throw new Error('No caption tracks from WEB innertube (playability: ' + (playability?.status || 'unknown') + ')');
   }
 
   const track = tracks.find(t => t.languageCode === 'en') || tracks[0];
@@ -1158,6 +1201,7 @@ router.get('/', (req, res) => {
           showLoading();
           document.getElementById('resultsGrid').innerHTML = '';
           let resultCount = 0;
+          let hadError = false;
 
           try {
             const response = await fetch('/repurpose/process-stream', {
@@ -1194,7 +1238,7 @@ router.get('/', (req, res) => {
                 if (trimmed.startsWith('data: ')) {
                   try {
                     const data = JSON.parse(trimmed.slice(6));
-                    if (data.error) { showError(data.error); break; }
+                    if (data.error) { showError(data.error); hadError = true; break; }
                     if (data.done) continue;
                     if (data.platform) {
                       document.getElementById('loadingState').classList.remove('show');
@@ -1207,7 +1251,7 @@ router.get('/', (req, res) => {
               }
             }
 
-            if (resultCount === 0) {
+            if (resultCount === 0 && !hadError) {
               showError('No content was generated. Try a different video.');
             }
           } catch (error) {
