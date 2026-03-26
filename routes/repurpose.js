@@ -857,7 +857,14 @@ router.get('/', (req, res) => {
               })
             });
 
-            const data = await response.json();
+            const contentType = response.headers.get('content-type') || '';
+            let data;
+            if (contentType.includes('application/json')) {
+              data = await response.json();
+            } else {
+              const text = await response.text();
+              throw new Error(text || 'Server returned an unexpected response. Please try again.');
+            }
 
             if (!response.ok) {
               throw new Error(data.error || 'Failed to repurpose content');
@@ -1108,10 +1115,14 @@ router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
       }
     }
 
+    if (outputs.length === 0) {
+      return res.status(500).json({ error: 'AI content generation failed for all platforms. Please try again.' });
+    }
+
     res.json({ success: true, outputs });
   } catch (error) {
     console.error('Repurpose error:', error);
-    res.status(500).json({ error: 'Failed to process request' });
+    res.status(500).json({ error: error.message || 'Failed to process request. Please try again.' });
   }
 });
 
@@ -1135,18 +1146,30 @@ async function generatePlatformContent(transcript, platform, tone, brandVoice) {
 
   prompt += `\n\nTone of voice: ${tone}\n\nTranscript:\n${transcript}`;
 
-  const response = await getOpenAIClient().chat.completions.create({
-    model: 'gpt-4o-mini',
-    max_tokens: 1500,
-    messages: [
-      {
-        role: 'user',
-        content: prompt
-      }
-    ]
-  });
+  try {
+    const response = await getOpenAIClient().chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 1500,
+      timeout: 55000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    });
 
-  return response.choices[0].message.content;
+    return response.choices[0].message.content;
+  } catch (aiError) {
+    console.error('OpenAI API error:', aiError.message, aiError.status || '');
+    if (aiError.message?.includes('API key') || aiError.status === 401) {
+      throw new Error('AI service configuration error. Please contact support.');
+    }
+    if (aiError.message?.includes('timeout') || aiError.code === 'ETIMEDOUT') {
+      throw new Error('AI generation timed out. Please try again with a shorter video.');
+    }
+    throw new Error('AI content generation failed. Please try again.');
+  }
 }
 
 // POST - Regenerate single platform
