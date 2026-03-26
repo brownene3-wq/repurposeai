@@ -104,6 +104,18 @@ router.get('/', (req, res) => {
           background: #e0e0e0;
           color: #6c5ce7;
         }
+        .sidebar { width: 250px; background: #111; border-right: 1px solid #222; padding: 20px 0; position: fixed; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
+                .sidebar .logo { font-size: 1.4em; font-weight: 700; color: #fff; }
+                .sidebar .logo span { color: #6c5ce7; }
+                .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
+                .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
+                .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
+                .theme-toggle { background: #222; border: 1px solid #333; color: #fff; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+                body.light .sidebar { background: #f8f8f8; border-color: #e0e0e0; }
+                body.light .sidebar a { color: #666; }
+                body.light .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.08); }
+                body.light .theme-toggle { background: #fff; border-color: #ddd; }
+
 
         .sidebar a.active {
           background: #6c5ce7;
@@ -596,20 +608,18 @@ router.get('/', (req, res) => {
     <body>
       <div class="container">
         <div class="sidebar" style="display:flex;flex-direction:column;">
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div class="logo">🎬 Repurpose</div>
-            <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+            <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
+            <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
           </div>
-          <a href="/dashboard">Dashboard</a>
-          <a href="/repurpose" class="active">Repurpose</a>
-          <a href="/repurpose/history">Library</a>
-          <a href="/dashboard/analytics">Analytics</a>
-          <a href="/dashboard/calendar">Calendar</a>
-          <a href="/dashboard/scheduled">Scheduled</a>
-          <a href="/brand-voice">Brand Voice</a>
-          <a href="/billing">Billing</a>
-          <a href="/contact">Support</a>
-          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;">Sign Out</a>
+          <a href="/dashboard">&#x1F3AC; Dashboard</a>
+          <a href="/repurpose" class="active">&#x1F504; Repurpose</a>
+          <a href="/repurpose/history">&#x1F4DA; Library</a>
+          <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
+          <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
+          <a href="/brand-voice">&#x1F399; Brand Voice</a>
+          <a href="/billing">&#x1F4B3; Billing</a>
+          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
         </div>
 
         <div class="main-content">
@@ -1430,8 +1440,19 @@ router.get('/history', requireAuth, (req, res) => {
     <body>
       <div class="container">
         <div class="sidebar" style="display:flex;flex-direction:column;">
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div class="logo">🎬 Repurpose</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+            <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
+            <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
+          </div>
+          <a href="/dashboard">&#x1F3AC; Dashboard</a>
+          <a href="/repurpose">&#x1F504; Repurpose</a>
+          <a href="/repurpose/history" class="active">&#x1F4DA; Library</a>
+          <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
+          <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
+          <a href="/brand-voice">&#x1F399; Brand Voice</a>
+          <a href="/billing">&#x1F4B3; Billing</a>
+          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
+        </div>
             <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
           </div>
           <a href="/dashboard">Dashboard</a>

@@ -47,24 +47,34 @@ router.get('/', requireAuth, (req, res) => {
     .btn-outline{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.15)}
     .btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
     .btn-current{background:rgba(16,185,129,0.15);color:var(--success);border:1px solid rgba(16,185,129,0.3);cursor:default}
-    .theme-toggle{position:static;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:36px;height:36px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--text-muted);transition:all .3s;font-family:'Inter',sans-serif;margin:0}[data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}
+    .sidebar { width: 250px; background: #111; border-right: 1px solid #222; padding: 20px 0; position: fixed; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
+    .sidebar .logo { font-size: 1.4em; font-weight: 700; color: #fff; }
+    .sidebar .logo span { color: #6c5ce7; }
+    .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
+    .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
+    .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
+    .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    body.light .sidebar { background: #f8f8f8; border-color: #e0e0e0; }
+    body.light .sidebar a { color: #666; }
+    body.light .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.08); }
+    body.light .theme-toggle { background: #fff; border-color: #ddd; }
  @media(max-width:768px){.pricing-grid{grid-template-columns:1fr}.price-card.featured{transform:none}.current-plan{flex-direction:column;gap:1rem;text-align:center}}
   </style>
 </head>
 <body>
-  <div class="sidebar" style="position:fixed;left:0;top:0;bottom:0;width:250px;background:#111;padding:20px 0;border-right:1px solid #222;z-index:100;display:flex;flex-direction:column;overflow-y:auto">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px">
-      <div style="font-size:1.4em;font-weight:700;color:#fff;padding:0">Repurpose<span style="color:#6c5ce7">AI</span></div>
-      <button class="theme-toggle" onclick="toggleTheme()" style="position:static;width:36px;height:36px;margin:0;border:1px solid rgba(255,255,255,0.1);background:var(--surface);border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem">&#x1F319;</button>
+  <div class="sidebar" style="display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+      <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
+      <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
     </div>
-    <a href="/dashboard" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F3AC; Dashboard</a>
-    <a href="/repurpose" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F504; Repurpose</a>
-    <a href="/repurpose/history" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F4DA; Library</a>
-    <a href="/dashboard/calendar" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F4C5; Calendar</a>
-    <a href="/brand-voice" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F399; Brand Voice</a>
-    <a href="/dashboard/analytics" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F4CA; Analytics</a>
-    <a href="/billing" style="display:block;padding:12px 20px;color:#6c5ce7;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent;border-left-color:#6c5ce7;background:rgba(108,92,231,0.1)" class="active">&#x1F4B3; Billing</a>
-    <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;display:block;padding:12px 20px;text-decoration:none;padding-bottom:20px">Sign Out</a>
+    <a href="/dashboard">&#x1F3AC; Dashboard</a>
+    <a href="/repurpose">&#x1F504; Repurpose</a>
+    <a href="/repurpose/history">&#x1F4DA; Library</a>
+    <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
+    <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
+    <a href="/brand-voice">&#x1F399; Brand Voice</a>
+    <a href="/billing" class="active">&#x1F4B3; Billing</a>
+    <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
   </div>
   <div class="billing-page" style="margin-left:250px">
     <a href="/dashboard" class="back-link">&#x2190; Back to Dashboard</a>
@@ -131,8 +141,17 @@ router.get('/', requireAuth, (req, res) => {
   </div>
 
   <script>
-    function toggleTheme(){var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
- async function upgradePlan(plan) {
+    function toggleTheme() {
+      document.body.classList.toggle('light');
+      localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+      const btn = document.querySelector('.theme-toggle');
+      btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
+    }
+    if (localStorage.getItem('theme') === 'light') {
+      document.body.classList.add('light');
+      document.querySelector('.theme-toggle').textContent = '☀️';
+    }
+    async function upgradePlan(plan) {
       try {
         const res = await fetch('/billing/create-checkout', {
           method: 'POST',

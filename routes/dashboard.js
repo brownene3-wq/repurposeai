@@ -17,14 +17,18 @@ router.get('/', requireAuth, (req, res) => {
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Inter',sans-serif;background:var(--dark);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
     .dashboard{display:flex;min-height:100vh}
-    .sidebar{width:260px;background:var(--dark-2);border-right:var(--border-subtle);padding:1.5rem;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;justify-content:space-between}
-    .sidebar-logo{font-size:1.4rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;display:block;flex-shrink:0}
-    .sidebar-nav{flex:1;display:flex;flex-direction:column;gap:.3rem}
-    .sidebar-nav a{display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;border-radius:10px;color:var(--text-muted);text-decoration:none;font-size:.9rem;font-weight:500;transition:all .2s;margin-bottom:.3rem}
-    .sidebar-nav a:hover,.sidebar-nav a.active{background:rgba(108,58,237,0.15);color:var(--text)}
-    .sidebar-nav a.active{color:var(--primary-light)}
-    .sidebar > a[href*="logout"]{margin-top:auto}
-    .main-content{flex:1;margin-left:260px;padding:2rem}
+    .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:20px 0;position:fixed;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
+    .sidebar .logo{font-size:1.4em;font-weight:700;color:#fff}
+    .sidebar .logo span{color:#6c5ce7}
+    .sidebar a{display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent}
+    .sidebar a:hover{color:#fff;background:rgba(108,92,231,0.1)}
+    .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.1);border-left-color:#6c5ce7}
+    .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    body.light .sidebar{background:#f8f8f8;border-color:#e0e0e0}
+    body.light .sidebar a{color:#666}
+    body.light .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.08)}
+    body.light .theme-toggle{background:#fff;border-color:#ddd}
+    .main-content{flex:1;margin-left:250px;padding:2rem}
     .page-header{margin-bottom:2rem}
     .page-header h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem}
     .page-header p{color:var(--text-muted);font-size:.95rem}
@@ -76,21 +80,19 @@ router.get('/', requireAuth, (req, res) => {
 </head>
 <body>
  <div class="dashboard">
-    <aside class="sidebar">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem">
-        <a href="/" class="sidebar-logo" style="margin-bottom:0">&#x26A1; RepurposeAI</a>
-        <button class="theme-toggle" style="position:static;width:36px;height:36px;padding:0;margin:0;border:1px solid rgba(255,255,255,0.1);background:var(--surface);border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem" onclick="toggleTheme()">&#x1F319;</button>
+    <aside class="sidebar" style="display:flex;flex-direction:column;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+        <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
+        <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
       </div>
-      <nav class="sidebar-nav">
-        <a href="/dashboard" class="active">&#x1F3AC; Dashboard</a>
-        <a href="/repurpose">&#x1F504; Repurpose</a>
-        <a href="/repurpose/history">&#x1F4DA; Library</a>
-        <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
-        <a href="/brand-voice">&#x1F399; Brand Voice</a>
-        <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
-        <a href="/billing">&#x1F4B3; Billing</a>
-      </nav>
-      <a href="/auth/logout" style="margin-top:auto;color:#EF4444;opacity:0.7;font-size:0.85rem;padding:.8rem 1rem;text-decoration:none">Sign Out</a>
+      <a href="/dashboard" class="active">&#x1F3AC; Dashboard</a>
+      <a href="/repurpose">&#x1F504; Repurpose</a>
+      <a href="/repurpose/history">&#x1F4DA; Library</a>
+      <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
+      <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
+      <a href="/brand-voice">&#x1F399; Brand Voice</a>
+      <a href="/billing">&#x1F4B3; Billing</a>
+      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
     </aside>
 
     <main class="main-content">
@@ -140,8 +142,19 @@ router.get('/', requireAuth, (req, res) => {
   <div class="toast" id="toast">Copied to clipboard!</div>
 
   <script>
-    function toggleTheme(){var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
- let currentContent = null;
+    function toggleTheme(){
+      document.body.classList.toggle('light');
+      localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+      const btn = document.querySelector('.theme-toggle');
+      btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
+      var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)
+    }
+    if (localStorage.getItem('theme') === 'light') {
+      document.body.classList.add('light');
+      document.querySelector('.theme-toggle').textContent = '☀️';
+    }
+    (function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
+    let currentContent = null;
     let currentVideo = null;
 
     async function processVideo() {

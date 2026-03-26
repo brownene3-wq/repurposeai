@@ -105,7 +105,7 @@ router.get('/', requireAuth, async (req, res) => {
     <div class="sidebar">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
         <div class="logo" style="padding:0;">Repurpose<span>AI</span></div>
-        <button class="theme-toggle" onclick="document.body.classList.toggle('light')">&#x1F319;</button>
+        <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
       </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
@@ -134,6 +134,19 @@ router.get('/', requireAuth, async (req, res) => {
       </div>
     </div>
   </div>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('light');
+      localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+      const btn = document.querySelector('.theme-toggle');
+      btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
+    }
+    if (localStorage.getItem('theme') === 'light') {
+      document.body.classList.add('light');
+      document.querySelector('.theme-toggle').textContent = '☀️';
+    }
+  </script>
 </body>
 </html>`;
     res.send(html);

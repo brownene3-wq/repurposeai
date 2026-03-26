@@ -13,12 +13,15 @@ router.get('/', requireAuth, (req, res) => {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; }
     .layout { display: flex; min-height: 100vh; }
-    .sidebar { width: 250px; background: #111; border-right: 1px solid #222; padding: 20px 0; position: fixed; height: 100vh; overflow-y: auto; }
-    .sidebar .logo { padding: 0 20px 30px; font-size: 1.4em; font-weight: 700; color: #fff; }
+    .sidebar { width: 250px; background: #111; border-right: 1px solid #222; padding: 20px 0; position: fixed; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
+    .sidebar .logo { font-size: 1.4em; font-weight: 700; color: #fff; }
     .sidebar .logo span { color: #6c5ce7; }
     .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
     .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
     .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
+    body.light .sidebar { background: #f8f8f8; border-color: #e0e0e0; }
+    body.light .sidebar a { color: #666; }
+    body.light .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.08); }
     .main { margin-left: 250px; flex: 1; padding: 30px; }
     .page-header { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; }
     .page-title { font-size: 1.8em; font-weight: 700; }
@@ -47,20 +50,19 @@ router.get('/', requireAuth, (req, res) => {
 </head>
 <body>
   <div class="layout">
-    <div class="sidebar">
+    <div class="sidebar" style="display:flex;flex-direction:column;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
-        <div class="logo" style="padding:0;margin-bottom:0">Repurpose<span>AI</span></div>
-        <button class="theme-toggle" onclick="document.body.classList.toggle('light')" style="position:static;margin:0">&#x1F319;</button>
+        <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
+        <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
       </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
       <a href="/repurpose/history">&#x1F4DA; Library</a>
+      <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
       <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
       <a href="/brand-voice">&#x1F399; Brand Voice</a>
-      <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
       <a href="/billing">&#x1F4B3; Billing</a>
-      <a href="/dashboard/scheduled" class="active">&#x23F0; Scheduled</a>
-      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding-bottom:20px;">Sign Out</a>
+      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
     </div>
     <div class="main">
       <div class="page-header">
@@ -83,6 +85,19 @@ router.get('/', requireAuth, (req, res) => {
       </div>
     </div>
   </div>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('light');
+      localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+      const btn = document.querySelector('.theme-toggle');
+      btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
+    }
+    if (localStorage.getItem('theme') === 'light') {
+      document.body.classList.add('light');
+      document.querySelector('.theme-toggle').textContent = '☀️';
+    }
+  </script>
 </body>
 </html>`;
   res.send(html);
