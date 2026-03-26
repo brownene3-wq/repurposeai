@@ -66,6 +66,21 @@ app.use('/repurpose', repurposeRouter);
 app.use('/brand-voice', brandVoiceRouter);
 app.use(pricingRouter);
 
+// Admin endpoint - upgrade user plan by email (secured by admin secret)
+app.post('/admin/upgrade-plan', async (req, res) => {
+  const adminSecret = process.env.ADMIN_SECRET || 'repurposeai-admin-2024';
+  if (req.headers['x-admin-secret'] !== adminSecret) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const { email, plan } = req.body;
+  if (!email || !plan) return res.status(400).json({ error: 'email and plan required' });
+  const { userOps } = require('./db/database');
+  const user = await userOps.getByEmail(email);
+  if (!user) return res.status(404).json({ error: 'User not found - they need to sign up first' });
+  await userOps.updatePlan(user.id, plan);
+  res.json({ success: true, message: `${email} upgraded to ${plan}` });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
