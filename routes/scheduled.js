@@ -20,7 +20,7 @@ router.get('/', requireAuth, (req, res) => {
     .sidebar .logo { font-size: 1.4em; font-weight: 700; color: #fff; }
     .sidebar .logo span { color: #6c5ce7; }
     .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
-    .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
+    .sidebar a:not(.logo):hover { color: #fff; background: rgba(108,92,231,0.1); }
     .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
     body.light .sidebar { background: #f8f8f8; border-color: #e0e0e0; }
     body.light .sidebar a { color: #666; }

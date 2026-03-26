@@ -54,7 +54,7 @@ router.get('/', requireAuth, (req, res) => {
     .sidebar .logo { font-size: 1.4em; font-weight: 700; color: #fff; }
     .sidebar .logo span { color: #6c5ce7; }
     .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
-    .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
+    .sidebar a:not(.logo):hover { color: #fff; background: rgba(108,92,231,0.1); }
     .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
     .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:fixed;top:1.2rem;right:1.5rem;z-index:100}
     body.light .sidebar { background: #f8f8f8; border-color: #e0e0e0; }

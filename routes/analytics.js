@@ -72,7 +72,7 @@ router.get('/', requireAuth, async (req, res) => {
     .sidebar .logo { padding: 0 20px 30px; font-size: 1.4em; font-weight: 700; color: #fff; }
     .sidebar .logo span { color: #6c5ce7; }
     .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
-    .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
+    .sidebar a:not(.logo):hover { color: #fff; background: rgba(108,92,231,0.1); }
     .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
     .main { margin-left: 250px; flex: 1; padding: 30px; }
     .page-title { font-size: 1.8em; font-weight: 700; margin-bottom: 30px; }

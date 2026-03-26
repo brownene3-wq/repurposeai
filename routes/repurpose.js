@@ -150,7 +150,7 @@ router.get('/', (req, res) => {
           border-left: 3px solid transparent;
         }
 
-        .sidebar a:hover {
+        .sidebar a:not(.logo):hover {
           color: #fff;
           background: rgba(108,92,231,0.1);
         }
@@ -1262,7 +1262,7 @@ router.get('/history', requireAuth, (req, res) => {
           border-left: 3px solid transparent;
         }
 
-        .sidebar a:hover {
+        .sidebar a:not(.logo):hover {
           color: #fff;
           background: rgba(108,92,231,0.1);
         }
