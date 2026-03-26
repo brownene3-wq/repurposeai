@@ -455,17 +455,18 @@ router.get('/', requireAuth, (req, res) => {
     <body>
       <div class="container">
         <div class="sidebar">
-          <div class="logo">🎬 Repurpose</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;margin-bottom:20px">
+            <div class="logo" style="padding:0;margin-bottom:0">🎬 Repurpose</div>
+            <button class="theme-toggle" onclick="toggleTheme()" style="position:static;width:36px;height:36px;padding:0;margin:0;border:1px solid #222;background:#161616;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:20px;transition:all 0.3s">🌙</button>
+          </div>
           <a href="/dashboard">Dashboard</a>
           <a href="/repurpose">Repurpose</a>
           <a href="/repurpose/history">Library</a>
-          <a href="/dashboard/analytics">Analytics</a>
           <a href="/dashboard/calendar" class="active">Calendar</a>
-          <a href="/dashboard/scheduled">Scheduled</a>
           <a href="/brand-voice">Brand Voice</a>
+          <a href="/dashboard/analytics">Analytics</a>
           <a href="/billing">Billing</a>
-          <a href="/contact">Support</a>
-          <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 16px;display:block;text-decoration:none">Sign Out</a>
         </div>
 
         <div class="main-content">

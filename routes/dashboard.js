@@ -17,16 +17,13 @@ router.get('/', requireAuth, (req, res) => {
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Inter',sans-serif;background:var(--dark);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
     .dashboard{display:flex;min-height:100vh}
-    .sidebar{width:260px;background:var(--dark-2);border-right:var(--border-subtle);padding:1.5rem;display:flex;flex-direction:column;position:fixed;top:0;bottom:0}
-    .sidebar-logo{font-size:1.4rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;margin-bottom:2rem;display:block}
-    .sidebar-nav{flex:1}
+    .sidebar{width:260px;background:var(--dark-2);border-right:var(--border-subtle);padding:1.5rem;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;justify-content:space-between}
+    .sidebar-logo{font-size:1.4rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;display:block;flex-shrink:0}
+    .sidebar-nav{flex:1;display:flex;flex-direction:column;gap:.3rem}
     .sidebar-nav a{display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;border-radius:10px;color:var(--text-muted);text-decoration:none;font-size:.9rem;font-weight:500;transition:all .2s;margin-bottom:.3rem}
     .sidebar-nav a:hover,.sidebar-nav a.active{background:rgba(108,58,237,0.15);color:var(--text)}
     .sidebar-nav a.active{color:var(--primary-light)}
-    .sidebar-user{padding:1rem;background:var(--surface);border-radius:12px;display:flex;align-items:center;gap:.8rem}
-    .sidebar-avatar{width:36px;height:36px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem}
-    .sidebar-username{font-size:.85rem;font-weight:600}
-    .sidebar-email{font-size:.75rem;color:var(--text-dim)}
+    .sidebar > a[href*="logout"]{margin-top:auto}
     .main-content{flex:1;margin-left:260px;padding:2rem}
     .page-header{margin-bottom:2rem}
     .page-header h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem}
@@ -81,19 +78,20 @@ router.get('/', requireAuth, (req, res) => {
   <button class="theme-toggle" onclick="toggleTheme()"><span>&#x1F319;</span><div class="toggle-track"><div class="toggle-thumb"></div></div><span>&#x2600;&#xFE0F;</span></button>
  <div class="dashboard">
     <aside class="sidebar">
-      <a href="/" class="sidebar-logo">&#x26A1; RepurposeAI</a>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem">
+        <a href="/" class="sidebar-logo" style="margin-bottom:0">&#x26A1; RepurposeAI</a>
+        <button class="theme-toggle" style="position:static;width:36px;height:36px;padding:0;margin:0;border:1px solid rgba(255,255,255,0.1);background:var(--surface);border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem" onclick="toggleTheme()">&#x1F319;</button>
+      </div>
       <nav class="sidebar-nav">
         <a href="/dashboard" class="active">&#x1F3AC; Dashboard</a>
         <a href="/repurpose">&#x1F504; Repurpose</a>
+        <a href="/repurpose/history">&#x1F4DA; Library</a>
+        <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
+        <a href="/brand-voice">&#x1F399; Brand Voice</a>
         <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
-        <a href="/dashboard/scheduled">&#x23F0; Scheduled</a>
         <a href="/billing">&#x1F4B3; Billing</a>
-        <a href="/contact">&#x1F4E7; Support</a>
       </nav>
-      <div class="sidebar-user">
-        <div class="sidebar-avatar">${(req.user.email || 'U')[0].toUpperCase()}</div>
-        <div><div class="sidebar-username">${req.user.email ? req.user.email.split('@')[0] : 'User'}</div><div class="sidebar-email">${req.user.email || ''}</div></div>
-      </div>
+      <a href="/auth/logout" style="margin-top:auto;color:#EF4444;opacity:0.7;font-size:0.85rem;padding:.8rem 1rem;text-decoration:none">Sign Out</a>
     </aside>
 
     <main class="main-content">

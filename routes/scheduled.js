@@ -48,13 +48,19 @@ router.get('/', requireAuth, (req, res) => {
 <body>
   <div class="layout">
     <div class="sidebar">
-      <div class="logo">Repurpose<span>AI</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+        <div class="logo" style="padding:0;margin-bottom:0">Repurpose<span>AI</span></div>
+        <button class="theme-toggle" onclick="document.body.classList.toggle('light')" style="position:static;margin:0">&#x1F319;</button>
+      </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
+      <a href="/repurpose/history">&#x1F4DA; Library</a>
+      <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
+      <a href="/brand-voice">&#x1F399; Brand Voice</a>
       <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
-      <a href="/dashboard/scheduled" class="active">&#x23F0; Scheduled</a>
       <a href="/billing">&#x1F4B3; Billing</a>
-      <a href="/contact">&#x1F4E7; Support</a>
+      <a href="/dashboard/scheduled" class="active">&#x23F0; Scheduled</a>
+      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding-bottom:20px;">Sign Out</a>
     </div>
     <div class="main">
       <div class="page-header">

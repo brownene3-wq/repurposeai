@@ -47,13 +47,26 @@ router.get('/', requireAuth, (req, res) => {
     .btn-outline{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.15)}
     .btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
     .btn-current{background:rgba(16,185,129,0.15);color:var(--success);border:1px solid rgba(16,185,129,0.3);cursor:default}
-    .theme-toggle{position:fixed;top:1.5rem;right:1.5rem;z-index:1001;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50px;padding:.5rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--text-muted);transition:all .3s;font-family:'Inter',sans-serif}[data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{width:44px;height:24px;background:var(--dark-2);border-radius:12px;position:relative;transition:background .3s}[data-theme="light"] .theme-toggle .toggle-track{background:#D1D5DB}.theme-toggle .toggle-thumb{width:20px;height:20px;background:var(--gradient-1);border-radius:50%;position:absolute;top:2px;left:2px;transition:transform .3s}[data-theme="light"] .theme-toggle .toggle-thumb{transform:translateX(20px)}
+    .theme-toggle{position:static;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:36px;height:36px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--text-muted);transition:all .3s;font-family:'Inter',sans-serif;margin:0}[data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}
  @media(max-width:768px){.pricing-grid{grid-template-columns:1fr}.price-card.featured{transform:none}.current-plan{flex-direction:column;gap:1rem;text-align:center}}
   </style>
 </head>
 <body>
-  <button class="theme-toggle" onclick="toggleTheme()"><span>&#x1F319;</span><div class="toggle-track"><div class="toggle-thumb"></div></div><span>&#x2600;&#xFE0F;</span></button>
- <div class="billing-page">
+  <div class="sidebar" style="position:fixed;left:0;top:0;bottom:0;width:250px;background:#111;padding:20px 0;border-right:1px solid #222;z-index:100;display:flex;flex-direction:column;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px">
+      <div style="font-size:1.4em;font-weight:700;color:#fff;padding:0">Repurpose<span style="color:#6c5ce7">AI</span></div>
+      <button class="theme-toggle" onclick="toggleTheme()" style="position:static;width:36px;height:36px;margin:0;border:1px solid rgba(255,255,255,0.1);background:var(--surface);border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem">&#x1F319;</button>
+    </div>
+    <a href="/dashboard" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F3AC; Dashboard</a>
+    <a href="/repurpose" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F504; Repurpose</a>
+    <a href="/repurpose/history" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F4DA; Library</a>
+    <a href="/dashboard/calendar" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F4C5; Calendar</a>
+    <a href="/brand-voice" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F399; Brand Voice</a>
+    <a href="/dashboard/analytics" style="display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent">&#x1F4CA; Analytics</a>
+    <a href="/billing" style="display:block;padding:12px 20px;color:#6c5ce7;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent;border-left-color:#6c5ce7;background:rgba(108,92,231,0.1)" class="active">&#x1F4B3; Billing</a>
+    <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;display:block;padding:12px 20px;text-decoration:none;padding-bottom:20px">Sign Out</a>
+  </div>
+  <div class="billing-page" style="margin-left:250px">
     <a href="/dashboard" class="back-link">&#x2190; Back to Dashboard</a>
     <div class="page-header">
       <h1>&#x1F4B3; Billing & Plans</h1>
