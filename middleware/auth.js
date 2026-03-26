@@ -21,7 +21,7 @@ function verifyToken(token) {
 }
 
 // Middleware: require authentication
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
 
   if (!token) {
@@ -40,7 +40,7 @@ function requireAuth(req, res, next) {
     return res.redirect('/auth/login');
   }
 
-  const user = userOps.findById(decoded.id);
+  const user = await userOps.getById(decoded.id);
   if (!user) {
     res.clearCookie('token');
     return res.redirect('/auth/login');
@@ -51,12 +51,12 @@ function requireAuth(req, res, next) {
 }
 
 // Middleware: optional auth (sets req.user if logged in)
-function optionalAuth(req, res, next) {
+async function optionalAuth(req, res, next) {
   const token = req.cookies?.token;
   if (token) {
     const decoded = verifyToken(token);
     if (decoded) {
-      req.user = userOps.findById(decoded.id);
+      req.user = await userOps.getById(decoded.id);
     }
   }
   next();

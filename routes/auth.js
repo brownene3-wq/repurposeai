@@ -39,11 +39,11 @@ function httpsGet(url, headers) {
 }
 
 // Helper: find or create OAuth user
-function findOrCreateOAuthUser(email, name) {
- let user = userOps.findByEmail(email);
+async function findOrCreateOAuthUser(email, name) {
+ let user = await userOps.getByEmail(email);
  if (!user) {
-  const randomPass = 'OAUTH_' + require('crypto').randomBytes(32).toString('hex');
-  user = userOps.create(email, randomPass, name || email.split('@')[0]);
+  const randomPass = await require('bcryptjs').hash('OAUTH_' + require('crypto').randomBytes(32).toString('hex'), 10);
+  user = await userOps.create(email, name || email.split('@')[0], randomPass);
  }
  return user;
 }
@@ -87,7 +87,7 @@ router.get('/google/callback', async (req, res) => {
 
   if (!profile.email) return res.redirect('/auth/login?error=Could+not+get+email+from+Google');
 
-  const user = findOrCreateOAuthUser(profile.email, profile.name);
+  const user = await findOrCreateOAuthUser(profile.email, profile.name);
   loginAndRedirect(res, user);
  } catch (err) {
   console.error('Google OAuth error:', err);
@@ -128,7 +128,7 @@ router.get('/microsoft/callback', async (req, res) => {
   const email = profile.mail || profile.userPrincipalName;
   if (!email) return res.redirect('/auth/login?error=Could+not+get+email+from+Microsoft');
 
-  const user = findOrCreateOAuthUser(email, profile.displayName);
+  const user = await findOrCreateOAuthUser(email, profile.displayName);
   loginAndRedirect(res, user);
  } catch (err) {
   console.error('Microsoft OAuth error:', err);
@@ -309,10 +309,11 @@ router.post('/api/register', async (req, res) => {
  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
- const existing = userOps.findByEmail(email);
+ const existing = await userOps.getByEmail(email);
  if (existing) return res.status(400).json({ error: 'An account with this email already exists. If you signed up with Google, please use the Continue with Google button to log in.' });
 
- const user = userOps.create(email, password, name || email.split('@')[0]);
+ const hashedPassword = await bcrypt.hash(password, 10);
+ const user = await userOps.create(email, name || email.split('@')[0], hashedPassword);
  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
  res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
  } catch (err) {
@@ -327,7 +328,7 @@ router.post('/api/login', async (req, res) => {
  const { email, password } = req.body;
  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
- const user = userOps.findByEmail(email);
+ const user = await userOps.getByEmail(email);
  if (!user) return res.status(401).json({ error: 'Invalid email or password. If you signed up with Google, please use the Continue with Google button above.' });
 
  const valid = await bcrypt.compare(password, user.password_hash);
