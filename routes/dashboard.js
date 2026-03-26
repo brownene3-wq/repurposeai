@@ -125,6 +125,16 @@ router.get('/', requireAuth, async (req, res) => {
           <button class="btn btn-primary" id="processBtn" onclick="processVideo()">&#x26A1; Repurpose</button>
         </div>
 
+        <div class="loading-spinner" id="loading">
+          <div class="spinner"></div>
+          <p style="color:var(--text-muted)">AI is analyzing your video and generating content...</p>
+        </div>
+      </div>
+
+      <div class="results-section" id="results" style="display:none;">
+        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
+        <div class="platform-tabs" id="platformTabs"></div>
+        <div id="platformContents"></div>
       </div>
     </main>
   </div>
@@ -148,10 +158,92 @@ router.get('/', requireAuth, async (req, res) => {
     }
     (function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
 
-    function processVideo() {
+    async function processVideo() {
       const url = document.getElementById('youtubeUrl').value.trim();
       if (!url) { alert('Please paste a YouTube URL'); return; }
-      window.location.href = '/repurpose?url=' + encodeURIComponent(url);
+
+      const btn = document.getElementById('processBtn');
+      btn.disabled = true; btn.innerHTML = 'Processing...';
+      document.getElementById('loading').classList.add('show');
+      document.getElementById('results').style.display = 'none';
+
+      try {
+        const res = await fetch('/repurpose/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, platforms: ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'], tone: 'Professional' })
+        });
+        const contentType = res.headers.get('content-type') || '';
+        let data;
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(text || 'Server error. Please try again.');
+        }
+        if (!res.ok) throw new Error(data.error || 'Processing failed');
+
+        if (data.outputs && data.outputs.length > 0) {
+          renderOutputs(data.outputs);
+          document.getElementById('results').style.display = 'block';
+        } else {
+          throw new Error('No content was generated. Please try a different video.');
+        }
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose';
+        document.getElementById('loading').classList.remove('show');
+      }
+    }
+
+    function renderOutputs(outputs) {
+      const tabs = document.getElementById('platformTabs');
+      const contents = document.getElementById('platformContents');
+      tabs.innerHTML = ''; contents.innerHTML = '';
+
+      outputs.forEach((output, i) => {
+        const platform = output.platform || 'Content';
+        const text = output.generated_content || '';
+        const id = platform.toLowerCase().replace(/[^a-z]/g, '');
+
+        const tab = document.createElement('button');
+        tab.className = 'platform-tab' + (i === 0 ? ' active' : '');
+        tab.textContent = platform;
+        tab.dataset.platform = id;
+        tab.onclick = () => switchTab(id);
+        tabs.appendChild(tab);
+
+        const div = document.createElement('div');
+        div.className = 'platform-content' + (i === 0 ? ' show' : '');
+        div.id = 'content-' + id;
+        div.innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">' +
+            '<h3 style="font-size:1rem;font-weight:600;color:var(--primary)">' + platform + '</h3>' +
+            '<span style="font-size:0.75rem;color:var(--text-muted)">' + text.length + ' chars</span>' +
+          '</div>' +
+          '<textarea class="content-textarea" id="textarea-' + id + '" style="width:100%;min-height:200px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:0.9rem;resize:vertical;">' + text.replace(/</g, '&lt;') + '</textarea>' +
+          '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;">' +
+            '<button class="btn btn-primary btn-sm" onclick="copyText(\\'' + id + '\\')">&#x1F4CB; Copy</button>' +
+          '</div>';
+        contents.appendChild(div);
+      });
+    }
+
+    function switchTab(id) {
+      document.querySelectorAll('.platform-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.platform-content').forEach(c => c.classList.remove('show'));
+      document.querySelector('[data-platform="' + id + '"]').classList.add('active');
+      document.getElementById('content-' + id).classList.add('show');
+    }
+
+    function copyText(id) {
+      const ta = document.getElementById('textarea-' + id);
+      navigator.clipboard.writeText(ta.value).then(() => {
+        const toast = document.getElementById('toast');
+        toast.style.display = 'block';
+        setTimeout(() => { toast.style.display = 'none'; }, 2000);
+      });
     }
 
     // Allow Enter key to trigger processing
