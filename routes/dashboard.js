@@ -167,56 +167,72 @@ router.get('/', requireAuth, async (req, res) => {
       btn.disabled = true; btn.innerHTML = 'Processing...';
       document.getElementById('loading').classList.add('show');
       document.getElementById('results').style.display = 'none';
+      document.getElementById('platformTabs').innerHTML = '';
+      document.getElementById('platformContents').innerHTML = '';
+      let platformCount = 0;
 
       try {
-        const res = await fetch('/repurpose/process', {
+        const res = await fetch('/repurpose/process-stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url, platforms: ['Instagram','Twitter','LinkedIn'], tone: 'Professional' })
         });
-        const contentType = res.headers.get('content-type') || '';
-        let data;
-        if (contentType.includes('application/json')) {
-          data = await res.json();
-        } else {
-          const text = await res.text();
-          throw new Error(text || 'Server error. Please try again.');
-        }
-        if (!res.ok) throw new Error(data.error || 'Processing failed');
 
-        if (data.outputs && data.outputs.length > 0) {
-          renderOutputs(data.outputs);
-          document.getElementById('results').style.display = 'block';
-        } else {
-          throw new Error('No content was generated. Please try a different video.');
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.error) { alert(data.error); break; }
+                if (data.done) break;
+                if (data.platform) {
+                  document.getElementById('loading').classList.remove('show');
+                  document.getElementById('results').style.display = 'block';
+                  addPlatformResult(data, platformCount === 0);
+                  platformCount++;
+                }
+              } catch(e) {}
+            }
+          }
+        }
+        if (platformCount === 0) {
+          alert('No content was generated. Try a different video.');
         }
       } catch (err) {
-        alert(err.message);
+        alert(err.message || 'Processing failed. Please try again.');
       } finally {
         btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose';
         document.getElementById('loading').classList.remove('show');
       }
     }
 
-    function renderOutputs(outputs) {
+    function addPlatformResult(output, isFirst) {
       const tabs = document.getElementById('platformTabs');
       const contents = document.getElementById('platformContents');
-      tabs.innerHTML = ''; contents.innerHTML = '';
+      const platform = output.platform || 'Content';
+      const text = output.generated_content || '';
+      const id = platform.toLowerCase().replace(/[^a-z]/g, '');
 
-      outputs.forEach((output, i) => {
-        const platform = output.platform || 'Content';
-        const text = output.generated_content || '';
-        const id = platform.toLowerCase().replace(/[^a-z]/g, '');
+      const tab = document.createElement('button');
+      tab.className = 'platform-tab' + (isFirst ? ' active' : '');
+      tab.textContent = platform;
+      tab.dataset.platform = id;
+      tab.onclick = () => switchTab(id);
+      tabs.appendChild(tab);
 
-        const tab = document.createElement('button');
-        tab.className = 'platform-tab' + (i === 0 ? ' active' : '');
-        tab.textContent = platform;
-        tab.dataset.platform = id;
-        tab.onclick = () => switchTab(id);
-        tabs.appendChild(tab);
-
-        const div = document.createElement('div');
-        div.className = 'platform-content' + (i === 0 ? ' show' : '');
+      const div = document.createElement('div');
+      div.className = 'platform-content' + (isFirst ? ' show' : '');
         div.id = 'content-' + id;
         div.innerHTML =
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">' +

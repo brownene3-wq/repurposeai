@@ -1038,6 +1038,75 @@ router.get('/', (req, res) => {
   `);
 });
 
+// POST - Stream content generation (Server-Sent Events)
+router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  try {
+    const { url, brandVoiceId } = req.body;
+    const platforms = req.body.platforms || ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'];
+    const tone = req.body.tone || 'Professional';
+    const userId = req.user.id;
+
+    const youtubeRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+    if (!youtubeRegex.test(url)) {
+      res.write('data: ' + JSON.stringify({ error: 'Invalid YouTube URL' }) + '\n\n');
+      return res.end();
+    }
+
+    const videoId = url.match(youtubeRegex)[1];
+    let transcript;
+    try {
+      const YT = await getYoutubeTranscript();
+      try {
+        const transcripts = await YT.fetchTranscript(videoId);
+        transcript = transcripts.map(t => t.text).join(' ');
+      } catch (libError) {
+        try {
+          transcript = await fetchTranscriptFallback(videoId);
+        } catch (fallbackError) {
+          throw libError;
+        }
+      }
+      if (!transcript || transcript.trim().length === 0) {
+        res.write('data: ' + JSON.stringify({ error: 'Video transcript is empty.' }) + '\n\n');
+        return res.end();
+      }
+    } catch (error) {
+      res.write('data: ' + JSON.stringify({ error: 'Could not fetch transcript. Make sure the video has captions enabled.' }) + '\n\n');
+      return res.end();
+    }
+
+    const content = await contentOps.create(userId, 'Video: ' + videoId, transcript, 'youtube', url);
+
+    let brandVoice = null;
+    if (brandVoiceId) {
+      brandVoice = await brandVoiceOps.getById(brandVoiceId);
+    }
+
+    // Send each platform as it completes
+    const promises = platforms.map(async (platform) => {
+      try {
+        const generatedContent = await generatePlatformContent(transcript, platform, tone, brandVoice);
+        const output = await outputOps.create(content.id, userId, 'generated', generatedContent, platform, tone);
+        res.write('data: ' + JSON.stringify({ platform: output.platform, generated_content: output.generated_content, id: output.id }) + '\n\n');
+      } catch (err) {
+        console.error('Error generating ' + platform + ':', err.message);
+      }
+    });
+
+    await Promise.allSettled(promises);
+    res.write('data: ' + JSON.stringify({ done: true }) + '\n\n');
+    res.end();
+  } catch (error) {
+    console.error('Stream error:', error);
+    res.write('data: ' + JSON.stringify({ error: error.message || 'Processing failed' }) + '\n\n');
+    res.end();
+  }
+});
+
 // POST - Process and generate content
 router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
   try {
