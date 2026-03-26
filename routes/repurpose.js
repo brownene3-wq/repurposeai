@@ -80,6 +80,87 @@ function parseTranscriptXml(xml) {
   return texts.join(' ');
 }
 
+// Method 0: Fetch transcript via Supadata API (paid, reliable)
+async function fetchTranscriptViaSupadata(videoId) {
+  const apiKey = process.env.SUPADATA_API_KEY;
+  if (!apiKey) {
+    throw new Error('SUPADATA_API_KEY not configured');
+  }
+  console.log('[Transcript] Trying Supadata API for', videoId);
+  const videoUrl = encodeURIComponent('https://www.youtube.com/watch?v=' + videoId);
+  const response = await httpsRequest('https://api.supadata.ai/v1/transcript?url=https://www.youtube.com/watch?v=' + videoId, {
+    method: 'GET',
+    headers: {
+      'x-api-key': apiKey,
+      'Accept': 'application/json'
+    }
+  });
+
+  console.log('[Transcript] Supadata response status:', response.status);
+
+  if (response.status === 202) {
+    // Async processing - poll for result
+    const jobData = JSON.parse(response.data);
+    const jobId = jobData.id || jobData.jobId;
+    if (!jobId) throw new Error('Supadata returned 202 but no job ID');
+    console.log('[Transcript] Supadata async job:', jobId, '- polling...');
+
+    // Poll up to 30 seconds
+    for (let i = 0; i < 15; i++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const pollResponse = await httpsRequest('https://api.supadata.ai/v1/transcript/' + jobId, {
+        method: 'GET',
+        headers: { 'x-api-key': apiKey, 'Accept': 'application/json' }
+      });
+      if (pollResponse.status === 200) {
+        const pollData = JSON.parse(pollResponse.data);
+        const text = extractSupadataTranscript(pollData);
+        if (text) {
+          console.log('[Transcript] Supadata async success:', text.length, 'chars');
+          return text;
+        }
+      }
+    }
+    throw new Error('Supadata async job timed out after 30s');
+  }
+
+  if (response.status !== 200) {
+    const errMsg = response.data ? response.data.substring(0, 200) : 'Unknown error';
+    throw new Error('Supadata API error ' + response.status + ': ' + errMsg);
+  }
+
+  const data = JSON.parse(response.data);
+  const text = extractSupadataTranscript(data);
+  if (!text) {
+    throw new Error('Supadata returned empty transcript');
+  }
+  console.log('[Transcript] Supadata success:', text.length, 'chars');
+  return text;
+}
+
+function extractSupadataTranscript(data) {
+  // Handle array of segments with text field
+  if (data.content && Array.isArray(data.content)) {
+    return data.content.map(seg => seg.text || seg).filter(Boolean).join(' ').trim();
+  }
+  // Handle direct string content
+  if (data.content && typeof data.content === 'string') {
+    return data.content.trim();
+  }
+  // Handle transcript field
+  if (data.transcript && typeof data.transcript === 'string') {
+    return data.transcript.trim();
+  }
+  if (data.transcript && Array.isArray(data.transcript)) {
+    return data.transcript.map(seg => seg.text || seg).filter(Boolean).join(' ').trim();
+  }
+  // Handle text field directly
+  if (data.text && typeof data.text === 'string') {
+    return data.text.trim();
+  }
+  return null;
+}
+
 // Method 1: Fetch transcript via YouTube innertube player API (ANDROID client)
 async function fetchTranscriptViaAndroid(videoId) {
   console.log('[Transcript] Trying ANDROID innertube for', videoId);
@@ -450,6 +531,7 @@ async function fetchTranscriptViaProxy(videoId) {
 // Master function: try all methods
 async function fetchVideoTranscript(videoId) {
   const methods = [
+    { name: 'Supadata API', fn: fetchTranscriptViaSupadata },
     { name: 'ANDROID innertube', fn: fetchTranscriptViaAndroid },
     { name: 'WEB page scraping', fn: fetchTranscriptViaWebPage },
     { name: 'WEB innertube', fn: fetchTranscriptViaWebInnertube },
