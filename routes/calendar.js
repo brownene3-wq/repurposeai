@@ -91,6 +91,10 @@ router.get('/', requireAuth, (req, res) => {
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
+          position: fixed;
+          top: 1.2rem;
+          right: 1.5rem;
+          z-index: 100;
         }
 
         body.light .sidebar {
@@ -451,9 +455,8 @@ router.get('/', requireAuth, (req, res) => {
     <body>
       <div class="container">
         <div class="sidebar" style="display:flex;flex-direction:column;">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+          <div style="padding:0 20px 20px;">
             <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
-            <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
           </div>
           <a href="/dashboard">&#x1F3AC; Dashboard</a>
           <a href="/repurpose">&#x1F504; Repurpose</a>
@@ -466,6 +469,7 @@ router.get('/', requireAuth, (req, res) => {
         </div>
 
         <div class="main-content">
+          <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
           <div class="header">
             <h1>Content Calendar</h1>
             <p>Visualize your content generation timeline</p>

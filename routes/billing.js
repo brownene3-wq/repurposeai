@@ -53,7 +53,7 @@ router.get('/', requireAuth, (req, res) => {
     .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
     .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
     .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
-    .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:fixed;top:1.2rem;right:1.5rem;z-index:100}
     body.light .sidebar { background: #f8f8f8; border-color: #e0e0e0; }
     body.light .sidebar a { color: #666; }
     body.light .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.08); }
@@ -63,9 +63,8 @@ router.get('/', requireAuth, (req, res) => {
 </head>
 <body>
   <div class="sidebar" style="display:flex;flex-direction:column;">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+    <div style="padding:0 20px 20px;">
       <div class="logo" style="padding:0;margin:0;">Repurpose<span>AI</span></div>
-      <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
     </div>
     <a href="/dashboard">&#x1F3AC; Dashboard</a>
     <a href="/repurpose">&#x1F504; Repurpose</a>
@@ -76,6 +75,7 @@ router.get('/', requireAuth, (req, res) => {
     <a href="/billing" class="active">&#x1F4B3; Billing</a>
     <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
   </div>
+  <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
   <div class="billing-page" style="margin-left:250px">
     <a href="/dashboard" class="back-link">&#x2190; Back to Dashboard</a>
     <div class="page-header">

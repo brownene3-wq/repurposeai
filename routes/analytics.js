@@ -87,7 +87,7 @@ router.get('/', requireAuth, async (req, res) => {
     .chart-bar .count { width: 40px; text-align: right; font-size: 0.85em; color: #888; margin-left: 10px; }
     .empty-state { text-align: center; padding: 40px; color: #666; }
     .empty-state p { margin-top: 10px; }
-    .theme-toggle { background: #222; border: 1px solid #333; color: #fff; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; }
+    .theme-toggle { background: #222; border: 1px solid #333; color: #fff; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; position: fixed; top: 1.2rem; right: 1.5rem; z-index: 100; }
     body.light { background: #f5f5f5; color: #333; }
     body.light .sidebar { background: #fff; border-color: #e0e0e0; }
     body.light .sidebar a { color: #666; }
@@ -103,9 +103,8 @@ router.get('/', requireAuth, async (req, res) => {
 <body>
   <div class="layout">
     <div class="sidebar">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 20px;">
+      <div style="padding:0 20px 20px;">
         <div class="logo" style="padding:0;">Repurpose<span>AI</span></div>
-        <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
       </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
@@ -117,6 +116,7 @@ router.get('/', requireAuth, async (req, res) => {
       <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding-bottom:20px;">Sign Out</a>
     </div>
     <div class="main">
+      <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
       <div class="page-title">&#x1F4CA; Analytics</div>
       <div class="stats-grid">
         <div class="stat-card"><div class="label">Videos This Month</div><div class="value">${videosThisMonth}</div><div class="change">${videosThisMonth > 0 ? '&#x2705; Active' : '-'}</div></div>
