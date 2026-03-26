@@ -78,7 +78,7 @@ const { contentOps, outputOps, brandVoiceOps } = require('../db/database');
 let client;
 function getOpenAIClient() {
   if (!client) {
-    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 55000 });
   }
   return client;
 }
@@ -1152,7 +1152,6 @@ async function generatePlatformContent(transcript, platform, tone, brandVoice) {
     const response = await getOpenAIClient().chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 1500,
-      timeout: 55000,
       messages: [
         {
           role: 'user',
@@ -1167,7 +1166,7 @@ async function generatePlatformContent(transcript, platform, tone, brandVoice) {
     if (aiError.message?.includes('API key') || aiError.status === 401) {
       throw new Error('AI service configuration error. Please contact support.');
     }
-    if (aiError.message?.includes('timeout') || aiError.code === 'ETIMEDOUT') {
+    if (aiError.code === 'ETIMEDOUT' || aiError.code === 'ECONNABORTED') {
       throw new Error('AI generation timed out. Please try again with a shorter video.');
     }
     throw new Error('AI content generation failed. Please try again.');
