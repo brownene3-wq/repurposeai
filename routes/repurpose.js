@@ -1026,6 +1026,12 @@ router.get('/', (req, res) => {
         }
 
         loadBrandVoices();
+
+        // Pre-fill URL from query parameter (when redirected from dashboard)
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('url')) {
+          document.getElementById('youtubeUrl').value = params.get('url');
+        }
       </script>
     </body>
     </html>

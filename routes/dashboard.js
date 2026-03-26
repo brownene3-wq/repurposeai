@@ -125,26 +125,6 @@ router.get('/', requireAuth, async (req, res) => {
           <button class="btn btn-primary" id="processBtn" onclick="processVideo()">&#x26A1; Repurpose</button>
         </div>
 
-        <div class="loading-spinner" id="loading">
-          <div class="spinner"></div>
-          <p style="color:var(--text-muted)">AI is analyzing your video and generating content...</p>
-        </div>
-
-        <div class="video-preview" id="videoPreview">
-          <div class="video-info">
-            <img class="video-thumb" id="videoThumb" src="" alt="Video thumbnail">
-            <div class="video-meta">
-              <h3 id="videoTitle"></h3>
-              <p id="videoAuthor"></p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="results-section" id="results">
-        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
-        <div class="platform-tabs" id="platformTabs"></div>
-        <div id="platformContents"></div>
       </div>
     </main>
   </div>
@@ -167,108 +147,11 @@ router.get('/', requireAuth, async (req, res) => {
       document.querySelector('.theme-toggle').textContent = '☀️';
     }
     (function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
-    let currentContent = null;
-    let currentVideo = null;
 
-    async function processVideo() {
+    function processVideo() {
       const url = document.getElementById('youtubeUrl').value.trim();
       if (!url) { alert('Please paste a YouTube URL'); return; }
-
-      const btn = document.getElementById('processBtn');
-      btn.disabled = true; btn.innerHTML = 'Processing...';
-      document.getElementById('loading').classList.add('show');
-      document.getElementById('results').classList.remove('show');
-      document.getElementById('videoPreview').classList.remove('show');
-
-      try {
-        const res = await fetch('/repurpose/process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, platforms: ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'], tone: 'Professional' })
-        });
-        const contentType = res.headers.get('content-type') || '';
-        let data;
-        if (contentType.includes('application/json')) {
-          data = await res.json();
-        } else {
-          const text = await res.text();
-          throw new Error(text || 'Server error. Please try again in a moment.');
-        }
-        if (!res.ok) throw new Error(data.error || 'Processing failed');
-
-        currentVideo = data.video;
-        currentContent = data.content;
-
-        // Show video preview
-        document.getElementById('videoThumb').src = data.video.thumbnail;
-        document.getElementById('videoTitle').textContent = data.video.title;
-        document.getElementById('videoAuthor').textContent = 'by ' + data.video.author;
-        document.getElementById('videoPreview').classList.add('show');
-
-        renderPlatforms(data.content);
-        document.getElementById('results').classList.add('show');
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose';
-        document.getElementById('loading').classList.remove('show');
-      }
-    }
-
-    function renderPlatforms(content) {
-      const tabs = document.getElementById('platformTabs');
-      const contents = document.getElementById('platformContents');
-      tabs.innerHTML = ''; contents.innerHTML = '';
-      let first = true;
-      for (const [key, platform] of Object.entries(content)) {
-        const tab = document.createElement('button');
-        tab.className = 'platform-tab' + (first ? ' active' : '');
-        tab.innerHTML = platform.icon + ' ' + platform.name;
-        tab.onclick = () => switchPlatform(key);
-        tab.dataset.platform = key;
-        tabs.appendChild(tab);
-
-        const div = document.createElement('div');
-        div.className = 'platform-content' + (first ? ' show' : '');
-        div.id = 'content-' + key;
-        div.innerHTML = '<div class="platform-header"><h3>' + platform.icon + ' ' + platform.name + '</h3><span class="platform-type">' + platform.type + '</span></div>' +
-          '<textarea class="content-textarea" id="textarea-' + key + '">' + platform.caption.replace(/</g, '&lt;') + '</textarea>' +
-          '<div class="char-count"><span id="chars-' + key + '">' + platform.caption.length + '</span> / ' + platform.charLimit + ' characters</div>' +
-          '<div class="content-actions">' +
-          '<button class="btn btn-primary btn-sm" onclick="copyContent(\\'' + key + '\\')">&#x1F4CB; Copy</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="downloadContent(\\'' + key + '\\')">&#x2B07; Download</button>' +
-          '</div>';
-        contents.appendChild(div);
-
-        const ta = div.querySelector('textarea');
-        ta.addEventListener('input', () => { document.getElementById('chars-' + key).textContent = ta.value.length; });
-        first = false;
-      }
-    }
-
-    function switchPlatform(key) {
-      document.querySelectorAll('.platform-tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.platform-content').forEach(c => c.classList.remove('show'));
-      document.querySelector('[data-platform="' + key + '"]').classList.add('active');
-      document.getElementById('content-' + key).classList.add('show');
-    }
-
-    function copyContent(key) {
-      const textarea = document.getElementById('textarea-' + key);
-      navigator.clipboard.writeText(textarea.value).then(() => {
-        const toast = document.getElementById('toast');
-        toast.style.display = 'block';
-        setTimeout(() => { toast.style.display = 'none'; }, 2000);
-      });
-    }
-
-    function downloadContent(key) {
-      const textarea = document.getElementById('textarea-' + key);
-      const blob = new Blob([textarea.value], { type: 'text/plain' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = key + '-content.txt';
-      a.click();
+      window.location.href = '/repurpose?url=' + encodeURIComponent(url);
     }
 
     // Allow Enter key to trigger processing
