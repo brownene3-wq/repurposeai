@@ -251,7 +251,6 @@ router.get('/', requireAuth, async (req, res) => {
             '<button class="btn btn-primary btn-sm" onclick="copyText(\\'' + id + '\\')">&#x1F4CB; Copy</button>' +
           '</div>';
         contents.appendChild(div);
-      });
     }
 
     function switchTab(id) {
