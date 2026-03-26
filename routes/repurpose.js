@@ -2283,6 +2283,134 @@ router.get('/history', requireAuth, (req, res) => {
           cursor: not-allowed;
         }
 
+        .modal-overlay {
+          display: none;
+          position: fixed;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(0,0,0,0.7);
+          z-index: 1000;
+          justify-content: center;
+          align-items: flex-start;
+          padding: 40px 20px;
+          overflow-y: auto;
+        }
+
+        .modal-overlay.show {
+          display: flex;
+        }
+
+        .modal-content {
+          background: #161616;
+          border: 1px solid #333;
+          border-radius: 16px;
+          max-width: 900px;
+          width: 100%;
+          padding: 30px;
+          position: relative;
+        }
+
+        body.light .modal-content {
+          background: #fff;
+          border-color: #e0e0e0;
+        }
+
+        .modal-close {
+          position: absolute;
+          top: 15px;
+          right: 20px;
+          background: none;
+          border: none;
+          color: #888;
+          font-size: 24px;
+          cursor: pointer;
+        }
+
+        .modal-close:hover {
+          color: #fff;
+        }
+
+        body.light .modal-close:hover {
+          color: #333;
+        }
+
+        .modal-title {
+          font-size: 22px;
+          font-weight: 700;
+          margin-bottom: 5px;
+        }
+
+        .modal-date {
+          font-size: 13px;
+          color: #888;
+          margin-bottom: 20px;
+        }
+
+        .output-card {
+          background: #0a0a0a;
+          border: 1px solid #222;
+          border-radius: 10px;
+          padding: 20px;
+          margin-bottom: 15px;
+        }
+
+        body.light .output-card {
+          background: #f8f8f8;
+          border-color: #e0e0e0;
+        }
+
+        .output-platform {
+          color: #6c5ce7;
+          font-weight: 600;
+          font-size: 15px;
+          margin-bottom: 10px;
+        }
+
+        .output-text {
+          color: #ccc;
+          font-size: 14px;
+          line-height: 1.7;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+        }
+
+        body.light .output-text {
+          color: #444;
+        }
+
+        .output-actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 12px;
+        }
+
+        .output-actions button {
+          padding: 6px 14px;
+          border-radius: 6px;
+          border: 1px solid #333;
+          background: #161616;
+          color: #ccc;
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        body.light .output-actions button {
+          background: #fff;
+          border-color: #ddd;
+          color: #555;
+        }
+
+        .output-actions button:hover {
+          border-color: #6c5ce7;
+          color: #6c5ce7;
+        }
+
+        .modal-loading {
+          text-align: center;
+          padding: 40px;
+          color: #888;
+        }
+
         @media (max-width: 768px) {
           .sidebar {
             width: 100%;
@@ -2345,6 +2473,15 @@ router.get('/history', requireAuth, (req, res) => {
             <button onclick="previousPage()" id="prevBtn">← Previous</button>
             <span id="pageInfo" style="padding: 10px 15px; color: #888;">Page 1</span>
             <button onclick="nextPage()" id="nextBtn">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="contentModal">
+        <div class="modal-content">
+          <button class="modal-close" onclick="closeModal()">&times;</button>
+          <div id="modalBody">
+            <div class="modal-loading">Loading...</div>
           </div>
         </div>
       </div>
@@ -2418,9 +2555,62 @@ router.get('/history', requireAuth, (req, res) => {
           }
         }
 
-        function viewContent(contentId) {
-          // TODO: Implement detail view
-          alert('Content detail view coming soon');
+        async function viewContent(contentId) {
+          const modal = document.getElementById('contentModal');
+          const modalBody = document.getElementById('modalBody');
+          modal.classList.add('show');
+          modalBody.innerHTML = '<div class="modal-loading">Loading content...</div>';
+
+          try {
+            const response = await fetch('/repurpose/api/content/' + contentId);
+            const data = await response.json();
+
+            if (data.error) {
+              modalBody.innerHTML = '<div class="modal-loading">Content not found</div>';
+              return;
+            }
+
+            let html = '<div class="modal-title">' + escapeHtml(data.title || 'Untitled') + '</div>';
+            html += '<div class="modal-date">' + new Date(data.created_at).toLocaleDateString() + '</div>';
+
+            if (data.outputs && data.outputs.length > 0) {
+              data.outputs.forEach(function(output) {
+                html += '<div class="output-card">';
+                html += '<div class="output-platform">' + escapeHtml(output.platform) + '</div>';
+                html += '<div class="output-text">' + escapeHtml(output.generated_content || '') + '</div>';
+                html += '<div class="output-actions">';
+                html += '<button onclick="copyOutput(this)">📋 Copy</button>';
+                html += '</div>';
+                html += '</div>';
+              });
+            } else {
+              html += '<div class="modal-loading">No generated content found</div>';
+            }
+
+            modalBody.innerHTML = html;
+          } catch (err) {
+            modalBody.innerHTML = '<div class="modal-loading">Error loading content</div>';
+          }
+        }
+
+        function closeModal() {
+          document.getElementById('contentModal').classList.remove('show');
+        }
+
+        document.getElementById('contentModal').addEventListener('click', function(e) {
+          if (e.target === this) closeModal();
+        });
+
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') closeModal();
+        });
+
+        function copyOutput(btn) {
+          const text = btn.closest('.output-card').querySelector('.output-text').textContent;
+          navigator.clipboard.writeText(text).then(function() {
+            btn.textContent = '✅ Copied!';
+            setTimeout(function() { btn.textContent = '📋 Copy'; }, 2000);
+          });
         }
 
         function escapeHtml(text) {
@@ -2476,6 +2666,38 @@ router.get('/api/history', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching history:', error);
     res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
+// API endpoint for content detail with all outputs
+router.get('/api/content/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const contentId = req.params.id;
+    const content = await contentOps.getById(contentId);
+
+    if (!content || content.user_id !== userId) {
+      return res.status(404).json({ error: 'Content not found' });
+    }
+
+    const outputs = await outputOps.getByContentId(contentId);
+
+    res.json({
+      id: content.id,
+      title: content.title,
+      created_at: content.created_at,
+      source_url: content.source_url,
+      outputs: outputs.map(o => ({
+        id: o.id,
+        platform: o.platform,
+        generated_content: o.generated_content,
+        tone: o.tone,
+        created_at: o.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching content detail:', error);
+    res.status(500).json({ error: 'Failed to fetch content' });
   }
 });
 
