@@ -6,9 +6,13 @@ const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { contentOps, outputOps, brandVoiceOps } = require('../db/database');
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+let client;
+function getOpenAIClient() {
+  if (!client) {
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return client;
+}
 
 // GET - Premium repurpose form page
 router.get('/', (req, res) => {
@@ -1011,7 +1015,7 @@ async function generatePlatformContent(transcript, platform, tone, brandVoice) {
 
   prompt += `\n\nTone of voice: ${tone}\n\nTranscript:\n${transcript}`;
 
-  const response = await client.chat.completions.create({
+  const response = await getOpenAIClient().chat.completions.create({
     model: 'gpt-4o-mini',
     max_tokens: 1500,
     messages: [
