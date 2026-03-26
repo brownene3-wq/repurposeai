@@ -1775,12 +1775,21 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     }
 
     const videoId = url.match(youtubeRegex)[1];
+    const totalStart = Date.now();
     let transcript;
     try {
+      const transcriptStart = Date.now();
       transcript = await fetchVideoTranscript(videoId);
+      console.log('[Timing] Transcript fetch:', Date.now() - transcriptStart, 'ms');
       if (!transcript || transcript.trim().length === 0) {
         res.write('data: ' + JSON.stringify({ error: 'Video transcript is empty.' }) + '\n\n');
         return res.end();
+      }
+      // Cap transcript to ~8000 words to speed up OpenAI generation
+      const words = transcript.split(/\s+/);
+      if (words.length > 8000) {
+        transcript = words.slice(0, 8000).join(' ');
+        console.log('[Timing] Transcript truncated from', words.length, 'to 8000 words');
       }
     } catch (error) {
       console.error('All transcript methods failed for', videoId, ':', error.message);
@@ -1788,7 +1797,9 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
       return res.end();
     }
 
+    const dbStart = Date.now();
     const content = await contentOps.create(userId, 'Video: ' + videoId, transcript, 'youtube', url);
+    console.log('[Timing] DB content create:', Date.now() - dbStart, 'ms');
 
     let brandVoice = null;
     if (brandVoiceId) {
@@ -1798,7 +1809,9 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     // Send each platform as it completes
     const promises = platforms.map(async (platform) => {
       try {
+        const genStart = Date.now();
         const generatedContent = await generatePlatformContent(transcript, platform, tone, brandVoice);
+        console.log('[Timing] OpenAI generation for', platform, ':', Date.now() - genStart, 'ms');
         const output = await outputOps.create(content.id, userId, 'generated', generatedContent, platform, tone);
         res.write('data: ' + JSON.stringify({ platform: output.platform, generated_content: output.generated_content, id: output.id }) + '\n\n');
       } catch (err) {
@@ -1807,6 +1820,7 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     });
 
     await Promise.allSettled(promises);
+    console.log('[Timing] Total process-stream:', Date.now() - totalStart, 'ms');
     res.write('data: ' + JSON.stringify({ done: true }) + '\n\n');
     res.end();
   } catch (error) {
