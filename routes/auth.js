@@ -177,13 +177,11 @@ function authStyles() {
  [data-theme="light"] .btn-oauth{border-color:rgba(0,0,0,0.12);background:#fff}
  .btn-oauth:hover{border-color:var(--primary-light);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
  .btn-oauth svg{width:20px;height:20px;flex-shrink:0}
- .theme-toggle{position:fixed;top:1.5rem;right:1.5rem;z-index:100;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50px;padding:.5rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--text-muted);transition:all .3s;font-family:'Inter',sans-serif}
+ .theme-toggle{position:fixed;top:1.5rem;right:1.5rem;z-index:100;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:36px;height:36px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--text-muted);transition:all .3s}
  [data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}
  .theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}
- .theme-toggle .toggle-track{width:44px;height:24px;background:var(--dark-2);border-radius:12px;position:relative;transition:background .3s}
- [data-theme="light"] .theme-toggle .toggle-track{background:#D1D5DB}
- .theme-toggle .toggle-thumb{width:20px;height:20px;background:var(--gradient-1);border-radius:50%;position:absolute;top:2px;left:2px;transition:transform .3s}
- [data-theme="light"] .theme-toggle .toggle-thumb{transform:translateX(20px)}
+ .theme-toggle .toggle-track{display:none}
+ .theme-toggle .toggle-thumb{display:none}
  @media(max-width:768px){.auth-right{display:none}.auth-left{padding:1.5rem}}
  `;
 }
@@ -202,11 +200,7 @@ function authPage(type) {
  <style>${authStyles()}</style>
 </head>
 <body>
- <button class="theme-toggle" onclick="toggleTheme()">
- <span>&#x1F319;</span>
- <div class="toggle-track"><div class="toggle-thumb"></div></div>
- <span>&#x2600;&#xFE0F;</span>
- </button>
+ <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
@@ -253,10 +247,12 @@ function authPage(type) {
  var n = c === 'light' ? 'dark' : 'light';
  h.setAttribute('data-theme', n);
  localStorage.setItem('repurposeai-theme', n);
+ var btn = document.querySelector('.theme-toggle');
+ if (btn) btn.textContent = n === 'light' ? '☀️' : '🌙';
  }
  (function() {
  var s = localStorage.getItem('repurposeai-theme');
- if (s === 'light') document.documentElement.setAttribute('data-theme', 'light');
+ if (s === 'light') { document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
  var params = new URLSearchParams(window.location.search);
  var err = params.get('error');
  if (err) { var el = document.getElementById('errorMsg'); el.textContent = decodeURIComponent(err); el.classList.add('show'); }

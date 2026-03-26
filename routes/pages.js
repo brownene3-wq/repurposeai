@@ -82,7 +82,7 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .demo-input{flex:1;padding:1rem 1.2rem;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:var(--text);font-size:.95rem}
 .demo-platforms{display:flex;gap:1rem;flex-wrap:wrap}
 .demo-platform{padding:.8rem 1.2rem;border-radius:10px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);font-size:.85rem;color:var(--primary-light)}
-.theme-toggle{position:fixed;top:1.5rem;right:1.5rem;z-index:1001;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50px;padding:.5rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--text-muted);transition:all .3s;font-family:'Inter',sans-serif}[data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{width:44px;height:24px;background:var(--dark-2);border-radius:12px;position:relative;transition:background .3s}[data-theme="light"] .theme-toggle .toggle-track{background:#D1D5DB}.theme-toggle .toggle-thumb{width:20px;height:20px;background:var(--gradient-1);border-radius:50%;position:absolute;top:2px;left:2px;transition:transform .3s}[data-theme="light"] .theme-toggle .toggle-thumb{transform:translateX(20px)}
+.theme-toggle{background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:32px;height:32px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:var(--text-muted);transition:all .3s;flex-shrink:0}[data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{display:none}.theme-toggle .toggle-thumb{display:none}
 @media(max-width:768px){.nav-links{display:none}.steps-grid,.features-grid,.pricing-grid,.testimonials-grid{grid-template-columns:1fr}.footer-grid{grid-template-columns:1fr 1fr}.hero-stats{flex-direction:column;gap:1.5rem}.hero h1{font-size:2.2rem}.price-card.featured{transform:none}.demo-input-group{flex-direction:column}}
 `;
 }
@@ -99,7 +99,6 @@ router.get('/', (req, res) => {
   <style>${getStyles()}</style>
 </head>
 <body>
- <button class="theme-toggle" onclick="toggleTheme()"><span>&#x1F319;</span><div class="toggle-track"><div class="toggle-thumb"></div></div><span>&#x2600;&#xFE0F;</span></button>
  <nav class="nav"><div class="nav-inner">
     <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
     <div class="nav-links">
@@ -108,6 +107,7 @@ router.get('/', (req, res) => {
       <a href="#pricing">Pricing</a>
       <a href="/auth/login" class="btn btn-outline">Log In</a>
       <a href="/auth/register" class="btn btn-primary">Start Free</a>
+      <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
     </div>
   </div></nav>
 
@@ -276,7 +276,7 @@ router.get('/', (req, res) => {
   </footer>
 
   <script>
-    function toggleTheme(){var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n)}(function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light")document.documentElement.setAttribute("data-theme","light")})();
+    function toggleTheme(){var h=document.documentElement;var c=h.getAttribute("data-theme");var n=c==="light"?"dark":"light";h.setAttribute("data-theme",n);localStorage.setItem("repurposeai-theme",n);var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent=n==="light"?'☀️':'🌙'}(function(){var s=localStorage.getItem("repurposeai-theme");if(s==="light"){document.documentElement.setAttribute("data-theme","light");var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent='☀️'}})();
  document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => { e.preventDefault(); const t = document.querySelector(a.getAttribute('href')); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); });
     });
