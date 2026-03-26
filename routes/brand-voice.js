@@ -12,6 +12,9 @@ router.get('/', requireAuth, (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+      <meta http-equiv="Pragma" content="no-cache">
+      <meta http-equiv="Expires" content="0">
       <title>Brand Voice - Content Repurpose SaaS</title>
       <style>
         * {
@@ -632,6 +635,8 @@ router.get('/', requireAuth, (req, res) => {
       <div class="success-feedback" id="successFeedback">✓ Success!</div>
 
       <script>
+        // Force reload if served from browser back-forward cache
+        window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
         let allVoices = [];
 
         async function loadVoices() {

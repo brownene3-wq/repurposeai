@@ -91,6 +91,9 @@ router.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+      <meta http-equiv="Pragma" content="no-cache">
+      <meta http-equiv="Expires" content="0">
       <title>Repurpose Content - Content Repurpose SaaS</title>
       <style>
         * {
@@ -775,6 +778,8 @@ router.get('/', (req, res) => {
       <div class="success-feedback" id="successFeedback">✓ Copied to clipboard!</div>
 
       <script>
+        // Force reload if served from browser back-forward cache
+        window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
         let brandVoices = [];
 
         async function loadBrandVoices() {
@@ -1199,6 +1204,9 @@ router.get('/history', requireAuth, (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+      <meta http-equiv="Pragma" content="no-cache">
+      <meta http-equiv="Expires" content="0">
       <title>Content Library - Content Repurpose SaaS</title>
       <style>
         * {
@@ -1537,6 +1545,8 @@ router.get('/history', requireAuth, (req, res) => {
       </div>
 
       <script>
+        // Force reload if served from browser back-forward cache
+        window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
         let allContent = [];
         let currentPage = 1;
         const itemsPerPage = 9;

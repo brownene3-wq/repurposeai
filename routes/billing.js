@@ -12,6 +12,9 @@ router.get('/', requireAuth, (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Billing - RepurposeAI</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
   <style>
@@ -141,6 +144,8 @@ router.get('/', requireAuth, (req, res) => {
   </div>
 
   <script>
+    // Force reload if served from browser back-forward cache
+    window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
     function toggleTheme() {
       document.body.classList.toggle('light');
       localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
