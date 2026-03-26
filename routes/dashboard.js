@@ -70,12 +70,11 @@ router.get('/', requireAuth, (req, res) => {
     .stat-card .stat-label{font-size:.8rem;color:var(--text-dim);margin-top:.3rem}
     .toast{position:fixed;bottom:2rem;right:2rem;background:var(--success);color:#fff;padding:1rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:500;display:none;z-index:9999;animation:slideUp .3s ease}
     @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
-    [data-theme="light"] .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}[data-theme="light"] .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}.theme-toggle{position:fixed;top:1.5rem;right:1.5rem;z-index:1001;background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50px;padding:.5rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--text-muted);transition:all .3s;font-family:'Inter',sans-serif}[data-theme="light"] .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{width:44px;height:24px;background:var(--dark-2);border-radius:12px;position:relative;transition:background .3s}[data-theme="light"] .theme-toggle .toggle-track{background:#D1D5DB}.theme-toggle .toggle-thumb{width:20px;height:20px;background:var(--gradient-1);border-radius:50%;position:absolute;top:2px;left:2px;transition:transform .3s}[data-theme="light"] .theme-toggle .toggle-thumb{transform:translateX(20px)}
+    [data-theme="light"] .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}[data-theme="light"] .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}
  @media(max-width:768px){.sidebar{display:none}.main-content{margin-left:0}.stats-grid{grid-template-columns:repeat(2,1fr)}.input-group{flex-direction:column}.video-info{flex-direction:column}.video-thumb{width:100%;height:auto}}
   </style>
 </head>
 <body>
-  <button class="theme-toggle" onclick="toggleTheme()"><span>&#x1F319;</span><div class="toggle-track"><div class="toggle-thumb"></div></div><span>&#x2600;&#xFE0F;</span></button>
  <div class="dashboard">
     <aside class="sidebar">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem">

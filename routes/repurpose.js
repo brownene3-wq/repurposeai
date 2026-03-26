@@ -111,20 +111,19 @@ router.get('/', (req, res) => {
         }
 
         .theme-toggle {
-          position: absolute;
-          bottom: 20px;
-          left: 20px;
-          width: 40px;
-          height: 40px;
-          border: 1px solid #222;
-          background: #161616;
-          border-radius: 8px;
+          width: 36px;
+          height: 36px;
+          border: 1px solid #333;
+          background: #222;
+          border-radius: 50%;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 20px;
+          font-size: 18px;
           transition: all 0.3s;
+          color: #fff;
+          flex-shrink: 0;
         }
 
         body.light .theme-toggle {
@@ -1212,20 +1211,19 @@ router.get('/history', requireAuth, (req, res) => {
         }
 
         .theme-toggle {
-          position: absolute;
-          bottom: 20px;
-          left: 20px;
-          width: 40px;
-          height: 40px;
-          border: 1px solid #222;
-          background: #161616;
-          border-radius: 8px;
+          width: 36px;
+          height: 36px;
+          border: 1px solid #333;
+          background: #222;
+          border-radius: 50%;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 20px;
+          font-size: 18px;
           transition: all 0.3s;
+          color: #fff;
+          flex-shrink: 0;
         }
 
         body.light .theme-toggle {

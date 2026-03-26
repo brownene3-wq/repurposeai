@@ -36,7 +36,7 @@ router.get('/', requireAuth, (req, res) => {
     .step-num { width: 36px; height: 36px; background: #6c5ce7; color: #fff; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: 12px; }
     .step h3 { color: #fff; margin-bottom: 8px; }
     .step p { color: #888; font-size: 0.9em; }
-    .theme-toggle { position: fixed; bottom: 20px; right: 20px; background: #222; border: 1px solid #333; color: #fff; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 1.2em; display: flex; align-items: center; justify-content: center; }
+    .theme-toggle { background: #222; border: 1px solid #333; color: #fff; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     body.light { background: #f5f5f5; color: #333; }
     body.light .sidebar { background: #fff; border-color: #e0e0e0; }
     body.light .sidebar a { color: #666; }
@@ -83,7 +83,6 @@ router.get('/', requireAuth, (req, res) => {
       </div>
     </div>
   </div>
-  <button class="theme-toggle" onclick="document.body.classList.toggle('light')">&#x1F319;</button>
 </body>
 </html>`;
   res.send(html);
