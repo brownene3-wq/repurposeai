@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
+const { userOps } = require('../db/database');
 
 const STRIPE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || '';
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
@@ -61,11 +62,13 @@ router.get('/', requireAuth, (req, res) => {
 
     <div class="current-plan">
       <div class="plan-info">
-        <h3>Current Plan: Free Starter</h3>
-        <p>3 videos per month, 3 platforms</p>
+        <h3>Current Plan: ${req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free Starter'}</h3>
+        <p>${req.user.plan === 'pro' ? 'Unlimited videos, all platforms' : req.user.plan === 'enterprise' ? 'Everything unlimited + team features' : '3 videos per month, 3 platforms'}</p>
       </div>
       <span class="plan-badge">Active</span>
     </div>
+    ${req.query.success ? '<div style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:1rem 1.5rem;margin-bottom:2rem;color:#10B981;font-weight:500">Payment successful! Your plan has been upgraded.</div>' : ''}
+    ${req.query.canceled ? '<div style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:1rem 1.5rem;margin-bottom:2rem;color:#EF4444;font-weight:500">Payment was canceled. No charges were made.</div>' : ''}
 
     <div class="pricing-grid">
       <div class="price-card">
@@ -79,7 +82,7 @@ router.get('/', requireAuth, (req, res) => {
           <li>Download content</li>
           <li>Email support</li>
         </ul>
-        <button class="btn btn-current">&#x2713; Current Plan</button>
+        ${req.user.plan === 'free' || !req.user.plan ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-outline" disabled>Free Tier</button>'}
       </div>
       <div class="price-card featured">
         <h3>Pro</h3>
@@ -94,7 +97,7 @@ router.get('/', requireAuth, (req, res) => {
           <li>Analytics dashboard</li>
           <li>Priority support</li>
         </ul>
-        <button class="btn btn-primary" onclick="upgradePlan('pro')">Upgrade to Pro &#x2192;</button>
+        ${req.user.plan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="upgradePlan(\'pro\')">Upgrade to Pro &#x2192;</button>'}
       </div>
       <div class="price-card">
         <h3>Enterprise</h3>
@@ -109,7 +112,7 @@ router.get('/', requireAuth, (req, res) => {
           <li>Custom AI training</li>
           <li>Dedicated manager</li>
         </ul>
-        <button class="btn btn-outline" onclick="upgradePlan('enterprise')">Contact Sales &#x2192;</button>
+        ${req.user.plan === 'enterprise' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-outline" onclick="upgradePlan(\'enterprise\')">Upgrade to Enterprise &#x2192;</button>'}
       </div>
     </div>
   </div>
@@ -174,8 +177,62 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
 });
 
 // Stripe webhook
-router.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  // Handle Stripe webhooks for subscription updates
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!STRIPE_SECRET) return res.status(400).send('Stripe not configured');
+
+  const stripe = require('stripe')(STRIPE_SECRET);
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  let event;
+  try {
+    if (webhookSecret && sig) {
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    } else {
+      event = JSON.parse(req.body);
+    }
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const customerEmail = session.customer_email || session.customer_details?.email;
+        if (customerEmail) {
+          const user = await userOps.getByEmail(customerEmail);
+          if (user) {
+            // Determine which plan based on the price
+            const lineItems = await stripe.checkout.sessions.listLineItems(session.id);
+            const priceId = lineItems.data[0]?.price?.id;
+            let plan = 'pro';
+            if (priceId === process.env.STRIPE_PRICE_ENTERPRISE) plan = 'enterprise';
+            await userOps.updatePlan(user.id, plan);
+            console.log(`Upgraded ${customerEmail} to ${plan} plan`);
+          }
+        }
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        // Downgrade to free when subscription is canceled
+        const customer = await stripe.customers.retrieve(subscription.customer);
+        if (customer.email) {
+          const user = await userOps.getByEmail(customer.email);
+          if (user) {
+            await userOps.updatePlan(user.id, 'free');
+            console.log(`Downgraded ${customer.email} to free plan`);
+          }
+        }
+        break;
+      }
+    }
+  } catch (err) {
+    console.error('Webhook processing error:', err);
+  }
+
   res.json({ received: true });
 });
 

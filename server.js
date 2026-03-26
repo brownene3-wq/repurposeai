@@ -5,9 +5,15 @@ const { initDatabase } = require('./db/database');
 
 const app = express();
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Middleware - skip JSON parsing for Stripe webhook (needs raw body)
+app.use((req, res, next) => {
+  if (req.originalUrl === '/billing/webhook') return next();
+  express.json()(req, res, next);
+});
+app.use((req, res, next) => {
+  if (req.originalUrl === '/billing/webhook') return next();
+  express.urlencoded({ extended: true })(req, res, next);
+});
 app.use(cookieParser());
 
 // Initialize database
