@@ -58,94 +58,77 @@ router.get('/', (req, res) => {
         .sidebar {
           width: 250px;
           background: #111;
-          padding: 30px 20px;
           border-right: 1px solid #222;
+          padding: 20px 0;
           position: fixed;
           height: 100vh;
           overflow-y: auto;
-        }
-
-        body.light .sidebar {
-          background: #f0f0f0;
-          border-right: 1px solid #e0e0e0;
-        }
-
-        .logo {
-          font-size: 24px;
-          font-weight: bold;
-          color: #6c5ce7;
-          margin-bottom: 40px;
           display: flex;
-          align-items: center;
-          gap: 10px;
+          flex-direction: column;
+        }
+
+        .sidebar .logo {
+          font-size: 1.4em;
+          font-weight: 700;
+          color: #fff;
+        }
+
+        .sidebar .logo span {
+          color: #6c5ce7;
         }
 
         .sidebar a {
           display: block;
-          padding: 12px 16px;
-          color: #b0b0b0;
+          padding: 12px 20px;
+          color: #888;
           text-decoration: none;
-          border-radius: 8px;
-          margin-bottom: 8px;
-          transition: all 0.3s;
-          font-size: 14px;
+          transition: all 0.2s;
+          border-left: 3px solid transparent;
+        }
+
+        .sidebar a:hover {
+          color: #fff;
+          background: rgba(108,92,231,0.1);
+        }
+
+        .sidebar a.active {
+          color: #6c5ce7;
+          background: rgba(108,92,231,0.1);
+          border-left-color: #6c5ce7;
+        }
+
+        .theme-toggle {
+          background: #222;
+          border: 1px solid #333;
+          color: #fff;
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          cursor: pointer;
+          font-size: 1em;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        body.light .sidebar {
+          background: #f8f8f8;
+          border-color: #e0e0e0;
         }
 
         body.light .sidebar a {
           color: #666;
         }
 
-        .sidebar a:hover {
-          background: #1a1a1a;
+        body.light .sidebar a.active {
           color: #6c5ce7;
-        }
-
-        body.light .sidebar a:hover {
-          background: #e0e0e0;
-          color: #6c5ce7;
-        }
-        .sidebar { width: 250px; background: #111; border-right: 1px solid #222; padding: 20px 0; position: fixed; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
-                .sidebar .logo { font-size: 1.4em; font-weight: 700; color: #fff; }
-                .sidebar .logo span { color: #6c5ce7; }
-                .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
-                .sidebar a:hover { color: #fff; background: rgba(108,92,231,0.1); }
-                .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
-                .theme-toggle { background: #222; border: 1px solid #333; color: #fff; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-                body.light .sidebar { background: #f8f8f8; border-color: #e0e0e0; }
-                body.light .sidebar a { color: #666; }
-                body.light .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.08); }
-                body.light .theme-toggle { background: #fff; border-color: #ddd; }
-
-
-        .sidebar a.active {
-          background: #6c5ce7;
-          color: white;
-        }
-
-        .theme-toggle {
-          width: 36px;
-          height: 36px;
-          border: 1px solid #333;
-          background: #222;
-          border-radius: 50%;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          transition: all 0.3s;
-          color: #fff;
-          flex-shrink: 0;
+          background: rgba(108,92,231,0.08);
         }
 
         body.light .theme-toggle {
           background: #fff;
-          border: 1px solid #ddd;
-        }
-
-        .theme-toggle:hover {
-          border-color: #6c5ce7;
-          color: #6c5ce7;
+          border-color: #ddd;
         }
 
         .main-content {
@@ -962,7 +945,7 @@ router.get('/', (req, res) => {
           document.body.classList.toggle('light');
           localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
           const btn = document.querySelector('.theme-toggle');
-          btn.textContent = document.body.classList.contains('light') ? '🌙' : '☀️';
+          btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
         }
 
         if (localStorage.getItem('theme') === 'light') {
@@ -1168,82 +1151,77 @@ router.get('/history', requireAuth, (req, res) => {
         .sidebar {
           width: 250px;
           background: #111;
-          padding: 30px 20px;
           border-right: 1px solid #222;
+          padding: 20px 0;
           position: fixed;
           height: 100vh;
           overflow-y: auto;
-        }
-
-        body.light .sidebar {
-          background: #f0f0f0;
-          border-right: 1px solid #e0e0e0;
-        }
-
-        .logo {
-          font-size: 24px;
-          font-weight: bold;
-          color: #6c5ce7;
-          margin-bottom: 40px;
           display: flex;
-          align-items: center;
-          gap: 10px;
+          flex-direction: column;
+        }
+
+        .sidebar .logo {
+          font-size: 1.4em;
+          font-weight: 700;
+          color: #fff;
+        }
+
+        .sidebar .logo span {
+          color: #6c5ce7;
         }
 
         .sidebar a {
           display: block;
-          padding: 12px 16px;
-          color: #b0b0b0;
+          padding: 12px 20px;
+          color: #888;
           text-decoration: none;
-          border-radius: 8px;
-          margin-bottom: 8px;
-          transition: all 0.3s;
-          font-size: 14px;
+          transition: all 0.2s;
+          border-left: 3px solid transparent;
+        }
+
+        .sidebar a:hover {
+          color: #fff;
+          background: rgba(108,92,231,0.1);
+        }
+
+        .sidebar a.active {
+          color: #6c5ce7;
+          background: rgba(108,92,231,0.1);
+          border-left-color: #6c5ce7;
+        }
+
+        .theme-toggle {
+          background: #222;
+          border: 1px solid #333;
+          color: #fff;
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          cursor: pointer;
+          font-size: 1em;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        body.light .sidebar {
+          background: #f8f8f8;
+          border-color: #e0e0e0;
         }
 
         body.light .sidebar a {
           color: #666;
         }
 
-        .sidebar a:hover {
-          background: #1a1a1a;
+        body.light .sidebar a.active {
           color: #6c5ce7;
-        }
-
-        body.light .sidebar a:hover {
-          background: #e0e0e0;
-          color: #6c5ce7;
-        }
-
-        .sidebar a.active {
-          background: #6c5ce7;
-          color: white;
-        }
-
-        .theme-toggle {
-          width: 36px;
-          height: 36px;
-          border: 1px solid #333;
-          background: #222;
-          border-radius: 50%;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          transition: all 0.3s;
-          color: #fff;
-          flex-shrink: 0;
+          background: rgba(108,92,231,0.08);
         }
 
         body.light .theme-toggle {
           background: #fff;
-          border: 1px solid #ddd;
-        }
-
-        .theme-toggle:hover {
-          border-color: #6c5ce7;
-          color: #6c5ce7;
+          border-color: #ddd;
         }
 
         .main-content {
@@ -1453,19 +1431,6 @@ router.get('/history', requireAuth, (req, res) => {
           <a href="/billing">&#x1F4B3; Billing</a>
           <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
         </div>
-            <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
-          </div>
-          <a href="/dashboard">Dashboard</a>
-          <a href="/repurpose">Repurpose</a>
-          <a href="/repurpose/history" class="active">Library</a>
-          <a href="/dashboard/analytics">Analytics</a>
-          <a href="/dashboard/calendar">Calendar</a>
-          <a href="/dashboard/scheduled">Scheduled</a>
-          <a href="/brand-voice">Brand Voice</a>
-          <a href="/billing">Billing</a>
-          <a href="/contact">Support</a>
-          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;">Sign Out</a>
-        </div>
 
         <div class="main-content">
           <div class="header">
@@ -1579,7 +1544,7 @@ router.get('/history', requireAuth, (req, res) => {
           document.body.classList.toggle('light');
           localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
           const btn = document.querySelector('.theme-toggle');
-          btn.textContent = document.body.classList.contains('light') ? '🌙' : '☀️';
+          btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
         }
 
         if (localStorage.getItem('theme') === 'light') {
