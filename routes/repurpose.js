@@ -87,17 +87,21 @@ async function fetchTranscriptViaAndroid(videoId) {
     context: {
       client: {
         clientName: 'ANDROID',
-        clientVersion: '20.10.38'
+        clientVersion: '19.29.37',
+        androidSdkVersion: 34,
+        hl: 'en',
+        gl: 'US'
       }
     },
     videoId: videoId
   });
 
-  const resp = await httpsRequest('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+  const resp = await httpsRequest('https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w&prettyPrint=false', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)'
+      'User-Agent': 'com.google.android.youtube/19.29.37 (Linux; U; Android 14; en_US) gzip',
+      'X-Goog-Api-Format-Version': '2'
     },
     body: postData
   });
@@ -118,6 +122,10 @@ async function fetchTranscriptViaAndroid(videoId) {
     console.log('[Transcript] ANDROID playability:', playability.status, playability.reason || '');
   }
   console.log('[Transcript] ANDROID captions exists:', !!json?.captions);
+
+  if (playability?.status === 'LOGIN_REQUIRED') {
+    throw new Error('LOGIN_REQUIRED from ANDROID innertube');
+  }
 
   const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (!Array.isArray(tracks) || tracks.length === 0) {
@@ -220,9 +228,13 @@ async function fetchTranscriptViaWebInnertube(videoId) {
     videoId: videoId
   });
 
-  const resp = await httpsRequest('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+  const resp = await httpsRequest('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Origin': 'https://www.youtube.com',
+      'Referer': 'https://www.youtube.com/watch?v=' + videoId
+    },
     body: postData
   });
 
@@ -241,6 +253,11 @@ async function fetchTranscriptViaWebInnertube(videoId) {
     console.log('[Transcript] WEB innertube playability:', playability.status, playability.reason || '');
   }
   console.log('[Transcript] WEB innertube captions exists:', !!json?.captions);
+
+  // If LOGIN_REQUIRED, don't waste time parsing — fail fast
+  if (playability?.status === 'LOGIN_REQUIRED') {
+    throw new Error('LOGIN_REQUIRED from WEB innertube');
+  }
 
   const tracks = json?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (!Array.isArray(tracks) || tracks.length === 0) {
@@ -347,13 +364,97 @@ async function fetchTranscriptViaGetTranscript(videoId) {
   return transcript;
 }
 
+// Method 5: Use third-party transcript proxy APIs (bypass YouTube IP blocking)
+async function fetchTranscriptViaProxy(videoId) {
+  console.log('[Transcript] Trying proxy APIs for', videoId);
+
+  // Try multiple free transcript proxy services
+  const proxyApis = [
+    {
+      name: 'kome.ai',
+      url: 'https://kome.ai/api/tools/youtube-transcripts',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: videoId, format: false }),
+      extract: (data) => {
+        const json = JSON.parse(data);
+        if (json.transcript) return json.transcript;
+        if (json.text) return json.text;
+        throw new Error('No transcript in response');
+      }
+    },
+    {
+      name: 'youtubetranscript.com',
+      url: 'https://www.youtubetranscript.com/api/transcript?videoId=' + videoId,
+      method: 'GET',
+      headers: {},
+      body: null,
+      extract: (data) => {
+        // Returns array of segments or XML
+        try {
+          const json = JSON.parse(data);
+          if (Array.isArray(json)) {
+            return json.map(s => s.text || s.snippet || '').filter(Boolean).join(' ');
+          }
+          if (json.transcript) return json.transcript;
+        } catch (e) {}
+        // Try parsing as XML
+        const transcript = parseTranscriptXml(data);
+        if (transcript) return transcript;
+        throw new Error('Could not parse response');
+      }
+    },
+    {
+      name: 'tactiq.io',
+      url: 'https://tactiq-apps-prod.tactiq.io/transcript',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoUrl: 'https://www.youtube.com/watch?v=' + videoId, langCode: 'en' }),
+      extract: (data) => {
+        const json = JSON.parse(data);
+        if (json.captions) {
+          return json.captions.map(c => c.text).filter(Boolean).join(' ');
+        }
+        throw new Error('No captions in response');
+      }
+    }
+  ];
+
+  for (const api of proxyApis) {
+    try {
+      console.log('[Transcript] Trying proxy:', api.name);
+      const resp = await httpsRequest(api.url, {
+        method: api.method,
+        headers: api.headers,
+        body: api.body
+      });
+
+      if (resp.status !== 200) {
+        console.log('[Transcript] Proxy', api.name, 'returned status', resp.status);
+        continue;
+      }
+
+      const transcript = api.extract(resp.data);
+      if (transcript && transcript.trim().length > 0) {
+        console.log('[Transcript] Proxy', api.name, 'succeeded for', videoId, '- length:', transcript.length);
+        return transcript;
+      }
+    } catch (err) {
+      console.log('[Transcript] Proxy', api.name, 'failed:', err.message);
+    }
+  }
+
+  throw new Error('All proxy APIs failed');
+}
+
 // Master function: try all methods
 async function fetchVideoTranscript(videoId) {
   const methods = [
     { name: 'ANDROID innertube', fn: fetchTranscriptViaAndroid },
     { name: 'WEB page scraping', fn: fetchTranscriptViaWebPage },
     { name: 'WEB innertube', fn: fetchTranscriptViaWebInnertube },
-    { name: 'get_transcript', fn: fetchTranscriptViaGetTranscript }
+    { name: 'get_transcript', fn: fetchTranscriptViaGetTranscript },
+    { name: 'proxy APIs', fn: fetchTranscriptViaProxy }
   ];
 
   const errors = [];
