@@ -135,6 +135,7 @@ router.get('/', requireAuth, async (req, res) => {
         <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
         <div class="platform-tabs" id="platformTabs"></div>
         <div id="platformContents"></div>
+        <p style="margin-top:1rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Want all 7 platforms? <a href="/repurpose" style="color:var(--primary);">Go to Repurpose</a></p>
       </div>
     </main>
   </div>
@@ -171,7 +172,7 @@ router.get('/', requireAuth, async (req, res) => {
         const res = await fetch('/repurpose/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, platforms: ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'], tone: 'Professional' })
+          body: JSON.stringify({ url, platforms: ['Instagram','Twitter','LinkedIn'], tone: 'Professional' })
         });
         const contentType = res.headers.get('content-type') || '';
         let data;
