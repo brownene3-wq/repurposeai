@@ -258,12 +258,102 @@ async function fetchTranscriptViaWebInnertube(videoId) {
   return transcript;
 }
 
+// Method 4: Use innertube get_transcript endpoint (works for Shorts)
+async function fetchTranscriptViaGetTranscript(videoId) {
+  console.log('[Transcript] Trying get_transcript endpoint for', videoId);
+
+  // First we need to get the video page to extract serialized share entity
+  // The get_transcript endpoint needs a params token
+  // We can construct it from the video ID
+  // The params field is a base64-encoded protobuf that contains the video ID
+  // Format: \n\x0b{videoId}\x12\x04asr\x18\x01
+  const paramsBytes = Buffer.from(
+    '\n\x0b' + videoId + '\x12\x04asr\x18\x01'
+  );
+  const params = paramsBytes.toString('base64');
+
+  const postData = JSON.stringify({
+    context: {
+      client: {
+        clientName: 'WEB',
+        clientVersion: '2.20250101.00.00',
+        hl: 'en',
+        gl: 'US'
+      }
+    },
+    params: params
+  });
+
+  const resp = await httpsRequest('https://www.youtube.com/youtubei/v1/get_transcript?prettyPrint=false', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: postData
+  });
+
+  if (resp.status !== 200) throw new Error('get_transcript returned ' + resp.status);
+
+  let json;
+  try {
+    json = JSON.parse(resp.data);
+  } catch (e) {
+    throw new Error('get_transcript returned invalid JSON');
+  }
+
+  // Navigate the response structure
+  const actions = json?.actions;
+  if (!actions || actions.length === 0) {
+    console.log('[Transcript] get_transcript response keys:', Object.keys(json || {}).join(','));
+    throw new Error('No actions in get_transcript response');
+  }
+
+  // Try to find transcript segments
+  let segments;
+  try {
+    // Path 1: Standard transcript panel
+    segments = actions[0]?.updateEngagementPanelAction?.content
+      ?.transcriptRenderer?.content?.transcriptSearchPanelRenderer?.body
+      ?.transcriptSegmentListRenderer?.initialSegments;
+  } catch (e) {}
+
+  if (!segments || segments.length === 0) {
+    // Path 2: Try alternative structure
+    try {
+      const renderer = actions[0]?.updateEngagementPanelAction?.content?.transcriptRenderer;
+      if (renderer) {
+        console.log('[Transcript] get_transcript renderer keys:', Object.keys(renderer).join(','));
+      }
+      // Try direct body path
+      segments = renderer?.body?.transcriptSegmentListRenderer?.initialSegments;
+    } catch (e) {}
+  }
+
+  if (!segments || segments.length === 0) {
+    // Log what we got for debugging
+    console.log('[Transcript] get_transcript action type:', Object.keys(actions[0] || {}).join(','));
+    throw new Error('No transcript segments in get_transcript response');
+  }
+
+  const texts = segments
+    .map(seg => {
+      const runs = seg?.transcriptSegmentRenderer?.snippet?.runs;
+      if (runs) return runs.map(r => r.text).join('');
+      return null;
+    })
+    .filter(Boolean);
+
+  if (texts.length === 0) throw new Error('Empty transcript from get_transcript');
+  const transcript = texts.join(' ');
+  console.log('[Transcript] get_transcript succeeded for', videoId, '- length:', transcript.length);
+  return transcript;
+}
+
 // Master function: try all methods
 async function fetchVideoTranscript(videoId) {
   const methods = [
     { name: 'ANDROID innertube', fn: fetchTranscriptViaAndroid },
     { name: 'WEB page scraping', fn: fetchTranscriptViaWebPage },
-    { name: 'WEB innertube', fn: fetchTranscriptViaWebInnertube }
+    { name: 'WEB innertube', fn: fetchTranscriptViaWebInnertube },
+    { name: 'get_transcript', fn: fetchTranscriptViaGetTranscript }
   ];
 
   const errors = [];
