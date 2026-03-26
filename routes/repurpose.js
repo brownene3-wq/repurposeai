@@ -1097,17 +1097,15 @@ router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
       brandVoice = await brandVoiceOps.getById(brandVoiceId);
     }
 
-    // Generate content for each platform
-    const outputs = [];
-    for (const platform of platforms) {
-      try {
+    // Generate content for all platforms in parallel
+    const results = await Promise.allSettled(
+      platforms.map(async (platform) => {
         const generatedContent = await generatePlatformContent(
           transcript,
           platform,
           tone,
           brandVoice
         );
-
         const output = await outputOps.create(
           content.id,
           userId,
@@ -1116,12 +1114,18 @@ router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
           platform,
           tone
         );
+        return output;
+      })
+    );
 
-        outputs.push(output);
-      } catch (error) {
-        console.error(`Error generating content for ${platform}:`, error);
+    const outputs = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        outputs.push(result.value);
+      } else {
+        console.error(`Error generating content for ${platforms[i]}:`, result.reason);
       }
-    }
+    });
 
     if (outputs.length === 0) {
       return res.status(500).json({ error: 'AI content generation failed for all platforms. Please try again.' });
