@@ -943,8 +943,12 @@ router.post('/process', requireAuth, async (req, res) => {
     try {
       const transcripts = await YoutubeTranscript.fetchTranscript(videoId);
       transcript = transcripts.map(t => t.text).join(' ');
+      if (!transcript || transcript.trim().length === 0) {
+        return res.status(400).json({ error: 'Video transcript is empty. Please try a video with spoken content and captions enabled.' });
+      }
     } catch (error) {
-      return res.status(400).json({ error: 'Could not fetch video transcript. Video may not have captions.' });
+      console.error('Transcript fetch error for video', videoId, ':', error.message);
+      return res.status(400).json({ error: 'Could not fetch video transcript. Make sure the video has captions/subtitles enabled. YouTube Shorts may not have auto-generated captions — try a regular YouTube video instead.' });
     }
 
     // Create content item
