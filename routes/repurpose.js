@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getTranscript } = require('youtube-transcript');
+const { YoutubeTranscript } = require('youtube-transcript');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
@@ -941,7 +941,7 @@ router.post('/process', requireAuth, async (req, res) => {
     const videoId = url.match(youtubeRegex)[1];
     let transcript;
     try {
-      const transcripts = await getTranscript(videoId);
+      const transcripts = await YoutubeTranscript.fetchTranscript(videoId);
       transcript = transcripts.map(t => t.text).join(' ');
     } catch (error) {
       return res.status(400).json({ error: 'Could not fetch video transcript. Video may not have captions.' });
