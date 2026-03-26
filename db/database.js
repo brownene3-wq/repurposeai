@@ -23,6 +23,18 @@ const initDatabase = async () => {
       )
     `);
 
+    // Migrate: add columns that may not exist on older tables
+    const migrations = [
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
+    ];
+    for (const sql of migrations) {
+      try { await pool.query(sql); } catch (e) { /* column may already exist */ }
+    }
+
     // Content items table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS content_items (
