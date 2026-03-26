@@ -584,7 +584,7 @@ router.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <div class="sidebar">
+        <div class="sidebar" style="display:flex;flex-direction:column;">
           <div class="logo">🎬 Repurpose</div>
           <a href="/dashboard">Dashboard</a>
           <a href="/repurpose" class="active">Repurpose</a>
@@ -596,6 +596,7 @@ router.get('/', (req, res) => {
           <a href="/billing">Billing</a>
           <a href="/contact">Support</a>
           <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;">Sign Out</a>
         </div>
 
         <div class="main-content">
@@ -612,28 +613,28 @@ router.get('/', (req, res) => {
                 <input type="text" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." />
               </div>
 
-              <h2 style="margin-top: 30px;">Step 2: Select Platforms</h2>
+              <h2 style="margin-top: 30px;">Step 2: Choose Platforms</h2>
               <div class="platform-selector">
-                <label class="platform-card">
-                  <input type="checkbox" name="platform" value="Twitter" />
-                  <span>𝕏 Twitter/X</span>
-                </label>
-                <label class="platform-card">
-                  <input type="checkbox" name="platform" value="LinkedIn" />
-                  <span>💼 LinkedIn</span>
-                </label>
-                <label class="platform-card">
+                <div class="platform-card" data-platform="Instagram">
                   <input type="checkbox" name="platform" value="Instagram" />
                   <span>📷 Instagram</span>
-                </label>
-                <label class="platform-card">
+                </div>
+                <div class="platform-card" data-platform="Twitter">
+                  <input type="checkbox" name="platform" value="Twitter" />
+                  <span>𝕏 Twitter/X</span>
+                </div>
+                <div class="platform-card" data-platform="LinkedIn">
+                  <input type="checkbox" name="platform" value="LinkedIn" />
+                  <span>💼 LinkedIn</span>
+                </div>
+                <div class="platform-card" data-platform="Facebook">
                   <input type="checkbox" name="platform" value="Facebook" />
-                  <span>f Facebook</span>
-                </label>
-                <label class="platform-card" style="grid-column: 1 / -1;">
+                  <span>👍 Facebook</span>
+                </div>
+                <div class="platform-card" data-platform="Blog">
                   <input type="checkbox" name="platform" value="Blog" />
-                  <span>📝 Blog Article</span>
-                </label>
+                  <span>📝 Blog Post</span>
+                </div>
               </div>
             </div>
 
@@ -642,26 +643,26 @@ router.get('/', (req, res) => {
               <div class="form-group">
                 <label>Tone of Voice</label>
                 <div class="tone-grid">
-                  <label class="tone-option">
+                  <div class="tone-option">
                     <input type="radio" name="tone" value="Professional" />
                     Professional
-                  </label>
-                  <label class="tone-option">
+                  </div>
+                  <div class="tone-option">
                     <input type="radio" name="tone" value="Casual" />
                     Casual
-                  </label>
-                  <label class="tone-option">
+                  </div>
+                  <div class="tone-option">
                     <input type="radio" name="tone" value="Humorous" />
                     Humorous
-                  </label>
-                  <label class="tone-option">
+                  </div>
+                  <div class="tone-option">
                     <input type="radio" name="tone" value="Inspirational" />
                     Inspirational
-                  </label>
-                  <label class="tone-option">
+                  </div>
+                  <div class="tone-option">
                     <input type="radio" name="tone" value="Educational" />
                     Educational
-                  </label>
+                  </div>
                 </div>
               </div>
 
