@@ -720,25 +720,25 @@ router.get('/', (req, res) => {
           }
         }
 
-        document.querySelectorAll('.platform-card input').forEach(input => {
-          input.parentElement.addEventListener('click', function(e) {
-            if (e.target.tagName !== 'INPUT') {
-              input.checked = !input.checked;
-            }
-            this.classList.toggle('selected');
+        document.querySelectorAll('.platform-card').forEach(card => {
+          card.addEventListener('click', function(e) {
+            e.preventDefault();
+            const input = this.querySelector('input');
+            input.checked = !input.checked;
+            this.classList.toggle('selected', input.checked);
           });
         });
 
-        document.querySelectorAll('.tone-option input').forEach(input => {
-          input.parentElement.addEventListener('click', function(e) {
-            if (e.target.tagName !== 'INPUT') {
-              document.querySelectorAll('.tone-option').forEach(opt => opt.classList.remove('selected'));
-              this.classList.add('selected');
-              input.checked = true;
-            } else {
-              document.querySelectorAll('.tone-option').forEach(opt => opt.classList.remove('selected'));
-              this.classList.add('selected');
-            }
+        document.querySelectorAll('.tone-option').forEach(option => {
+          option.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.querySelectorAll('.tone-option').forEach(opt => {
+              opt.classList.remove('selected');
+              opt.querySelector('input').checked = false;
+            });
+            const input = this.querySelector('input');
+            input.checked = true;
+            this.classList.add('selected');
           });
         });
 
