@@ -3,9 +3,8 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
-// youtube-transcript has "type":"module" which breaks dynamic import in CJS projects
-// Use our CJS wrapper that loads the bundle directly
-const { YoutubeTranscript } = require('../utils/youtube-transcript-loader.cjs');
+// youtube-transcript npm package is unreliable (gets blocked by YouTube)
+// We use yt-dlp for transcript fetching instead - it handles anti-bot measures
 const OpenAI = require('openai');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
@@ -56,6 +55,129 @@ function buildTranscriptText(segments) {
     const timestamp = formatTimestamp(seg.offset / 1000);
     return `[${timestamp}] ${seg.text}`;
   }).join(' ');
+}
+
+// Helper: Fetch transcript using yt-dlp (much more reliable than npm packages)
+function fetchTranscriptWithYtdlp(videoId) {
+  return new Promise((resolve, reject) => {
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const tmpDir = path.join('/tmp', 'yt-subtitles');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const outTemplate = path.join(tmpDir, `${videoId}`);
+
+    // Clean up any previous subtitle files for this video
+    try {
+      const existing = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId));
+      existing.forEach(f => { try { fs.unlinkSync(path.join(tmpDir, f)); } catch(e) {} });
+    } catch(e) {}
+
+    // Try auto-generated subtitles first (most videos have these), then manual
+    const args = [
+      '--skip-download',
+      '--write-auto-sub',
+      '--write-sub',
+      '--sub-lang', 'en',
+      '--sub-format', 'json3',
+      '--no-warnings',
+      '--no-check-certificates',
+      '-o', outTemplate,
+      videoUrl
+    ];
+
+    console.log('  Fetching subtitles with yt-dlp for:', videoId);
+    const proc = spawn('yt-dlp', args);
+    let stderr = '';
+
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    proc.on('close', (code) => {
+      // Find the subtitle file (could be .en.json3 or .en.vtt etc)
+      let subFile = null;
+      try {
+        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && f.includes('.json3'));
+        if (files.length > 0) subFile = path.join(tmpDir, files[0]);
+      } catch(e) {}
+
+      if (!subFile) {
+        // Try vtt format as fallback
+        try {
+          const vttFiles = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && (f.includes('.vtt') || f.includes('.srt')));
+          if (vttFiles.length > 0) subFile = path.join(tmpDir, vttFiles[0]);
+        } catch(e) {}
+      }
+
+      if (!subFile) {
+        console.error('  No subtitle file found. yt-dlp stderr:', stderr.slice(-500));
+        return reject(new Error('No transcript available for this video.'));
+      }
+
+      try {
+        const content = fs.readFileSync(subFile, 'utf8');
+        let segments = [];
+
+        if (subFile.endsWith('.json3')) {
+          // Parse JSON3 format (YouTube's native subtitle format)
+          const json = JSON.parse(content);
+          const events = json.events || [];
+          for (const event of events) {
+            if (event.segs && event.tStartMs !== undefined) {
+              const text = event.segs.map(s => s.utf8 || '').join('').trim();
+              if (text && text !== '\n') {
+                segments.push({
+                  offset: event.tStartMs,
+                  text: text.replace(/\n/g, ' ')
+                });
+              }
+            }
+          }
+        } else {
+          // Parse VTT/SRT format as plain text with timestamps
+          const lines = content.split('\n');
+          let currentTime = 0;
+          for (const line of lines) {
+            const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})[.,](\d{3})/);
+            if (timeMatch) {
+              currentTime = parseInt(timeMatch[1]) * 3600000 + parseInt(timeMatch[2]) * 60000 +
+                           parseInt(timeMatch[3]) * 1000 + parseInt(timeMatch[4]);
+            } else if (line.trim() && !line.includes('-->') && !line.match(/^\d+$/) && !line.startsWith('WEBVTT')) {
+              segments.push({ offset: currentTime, text: line.trim().replace(/<[^>]*>/g, '') });
+            }
+          }
+        }
+
+        // Clean up
+        try { fs.unlinkSync(subFile); } catch(e) {}
+
+        if (segments.length === 0) {
+          return reject(new Error('Transcript was empty.'));
+        }
+
+        console.log(`  Got ${segments.length} transcript segments`);
+        resolve(segments);
+      } catch (parseErr) {
+        console.error('  Error parsing subtitle file:', parseErr);
+        reject(new Error('Failed to parse transcript.'));
+      }
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error('yt-dlp not available: ' + err.message));
+    });
+  });
+}
+
+// Helper: Fetch video title using yt-dlp
+function fetchVideoTitle(videoId) {
+  return new Promise((resolve) => {
+    const proc = spawn('yt-dlp', [
+      '--skip-download', '--print', 'title', '--no-warnings',
+      `https://www.youtube.com/watch?v=${videoId}`
+    ]);
+    let title = '';
+    proc.stdout.on('data', (data) => { title += data.toString(); });
+    proc.on('close', () => { resolve(title.trim() || 'YouTube Video'); });
+    proc.on('error', () => { resolve('YouTube Video'); });
+  });
 }
 
 // Helper: Parse moment timestamp range (MM:SS-MM:SS format)
@@ -133,13 +255,13 @@ router.post('/analyze', requireAuth, async (req, res) => {
     try {
       sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript...' });
 
-      // Fetch transcript
+      // Fetch transcript using yt-dlp (reliable, handles YouTube anti-bot)
       let segments;
       try {
-        segments = await YoutubeTranscript.fetchTranscript(videoId);
+        segments = await fetchTranscriptWithYtdlp(videoId);
       } catch (transcriptError) {
         console.error('Transcript fetch error:', transcriptError);
-        sendUpdate({ status: 'error', message: 'Could not fetch transcript. Make sure the video has captions enabled.' });
+        sendUpdate({ status: 'error', message: transcriptError.message || 'Could not fetch transcript. Make sure the video has captions enabled.' });
         return res.end();
       }
 
@@ -149,7 +271,10 @@ router.post('/analyze', requireAuth, async (req, res) => {
       }
 
       const transcriptText = buildTranscriptText(segments);
-      const videoTitle = 'YouTube Video';
+
+      // Fetch actual video title
+      sendUpdate({ status: 'fetching_title', message: 'Getting video info...' });
+      const videoTitle = await fetchVideoTitle(videoId);
 
       // Create initial record
       sendUpdate({ status: 'creating_record', message: 'Saving to database...' });
