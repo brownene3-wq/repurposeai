@@ -851,18 +851,19 @@ router.post('/clip', requireAuth, async (req, res) => {
           return;
         }
 
-        // Step 1: Download the section with yt-dlp at good quality
+        // Step 1: Download the section with yt-dlp
+        // Prefer H.264+AAC for maximum compatibility; avoid VP9/Opus which cause issues
         const tempDownload = outputPath + '.temp.mp4';
         const ytdlpArgs = [
           '--no-playlist',
           '--download-sections', `*${startTs}-${endTs}`,
-          '--force-keyframes-at-cuts',
-          '-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-          '--merge-output-format', 'mp4',   // Ensure final output is mp4 container
+          '-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080][vcodec^=avc1]+bestaudio/best[height<=1080][vcodec^=avc1]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--merge-output-format', 'mp4',
+          '--postprocessor-args', '-fflags +genpts',
           '-o', tempDownload,
           '--no-warnings',
           '--no-check-certificates',
-          '--no-part',           // Don't use .part files (write directly to output)
+          '--no-part',
           videoUrl
         ];
 
@@ -930,6 +931,7 @@ router.post('/clip', requireAuth, async (req, res) => {
           // This works for any input aspect ratio (landscape, portrait, square)
           const vf = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1';
           const ffmpegArgs = [
+            '-fflags', '+genpts+igndts',  // Fix broken timestamps from yt-dlp section download
             '-i', actualDownload,
             '-vf', vf,
             '-c:v', 'libx264',
