@@ -1,14 +1,22 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
 // youtube-transcript has "type":"module" which breaks dynamic import in CJS projects
 // Use our CJS wrapper that loads the bundle directly
 const { YoutubeTranscript } = require('../utils/youtube-transcript-loader.cjs');
 const OpenAI = require('openai');
+const ytdl = require('@distube/ytdl-core');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { shortsOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Clips directory
+const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
+if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
 
 // Helper: Extract video ID from YouTube URL
 function extractVideoId(url) {
@@ -406,6 +414,164 @@ router.delete('/api/:id', requireAuth, async (req, res) => {
     console.error('Error deleting analysis:', error);
     res.status(500).json({ error: 'Failed to delete analysis' });
   }
+});
+
+// POST /clip - Generate a video clip for a specific moment
+router.post('/clip', requireAuth, async (req, res) => {
+  try {
+    const { analysisId, momentIndex } = req.body;
+
+    if (!analysisId || momentIndex === undefined) {
+      return res.status(400).json({ error: 'Analysis ID and moment index are required' });
+    }
+
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis) {
+      return res.status(404).json({ error: 'Analysis not found' });
+    }
+    if (analysis.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Parse moments
+    let moments = analysis.moments;
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+
+    const moment = moments[momentIndex];
+    if (!moment) {
+      return res.status(404).json({ error: 'Moment not found' });
+    }
+
+    // Parse time range
+    const rangeParts = (moment.timeRange || '').split('-');
+    const parseTime = (str) => {
+      const parts = (str || '').trim().split(':').map(Number);
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      return parts[0] || 0;
+    };
+    const startSec = parseTime(rangeParts[0]);
+    const endSec = rangeParts[1] ? parseTime(rangeParts[1]) : startSec + 60;
+    const duration = Math.max(endSec - startSec, 5); // At least 5 seconds
+
+    // Extract video ID
+    const videoId = extractVideoId(analysis.video_url);
+    if (!videoId) {
+      return res.status(400).json({ error: 'Invalid video URL in analysis' });
+    }
+
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const safeTitle = (moment.title || 'clip').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+    const filename = `${safeTitle}_${Date.now()}.mp4`;
+    const outputPath = path.join(CLIPS_DIR, filename);
+
+    // Send initial response
+    res.json({
+      success: true,
+      status: 'processing',
+      message: 'Generating clip...',
+      filename
+    });
+
+    // Process in background: download + clip with ffmpeg
+    (async () => {
+      try {
+        // Get video info and pick best format with video+audio
+        const info = await ytdl.getInfo(videoUrl);
+        const format = ytdl.chooseFormat(info.formats, {
+          quality: 'highest',
+          filter: (f) => f.hasVideo && f.hasAudio
+        });
+
+        if (!format || !format.url) {
+          console.error('No suitable format found for clipping');
+          return;
+        }
+
+        // Use ffmpeg to download only the clip segment
+        const ffmpeg = spawn('ffmpeg', [
+          '-ss', String(startSec),
+          '-i', format.url,
+          '-t', String(duration),
+          '-c:v', 'libx264',
+          '-c:a', 'aac',
+          '-preset', 'fast',
+          '-movflags', '+faststart',
+          '-y',
+          outputPath
+        ]);
+
+        ffmpeg.stderr.on('data', (data) => {
+          // ffmpeg outputs progress to stderr
+        });
+
+        ffmpeg.on('close', (code) => {
+          if (code === 0) {
+            console.log(`Clip generated: ${filename}`);
+          } else {
+            console.error(`ffmpeg exited with code ${code}`);
+            // Cleanup failed file
+            try { fs.unlinkSync(outputPath); } catch (e) {}
+          }
+        });
+
+        ffmpeg.on('error', (err) => {
+          console.error('ffmpeg error:', err);
+        });
+
+      } catch (err) {
+        console.error('Clip generation error:', err);
+        try { fs.unlinkSync(outputPath); } catch (e) {}
+      }
+    })();
+
+  } catch (error) {
+    console.error('Error starting clip generation:', error);
+    res.status(500).json({ error: 'Failed to start clip generation' });
+  }
+});
+
+// GET /clip/status/:filename - Check if clip is ready
+router.get('/clip/status/:filename', requireAuth, (req, res) => {
+  const filename = path.basename(req.params.filename); // Prevent path traversal
+  const filePath = path.join(CLIPS_DIR, filename);
+
+  if (fs.existsSync(filePath)) {
+    const stats = fs.statSync(filePath);
+    // Check if file is still being written (size changing)
+    if (stats.size > 0) {
+      res.json({ ready: true, size: stats.size, filename });
+    } else {
+      res.json({ ready: false, message: 'Still processing...' });
+    }
+  } else {
+    res.json({ ready: false, message: 'Still processing...' });
+  }
+});
+
+// GET /clip/download/:filename - Download generated clip
+router.get('/clip/download/:filename', requireAuth, (req, res) => {
+  const filename = path.basename(req.params.filename); // Prevent path traversal
+  const filePath = path.join(CLIPS_DIR, filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Clip not found. It may still be processing or has expired.' });
+  }
+
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const stream = fs.createReadStream(filePath);
+  stream.pipe(res);
+
+  // Clean up file after download (with delay to allow stream to finish)
+  stream.on('end', () => {
+    setTimeout(() => {
+      try { fs.unlinkSync(filePath); } catch (e) {}
+    }, 5000);
+  });
 });
 
 // Main page renderer
@@ -1030,6 +1196,11 @@ function renderShortsPage(user, analyses) {
               <button class="btn btn-small btn-primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
                 Generate Content
               </button>
+              <button class="btn btn-small" id="clip-btn-\${idx}"
+                style="background: linear-gradient(135deg, #FF0050 0%, #FF4500 100%); color: #fff;"
+                onclick="downloadClip('\${id}', \${idx}, this)">
+                Download Clip
+              </button>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
                 class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
                 Open on YouTube
@@ -1101,6 +1272,78 @@ function renderShortsPage(user, analyses) {
         </div>
       \`;
       document.getElementById('modalBody').innerHTML = html;
+    }
+
+    async function downloadClip(analysisId, momentIndex, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Starting...';
+
+      try {
+        // Request clip generation
+        const response = await fetch('/shorts/clip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ analysisId, momentIndex })
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to start clip generation');
+        }
+
+        const filename = data.filename;
+        btn.textContent = 'Processing...';
+        btn.style.background = 'rgba(255,255,255,0.15)';
+
+        // Poll for clip readiness
+        let attempts = 0;
+        const maxAttempts = 60; // 2 minutes max
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          try {
+            const statusResp = await fetch('/shorts/clip/status/' + filename);
+            const statusData = await statusResp.json();
+
+            if (statusData.ready) {
+              clearInterval(pollInterval);
+              btn.textContent = 'Downloading...';
+
+              // Trigger download
+              const link = document.createElement('a');
+              link.href = '/shorts/clip/download/' + filename;
+              link.download = filename;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+
+              setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = 'Download Clip';
+                btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
+              }, 2000);
+
+              showToast('Clip downloaded!');
+            } else if (attempts >= maxAttempts) {
+              clearInterval(pollInterval);
+              throw new Error('Clip generation timed out');
+            } else {
+              // Update progress
+              const dots = '.'.repeat((attempts % 3) + 1);
+              btn.textContent = 'Processing' + dots;
+            }
+          } catch (pollError) {
+            clearInterval(pollInterval);
+            throw pollError;
+          }
+        }, 2000);
+
+      } catch (error) {
+        showToast(error.message || 'Failed to generate clip');
+        btn.disabled = false;
+        btn.textContent = originalText;
+        btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
+      }
     }
 
     function closeModal() {
