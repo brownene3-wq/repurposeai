@@ -1355,17 +1355,17 @@ function renderShortsPage(user, analyses) {
 
           // Build clickable thumbnail preview (iframes fail when embedding is disabled)
           const videoEmbed = videoId ? \`
-            <a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank" class="moment-video-wrap" style="display:block; position:relative; text-decoration:none;">
+            <a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank" style="display:block; position:relative; text-decoration:none; height:120px; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000;">
               <img src="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg" alt="Video thumbnail"
-                style="width:100%; max-height:180px; object-fit:cover; border-radius:8px; display:block;" loading="lazy" />
+                style="width:100%; height:120px; object-fit:cover; display:block;" loading="lazy" />
               <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                width:60px; height:60px; background:rgba(0,0,0,0.7); border-radius:50%;
+                width:44px; height:44px; background:rgba(0,0,0,0.7); border-radius:50%;
                 display:flex; align-items:center; justify-content:center;">
-                <div style="width:0; height:0; border-left:22px solid #fff; border-top:13px solid transparent;
-                  border-bottom:13px solid transparent; margin-left:4px;"></div>
+                <div style="width:0; height:0; border-left:16px solid #fff; border-top:10px solid transparent;
+                  border-bottom:10px solid transparent; margin-left:3px;"></div>
               </div>
-              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.8);
-                padding:2px 8px; border-radius:4px; color:#fff; font-size:12px;">
+              <div style="position:absolute; bottom:6px; left:6px; background:rgba(0,0,0,0.8);
+                padding:2px 6px; border-radius:4px; color:#fff; font-size:11px;">
                 \${moment.timeRange}
               </div>
             </a>
