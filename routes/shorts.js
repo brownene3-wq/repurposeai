@@ -533,7 +533,8 @@ router.post('/clip', requireAuth, async (req, res) => {
           '--no-playlist',
           '--download-sections', `*${startTs}-${endTs}`,
           '--force-keyframes-at-cuts',
-          '-f', 'best[height<=1080][ext=mp4]/best[height<=720]/best',  // Single combined format (avoid separate merge)
+          '-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--merge-output-format', 'mp4',   // Ensure final output is mp4 container
           '-o', tempDownload,
           '--no-warnings',
           '--no-check-certificates',
@@ -597,20 +598,26 @@ router.post('/clip', requireAuth, async (req, res) => {
 
           console.log(`  Cropping to 9:16 vertical: ${actualDownload}`);
 
-          // Crop center of landscape video to 9:16 portrait, scale to 1080x1920
-          // crop=w:h:x:y - width=(height*9/16), height=full, centered horizontally
+          // Crop center of video to 9:16 portrait, scale to 1080x1920
+          // Use min() to avoid cropping wider/taller than the source
+          // For landscape: crop width = height*9/16, full height, centered
+          // For portrait/square: just scale to fit 1080x1920
+          const cropFilter = "crop='min(ih*9/16,iw)':'min(iw*16/9,ih)':'(iw-min(ih*9/16,iw))/2':'(ih-min(iw*16/9,ih))/2',scale=1080:1920:flags=lanczos";
           const ffmpegCrop = spawn(ffmpegPath, [
             '-i', actualDownload,
-            '-vf', 'crop=in_h*9/16:in_h:(in_w-in_h*9/16)/2:0,scale=1080:1920',
+            '-vf', cropFilter,
             '-c:v', 'libx264',
-            '-profile:v', 'high',     // H.264 High profile for wide compatibility
-            '-level', '4.1',
-            '-pix_fmt', 'yuv420p',    // Required for browser playback
+            '-profile:v', 'baseline',   // Baseline profile = maximum device compatibility
+            '-level', '3.1',
+            '-pix_fmt', 'yuv420p',      // Required for QuickTime/browser playback
             '-c:a', 'aac',
             '-b:a', '128k',
+            '-ar', '44100',             // Standard audio sample rate
+            '-ac', '2',                 // Stereo audio
             '-preset', 'fast',
-            '-crf', '20',
-            '-movflags', '+faststart',  // Enable streaming/progressive download
+            '-crf', '23',
+            '-movflags', '+faststart',  // Enable progressive download
+            '-brand', 'mp42',           // MP4 brand for maximum compatibility
             '-y',
             outputPath
           ]);
@@ -629,7 +636,10 @@ router.post('/clip', requireAuth, async (req, res) => {
           ffmpegCrop.on('close', (ffCode) => {
             clearTimeout(timeout);
             try { fs.unlinkSync(progressPath); } catch (e) {}
-            try { fs.unlinkSync(tempDownload); } catch (e) {} // Clean up temp download
+            try { fs.unlinkSync(actualDownload); } catch (e) {} // Clean up actual download
+            if (actualDownload !== tempDownload) {
+              try { fs.unlinkSync(tempDownload); } catch (e) {} // Clean up temp too
+            }
 
             if (ffCode === 0) {
               const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
@@ -709,7 +719,9 @@ router.get('/clip/download/:filename', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Clip not found. It may still be processing or has expired.' });
   }
 
+  const stat = fs.statSync(filePath);
   res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Length', stat.size);
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
   const stream = fs.createReadStream(filePath);
@@ -974,19 +986,17 @@ function renderShortsPage(user, analyses) {
     .moment-video-wrap {
       position: relative;
       width: 100%;
-      padding-bottom: 56.25%;
+      max-height: 180px;
       margin-bottom: 12px;
       border-radius: 8px;
       overflow: hidden;
       background: #000;
     }
 
-    .moment-video-wrap iframe {
-      position: absolute;
-      top: 0;
-      left: 0;
+    .moment-video-wrap img {
       width: 100%;
-      height: 100%;
+      max-height: 180px;
+      object-fit: cover;
       border: none;
       border-radius: 8px;
     }
@@ -1343,8 +1353,8 @@ function renderShortsPage(user, analyses) {
           // Build clickable thumbnail preview (iframes fail when embedding is disabled)
           const videoEmbed = videoId ? \`
             <a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank" class="moment-video-wrap" style="display:block; position:relative; text-decoration:none;">
-              <img src="https://img.youtube.com/vi/\${videoId}/hqdefault.jpg" alt="Video thumbnail"
-                style="width:100%; border-radius:8px; display:block;" loading="lazy" />
+              <img src="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg" alt="Video thumbnail"
+                style="width:100%; max-height:180px; object-fit:cover; border-radius:8px; display:block;" loading="lazy" />
               <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
                 width:60px; height:60px; background:rgba(0,0,0,0.7); border-radius:50%;
                 display:flex; align-items:center; justify-content:center;">
