@@ -926,25 +926,30 @@ router.post('/clip', requireAuth, async (req, res) => {
           // Use min() to avoid cropping wider/taller than the source
           // For landscape: crop width = height*9/16, full height, centered
           // For portrait/square: just scale to fit 1080x1920
-          const cropFilter = "crop='min(ih*9/16,iw)':'min(iw*16/9,ih)':'(iw-min(ih*9/16,iw))/2':'(ih-min(iw*16/9,ih))/2',scale=1080:1920:flags=lanczos";
-          const ffmpegCrop = spawn(ffmpegPath, [
+          // Crop to 9:16 center then scale to 1080x1920
+          // Use min() with escaped commas for ffmpeg expression safety
+          const cropFilter = "crop='min(ih*9/16\\,iw)':'min(iw*16/9\\,ih)':'(iw-min(ih*9/16\\,iw))/2':'(ih-min(iw*16/9\\,ih))/2',scale=1080:1920:flags=lanczos";
+          const ffmpegArgs = [
             '-i', actualDownload,
             '-vf', cropFilter,
             '-c:v', 'libx264',
-            '-profile:v', 'baseline',   // Baseline profile = maximum device compatibility
-            '-level', '3.1',
-            '-pix_fmt', 'yuv420p',      // Required for QuickTime/browser playback
+            '-profile:v', 'high',
+            '-level', '4.0',
+            '-pix_fmt', 'yuv420p',
             '-c:a', 'aac',
             '-b:a', '128k',
-            '-ar', '44100',             // Standard audio sample rate
-            '-ac', '2',                 // Stereo audio
+            '-ar', '44100',
+            '-ac', '2',
             '-preset', 'fast',
             '-crf', '23',
-            '-movflags', '+faststart',  // Enable progressive download
-            '-brand', 'mp42',           // MP4 brand for maximum compatibility
+            '-movflags', '+faststart',
+            '-max_muxing_queue_size', '1024',
+            '-f', 'mp4',
             '-y',
             outputPath
-          ]);
+          ];
+          console.log('ffmpeg args:', ffmpegArgs.join(' '));
+          const ffmpegCrop = spawn(ffmpegPath, ffmpegArgs);
 
           let ffmpegStderr = '';
           ffmpegCrop.stderr.on('data', (data) => {
