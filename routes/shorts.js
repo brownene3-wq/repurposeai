@@ -527,14 +527,15 @@ router.post('/clip', requireAuth, async (req, res) => {
           return;
         }
 
-        // yt-dlp can download just the section we need and convert to mp4
+        // Step 1: Download the section with yt-dlp at good quality
+        const tempDownload = outputPath + '.download.mp4';
         const ytdlpArgs = [
           '--no-playlist',
           '--download-sections', `*${startTs}-${endTs}`,
           '--force-keyframes-at-cuts',
-          '-f', 'worst[ext=mp4]/worst',  // Lowest quality for speed
-          '--recode-video', 'mp4',
-          '-o', outputPath,
+          '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
+          '--merge-output-format', 'mp4',
+          '-o', tempDownload,
           '--no-warnings',
           '--no-check-certificates',
           videoUrl
@@ -561,20 +562,66 @@ router.post('/clip', requireAuth, async (req, res) => {
         });
 
         ytdlpProc.on('close', (code) => {
-          clearTimeout(timeout);
-          try { fs.unlinkSync(progressPath); } catch (e) {}
-          if (code === 0) {
-            const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
-            console.log(`Clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
-            if (size === 0) {
-              writeError('Clip generation produced empty file');
-            }
-          } else {
+          if (code !== 0) {
+            clearTimeout(timeout);
+            try { fs.unlinkSync(progressPath); } catch (e) {}
             console.error('yt-dlp stderr:', stderrLog.slice(-800));
             const lines = stderrLog.split('\n');
             const errorLine = lines.find(l => /error|denied|forbidden|refused/i.test(l)) || lines.slice(-3).join(' ');
             writeError(`yt-dlp exit code ${code}: ${errorLine.substring(0, 300)}`);
+            return;
           }
+
+          // Step 2: Use ffmpeg to crop the downloaded clip to vertical 9:16 format
+          // This center-crops the landscape video to portrait (keeps the center)
+          writeProgress('Converting to vertical short format...');
+          console.log(`  yt-dlp done, cropping to 9:16 vertical...`);
+
+          const ffmpegCrop = spawn(ffmpegPath, [
+            '-i', tempDownload,
+            '-vf', 'crop=ih*9/16:ih,scale=1080:1920',  // Crop center to 9:16, scale to 1080x1920
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-preset', 'fast',
+            '-crf', '20',           // Good quality
+            '-movflags', '+faststart',
+            '-y',
+            outputPath
+          ]);
+
+          let ffmpegStderr = '';
+          ffmpegCrop.stderr.on('data', (data) => {
+            ffmpegStderr += data.toString();
+            if (ffmpegStderr.length > 2048) ffmpegStderr = ffmpegStderr.slice(-2048);
+            const msg = data.toString();
+            if (msg.includes('time=')) {
+              const timeMatch = msg.match(/time=(\S+)/);
+              if (timeMatch) writeProgress(`Formatting: ${timeMatch[1]}`);
+            }
+          });
+
+          ffmpegCrop.on('close', (ffCode) => {
+            clearTimeout(timeout);
+            try { fs.unlinkSync(progressPath); } catch (e) {}
+            try { fs.unlinkSync(tempDownload); } catch (e) {} // Clean up temp download
+
+            if (ffCode === 0) {
+              const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
+              console.log(`Short clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB, 1080x1920)`);
+              if (size === 0) {
+                writeError('Clip formatting produced empty file');
+              }
+            } else {
+              console.error('ffmpeg crop stderr:', ffmpegStderr.slice(-800));
+              writeError(`Video formatting failed (code ${ffCode})`);
+            }
+          });
+
+          ffmpegCrop.on('error', (err) => {
+            clearTimeout(timeout);
+            try { fs.unlinkSync(tempDownload); } catch (e) {}
+            writeError('ffmpeg crop error: ' + err.message);
+          });
         });
 
         ytdlpProc.on('error', (err) => {
