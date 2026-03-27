@@ -650,10 +650,30 @@ function renderShortsPage(user, analyses) {
       border: var(--border-subtle);
       border-radius: 12px;
       padding: 32px;
-      max-width: 600px;
-      max-height: 80vh;
+      max-width: 800px;
+      max-height: 85vh;
       overflow-y: auto;
-      width: 90%;
+      width: 95%;
+    }
+
+    .moment-video-wrap {
+      position: relative;
+      width: 100%;
+      padding-bottom: 56.25%;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .moment-video-wrap iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 8px;
     }
 
     .modal-header {
@@ -830,8 +850,14 @@ function renderShortsPage(user, analyses) {
           </div>
         ` : `
           <div class="cards-grid">
-            ${analyses.map(analysis => `
+            ${analyses.map(analysis => {
+              // Extract video ID for thumbnail
+              const ytRegex = new RegExp('(?:youtube\\.com/watch\\\\?v=|youtu\\.be/|youtube\\.com/embed/)([a-zA-Z0-9_-]{11})');
+              const vidMatch = (analysis.video_url || '').match(ytRegex);
+              const vidId = vidMatch ? vidMatch[1] : null;
+              return `
               <div class="card" onclick="viewAnalysis('${analysis.id}')">
+                ${vidId ? `<img src="https://img.youtube.com/vi/${vidId}/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">` : ''}
                 <div class="card-header">
                   <div class="card-title">${analysis.video_title || 'YouTube Video'}</div>
                   <div class="card-meta">${new Date(analysis.created_at).toLocaleDateString()}</div>
@@ -847,7 +873,7 @@ function renderShortsPage(user, analyses) {
                   ${(analysis.moments?.length || 0) > 3 ? '<div style="padding: 8px 0; color: #666; font-size: 12px;">+' + ((analysis.moments?.length || 0) - 3) + ' more</div>' : ''}
                 </div>
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
         `}
       </div>
@@ -933,16 +959,38 @@ function renderShortsPage(user, analyses) {
       }
     }
 
+    function getVideoId(url) {
+      if (!url) return null;
+      const patterns = [
+        /(?:youtube\\.com\\/watch\\?v=|youtu\\.be\\/|youtube\\.com\\/embed\\/)([a-zA-Z0-9_-]{11})/,
+        /^([a-zA-Z0-9_-]{11})$/
+      ];
+      for (const p of patterns) {
+        const m = url.match(p);
+        if (m) return m[1];
+      }
+      return null;
+    }
+
+    function timeToSeconds(timeStr) {
+      if (!timeStr) return 0;
+      const parts = timeStr.split(':').map(Number);
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      return parts[0] || 0;
+    }
+
     async function viewAnalysis(id) {
       try {
         const response = await fetch('/shorts/api/' + id);
         const data = await response.json();
         const analysis = data.analysis;
+        const videoId = getVideoId(analysis.video_url);
 
         const html = \`
           <div class="modal-header">
             <h2 class="modal-title">\${analysis.video_title || 'Analysis'}</h2>
-            <p style="color: #888; margin-top: 8px;">\${analysis.moments?.length || 0} moments found</p>
+            <p style="color: #888; margin-top: 8px;">\${analysis.moments?.length || 0} viral moments found</p>
           </div>
           <div id="momentsContainer"></div>
         \`;
@@ -953,23 +1001,43 @@ function renderShortsPage(user, analyses) {
         (analysis.moments || []).forEach((moment, idx) => {
           const card = document.createElement('div');
           card.className = 'moment-card';
+
+          // Parse time range for video embed
+          const rangeParts = (moment.timeRange || '').split('-');
+          const startSec = timeToSeconds(rangeParts[0]);
+          const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
+
+          // Build video embed if we have a video ID
+          const videoEmbed = videoId ? \`
+            <div class="moment-video-wrap">
+              <iframe src="https://www.youtube.com/embed/\${videoId}?start=\${startSec}&end=\${endSec}&rel=0&modestbranding=1"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen loading="lazy"></iframe>
+            </div>
+          \` : '';
+
           card.innerHTML = \`
             <div class="moment-card-header">
               <div style="flex: 1;">
                 <div class="moment-card-title">\${moment.title}</div>
-                <div class="moment-card-time">\${moment.timeRange}</div>
+                <div class="moment-card-time">\${moment.timeRange} (\${endSec - startSec}s clip)</div>
               </div>
               <div class="moment-score">\${moment.viralityScore}%</div>
             </div>
+            \${videoEmbed}
             <div class="moment-card-desc">\${moment.description}</div>
-            <div style="margin-top: 12px;">
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
               <button class="btn btn-small btn-primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
                 Generate Content
               </button>
+              \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
+                class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
+                Open on YouTube
+              </a>\` : ''}
             </div>
           \`;
           card.onclick = (e) => {
-            if (e.target.tagName !== 'BUTTON') {
+            if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'IFRAME') {
               card.classList.toggle('selected');
             }
           };
