@@ -334,36 +334,6 @@ function parseTimeRange(rangeStr) {
 }
 
 // GET /debug-transcript/:videoId - Debug transcript fetching (try both strategies)
-router.get('/debug-transcript/:videoId', requireAuth, async (req, res) => {
-  const videoId = req.params.videoId;
-  const results = { videoId, strategies: [] };
-
-  // Test Strategy A: Direct fetch
-  try {
-    const segments = await fetchTranscriptDirect(videoId);
-    results.strategies.push({ name: 'direct_fetch', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
-  } catch(e) {
-    results.strategies.push({ name: 'direct_fetch', success: false, error: e.message });
-  }
-
-  // Test Strategy B: yt-dlp
-  try {
-    const segments = await fetchTranscriptWithYtdlp(videoId);
-    results.strategies.push({ name: 'ytdlp', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
-  } catch(e) {
-    results.strategies.push({ name: 'ytdlp', success: false, error: e.message });
-  }
-
-  // Also list files in the subtitle temp dir
-  try {
-    const tmpDir = path.join('/tmp', 'yt-subtitles');
-    const files = fs.existsSync(tmpDir) ? fs.readdirSync(tmpDir) : [];
-    results.subtitleFiles = files;
-  } catch(e) {}
-
-  res.json(results);
-});
-
 // GET / - Main Smart Shorts page
 router.get('/', requireAuth, async (req, res) => {
   try {
