@@ -1496,7 +1496,6 @@ function renderShortsPage(user, analyses) {
             class="upload-input"
             id="videoUrl"
             placeholder="https://youtube.com/watch?v=..."
-            onkeydown="if(event.key==='Enter'){event.preventDefault();analyzeVideo();}"
           >
           <button class="btn btn-primary" onclick="analyzeVideo()">
             <span id="analyzeBtn">Analyze</span>
@@ -1559,6 +1558,19 @@ function renderShortsPage(user, analyses) {
   </div>
 
   <script>
+    // Enter key triggers analyze
+    document.addEventListener('DOMContentLoaded', function() {
+      var urlInput = document.getElementById('videoUrl');
+      if (urlInput) {
+        urlInput.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            analyzeVideo();
+          }
+        });
+      }
+    });
+
     async function analyzeVideo() {
       const url = document.getElementById('videoUrl').value.trim();
       if (!url) {
