@@ -845,13 +845,12 @@ router.post('/clip', requireAuth, async (req, res) => {
           return;
         }
 
-        // NEW APPROACH: Download full video at 720p, then use ffmpeg for EVERYTHING
-        // (seeking, cutting, cropping, encoding). This avoids yt-dlp's --download-sections
-        // which produces files with broken timestamps that QuickTime can't play.
+        // Download full video at 1080p, then use ffmpeg for seeking/cutting/cropping/encoding.
+        // This avoids yt-dlp's --download-sections which produces broken timestamps.
         const tempDownload = outputPath + '.temp.mp4';
         const ytdlpArgs = [
           '--no-playlist',
-          '-f', 'bestvideo[height<=720][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+          '-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
           '--merge-output-format', 'mp4',
           '-o', tempDownload,
           '--no-warnings',
@@ -922,8 +921,8 @@ router.post('/clip', requireAuth, async (req, res) => {
             '-b:a', '128k',
             '-ar', '44100',
             '-ac', '2',
-            '-preset', 'fast',
-            '-crf', '23',
+            '-preset', 'medium',
+            '-crf', '18',
             '-movflags', '+faststart',
             '-max_muxing_queue_size', '1024',
             '-y',
