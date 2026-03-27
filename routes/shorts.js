@@ -2,12 +2,18 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 // youtube-transcript has "type":"module" which breaks dynamic import in CJS projects
 // Use our CJS wrapper that loads the bundle directly
 const { YoutubeTranscript } = require('../utils/youtube-transcript-loader.cjs');
 const OpenAI = require('openai');
-const ytdl = require('@distube/ytdl-core');
+// Lazy-load ytdl-core to avoid crashing if it has issues
+let ytdl;
+try { ytdl = require('@distube/ytdl-core'); } catch (e) { console.error('ytdl-core not available:', e.message); }
+
+// Check if ffmpeg is available
+let ffmpegAvailable = false;
+try { execSync('ffmpeg -version', { stdio: 'pipe' }); ffmpegAvailable = true; } catch (e) { console.log('ffmpeg not found - clip download feature disabled'); }
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { shortsOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
@@ -419,6 +425,10 @@ router.delete('/api/:id', requireAuth, async (req, res) => {
 // POST /clip - Generate a video clip for a specific moment
 router.post('/clip', requireAuth, async (req, res) => {
   try {
+    if (!ytdl || !ffmpegAvailable) {
+      return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
+    }
+
     const { analysisId, momentIndex } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
