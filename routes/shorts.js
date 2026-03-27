@@ -835,13 +835,7 @@ router.post('/clip', requireAuth, async (req, res) => {
       }, 300000);
 
       try {
-        writeProgress('Downloading and clipping video...');
-
-        // Use yt-dlp (Python) for reliable YouTube downloads - it handles all YouTube's
-        // anti-bot measures and is actively maintained. Combined with ffmpeg for clipping.
-        // yt-dlp can download a specific section using --download-sections
-        const startTs = formatTimestamp(startSec);
-        const endTs = formatTimestamp(startSec + duration);
+        writeProgress('Downloading video...');
 
         // Check if yt-dlp is available
         let ytdlpPath = 'yt-dlp';
@@ -851,15 +845,14 @@ router.post('/clip', requireAuth, async (req, res) => {
           return;
         }
 
-        // Step 1: Download the section with yt-dlp
-        // Prefer H.264+AAC for maximum compatibility; avoid VP9/Opus which cause issues
+        // NEW APPROACH: Download full video at 720p, then use ffmpeg for EVERYTHING
+        // (seeking, cutting, cropping, encoding). This avoids yt-dlp's --download-sections
+        // which produces files with broken timestamps that QuickTime can't play.
         const tempDownload = outputPath + '.temp.mp4';
         const ytdlpArgs = [
           '--no-playlist',
-          '--download-sections', `*${startTs}-${endTs}`,
-          '-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080][vcodec^=avc1]+bestaudio/best[height<=1080][vcodec^=avc1]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '-f', 'bestvideo[height<=720][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best',
           '--merge-output-format', 'mp4',
-          '--postprocessor-args', '-fflags +genpts',
           '-o', tempDownload,
           '--no-warnings',
           '--no-check-certificates',
@@ -867,14 +860,13 @@ router.post('/clip', requireAuth, async (req, res) => {
           videoUrl
         ];
 
-        console.log(`  Running yt-dlp: section ${startTs} to ${endTs}`);
+        console.log(`  Running yt-dlp: downloading full video at 720p`);
         const ytdlpProc = spawn(ytdlpPath, ytdlpArgs);
 
         let stderrLog = '';
         ytdlpProc.stdout.on('data', (data) => {
           const msg = data.toString().trim();
           console.log(`  yt-dlp: ${msg}`);
-          // Parse download progress
           const pctMatch = msg.match(/(\d+\.?\d*)%/);
           if (pctMatch) {
             writeProgress(`Downloading: ${Math.round(parseFloat(pctMatch[1]))}%`);
@@ -884,7 +876,6 @@ router.post('/clip', requireAuth, async (req, res) => {
         ytdlpProc.stderr.on('data', (data) => {
           stderrLog += data.toString();
           if (stderrLog.length > 2048) stderrLog = stderrLog.slice(-2048);
-          console.error(`  yt-dlp stderr: ${data.toString().trim()}`);
         });
 
         ytdlpProc.on('close', (code) => {
@@ -892,48 +883,37 @@ router.post('/clip', requireAuth, async (req, res) => {
             clearTimeout(timeout);
             try { fs.unlinkSync(progressPath); } catch (e) {}
             console.error('yt-dlp stderr:', stderrLog.slice(-800));
-            const lines = stderrLog.split('\n');
-            const errorLine = lines.find(l => /error|denied|forbidden|refused/i.test(l)) || lines.slice(-3).join(' ');
-            writeError(`yt-dlp exit code ${code}: ${errorLine.substring(0, 300)}`);
+            writeError('Video download failed. Please try again.');
             return;
           }
 
-          // Step 2: Use ffmpeg to crop the downloaded clip to vertical 9:16 format
-          writeProgress('Converting to vertical short format...');
-
-          // yt-dlp may output with slightly different filename - find the actual file
+          // Find the actual downloaded file
           let actualDownload = tempDownload;
           if (!fs.existsSync(tempDownload)) {
-            // Look for files matching our base name in CLIPS_DIR
             const baseName = path.basename(outputPath, '.mp4');
             const files = fs.readdirSync(CLIPS_DIR);
             const match = files.find(f => f.includes(baseName) && f.includes('.temp'));
             if (match) {
               actualDownload = path.join(CLIPS_DIR, match);
-              console.log(`  Found actual download: ${match}`);
             } else {
-              // Try any recent file that's not the output
-              const outputBase = path.basename(outputPath);
-              const recentFiles = files.filter(f => f !== outputBase && !f.endsWith('.progress') && !f.endsWith('.error'));
-              console.log(`  Temp file not found. CLIPS_DIR contents: ${recentFiles.join(', ')}`);
-              writeError('Downloaded file not found after yt-dlp completed. Check server logs.');
+              writeError('Downloaded file not found. Please try again.');
               return;
             }
           }
 
-          console.log(`  Cropping to 9:16 vertical: ${actualDownload}`);
+          const dlSize = fs.statSync(actualDownload).size;
+          console.log(`  Downloaded: ${(dlSize / 1024 / 1024).toFixed(1)}MB`);
+          writeProgress('Creating vertical clip...');
 
-          // Crop center of video to 9:16 portrait, scale to 1080x1920
-          // Use min() to avoid cropping wider/taller than the source
-          // For landscape: crop width = height*9/16, full height, centered
-          // For portrait/square: just scale to fit 1080x1920
-          // Simple two-step: scale to fill 1080x1920, then center-crop to exact size
-          // This works for any input aspect ratio (landscape, portrait, square)
-          const vf = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1';
+          // Step 2: ffmpeg does EVERYTHING: seek, cut, crop, encode
+          // -ss before -i = fast input seeking (no decoding until start point)
+          // -t = duration to encode
+          // -vf = scale to fill 1080x1920, center-crop to exact size
           const ffmpegArgs = [
-            '-fflags', '+genpts+igndts',  // Fix broken timestamps from yt-dlp section download
+            '-ss', String(startSec),
             '-i', actualDownload,
-            '-vf', vf,
+            '-t', String(duration),
+            '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
             '-c:v', 'libx264',
             '-profile:v', 'high',
             '-level', '4.0',
@@ -949,50 +929,60 @@ router.post('/clip', requireAuth, async (req, res) => {
             '-y',
             outputPath
           ];
-          console.log('ffmpeg command:', ffmpegPath, ffmpegArgs.join(' '));
+          console.log('  ffmpeg:', ffmpegArgs.join(' '));
           const ffmpegCrop = spawn(ffmpegPath, ffmpegArgs);
 
           let ffmpegStderr = '';
           ffmpegCrop.stderr.on('data', (data) => {
             ffmpegStderr += data.toString();
-            if (ffmpegStderr.length > 2048) ffmpegStderr = ffmpegStderr.slice(-2048);
+            if (ffmpegStderr.length > 4096) ffmpegStderr = ffmpegStderr.slice(-4096);
             const msg = data.toString();
             if (msg.includes('time=')) {
               const timeMatch = msg.match(/time=(\S+)/);
-              if (timeMatch) writeProgress(`Formatting: ${timeMatch[1]}`);
+              if (timeMatch) writeProgress(`Encoding: ${timeMatch[1]}`);
             }
           });
 
           ffmpegCrop.on('close', (ffCode) => {
             clearTimeout(timeout);
             try { fs.unlinkSync(progressPath); } catch (e) {}
-            try { fs.unlinkSync(actualDownload); } catch (e) {} // Clean up actual download
+            try { fs.unlinkSync(actualDownload); } catch (e) {}
             if (actualDownload !== tempDownload) {
-              try { fs.unlinkSync(tempDownload); } catch (e) {} // Clean up temp too
+              try { fs.unlinkSync(tempDownload); } catch (e) {}
             }
 
-            if (ffCode === 0) {
-              const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
-              console.log(`Short clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB, 1080x1920)`);
-              if (size === 0) {
-                writeError('Clip formatting produced empty file');
+            if (ffCode === 0 && fs.existsSync(outputPath)) {
+              const size = fs.statSync(outputPath).size;
+              // Validate: check the file starts with ftyp (valid MP4)
+              const fd = fs.openSync(outputPath, 'r');
+              const header = Buffer.alloc(8);
+              fs.readSync(fd, header, 0, 8, 0);
+              fs.closeSync(fd);
+              const ftyp = header.toString('ascii', 4, 8);
+
+              if (size > 1000 && ftyp === 'ftyp') {
+                console.log(`  Clip ready: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB, ftyp OK)`);
+              } else {
+                console.error(`  Invalid output: size=${size}, ftyp='${ftyp}'`);
+                console.error('  ffmpeg stderr:', ffmpegStderr.slice(-800));
+                writeError('Video encoding produced invalid file. Please try again.');
               }
             } else {
-              console.error('ffmpeg crop stderr:', ffmpegStderr.slice(-800));
-              writeError(`Video formatting failed (code ${ffCode})`);
+              console.error('  ffmpeg failed (code ' + ffCode + '):', ffmpegStderr.slice(-800));
+              writeError(`Video encoding failed (code ${ffCode}). Please try again.`);
             }
           });
 
           ffmpegCrop.on('error', (err) => {
             clearTimeout(timeout);
-            try { fs.unlinkSync(tempDownload); } catch (e) {}
-            writeError('ffmpeg crop error: ' + err.message);
+            try { fs.unlinkSync(actualDownload); } catch (e) {}
+            writeError('Encoding error: ' + err.message);
           });
         });
 
         ytdlpProc.on('error', (err) => {
           clearTimeout(timeout);
-          writeError('yt-dlp process error: ' + err.message);
+          writeError('Download error: ' + err.message);
         });
 
       } catch (err) {
