@@ -573,18 +573,40 @@ router.post('/clip', requireAuth, async (req, res) => {
           }
 
           // Step 2: Use ffmpeg to crop the downloaded clip to vertical 9:16 format
-          // This center-crops the landscape video to portrait (keeps the center)
           writeProgress('Converting to vertical short format...');
-          console.log(`  yt-dlp done, cropping to 9:16 vertical...`);
 
+          // yt-dlp may output with slightly different filename - find the actual file
+          let actualDownload = tempDownload;
+          if (!fs.existsSync(tempDownload)) {
+            // Look for files matching the pattern in CLIPS_DIR
+            const files = fs.readdirSync(CLIPS_DIR).filter(f => f.includes('.download'));
+            const match = files.find(f => outputPath.includes(f.split('.download')[0]));
+            if (match) {
+              actualDownload = path.join(CLIPS_DIR, match);
+              console.log(`  Found actual download: ${match}`);
+            } else {
+              console.log(`  Files in CLIPS_DIR: ${files.join(', ')}`);
+              writeError('Downloaded file not found after yt-dlp completed');
+              return;
+            }
+          }
+
+          console.log(`  Cropping to 9:16 vertical: ${actualDownload}`);
+
+          // Crop center of landscape video to 9:16 portrait, scale to 1080x1920
+          // crop=w:h:x:y - width=(height*9/16), height=full, centered horizontally
           const ffmpegCrop = spawn(ffmpegPath, [
-            '-i', tempDownload,
-            '-vf', 'crop=ih*9/16:ih,scale=1080:1920',  // Crop center to 9:16, scale to 1080x1920
+            '-i', actualDownload,
+            '-vf', 'crop=in_h*9/16:in_h:(in_w-in_h*9/16)/2:0,scale=1080:1920',
             '-c:v', 'libx264',
+            '-profile:v', 'high',     // H.264 High profile for wide compatibility
+            '-level', '4.1',
+            '-pix_fmt', 'yuv420p',    // Required for browser playback
             '-c:a', 'aac',
+            '-b:a', '128k',
             '-preset', 'fast',
-            '-crf', '20',           // Good quality
-            '-movflags', '+faststart',
+            '-crf', '20',
+            '-movflags', '+faststart',  // Enable streaming/progressive download
             '-y',
             outputPath
           ]);
@@ -1296,13 +1318,22 @@ function renderShortsPage(user, analyses) {
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Build video embed if we have a video ID
+          // Build clickable thumbnail preview (iframes fail when embedding is disabled)
           const videoEmbed = videoId ? \`
-            <div class="moment-video-wrap">
-              <iframe src="https://www.youtube.com/embed/\${videoId}?start=\${startSec}&end=\${endSec}&rel=0&modestbranding=1"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen loading="lazy"></iframe>
-            </div>
+            <a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank" class="moment-video-wrap" style="display:block; position:relative; text-decoration:none;">
+              <img src="https://img.youtube.com/vi/\${videoId}/hqdefault.jpg" alt="Video thumbnail"
+                style="width:100%; border-radius:8px; display:block;" loading="lazy" />
+              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                width:60px; height:60px; background:rgba(0,0,0,0.7); border-radius:50%;
+                display:flex; align-items:center; justify-content:center;">
+                <div style="width:0; height:0; border-left:22px solid #fff; border-top:13px solid transparent;
+                  border-bottom:13px solid transparent; margin-left:4px;"></div>
+              </div>
+              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.8);
+                padding:2px 8px; border-radius:4px; color:#fff; font-size:12px;">
+                \${moment.timeRange}
+              </div>
+            </a>
           \` : '';
 
           card.innerHTML = \`
