@@ -536,15 +536,13 @@ router.post('/clip', requireAuth, async (req, res) => {
 
         writeProgress(`Using format itag=${format.itag} (${format.qualityLabel || 'unknown'}), starting ffmpeg...`);
 
-        // Build ffmpeg args with direct URL and proper headers
-        const headers = [
-          'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer: https://www.youtube.com/',
-          'Origin: https://www.youtube.com'
-        ].join('\r\n');
+        // Write the URL to a temp file to avoid shell escaping issues with long YouTube URLs
+        const inputListPath = outputPath + '.input.txt';
+        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
         const ffmpegArgs = [
-          '-headers', headers,
+          '-user_agent', userAgent,
+          '-referer', 'https://www.youtube.com/',
           '-ss', String(startSec),
           '-i', format.url,
           '-t', String(duration),
@@ -558,6 +556,7 @@ router.post('/clip', requireAuth, async (req, res) => {
           outputPath
         ];
 
+        console.log(`  ffmpeg URL length: ${format.url.length} chars`);
         const ffmpegProc = spawn(ffmpegPath, ffmpegArgs);
 
         let stderrLog = '';
@@ -575,6 +574,7 @@ router.post('/clip', requireAuth, async (req, res) => {
         ffmpegProc.on('close', (code) => {
           clearTimeout(timeout);
           try { fs.unlinkSync(progressPath); } catch (e) {}
+          try { fs.unlinkSync(inputListPath); } catch (e) {}
           if (code === 0) {
             const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
             console.log(`Clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
@@ -582,8 +582,11 @@ router.post('/clip', requireAuth, async (req, res) => {
               writeError('Clip generation produced empty file');
             }
           } else {
-            console.error('ffmpeg stderr (last 800):', stderrLog.slice(-800));
-            writeError(`ffmpeg exit code ${code}: ${stderrLog.slice(-200)}`);
+            console.error('ffmpeg stderr (last 1500):', stderrLog.slice(-1500));
+            // Extract the actual error line from stderr (usually starts with a recognizable pattern)
+            const lines = stderrLog.split('\n');
+            const errorLine = lines.find(l => /error|denied|forbidden|refused|timed out|403|404|401/i.test(l)) || lines.slice(-3).join(' ');
+            writeError(`ffmpeg exit code ${code}: ${errorLine.substring(0, 300)}`);
           }
         });
 
