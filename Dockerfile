@@ -1,4 +1,4 @@
-FROM node:18-slim
+FROM node:20-slim
 
 # Install ffmpeg and curl (needed for video clipping)
 RUN apt-get update && \
