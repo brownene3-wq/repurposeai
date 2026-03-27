@@ -333,54 +333,33 @@ function parseTimeRange(rangeStr) {
   return { start: parseTime(start), end: parseTime(end) };
 }
 
-// GET /debug-transcript/:videoId - Debug transcript fetching
+// GET /debug-transcript/:videoId - Debug transcript fetching (try both strategies)
 router.get('/debug-transcript/:videoId', requireAuth, async (req, res) => {
   const videoId = req.params.videoId;
   const results = { videoId, strategies: [] };
 
-  // Test direct fetch
+  // Test Strategy A: Direct fetch
   try {
-    const pageUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const pageResp = await fetch(pageUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-    });
-    const pageHtml = await pageResp.text();
-    const hasCaptions = pageHtml.includes('captionTracks');
-    const hasPlayerResp = pageHtml.includes('ytInitialPlayerResponse');
-    const pageLen = pageHtml.length;
-    const titleMatch = pageHtml.match(/<title>(.*?)<\/title>/);
-
-    // Try to extract caption info
-    let captionInfo = 'none found';
-    const captionMatch = pageHtml.match(/"captionTracks":\s*(\[.*?\])/);
-    if (captionMatch) {
-      try {
-        const tracks = JSON.parse(captionMatch[1]);
-        captionInfo = tracks.map(t => `${t.languageCode}(${t.kind||'manual'})`).join(', ');
-      } catch(e) { captionInfo = 'parse error: ' + e.message; }
-    }
-
-    results.strategies.push({
-      name: 'direct_fetch',
-      status: pageResp.status,
-      pageLength: pageLen,
-      title: titleMatch ? titleMatch[1] : 'unknown',
-      hasPlayerResponse: hasPlayerResp,
-      hasCaptionTracks: hasCaptions,
-      captionInfo
-    });
+    const segments = await fetchTranscriptDirect(videoId);
+    results.strategies.push({ name: 'direct_fetch', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
   } catch(e) {
-    results.strategies.push({ name: 'direct_fetch', error: e.message });
+    results.strategies.push({ name: 'direct_fetch', success: false, error: e.message });
   }
 
-  // Test yt-dlp list-subs
+  // Test Strategy B: yt-dlp
   try {
-    const { execSync } = require('child_process');
-    const output = execSync(`yt-dlp --list-subs --no-warnings --no-check-certificates "https://www.youtube.com/watch?v=${videoId}" 2>&1`, { timeout: 30000 }).toString();
-    results.strategies.push({ name: 'ytdlp_list_subs', output: output.substring(0, 1000) });
+    const segments = await fetchTranscriptWithYtdlp(videoId);
+    results.strategies.push({ name: 'ytdlp', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
   } catch(e) {
-    results.strategies.push({ name: 'ytdlp_list_subs', error: e.message.substring(0, 500), stderr: (e.stderr || '').toString().substring(0, 500) });
+    results.strategies.push({ name: 'ytdlp', success: false, error: e.message });
   }
+
+  // Also list files in the subtitle temp dir
+  try {
+    const tmpDir = path.join('/tmp', 'yt-subtitles');
+    const files = fs.existsSync(tmpDir) ? fs.readdirSync(tmpDir) : [];
+    results.subtitleFiles = files;
+  } catch(e) {}
 
   res.json(results);
 });
