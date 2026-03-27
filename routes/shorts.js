@@ -490,13 +490,32 @@ router.post('/clip', requireAuth, async (req, res) => {
       filename
     });
 
-    // Process in background
+    // Write progress to a file so the status endpoint can report it
+    const progressPath = outputPath + '.progress';
+    const writeProgress = (msg) => {
+      try { fs.writeFileSync(progressPath, msg); } catch (e) {}
+      console.log(`  [${filename}] ${msg}`);
+    };
+    const writeError = (msg) => {
+      try { fs.unlinkSync(progressPath); } catch (e) {}
+      try { fs.unlinkSync(outputPath); } catch (e) {}
+      try { fs.writeFileSync(outputPath + '.error', msg); } catch (e) {}
+      console.error(`  [${filename}] ERROR: ${msg}`);
+    };
+
+    // Process in background with timeout
     (async () => {
+      // Set a 3-minute timeout for the whole operation
+      const timeout = setTimeout(() => {
+        writeError('Clip generation timed out after 3 minutes');
+      }, 180000);
+
       try {
-        console.log(`Starting clip: ${filename} (${startSec}s to ${startSec + duration}s)`);
+        writeProgress('Getting video info...');
 
         // Get video info from ytdl (handles signature decryption)
         const info = await ytdl.getInfo(videoUrl);
+        writeProgress('Got video info, selecting format...');
 
         // Find best combined format (video+audio) - prefer lowest quality for speed
         const formats = info.formats
@@ -505,21 +524,19 @@ router.post('/clip', requireAuth, async (req, res) => {
 
         let format = formats[0]; // Lowest quality combined format
         if (!format) {
-          // No combined format - try any format with video
           const videoFormats = info.formats.filter(f => f.hasVideo && f.url).sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0));
           format = videoFormats[0];
         }
 
         if (!format || !format.url) {
-          console.error('No suitable formats found');
-          fs.writeFileSync(outputPath + '.error', 'No suitable video format found for this video');
+          clearTimeout(timeout);
+          writeError('No suitable video format found for this video');
           return;
         }
 
-        console.log(`  Using format: itag=${format.itag}, quality=${format.qualityLabel || 'unknown'}, hasAudio=${format.hasAudio}`);
+        writeProgress(`Using format itag=${format.itag} (${format.qualityLabel || 'unknown'}), starting ffmpeg...`);
 
-        // Build ffmpeg args - use the direct URL with proper headers
-        // YouTube requires specific headers for direct URL access
+        // Build ffmpeg args with direct URL and proper headers
         const headers = [
           'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Referer: https://www.youtube.com/',
@@ -528,8 +545,8 @@ router.post('/clip', requireAuth, async (req, res) => {
 
         const ffmpegArgs = [
           '-headers', headers,
-          '-ss', String(startSec),     // Input seeking - fast on HTTP
-          '-i', format.url,            // Direct YouTube stream URL
+          '-ss', String(startSec),
+          '-i', format.url,
           '-t', String(duration),
           '-c:v', 'libx264',
           '-c:a', 'aac',
@@ -541,45 +558,43 @@ router.post('/clip', requireAuth, async (req, res) => {
           outputPath
         ];
 
-        console.log(`  Running ffmpeg with direct URL, seeking to ${startSec}s`);
         const ffmpegProc = spawn(ffmpegPath, ffmpegArgs);
 
         let stderrLog = '';
         ffmpegProc.stderr.on('data', (data) => {
           stderrLog += data.toString();
+          // Keep only last 2KB to avoid memory growth
+          if (stderrLog.length > 2048) stderrLog = stderrLog.slice(-2048);
           const msg = data.toString();
           if (msg.includes('time=')) {
             const timeMatch = msg.match(/time=(\S+)/);
-            if (timeMatch) console.log(`  ffmpeg progress: ${timeMatch[1]}`);
+            if (timeMatch) writeProgress(`Encoding: ${timeMatch[1]}`);
           }
         });
 
         ffmpegProc.on('close', (code) => {
+          clearTimeout(timeout);
+          try { fs.unlinkSync(progressPath); } catch (e) {}
           if (code === 0) {
             const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
             console.log(`Clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
             if (size === 0) {
-              try { fs.unlinkSync(outputPath); } catch (e) {}
-              fs.writeFileSync(outputPath + '.error', 'Clip generation produced empty file');
+              writeError('Clip generation produced empty file');
             }
           } else {
-            console.error(`ffmpeg exited with code ${code}`);
-            console.error('ffmpeg stderr (last 800 chars):', stderrLog.slice(-800));
-            try { fs.unlinkSync(outputPath); } catch (e) {}
-            fs.writeFileSync(outputPath + '.error', `Clip encoding failed (code ${code}). Last error: ${stderrLog.slice(-200)}`);
+            console.error('ffmpeg stderr (last 800):', stderrLog.slice(-800));
+            writeError(`ffmpeg exit code ${code}: ${stderrLog.slice(-200)}`);
           }
         });
 
         ffmpegProc.on('error', (err) => {
-          console.error('ffmpeg process error:', err.message);
-          try { fs.unlinkSync(outputPath); } catch (e) {}
-          fs.writeFileSync(outputPath + '.error', 'ffmpeg process error: ' + err.message);
+          clearTimeout(timeout);
+          writeError('ffmpeg process error: ' + err.message);
         });
 
       } catch (err) {
-        console.error('Clip generation error:', err.message);
-        try { fs.unlinkSync(outputPath); } catch (e) {}
-        fs.writeFileSync(outputPath + '.error', `Clip generation failed: ${err.message}`);
+        clearTimeout(timeout);
+        writeError(`Clip generation failed: ${err.message}`);
       }
     })();
 
@@ -594,6 +609,7 @@ router.get('/clip/status/:filename', requireAuth, (req, res) => {
   const filename = path.basename(req.params.filename); // Prevent path traversal
   const filePath = path.join(CLIPS_DIR, filename);
   const errorPath = filePath + '.error';
+  const progressPath = filePath + '.progress';
 
   // Check for error marker first
   if (fs.existsSync(errorPath)) {
@@ -606,12 +622,18 @@ router.get('/clip/status/:filename', requireAuth, (req, res) => {
   if (fs.existsSync(filePath)) {
     const stats = fs.statSync(filePath);
     if (stats.size > 0) {
+      try { fs.unlinkSync(progressPath); } catch (e) {}
       res.json({ ready: true, size: stats.size, filename });
     } else {
       res.json({ ready: false, message: 'Still processing...' });
     }
   } else {
-    res.json({ ready: false, message: 'Still processing...' });
+    // Check for progress file
+    let progressMsg = 'Still processing...';
+    if (fs.existsSync(progressPath)) {
+      try { progressMsg = fs.readFileSync(progressPath, 'utf8') || progressMsg; } catch (e) {}
+    }
+    res.json({ ready: false, message: progressMsg });
   }
 });
 
@@ -1395,9 +1417,16 @@ function renderShortsPage(user, analyses) {
               clearInterval(pollInterval);
               throw new Error('Clip generation timed out');
             } else {
-              // Update progress
-              const dots = '.'.repeat((attempts % 3) + 1);
-              btn.textContent = 'Processing' + dots;
+              // Update progress with server message
+              const msg = statusData.message || '';
+              if (msg.startsWith('Encoding:')) {
+                btn.textContent = msg;
+              } else if (msg !== 'Still processing...') {
+                btn.textContent = msg.substring(0, 30);
+              } else {
+                const dots = '.'.repeat((attempts % 3) + 1);
+                btn.textContent = 'Processing' + dots;
+              }
             }
           } catch (pollError) {
             clearInterval(pollInterval);
