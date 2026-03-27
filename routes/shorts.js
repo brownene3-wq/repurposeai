@@ -74,68 +74,55 @@ async function fetchTranscriptDirect(videoId) {
 
   const pageHtml = await pageResp.text();
 
-  // Step 2: Extract caption tracks from the page's ytInitialPlayerResponse
-  // The JSON can be very long so we need a non-greedy match that handles nested brackets
+  // Step 2: Extract caption tracks using bracket-counting (most reliable)
   let captionTracks;
-  const captionMatch = pageHtml.match(/"captionTracks":\s*(\[.*?\])/);
-  if (captionMatch) {
-    try {
-      captionTracks = JSON.parse(captionMatch[1]);
-    } catch(e) {
-      // Try a more aggressive extraction - find the array bounds manually
-      const startIdx = pageHtml.indexOf('"captionTracks":');
-      if (startIdx !== -1) {
-        const arrStart = pageHtml.indexOf('[', startIdx);
-        let depth = 0, arrEnd = arrStart;
-        for (let i = arrStart; i < pageHtml.length && i < arrStart + 50000; i++) {
-          if (pageHtml[i] === '[') depth++;
-          if (pageHtml[i] === ']') depth--;
-          if (depth === 0) { arrEnd = i + 1; break; }
-        }
-        try {
-          captionTracks = JSON.parse(pageHtml.substring(arrStart, arrEnd));
-        } catch(e2) {
-          throw new Error('Failed to parse captionTracks JSON: ' + e2.message);
-        }
+  const startIdx = pageHtml.indexOf('"captionTracks":');
+  if (startIdx !== -1) {
+    const arrStart = pageHtml.indexOf('[', startIdx);
+    if (arrStart !== -1 && arrStart < startIdx + 30) {
+      let depth = 0, arrEnd = arrStart;
+      for (let i = arrStart; i < pageHtml.length && i < arrStart + 100000; i++) {
+        if (pageHtml[i] === '[') depth++;
+        if (pageHtml[i] === ']') depth--;
+        if (depth === 0) { arrEnd = i + 1; break; }
+      }
+      try {
+        captionTracks = JSON.parse(pageHtml.substring(arrStart, arrEnd));
+      } catch(e) {
+        console.log('  captionTracks parse error:', e.message, 'raw:', pageHtml.substring(arrStart, arrStart + 200));
+        throw new Error('Failed to parse captionTracks JSON: ' + e.message);
       }
     }
   }
 
   if (!captionTracks || captionTracks.length === 0) {
-    throw new Error('No caption tracks found in video page');
+    // Check if video page has playability status
+    const playMatch = pageHtml.match(/"playabilityStatus":\s*\{[^}]*"status"\s*:\s*"([^"]+)"/);
+    const reason = playMatch ? playMatch[1] : 'unknown';
+    throw new Error(`No caption tracks found (playability: ${reason}, pageLen: ${pageHtml.length})`);
   }
 
-  if (!captionTracks || captionTracks.length === 0) {
-    throw new Error('Video has no caption tracks');
-  }
-
-  console.log(`  Found ${captionTracks.length} caption tracks`);
+  console.log(`  Found ${captionTracks.length} caption tracks:`, captionTracks.map(t => `${t.languageCode}(${t.kind||'manual'})`).join(', '));
 
   // Step 3: Prefer English, fall back to first available
-  let track = captionTracks.find(t => t.languageCode === 'en' || (t.languageCode || '').startsWith('en'));
+  let track = captionTracks.find(t => (t.languageCode || '').startsWith('en'));
   if (!track) {
-    // Try auto-generated (kind === 'asr')
-    track = captionTracks.find(t => t.kind === 'asr' && ((t.languageCode || '').startsWith('en')));
+    track = captionTracks.find(t => t.kind === 'asr');
   }
   if (!track) {
-    // Take any track
     track = captionTracks[0];
   }
 
   console.log(`  Using caption track: ${track.languageCode} (${track.kind || 'manual'})`);
 
-  // Step 4: Fetch the subtitle XML
+  // Step 4: Fetch the subtitle content
   let subtitleUrl = track.baseUrl;
   if (!subtitleUrl) {
     throw new Error('Caption track has no URL');
   }
 
   // Request JSON3 format for easier parsing
-  if (subtitleUrl.includes('?')) {
-    subtitleUrl += '&fmt=json3';
-  } else {
-    subtitleUrl += '?fmt=json3';
-  }
+  subtitleUrl += (subtitleUrl.includes('?') ? '&' : '?') + 'fmt=json3';
 
   const subResp = await fetch(subtitleUrl, {
     headers: {
@@ -162,14 +149,50 @@ async function fetchTranscriptDirect(videoId) {
         }
       }
     }
+    // If json3 parsed but events were empty, check for different json structure
+    if (segments.length === 0 && json.actions) {
+      // Some videos use actions instead of events
+      for (const action of json.actions) {
+        if (action.updateEngagementPanelAction) continue;
+        const body = action.appendContinuationItemsAction?.continuationItems || [];
+        for (const item of body) {
+          const text = item?.transcriptSegmentRenderer?.snippet?.runs?.map(r => r.text).join('') || '';
+          const startMs = parseInt(item?.transcriptSegmentRenderer?.startMs || '0');
+          if (text.trim()) {
+            segments.push({ offset: startMs, text: text.trim() });
+          }
+        }
+      }
+    }
   } catch (jsonErr) {
     // Fall back to XML parsing
+    console.log('  JSON parse failed, trying XML. First 200 chars:', subText.slice(0, 200));
     const textMatches = subText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
     for (const m of textMatches) {
       const startMs = Math.round(parseFloat(m[1]) * 1000);
       const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
       if (text) {
         segments.push({ offset: startMs, text });
+      }
+    }
+  }
+
+  if (segments.length === 0) {
+    // Try fetching without fmt=json3 (get XML instead)
+    const xmlUrl = subtitleUrl.replace('&fmt=json3', '').replace('?fmt=json3', '');
+    console.log('  JSON3 was empty, trying XML format');
+    const xmlResp = await fetch(xmlUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    if (xmlResp.ok) {
+      const xmlText = await xmlResp.text();
+      const textMatches = xmlText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
+      for (const m of textMatches) {
+        const startMs = Math.round(parseFloat(m[1]) * 1000);
+        const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+        if (text) {
+          segments.push({ offset: startMs, text });
+        }
       }
     }
   }
@@ -332,6 +355,42 @@ function parseTimeRange(rangeStr) {
   };
   return { start: parseTime(start), end: parseTime(end) };
 }
+
+// GET /debug-transcript/:videoId - Detailed debug for transcript fetching
+router.get('/debug-transcript/:videoId', requireAuth, async (req, res) => {
+  const videoId = req.params.videoId;
+  const results = { videoId, deployVersion: 'v5-robust', strategies: [] };
+
+  // Test Strategy A: Direct fetch with detailed info
+  try {
+    const segments = await fetchTranscriptDirect(videoId);
+    results.strategies.push({ name: 'direct_fetch', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
+  } catch(e) {
+    results.strategies.push({ name: 'direct_fetch', success: false, error: e.message });
+  }
+
+  // Test Strategy B: yt-dlp
+  try {
+    const segments = await fetchTranscriptWithYtdlp(videoId);
+    results.strategies.push({ name: 'ytdlp', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
+  } catch(e) {
+    results.strategies.push({ name: 'ytdlp', success: false, error: e.message });
+  }
+
+  // List subtitle temp files
+  try {
+    const tmpDir = path.join('/tmp', 'yt-subtitles');
+    results.subtitleFiles = fs.existsSync(tmpDir) ? fs.readdirSync(tmpDir) : [];
+  } catch(e) {}
+
+  // Also check yt-dlp version
+  try {
+    const { execSync } = require('child_process');
+    results.ytdlpVersion = execSync('yt-dlp --version 2>&1').toString().trim();
+  } catch(e) { results.ytdlpVersion = 'unknown'; }
+
+  res.json(results);
+});
 
 // GET / - Main Smart Shorts page
 router.get('/', requireAuth, async (req, res) => {
