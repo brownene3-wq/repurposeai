@@ -11,12 +11,12 @@ const OpenAI = require('openai');
 let ytdl;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { console.error('ytdl-core not available:', e.message); }
 
-// Find ffmpeg binary: check ffmpeg-static first, then system ffmpeg
+// Find ffmpeg binary: check local bin/, then ffmpeg-static, then system
 let ffmpegPath = null;
-try { ffmpegPath = require('ffmpeg-static'); } catch (e) {}
-if (!ffmpegPath) {
-  try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {}
-}
+const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
+if (fs.existsSync(localFfmpeg)) { ffmpegPath = localFfmpeg; }
+if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
+if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
 const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
