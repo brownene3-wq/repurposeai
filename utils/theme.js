@@ -105,4 +105,4 @@ function getThemeScript() {
   `;
 }
 
-};
+module.exports = { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript };
