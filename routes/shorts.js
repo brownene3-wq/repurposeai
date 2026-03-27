@@ -356,42 +356,6 @@ function parseTimeRange(rangeStr) {
   return { start: parseTime(start), end: parseTime(end) };
 }
 
-// GET /debug-transcript/:videoId - Detailed debug for transcript fetching
-router.get('/debug-transcript/:videoId', requireAuth, async (req, res) => {
-  const videoId = req.params.videoId;
-  const results = { videoId, deployVersion: 'v5-robust', strategies: [] };
-
-  // Test Strategy A: Direct fetch with detailed info
-  try {
-    const segments = await fetchTranscriptDirect(videoId);
-    results.strategies.push({ name: 'direct_fetch', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
-  } catch(e) {
-    results.strategies.push({ name: 'direct_fetch', success: false, error: e.message });
-  }
-
-  // Test Strategy B: yt-dlp
-  try {
-    const segments = await fetchTranscriptWithYtdlp(videoId);
-    results.strategies.push({ name: 'ytdlp', success: true, segmentCount: segments.length, sample: segments.slice(0, 3) });
-  } catch(e) {
-    results.strategies.push({ name: 'ytdlp', success: false, error: e.message });
-  }
-
-  // List subtitle temp files
-  try {
-    const tmpDir = path.join('/tmp', 'yt-subtitles');
-    results.subtitleFiles = fs.existsSync(tmpDir) ? fs.readdirSync(tmpDir) : [];
-  } catch(e) {}
-
-  // Also check yt-dlp version
-  try {
-    const { execSync } = require('child_process');
-    results.ytdlpVersion = execSync('yt-dlp --version 2>&1').toString().trim();
-  } catch(e) { results.ytdlpVersion = 'unknown'; }
-
-  res.json(results);
-});
-
 // GET / - Main Smart Shorts page
 router.get('/', requireAuth, async (req, res) => {
   try {
