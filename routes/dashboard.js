@@ -11,7 +11,7 @@ router.get('/', requireAuth, async (req, res) => {
     videosProcessed = await contentOps.countByUserIdThisMonth(req.user.id);
     postsGenerated = await outputOps.countByUserId(req.user.id);
   } catch (e) { console.error('Dashboard stats error:', e); }
-  COnst planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free';
+  const planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free';
   const html = `${getHeadHTML('Dashboard')}
   <style>
     ${getBaseCSS()}
@@ -217,4 +217,8 @@ router.get('/', requireAuth, async (req, res) => {
     });
   </script>
 </body>
-</html>
+</html>`;
+  res.send(html);
+});
+
+module.exports = router;
