@@ -427,25 +427,6 @@ router.delete('/api/:id', requireAuth, async (req, res) => {
   }
 });
 
-// GET /clip/debug - Check ffmpeg and ytdl availability (temp diagnostic)
-router.get('/clip/debug', requireAuth, (req, res) => {
-  let ffmpegCheck = 'not found';
-  try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegCheck = 'system'; } catch (e) {}
-  const localBin = path.join(__dirname, '..', 'bin', 'ffmpeg');
-  const localExists = fs.existsSync(localBin);
-  res.json({
-    ytdlLoaded: !!ytdl,
-    ytdlError: ytdlError || null,
-    ffmpegPath,
-    ffmpegAvailable,
-    systemFfmpeg: ffmpegCheck,
-    localBinExists: localExists,
-    localBinPath: localBin,
-    binDirExists: fs.existsSync(path.join(__dirname, '..', 'bin')),
-    nodeVersion: process.version
-  });
-});
-
 // POST /clip - Generate a video clip for a specific moment
 router.post('/clip', requireAuth, async (req, res) => {
   try {
@@ -509,26 +490,85 @@ router.post('/clip', requireAuth, async (req, res) => {
       filename
     });
 
-    // Process in background: pipe ytdl stream through ffmpeg to clip
+    // Process in background: get direct URL from ytdl, then use ffmpeg with fast HTTP seeking
     (async () => {
       try {
         console.log(`Starting clip: ${filename} (${startSec}s to ${startSec + duration}s)`);
 
-        // Download with ytdl and pipe to ffmpeg for clipping
-        const videoStream = ytdl(videoUrl, {
-          quality: 'highest',
-          filter: 'videoandaudio'
-        });
+        // Get video info to find a direct stream URL (allows ffmpeg HTTP seeking)
+        const info = await ytdl.getInfo(videoUrl);
 
-        videoStream.on('error', (err) => {
-          console.error('ytdl stream error:', err.message);
+        // Try to find a combined (video+audio) format first
+        let format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'videoandaudio' });
+
+        if (!format || !format.url) {
+          // Fallback: get best video-only and best audio-only, merge with ffmpeg
+          const videoFormat = ytdl.chooseFormat(info.formats, { quality: 'highestvideo', filter: 'videoonly' });
+          const audioFormat = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
+
+          if (videoFormat && videoFormat.url && audioFormat && audioFormat.url) {
+            console.log(`Using separate streams: video=${videoFormat.qualityLabel || videoFormat.itag}, audio=${audioFormat.audioBitrate || audioFormat.itag}kbps`);
+
+            // ffmpeg with two inputs, -ss before each -i for fast seeking
+            const ffmpegProc = spawn(ffmpegPath, [
+              '-ss', String(startSec),
+              '-i', videoFormat.url,
+              '-ss', String(startSec),
+              '-i', audioFormat.url,
+              '-t', String(duration),
+              '-map', '0:v:0',
+              '-map', '1:a:0',
+              '-c:v', 'libx264',
+              '-c:a', 'aac',
+              '-preset', 'ultrafast',
+              '-movflags', '+faststart',
+              '-y',
+              outputPath
+            ]);
+
+            let stderrLog = '';
+            ffmpegProc.stderr.on('data', (data) => {
+              stderrLog += data.toString();
+              const msg = data.toString();
+              if (msg.includes('time=')) {
+                const timeMatch = msg.match(/time=(\S+)/);
+                if (timeMatch) console.log(`  ffmpeg progress: ${timeMatch[1]}`);
+              }
+            });
+
+            ffmpegProc.on('close', (code) => {
+              if (code === 0) {
+                const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
+                console.log(`Clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
+              } else {
+                console.error(`ffmpeg exited with code ${code}`);
+                console.error('ffmpeg stderr (last 500 chars):', stderrLog.slice(-500));
+                try { fs.unlinkSync(outputPath); } catch (e) {}
+                try { fs.writeFileSync(outputPath + '.error', 'Clip generation failed - video encoding error'); } catch (e) {}
+              }
+            });
+
+            ffmpegProc.on('error', (err) => {
+              console.error('ffmpeg process error:', err.message);
+              try { fs.unlinkSync(outputPath); } catch (e) {}
+              try { fs.writeFileSync(outputPath + '.error', 'Clip generation failed - ffmpeg error'); } catch (e) {}
+            });
+
+            return; // Exit - ffmpeg is running in background
+          }
+
+          // No usable formats at all
+          console.error('No suitable video formats found for clipping');
           try { fs.unlinkSync(outputPath); } catch (e) {}
-        });
+          try { fs.writeFileSync(outputPath + '.error', 'No suitable video formats found'); } catch (e) {}
+          return;
+        }
 
-        // Use ffmpeg to cut the clip from the stream
+        // Combined format available - use -ss before -i for fast HTTP seeking
+        console.log(`Using combined stream: ${format.qualityLabel || format.itag}, ${format.container}`);
         const ffmpegProc = spawn(ffmpegPath, [
-          '-i', 'pipe:0',        // Read from stdin
           '-ss', String(startSec),
+          '-i', format.url,
           '-t', String(duration),
           '-c:v', 'libx264',
           '-c:a', 'aac',
@@ -538,14 +578,9 @@ router.post('/clip', requireAuth, async (req, res) => {
           outputPath
         ]);
 
-        // Pipe ytdl output to ffmpeg input
-        videoStream.pipe(ffmpegProc.stdin).on('error', (e) => {
-          // Ignore EPIPE errors (ffmpeg may close stdin early after seeking)
-          if (e.code !== 'EPIPE') console.error('Pipe error:', e.message);
-        });
-
+        let stderrLog = '';
         ffmpegProc.stderr.on('data', (data) => {
-          // Log ffmpeg progress occasionally
+          stderrLog += data.toString();
           const msg = data.toString();
           if (msg.includes('time=')) {
             const timeMatch = msg.match(/time=(\S+)/);
@@ -559,18 +594,22 @@ router.post('/clip', requireAuth, async (req, res) => {
             console.log(`Clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
           } else {
             console.error(`ffmpeg exited with code ${code}`);
+            console.error('ffmpeg stderr (last 500 chars):', stderrLog.slice(-500));
             try { fs.unlinkSync(outputPath); } catch (e) {}
+            try { fs.writeFileSync(outputPath + '.error', 'Clip generation failed - video encoding error'); } catch (e) {}
           }
         });
 
         ffmpegProc.on('error', (err) => {
           console.error('ffmpeg process error:', err.message);
           try { fs.unlinkSync(outputPath); } catch (e) {}
+          try { fs.writeFileSync(outputPath + '.error', 'Clip generation failed - ffmpeg error'); } catch (e) {}
         });
 
       } catch (err) {
         console.error('Clip generation error:', err.message);
         try { fs.unlinkSync(outputPath); } catch (e) {}
+        try { fs.writeFileSync(outputPath + '.error', `Clip generation failed: ${err.message}`); } catch (e) {}
       }
     })();
 
@@ -584,10 +623,18 @@ router.post('/clip', requireAuth, async (req, res) => {
 router.get('/clip/status/:filename', requireAuth, (req, res) => {
   const filename = path.basename(req.params.filename); // Prevent path traversal
   const filePath = path.join(CLIPS_DIR, filename);
+  const errorPath = filePath + '.error';
+
+  // Check for error marker first
+  if (fs.existsSync(errorPath)) {
+    let errorMsg = 'Clip generation failed';
+    try { errorMsg = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
+    try { fs.unlinkSync(errorPath); } catch (e) {}
+    return res.json({ ready: false, failed: true, message: errorMsg });
+  }
 
   if (fs.existsSync(filePath)) {
     const stats = fs.statSync(filePath);
-    // Check if file is still being written (size changing)
     if (stats.size > 0) {
       res.json({ ready: true, size: stats.size, filename });
     } else {
@@ -1352,7 +1399,10 @@ function renderShortsPage(user, analyses) {
             const statusResp = await fetch('/shorts/clip/status/' + filename);
             const statusData = await statusResp.json();
 
-            if (statusData.ready) {
+            if (statusData.failed) {
+              clearInterval(pollInterval);
+              throw new Error(statusData.message || 'Clip generation failed');
+            } else if (statusData.ready) {
               clearInterval(pollInterval);
               btn.textContent = 'Downloading...';
 
