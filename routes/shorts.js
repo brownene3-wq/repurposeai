@@ -3,8 +3,9 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
-// youtube-transcript npm package is unreliable (gets blocked by YouTube)
-// We use yt-dlp for transcript fetching instead - it handles anti-bot measures
+// Try youtube-transcript npm first (faster), fall back to yt-dlp (more reliable)
+let YoutubeTranscript;
+try { YoutubeTranscript = require('../utils/youtube-transcript-loader.cjs').YoutubeTranscript; } catch(e) { console.log('youtube-transcript not available:', e.message); }
 const OpenAI = require('openai');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
@@ -265,13 +266,37 @@ router.post('/analyze', requireAuth, async (req, res) => {
     try {
       sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript...' });
 
-      // Fetch transcript using yt-dlp (reliable, handles YouTube anti-bot)
+      // Try multiple transcript sources: npm package first (fast), then yt-dlp (robust)
       let segments;
-      try {
-        segments = await fetchTranscriptWithYtdlp(videoId);
-      } catch (transcriptError) {
-        console.error('Transcript fetch error:', transcriptError);
-        sendUpdate({ status: 'error', message: transcriptError.message || 'Could not fetch transcript. Make sure the video has captions enabled.' });
+
+      // Strategy A: youtube-transcript npm package (fast, works for most videos)
+      if (YoutubeTranscript) {
+        try {
+          console.log('  Trying youtube-transcript npm package...');
+          segments = await YoutubeTranscript.fetchTranscript(videoId);
+          if (segments && segments.length > 0) {
+            console.log(`  npm package got ${segments.length} segments`);
+          } else {
+            segments = null;
+          }
+        } catch (npmErr) {
+          console.log('  npm package failed:', npmErr.message);
+          segments = null;
+        }
+      }
+
+      // Strategy B: yt-dlp subtitle fetching (handles more edge cases)
+      if (!segments || segments.length === 0) {
+        sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript (trying alternate method)...' });
+        try {
+          segments = await fetchTranscriptWithYtdlp(videoId);
+        } catch (ytdlpErr) {
+          console.error('  yt-dlp subtitle fetch also failed:', ytdlpErr.message);
+        }
+      }
+
+      if (!segments || segments.length === 0) {
+        sendUpdate({ status: 'error', message: 'Could not fetch transcript. Make sure the video has captions/subtitles enabled.' });
         return res.end();
       }
 
