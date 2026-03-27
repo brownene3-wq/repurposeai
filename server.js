@@ -19,7 +19,7 @@ app.use(cookieParser());
 
 // Inject chat widget into all HTML pages
 app.use((req, res, next) => {
-  const skip = req.path.includes('/api/') || req.path.includes('/process-stream') || req.path === '/billing/webhook' || req.path.startsWith('/chatbot');
+  const skip = req.path.includes('/api/') || req.path.includes('/process-stream') || req.path === '/billing/webhook' || req.path.startsWith('/chatbot') || req.path === '/shorts/analyze';
   if (skip) return next();
   injectChatWidget(req, res, next);
 });

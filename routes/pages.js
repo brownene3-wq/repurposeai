@@ -138,13 +138,14 @@ router.get('/', (req, res) => {
             <div class="demo-platform">&#x1F4D8; Facebook Post</div>
             <div class="demo-platform">&#x1F4BC; LinkedIn Article</div>
             <div class="demo-platform">&#x1F426; Twitter Thread</div>
+            <div class="demo-platform">&#x2702;&#xFE0F; Smart Shorts</div>
           </div>
         </div>
       </div>
       <div class="hero-stats">
         <div class="hero-stat"><div class="number">10K+</div><div class="label">Videos Repurposed</div></div>
         <div class="hero-stat"><div class="number">50K+</div><div class="label">Posts Generated</div></div>
-        <div class="hero-stat"><div class="number">5</div><div class="label">Platforms Supported</div></div>
+        <div class="hero-stat"><div class="number">7</div><div class="label">Platforms Supported</div></div>
       </div>
     </div>
   </section>
@@ -165,7 +166,7 @@ router.get('/', (req, res) => {
         <div class="step-card">
           <div class="step-number">2</div><div class="step-icon">&#x2728;</div>
           <h3>AI Creates Content</h3>
-          <p>Our AI engine generates platform-optimized content: Instagram captions with hashtags, TikTok scripts, LinkedIn articles, tweet threads, and more.</p>
+          <p>Our AI engine generates platform-optimized content: Instagram captions, TikTok scripts, LinkedIn articles, tweet threads, and Smart Shorts clips — all optimized for each platform.</p>
         </div>
         <div class="step-card">
           <div class="step-number">3</div><div class="step-icon">&#x1F680;</div>
@@ -185,11 +186,11 @@ router.get('/', (req, res) => {
       </div>
       <div class="features-grid">
         <div class="feature-card"><div class="feature-icon">&#x1F9E0;</div><h3>Smart AI Engine</h3><p>Advanced AI understands context, tone, and audience to create platform-perfect content every time.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F3A8;</div><h3>Platform Optimization</h3><p>Content is automatically tailored for each platform's format, character limits, and best practices.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x2702;&#xFE0F;</div><h3>Smart Shorts</h3><p>Automatically identify viral-worthy moments in any YouTube video and generate short-form content for TikTok, Reels, and Shorts.</p></div>
         <div class="feature-card"><div class="feature-icon">&#x1F399;</div><h3>Brand Voice</h3><p>Create custom brand voice profiles so every piece of content matches your unique tone and style.</p></div>
-        <div class="feature-card"><div class="feature-icon">#&#xFE0F;&#x20E3;</div><h3>Hashtag Generator</h3><p>AI-generated hashtags tailored to your niche and trending topics for maximum reach.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F4C5;</div><h3>Content Calendar</h3><p>Plan and schedule your repurposed content across all platforms with an intuitive visual calendar.</p></div>
         <div class="feature-card"><div class="feature-icon">&#x1F4CA;</div><h3>Analytics Dashboard</h3><p>Track your content generation across all platforms with analytics and activity history.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F517;</div><h3>One-Click Sharing</h3><p>Share generated content directly to Twitter, LinkedIn, and Facebook, or copy to clipboard for any platform.</p></div>
+        <div class="feature-card"><div class="feature-icon">&#x1F3A8;</div><h3>Platform Optimization</h3><p>Content is automatically tailored for each platform's format, character limits, and best practices.</p></div>
       </div>
     </div>
   </section>
@@ -211,13 +212,13 @@ router.get('/', (req, res) => {
         <div class="price-card featured">
           <h3>Pro</h3><div class="price">$29<span>/month</span></div>
           <p class="price-desc">For creators serious about growth</p>
-          <ul class="price-features"><li>Unlimited videos</li><li>All 7 platforms</li><li>Advanced AI with tone control</li><li>Up to 10 brand voice profiles</li><li>Hashtag optimization</li><li>Analytics dashboard</li><li>Content calendar</li></ul>
+          <ul class="price-features"><li>Unlimited videos</li><li>All 7 platforms</li><li>Smart Shorts AI analysis</li><li>Up to 10 brand voice profiles</li><li>Content calendar</li><li>Analytics dashboard</li><li>Hashtag optimization</li></ul>
           <a href="/auth/register?plan=pro" class="btn btn-primary">Start Pro Trial</a>
         </div>
         <div class="price-card">
           <h3>Enterprise</h3><div class="price">Custom</div>
           <p class="price-desc">For agencies and teams</p>
-          <ul class="price-features"><li>Everything in Pro</li><li>Unlimited brand voices</li><li>Unlimited videos</li><li>Content calendar view</li><li>Priority email support</li><li>Custom onboarding</li></ul>
+          <ul class="price-features"><li>Everything in Pro</li><li>Unlimited brand voices</li><li>Unlimited Smart Shorts</li><li>Advanced analytics</li><li>Priority email support</li><li>Custom onboarding</li></ul>
           <a href="/contact" class="btn btn-outline">Contact Sales</a>
         </div>
       </div>
@@ -270,7 +271,7 @@ router.get('/', (req, res) => {
       <div><h4>Legal</h4><a href="#">Privacy Policy</a><a href="#">Terms of Service</a><a href="#">Cookie Policy</a></div>
     </div>
     <div class="footer-bottom">
-      <span>&copy; 2024 ${BRAND.name}. All rights reserved.</span>
+      <span>&copy; 2025 ${BRAND.name}. All rights reserved.</span>
       <span>Built with &#x2764;&#xFE0F; and AI</span>
     </div>
   </footer>

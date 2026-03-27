@@ -75,38 +75,70 @@ router.get('/', requireAuth, async (req, res) => {
 
 // POST /analyze - Analyze YouTube video
 router.post('/analyze', requireAuth, async (req, res) => {
-  // Lazy load ESM module
-  if (!YoutubeTranscript) {
-    const mod = await import('youtube-transcript');
-    YoutubeTranscript = mod.YoutubeTranscript;
-  }
+  let sseStarted = false;
+
   try {
     const { videoUrl } = req.body;
     if (!videoUrl) {
-      return res.status(400).json({ error: 'Video URL required' });
+      return res.status(400).json({ error: 'Video URL is required' });
     }
 
     const videoId = extractVideoId(videoUrl);
     if (!videoId) {
-      return res.status(400).json({ error: 'Invalid YouTube URL' });
+      return res.status(400).json({ error: 'Invalid YouTube URL. Please paste a valid YouTube video link.' });
+    }
+
+    // Check OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'AI service is not configured. Please contact support.' });
     }
 
     const userId = req.user.id;
+
+    // Lazy load ESM module
+    if (!YoutubeTranscript) {
+      try {
+        const mod = await import('youtube-transcript');
+        YoutubeTranscript = mod.YoutubeTranscript;
+      } catch (importError) {
+        console.error('Failed to load youtube-transcript module:', importError);
+        return res.status(500).json({ error: 'Transcript service unavailable. Please try again later.' });
+      }
+    }
 
     // Set up Server-Sent Events
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseStarted = true;
 
     const sendUpdate = (data) => {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      try {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch (e) {
+        console.error('Error writing SSE:', e);
+      }
     };
 
     try {
       sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript...' });
 
       // Fetch transcript
-      const segments = await YoutubeTranscript.fetchTranscript(videoId);
+      let segments;
+      try {
+        segments = await YoutubeTranscript.fetchTranscript(videoId);
+      } catch (transcriptError) {
+        console.error('Transcript fetch error:', transcriptError);
+        sendUpdate({ status: 'error', message: 'Could not fetch transcript. Make sure the video has captions enabled.' });
+        return res.end();
+      }
+
+      if (!segments || segments.length === 0) {
+        sendUpdate({ status: 'error', message: 'No transcript found for this video. The video may not have captions.' });
+        return res.end();
+      }
+
       const transcriptText = buildTranscriptText(segments);
       const videoTitle = 'YouTube Video';
 
@@ -186,12 +218,21 @@ Ensure all times are accurate to the transcript. Focus on moments that are 30-12
       res.end();
     } catch (streamError) {
       console.error('Error during analysis stream:', streamError);
-      sendUpdate({ status: 'error', message: streamError.message });
+      sendUpdate({ status: 'error', message: streamError.message || 'Analysis failed unexpectedly.' });
       res.end();
     }
   } catch (error) {
     console.error('Error in analyze endpoint:', error);
-    res.status(500).json({ error: 'Analysis failed' });
+    if (!sseStarted) {
+      res.status(500).json({ error: error.message || 'Analysis failed. Please try again.' });
+    } else {
+      try {
+        res.write(`data: ${JSON.stringify({ status: 'error', message: error.message || 'Analysis failed.' })}\n\n`);
+        res.end();
+      } catch (e) {
+        res.end();
+      }
+    }
   }
 });
 
@@ -850,7 +891,16 @@ function renderShortsPage(user, analyses) {
           body: JSON.stringify({ videoUrl: url })
         });
 
-        if (!response.ok) throw new Error('Analysis failed');
+        // If response is JSON (error before SSE started), handle it
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          throw new Error(data.error || 'Analysis failed');
+        }
+
+        if (!response.ok) {
+          throw new Error('Analysis failed. Please try again.');
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -867,17 +917,27 @@ function renderShortsPage(user, analyses) {
               try {
                 const data = JSON.parse(line.slice(6));
                 if (data.status === 'completed') {
-                  showToast('â Analysis complete!');
+                  showToast('Analysis complete!');
                   setTimeout(() => location.reload(), 1500);
                 } else if (data.status === 'error') {
-                  showToast('â ' + data.message);
+                  throw new Error(data.message || 'Analysis failed');
+                } else if (data.message) {
+                  btnText.textContent = data.message;
                 }
-              } catch (e) {}
+              } catch (e) {
+                if (e.message && e.message !== 'Unexpected token') {
+                  throw e;
+                }
+              }
             }
           }
         }
+
+        // If we get here without completing, reset the button
+        btn.disabled = false;
+        btnText.textContent = 'Analyze';
       } catch (error) {
-        showToast('Error: ' + error.message);
+        showToast(error.message || 'Analysis failed');
         btn.disabled = false;
         btnText.textContent = 'Analyze';
       }

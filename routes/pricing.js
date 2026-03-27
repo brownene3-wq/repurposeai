@@ -71,8 +71,9 @@ router.get('/pricing', (req, res) => {
         <ul class="plan-features">
           <li>3 repurposes per month</li>
           <li>YouTube video support</li>
-          <li>5 platform formats</li>
+          <li>7 platform formats</li>
           <li>Basic AI captions</li>
+          <li>Content library</li>
           <li>Community support</li>
         </ul>
         <a href="/auth/register" class="plan-btn secondary">Get Started Free</a>
@@ -83,12 +84,13 @@ router.get('/pricing', (req, res) => {
         <div class="plan-desc">For creators who need unlimited repurposing power</div>
         <ul class="plan-features">
           <li>Unlimited repurposes</li>
-          <li>YouTube video support</li>
-          <li>All platform formats</li>
+          <li>Smart Shorts AI analysis</li>
+          <li>All 7 platform formats</li>
           <li>Advanced AI captions</li>
-          <li>Priority support</li>
-          <li>Custom brand voice</li>
+          <li>Up to 10 brand voices</li>
+          <li>Content calendar</li>
           <li>Analytics dashboard</li>
+          <li>Priority support</li>
         </ul>
         <a href="/auth/register" class="plan-btn primary">Start Pro Trial</a>
       </div>
@@ -98,12 +100,12 @@ router.get('/pricing', (req, res) => {
         <div class="plan-desc">For teams and agencies managing multiple brands</div>
         <ul class="plan-features">
           <li>Everything in Pro</li>
-          <li>Team collaboration</li>
-          <li>API access</li>
-          <li>White-label exports</li>
+          <li>Unlimited brand voices</li>
+          <li>Unlimited Smart Shorts</li>
+          <li>Advanced analytics</li>
           <li>Dedicated account manager</li>
-          <li>Custom integrations</li>
-          <li>SLA guarantee</li>
+          <li>Priority email support</li>
+          <li>Custom onboarding</li>
         </ul>
         <a href="/contact" class="plan-btn secondary">Contact Sales</a>
       </div>
@@ -125,6 +127,10 @@ router.get('/pricing', (req, res) => {
       <div class="faq-item">
         <h3>What counts as a repurpose?</h3>
         <p>Each time you submit a YouTube video URL and generate content for social platforms, that counts as one repurpose.</p>
+      </div>
+      <div class="faq-item">
+        <h3>What is Smart Shorts?</h3>
+        <p>Smart Shorts uses AI to analyze YouTube video transcripts and identify the most viral-worthy moments. It then generates platform-optimized scripts, hooks, captions, and hashtags for TikTok, Instagram Reels, and YouTube Shorts.</p>
       </div>
     </div>
   </div>
