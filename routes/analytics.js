@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { getDb, contentOps, outputOps } = require('../db/database');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -55,26 +56,10 @@ router.get('/', requireAuth, async (req, res) => {
       </table>`;
     }
 
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
-  <title>Analytics - RepurposeAI</title>
+    const html = `${getHeadHTML('Analytics')}
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; }
+    ${getBaseCSS()}
     .layout { display: flex; min-height: 100vh; }
-    .sidebar { width: 250px; background: #111; border-right: 1px solid #222; padding: 20px 0; position: fixed; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
-    .sidebar .logo { padding: 0 20px 30px; font-size: 1.4em; font-weight: 700; color: #fff; }
-    .sidebar .logo span { color: #6c5ce7; }
-    .sidebar a { display: block; padding: 12px 20px; color: #888; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
-    .sidebar a:not(.logo):hover { color: #fff; background: rgba(108,92,231,0.1); }
-    .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.1); border-left-color: #6c5ce7; }
     .main { margin-left: 250px; flex: 1; padding: 30px; }
     .page-title { font-size: 1.8em; font-weight: 700; margin-bottom: 30px; }
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
@@ -91,12 +76,6 @@ router.get('/', requireAuth, async (req, res) => {
     .chart-bar .count { width: 40px; text-align: right; font-size: 0.85em; color: #888; margin-left: 10px; }
     .empty-state { text-align: center; padding: 40px; color: #666; }
     .empty-state p { margin-top: 10px; }
-    .theme-toggle { background: #222; border: 1px solid #333; color: #fff; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; position: fixed; top: 1.2rem; right: 1.5rem; z-index: 100; }
-    body.light { background: #f5f5f5; color: #333; }
-    body.light .sidebar { background: #fff; border-color: #e0e0e0; }
-    body.light .sidebar a { color: #666; }
-    body.light .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.08); }
-    body.light .main { background: #f5f5f5; }
     body.light .stat-card, body.light .section { background: #fff; border-color: #e0e0e0; }
     body.light .stat-card .value { color: #333; }
     body.light .chart-bar .bar-bg { background: #e0e0e0; }
@@ -106,22 +85,9 @@ router.get('/', requireAuth, async (req, res) => {
 </head>
 <body>
   <div class="layout">
-    <div class="sidebar">
-      <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
-      </div>
-      <a href="/dashboard">&#x1F3AC; Dashboard</a>
-      <a href="/repurpose">&#x1F504; Repurpose</a>
-      <a href="/repurpose/history">&#x1F4DA; Library</a>
-      <a href="/shorts" class="sidebar-nav-link">✂️ Smart Shorts</a>
-      <a href="/dashboard/analytics" class="active">&#x1F4CA; Analytics</a>
-      <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
-      <a href="/brand-voice">&#x1F399; Brand Voice</a>
-      <a href="/billing">&#x1F4B3; Billing</a>
-      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding-bottom:20px;">Sign Out</a>
-    </div>
+    ${getSidebar('analytics')}
     <div class="main">
-      <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
+      ${getThemeToggle()}
       <div class="page-title">&#x1F4CA; Analytics</div>
       <div class="stats-grid">
         <div class="stat-card"><div class="label">Videos This Month</div><div class="value">${videosThisMonth}</div><div class="change">${videosThisMonth > 0 ? '&#x2705; Active' : '-'}</div></div>
@@ -141,19 +107,7 @@ router.get('/', requireAuth, async (req, res) => {
   </div>
 
   <script>
-    // Force reload if served from browser back-forward cache
-    window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
-
-    function toggleTheme() {
-      document.body.classList.toggle('light');
-      localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
-      const btn = document.querySelector('.theme-toggle');
-      btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
-    }
-    if (localStorage.getItem('theme') === 'light') {
-      document.body.classList.add('light');
-      document.querySelector('.theme-toggle').textContent = '☀️';
-    }
+    ${getThemeScript()}
   </script>
 </body>
 </html>`;
