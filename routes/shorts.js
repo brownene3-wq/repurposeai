@@ -57,113 +57,123 @@ function buildTranscriptText(segments) {
   }).join(' ');
 }
 
-// Helper: Fetch transcript using yt-dlp (much more reliable than npm packages)
-function fetchTranscriptWithYtdlp(videoId) {
+// Helper: Run a single yt-dlp subtitle attempt with given args
+function tryYtdlpSubtitles(videoId, args, tmpDir) {
   return new Promise((resolve, reject) => {
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const tmpDir = path.join('/tmp', 'yt-subtitles');
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-    const outTemplate = path.join(tmpDir, `${videoId}`);
-
-    // Clean up any previous subtitle files for this video
-    try {
-      const existing = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId));
-      existing.forEach(f => { try { fs.unlinkSync(path.join(tmpDir, f)); } catch(e) {} });
-    } catch(e) {}
-
-    // Try auto-generated subtitles first (most videos have these), then manual
-    const args = [
-      '--skip-download',
-      '--write-auto-sub',
-      '--write-sub',
-      '--sub-lang', 'en',
-      '--sub-format', 'json3',
-      '--no-warnings',
-      '--no-check-certificates',
-      '-o', outTemplate,
-      videoUrl
-    ];
-
-    console.log('  Fetching subtitles with yt-dlp for:', videoId);
     const proc = spawn('yt-dlp', args);
     let stderr = '';
-
+    proc.stdout.on('data', (data) => { console.log('  yt-dlp subs:', data.toString().trim()); });
     proc.stderr.on('data', (data) => { stderr += data.toString(); });
-
     proc.on('close', (code) => {
-      // Find the subtitle file (could be .en.json3 or .en.vtt etc)
-      let subFile = null;
+      // Find any subtitle file for this video
       try {
-        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && f.includes('.json3'));
-        if (files.length > 0) subFile = path.join(tmpDir, files[0]);
-      } catch(e) {}
-
-      if (!subFile) {
-        // Try vtt format as fallback
-        try {
-          const vttFiles = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && (f.includes('.vtt') || f.includes('.srt')));
-          if (vttFiles.length > 0) subFile = path.join(tmpDir, vttFiles[0]);
-        } catch(e) {}
-      }
-
-      if (!subFile) {
-        console.error('  No subtitle file found. yt-dlp stderr:', stderr.slice(-500));
-        return reject(new Error('No transcript available for this video.'));
-      }
-
-      try {
-        const content = fs.readFileSync(subFile, 'utf8');
-        let segments = [];
-
-        if (subFile.endsWith('.json3')) {
-          // Parse JSON3 format (YouTube's native subtitle format)
-          const json = JSON.parse(content);
-          const events = json.events || [];
-          for (const event of events) {
-            if (event.segs && event.tStartMs !== undefined) {
-              const text = event.segs.map(s => s.utf8 || '').join('').trim();
-              if (text && text !== '\n') {
-                segments.push({
-                  offset: event.tStartMs,
-                  text: text.replace(/\n/g, ' ')
-                });
-              }
-            }
-          }
+        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && !f.endsWith('.mp4'));
+        if (files.length > 0) {
+          resolve(path.join(tmpDir, files[0]));
         } else {
-          // Parse VTT/SRT format as plain text with timestamps
-          const lines = content.split('\n');
-          let currentTime = 0;
-          for (const line of lines) {
-            const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})[.,](\d{3})/);
-            if (timeMatch) {
-              currentTime = parseInt(timeMatch[1]) * 3600000 + parseInt(timeMatch[2]) * 60000 +
-                           parseInt(timeMatch[3]) * 1000 + parseInt(timeMatch[4]);
-            } else if (line.trim() && !line.includes('-->') && !line.match(/^\d+$/) && !line.startsWith('WEBVTT')) {
-              segments.push({ offset: currentTime, text: line.trim().replace(/<[^>]*>/g, '') });
-            }
-          }
+          console.log(`  yt-dlp attempt found no files (code ${code}). stderr: ${stderr.slice(-300)}`);
+          resolve(null);
         }
-
-        // Clean up
-        try { fs.unlinkSync(subFile); } catch(e) {}
-
-        if (segments.length === 0) {
-          return reject(new Error('Transcript was empty.'));
-        }
-
-        console.log(`  Got ${segments.length} transcript segments`);
-        resolve(segments);
-      } catch (parseErr) {
-        console.error('  Error parsing subtitle file:', parseErr);
-        reject(new Error('Failed to parse transcript.'));
-      }
+      } catch(e) { resolve(null); }
     });
-
-    proc.on('error', (err) => {
-      reject(new Error('yt-dlp not available: ' + err.message));
-    });
+    proc.on('error', (err) => { resolve(null); });
   });
+}
+
+// Helper: Parse subtitle file content into segments
+function parseSubtitleFile(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  let segments = [];
+
+  if (filePath.endsWith('.json3')) {
+    const json = JSON.parse(content);
+    const events = json.events || [];
+    for (const event of events) {
+      if (event.segs && event.tStartMs !== undefined) {
+        const text = event.segs.map(s => s.utf8 || '').join('').trim();
+        if (text && text !== '\n') {
+          segments.push({ offset: event.tStartMs, text: text.replace(/\n/g, ' ') });
+        }
+      }
+    }
+  } else {
+    // Parse VTT/SRT format
+    const lines = content.split('\n');
+    let currentTime = 0;
+    for (const line of lines) {
+      const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})[.,](\d{3})/);
+      if (timeMatch) {
+        currentTime = parseInt(timeMatch[1]) * 3600000 + parseInt(timeMatch[2]) * 60000 +
+                     parseInt(timeMatch[3]) * 1000 + parseInt(timeMatch[4]);
+      } else if (line.trim() && !line.includes('-->') && !line.match(/^\d+$/) && !line.startsWith('WEBVTT')) {
+        segments.push({ offset: currentTime, text: line.trim().replace(/<[^>]*>/g, '') });
+      }
+    }
+  }
+
+  // Clean up
+  try { fs.unlinkSync(filePath); } catch(e) {}
+  return segments;
+}
+
+// Helper: Fetch transcript using yt-dlp with multiple fallback strategies
+async function fetchTranscriptWithYtdlp(videoId) {
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const tmpDir = path.join('/tmp', 'yt-subtitles');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  const outTemplate = path.join(tmpDir, `${videoId}`);
+
+  // Clean up any previous subtitle files for this video
+  try {
+    const existing = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId));
+    existing.forEach(f => { try { fs.unlinkSync(path.join(tmpDir, f)); } catch(e) {} });
+  } catch(e) {}
+
+  const baseArgs = ['--skip-download', '--no-warnings', '--no-check-certificates', '-o', outTemplate, videoUrl];
+
+  // Strategy 1: English auto-generated + manual subs in json3
+  console.log('  Trying: English json3 subtitles');
+  let subFile = await tryYtdlpSubtitles(videoId, [
+    ...baseArgs.slice(0, -1), '--write-auto-sub', '--write-sub', '--sub-lang', 'en.*,en', '--sub-format', 'json3', videoUrl
+  ], tmpDir);
+
+  // Strategy 2: English subs in any format (vtt/srt)
+  if (!subFile) {
+    console.log('  Trying: English vtt/srt subtitles');
+    subFile = await tryYtdlpSubtitles(videoId, [
+      ...baseArgs.slice(0, -1), '--write-auto-sub', '--write-sub', '--sub-lang', 'en.*,en', '--sub-format', 'vtt/srt/best', videoUrl
+    ], tmpDir);
+  }
+
+  // Strategy 3: Any language auto-generated subs
+  if (!subFile) {
+    console.log('  Trying: Any language auto-generated subtitles');
+    subFile = await tryYtdlpSubtitles(videoId, [
+      ...baseArgs.slice(0, -1), '--write-auto-sub', '--sub-format', 'json3/vtt/srt/best', videoUrl
+    ], tmpDir);
+  }
+
+  // Strategy 4: Any manual subs at all
+  if (!subFile) {
+    console.log('  Trying: Any manual subtitles');
+    subFile = await tryYtdlpSubtitles(videoId, [
+      ...baseArgs.slice(0, -1), '--write-sub', '--sub-format', 'json3/vtt/srt/best', videoUrl
+    ], tmpDir);
+  }
+
+  if (!subFile) {
+    throw new Error('No transcript available for this video. It may not have captions enabled.');
+  }
+
+  console.log('  Found subtitle file:', path.basename(subFile));
+  const segments = parseSubtitleFile(subFile);
+
+  if (segments.length === 0) {
+    throw new Error('Transcript was empty.');
+  }
+
+  console.log(`  Got ${segments.length} transcript segments`);
+  return segments;
 }
 
 // Helper: Fetch video title using yt-dlp
