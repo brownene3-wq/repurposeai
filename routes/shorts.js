@@ -8,8 +8,8 @@ const { spawn, execSync } = require('child_process');
 const { YoutubeTranscript } = require('../utils/youtube-transcript-loader.cjs');
 const OpenAI = require('openai');
 // Lazy-load ytdl-core to avoid crashing if it has issues
-let ytdl;
-try { ytdl = require('@distube/ytdl-core'); } catch (e) { console.error('ytdl-core not available:', e.message); }
+let ytdl, ytdlError;
+try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
 
 // Find ffmpeg binary: check local bin/, then ffmpeg-static, then system
 let ffmpegPath = null;
@@ -435,6 +435,7 @@ router.get('/clip/debug', requireAuth, (req, res) => {
   const localExists = fs.existsSync(localBin);
   res.json({
     ytdlLoaded: !!ytdl,
+    ytdlError: ytdlError || null,
     ffmpegPath,
     ffmpegAvailable,
     systemFfmpeg: ffmpegCheck,
