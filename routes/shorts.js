@@ -1583,21 +1583,25 @@ function renderShortsPage(user, analyses) {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let sseBuffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\\n');
+          sseBuffer += decoder.decode(value, { stream: true });
+          const lines = sseBuffer.split('\\n');
+          // Keep the last (potentially incomplete) line in the buffer
+          sseBuffer = lines.pop() || '';
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
               let data;
               try {
-                data = JSON.parse(line.slice(6));
+                data = JSON.parse(trimmed.slice(6));
               } catch (parseErr) {
-                console.log('SSE parse skip:', line.slice(0, 100));
+                console.log('SSE parse skip:', trimmed.slice(0, 100));
                 continue;
               }
               if (data.status === 'completed') {
