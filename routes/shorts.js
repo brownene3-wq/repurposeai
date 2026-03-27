@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-// youtube-transcript is ESM-only, use dynamic import
-let YoutubeTranscript;
+// youtube-transcript has "type":"module" which breaks dynamic import in CJS projects
+// Use our CJS wrapper that loads the bundle directly
+const { YoutubeTranscript } = require('../utils/youtube-transcript-loader.cjs');
 const OpenAI = require('openai');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { shortsOps } = require('../db/database');
@@ -94,17 +95,6 @@ router.post('/analyze', requireAuth, async (req, res) => {
     }
 
     const userId = req.user.id;
-
-    // Lazy load ESM module
-    if (!YoutubeTranscript) {
-      try {
-        const mod = await import('youtube-transcript');
-        YoutubeTranscript = mod.YoutubeTranscript;
-      } catch (importError) {
-        console.error('Failed to load youtube-transcript module:', importError);
-        return res.status(500).json({ error: 'Transcript service unavailable. Please try again later.' });
-      }
-    }
 
     // Set up Server-Sent Events
     res.setHeader('Content-Type', 'text/event-stream');
