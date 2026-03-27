@@ -11,9 +11,15 @@ const OpenAI = require('openai');
 let ytdl;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { console.error('ytdl-core not available:', e.message); }
 
-// Check if ffmpeg is available
-let ffmpegAvailable = false;
-try { execSync('ffmpeg -version', { stdio: 'pipe' }); ffmpegAvailable = true; } catch (e) { console.log('ffmpeg not found - clip download feature disabled'); }
+// Find ffmpeg binary: prefer ffmpeg-static, fall back to system ffmpeg
+let ffmpegPath = null;
+try { ffmpegPath = require('ffmpeg-static'); } catch (e) {}
+if (!ffmpegPath) {
+  try { execSync('ffmpeg -version', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {}
+}
+const ffmpegAvailable = !!ffmpegPath;
+if (ffmpegAvailable) { console.log('ffmpeg available at:', ffmpegPath); }
+else { console.log('ffmpeg not found - clip download feature disabled'); }
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { shortsOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
@@ -501,7 +507,7 @@ router.post('/clip', requireAuth, async (req, res) => {
         }
 
         // Use ffmpeg to download only the clip segment
-        const ffmpeg = spawn('ffmpeg', [
+        const ffmpeg = spawn(ffmpegPath, [
           '-ss', String(startSec),
           '-i', format.url,
           '-t', String(duration),
