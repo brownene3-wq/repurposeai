@@ -1002,14 +1002,25 @@ function renderShortsPage(user, analyses) {
     }
 
     .modal-close {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      background: none;
-      border: none;
-      color: var(--text-dim);
-      font-size: 24px;
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.6);
+      border: 2px solid rgba(255,255,255,0.3);
+      color: #fff;
+      font-size: 28px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1002;
+      transition: background 0.2s;
+    }
+    .modal-close:hover {
+      background: rgba(255,0,0,0.6);
     }
 
     .platform-selector {
@@ -1171,7 +1182,14 @@ function renderShortsPage(user, analyses) {
               const vidMatch = (analysis.video_url || '').match(ytRegex);
               const vidId = vidMatch ? vidMatch[1] : null;
               return `
-              <div class="card" onclick="viewAnalysis('${analysis.id}')">
+              <div class="card" onclick="viewAnalysis('${analysis.id}')" style="position:relative;">
+                <button onclick="event.stopPropagation(); deleteAnalysis('${analysis.id}', this)" title="Delete"
+                  style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.5); border:none; color:#ff6b6b;
+                  width:32px; height:32px; border-radius:50%; cursor:pointer; font-size:16px; display:flex;
+                  align-items:center; justify-content:center; z-index:2; transition:background 0.2s;"
+                  onmouseover="this.style.background='rgba(255,0,0,0.6)'; this.style.color='#fff'"
+                  onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.color='#ff6b6b'"
+                >&times;</button>
                 ${vidId ? `<img src="https://img.youtube.com/vi/${vidId}/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">` : ''}
                 <div class="card-header">
                   <div class="card-title">${analysis.video_title || 'YouTube Video'}</div>
@@ -1197,7 +1215,7 @@ function renderShortsPage(user, analyses) {
   <!-- Modal for viewing analysis -->
   <div class="modal" id="analysisModal">
     <div class="modal-content">
-      <button class="modal-close" onclick="closeModal()">Ã</button>
+      <button class="modal-close" onclick="closeModal()" title="Close">&times;</button>
       <div id="modalBody"></div>
     </div>
   </div>
@@ -1516,6 +1534,34 @@ function renderShortsPage(user, analyses) {
 
     function closeModal() {
       document.getElementById('analysisModal').classList.remove('active');
+    }
+
+    // Close modal when clicking the backdrop (outside the content)
+    document.getElementById('analysisModal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    async function deleteAnalysis(id, btn) {
+      if (!confirm('Delete this analysis? This cannot be undone.')) return;
+      try {
+        const resp = await fetch('/shorts/api/' + id, { method: 'DELETE' });
+        const data = await resp.json();
+        if (data.success) {
+          // Remove the card from the DOM
+          const card = btn.closest('.card');
+          if (card) {
+            card.style.transition = 'opacity 0.3s, transform 0.3s';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.9)';
+            setTimeout(() => card.remove(), 300);
+          }
+          showToast('Analysis deleted');
+        } else {
+          showToast(data.error || 'Failed to delete');
+        }
+      } catch (err) {
+        showToast('Error: ' + err.message);
+      }
     }
 
     function showToast(message) {
