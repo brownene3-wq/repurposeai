@@ -3,9 +3,6 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
-// Try youtube-transcript npm first (faster), fall back to yt-dlp (more reliable)
-let YoutubeTranscript;
-try { YoutubeTranscript = require('../utils/youtube-transcript-loader.cjs').YoutubeTranscript; } catch(e) { console.log('youtube-transcript not available:', e.message); }
 const OpenAI = require('openai');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
@@ -56,6 +53,115 @@ function buildTranscriptText(segments) {
     const timestamp = formatTimestamp(seg.offset / 1000);
     return `[${timestamp}] ${seg.text}`;
   }).join(' ');
+}
+
+// Helper: Fetch transcript directly from YouTube's timedtext API
+async function fetchTranscriptDirect(videoId) {
+  console.log('  Fetching transcript directly from YouTube for:', videoId);
+
+  // Step 1: Fetch the video page to get caption track URLs
+  const pageUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const pageResp = await fetch(pageUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+    }
+  });
+
+  if (!pageResp.ok) {
+    throw new Error(`YouTube page returned ${pageResp.status}`);
+  }
+
+  const pageHtml = await pageResp.text();
+
+  // Step 2: Extract caption tracks from the page's ytInitialPlayerResponse
+  const captionMatch = pageHtml.match(/"captionTracks":\s*(\[.*?\])/);
+  if (!captionMatch) {
+    // Try alternate pattern
+    const altMatch = pageHtml.match(/playerCaptionsTracklistRenderer.*?"captionTracks":\s*(\[.*?\])/);
+    if (!altMatch) {
+      throw new Error('No caption tracks found in video page');
+    }
+    var captionTracks = JSON.parse(altMatch[1]);
+  } else {
+    var captionTracks = JSON.parse(captionMatch[1]);
+  }
+
+  if (!captionTracks || captionTracks.length === 0) {
+    throw new Error('Video has no caption tracks');
+  }
+
+  console.log(`  Found ${captionTracks.length} caption tracks`);
+
+  // Step 3: Prefer English, fall back to first available
+  let track = captionTracks.find(t => t.languageCode === 'en' || (t.languageCode || '').startsWith('en'));
+  if (!track) {
+    // Try auto-generated (kind === 'asr')
+    track = captionTracks.find(t => t.kind === 'asr' && ((t.languageCode || '').startsWith('en')));
+  }
+  if (!track) {
+    // Take any track
+    track = captionTracks[0];
+  }
+
+  console.log(`  Using caption track: ${track.languageCode} (${track.kind || 'manual'})`);
+
+  // Step 4: Fetch the subtitle XML
+  let subtitleUrl = track.baseUrl;
+  if (!subtitleUrl) {
+    throw new Error('Caption track has no URL');
+  }
+
+  // Request JSON3 format for easier parsing
+  if (subtitleUrl.includes('?')) {
+    subtitleUrl += '&fmt=json3';
+  } else {
+    subtitleUrl += '?fmt=json3';
+  }
+
+  const subResp = await fetch(subtitleUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    }
+  });
+
+  if (!subResp.ok) {
+    throw new Error(`Subtitle fetch returned ${subResp.status}`);
+  }
+
+  const subText = await subResp.text();
+  let segments = [];
+
+  try {
+    // Try JSON3 format
+    const json = JSON.parse(subText);
+    const events = json.events || [];
+    for (const event of events) {
+      if (event.segs && event.tStartMs !== undefined) {
+        const text = event.segs.map(s => s.utf8 || '').join('').trim();
+        if (text && text !== '\n') {
+          segments.push({ offset: event.tStartMs, text: text.replace(/\n/g, ' ') });
+        }
+      }
+    }
+  } catch (jsonErr) {
+    // Fall back to XML parsing
+    const textMatches = subText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
+    for (const m of textMatches) {
+      const startMs = Math.round(parseFloat(m[1]) * 1000);
+      const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+      if (text) {
+        segments.push({ offset: startMs, text });
+      }
+    }
+  }
+
+  if (segments.length === 0) {
+    throw new Error('Parsed transcript was empty');
+  }
+
+  console.log(`  Direct fetch got ${segments.length} transcript segments`);
+  return segments;
 }
 
 // Helper: Run a single yt-dlp subtitle attempt with given args
@@ -266,29 +372,23 @@ router.post('/analyze', requireAuth, async (req, res) => {
     try {
       sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript...' });
 
-      // Try multiple transcript sources: npm package first (fast), then yt-dlp (robust)
+      // Try multiple transcript sources with fallbacks
       let segments;
 
-      // Strategy A: youtube-transcript npm package (fast, works for most videos)
-      if (YoutubeTranscript) {
-        try {
-          console.log('  Trying youtube-transcript npm package...');
-          segments = await YoutubeTranscript.fetchTranscript(videoId);
-          if (segments && segments.length > 0) {
-            console.log(`  npm package got ${segments.length} segments`);
-          } else {
-            segments = null;
-          }
-        } catch (npmErr) {
-          console.log('  npm package failed:', npmErr.message);
-          segments = null;
-        }
+      // Strategy A: Direct YouTube timedtext API (fastest, most reliable)
+      try {
+        console.log('  Strategy A: Direct YouTube fetch');
+        segments = await fetchTranscriptDirect(videoId);
+      } catch (directErr) {
+        console.log('  Direct fetch failed:', directErr.message);
+        segments = null;
       }
 
-      // Strategy B: yt-dlp subtitle fetching (handles more edge cases)
+      // Strategy B: yt-dlp subtitle fetching (handles geo-restricted, etc)
       if (!segments || segments.length === 0) {
         sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript (trying alternate method)...' });
         try {
+          console.log('  Strategy B: yt-dlp subtitles');
           segments = await fetchTranscriptWithYtdlp(videoId);
         } catch (ytdlpErr) {
           console.error('  yt-dlp subtitle fetch also failed:', ytdlpErr.message);
