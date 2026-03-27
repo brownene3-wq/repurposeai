@@ -604,6 +604,7 @@ router.get('/', requireAuth, (req, res) => {
           <a href="/dashboard">&#x1F3AC; Dashboard</a>
           <a href="/repurpose">&#x1F504; Repurpose</a>
           <a href="/repurpose/history">&#x1F4DA; Library</a>
+          <a href="/shorts" class="sidebar-nav-link">✂️ Smart Shorts</a>
           <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
           <a href="/dashboard/calendar" class="active">&#x1F4C5; Calendar</a>
           <a href="/brand-voice">&#x1F399; Brand Voice</a>
