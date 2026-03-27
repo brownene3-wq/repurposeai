@@ -1558,8 +1558,8 @@ function renderShortsPage(user, analyses) {
   </div>
 
   <script>
-    // Enter key triggers analyze
-    document.addEventListener('DOMContentLoaded', function() {
+    // Enter key triggers analyze (attached immediately since script is at end of body)
+    (function() {
       var urlInput = document.getElementById('videoUrl');
       if (urlInput) {
         urlInput.addEventListener('keydown', function(e) {
@@ -1568,8 +1568,14 @@ function renderShortsPage(user, analyses) {
             analyzeVideo();
           }
         });
+        urlInput.addEventListener('keypress', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            analyzeVideo();
+          }
+        });
       }
-    });
+    })();
 
     async function analyzeVideo() {
       const url = document.getElementById('videoUrl').value.trim();
