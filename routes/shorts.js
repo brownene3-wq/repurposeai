@@ -509,54 +509,67 @@ router.post('/clip', requireAuth, async (req, res) => {
       filename
     });
 
-    // Process in background: download + clip with ffmpeg
+    // Process in background: pipe ytdl stream through ffmpeg to clip
     (async () => {
       try {
-        // Get video info and pick best format with video+audio
-        const info = await ytdl.getInfo(videoUrl);
-        const format = ytdl.chooseFormat(info.formats, {
+        console.log(`Starting clip: ${filename} (${startSec}s to ${startSec + duration}s)`);
+
+        // Download with ytdl and pipe to ffmpeg for clipping
+        const videoStream = ytdl(videoUrl, {
           quality: 'highest',
-          filter: (f) => f.hasVideo && f.hasAudio
+          filter: 'videoandaudio'
         });
 
-        if (!format || !format.url) {
-          console.error('No suitable format found for clipping');
-          return;
-        }
+        videoStream.on('error', (err) => {
+          console.error('ytdl stream error:', err.message);
+          try { fs.unlinkSync(outputPath); } catch (e) {}
+        });
 
-        // Use ffmpeg to download only the clip segment
-        const ffmpeg = spawn(ffmpegPath, [
+        // Use ffmpeg to cut the clip from the stream
+        const ffmpegProc = spawn(ffmpegPath, [
+          '-i', 'pipe:0',        // Read from stdin
           '-ss', String(startSec),
-          '-i', format.url,
           '-t', String(duration),
           '-c:v', 'libx264',
           '-c:a', 'aac',
-          '-preset', 'fast',
+          '-preset', 'ultrafast',
           '-movflags', '+faststart',
           '-y',
           outputPath
         ]);
 
-        ffmpeg.stderr.on('data', (data) => {
-          // ffmpeg outputs progress to stderr
+        // Pipe ytdl output to ffmpeg input
+        videoStream.pipe(ffmpegProc.stdin).on('error', (e) => {
+          // Ignore EPIPE errors (ffmpeg may close stdin early after seeking)
+          if (e.code !== 'EPIPE') console.error('Pipe error:', e.message);
         });
 
-        ffmpeg.on('close', (code) => {
+        ffmpegProc.stderr.on('data', (data) => {
+          // Log ffmpeg progress occasionally
+          const msg = data.toString();
+          if (msg.includes('time=')) {
+            const timeMatch = msg.match(/time=(\S+)/);
+            if (timeMatch) console.log(`  ffmpeg progress: ${timeMatch[1]}`);
+          }
+        });
+
+        ffmpegProc.on('close', (code) => {
           if (code === 0) {
-            console.log(`Clip generated: ${filename}`);
+            const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
+            console.log(`Clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
           } else {
             console.error(`ffmpeg exited with code ${code}`);
-            // Cleanup failed file
             try { fs.unlinkSync(outputPath); } catch (e) {}
           }
         });
 
-        ffmpeg.on('error', (err) => {
-          console.error('ffmpeg error:', err);
+        ffmpegProc.on('error', (err) => {
+          console.error('ffmpeg process error:', err.message);
+          try { fs.unlinkSync(outputPath); } catch (e) {}
         });
 
       } catch (err) {
-        console.error('Clip generation error:', err);
+        console.error('Clip generation error:', err.message);
         try { fs.unlinkSync(outputPath); } catch (e) {}
       }
     })();
