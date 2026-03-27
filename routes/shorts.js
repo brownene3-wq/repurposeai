@@ -528,16 +528,16 @@ router.post('/clip', requireAuth, async (req, res) => {
         }
 
         // Step 1: Download the section with yt-dlp at good quality
-        const tempDownload = outputPath + '.download.mp4';
+        const tempDownload = outputPath + '.temp.mp4';
         const ytdlpArgs = [
           '--no-playlist',
           '--download-sections', `*${startTs}-${endTs}`,
           '--force-keyframes-at-cuts',
-          '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
-          '--merge-output-format', 'mp4',
+          '-f', 'best[height<=1080][ext=mp4]/best[height<=720]/best',  // Single combined format (avoid separate merge)
           '-o', tempDownload,
           '--no-warnings',
           '--no-check-certificates',
+          '--no-part',           // Don't use .part files (write directly to output)
           videoUrl
         ];
 
@@ -578,15 +578,19 @@ router.post('/clip', requireAuth, async (req, res) => {
           // yt-dlp may output with slightly different filename - find the actual file
           let actualDownload = tempDownload;
           if (!fs.existsSync(tempDownload)) {
-            // Look for files matching the pattern in CLIPS_DIR
-            const files = fs.readdirSync(CLIPS_DIR).filter(f => f.includes('.download'));
-            const match = files.find(f => outputPath.includes(f.split('.download')[0]));
+            // Look for files matching our base name in CLIPS_DIR
+            const baseName = path.basename(outputPath, '.mp4');
+            const files = fs.readdirSync(CLIPS_DIR);
+            const match = files.find(f => f.includes(baseName) && f.includes('.temp'));
             if (match) {
               actualDownload = path.join(CLIPS_DIR, match);
               console.log(`  Found actual download: ${match}`);
             } else {
-              console.log(`  Files in CLIPS_DIR: ${files.join(', ')}`);
-              writeError('Downloaded file not found after yt-dlp completed');
+              // Try any recent file that's not the output
+              const outputBase = path.basename(outputPath);
+              const recentFiles = files.filter(f => f !== outputBase && !f.endsWith('.progress') && !f.endsWith('.error'));
+              console.log(`  Temp file not found. CLIPS_DIR contents: ${recentFiles.join(', ')}`);
+              writeError('Downloaded file not found after yt-dlp completed. Check server logs.');
               return;
             }
           }
