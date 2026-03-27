@@ -427,6 +427,24 @@ router.delete('/api/:id', requireAuth, async (req, res) => {
   }
 });
 
+// GET /clip/debug - Check ffmpeg and ytdl availability (temp diagnostic)
+router.get('/clip/debug', requireAuth, (req, res) => {
+  let ffmpegCheck = 'not found';
+  try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegCheck = 'system'; } catch (e) {}
+  const localBin = path.join(__dirname, '..', 'bin', 'ffmpeg');
+  const localExists = fs.existsSync(localBin);
+  res.json({
+    ytdlLoaded: !!ytdl,
+    ffmpegPath,
+    ffmpegAvailable,
+    systemFfmpeg: ffmpegCheck,
+    localBinExists: localExists,
+    localBinPath: localBin,
+    binDirExists: fs.existsSync(path.join(__dirname, '..', 'bin')),
+    nodeVersion: process.version
+  });
+});
+
 // POST /clip - Generate a video clip for a specific moment
 router.post('/clip', requireAuth, async (req, res) => {
   try {
