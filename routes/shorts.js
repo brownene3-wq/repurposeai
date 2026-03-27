@@ -505,33 +505,36 @@ router.post('/clip', requireAuth, async (req, res) => {
 
     // Process in background with timeout
     (async () => {
-      // Set a 3-minute timeout for the whole operation
+      // Set a 5-minute timeout for the whole operation
       const timeout = setTimeout(() => {
-        writeError('Clip generation timed out after 3 minutes');
-      }, 180000);
+        writeError('Clip generation timed out after 5 minutes. Try a moment closer to the start of the video.');
+      }, 300000);
 
       try {
         writeProgress('Downloading video...');
 
-        // Use ytdl to stream with lowest quality (fastest download for social clips)
-        // The 'begin' param tells ytdl to start downloading near the target timestamp
-        const beginSec = Math.max(0, startSec - 2);
+        // Stream with ytdl - use lowest quality combined format for fastest download
+        // Note: 'begin' param causes 403 errors, so we download from the start
+        // and let ffmpeg seek through the pipe (slower but reliable)
         const videoStream = ytdl(videoUrl, {
           quality: 'lowest',
-          filter: 'videoandaudio',
-          begin: beginSec > 0 ? `${beginSec}s` : undefined
+          filter: 'videoandaudio'
         });
 
-        let downloadError = false;
         videoStream.on('error', (err) => {
-          downloadError = true;
           console.error('ytdl stream error:', err.message);
           writeError('Video download failed: ' + err.message);
         });
 
-        // If 'begin' works, ffmpeg only needs to skip ~2 seconds
-        // If 'begin' doesn't work (some formats don't support it), ffmpeg skips the full duration
-        const ffmpegSs = beginSec > 0 ? 2 : startSec;
+        videoStream.on('progress', (chunkLength, downloaded, total) => {
+          if (total > 0) {
+            const pct = Math.round((downloaded / total) * 100);
+            if (pct % 10 === 0) writeProgress(`Downloading: ${pct}%`);
+          }
+        });
+
+        // ffmpeg seeks through the pipe to the start timestamp
+        const ffmpegSs = startSec;
 
         const ffmpegArgs = [
           '-ss', String(ffmpegSs),
@@ -1383,7 +1386,7 @@ function renderShortsPage(user, analyses) {
 
         // Poll for clip readiness
         let attempts = 0;
-        const maxAttempts = 60; // 2 minutes max
+        const maxAttempts = 150; // 5 minutes max
         const pollInterval = setInterval(async () => {
           attempts++;
           try {
