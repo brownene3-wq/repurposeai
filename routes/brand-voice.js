@@ -3,127 +3,15 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { brandVoiceOps } = require('../db/database');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 // GET - Brand voice management page
 router.get('/', requireAuth, (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
-      <meta http-equiv="Pragma" content="no-cache">
-      <meta http-equiv="Expires" content="0">
-      <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
-      <title>Brand Voice - Content Repurpose SaaS</title>
+  res.send(`${getHeadHTML('Brand Voice')}</title>
       <style>
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #0a0a0a;
-          color: #e0e0e0;
-          transition: background 0.3s, color 0.3s;
-        }
-
-        body.light {
-          background: #f5f5f5;
-          color: #1a1a1a;
-        }
-
-        .container {
-          display: flex;
-          min-height: 100vh;
-        }
-
-        .sidebar {
-          width: 250px;
-          background: #111;
-          border-right: 1px solid #222;
-          padding: 20px 0;
-          position: fixed;
-          height: 100vh;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .sidebar .logo {
-          font-size: 1.4em;
-          font-weight: 700;
-          color: #fff;
-        }
-
-        .sidebar .logo span {
-          color: #6c5ce7;
-        }
-
-        .sidebar a {
-          display: block;
-          padding: 12px 20px;
-          color: #888;
-          text-decoration: none;
-          transition: all 0.2s;
-          border-left: 3px solid transparent;
-        }
-
-        .sidebar a:not(.logo):hover {
-          color: #fff;
-          background: rgba(108,92,231,0.1);
-        }
-
-        .sidebar a.active {
-          color: #6c5ce7;
-          background: rgba(108,92,231,0.1);
-          border-left-color: #6c5ce7;
-        }
-
-        .theme-toggle {
-          background: #222;
-          border: 1px solid #333;
-          color: #fff;
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          cursor: pointer;
-          font-size: 1em;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          position: fixed;
-          top: 1.2rem;
-          right: 1.5rem;
-          z-index: 100;
-        }
-
-        body.light .sidebar {
-          background: #f8f8f8;
-          border-color: #e0e0e0;
-        }
-
-        body.light .sidebar a {
-          color: #666;
-        }
-
-        body.light .sidebar a.active {
-          color: #6c5ce7;
-          background: rgba(108,92,231,0.08);
-        }
-
-        body.light .theme-toggle {
-          background: #fff;
-          border-color: #ddd;
-        }
+        ${getBaseCSS()}
 
         .main-content {
-          margin-left: 250px;
-          flex: 1;
           padding: 40px;
         }
 
@@ -522,24 +410,11 @@ router.get('/', requireAuth, (req, res) => {
       </style>
     </head>
     <body>
-      <div class="container">
-        <div class="sidebar" style="display:flex;flex-direction:column;">
-          <div style="padding:0 20px 20px;">
-            <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
-          </div>
-          <a href="/dashboard">&#x1F3AC; Dashboard</a>
-          <a href="/repurpose">&#x1F504; Repurpose</a>
-          <a href="/repurpose/history">&#x1F4DA; Library</a>
-          <a href="/shorts" class="sidebar-nav-link">✂️ Smart Shorts</a>
-          <a href="/dashboard/analytics">&#x1F4CA; Analytics</a>
-          <a href="/dashboard/calendar">&#x1F4C5; Calendar</a>
-          <a href="/brand-voice" class="active">&#x1F399; Brand Voice</a>
-          <a href="/billing">&#x1F4B3; Billing</a>
-          <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
-        </div>
+      <div class="dashboard">
+        ${getSidebar('brand-voice')}
 
         <div class="main-content">
-          <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
+          ${getThemeToggle()}
           <div class="header">
             <h1>Brand Voice</h1>
             <p>Create and manage your unique brand voice profiles</p>
@@ -637,8 +512,7 @@ router.get('/', requireAuth, (req, res) => {
       <div class="success-feedback" id="successFeedback">✓ Success!</div>
 
       <script>
-        // Force reload if served from browser back-forward cache
-        window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
+        ${getThemeScript()}
         let allVoices = [];
 
         async function loadVoices() {
@@ -823,17 +697,6 @@ router.get('/', requireAuth, (req, res) => {
             "'": '&#039;'
           };
           return text.replace(/[&<>"']/g, m => map[m]);
-        }
-
-        function toggleTheme() {
-          document.body.classList.toggle('light');
-          localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
-          const btn = document.querySelector('.theme-toggle');
-          btn.textContent = document.body.classList.contains('light') ? '☀️' : '🌙';
-        }
-        if (localStorage.getItem('theme') === 'light') {
-          document.body.classList.add('light');
-          document.querySelector('.theme-toggle').textContent = '☀️';
         }
 
         loadVoices();

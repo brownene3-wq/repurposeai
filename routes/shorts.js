@@ -5,6 +5,7 @@ let YoutubeTranscript;
 const OpenAI = require('openai');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { shortsOps } = require('../db/database');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -394,94 +395,13 @@ function renderShortsPage(user, analyses) {
     linkedin: 'in'
   };
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Shorts - RepurposeAI</title>
+  return `${getHeadHTML('Smart Shorts')}
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    ${getBaseCSS()}
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: #0a0a0a;
-      color: #fff;
-      line-height: 1.6;
-    }
-
-    .container {
-      display: flex;
-      min-height: 100vh;
-    }
-
-    /* Sidebar */
-    .sidebar {
-      width: 280px;
-      background: #111;
-      border-right: 1px solid #222;
-      padding: 24px 0;
-      position: fixed;
-      height: 100vh;
-      overflow-y: auto;
-      z-index: 100;
-    }
-
-    .sidebar-logo {
-      padding: 0 24px 32px;
-      font-size: 24px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #6c5ce7, #00cec9);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .sidebar-nav {
-      list-style: none;
-    }
-
-    .sidebar-nav-item {
-      margin: 8px 12px;
-    }
-
-    .sidebar-nav-link {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      border-radius: 8px;
-      color: #aaa;
-      text-decoration: none;
-      transition: all 0.3s ease;
-      font-size: 14px;
-    }
-
-    .sidebar-nav-link:hover {
-      background: #1a1a1a;
-      color: #fff;
-    }
-
-    .sidebar-nav-link.active {
-      background: linear-gradient(135deg, #6c5ce7, #00cec9);
-      color: #fff;
-      font-weight: 600;
-    }
-
-    .sidebar-divider {
-      height: 1px;
-      background: #222;
-      margin: 16px 0;
-    }
-
-    /* Main content */
-    .main {
-      flex: 1;
-      margin-left: 280px;
+    /* Shorts-specific styles */
+    .main-content {
+      margin-left: 250px;
       padding: 40px;
     }
 
@@ -493,15 +413,11 @@ function renderShortsPage(user, analyses) {
       font-size: 32px;
       font-weight: 700;
       margin-bottom: 8px;
-      background: linear-gradient(135deg, #6c5ce7, #00cec9);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
     }
 
     .header-subtitle {
       font-size: 16px;
-      color: #888;
+      color: var(--text-muted);
     }
 
     /* Cards */
@@ -513,8 +429,8 @@ function renderShortsPage(user, analyses) {
     }
 
     .card {
-      background: rgba(17, 17, 17, 0.8);
-      border: 1px solid #222;
+      background: var(--surface-light);
+      border: var(--border-subtle);
       border-radius: 12px;
       padding: 24px;
       backdrop-filter: blur(10px);
@@ -523,7 +439,7 @@ function renderShortsPage(user, analyses) {
     }
 
     .card:hover {
-      border-color: #6c5ce7;
+      border-color: var(--primary);
       transform: translateY(-4px);
       box-shadow: 0 8px 24px rgba(108, 92, 231, 0.2);
     }
@@ -540,7 +456,7 @@ function renderShortsPage(user, analyses) {
 
     .card-meta {
       font-size: 13px;
-      color: #666;
+      color: var(--text-dim);
     }
 
     .moments-list {
@@ -548,8 +464,8 @@ function renderShortsPage(user, analyses) {
     }
 
     .moment-item {
-      background: #0a0a0a;
-      border-left: 3px solid #6c5ce7;
+      background: var(--dark);
+      border-left: 3px solid var(--primary);
       padding: 12px;
       margin-bottom: 8px;
       border-radius: 4px;
@@ -563,17 +479,18 @@ function renderShortsPage(user, analyses) {
 
     .virality-score {
       display: inline-block;
-      background: linear-gradient(135deg, #6c5ce7, #00cec9);
+      background: var(--gradient-1);
       padding: 2px 8px;
       border-radius: 4px;
       font-size: 11px;
       margin-top: 4px;
+      color: #fff;
     }
 
     .empty-state {
       text-align: center;
       padding: 60px 40px;
-      color: #666;
+      color: var(--text-dim);
     }
 
     .empty-state-icon {
@@ -585,7 +502,7 @@ function renderShortsPage(user, analyses) {
       font-size: 20px;
       font-weight: 600;
       margin-bottom: 8px;
-      color: #fff;
+      color: var(--text);
     }
 
     .empty-state-text {
@@ -595,8 +512,8 @@ function renderShortsPage(user, analyses) {
 
     /* Upload Section */
     .upload-section {
-      background: rgba(108, 92, 231, 0.05);
-      border: 2px dashed #6c5ce7;
+      background: rgba(108, 58, 237, 0.05);
+      border: 2px dashed var(--primary);
       border-radius: 12px;
       padding: 32px;
       text-align: center;
@@ -611,39 +528,26 @@ function renderShortsPage(user, analyses) {
 
     .upload-input {
       flex: 1;
-      background: #111;
-      border: 1px solid #222;
+      background: var(--surface);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 8px;
       padding: 12px 16px;
-      color: #fff;
+      color: var(--text);
       font-size: 14px;
     }
 
     .upload-input::placeholder {
-      color: #666;
-    }
-
-    .btn {
-      padding: 12px 24px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
+      color: var(--text-dim);
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, #6c5ce7, #00cec9);
+      background: var(--gradient-1);
       color: #fff;
     }
 
     .btn-primary:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(108, 92, 231, 0.4);
+      box-shadow: 0 8px 20px rgba(108, 58, 237, 0.4);
     }
 
     .btn-primary:active {
@@ -673,8 +577,8 @@ function renderShortsPage(user, analyses) {
       position: fixed;
       bottom: 24px;
       right: 24px;
-      background: #1a1a1a;
-      border: 1px solid #6c5ce7;
+      background: var(--surface-light);
+      border: var(--border-subtle);
       padding: 16px 20px;
       border-radius: 8px;
       font-size: 14px;
@@ -711,8 +615,8 @@ function renderShortsPage(user, analyses) {
     }
 
     .modal-content {
-      background: #111;
-      border: 1px solid #222;
+      background: var(--surface);
+      border: var(--border-subtle);
       border-radius: 12px;
       padding: 32px;
       max-width: 600px;
@@ -737,7 +641,7 @@ function renderShortsPage(user, analyses) {
       right: 16px;
       background: none;
       border: none;
-      color: #666;
+      color: var(--text-dim);
       font-size: 24px;
       cursor: pointer;
     }
@@ -751,23 +655,25 @@ function renderShortsPage(user, analyses) {
 
     .platform-badge {
       padding: 12px 16px;
-      border: 2px solid #222;
+      border: 2px solid rgba(255, 255, 255, 0.1);
       border-radius: 8px;
       text-align: center;
       cursor: pointer;
       transition: all 0.3s ease;
       font-size: 13px;
       font-weight: 600;
+      background: var(--surface-light);
+      color: var(--text);
     }
 
     .platform-badge.selected {
-      border-color: #6c5ce7;
-      background: rgba(108, 92, 231, 0.1);
+      border-color: var(--primary);
+      background: rgba(108, 58, 237, 0.1);
     }
 
     .moment-card {
-      background: #0a0a0a;
-      border: 1px solid #222;
+      background: var(--dark);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 8px;
       padding: 16px;
       margin-bottom: 12px;
@@ -776,13 +682,13 @@ function renderShortsPage(user, analyses) {
     }
 
     .moment-card:hover {
-      border-color: #6c5ce7;
-      background: rgba(108, 92, 231, 0.05);
+      border-color: var(--primary);
+      background: rgba(108, 58, 237, 0.05);
     }
 
     .moment-card.selected {
-      border-color: #00cec9;
-      background: rgba(0, 206, 201, 0.1);
+      border-color: var(--primary-light);
+      background: rgba(108, 58, 237, 0.15);
     }
 
     .moment-card-header {
@@ -795,6 +701,7 @@ function renderShortsPage(user, analyses) {
     .moment-card-title {
       font-weight: 600;
       font-size: 14px;
+      color: var(--text);
     }
 
     .moment-score {
@@ -804,20 +711,21 @@ function renderShortsPage(user, analyses) {
       width: 48px;
       height: 48px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #6c5ce7, #00cec9);
+      background: var(--gradient-1);
       font-weight: 700;
       font-size: 12px;
+      color: #fff;
     }
 
     .moment-card-time {
       font-size: 12px;
-      color: #888;
+      color: var(--text-dim);
       margin-bottom: 8px;
     }
 
     .moment-card-desc {
       font-size: 13px;
-      color: #aaa;
+      color: var(--text-muted);
       line-height: 1.5;
     }
 
@@ -832,7 +740,7 @@ function renderShortsPage(user, analyses) {
         transform: translateX(0);
       }
 
-      .main {
+      .main-content {
         margin-left: 0;
         padding: 24px;
       }
@@ -851,50 +759,12 @@ function renderShortsPage(user, analyses) {
     }
   </style>
 </head>
-<body>
-  <div class="container">
-    <!-- Sidebar -->
-    <nav class="sidebar">
-      <div class="sidebar-logo">Repurpose</div>
-      <ul class="sidebar-nav">
-        <li class="sidebar-nav-item">
-          <a href="/dashboard" class="sidebar-nav-link">ð Dashboard</a>
-        </li>
-        <li class="sidebar-nav-item">
-          <a href="/repurpose" class="sidebar-nav-link">â»ï¸ Repurpose</a>
-        </li>
-        <li class="sidebar-nav-item">
-          <a href="/repurpose/history" class="sidebar-nav-link">ð Library</a>
-        </li>
-        <li class="sidebar-nav-item">
-          <a href="/shorts" class="sidebar-nav-link active">âï¸ Smart Shorts</a>
-        </li>
-      </ul>
-      <div class="sidebar-divider"></div>
-      <ul class="sidebar-nav">
-        <li class="sidebar-nav-item">
-          <a href="/dashboard/analytics" class="sidebar-nav-link">ð Analytics</a>
-        </li>
-        <li class="sidebar-nav-item">
-          <a href="/dashboard/calendar" class="sidebar-nav-link">ð Calendar</a>
-        </li>
-        <li class="sidebar-nav-item">
-          <a href="/brand-voice" class="sidebar-nav-link">ðï¸ Brand Voice</a>
-        </li>
-      </ul>
-      <div class="sidebar-divider"></div>
-      <ul class="sidebar-nav">
-        <li class="sidebar-nav-item">
-          <a href="/billing" class="sidebar-nav-link">ð³ Billing</a>
-        </li>
-        <li class="sidebar-nav-item">
-          <a href="/auth/logout" class="sidebar-nav-link">ðª Sign Out</a>
-        </li>
-      </ul>
-    </nav>
+<body class="dashboard">
+  ${getThemeToggle()}
+  ${getSidebar('shorts')}
 
-    <!-- Main content -->
-    <main class="main">
+  <!-- Main content -->
+  <main class="main-content">
       <div class="header">
         <h1 class="header-title">Smart Shorts</h1>
         <p class="header-subtitle">Transform any YouTube video into viral short-form content</p>
@@ -951,7 +821,6 @@ function renderShortsPage(user, analyses) {
         `}
       </div>
     </main>
-  </div>
 
   <!-- Modal for viewing analysis -->
   <div class="modal" id="analysisModal">
@@ -1131,6 +1000,8 @@ function renderShortsPage(user, analyses) {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeModal();
     });
+
+    ${getThemeScript()}
   </script>
 </body>
 </html>`;
