@@ -77,7 +77,7 @@ async function fetchTranscriptDirect(videoId) {
   // Step 2: Extract caption tracks from the page's ytInitialPlayerResponse
   // The JSON can be very long so we need a non-greedy match that handles nested brackets
   let captionTracks;
-  const captionMatch = pageHtml.match(/"captionTracks":\s*(\[[\s\S]*?\])\s*,\s*"/);
+  const captionMatch = pageHtml.match(/"captionTracks":\s*(\[.*?\])/);
   if (captionMatch) {
     try {
       captionTracks = JSON.parse(captionMatch[1]);
@@ -256,30 +256,30 @@ async function fetchTranscriptWithYtdlp(videoId) {
 
   const baseArgs = ['--skip-download', '--no-warnings', '--no-check-certificates', '-o', outTemplate, videoUrl];
 
-  // Strategy 1: English auto-generated + manual subs in json3
-  console.log('  Trying: English json3 subtitles');
+  // Strategy 1: English auto-generated + manual subs in json3 (wildcard for en variants)
+  console.log('  Trying: English json3 subtitles (wildcard)');
   let subFile = await tryYtdlpSubtitles(videoId, [
     '--skip-download', '--no-warnings', '--no-check-certificates',
-    '--write-auto-subs', '--write-subs', '--sub-langs', 'en', '--sub-format', 'json3',
+    '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en', '--sub-format', 'json3',
     '-o', outTemplate, videoUrl
   ], tmpDir);
 
-  // Strategy 2: English subs in vtt format
+  // Strategy 2: English subs in vtt format (wildcard)
   if (!subFile) {
-    console.log('  Trying: English vtt subtitles');
+    console.log('  Trying: English vtt subtitles (wildcard)');
     subFile = await tryYtdlpSubtitles(videoId, [
       '--skip-download', '--no-warnings', '--no-check-certificates',
-      '--write-auto-subs', '--write-subs', '--sub-langs', 'en', '--sub-format', 'vtt',
+      '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en', '--sub-format', 'vtt',
       '-o', outTemplate, videoUrl
     ], tmpDir);
   }
 
-  // Strategy 3: Any language auto-generated subs
+  // Strategy 3: Any language auto-generated subs (all languages)
   if (!subFile) {
     console.log('  Trying: Any language auto-generated subtitles');
     subFile = await tryYtdlpSubtitles(videoId, [
       '--skip-download', '--no-warnings', '--no-check-certificates',
-      '--write-auto-subs', '--sub-format', 'json3',
+      '--write-auto-subs', '--sub-langs', 'all', '--sub-format', 'json3',
       '-o', outTemplate, videoUrl
     ], tmpDir);
   }
@@ -289,7 +289,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
     console.log('  Trying: Any manual subtitles');
     subFile = await tryYtdlpSubtitles(videoId, [
       '--skip-download', '--no-warnings', '--no-check-certificates',
-      '--write-subs', '--sub-format', 'json3',
+      '--write-subs', '--sub-langs', 'all', '--sub-format', 'json3',
       '-o', outTemplate, videoUrl
     ], tmpDir);
   }
