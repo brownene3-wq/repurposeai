@@ -511,40 +511,31 @@ router.post('/clip', requireAuth, async (req, res) => {
       }, 180000);
 
       try {
-        writeProgress('Getting video info...');
+        writeProgress('Downloading video...');
 
-        // Get video info from ytdl (handles signature decryption)
-        const info = await ytdl.getInfo(videoUrl);
-        writeProgress('Got video info, selecting format...');
+        // Use ytdl to stream with lowest quality (fastest download for social clips)
+        // The 'begin' param tells ytdl to start downloading near the target timestamp
+        const beginSec = Math.max(0, startSec - 2);
+        const videoStream = ytdl(videoUrl, {
+          quality: 'lowest',
+          filter: 'videoandaudio',
+          begin: beginSec > 0 ? `${beginSec}s` : undefined
+        });
 
-        // Find best combined format (video+audio) - prefer lowest quality for speed
-        const formats = info.formats
-          .filter(f => f.hasVideo && f.hasAudio && f.url)
-          .sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0)); // Sort by bitrate ascending
+        let downloadError = false;
+        videoStream.on('error', (err) => {
+          downloadError = true;
+          console.error('ytdl stream error:', err.message);
+          writeError('Video download failed: ' + err.message);
+        });
 
-        let format = formats[0]; // Lowest quality combined format
-        if (!format) {
-          const videoFormats = info.formats.filter(f => f.hasVideo && f.url).sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0));
-          format = videoFormats[0];
-        }
-
-        if (!format || !format.url) {
-          clearTimeout(timeout);
-          writeError('No suitable video format found for this video');
-          return;
-        }
-
-        writeProgress(`Using format itag=${format.itag} (${format.qualityLabel || 'unknown'}), starting ffmpeg...`);
-
-        // Write the URL to a temp file to avoid shell escaping issues with long YouTube URLs
-        const inputListPath = outputPath + '.input.txt';
-        const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        // If 'begin' works, ffmpeg only needs to skip ~2 seconds
+        // If 'begin' doesn't work (some formats don't support it), ffmpeg skips the full duration
+        const ffmpegSs = beginSec > 0 ? 2 : startSec;
 
         const ffmpegArgs = [
-          '-user_agent', userAgent,
-          '-referer', 'https://www.youtube.com/',
-          '-ss', String(startSec),
-          '-i', format.url,
+          '-ss', String(ffmpegSs),
+          '-i', 'pipe:0',
           '-t', String(duration),
           '-c:v', 'libx264',
           '-c:a', 'aac',
@@ -556,8 +547,12 @@ router.post('/clip', requireAuth, async (req, res) => {
           outputPath
         ];
 
-        console.log(`  ffmpeg URL length: ${format.url.length} chars`);
         const ffmpegProc = spawn(ffmpegPath, ffmpegArgs);
+
+        // Pipe ytdl stream to ffmpeg
+        videoStream.pipe(ffmpegProc.stdin).on('error', (e) => {
+          if (e.code !== 'EPIPE') console.error('Pipe error:', e.message);
+        });
 
         let stderrLog = '';
         ffmpegProc.stderr.on('data', (data) => {
@@ -573,8 +568,8 @@ router.post('/clip', requireAuth, async (req, res) => {
 
         ffmpegProc.on('close', (code) => {
           clearTimeout(timeout);
+          try { videoStream.destroy(); } catch (e) {} // Stop downloading
           try { fs.unlinkSync(progressPath); } catch (e) {}
-          try { fs.unlinkSync(inputListPath); } catch (e) {}
           if (code === 0) {
             const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
             console.log(`Clip generated: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
@@ -592,6 +587,7 @@ router.post('/clip', requireAuth, async (req, res) => {
 
         ffmpegProc.on('error', (err) => {
           clearTimeout(timeout);
+          try { videoStream.destroy(); } catch (e) {}
           writeError('ffmpeg process error: ' + err.message);
         });
 
