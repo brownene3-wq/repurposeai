@@ -49,12 +49,7 @@ router.get('/', requireAuth, async (req, res) => {
     .stat-card .stat-value{font-size:1.8rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
     .stat-card .stat-label{font-size:.8rem;color:var(--text-dim);margin-top:.3rem}
     @media(max-width:768px){.stats-grid{grid-template-columns:repeat(2,1fr)}.input-group{flex-direction:column}.video-info{flex-direction:column}.video-thumb{width:100%;height:auto}}
-  
-  
-  
-  
-  
-                                      ¼/style>
+  </style>
 </head>
 <body>
  <div class="dashboard">
