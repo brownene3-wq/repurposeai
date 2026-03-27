@@ -1,8 +1,9 @@
 FROM node:20-slim
 
-# Install ffmpeg and curl (needed for video clipping)
+# Install ffmpeg, python3, and yt-dlp (for video clipping)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg python3 python3-pip && \
+    pip3 install --break-system-packages yt-dlp && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

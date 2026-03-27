@@ -511,67 +511,57 @@ router.post('/clip', requireAuth, async (req, res) => {
       }, 300000);
 
       try {
-        writeProgress('Downloading video...');
+        writeProgress('Downloading and clipping video...');
 
-        // Stream with ytdl - use lowest quality combined format for fastest download
-        // Note: 'begin' param causes 403 errors, so we download from the start
-        // and let ffmpeg seek through the pipe (slower but reliable)
-        const videoStream = ytdl(videoUrl, {
-          quality: 'lowest',
-          filter: 'videoandaudio'
-        });
+        // Use yt-dlp (Python) for reliable YouTube downloads - it handles all YouTube's
+        // anti-bot measures and is actively maintained. Combined with ffmpeg for clipping.
+        // yt-dlp can download a specific section using --download-sections
+        const startTs = formatTimestamp(startSec);
+        const endTs = formatTimestamp(startSec + duration);
 
-        videoStream.on('error', (err) => {
-          console.error('ytdl stream error:', err.message);
-          writeError('Video download failed: ' + err.message);
-        });
+        // Check if yt-dlp is available
+        let ytdlpPath = 'yt-dlp';
+        try { execSync('which yt-dlp', { stdio: 'pipe' }); } catch (e) {
+          clearTimeout(timeout);
+          writeError('yt-dlp is not installed on this server');
+          return;
+        }
 
-        videoStream.on('progress', (chunkLength, downloaded, total) => {
-          if (total > 0) {
-            const pct = Math.round((downloaded / total) * 100);
-            if (pct % 10 === 0) writeProgress(`Downloading: ${pct}%`);
-          }
-        });
-
-        // ffmpeg seeks through the pipe to the start timestamp
-        const ffmpegSs = startSec;
-
-        const ffmpegArgs = [
-          '-ss', String(ffmpegSs),
-          '-i', 'pipe:0',
-          '-t', String(duration),
-          '-c:v', 'libx264',
-          '-c:a', 'aac',
-          '-preset', 'ultrafast',
-          '-crf', '28',
-          '-vf', 'scale=-2:720',
-          '-movflags', '+faststart',
-          '-y',
-          outputPath
+        // yt-dlp can download just the section we need and convert to mp4
+        const ytdlpArgs = [
+          '--no-playlist',
+          '--download-sections', `*${startTs}-${endTs}`,
+          '--force-keyframes-at-cuts',
+          '-f', 'worst[ext=mp4]/worst',  // Lowest quality for speed
+          '--recode-video', 'mp4',
+          '-o', outputPath,
+          '--no-warnings',
+          '--no-check-certificates',
+          videoUrl
         ];
 
-        const ffmpegProc = spawn(ffmpegPath, ffmpegArgs);
-
-        // Pipe ytdl stream to ffmpeg
-        videoStream.pipe(ffmpegProc.stdin).on('error', (e) => {
-          if (e.code !== 'EPIPE') console.error('Pipe error:', e.message);
-        });
+        console.log(`  Running yt-dlp: section ${startTs} to ${endTs}`);
+        const ytdlpProc = spawn(ytdlpPath, ytdlpArgs);
 
         let stderrLog = '';
-        ffmpegProc.stderr.on('data', (data) => {
-          stderrLog += data.toString();
-          // Keep only last 2KB to avoid memory growth
-          if (stderrLog.length > 2048) stderrLog = stderrLog.slice(-2048);
-          const msg = data.toString();
-          if (msg.includes('time=')) {
-            const timeMatch = msg.match(/time=(\S+)/);
-            if (timeMatch) writeProgress(`Encoding: ${timeMatch[1]}`);
+        ytdlpProc.stdout.on('data', (data) => {
+          const msg = data.toString().trim();
+          console.log(`  yt-dlp: ${msg}`);
+          // Parse download progress
+          const pctMatch = msg.match(/(\d+\.?\d*)%/);
+          if (pctMatch) {
+            writeProgress(`Downloading: ${Math.round(parseFloat(pctMatch[1]))}%`);
           }
         });
 
-        ffmpegProc.on('close', (code) => {
+        ytdlpProc.stderr.on('data', (data) => {
+          stderrLog += data.toString();
+          if (stderrLog.length > 2048) stderrLog = stderrLog.slice(-2048);
+          console.error(`  yt-dlp stderr: ${data.toString().trim()}`);
+        });
+
+        ytdlpProc.on('close', (code) => {
           clearTimeout(timeout);
-          try { videoStream.destroy(); } catch (e) {} // Stop downloading
           try { fs.unlinkSync(progressPath); } catch (e) {}
           if (code === 0) {
             const size = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
@@ -580,18 +570,16 @@ router.post('/clip', requireAuth, async (req, res) => {
               writeError('Clip generation produced empty file');
             }
           } else {
-            console.error('ffmpeg stderr (last 1500):', stderrLog.slice(-1500));
-            // Extract the actual error line from stderr (usually starts with a recognizable pattern)
+            console.error('yt-dlp stderr:', stderrLog.slice(-800));
             const lines = stderrLog.split('\n');
-            const errorLine = lines.find(l => /error|denied|forbidden|refused|timed out|403|404|401/i.test(l)) || lines.slice(-3).join(' ');
-            writeError(`ffmpeg exit code ${code}: ${errorLine.substring(0, 300)}`);
+            const errorLine = lines.find(l => /error|denied|forbidden|refused/i.test(l)) || lines.slice(-3).join(' ');
+            writeError(`yt-dlp exit code ${code}: ${errorLine.substring(0, 300)}`);
           }
         });
 
-        ffmpegProc.on('error', (err) => {
+        ytdlpProc.on('error', (err) => {
           clearTimeout(timeout);
-          try { videoStream.destroy(); } catch (e) {}
-          writeError('ffmpeg process error: ' + err.message);
+          writeError('yt-dlp process error: ' + err.message);
         });
 
       } catch (err) {
