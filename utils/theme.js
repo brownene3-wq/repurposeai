@@ -94,15 +94,15 @@ function getThemeScript() {
       document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
       localStorage.setItem('theme', isLight ? 'light' : 'dark');
       const btn = document.querySelector('.theme-toggle');
-      if(btn) btn.textContent = isLight ? 'âï¸' : 'ð';
+      if(btn) btn.innerHTML = isLight ? '&#x2600;&#xFE0F;' : '&#x1F319;';
     }
     if (localStorage.getItem('theme') === 'light') {
       document.body.classList.add('light');
       document.documentElement.setAttribute('data-theme', 'light');
       const btn = document.querySelector('.theme-toggle');
-      if(btn) btn.textContent = 'âï¸';
+      if(btn) btn.innerHTML = '&#x2600;&#xFE0F;';
     }
   `;
 }
 
-module.exports = { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript };
+};

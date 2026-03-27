@@ -937,11 +937,14 @@ function renderShortsPage(user, analyses) {
       right: 24px;
       background: var(--surface-light);
       border: var(--border-subtle);
+      color: var(--text);
       padding: 16px 20px;
       border-radius: 8px;
       font-size: 14px;
+      display: block !important;
       animation: slideUp 0.3s ease;
-      z-index: 1000;
+      z-index: 10000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
 
     @keyframes slideUp {
@@ -1180,7 +1183,7 @@ function renderShortsPage(user, analyses) {
       <div id="analysesContainer">
         ${analyses.length === 0 ? `
           <div class="empty-state">
-            <div class="empty-state-icon">âï¸</div>
+            <div class="empty-state-icon">&#x2702;&#xFE0F;</div>
             <h3 class="empty-state-title">No analyses yet</h3>
             <p class="empty-state-text">Paste a YouTube URL above to get started</p>
           </div>
@@ -1273,20 +1276,20 @@ function renderShortsPage(user, analyses) {
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
+              let data;
               try {
-                const data = JSON.parse(line.slice(6));
-                if (data.status === 'completed') {
-                  showToast('Analysis complete!');
-                  setTimeout(() => location.reload(), 1500);
-                } else if (data.status === 'error') {
-                  throw new Error(data.message || 'Analysis failed');
-                } else if (data.message) {
-                  btnText.textContent = data.message;
-                }
-              } catch (e) {
-                if (e.message && e.message !== 'Unexpected token') {
-                  throw e;
-                }
+                data = JSON.parse(line.slice(6));
+              } catch (parseErr) {
+                console.log('SSE parse skip:', line.slice(0, 100));
+                continue;
+              }
+              if (data.status === 'completed') {
+                showToast('Analysis complete!');
+                setTimeout(() => location.reload(), 1500);
+              } else if (data.status === 'error') {
+                throw new Error(data.message || 'Analysis failed');
+              } else if (data.message) {
+                btnText.textContent = data.message;
               }
             }
           }
