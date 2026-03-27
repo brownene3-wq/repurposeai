@@ -926,12 +926,12 @@ router.post('/clip', requireAuth, async (req, res) => {
           // Use min() to avoid cropping wider/taller than the source
           // For landscape: crop width = height*9/16, full height, centered
           // For portrait/square: just scale to fit 1080x1920
-          // Crop to 9:16 center then scale to 1080x1920
-          // Use min() with escaped commas for ffmpeg expression safety
-          const cropFilter = "crop='min(ih*9/16\\,iw)':'min(iw*16/9\\,ih)':'(iw-min(ih*9/16\\,iw))/2':'(ih-min(iw*16/9\\,ih))/2',scale=1080:1920:flags=lanczos";
+          // Simple two-step: scale to fill 1080x1920, then center-crop to exact size
+          // This works for any input aspect ratio (landscape, portrait, square)
+          const vf = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1';
           const ffmpegArgs = [
             '-i', actualDownload,
-            '-vf', cropFilter,
+            '-vf', vf,
             '-c:v', 'libx264',
             '-profile:v', 'high',
             '-level', '4.0',
@@ -944,11 +944,10 @@ router.post('/clip', requireAuth, async (req, res) => {
             '-crf', '23',
             '-movflags', '+faststart',
             '-max_muxing_queue_size', '1024',
-            '-f', 'mp4',
             '-y',
             outputPath
           ];
-          console.log('ffmpeg args:', ffmpegArgs.join(' '));
+          console.log('ffmpeg command:', ffmpegPath, ffmpegArgs.join(' '));
           const ffmpegCrop = spawn(ffmpegPath, ffmpegArgs);
 
           let ffmpegStderr = '';
