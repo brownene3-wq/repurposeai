@@ -403,6 +403,21 @@ router.post('/analyze', requireAuth, async (req, res) => {
 
     const userId = req.user.id;
 
+    // Check for existing analysis of same video
+    const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    try {
+      const { pool } = require('../db/database');
+      const existing = await pool.query(
+        `SELECT id FROM smart_shorts WHERE user_id = $1 AND video_url LIKE $2 AND status = 'completed' LIMIT 1`,
+        [userId, `%${videoId}%`]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(400).json({ error: 'You have already analyzed this video. Check your analyses below.' });
+      }
+    } catch(e) {
+      console.log('Duplicate check failed (non-fatal):', e.message);
+    }
+
     // Set up Server-Sent Events
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -1481,6 +1496,7 @@ function renderShortsPage(user, analyses) {
             class="upload-input"
             id="videoUrl"
             placeholder="https://youtube.com/watch?v=..."
+            onkeydown="if(event.key==='Enter'){event.preventDefault();analyzeVideo();}"
           >
           <button class="btn btn-primary" onclick="analyzeVideo()">
             <span id="analyzeBtn">Analyze</span>
