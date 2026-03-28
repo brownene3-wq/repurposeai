@@ -2891,6 +2891,76 @@ function renderShortsPage(user, analyses) {
         </div>
       </div>
 
+      <!-- Workflow Templates -->
+      <div style="margin-bottom: 16px;">
+        <button class="btn" onclick="toggleWorkflows()" id="workflowToggle"
+          style="background: rgba(243,156,18,0.12); color: #f39c12; border: 1px solid rgba(243,156,18,0.3); font-size: 13px; padding: 8px 16px;">
+          Workflow Templates
+        </button>
+        <div id="workflowPanel" style="display:none; margin-top:12px;">
+          <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">
+            <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-tiktok')">
+              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x266C;</div>
+              <div style="font-weight:600;margin-bottom:4px;">YouTube to TikTok</div>
+              <div style="font-size:12px;color:var(--text-muted);">Blur background, auto-captions, TikTok-optimized content with trending hashtags</div>
+              <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+                <span style="font-size:10px;background:rgba(255,0,80,0.2);color:#FF0050;padding:2px 6px;border-radius:4px;">Blur BG</span>
+                <span style="font-size:10px;background:rgba(255,0,80,0.2);color:#FF0050;padding:2px 6px;border-radius:4px;">Captions ON</span>
+                <span style="font-size:10px;background:rgba(255,0,80,0.2);color:#FF0050;padding:2px 6px;border-radius:4px;">TikTok + IG</span>
+              </div>
+            </div>
+            <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-shorts')">
+              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x25B6;</div>
+              <div style="font-weight:600;margin-bottom:4px;">YouTube to YT Shorts</div>
+              <div style="font-size:12px;color:var(--text-muted);">Center crop for full-frame, captions, Shorts-optimized with SEO description</div>
+              <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+                <span style="font-size:10px;background:rgba(255,0,0,0.2);color:#ff0000;padding:2px 6px;border-radius:4px;">Center Crop</span>
+                <span style="font-size:10px;background:rgba(255,0,0,0.2);color:#ff0000;padding:2px 6px;border-radius:4px;">Captions ON</span>
+                <span style="font-size:10px;background:rgba(255,0,0,0.2);color:#ff0000;padding:2px 6px;border-radius:4px;">Shorts Only</span>
+              </div>
+            </div>
+            <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-linkedin')">
+              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x1F4BC;</div>
+              <div style="font-weight:600;margin-bottom:4px;">YouTube to LinkedIn</div>
+              <div style="font-size:12px;color:var(--text-muted);">Fit style with clean background, professional content + blog post</div>
+              <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+                <span style="font-size:10px;background:rgba(0,119,181,0.2);color:#0077b5;padding:2px 6px;border-radius:4px;">Fit Style</span>
+                <span style="font-size:10px;background:rgba(0,119,181,0.2);color:#0077b5;padding:2px 6px;border-radius:4px;">No Captions</span>
+                <span style="font-size:10px;background:rgba(0,119,181,0.2);color:#0077b5;padding:2px 6px;border-radius:4px;">LinkedIn + Blog</span>
+              </div>
+            </div>
+            <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-all')">
+              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x1F30D;</div>
+              <div style="font-weight:600;margin-bottom:4px;">YouTube to Everything</div>
+              <div style="font-size:12px;color:var(--text-muted);">Maximum reach: blur BG clip, captions, content for all 8 platforms, thumbnail</div>
+              <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+                <span style="font-size:10px;background:rgba(108,92,231,0.2);color:#a29bfe;padding:2px 6px;border-radius:4px;">Blur BG</span>
+                <span style="font-size:10px;background:rgba(108,92,231,0.2);color:#a29bfe;padding:2px 6px;border-radius:4px;">All Platforms</span>
+                <span style="font-size:10px;background:rgba(108,92,231,0.2);color:#a29bfe;padding:2px 6px;border-radius:4px;">+ Thumbnail</span>
+              </div>
+            </div>
+            <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('podcast')">
+              <div style="font-size:24px;margin-bottom:8px;">&#x1F399; &#x2192; &#x1F4F1;</div>
+              <div style="font-weight:600;margin-bottom:4px;">Podcast to Clips</div>
+              <div style="font-size:12px;color:var(--text-muted);">PiP style for talking heads, bold captions, Twitter thread + newsletter</div>
+              <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+                <span style="font-size:10px;background:rgba(243,156,18,0.2);color:#f39c12;padding:2px 6px;border-radius:4px;">PiP Style</span>
+                <span style="font-size:10px;background:rgba(243,156,18,0.2);color:#f39c12;padding:2px 6px;border-radius:4px;">Thread + Newsletter</span>
+              </div>
+            </div>
+            <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('education')">
+              <div style="font-size:24px;margin-bottom:8px;">&#x1F393; &#x2192; &#x1F4DD;</div>
+              <div style="font-weight:600;margin-bottom:4px;">Education to Blog</div>
+              <div style="font-size:12px;color:var(--text-muted);">Fit style, captions for accessibility, long-form blog + LinkedIn article</div>
+              <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+                <span style="font-size:10px;background:rgba(16,185,129,0.2);color:#10b981;padding:2px 6px;border-radius:4px;">Fit Style</span>
+                <span style="font-size:10px;background:rgba(16,185,129,0.2);color:#10b981;padding:2px 6px;border-radius:4px;">Blog + LinkedIn</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Batch Analysis -->
       <div style="margin-bottom: 16px;">
         <button class="btn" onclick="toggleBatchInput()" id="batchToggle"
@@ -3753,6 +3823,61 @@ function renderShortsPage(user, analyses) {
         btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
       }
     }
+
+    // === Workflow Templates ===
+    let activeWorkflow = null;
+    const workflows = {
+      'yt-tiktok': { clipStyle: 'blur', captions: true, platforms: ['tiktok', 'instagram'], name: 'YouTube to TikTok' },
+      'yt-shorts': { clipStyle: 'crop', captions: true, platforms: ['shorts'], name: 'YouTube to YT Shorts' },
+      'yt-linkedin': { clipStyle: 'fit', captions: false, platforms: ['linkedin', 'blog'], name: 'YouTube to LinkedIn' },
+      'yt-all': { clipStyle: 'blur', captions: true, platforms: ['tiktok','instagram','shorts','twitter','linkedin','thread','blog','newsletter'], name: 'YouTube to Everything' },
+      'podcast': { clipStyle: 'pip', captions: true, platforms: ['twitter', 'thread', 'newsletter'], name: 'Podcast to Clips' },
+      'education': { clipStyle: 'fit', captions: true, platforms: ['blog', 'linkedin'], name: 'Education to Blog' }
+    };
+
+    function toggleWorkflows() {
+      const panel = document.getElementById('workflowPanel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function applyWorkflow(workflowId) {
+      activeWorkflow = workflows[workflowId];
+      if (!activeWorkflow) return;
+
+      showToast('Workflow "' + activeWorkflow.name + '" active! Analyze a video to use it.');
+      document.getElementById('workflowPanel').style.display = 'none';
+
+      // Show active workflow badge
+      const toggle = document.getElementById('workflowToggle');
+      toggle.innerHTML = 'Workflow: <strong>' + activeWorkflow.name + '</strong> <span style="font-size:10px;cursor:pointer;" onclick="event.stopPropagation();clearWorkflow();">&times;</span>';
+      toggle.style.background = 'rgba(243,156,18,0.3)';
+    }
+
+    function clearWorkflow() {
+      activeWorkflow = null;
+      const toggle = document.getElementById('workflowToggle');
+      toggle.textContent = 'Workflow Templates';
+      toggle.style.background = 'rgba(243,156,18,0.12)';
+      showToast('Workflow cleared');
+    }
+
+    // Override viewAnalysis to apply workflow settings
+    const _origViewAnalysis = viewAnalysis;
+    viewAnalysis = async function(id) {
+      await _origViewAnalysis(id);
+      if (activeWorkflow) {
+        // Apply workflow settings to all moment cards
+        setTimeout(() => {
+          const moments = document.querySelectorAll('.moment-card');
+          moments.forEach((card, idx) => {
+            const styleSelect = document.getElementById('clip-style-' + idx);
+            if (styleSelect) styleSelect.value = activeWorkflow.clipStyle;
+            const captionsCheck = document.getElementById('captions-' + idx);
+            if (captionsCheck) captionsCheck.checked = activeWorkflow.captions;
+          });
+        }, 100);
+      }
+    };
 
     // === Content Calendar ===
     let calendarMonth = new Date().getMonth();
