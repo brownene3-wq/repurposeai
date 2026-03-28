@@ -1211,7 +1211,8 @@ router.post('/clip', requireAuth, async (req, res) => {
           // Step 2a: Extract the segment (fast seek + stream copy = fast, preserves all data)
           // Step 2b: Re-encode to vertical H.264 for QuickTime
 
-          const segmentPath = outputPath + '.segment.mp4';
+          // Use .mkv for segment since it handles any codec (VP9, AV1, H.264, etc.)
+          const segmentPath = outputPath + '.segment.mkv';
 
           // Step 2a: Extract segment with stream copy (very fast)
           const extractArgs = [
