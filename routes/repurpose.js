@@ -1255,7 +1255,7 @@ router.get('/', (req, res) => {
               <h2>Step 1: Your Content</h2>
               <div class="form-group">
                 <label>YouTube URL</label>
-                <input type="text" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." />
+                <input type="url" id="youtubeUrl" name="yt_repurpose_url" autocomplete="one-time-code" data-form-type="other" data-lpignore="true" placeholder="https://www.youtube.com/watch?v=..." />
               </div>
 
               <h2 style="margin-top: 30px;">Step 2: Choose Platforms</h2>
@@ -1935,7 +1935,7 @@ router.get('/history', requireAuth, (req, res) => {
         .header h1 {
           font-size: 32px;
           margin-bottom: 10px;
-          background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -1951,22 +1951,30 @@ router.get('/history', requireAuth, (req, res) => {
         .search-input {
           flex: 1;
           min-width: 200px;
-          padding: 12px;
+          padding: 12px 16px;
           background: #161616;
-          border: 1px solid #333;
-          border-radius: 8px;
+          border: 1px solid rgba(108,58,237,0.15);
+          border-radius: 12px;
           color: #e0e0e0;
           font-size: 14px;
+          transition: all 0.3s;
+        }
+
+        .search-input:focus {
+          outline: none;
+          border-color: #6C3AED;
+          box-shadow: 0 0 0 3px rgba(108,58,237,0.1);
         }
 
         body.light .search-input {
           background: #fff;
-          border: 1px solid #ddd;
+          border: 1px solid rgba(108,58,237,0.12);
           color: #1a1a1a;
+          box-shadow: 0 2px 8px rgba(108,58,237,0.04);
         }
 
         .search-input::placeholder {
-          color: #888;
+          color: #718096;
         }
 
         .content-grid {
@@ -1978,25 +1986,45 @@ router.get('/history', requireAuth, (req, res) => {
 
         .content-card {
           background: #161616;
-          border: 1px solid #222;
-          border-radius: 12px;
-          padding: 20px;
+          border: 1px solid rgba(108,58,237,0.12);
+          border-radius: 16px;
+          padding: 24px;
           cursor: pointer;
           transition: all 0.3s;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .content-card::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 3px;
+          background: linear-gradient(90deg, #6C3AED, #EC4899);
+          opacity: 0;
+          transition: opacity 0.3s;
+        }
+
+        .content-card:hover::before {
+          opacity: 1;
         }
 
         body.light .content-card {
           background: #fff;
-          border: 1px solid #e0e0e0;
+          border: 1px solid rgba(108,58,237,0.1);
+          box-shadow: 0 2px 12px rgba(108,58,237,0.04);
         }
 
         .content-card:hover {
-          border-color: #6c5ce7;
+          border-color: rgba(108,58,237,0.3);
           transform: translateY(-4px);
+          box-shadow: 0 8px 24px rgba(108,58,237,0.12);
         }
 
         .card-title {
-          font-weight: 600;
+          font-weight: 700;
           margin-bottom: 10px;
           color: #e0e0e0;
         }
@@ -2007,33 +2035,41 @@ router.get('/history', requireAuth, (req, res) => {
 
         .card-date {
           font-size: 12px;
-          color: #888;
+          color: #718096;
           margin-bottom: 12px;
         }
 
         .card-platforms {
           display: flex;
           flex-wrap: wrap;
-          gap: 8px;
+          gap: 6px;
           margin-bottom: 12px;
         }
 
         .platform-badge {
           display: inline-block;
-          background: #0a0a0a;
-          color: #6c5ce7;
-          padding: 4px 8px;
-          border-radius: 4px;
+          padding: 4px 10px;
+          border-radius: 20px;
           font-size: 11px;
-          font-weight: 500;
+          font-weight: 600;
+          color: #fff;
+          background: linear-gradient(135deg, #6C3AED, #EC4899);
         }
 
+        .platform-badge[data-platform="Instagram"] { background: linear-gradient(135deg, #833AB4, #E1306C); }
+        .platform-badge[data-platform="TikTok"] { background: linear-gradient(135deg, #010101, #25F4EE); }
+        .platform-badge[data-platform="Twitter"] { background: linear-gradient(135deg, #14171A, #1DA1F2); }
+        .platform-badge[data-platform="LinkedIn"] { background: linear-gradient(135deg, #0A66C2, #004182); }
+        .platform-badge[data-platform="Facebook"] { background: linear-gradient(135deg, #1877F2, #42a5f5); }
+        .platform-badge[data-platform="YouTube"] { background: linear-gradient(135deg, #FF0000, #CC0000); }
+        .platform-badge[data-platform="Blog"] { background: linear-gradient(135deg, #6C3AED, #EC4899); }
+
         body.light .platform-badge {
-          background: #f0f0f0;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
         .card-preview {
-          color: #b0b0b0;
+          color: #a0aec0;
           font-size: 13px;
           line-height: 1.5;
           max-height: 60px;
@@ -2042,7 +2078,7 @@ router.get('/history', requireAuth, (req, res) => {
         }
 
         body.light .card-preview {
-          color: #666;
+          color: #4a5568;
         }
 
         .empty-state {
@@ -2320,7 +2356,7 @@ router.get('/history', requireAuth, (req, res) => {
               <div class="card-title">\${escapeHtml(item.title || 'Untitled')}</div>
               <div class="card-date">\${new Date(item.created_at).toLocaleDateString()}</div>
               <div class="card-platforms">
-                \${item.platforms.map(p => \`<span class="platform-badge">\${p}</span>\`).join('')}
+                \${item.platforms.map(p => \`<span class="platform-badge" data-platform="\${p}">\${p}</span>\`).join('')}
               </div>
               <div class="card-preview">\${escapeHtml((item.preview || '').substring(0, 100))}...</div>
             </div>

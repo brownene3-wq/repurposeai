@@ -81,7 +81,7 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="repurpose-card">
         <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x1F680; Repurpose a Video</h2>
         <div class="input-group">
-          <input type="text" class="url-input" id="youtubeUrl" placeholder="Paste YouTube URL here... (e.g. https://youtube.com/watch?v=...)">
+          <input type="url" class="url-input" id="youtubeUrl" name="yt_dashboard_url" autocomplete="one-time-code" data-form-type="other" data-lpignore="true" placeholder="Paste YouTube URL here... (e.g. https://youtube.com/watch?v=...)">
           <button class="btn btn-primary" id="processBtn" onclick="processVideo()">&#x26A1; Repurpose</button>
         </div>
 
@@ -214,6 +214,19 @@ router.get('/', requireAuth, async (req, res) => {
         setTimeout(() => { toast.style.display = 'none'; }, 2000);
       });
     }
+
+    // Clear autofilled email from URL input
+    (function() {
+      var u = document.getElementById('youtubeUrl');
+      if (u) {
+        setTimeout(function() {
+          if (u.value && (u.value.includes('@') || !u.value.includes('http'))) u.value = '';
+        }, 100);
+        u.addEventListener('focus', function() {
+          if (this.value && this.value.includes('@')) this.value = '';
+        });
+      }
+    })();
 
     // Allow Enter key to trigger processing
     document.getElementById('youtubeUrl').addEventListener('keypress', (e) => {

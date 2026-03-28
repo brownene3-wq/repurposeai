@@ -4563,10 +4563,12 @@ function renderShortsPage(user, analyses) {
             type="url"
             class="upload-input"
             id="videoUrl"
-            name="youtube_video_url"
-            autocomplete="off"
+            name="yt_video_search_url_field"
+            autocomplete="one-time-code"
             autocorrect="off"
             spellcheck="false"
+            data-form-type="other"
+            data-lpignore="true"
             placeholder="https://youtube.com/watch?v=..."
           >
           <button class="btn btn-primary" onclick="analyzeVideo()">
@@ -4816,12 +4818,12 @@ function renderShortsPage(user, analyses) {
               const vidId = vidMatch ? vidMatch[1] : null;
               return `
               <div class="card" onclick="viewAnalysis('${analysis.id}')" style="position:relative;">
-                <button onclick="event.stopPropagation(); deleteAnalysis('${analysis.id}', this)" title="Delete"
-                  style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.5); border:none; color:#ff6b6b;
-                  width:32px; height:32px; border-radius:50%; cursor:pointer; font-size:16px; display:flex;
-                  align-items:center; justify-content:center; z-index:2; transition:background 0.2s;"
-                  onmouseover="this.style.background='rgba(255,0,0,0.6)'; this.style.color='#fff'"
-                  onmouseout="this.style.background='rgba(0,0,0,0.5)'; this.style.color='#ff6b6b'"
+                <button onclick="event.stopPropagation(); event.preventDefault(); deleteAnalysis('${analysis.id}', this); return false;" title="Delete"
+                  style="position:absolute; top:10px; right:10px; background:rgba(239,68,68,0.9); border:2px solid rgba(255,255,255,0.3); color:#fff;
+                  width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:14px; display:flex;
+                  align-items:center; justify-content:center; z-index:10; transition:all 0.2s; font-weight:bold;"
+                  onmouseover="this.style.background='#ef4444'; this.style.transform='scale(1.15)'"
+                  onmouseout="this.style.background='rgba(239,68,68,0.9)'; this.style.transform='scale(1)'"
                 >&times;</button>
                 ${vidId ? `<img src="https://img.youtube.com/vi/${vidId}/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">` : ''}
                 <div class="card-header">
@@ -5017,10 +5019,21 @@ function renderShortsPage(user, analyses) {
   </div>
 
   <script>
-    // Enter key triggers analyze (attached immediately since script is at end of body)
+    // Clear autofilled email from URL input (Chrome ignores autocomplete=off)
     (function() {
       var urlInput = document.getElementById('videoUrl');
       if (urlInput) {
+        // Force clear on load — browser autofill puts email here
+        setTimeout(function() {
+          var val = urlInput.value;
+          if (val && (val.includes('@') || !val.includes('http'))) {
+            urlInput.value = '';
+          }
+        }, 100);
+        // Also clear on focus if it has an email
+        urlInput.addEventListener('focus', function() {
+          if (this.value && this.value.includes('@')) this.value = '';
+        });
         urlInput.addEventListener('keydown', function(e) {
           if (e.key === 'Enter') {
             e.preventDefault();

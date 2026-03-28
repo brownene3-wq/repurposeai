@@ -347,23 +347,28 @@ router.get('/', requireAuth, (req, res) => {
 
         .sidebar-section {
           background: #161616;
-          border: 1px solid #222;
-          border-radius: 12px;
+          border: 1px solid rgba(108,58,237,0.15);
+          border-radius: 16px;
           padding: 20px;
           margin-bottom: 20px;
         }
 
         body.light .sidebar-section {
           background: #fff;
-          border: 1px solid #e0e0e0;
+          border: 1px solid rgba(108,58,237,0.12);
+          box-shadow: 0 2px 12px rgba(108,58,237,0.06);
         }
 
         .sidebar-section h3 {
-          font-size: 14px;
+          font-size: 13px;
           margin-bottom: 15px;
-          color: #6c5ce7;
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
           text-transform: uppercase;
-          font-weight: 600;
+          font-weight: 700;
+          letter-spacing: 0.5px;
         }
 
         .content-list {
@@ -375,35 +380,55 @@ router.get('/', requireAuth, (req, res) => {
         .content-item {
           background: #0a0a0a;
           border: 1px solid #222;
-          border-radius: 6px;
-          padding: 10px;
+          border-radius: 10px;
+          padding: 12px;
           font-size: 12px;
           cursor: pointer;
           transition: all 0.3s;
+          border-left: 3px solid #6C3AED;
         }
 
         body.light .content-item {
-          background: #f5f5f5;
-          border: 1px solid #ddd;
+          background: #f8f9fc;
+          border: 1px solid #e2e8f0;
+          border-left: 3px solid #6C3AED;
         }
 
         .content-item:hover {
-          border-color: #6c5ce7;
-          color: #6c5ce7;
+          border-left-color: #EC4899;
+          transform: translateX(4px);
+          box-shadow: 0 2px 8px rgba(108,58,237,0.15);
         }
 
+        .content-item[data-platform="Instagram"] { border-left-color: #E1306C; }
+        .content-item[data-platform="TikTok"] { border-left-color: #25F4EE; }
+        .content-item[data-platform="Twitter"] { border-left-color: #1DA1F2; }
+        .content-item[data-platform="LinkedIn"] { border-left-color: #0A66C2; }
+        .content-item[data-platform="Facebook"] { border-left-color: #1877F2; }
+        .content-item[data-platform="YouTube"] { border-left-color: #FF0000; }
+        .content-item[data-platform="Blog"] { border-left-color: #EC4899; }
+
         .content-item-title {
-          font-weight: 500;
+          font-weight: 600;
           margin-bottom: 4px;
           color: #e0e0e0;
         }
+
+        .content-item[data-platform="Instagram"] .content-item-title { color: #E1306C; }
+        .content-item[data-platform="TikTok"] .content-item-title { color: #25F4EE; }
+        body.light .content-item[data-platform="TikTok"] .content-item-title { color: #010101; }
+        .content-item[data-platform="Twitter"] .content-item-title { color: #1DA1F2; }
+        .content-item[data-platform="LinkedIn"] .content-item-title { color: #0A66C2; }
+        .content-item[data-platform="Facebook"] .content-item-title { color: #1877F2; }
+        .content-item[data-platform="YouTube"] .content-item-title { color: #FF0000; }
+        .content-item[data-platform="Blog"] .content-item-title { color: #EC4899; }
 
         body.light .content-item-title {
           color: #1a1a1a;
         }
 
         .content-item-date {
-          color: #888;
+          color: #718096;
           font-size: 11px;
         }
 
@@ -671,7 +696,7 @@ router.get('/', requireAuth, (req, res) => {
           const todayList = document.getElementById('todayList');
           if (todayContent.length > 0) {
             todayList.innerHTML = todayContent.map(p => \`
-              <div class="content-item" onclick="openSingleContent('\${p}', 'Today', '\${todayKey}')">
+              <div class="content-item" data-platform="\${p}" onclick="openSingleContent('\${p}', 'Today', '\${todayKey}')">
                 <div class="content-item-title">\${p}</div>
                 <div class="content-item-date">Today</div>
               </div>
@@ -694,7 +719,7 @@ router.get('/', requireAuth, (req, res) => {
           const weekList = document.getElementById('weekList');
           if (weekContent.length > 0) {
             weekList.innerHTML = weekContent.map(c => \`
-              <div class="content-item" onclick="openSingleContent('\${c.platform}', '\${c.date}', '\${c.dateKey}')">
+              <div class="content-item" data-platform="\${c.platform}" onclick="openSingleContent('\${c.platform}', '\${c.date}', '\${c.dateKey}')">
                 <div class="content-item-title">\${c.platform}</div>
                 <div class="content-item-date">\${c.date}</div>
               </div>
@@ -717,7 +742,7 @@ router.get('/', requireAuth, (req, res) => {
           const recentList = document.getElementById('recentList');
           if (recentContent.length > 0) {
             recentList.innerHTML = recentContent.slice(0, 5).map(c => \`
-              <div class="content-item" onclick="openSingleContent('\${c.platform}', '\${c.date}', '\${c.dateKey}')">
+              <div class="content-item" data-platform="\${c.platform}" onclick="openSingleContent('\${c.platform}', '\${c.date}', '\${c.dateKey}')">
                 <div class="content-item-title">\${c.platform}</div>
                 <div class="content-item-date">\${c.date}</div>
               </div>
