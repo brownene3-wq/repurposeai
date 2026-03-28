@@ -4073,16 +4073,17 @@ function renderShortsPage(user, analyses) {
           return ed === dateStr;
         });
 
-        html += '<div style="padding:6px;min-height:80px;background:' + (isToday ? 'rgba(108,92,231,0.1)' : 'rgba(0,0,0,0.3)') +
-          ';cursor:pointer;transition:background 0.2s;" onclick="openAddEntry(\\'' + dateStr + '\\')" ' +
-          'onmouseover="this.style.background=\\'rgba(108,92,231,0.15)\\'" onmouseout="this.style.background=\\'' + (isToday ? 'rgba(108,92,231,0.1)' : 'rgba(0,0,0,0.3)') + '\\'">' +
+        var bgColor = isToday ? 'rgba(108,92,231,0.1)' : 'rgba(0,0,0,0.3)';
+        html += '<div style="padding:6px;min-height:80px;background:' + bgColor +
+          ';cursor:pointer;transition:background 0.2s;" onclick="openAddEntry(' + "'" + dateStr + "'" + ')" ' +
+          'onmouseover="this.style.background=' + "'" + 'rgba(108,92,231,0.15)' + "'" + '" onmouseout="this.style.background=' + "'" + bgColor + "'" + '">' +
           '<div style="font-size:12px;font-weight:' + (isToday ? '700' : '400') + ';color:' + (isToday ? '#a29bfe' : '#888') + ';margin-bottom:4px;">' + day + '</div>';
 
         dayEntries.forEach(entry => {
           const sc = statusColors[entry.status] || '#6c5ce7';
           html += '<div style="font-size:10px;padding:2px 4px;margin-bottom:2px;background:' + sc + '22;border-left:2px solid ' + sc +
             ';border-radius:2px;color:#ccc;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" ' +
-            'onclick="event.stopPropagation();editCalendarEntry(\\'' + entry.id + '\\')" title="' + (entry.title || '').replace(/"/g,'&quot;') + '">' +
+            'onclick="event.stopPropagation();editCalendarEntry(' + "'" + entry.id + "'" + ')" title="' + (entry.title || '').replace(/"/g,'&amp;quot;') + '">' +
             (platformEmojis[entry.platform] || '') + ' ' + (entry.title || '').substring(0,15) +
           '</div>';
         });
@@ -4297,7 +4298,7 @@ function renderShortsPage(user, analyses) {
 
         let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
           '<h3 style="font-size:18px;">Virality Breakdown</h3>' +
-          '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);" onclick="this.closest(\'#' + overlayId + '\').remove()">Close</button>' +
+          '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);" onclick="document.getElementById(' + "'" + overlayId + "'" + ').remove()">Close</button>' +
         '</div>';
 
         // Score bars
@@ -4330,7 +4331,7 @@ function renderShortsPage(user, analyses) {
       } catch (error) {
         overlay.querySelector('div > div').innerHTML =
           '<p style="color:#ff6b6b;text-align:center;">Error: ' + (error.message || 'Failed') + '</p>' +
-          '<button class="btn" style="width:100%;margin-top:12px;background:rgba(255,255,255,0.1);" onclick="this.closest(\'#' + overlayId + '\').remove()">Close</button>';
+          '<button class="btn" style="width:100%;margin-top:12px;background:rgba(255,255,255,0.1);" onclick="document.getElementById(' + "'" + overlayId + "'" + ').remove()">Close</button>';
       }
     }
 
@@ -4353,7 +4354,7 @@ function renderShortsPage(user, analyses) {
         let html = '<div style="margin-top:12px;background:rgba(243,156,18,0.05);border:1px solid rgba(243,156,18,0.2);border-radius:8px;padding:12px;" id="broll-panel-' + momentIndex + '">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
             '<h4 style="font-size:14px;color:#f39c12;">B-Roll Suggestions</h4>' +
-            '<button class="btn btn-small" style="font-size:10px;background:rgba(255,255,255,0.1);" onclick="this.closest(\'[id^=broll-panel]\').remove()">Close</button>' +
+            '<button class="btn btn-small" style="font-size:10px;background:rgba(255,255,255,0.1);" onclick="document.getElementById(' + "'broll-panel-" + momentIndex + "'" + ').remove()">Close</button>' +
           '</div>';
 
         if (data.message) {
@@ -4443,7 +4444,7 @@ function renderShortsPage(user, analyses) {
                   '<a href="/shorts/thumbnail/download/' + filename + '" download="' + filename + '" class="btn btn-small" ' +
                     'style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:11px;">Download</a>' +
                   '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:11px;" ' +
-                    'onclick="this.closest(\'[id^=thumb-preview]\').remove()">Close</button>' +
+                    'onclick="document.getElementById(' + "'thumb-preview-" + momentIndex + "'" + ').remove()">Close</button>' +
                 '</div>' +
               '</div>';
 
@@ -4588,7 +4589,7 @@ function renderShortsPage(user, analyses) {
         });
 
         const secs = line.time.split(':').reduce((a,b) => a*60 + parseInt(b), 0);
-        const ytLink = videoId ? ' onclick="window.open(\\'https://youtube.com/watch?v=' + videoId + '&t=' + secs + '\\', \\'_blank\\')"' : '';
+        const ytLink = videoId ? " onclick=\"window.open(" + "'" + "https://youtube.com/watch?v=" + videoId + "&t=" + secs + "'" + ", " + "'" + "_blank" + "'" + ")\"" : '';
 
         return '<div class="transcript-line" style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;"' + ytLink + '>' +
           '<span style="color:#6c5ce7;font-size:12px;font-family:monospace;white-space:nowrap;min-width:65px;">' + line.time + '</span>' +
