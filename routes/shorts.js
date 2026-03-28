@@ -17,7 +17,7 @@ if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath
 const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
-const { shortsOps } = require('../db/database');
+const { shortsOps, brandKitOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -1364,6 +1364,31 @@ router.delete('/api/:id', requireAuth, async (req, res) => {
   }
 });
 
+// GET /brand-kit - Get user's brand kit settings
+router.get('/brand-kit', requireAuth, async (req, res) => {
+  try {
+    const kit = await brandKitOps.getByUserId(req.user.id);
+    res.json({ success: true, brandKit: kit || {} });
+  } catch (error) {
+    console.error('Error fetching brand kit:', error);
+    res.status(500).json({ error: 'Failed to fetch brand kit' });
+  }
+});
+
+// POST /brand-kit - Save user's brand kit settings
+router.post('/brand-kit', requireAuth, async (req, res) => {
+  try {
+    const { brandName, watermarkText, primaryColor, secondaryColor, fontStyle } = req.body;
+    const kit = await brandKitOps.upsert(req.user.id, {
+      brandName, watermarkText, primaryColor, secondaryColor, fontStyle
+    });
+    res.json({ success: true, brandKit: kit });
+  } catch (error) {
+    console.error('Error saving brand kit:', error);
+    res.status(500).json({ error: 'Failed to save brand kit' });
+  }
+});
+
 // POST /clip - Generate a video clip for a specific moment
 router.post('/clip', requireAuth, async (req, res) => {
   try {
@@ -1384,6 +1409,12 @@ router.post('/clip', requireAuth, async (req, res) => {
     if (analysis.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
+
+    // Fetch user's brand kit for watermark
+    let brandKit = null;
+    try {
+      brandKit = await brandKitOps.getByUserId(req.user.id);
+    } catch (e) { console.log('Brand kit fetch skipped:', e.message); }
 
     // Parse moments
     let moments = analysis.moments;
@@ -1580,34 +1611,44 @@ router.post('/clip', requireAuth, async (req, res) => {
 
         // Build filter based on selected clip style
         const captionFilter = assFilePath ? `,ass='${assFilePath.replace(/'/g, "'\\''").replace(/:/g, '\\:')}'` : '';
+
+        // Build watermark filter from brand kit
+        let watermarkFilter = '';
+        if (brandKit && brandKit.watermark_text && brandKit.watermark_text.trim()) {
+          const wmText = brandKit.watermark_text.trim().replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/\\/g, '\\\\');
+          const wmColor = (brandKit.primary_color || '#FFFFFF').replace('#', '');
+          // Semi-transparent watermark in bottom-right corner
+          watermarkFilter = `,drawtext=text='${wmText}':fontsize=28:fontcolor=${wmColor}@0.6:x=w-tw-30:y=h-th-30:font=Liberation Sans`;
+        }
+
         const style = clipStyle || 'blur';
         let videoFilter;
 
-        console.log(`  Clip style: ${style}, captions: ${!!assFilePath}`);
+        console.log(`  Clip style: ${style}, captions: ${!!assFilePath}, watermark: ${!!watermarkFilter}`);
 
         if (style === 'crop') {
           // Center crop: zoom in and crop to 9:16 (loses sides but fills frame)
-          videoFilter = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1${captionFilter}`;
+          videoFilter = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1${captionFilter}${watermarkFilter}`;
         } else if (style === 'fit') {
           // Fit with black background: full video centered on black
           videoFilter = [
             'color=c=black:s=1080x1920:r=30[bg]',
             '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
-            '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter
+            '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else if (style === 'pip') {
           // Picture-in-Picture: full video large + small original in corner
           videoFilter = [
             '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
             '[0:v]scale=340:-2,setsar=1[pip]',
-            '[bg][pip]overlay=W-w-30:30,setsar=1' + captionFilter
+            '[bg][pip]overlay=W-w-30:30,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else {
           // Default: blur background (most popular for repurposed content)
           videoFilter = [
             '[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
             '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
-            '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter
+            '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         }
 
@@ -2287,6 +2328,71 @@ function renderShortsPage(user, analyses) {
         </div>
       </div>
 
+      <!-- Brand Kit Settings -->
+      <div style="margin-bottom: 24px;">
+        <button class="btn" onclick="toggleBrandKit()" id="brandKitToggle"
+          style="background: rgba(108,92,231,0.15); color: #a29bfe; border: 1px solid rgba(108,92,231,0.3); font-size: 13px; padding: 8px 16px;">
+          Brand Kit Settings
+        </button>
+        <div id="brandKitPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+          <h3 style="margin-bottom:16px; font-size:16px; font-weight:600;">Brand Kit</h3>
+          <p style="color:#888; font-size:13px; margin-bottom:20px;">Customize your clips with your brand identity. Watermark text appears on all generated clips.</p>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">Brand Name</label>
+              <input type="text" id="bk-brandName" placeholder="My Brand"
+                style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px;">
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">Watermark Text</label>
+              <input type="text" id="bk-watermarkText" placeholder="@mybrand"
+                style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px;">
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">Primary Color</label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="color" id="bk-primaryColor" value="#FF0050"
+                  style="width:40px; height:40px; border:none; border-radius:8px; cursor:pointer; background:none;">
+                <input type="text" id="bk-primaryColorText" value="#FF0050"
+                  style="flex:1; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px; font-family:monospace;"
+                  oninput="document.getElementById('bk-primaryColor').value=this.value">
+              </div>
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">Secondary Color</label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="color" id="bk-secondaryColor" value="#6c5ce7"
+                  style="width:40px; height:40px; border:none; border-radius:8px; cursor:pointer; background:none;">
+                <input type="text" id="bk-secondaryColorText" value="#6c5ce7"
+                  style="flex:1; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px; font-family:monospace;"
+                  oninput="document.getElementById('bk-secondaryColor').value=this.value">
+              </div>
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">Font Style</label>
+              <select id="bk-fontStyle"
+                style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px; cursor:pointer;">
+                <option value="modern">Modern (Sans-serif)</option>
+                <option value="bold">Bold Impact</option>
+                <option value="elegant">Elegant (Serif)</option>
+                <option value="handwritten">Handwritten</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
+            <button class="btn btn-primary" onclick="saveBrandKit()" id="bk-saveBtn"
+              style="padding:10px 24px;">Save Brand Kit</button>
+            <span id="bk-status" style="font-size:13px; color:#888;"></span>
+          </div>
+          <div id="bk-preview" style="display:none; margin-top:16px; padding:16px; background:#000; border-radius:8px;">
+            <p style="font-size:12px; color:#666; margin-bottom:8px;">Preview:</p>
+            <div style="position:relative; width:200px; height:356px; background:#1a1a2e; border-radius:8px; overflow:hidden;">
+              <div id="bk-preview-watermark" style="position:absolute; bottom:10px; right:10px; font-size:14px; opacity:0.6;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Analyses grid -->
       <div id="analysesContainer">
         ${analyses.length === 0 ? `
@@ -2860,6 +2966,91 @@ function renderShortsPage(user, analyses) {
         btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
       }
     }
+
+    // === Brand Kit Functions ===
+    function toggleBrandKit() {
+      const panel = document.getElementById('brandKitPanel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      if (panel.style.display === 'block') loadBrandKit();
+    }
+
+    async function loadBrandKit() {
+      try {
+        const resp = await fetch('/shorts/brand-kit');
+        const data = await resp.json();
+        if (data.success && data.brandKit) {
+          const kit = data.brandKit;
+          document.getElementById('bk-brandName').value = kit.brand_name || '';
+          document.getElementById('bk-watermarkText').value = kit.watermark_text || '';
+          document.getElementById('bk-primaryColor').value = kit.primary_color || '#FF0050';
+          document.getElementById('bk-primaryColorText').value = kit.primary_color || '#FF0050';
+          document.getElementById('bk-secondaryColor').value = kit.secondary_color || '#6c5ce7';
+          document.getElementById('bk-secondaryColorText').value = kit.secondary_color || '#6c5ce7';
+          document.getElementById('bk-fontStyle').value = kit.font_style || 'modern';
+          updateBrandPreview();
+        }
+      } catch (e) { console.log('Brand kit load error:', e); }
+    }
+
+    async function saveBrandKit() {
+      const btn = document.getElementById('bk-saveBtn');
+      const status = document.getElementById('bk-status');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const resp = await fetch('/shorts/brand-kit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            brandName: document.getElementById('bk-brandName').value,
+            watermarkText: document.getElementById('bk-watermarkText').value,
+            primaryColor: document.getElementById('bk-primaryColor').value,
+            secondaryColor: document.getElementById('bk-secondaryColor').value,
+            fontStyle: document.getElementById('bk-fontStyle').value
+          })
+        });
+        const data = await resp.json();
+        if (data.success) {
+          status.textContent = 'Saved!';
+          status.style.color = '#10b981';
+          showToast('Brand Kit saved! Watermark will appear on future clips.');
+          updateBrandPreview();
+        } else {
+          throw new Error(data.error);
+        }
+      } catch (e) {
+        status.textContent = 'Error saving';
+        status.style.color = '#ff6b6b';
+        showToast('Error: ' + e.message);
+      }
+      btn.disabled = false;
+      btn.textContent = 'Save Brand Kit';
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    }
+
+    function updateBrandPreview() {
+      const watermark = document.getElementById('bk-watermarkText').value;
+      const color = document.getElementById('bk-primaryColor').value;
+      const preview = document.getElementById('bk-preview');
+      const wmEl = document.getElementById('bk-preview-watermark');
+      if (watermark) {
+        preview.style.display = 'block';
+        wmEl.textContent = watermark;
+        wmEl.style.color = color;
+      } else {
+        preview.style.display = 'none';
+      }
+    }
+
+    // Sync color picker with text input
+    document.getElementById('bk-primaryColor').addEventListener('input', function() {
+      document.getElementById('bk-primaryColorText').value = this.value;
+      updateBrandPreview();
+    });
+    document.getElementById('bk-secondaryColor').addEventListener('input', function() {
+      document.getElementById('bk-secondaryColorText').value = this.value;
+    });
 
     function buildTranscriptViewer(transcript, moments, videoId) {
       if (!transcript) return '<p style="color:#888;padding:10px;">No transcript available.</p>';
