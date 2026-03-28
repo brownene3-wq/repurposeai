@@ -2464,10 +2464,28 @@ function renderShortsPage(user, analyses) {
         const analysis = data.analysis;
         const videoId = getVideoId(analysis.video_url);
 
+        // Build transcript viewer with keyword highlights
+        const transcriptHtml = buildTranscriptViewer(analysis.transcript || '', analysis.moments || [], videoId);
+
         const html = \`
           <div class="modal-header">
             <h2 class="modal-title">\${analysis.video_title || 'Analysis'}</h2>
-            <p style="color: #888; margin-top: 8px;">\${analysis.moments?.length || 0} viral moments found</p>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+              <p style="color: #888; flex:1;">\${analysis.moments?.length || 0} viral moments found</p>
+              <button class="btn btn-small" style="background:rgba(108,92,231,0.2);color:#a29bfe;font-size:12px;"
+                onclick="document.getElementById('transcriptPanel').style.display = document.getElementById('transcriptPanel').style.display === 'none' ? 'block' : 'none'">
+                View Transcript
+              </button>
+            </div>
+          </div>
+          <div id="transcriptPanel" style="display:none; padding:0 16px 16px; max-height:300px; overflow-y:auto;
+            background:rgba(0,0,0,0.3); margin:0 16px 16px; border-radius:8px;">
+            <div style="position:sticky;top:0;background:rgba(0,0,0,0.9);padding:10px 0 8px;z-index:1;">
+              <input type="text" id="transcriptSearch" placeholder="Search transcript..."
+                style="width:100%;padding:8px 12px;background:#111;border:1px solid #333;border-radius:6px;color:#fff;font-size:13px;"
+                oninput="filterTranscript(this.value)">
+            </div>
+            <div id="transcriptContent">\${transcriptHtml}</div>
           </div>
           <div id="momentsContainer"></div>
         \`;
@@ -2841,6 +2859,52 @@ function renderShortsPage(user, analyses) {
         btn.textContent = originalText;
         btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
       }
+    }
+
+    function buildTranscriptViewer(transcript, moments, videoId) {
+      if (!transcript) return '<p style="color:#888;padding:10px;">No transcript available.</p>';
+
+      // Extract keywords from moments for highlighting
+      const keywords = new Set();
+      (moments || []).forEach(m => {
+        (m.keyThemes || []).forEach(t => { if (t.length > 3) keywords.add(t.toLowerCase()); });
+      });
+
+      // Parse transcript "[HH:MM:SS] text" format
+      const lines = [];
+      const regex = /\[(\d{2}:\d{2}:\d{2})\]\s*(.*?)(?=\s*\[\d{2}:\d{2}:\d{2}\]|$)/g;
+      let match;
+      while ((match = regex.exec(transcript)) !== null) {
+        lines.push({ time: match[1], text: match[2].trim() });
+      }
+
+      if (lines.length === 0) return '<p style="color:#888;padding:10px;">Transcript format not recognized.</p>';
+
+      return lines.map(line => {
+        let text = line.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        // Highlight keywords (simple word boundary match)
+        keywords.forEach(kw => {
+          const escaped = kw.replace(/[.*+?^$|()]/g, String.fromCharCode(92) + '$&');
+          const re = new RegExp('(' + escaped + ')', 'gi');
+          text = text.replace(re, '<mark style="background:#6c5ce740;color:#a29bfe;padding:1px 3px;border-radius:2px;">$1</mark>');
+        });
+
+        const secs = line.time.split(':').reduce((a,b) => a*60 + parseInt(b), 0);
+        const ytLink = videoId ? ' onclick="window.open(\\'https://youtube.com/watch?v=' + videoId + '&t=' + secs + '\\', \\'_blank\\')"' : '';
+
+        return '<div class="transcript-line" style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;"' + ytLink + '>' +
+          '<span style="color:#6c5ce7;font-size:12px;font-family:monospace;white-space:nowrap;min-width:65px;">' + line.time + '</span>' +
+          '<span style="font-size:13px;line-height:1.5;color:#ccc;">' + text + '</span>' +
+        '</div>';
+      }).join('');
+    }
+
+    function filterTranscript(query) {
+      const lines = document.querySelectorAll('.transcript-line');
+      const q = query.toLowerCase();
+      lines.forEach(line => {
+        line.style.display = !q || line.textContent.toLowerCase().includes(q) ? 'flex' : 'none';
+      });
     }
 
     function closeModal() {
