@@ -3370,6 +3370,26 @@ function renderShortsPage(user, analyses) {
       line-height: 1.5;
     }
 
+    /* Calendar theme-aware styles */
+    .cal-cell {
+      padding: 6px; min-height: 80px; cursor: pointer; transition: background 0.2s;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    }
+    .cal-cell.cal-today {
+      background: rgba(108,92,231,0.15); border: 1px solid rgba(108,92,231,0.4);
+    }
+    .cal-cell:hover { background: rgba(108,92,231,0.12) !important; }
+    .cal-day { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+    .cal-today .cal-day { font-weight: 700; color: #6c5ce7; }
+    .cal-entry { font-size: 10px; padding: 3px 5px; margin-bottom: 2px; border-radius: 3px; color: var(--text-muted); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+
+    body.light .cal-cell { background: #f8f9fc; border-color: rgba(0,0,0,0.08); }
+    body.light .cal-cell.cal-today { background: rgba(108,92,231,0.1); border-color: rgba(108,92,231,0.35); }
+    body.light .cal-cell:hover { background: rgba(108,92,231,0.08) !important; }
+    body.light .cal-day { color: #2d3748; }
+    body.light .cal-today .cal-day { color: #5B21B6; }
+    body.light .cal-entry { color: #4a5568; }
+
     /* Responsive */
     @media (max-width: 768px) {
       .sidebar {
@@ -4663,18 +4683,13 @@ function renderShortsPage(user, analyses) {
           return ed === dateStr;
         });
 
-        var bgColor = isToday ? 'rgba(108,92,231,0.15)' : 'rgba(255,255,255,0.04)';
-        var borderStyle = isToday ? 'border:1px solid rgba(108,92,231,0.4)' : 'border:1px solid rgba(255,255,255,0.06)';
-        html += '<div style="padding:6px;min-height:80px;background:' + bgColor +
-          ';cursor:pointer;transition:background 0.2s;' + borderStyle + ';" onclick="openAddEntry(' + "'" + dateStr + "'" + ')" ' +
-          'onmouseover="this.style.background=' + "'" + 'rgba(108,92,231,0.12)' + "'" + '" onmouseout="this.style.background=' + "'" + bgColor + "'" + '">' +
-          '<div style="font-size:13px;font-weight:' + (isToday ? '700' : '600') + ';color:' + (isToday ? '#a29bfe' : '#e0e0e0') + ';margin-bottom:4px;">' + day + '</div>';
+        html += '<div class="cal-cell' + (isToday ? ' cal-today' : '') + '" onclick="openAddEntry(' + "'" + dateStr + "'" + ')">' +
+          '<div class="cal-day">' + day + '</div>';
 
         dayEntries.forEach(entry => {
           const sc = statusColors[entry.status] || '#6c5ce7';
-          html += '<div style="font-size:10px;padding:3px 5px;margin-bottom:2px;background:' + sc + '22;border-left:2px solid ' + sc +
-            ';border-radius:3px;color:#ccc;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;" ' +
-            'onclick="event.stopPropagation();editCalendarEntry(' + "'" + entry.id + "'" + ')" title="Click to edit or delete: ' + (entry.title || '').replace(/"/g,'&amp;quot;') + '">' +
+          html += '<div class="cal-entry" style="background:' + sc + '22;border-left:2px solid ' + sc +
+            ';" onclick="event.stopPropagation();editCalendarEntry(' + "'" + entry.id + "'" + ')" title="Click to edit or delete: ' + (entry.title || '').replace(/"/g,'&amp;quot;') + '">' +
             (platformEmojis[entry.platform] || '') + ' ' + (entry.title || '').substring(0,15) +
             '<span style="position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:8px;opacity:0.5;">&#9998;</span>' +
           '</div>';
