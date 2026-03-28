@@ -49,6 +49,8 @@ const initDatabase = async () => {
       `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS example_content TEXT`,
       `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS tone TEXT`,
       `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false`,
+      // Brand kits - ElevenLabs integration
+      `ALTER TABLE brand_kits ADD COLUMN IF NOT EXISTS elevenlabs_api_key TEXT DEFAULT ''`,
     ];
     for (const sql of migrations) {
       try { await pool.query(sql); } catch (e) { /* table or column may not exist yet */ }
@@ -536,18 +538,20 @@ const brandKitOps = {
   },
   async upsert(userId, data) {
     const result = await pool.query(`
-      INSERT INTO brand_kits (id, user_id, brand_name, watermark_text, primary_color, secondary_color, font_style)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO brand_kits (id, user_id, brand_name, watermark_text, primary_color, secondary_color, font_style, elevenlabs_api_key)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (user_id) DO UPDATE SET
         brand_name = EXCLUDED.brand_name,
         watermark_text = EXCLUDED.watermark_text,
         primary_color = EXCLUDED.primary_color,
         secondary_color = EXCLUDED.secondary_color,
         font_style = EXCLUDED.font_style,
+        elevenlabs_api_key = EXCLUDED.elevenlabs_api_key,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
     `, [uuidv4(), userId, data.brandName || '', data.watermarkText || '',
-        data.primaryColor || '#FF0050', data.secondaryColor || '#6c5ce7', data.fontStyle || 'modern']);
+        data.primaryColor || '#FF0050', data.secondaryColor || '#6c5ce7', data.fontStyle || 'modern',
+        data.elevenlabsApiKey || '']);
     return result.rows[0];
   }
 };

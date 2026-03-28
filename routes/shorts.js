@@ -1385,14 +1385,43 @@ router.get('/brand-kit', requireAuth, async (req, res) => {
 // POST /brand-kit - Save user's brand kit settings
 router.post('/brand-kit', requireAuth, async (req, res) => {
   try {
-    const { brandName, watermarkText, primaryColor, secondaryColor, fontStyle } = req.body;
+    const { brandName, watermarkText, primaryColor, secondaryColor, fontStyle, elevenlabsApiKey } = req.body;
     const kit = await brandKitOps.upsert(req.user.id, {
-      brandName, watermarkText, primaryColor, secondaryColor, fontStyle
+      brandName, watermarkText, primaryColor, secondaryColor, fontStyle, elevenlabsApiKey
     });
     res.json({ success: true, brandKit: kit });
   } catch (error) {
     console.error('Error saving brand kit:', error);
     res.status(500).json({ error: 'Failed to save brand kit' });
+  }
+});
+
+// GET /elevenlabs-voices - Fetch available ElevenLabs voices for the user
+router.get('/elevenlabs-voices', requireAuth, async (req, res) => {
+  try {
+    const brandKit = await brandKitOps.getByUserId(req.user.id);
+    const apiKey = brandKit?.elevenlabs_api_key;
+    if (!apiKey) {
+      return res.json({ voices: [], message: 'No ElevenLabs API key configured. Add it in Brand Kit settings.' });
+    }
+    const elResp = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: { 'xi-api-key': apiKey }
+    });
+    if (!elResp.ok) {
+      return res.status(400).json({ error: 'Invalid ElevenLabs API key or API error' });
+    }
+    const data = await elResp.json();
+    const voices = (data.voices || []).map(v => ({
+      voice_id: v.voice_id,
+      name: v.name,
+      category: v.category || 'custom',
+      preview_url: v.preview_url || null,
+      labels: v.labels || {}
+    }));
+    res.json({ voices });
+  } catch (err) {
+    console.error('ElevenLabs voices error:', err);
+    res.status(500).json({ error: 'Failed to fetch voices' });
   }
 });
 
@@ -2691,6 +2720,593 @@ router.get('/clip/debug', requireAuth, (req, res) => {
   }
 });
 
+// POST /narrate - Generate narration for a clip
+router.post('/narrate', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) {
+      return res.status(503).json({ error: 'ffmpeg not available on this server.' });
+    }
+
+    const { analysisId, momentIndex, narrationStyle, voiceEnabled, audioMix, clipFilename,
+            ttsProvider, elevenlabsVoiceId } = req.body;
+
+    // Validate inputs
+    if (!analysisId || momentIndex === undefined || !narrationStyle || !clipFilename) {
+      return res.status(400).json({ error: 'Analysis ID, moment index, narration style, and clip filename are required' });
+    }
+
+    const validStyles = ['funny', 'documentary', 'dramatic', 'hype', 'sarcastic', 'storytime', 'news', 'poetic'];
+    if (!validStyles.includes(narrationStyle)) {
+      return res.status(400).json({ error: `Invalid narration style. Must be one of: ${validStyles.join(', ')}` });
+    }
+
+    // Get analysis
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Analysis not found or unauthorized' });
+    }
+
+    // Get moment
+    let moments = analysis.moments;
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIndex];
+    if (!moment) {
+      return res.status(404).json({ error: 'Moment not found' });
+    }
+
+    // Verify clip file exists
+    const clipPath = path.join(CLIPS_DIR, clipFilename);
+    if (!fs.existsSync(clipPath)) {
+      return res.status(404).json({ error: 'Clip file not found' });
+    }
+
+    // Generate output filename
+    const baseName = clipFilename.replace(/\.[^.]+$/, ''); // Remove extension
+    const narratedFilename = `${baseName}_narrated_${Date.now()}.mp4`;
+    const outputPath = path.join(CLIPS_DIR, narratedFilename);
+
+    // Send initial response
+    res.json({
+      success: true,
+      status: 'processing',
+      message: 'Generating narration...',
+      filename: narratedFilename
+    });
+
+    // Write progress/error helpers (same pattern as clip endpoint)
+    const progressPath = outputPath + '.progress';
+    const writeProgress = (msg) => {
+      try { fs.writeFileSync(progressPath, msg); } catch (e) {}
+      console.log(`  [${narratedFilename}] ${msg}`);
+    };
+    const writeError = (msg) => {
+      try { fs.unlinkSync(progressPath); } catch (e) {}
+      try { fs.unlinkSync(outputPath); } catch (e) {}
+      try { fs.writeFileSync(outputPath + '.error', msg); } catch (e) {}
+      console.error(`  [${narratedFilename}] ERROR: ${msg}`);
+    };
+
+    // runCommand helper (same as clip endpoint)
+    const runCommand = (cmd, args, options = {}) => {
+      return new Promise((resolve, reject) => {
+        const cmdLabel = path.basename(cmd);
+        console.log(`  Running ${cmdLabel}: ${args.slice(0, 4).join(' ')}...`);
+        const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+        const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+
+        proc.stdout.on('data', (data) => {
+          stdout += data.toString();
+          const timeMatch = data.toString().match(/time=(\d+:\d+:\d+)/);
+          if (timeMatch) writeProgress(`Processing: ${timeMatch[1]}`);
+        });
+        proc.stderr.on('data', (data) => {
+          stderr += data.toString();
+          const timeMatch = data.toString().match(/time=(\d+:\d+:\d+)/);
+          if (timeMatch) writeProgress(`Processing: ${timeMatch[1]}`);
+        });
+        proc.on('error', (err) => settle(reject, new Error(`${cmdLabel} process error: ${err.message}`)));
+        proc.on('close', (code, signal) => {
+          if (code === 0) settle(resolve, { stdout, stderr });
+          else settle(reject, new Error(`${cmdLabel} exit ${code}${signal ? '/'+signal : ''}: ${stderr.slice(-500)}`));
+        });
+
+        const timer = options.timeout ? setTimeout(() => {
+          console.error(`  ${cmdLabel} timed out after ${options.timeout/1000}s`);
+          try { proc.kill('SIGKILL'); } catch(e) {}
+          settle(reject, new Error(`${cmdLabel} timed out after ${options.timeout/1000}s`));
+        }, options.timeout) : null;
+      });
+    };
+
+    // Process in background
+    (async () => {
+      const timeout = setTimeout(() => {
+        writeError('Narration generation timed out after 5 minutes.');
+      }, 300000);
+
+      try {
+        // Step 1: Generate narration script using GPT-4o-mini
+        writeProgress('Generating narration script...');
+
+        let transcriptExcerpt = '';
+        if (analysis.transcript) {
+          // Try to extract transcript segment for this moment
+          const segments = parseTranscriptToSegments(analysis.transcript);
+          if (segments.length > 0) {
+            const segmentTexts = segments.map(s => s.text).join(' ');
+            transcriptExcerpt = segmentTexts.substring(0, 300); // First 300 chars
+          }
+        }
+        if (!transcriptExcerpt) {
+          transcriptExcerpt = moment.title || 'This video moment';
+        }
+
+        // Style prompts
+        const stylePrompts = {
+          funny: "Write a hilarious, meme-style voiceover commentary. Use modern internet humor, sarcasm, and comedic observations. Keep it punchy — max 4-5 short sentences.",
+          documentary: "Write a calm, authoritative David Attenborough-style nature documentary narration. Observational, educational, and slightly awe-inspired. Max 4-5 sentences.",
+          dramatic: "Write an intense, cinematic narration like a movie trailer voiceover. Build tension and drama. Max 4-5 powerful sentences.",
+          hype: "Write an extremely energetic, motivational narration like a sports commentator or hype man. Use exclamation marks, energy words, and keep the audience pumped. Max 4-5 sentences.",
+          sarcastic: "Write a dry, witty, sarcastic commentary like a deadpan comedian roasting what's happening. Max 4-5 sentences.",
+          storytime: "Write a cozy, warm bedtime story narration as if telling this story to a fascinated audience. Use 'once upon a time' energy. Max 4-5 sentences.",
+          news: "Write a professional breaking news broadcast narration. Formal, factual, slightly urgent. Max 4-5 sentences.",
+          poetic: "Write a beautiful, poetic narration with metaphors and lyrical language. Almost like spoken word poetry. Max 4-5 sentences."
+        };
+
+        const systemPrompt = `You are a creative narration writer for short-form video content. Write engaging, authentic voiceover scripts that match the specified style.`;
+        const userPrompt = `${stylePrompts[narrationStyle]}\n\nBased on this video transcript excerpt: ${transcriptExcerpt}`;
+
+        const narrationResponse = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: 300,
+          temperature: 0.8
+        });
+
+        const narrationScript = narrationResponse.choices[0]?.message?.content || '';
+        if (!narrationScript) {
+          clearTimeout(timeout);
+          writeError('Failed to generate narration script');
+          return;
+        }
+
+        console.log(`  Generated narration: ${narrationScript.substring(0, 100)}...`);
+
+        // Step 2: Generate audio if voiceEnabled
+        let audioPath = null;
+        if (voiceEnabled) {
+          writeProgress('Generating voice audio...');
+
+          // Get user's ElevenLabs API key from brand kit if they have one
+          const brandKit = await brandKitOps.getByUserId(req.user.id);
+          const userElevenLabsKey = brandKit?.elevenlabs_api_key || null;
+          const useElevenLabs = ttsProvider === 'elevenlabs' && userElevenLabsKey && elevenlabsVoiceId;
+
+          try {
+            audioPath = outputPath + '.audio.mp3';
+
+            if (useElevenLabs) {
+              // ElevenLabs TTS
+              writeProgress('Generating ElevenLabs voice...');
+              const elResp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenlabsVoiceId}`, {
+                method: 'POST',
+                headers: {
+                  'xi-api-key': userElevenLabsKey,
+                  'Content-Type': 'application/json',
+                  'Accept': 'audio/mpeg'
+                },
+                body: JSON.stringify({
+                  text: narrationScript,
+                  model_id: 'eleven_monolingual_v1',
+                  voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+                })
+              });
+              if (!elResp.ok) {
+                const errText = await elResp.text().catch(() => 'Unknown error');
+                throw new Error(`ElevenLabs API error (${elResp.status}): ${errText}`);
+              }
+              const buffer = Buffer.from(await elResp.arrayBuffer());
+              fs.writeFileSync(audioPath, buffer);
+              console.log(`  ElevenLabs audio generated: ${audioPath} (${buffer.length} bytes)`);
+            } else {
+              // OpenAI TTS (default)
+              let voiceName = 'nova';
+              if (narrationStyle === 'documentary' || narrationStyle === 'news') voiceName = 'onyx';
+              else if (narrationStyle === 'storytime' || narrationStyle === 'poetic') voiceName = 'shimmer';
+              else if (narrationStyle === 'dramatic') voiceName = 'echo';
+              else if (narrationStyle === 'hype') voiceName = 'fable';
+
+              const speech = await openai.audio.speech.create({
+                model: 'tts-1',
+                voice: voiceName,
+                input: narrationScript
+              });
+              const buffer = Buffer.from(await speech.arrayBuffer());
+              fs.writeFileSync(audioPath, buffer);
+              console.log(`  OpenAI TTS audio generated: ${audioPath}`);
+            }
+          } catch (ttsErr) {
+            clearTimeout(timeout);
+            writeError(`Voice generation failed: ${ttsErr.message}`);
+            return;
+          }
+        }
+
+        // Step 3: Process video with ffmpeg
+        writeProgress('Processing video...');
+
+        const tempOutput = outputPath + '.temp.mp4';
+
+        if (voiceEnabled && audioPath) {
+          // Add audio to video (mix or replace)
+          const audioFilter = audioMix === 'replace'
+            ? '[1:a]' // Just use narration audio
+            : '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest'; // Mix with original at 30%
+
+          try {
+            await runCommand(ffmpegPath, [
+              '-i', clipPath,
+              '-i', audioPath,
+              '-c:v', 'copy',
+              '-filter_complex', audioFilter,
+              '-c:a', 'aac',
+              '-shortest',
+              '-y',
+              tempOutput
+            ], { timeout: 120000 });
+          } catch (ffErr) {
+            clearTimeout(timeout);
+            writeError(`ffmpeg audio processing failed: ${ffErr.message}`);
+            try { fs.unlinkSync(audioPath); } catch(e) {}
+            return;
+          }
+        } else if (!voiceEnabled) {
+          // Text-only: burn captions with drawtext filter
+          writeProgress('Adding text captions...');
+
+          // Split narration into 2-3 line chunks with timing
+          const lines = narrationScript.split(/[.!?]+/).filter(l => l.trim());
+          const chunkSize = Math.ceil(lines.length / 2);
+          const chunks = [];
+          for (let i = 0; i < lines.length; i += chunkSize) {
+            chunks.push(lines.slice(i, i + chunkSize).join('. ').trim());
+          }
+
+          // Get video duration
+          let videoDuration = 5; // Default
+          try {
+            const probeResult = require('child_process').execSync(
+              `ffprobe -v error -show_entries format=duration -of csv=p=0 "${clipPath.replace(/"/g, '\\"')}"`,
+              { encoding: 'utf8' }
+            );
+            videoDuration = parseFloat(probeResult) || 5;
+          } catch (e) {
+            console.log('  Could not determine video duration, using default');
+          }
+
+          // Build drawtext filters for each chunk
+          let drawTextFilters = [];
+          const chunkDuration = videoDuration / chunks.length;
+          chunks.forEach((chunk, idx) => {
+            const startTime = idx * chunkDuration;
+            const endTime = (idx + 1) * chunkDuration;
+            const escapedText = chunk.replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/\\/g, '\\\\');
+
+            drawTextFilters.push(
+              `drawtext=text='${escapedText}':fontsize=48:fontcolor=white:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-100:enable='between(t,${startTime},${endTime})'`
+            );
+          });
+
+          const videoFilter = drawTextFilters.join(',');
+
+          try {
+            await runCommand(ffmpegPath, [
+              '-i', clipPath,
+              '-vf', videoFilter,
+              '-c:a', 'copy',
+              '-c:v', 'libx264',
+              '-preset', 'fast',
+              '-y',
+              tempOutput
+            ], { timeout: 120000 });
+          } catch (ffErr) {
+            clearTimeout(timeout);
+            writeError(`ffmpeg text overlay failed: ${ffErr.message}`);
+            return;
+          }
+        } else {
+          // No voice, no text - just copy the original
+          try {
+            await runCommand(ffmpegPath, [
+              '-i', clipPath,
+              '-c', 'copy',
+              '-y',
+              tempOutput
+            ], { timeout: 120000 });
+          } catch (ffErr) {
+            clearTimeout(timeout);
+            writeError(`ffmpeg copy failed: ${ffErr.message}`);
+            return;
+          }
+        }
+
+        // Step 4: Rename temp to final output
+        if (fs.existsSync(tempOutput)) {
+          fs.renameSync(tempOutput, outputPath);
+          console.log(`  Narrated clip saved: ${outputPath}`);
+        } else {
+          clearTimeout(timeout);
+          writeError('Output file was not created');
+          return;
+        }
+
+        // Cleanup temp audio file
+        if (audioPath && fs.existsSync(audioPath)) {
+          try { fs.unlinkSync(audioPath); } catch (e) {}
+        }
+
+        // Clean up progress file on success
+        try { fs.unlinkSync(progressPath); } catch (e) {}
+        clearTimeout(timeout);
+        console.log(`  Narration complete: ${narratedFilename}`);
+
+      } catch (err) {
+        clearTimeout(timeout);
+        writeError(err.message || 'Unknown error during narration processing');
+      }
+    })();
+
+  } catch (err) {
+    console.error('POST /narrate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /quick-narrate - Download a YouTube video and add narration (standalone, no analysis needed)
+router.post('/quick-narrate', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) return res.status(503).json({ error: 'ffmpeg not available' });
+
+    const { videoUrl, narrationStyle, voiceEnabled, audioMix, ttsProvider, elevenlabsVoiceId, customScript } = req.body;
+    if (!videoUrl) return res.status(400).json({ error: 'Video URL is required' });
+
+    const validStyles = ['funny', 'documentary', 'dramatic', 'hype', 'sarcastic', 'storytime', 'news', 'poetic'];
+    if (narrationStyle && !validStyles.includes(narrationStyle)) {
+      return res.status(400).json({ error: 'Invalid narration style' });
+    }
+
+    const videoId = extractVideoId(videoUrl);
+    if (!videoId) return res.status(400).json({ error: 'Invalid YouTube URL' });
+
+    const filename = `quicknarrate_${Date.now()}.mp4`;
+    const outputPath = path.join(CLIPS_DIR, filename);
+    const progressPath = outputPath + '.progress';
+    const writeProgress = (msg) => { try { fs.writeFileSync(progressPath, msg); } catch(e) {} console.log(`  [${filename}] ${msg}`); };
+    const writeError = (msg) => {
+      try { fs.unlinkSync(progressPath); } catch(e) {}
+      try { fs.unlinkSync(outputPath); } catch(e) {}
+      try { fs.writeFileSync(outputPath + '.error', msg); } catch(e) {}
+      console.error(`  [${filename}] ERROR: ${msg}`);
+    };
+
+    res.json({ success: true, filename, status: 'processing' });
+
+    const runCommand = (cmd, args, options = {}) => {
+      return new Promise((resolve, reject) => {
+        const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+        let stderr = ''; let settled = false;
+        const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+        proc.stderr.on('data', (d) => { stderr += d.toString(); const m = d.toString().match(/time=(\d+:\d+:\d+)/); if (m) writeProgress('Processing: ' + m[1]); });
+        proc.on('error', (err) => settle(reject, new Error(err.message)));
+        proc.on('close', (code) => { if (code === 0) settle(resolve, {}); else settle(reject, new Error('exit ' + code + ': ' + stderr.slice(-300))); });
+        const timer = options.timeout ? setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} settle(reject, new Error('Timed out')); }, options.timeout) : null;
+      });
+    };
+
+    (async () => {
+      const timeout = setTimeout(() => writeError('Timed out after 8 minutes'), 480000);
+      try {
+        // Step 1: Download video
+        writeProgress('Downloading video...');
+        const downloadPath = outputPath + '.download.mkv';
+        await runCommand('yt-dlp', [
+          '--no-playlist', '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--merge-output-format', 'mkv', '-o', downloadPath, '--no-warnings', '--no-check-certificates',
+          '--no-part', '--force-overwrites', '--extractor-args', 'youtube:player_client=web,android', videoUrl
+        ], { timeout: 240000 });
+
+        // Step 2: Get transcript for context (optional, best-effort)
+        let transcriptText = '';
+        try {
+          const titleProc = require('child_process').execSync(
+            'yt-dlp --get-title --no-warnings "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
+          ).trim();
+          transcriptText = titleProc || 'Short video';
+        } catch(e) { transcriptText = 'Short video'; }
+
+        // Step 3: Generate narration script
+        writeProgress('Generating narration script...');
+        let narrationScript = customScript || '';
+        if (!narrationScript) {
+          const stylePrompts = {
+            funny: "Write a hilarious, meme-style voiceover. Modern internet humor, punchy. Max 4-5 short sentences.",
+            documentary: "Write a David Attenborough-style narration. Observational, educational. Max 4-5 sentences.",
+            dramatic: "Write an intense movie trailer voiceover. Build tension. Max 4-5 powerful sentences.",
+            hype: "Write an extremely energetic sports commentator narration. Max 4-5 sentences.",
+            sarcastic: "Write dry, witty sarcastic commentary. Deadpan humor. Max 4-5 sentences.",
+            storytime: "Write a cozy bedtime story narration. Warm and engaging. Max 4-5 sentences.",
+            news: "Write a breaking news broadcast narration. Formal, slightly urgent. Max 4-5 sentences.",
+            poetic: "Write beautiful poetic narration with metaphors. Max 4-5 sentences."
+          };
+          const resp = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: 'You are a creative narration writer for short-form video content.' },
+              { role: 'user', content: (stylePrompts[narrationStyle] || stylePrompts.funny) + '\\nVideo title/context: ' + transcriptText }
+            ],
+            max_tokens: 300, temperature: 0.8
+          });
+          narrationScript = resp.choices[0]?.message?.content || 'What an incredible moment captured on camera.';
+        }
+
+        // Step 4: Generate TTS audio if voice enabled
+        let audioPath = null;
+        if (voiceEnabled !== false) {
+          writeProgress('Generating voice audio...');
+          audioPath = outputPath + '.audio.mp3';
+          const brandKit = await brandKitOps.getByUserId(req.user.id);
+          const userElevenLabsKey = brandKit?.elevenlabs_api_key || null;
+          const useElevenLabs = ttsProvider === 'elevenlabs' && userElevenLabsKey && elevenlabsVoiceId;
+
+          if (useElevenLabs) {
+            const elResp = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + elevenlabsVoiceId, {
+              method: 'POST',
+              headers: { 'xi-api-key': userElevenLabsKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
+              body: JSON.stringify({ text: narrationScript, model_id: 'eleven_monolingual_v1', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
+            });
+            if (!elResp.ok) throw new Error('ElevenLabs API error: ' + elResp.status);
+            fs.writeFileSync(audioPath, Buffer.from(await elResp.arrayBuffer()));
+          } else {
+            let voice = 'nova';
+            if (narrationStyle === 'documentary' || narrationStyle === 'news') voice = 'onyx';
+            else if (narrationStyle === 'storytime' || narrationStyle === 'poetic') voice = 'shimmer';
+            const speech = await openai.audio.speech.create({ model: 'tts-1', voice, input: narrationScript });
+            fs.writeFileSync(audioPath, Buffer.from(await speech.arrayBuffer()));
+          }
+        }
+
+        // Step 5: Combine video + narration audio
+        writeProgress('Processing final video...');
+        const tempOut = outputPath + '.temp.mp4';
+        if (audioPath) {
+          const af = audioMix === 'replace' ? '[1:a]' :
+            '[0:a]volume=0.3[orig];[1:a]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=longest';
+          await runCommand(ffmpegPath, [
+            '-i', downloadPath, '-i', audioPath, '-c:v', 'copy',
+            '-filter_complex', af, '-c:a', 'aac', '-shortest', '-y', tempOut
+          ], { timeout: 120000 });
+        } else {
+          // Text-only narration overlay
+          const escaped = narrationScript.replace(/'/g, "'\\''").replace(/:/g, '\\:');
+          await runCommand(ffmpegPath, [
+            '-i', downloadPath,
+            '-vf', "drawtext=text='" + escaped.substring(0, 200) + "':fontsize=36:fontcolor=white:bordercolor=black:borderw=2:x=(w-text_w)/2:y=h-80",
+            '-c:a', 'copy', '-c:v', 'libx264', '-preset', 'fast', '-y', tempOut
+          ], { timeout: 120000 });
+        }
+
+        if (fs.existsSync(tempOut)) fs.renameSync(tempOut, outputPath);
+        else { writeError('No output produced'); return; }
+
+        // Cleanup
+        try { fs.unlinkSync(downloadPath); } catch(e) {}
+        if (audioPath) try { fs.unlinkSync(audioPath); } catch(e) {}
+        try { fs.unlinkSync(progressPath); } catch(e) {}
+        clearTimeout(timeout);
+        console.log('  Quick narrate complete: ' + filename);
+      } catch (err) {
+        clearTimeout(timeout);
+        writeError(err.message || 'Quick narrate failed');
+      }
+    })();
+  } catch (err) {
+    console.error('POST /quick-narrate error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /narrate/status/:filename - Check narration processing status
+router.get('/narrate/status/:filename', requireAuth, (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(CLIPS_DIR, filename);
+  const progressPath = filePath + '.progress';
+  const errorPath = filePath + '.error';
+
+  // Check for error
+  if (fs.existsSync(errorPath)) {
+    let errorMsg = 'Unknown error';
+    try { errorMsg = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
+    return res.json({ ready: false, error: true, message: errorMsg });
+  }
+
+  // Check if done
+  if (fs.existsSync(filePath)) {
+    const stats = fs.statSync(filePath);
+    const stillProcessing = fs.existsSync(progressPath);
+    if (stats.size > 10000 && !stillProcessing) {
+      res.json({ ready: true, size: stats.size, filename });
+    } else if (stillProcessing) {
+      let progressMsg = 'Still processing...';
+      try { progressMsg = fs.readFileSync(progressPath, 'utf8') || progressMsg; } catch (e) {}
+      res.json({ ready: false, message: progressMsg });
+    } else {
+      res.json({ ready: false, message: 'Finalizing...' });
+    }
+  } else {
+    let progressMsg = 'Still processing...';
+    if (fs.existsSync(progressPath)) {
+      try { progressMsg = fs.readFileSync(progressPath, 'utf8') || progressMsg; } catch (e) {}
+    }
+    res.json({ ready: false, message: progressMsg });
+  }
+});
+
+// GET /narrate/download/:filename - Download narrated clip
+router.get('/narrate/download/:filename', requireAuth, (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(CLIPS_DIR, filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Narrated clip not found. It may still be processing or has expired.' });
+  }
+
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+
+  // Support Range requests
+  const range = req.headers.range;
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunkSize = (end - start) + 1;
+
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type': 'video/mp4',
+    });
+
+    const stream = fs.createReadStream(filePath, { start, end });
+    stream.pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': 'video/mp4',
+      'Accept-Ranges': 'bytes',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+
+    stream.on('end', () => {
+      setTimeout(() => {
+        try { fs.unlinkSync(filePath); } catch (e) {}
+      }, 30000);
+    });
+  }
+});
+
 // POST /clip-with-broll - Generate clip with B-Roll scenes spliced in
 router.post('/clip-with-broll', requireAuth, async (req, res) => {
   try {
@@ -3604,6 +4220,60 @@ function renderShortsPage(user, analyses) {
         </div>
       </div>
 
+      <!-- Quick Narrate Tool -->
+      <div style="margin-bottom: 16px;">
+        <button class="btn" onclick="document.getElementById('quickNarratePanel').style.display = document.getElementById('quickNarratePanel').style.display === 'none' ? 'block' : 'none';"
+          style="background: rgba(0,184,148,0.12); color: #00b894; border: 1px solid rgba(0,184,148,0.3); font-size: 13px; padding: 8px 16px;">
+          🎙️ Quick Narrate a Video
+        </button>
+        <div id="quickNarratePanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div>
+              <h3 style="font-size:16px; font-weight:600;">🎙️ Quick Narrate</h3>
+              <p style="color:#888; font-size:12px; margin-top:2px;">Paste any YouTube video URL and add AI narration over it — perfect for narration-style content</p>
+            </div>
+            <button class="btn btn-small" onclick="document.getElementById('quickNarratePanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times;</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <input type="text" id="qn-videoUrl" placeholder="https://youtube.com/watch?v=... or YouTube Shorts URL"
+              style="flex:1;padding:10px 12px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:14px;">
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <select id="qn-style" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
+              <option value="funny">😂 Funny</option>
+              <option value="documentary">🎬 Documentary</option>
+              <option value="dramatic">🎭 Dramatic</option>
+              <option value="hype">🔥 Hype</option>
+              <option value="sarcastic">😏 Sarcastic</option>
+              <option value="storytime">📖 Storytime</option>
+              <option value="news">📺 News</option>
+              <option value="poetic">✨ Poetic</option>
+            </select>
+            <select id="qn-mix" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
+              <option value="mix">🔀 Mix Audio (30% original)</option>
+              <option value="replace">🔇 Replace Audio</option>
+            </select>
+            <select id="qn-provider" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;" onchange="if(this.value==='elevenlabs'){document.getElementById('qn-el-voices').style.display='inline-block';loadQNElevenLabsVoices();}else{document.getElementById('qn-el-voices').style.display='none';}">
+              <option value="openai">OpenAI TTS</option>
+              <option value="elevenlabs">ElevenLabs</option>
+            </select>
+            <select id="qn-el-voices" style="display:none;padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
+              <option value="">Select voice...</option>
+            </select>
+          </div>
+          <div style="margin-bottom:12px;">
+            <textarea id="qn-customScript" placeholder="(Optional) Write your own narration script here, or leave blank for AI to generate one..."
+              style="width:100%;padding:10px 12px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:13px;resize:vertical;min-height:60px;font-family:inherit;"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()" style="background:linear-gradient(135deg,#00b894,#00cec9);padding:10px 24px;">
+              🎙️ Generate Narrated Video
+            </button>
+            <span id="qn-status" style="font-size:13px;color:var(--text-muted);"></span>
+          </div>
+        </div>
+      </div>
+
       <!-- Workflow Templates -->
       <div style="margin-bottom: 16px;">
         <button class="btn" onclick="toggleWorkflows()" id="workflowToggle"
@@ -3752,6 +4422,12 @@ function renderShortsPage(user, analyses) {
                 <option value="elegant">Elegant (Serif)</option>
                 <option value="handwritten">Handwritten</option>
               </select>
+            </div>
+            <div style="grid-column:1/-1;">
+              <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">🎙️ ElevenLabs API Key <span style="color:#888;font-weight:400;">(optional — for premium AI voices in narration)</span></label>
+              <input type="password" id="bk-elevenlabsApiKey" placeholder="Enter your ElevenLabs API key..."
+                style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px;">
+              <p style="font-size:11px; color:#666; margin-top:4px;">Get your key at <a href="https://elevenlabs.io" target="_blank" style="color:#a29bfe;">elevenlabs.io</a> — enables custom AI voices for narrated clips</p>
             </div>
           </div>
           <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
@@ -3922,6 +4598,66 @@ function renderShortsPage(user, analyses) {
     <div class="modal-content">
       <button class="modal-close" onclick="closeModal()" title="Close">&times;</button>
       <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Narration Modal -->
+  <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+    <div style="background:var(--surface);border-radius:16px;padding:28px;max-width:520px;width:90%;margin:auto;position:relative;max-height:90vh;overflow-y:auto;">
+      <button onclick="closeNarrationModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;">&times;</button>
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;">🎙️ AI Narration</h2>
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">Add a voiceover or text narration to your clip</p>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Style</label>
+        <div id="narration-styles" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+          <button class="narr-style-btn" data-style="funny" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😂<br>Funny</button>
+          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🎬<br>Documentary</button>
+          <button class="narr-style-btn" data-style="dramatic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🎭<br>Dramatic</button>
+          <button class="narr-style-btn" data-style="hype" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🔥<br>Hype</button>
+          <button class="narr-style-btn" data-style="sarcastic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😏<br>Sarcastic</button>
+          <button class="narr-style-btn" data-style="storytime" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📖<br>Storytime</button>
+          <button class="narr-style-btn" data-style="news" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📺<br>News</button>
+          <button class="narr-style-btn" data-style="poetic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">✨<br>Poetic</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Type</label>
+        <div style="display:flex;gap:8px;">
+          <button id="voice-type-ai" class="voice-type-btn active" onclick="setVoiceType('ai')" style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;">🔊 AI Voice</button>
+          <button id="voice-type-text" class="voice-type-btn" onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;">📝 Text Only</button>
+        </div>
+      </div>
+
+      <div id="voice-options" style="margin-bottom:16px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Provider</label>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button id="provider-openai" class="provider-btn active" onclick="setProvider('openai')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #6c5ce7;background:rgba(108,92,231,0.1);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">OpenAI TTS</button>
+          <button id="provider-elevenlabs" class="provider-btn" onclick="setProvider('elevenlabs')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">ElevenLabs</button>
+        </div>
+        <div id="elevenlabs-voice-picker" style="display:none;">
+          <select id="elevenlabs-voice-select" style="width:100%;padding:8px 10px;background:var(--surface-light);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:12px;">
+            <option value="">Loading voices...</option>
+          </select>
+          <p style="font-size:10px;color:var(--text-dim);margin-top:4px;">Add your ElevenLabs API key in Brand Kit settings to use custom voices</p>
+        </div>
+      </div>
+
+      <div id="audio-mix-options" style="margin-bottom:20px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Audio Mix</label>
+        <div style="display:flex;gap:8px;">
+          <button id="mix-type-mix" class="mix-type-btn active" onclick="setMixType('mix')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:11px;cursor:pointer;">🔀 Mix (30% original)</button>
+          <button id="mix-type-replace" class="mix-type-btn" onclick="setMixType('replace')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;">🔇 Replace Audio</button>
+        </div>
+      </div>
+
+      <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">⚠️ You need to download the clip first, then narrate it. If you haven't downloaded yet, close this and click Download Clip first.</p>
+
+      <button id="narrate-generate-btn" onclick="generateNarration()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;">
+        🎙️ Generate Narration
+      </button>
+      <div id="narration-progress" style="display:none;margin-top:12px;text-align:center;color:var(--text-muted);font-size:13px;"></div>
     </div>
   </div>
 
@@ -4167,6 +4903,11 @@ function renderShortsPage(user, analyses) {
                 style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: #fff; font-size: 11px;"
                 onclick="findBRoll('\${id}', \${idx}, this)">
                 🎬 Auto B-Roll
+              </button>
+              <button class="btn btn-small" id="narrate-btn-\${idx}"
+                style="background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); color: #fff; font-size: 11px;"
+                onclick="openNarrationModal('\${id}', \${idx})">
+                🎙️ Narrate
               </button>
               <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:#1a1a2e; color:#ccc;
                 border:1px solid #333; border-radius:4px; cursor:pointer;" title="Thumbnail style">
@@ -4571,6 +5312,8 @@ function renderShortsPage(user, analyses) {
               }, 2000);
 
               showToast('Clip downloaded!');
+              // Store filename for narration
+              btn.dataset.lastFilename = filename;
             } else if (attempts >= maxAttempts) {
               clearInterval(pollInterval);
               throw new Error('Clip generation timed out');
@@ -5543,6 +6286,7 @@ function renderShortsPage(user, analyses) {
           document.getElementById('bk-secondaryColor').value = kit.secondary_color || '#6c5ce7';
           document.getElementById('bk-secondaryColorText').value = kit.secondary_color || '#6c5ce7';
           document.getElementById('bk-fontStyle').value = kit.font_style || 'modern';
+          if (kit.elevenlabs_api_key) document.getElementById('bk-elevenlabsApiKey').value = kit.elevenlabs_api_key;
           updateBrandPreview();
         }
       } catch (e) { console.log('Brand kit load error:', e); }
@@ -5563,7 +6307,8 @@ function renderShortsPage(user, analyses) {
             watermarkText: document.getElementById('bk-watermarkText').value,
             primaryColor: document.getElementById('bk-primaryColor').value,
             secondaryColor: document.getElementById('bk-secondaryColor').value,
-            fontStyle: document.getElementById('bk-fontStyle').value
+            fontStyle: document.getElementById('bk-fontStyle').value,
+            elevenlabsApiKey: document.getElementById('bk-elevenlabsApiKey').value
           })
         });
         const data = await resp.json();
@@ -5696,8 +6441,275 @@ function renderShortsPage(user, analyses) {
     }
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') { closeModal(); closeNarrationModal(); }
     });
+
+    // === Narration Feature ===
+    var narrationState = {
+      analysisId: null,
+      momentIndex: null,
+      style: 'funny',
+      voiceEnabled: true,
+      provider: 'openai',
+      elevenlabsVoiceId: null,
+      audioMix: 'mix',
+      clipFilename: null
+    };
+
+    function openNarrationModal(analysisId, momentIndex) {
+      narrationState.analysisId = analysisId;
+      narrationState.momentIndex = momentIndex;
+      // Try to find the most recent clip filename for this moment
+      var clipBtn = document.getElementById('clip-btn-' + momentIndex);
+      if (clipBtn && clipBtn.dataset.lastFilename) {
+        narrationState.clipFilename = clipBtn.dataset.lastFilename;
+      }
+      document.getElementById('narrationModal').style.display = 'flex';
+      // Select first style by default
+      document.querySelectorAll('.narr-style-btn').forEach(function(btn, i) {
+        btn.style.borderColor = i === 0 ? '#00b894' : 'transparent';
+      });
+    }
+
+    function closeNarrationModal() {
+      document.getElementById('narrationModal').style.display = 'none';
+    }
+
+    // Style selection
+    document.querySelectorAll('.narr-style-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        narrationState.style = this.dataset.style;
+        document.querySelectorAll('.narr-style-btn').forEach(function(b) { b.style.borderColor = 'transparent'; });
+        this.style.borderColor = '#00b894';
+      });
+    });
+
+    function setVoiceType(type) {
+      narrationState.voiceEnabled = type === 'ai';
+      document.getElementById('voice-type-ai').style.borderColor = type === 'ai' ? '#00b894' : 'transparent';
+      document.getElementById('voice-type-ai').style.background = type === 'ai' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
+      document.getElementById('voice-type-text').style.borderColor = type === 'text' ? '#00b894' : 'transparent';
+      document.getElementById('voice-type-text').style.background = type === 'text' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
+      document.getElementById('voice-options').style.display = type === 'ai' ? 'block' : 'none';
+      document.getElementById('audio-mix-options').style.display = type === 'ai' ? 'block' : 'none';
+    }
+
+    function setProvider(provider) {
+      narrationState.provider = provider;
+      document.getElementById('provider-openai').style.borderColor = provider === 'openai' ? '#6c5ce7' : 'transparent';
+      document.getElementById('provider-openai').style.background = provider === 'openai' ? 'rgba(108,92,231,0.1)' : 'var(--surface-light)';
+      document.getElementById('provider-elevenlabs').style.borderColor = provider === 'elevenlabs' ? '#6c5ce7' : 'transparent';
+      document.getElementById('provider-elevenlabs').style.background = provider === 'elevenlabs' ? 'rgba(108,92,231,0.1)' : 'var(--surface-light)';
+      document.getElementById('elevenlabs-voice-picker').style.display = provider === 'elevenlabs' ? 'block' : 'none';
+      if (provider === 'elevenlabs') loadElevenLabsVoices();
+    }
+
+    function setMixType(type) {
+      narrationState.audioMix = type;
+      document.getElementById('mix-type-mix').style.borderColor = type === 'mix' ? '#00b894' : 'transparent';
+      document.getElementById('mix-type-mix').style.background = type === 'mix' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
+      document.getElementById('mix-type-replace').style.borderColor = type === 'replace' ? '#00b894' : 'transparent';
+      document.getElementById('mix-type-replace').style.background = type === 'replace' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
+    }
+
+    async function loadElevenLabsVoices() {
+      var select = document.getElementById('elevenlabs-voice-select');
+      select.innerHTML = '<option value="">Loading voices...</option>';
+      try {
+        var resp = await fetch('/shorts/elevenlabs-voices');
+        var data = await resp.json();
+        if (data.voices && data.voices.length > 0) {
+          select.innerHTML = data.voices.map(function(v) {
+            return '<option value="' + v.voice_id + '">' + v.name + ' (' + v.category + ')</option>';
+          }).join('');
+          narrationState.elevenlabsVoiceId = data.voices[0].voice_id;
+          select.onchange = function() { narrationState.elevenlabsVoiceId = this.value; };
+        } else {
+          select.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Brand Kit</option>';
+        }
+      } catch (err) {
+        select.innerHTML = '<option value="">Error loading voices</option>';
+      }
+    }
+
+    async function generateNarration() {
+      var btn = document.getElementById('narrate-generate-btn');
+      var progress = document.getElementById('narration-progress');
+
+      // First check if we need to generate the clip first
+      if (!narrationState.clipFilename) {
+        // Generate clip first
+        progress.style.display = 'block';
+        progress.textContent = 'Generating clip first...';
+        btn.disabled = true;
+        btn.textContent = 'Generating clip...';
+
+        try {
+          var clipStyle = 'blur';
+          var styleSelect = document.getElementById('clip-style-' + narrationState.momentIndex);
+          if (styleSelect) clipStyle = styleSelect.value;
+          var captionsCheck = document.getElementById('captions-' + narrationState.momentIndex);
+          var includeCaptions = captionsCheck ? captionsCheck.checked : true;
+
+          var genResp = await fetch('/shorts/clip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              analysisId: narrationState.analysisId,
+              momentIndex: narrationState.momentIndex,
+              includeCaptions: includeCaptions,
+              clipStyle: clipStyle
+            })
+          });
+          var genData = await genResp.json();
+          if (!genData.success) throw new Error(genData.error || 'Failed to generate clip');
+
+          narrationState.clipFilename = genData.filename;
+          // Poll for clip to be ready
+          for (var i = 0; i < 150; i++) {
+            await new Promise(function(r) { setTimeout(r, 2000); });
+            var statusResp = await fetch('/shorts/clip/status/' + genData.filename);
+            var statusData = await statusResp.json();
+            if (statusData.failed) throw new Error(statusData.message);
+            if (statusData.ready) break;
+            progress.textContent = 'Generating clip: ' + (statusData.message || 'Processing...');
+          }
+        } catch (err) {
+          progress.textContent = 'Error: ' + err.message;
+          btn.disabled = false;
+          btn.textContent = '🎙️ Generate Narration';
+          return;
+        }
+      }
+
+      // Now generate narration
+      btn.disabled = true;
+      btn.textContent = 'Generating narration...';
+      progress.style.display = 'block';
+      progress.textContent = 'Writing narration script...';
+
+      try {
+        var body = {
+          analysisId: narrationState.analysisId,
+          momentIndex: narrationState.momentIndex,
+          narrationStyle: narrationState.style,
+          voiceEnabled: narrationState.voiceEnabled,
+          audioMix: narrationState.audioMix,
+          clipFilename: narrationState.clipFilename,
+          ttsProvider: narrationState.provider,
+          elevenlabsVoiceId: narrationState.elevenlabsVoiceId
+        };
+
+        var resp = await fetch('/shorts/narrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Narration failed');
+
+        var filename = data.filename;
+        // Poll for narration to be ready
+        for (var attempts = 0; attempts < 150; attempts++) {
+          await new Promise(function(r) { setTimeout(r, 2000); });
+          var sResp = await fetch('/shorts/narrate/status/' + filename);
+          var sData = await sResp.json();
+          if (sData.failed) throw new Error(sData.message || 'Narration failed');
+          if (sData.ready) {
+            // Download narrated clip
+            progress.textContent = 'Downloading narrated clip...';
+            var link = document.createElement('a');
+            link.href = '/shorts/narrate/download/' + filename;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Narrated clip downloaded!');
+            closeNarrationModal();
+            break;
+          }
+          progress.textContent = sData.message || 'Processing...';
+        }
+      } catch (err) {
+        progress.textContent = 'Error: ' + err.message;
+        showToast('Narration failed: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🎙️ Generate Narration';
+      }
+    }
+
+    // === Quick Narrate ===
+    async function loadQNElevenLabsVoices() {
+      var sel = document.getElementById('qn-el-voices');
+      sel.innerHTML = '<option value="">Loading...</option>';
+      try {
+        var resp = await fetch('/shorts/elevenlabs-voices');
+        var data = await resp.json();
+        if (data.voices && data.voices.length > 0) {
+          sel.innerHTML = data.voices.map(function(v) { return '<option value="' + v.voice_id + '">' + v.name + '</option>'; }).join('');
+        } else {
+          sel.innerHTML = '<option value="">No voices — add API key in Brand Kit</option>';
+        }
+      } catch(e) { sel.innerHTML = '<option value="">Error</option>'; }
+    }
+
+    async function quickNarrate() {
+      var btn = document.getElementById('qn-btn');
+      var status = document.getElementById('qn-status');
+      var url = document.getElementById('qn-videoUrl').value.trim();
+      if (!url) { showToast('Please enter a YouTube URL', true); return; }
+
+      btn.disabled = true; btn.textContent = 'Processing...';
+      status.textContent = 'Starting...';
+
+      try {
+        var body = {
+          videoUrl: url,
+          narrationStyle: document.getElementById('qn-style').value,
+          voiceEnabled: true,
+          audioMix: document.getElementById('qn-mix').value,
+          ttsProvider: document.getElementById('qn-provider').value,
+          elevenlabsVoiceId: document.getElementById('qn-el-voices').value || null,
+          customScript: document.getElementById('qn-customScript').value.trim() || null
+        };
+
+        var resp = await fetch('/shorts/quick-narrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed');
+
+        // Poll for completion
+        for (var i = 0; i < 240; i++) {
+          await new Promise(function(r) { setTimeout(r, 2000); });
+          var sResp = await fetch('/shorts/narrate/status/' + data.filename);
+          var sData = await sResp.json();
+          if (sData.failed) throw new Error(sData.message || 'Failed');
+          if (sData.ready) {
+            status.textContent = 'Downloading...';
+            var link = document.createElement('a');
+            link.href = '/shorts/narrate/download/' + data.filename;
+            link.download = data.filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Narrated video downloaded!');
+            status.textContent = 'Done!';
+            break;
+          }
+          status.textContent = sData.message || 'Processing...';
+        }
+      } catch (err) {
+        showToast('Quick narrate failed: ' + err.message, true);
+        status.textContent = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🎙️ Generate Narrated Video';
+      }
+    }
 
     ${getThemeScript()}
   </script>
