@@ -3480,8 +3480,8 @@ function renderShortsPage(user, analyses) {
       <div style="display:flex;gap:8px;">
         <button class="btn btn-primary" onclick="saveCalendarEntry()" style="flex:1;">Save</button>
         <button class="btn" onclick="closeCalendarModal()" style="background:rgba(255,255,255,0.1);flex:1;">Cancel</button>
-        <button class="btn" id="cal-delete-btn" onclick="deleteCalendarEntry()" style="background:rgba(255,0,0,0.2);color:#ff6b6b;display:none;">Delete</button>
       </div>
+      <button class="btn" id="cal-delete-btn" onclick="deleteCalendarEntry()" style="background:rgba(255,0,0,0.15);color:#ff6b6b;border:1px solid rgba(255,0,0,0.3);display:none;width:100%;margin-top:10px;padding:10px;">🗑️ Delete This Entry</button>
     </div>
   </div>
 
@@ -4290,10 +4290,11 @@ function renderShortsPage(user, analyses) {
 
         dayEntries.forEach(entry => {
           const sc = statusColors[entry.status] || '#6c5ce7';
-          html += '<div style="font-size:10px;padding:2px 4px;margin-bottom:2px;background:' + sc + '22;border-left:2px solid ' + sc +
-            ';border-radius:2px;color:#ccc;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" ' +
-            'onclick="event.stopPropagation();editCalendarEntry(' + "'" + entry.id + "'" + ')" title="' + (entry.title || '').replace(/"/g,'&amp;quot;') + '">' +
+          html += '<div style="font-size:10px;padding:3px 5px;margin-bottom:2px;background:' + sc + '22;border-left:2px solid ' + sc +
+            ';border-radius:3px;color:#ccc;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;" ' +
+            'onclick="event.stopPropagation();editCalendarEntry(' + "'" + entry.id + "'" + ')" title="Click to edit or delete: ' + (entry.title || '').replace(/"/g,'&amp;quot;') + '">' +
             (platformEmojis[entry.platform] || '') + ' ' + (entry.title || '').substring(0,15) +
+            '<span style="position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:8px;opacity:0.5;">&#9998;</span>' +
           '</div>';
         });
 
@@ -4317,7 +4318,7 @@ function renderShortsPage(user, analyses) {
     }
 
     function editCalendarEntry(entryId) {
-      const entry = calendarEntries.find(e => e.id === entryId);
+      const entry = calendarEntries.find(e => String(e.id) === String(entryId));
       if (!entry) return;
       document.getElementById('cal-entry-id').value = entry.id;
       document.getElementById('cal-title').value = entry.title || '';
