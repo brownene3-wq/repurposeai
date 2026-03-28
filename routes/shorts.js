@@ -3426,6 +3426,18 @@ function renderShortsPage(user, analyses) {
     </main>
 
   <!-- Calendar Entry Modal -->
+  <!-- Day entries list modal (shows when clicking a day with entries) -->
+  <div id="calendarDayModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9998;align-items:center;justify-content:center;">
+    <div style="background:#1a1a2e;border-radius:12px;padding:24px;max-width:400px;width:90%;margin:auto;margin-top:15vh;">
+      <h3 style="margin-bottom:16px;" id="dayModalTitle">Entries</h3>
+      <div id="dayModalEntries"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn btn-primary" id="dayModalAddBtn" style="flex:1;">+ Add New Entry</button>
+        <button class="btn" onclick="document.getElementById('calendarDayModal').style.display='none'" style="background:rgba(255,255,255,0.1);flex:1;">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="calendarEntryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
     <div style="background:#1a1a2e;border-radius:12px;padding:24px;max-width:400px;width:90%;margin:auto;margin-top:15vh;">
       <h3 style="margin-bottom:16px;" id="calEntryTitle">Add Calendar Entry</h3>
@@ -4305,6 +4317,48 @@ function renderShortsPage(user, analyses) {
     }
 
     function openAddEntry(dateStr) {
+      // Check if this day has existing entries
+      var dayEntries = calendarEntries.filter(function(e) {
+        return (e.scheduled_date || '').substring(0,10) === dateStr;
+      });
+
+      if (dayEntries.length > 0) {
+        // Show the day modal with existing entries + option to add
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var d = new Date(dateStr + 'T12:00:00');
+        document.getElementById('dayModalTitle').textContent = months[d.getMonth()] + ' ' + d.getDate() + ' — ' + dayEntries.length + ' entr' + (dayEntries.length === 1 ? 'y' : 'ies');
+
+        var statusColors2 = { planned: '#6c5ce7', drafted: '#fdcb6e', ready: '#00b894', published: '#0984e3' };
+        var platformEmojis2 = { tiktok: '🎵', instagram: '📸', shorts: '🎬', twitter: '🐦', linkedin: '💼', blog: '📝', newsletter: '📧' };
+
+        var listHtml = '';
+        dayEntries.forEach(function(entry) {
+          var sc = statusColors2[entry.status] || '#6c5ce7';
+          listHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-left:3px solid ' + sc + ';border-radius:8px;">' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div style="font-size:14px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (platformEmojis2[entry.platform] || '') + ' ' + (entry.title || 'Untitled') + '</div>' +
+              '<div style="font-size:11px;color:#888;margin-top:2px;">' + (entry.status || 'planned') + (entry.scheduled_time ? ' at ' + entry.scheduled_time : '') + '</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px;">' +
+              '<button class="btn btn-small" style="font-size:11px;background:rgba(108,92,231,0.2);color:#a29bfe;padding:6px 10px;" onclick="document.getElementById(' + "'" + 'calendarDayModal' + "'" + ').style.display=' + "'" + 'none' + "'" + ';editCalendarEntry(' + "'" + entry.id + "'" + ')">Edit</button>' +
+              '<button class="btn btn-small" style="font-size:11px;background:rgba(255,0,0,0.15);color:#ff6b6b;padding:6px 10px;" onclick="quickDeleteEntry(' + "'" + entry.id + "'" + ')">Delete</button>' +
+            '</div>' +
+          '</div>';
+        });
+
+        document.getElementById('dayModalEntries').innerHTML = listHtml;
+        document.getElementById('dayModalAddBtn').onclick = function() {
+          document.getElementById('calendarDayModal').style.display = 'none';
+          openNewEntry(dateStr);
+        };
+        document.getElementById('calendarDayModal').style.display = 'flex';
+      } else {
+        // No entries — go straight to add form
+        openNewEntry(dateStr);
+      }
+    }
+
+    function openNewEntry(dateStr) {
       document.getElementById('cal-entry-id').value = '';
       document.getElementById('cal-title').value = '';
       document.getElementById('cal-date').value = dateStr || new Date().toISOString().split('T')[0];
@@ -4315,6 +4369,16 @@ function renderShortsPage(user, analyses) {
       document.getElementById('cal-delete-btn').style.display = 'none';
       document.getElementById('calEntryTitle').textContent = 'Add Calendar Entry';
       document.getElementById('calendarEntryModal').style.display = 'flex';
+    }
+
+    async function quickDeleteEntry(entryId) {
+      if (!confirm('Delete this entry?')) return;
+      try {
+        await fetch('/shorts/calendar/' + entryId, { method: 'DELETE' });
+        document.getElementById('calendarDayModal').style.display = 'none';
+        renderCalendar();
+        showToast('Entry deleted');
+      } catch (e) { showToast('Error: ' + e.message); }
     }
 
     function editCalendarEntry(entryId) {
