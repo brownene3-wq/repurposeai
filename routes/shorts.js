@@ -3413,11 +3413,20 @@ function renderShortsPage(user, analyses) {
       try {
         const response = await fetch('/shorts/api/' + id);
         const data = await response.json();
+        if (!data.analysis) {
+          throw new Error(data.error || 'Analysis data not found');
+        }
         const analysis = data.analysis;
-        const videoId = getVideoId(analysis.video_url);
+        const videoId = getVideoId(analysis.video_url || '');
 
         // Build transcript viewer with keyword highlights
-        const transcriptHtml = buildTranscriptViewer(analysis.transcript || '', analysis.moments || [], videoId);
+        // Ensure moments is an array
+        if (typeof analysis.moments === 'string') {
+          try { analysis.moments = JSON.parse(analysis.moments); } catch(e) { analysis.moments = []; }
+        }
+        if (!Array.isArray(analysis.moments)) analysis.moments = [];
+
+        const transcriptHtml = buildTranscriptViewer(analysis.transcript || '', analysis.moments, videoId);
 
         const html = \`
           <div class="modal-header">
@@ -3449,7 +3458,7 @@ function renderShortsPage(user, analyses) {
         document.getElementById('modalBody').innerHTML = html;
 
         const container = document.getElementById('momentsContainer');
-        (analysis.moments || []).forEach((moment, idx) => {
+        (analysis.moments).forEach((moment, idx) => {
           const card = document.createElement('div');
           card.className = 'moment-card';
 
@@ -4574,7 +4583,7 @@ function renderShortsPage(user, analyses) {
       const regex = /\[(\d{2}:\d{2}:\d{2})\]\s*(.*?)(?=\s*\[\d{2}:\d{2}:\d{2}\]|$)/g;
       let match;
       while ((match = regex.exec(transcript)) !== null) {
-        lines.push({ time: match[1], text: match[2].trim() });
+        lines.push({ time: match[1], text: (match[2] || '').trim() });
       }
 
       if (lines.length === 0) return '<p style="color:#888;padding:10px;">Transcript format not recognized.</p>';
