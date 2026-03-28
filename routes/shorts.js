@@ -2964,7 +2964,7 @@ function renderShortsPage(user, analyses) {
 
       .main-content {
         margin-left: 0;
-        padding: 24px;
+        padding: 16px;
       }
 
       .cards-grid {
@@ -2972,11 +2972,133 @@ function renderShortsPage(user, analyses) {
       }
 
       .header-title {
-        font-size: 24px;
+        font-size: 22px;
+      }
+
+      .header-subtitle {
+        font-size: 13px;
       }
 
       .upload-input-group {
         flex-direction: column;
+      }
+
+      .upload-input {
+        font-size: 14px !important;
+      }
+
+      /* Modal mobile */
+      .modal-content {
+        width: 100%;
+        max-width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+        padding: 16px;
+      }
+
+      .modal-title {
+        font-size: 18px;
+      }
+
+      .modal-close {
+        top: 10px;
+        right: 10px;
+        width: 36px;
+        height: 36px;
+        font-size: 22px;
+      }
+
+      /* Moment cards mobile */
+      .moment-card {
+        padding: 12px !important;
+      }
+
+      .moment-card-header {
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .moment-card-title {
+        font-size: 15px !important;
+      }
+
+      .moment-score {
+        font-size: 20px !important;
+      }
+
+      /* Upload section */
+      .upload-section {
+        padding: 16px !important;
+      }
+
+      /* Calendar mobile */
+      #calendarGrid {
+        font-size: 11px;
+      }
+
+      #calendarGrid > div {
+        min-height: 60px !important;
+        padding: 4px !important;
+      }
+
+      /* Brand kit grid */
+      #brandKitPanel > div:nth-child(3) {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Workflow grid */
+      #workflowPanel .card {
+        padding: 12px !important;
+      }
+
+      /* Buttons wrap on mobile */
+      .moment-card div[style*="display: flex"][style*="gap: 8px"] {
+        flex-direction: column;
+      }
+
+      /* Calendar entry modal */
+      #calendarEntryModal > div {
+        margin-top: 5vh !important;
+        width: 95% !important;
+        padding: 16px !important;
+      }
+
+      #calendarEntryModal div[style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Calendar header */
+      div[style*="Content Calendar"] {
+        flex-direction: column;
+        gap: 12px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .main-content {
+        padding: 12px;
+      }
+
+      .header-title {
+        font-size: 20px;
+      }
+
+      .modal-content {
+        padding: 12px;
+      }
+
+      .btn {
+        font-size: 12px !important;
+        padding: 8px 12px !important;
+      }
+
+      .btn-small {
+        font-size: 10px !important;
+        padding: 4px 8px !important;
+      }
+
+      select {
+        font-size: 12px !important;
       }
     }
   </style>
