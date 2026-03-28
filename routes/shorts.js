@@ -1402,14 +1402,27 @@ router.post('/clip', requireAuth, async (req, res) => {
         }
 
         // === STEP 2: ffmpeg encode (non-blocking spawn) ===
+        // Blur-background style: full video centered with blurred background
+        // [0:v] = blurred background scaled to fill 1080x1920
+        // [1:v] = foreground video scaled to fit within 1080x1920 (preserving aspect ratio)
+        // Overlay foreground centered on blurred background
         writeProgress('Creating vertical clip...');
+
+        const blurBgFilter = [
+          // Background: scale to fill, crop to 9:16, blur heavily
+          '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg]',
+          // Foreground: scale to fit within 1080x1920, keeping aspect ratio
+          '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
+          // Overlay foreground centered on blurred background
+          '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1'
+        ].join(';');
 
         const ffmpegArgs = [
           '-y',
           '-ss', String(startSec),
           '-i', actualDownload,
           '-t', String(duration),
-          '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
+          '-filter_complex', blurBgFilter,
           '-c:v', 'libx264',
           '-profile:v', 'high',
           '-level', '4.0',
@@ -1427,7 +1440,7 @@ router.post('/clip', requireAuth, async (req, res) => {
 
         let ffmpegSuccess = false;
         try {
-          await runCommand(ffmpegPath, ffmpegArgs, { timeout: 180000 });
+          await runCommand(ffmpegPath, ffmpegArgs, { timeout: 240000 });
           console.log('  ffmpeg completed successfully');
           ffmpegSuccess = true;
         } catch (ffErr) {
@@ -1445,7 +1458,7 @@ router.post('/clip', requireAuth, async (req, res) => {
             '-i', actualDownload,
             '-ss', String(startSec),
             '-t', String(duration),
-            '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
+            '-filter_complex', blurBgFilter,
             '-c:v', 'libx264',
             '-profile:v', 'high',
             '-level', '4.0',
@@ -1462,7 +1475,7 @@ router.post('/clip', requireAuth, async (req, res) => {
           ];
 
           try {
-            await runCommand(ffmpegPath, retryArgs, { timeout: 240000 });
+            await runCommand(ffmpegPath, retryArgs, { timeout: 300000 });
             console.log('  ffmpeg retry succeeded');
             ffmpegSuccess = true;
           } catch (retryErr) {
