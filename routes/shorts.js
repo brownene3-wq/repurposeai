@@ -1080,7 +1080,9 @@ Return a JSON array of moments with this exact structure:
     "keyThemes": ["theme1", "theme2"],
     "suggestedCaptions": ["caption1", "caption2"],
     "suggestedHashtags": ["#hashtag1", "#hashtag2"],
-    "emotion": "primary emotion (inspiration/humor/surprise/education/controversy)"
+    "emotion": "primary emotion (inspiration/humor/surprise/education/controversy)",
+    "platforms": ["tiktok", "instagram", "shorts"],
+    "platformScores": { "tiktok": 90, "instagram": 80, "shorts": 85, "twitter": 70, "linkedin": 60 }
   }
 ]
 
@@ -1587,6 +1589,54 @@ router.get('/export/:analysisId', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Export error:', error);
     if (!res.headersSent) res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+// POST /virality-analysis - Get detailed virality breakdown for a moment
+router.post('/virality-analysis', requireAuth, async (req, res) => {
+  try {
+    const { analysisId, momentIndex } = req.body;
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not found or unauthorized' });
+    }
+
+    let moments = analysis.moments;
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIndex];
+    if (!moment) return res.status(404).json({ error: 'Moment not found' });
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: `You are a viral content expert. Analyze this moment and return a JSON object with:
+          - hookStrength (0-100): How strong the opening hook is
+          - emotionalImpact (0-100): Emotional resonance score
+          - shareability (0-100): How likely people are to share
+          - trendAlignment (0-100): How aligned with current trends
+          - audienceReach (0-100): Potential audience size
+          - boostTips (array of 3-5 strings): Specific actionable tips to increase virality
+          - bestTimeToPost (string): Best time/day to post this content
+          - targetAudience (string): Description of ideal target audience
+          - predictedViews (string): Estimated view range (e.g. "10K-50K")` },
+        { role: 'user', content: `Analyze this moment for virality:\nTitle: ${moment.title}\nDescription: ${moment.description}\nScore: ${moment.viralityScore}%\nThemes: ${(moment.keyThemes || []).join(', ')}\nPlatforms: ${(moment.platforms || []).join(', ')}` }
+      ],
+      response_format: { type: 'json_object' }
+    });
+
+    let breakdown = {};
+    try {
+      breakdown = JSON.parse(completion.choices[0].message.content);
+    } catch (e) {
+      breakdown = { error: 'Could not parse analysis' };
+    }
+
+    res.json({ success: true, breakdown });
+  } catch (error) {
+    console.error('Virality analysis error:', error);
+    res.status(500).json({ error: 'Failed to analyze virality' });
   }
 });
 
@@ -3432,10 +3482,19 @@ function renderShortsPage(user, analyses) {
                 <div class="moment-card-title">\${moment.title}</div>
                 <div class="moment-card-time">\${moment.timeRange} (\${endSec - startSec}s clip)</div>
               </div>
-              <div class="moment-score">\${moment.viralityScore}%</div>
+              <div class="moment-score" style="cursor:pointer;" onclick="event.stopPropagation();showViralityBreakdown('\${id}', \${idx})" title="Click for virality breakdown">\${moment.viralityScore}%</div>
             </div>
             \${videoEmbed}
             <div class="moment-card-desc">\${moment.description}</div>
+            <div style="margin-top:8px;">
+              <div style="height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;">
+                <div style="height:100%;width:\${moment.viralityScore}%;background:linear-gradient(90deg,\${moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b'},\${moment.viralityScore >= 80 ? '#00b894' : moment.viralityScore >= 60 ? '#e67e22' : '#ff4757'});border-radius:2px;transition:width 0.5s;"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:4px;">
+                <span style="font-size:10px;color:\${moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b'};">\${moment.viralityScore >= 80 ? 'High Viral Potential' : moment.viralityScore >= 60 ? 'Good Potential' : 'Moderate Potential'}</span>
+                <span style="font-size:10px;color:var(--text-muted);">\${(moment.keyThemes || []).slice(0,3).join(', ')}</span>
+              </div>
+            </div>
             <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
               <button class="btn btn-small btn-primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
                 Generate Content
@@ -4197,6 +4256,82 @@ function renderShortsPage(user, analyses) {
     function exportAllClips(analysisId) {
       showToast('Preparing ZIP download...');
       window.location.href = '/shorts/export/' + analysisId;
+    }
+
+    // === Virality Score Breakdown ===
+    async function showViralityBreakdown(analysisId, momentIndex) {
+      // Show loading overlay
+      const overlayId = 'virality-overlay';
+      const existing = document.getElementById(overlayId);
+      if (existing) existing.remove();
+
+      const overlay = document.createElement('div');
+      overlay.id = overlayId;
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;';
+      overlay.innerHTML = '<div style="background:#1a1a2e;border-radius:16px;padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto;">' +
+        '<div style="text-align:center;padding:20px;"><div style="font-size:24px;margin-bottom:8px;">Analyzing virality...</div><p style="color:#888;">Getting AI insights</p></div></div>';
+      overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+      document.body.appendChild(overlay);
+
+      try {
+        const resp = await fetch('/shorts/virality-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ analysisId, momentIndex })
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error);
+
+        const b = data.breakdown;
+        const scoreBar = (label, value, color) =>
+          '<div style="margin-bottom:10px;">' +
+            '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">' +
+              '<span style="color:#ccc;">' + label + '</span><span style="color:' + color + ';font-weight:600;">' + value + '%</span>' +
+            '</div>' +
+            '<div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;">' +
+              '<div style="height:100%;width:' + value + '%;background:' + color + ';border-radius:3px;transition:width 0.8s;"></div>' +
+            '</div>' +
+          '</div>';
+
+        const getColor = (v) => v >= 80 ? '#10b981' : v >= 60 ? '#f39c12' : '#ff6b6b';
+
+        let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
+          '<h3 style="font-size:18px;">Virality Breakdown</h3>' +
+          '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);" onclick="this.closest(\'#' + overlayId + '\').remove()">Close</button>' +
+        '</div>';
+
+        // Score bars
+        html += scoreBar('Hook Strength', b.hookStrength || 0, getColor(b.hookStrength || 0));
+        html += scoreBar('Emotional Impact', b.emotionalImpact || 0, getColor(b.emotionalImpact || 0));
+        html += scoreBar('Shareability', b.shareability || 0, getColor(b.shareability || 0));
+        html += scoreBar('Trend Alignment', b.trendAlignment || 0, getColor(b.trendAlignment || 0));
+        html += scoreBar('Audience Reach', b.audienceReach || 0, getColor(b.audienceReach || 0));
+
+        // Meta info
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;">' +
+          '<div><div style="font-size:10px;color:#888;text-transform:uppercase;">Best Time</div><div style="font-size:13px;color:#fff;">' + (b.bestTimeToPost || 'N/A') + '</div></div>' +
+          '<div><div style="font-size:10px;color:#888;text-transform:uppercase;">Predicted Views</div><div style="font-size:13px;color:#10b981;font-weight:600;">' + (b.predictedViews || 'N/A') + '</div></div>' +
+          '<div style="grid-column:span 2;"><div style="font-size:10px;color:#888;text-transform:uppercase;">Target Audience</div><div style="font-size:13px;color:#ccc;">' + (b.targetAudience || 'N/A') + '</div></div>' +
+        '</div>';
+
+        // Boost tips
+        if (b.boostTips && b.boostTips.length > 0) {
+          html += '<h4 style="font-size:14px;margin-bottom:10px;color:#f39c12;">Boost Tips</h4>';
+          b.boostTips.forEach((tip, i) => {
+            html += '<div style="display:flex;gap:8px;margin-bottom:8px;padding:8px;background:rgba(243,156,18,0.08);border-radius:6px;">' +
+              '<span style="color:#f39c12;font-weight:700;font-size:14px;">' + (i+1) + '.</span>' +
+              '<span style="font-size:13px;color:#ccc;line-height:1.4;">' + tip + '</span>' +
+            '</div>';
+          });
+        }
+
+        overlay.querySelector('div > div').innerHTML = html;
+
+      } catch (error) {
+        overlay.querySelector('div > div').innerHTML =
+          '<p style="color:#ff6b6b;text-align:center;">Error: ' + (error.message || 'Failed') + '</p>' +
+          '<button class="btn" style="width:100%;margin-top:12px;background:rgba(255,255,255,0.1);" onclick="this.closest(\'#' + overlayId + '\').remove()">Close</button>';
+      }
     }
 
     // === B-Roll Finder ===
