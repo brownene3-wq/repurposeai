@@ -1371,7 +1371,7 @@ router.post('/clip', requireAuth, async (req, res) => {
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
     }
 
-    const { analysisId, momentIndex, includeCaptions } = req.body;
+    const { analysisId, momentIndex, includeCaptions, clipStyle } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
       return res.status(400).json({ error: 'Analysis ID and moment index are required' });
@@ -1578,26 +1578,45 @@ router.post('/clip', requireAuth, async (req, res) => {
           }
         }
 
-        // Optimized blur-background filter:
-        // Scale DOWN to tiny res first, blur there (16x faster), then scale UP
-        // If captions are available, burn them in with the ASS filter
-        const blurBgFilter = [
-          // Background: scale down to small, blur cheaply, scale up to fill 9:16
-          '[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
-          // Foreground: scale to fit within 1080x1920, preserving aspect ratio
-          '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
-          // Center foreground on blurred background
-          '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' +
-            // Burn in ASS captions if available (after compositing so text renders on final frame)
-            (assFilePath ? `,ass='${assFilePath.replace(/'/g, "'\\''").replace(/:/g, '\\:')}'` : '')
-        ].join(';');
+        // Build filter based on selected clip style
+        const captionFilter = assFilePath ? `,ass='${assFilePath.replace(/'/g, "'\\''").replace(/:/g, '\\:')}'` : '';
+        const style = clipStyle || 'blur';
+        let videoFilter;
+
+        console.log(`  Clip style: ${style}, captions: ${!!assFilePath}`);
+
+        if (style === 'crop') {
+          // Center crop: zoom in and crop to 9:16 (loses sides but fills frame)
+          videoFilter = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1${captionFilter}`;
+        } else if (style === 'fit') {
+          // Fit with black background: full video centered on black
+          videoFilter = [
+            'color=c=black:s=1080x1920:r=30[bg]',
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
+            '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter
+          ].join(';');
+        } else if (style === 'pip') {
+          // Picture-in-Picture: full video large + small original in corner
+          videoFilter = [
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
+            '[0:v]scale=340:-2,setsar=1[pip]',
+            '[bg][pip]overlay=W-w-30:30,setsar=1' + captionFilter
+          ].join(';');
+        } else {
+          // Default: blur background (most popular for repurposed content)
+          videoFilter = [
+            '[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
+            '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter
+          ].join(';');
+        }
 
         const ffmpegArgs = [
           '-y',
           '-ss', String(startSec),
           '-i', actualDownload,
           '-t', String(duration),
-          '-filter_complex', blurBgFilter,
+          ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
           '-c:v', 'libx264',
           '-profile:v', 'high',
           '-level', '4.0',
@@ -1633,7 +1652,7 @@ router.post('/clip', requireAuth, async (req, res) => {
             '-i', actualDownload,
             '-ss', String(startSec),
             '-t', String(duration),
-            '-filter_complex', blurBgFilter,
+            ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
             '-c:v', 'libx264',
             '-profile:v', 'high',
             '-level', '4.0',
@@ -2508,6 +2527,13 @@ function renderShortsPage(user, analyses) {
                   style="accent-color:#FF0050; width:14px; height:14px;">
                 <span>Captions</span>
               </label>
+              <select id="clip-style-\${idx}" style="font-size:11px; padding:4px 6px; background:#1a1a2e; color:#ccc;
+                border:1px solid #333; border-radius:4px; cursor:pointer;" title="Clip style">
+                <option value="blur">Blur BG</option>
+                <option value="crop">Center Crop</option>
+                <option value="fit">Fit (Black BG)</option>
+                <option value="pip">Picture-in-Picture</option>
+              </select>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
                 class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
                 Open on YouTube
@@ -2734,16 +2760,18 @@ function renderShortsPage(user, analyses) {
       btn.disabled = true;
       btn.textContent = 'Starting...';
 
-      // Check if captions checkbox is checked
+      // Check options
       const captionsCheckbox = document.getElementById('captions-' + momentIndex);
       const includeCaptions = captionsCheckbox ? captionsCheckbox.checked : false;
+      const styleSelect = document.getElementById('clip-style-' + momentIndex);
+      const clipStyle = styleSelect ? styleSelect.value : 'blur';
 
       try {
         // Request clip generation
         const response = await fetch('/shorts/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex, includeCaptions })
+          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle })
         });
 
         const data = await response.json();
