@@ -1309,34 +1309,48 @@ router.post('/clip', requireAuth, async (req, res) => {
     // Helper: run a command with spawn (non-blocking, keeps event loop alive)
     const runCommand = (cmd, args, options = {}) => {
       return new Promise((resolve, reject) => {
-        console.log(`  Running: ${cmd} ${args.slice(0, 3).join(' ')}...`);
-        const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], ...options });
+        const cmdLabel = path.basename(cmd);
+        console.log(`  Running ${cmdLabel}: ${args.slice(0, 4).join(' ')}...`);
+        const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
         let stdout = '';
         let stderr = '';
+        let settled = false;
+        const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+
         proc.stdout.on('data', (data) => {
           stdout += data.toString();
-          // Update progress for yt-dlp downloads
           const pctMatch = data.toString().match(/(\d+\.?\d*)%/);
           if (pctMatch) writeProgress(`Downloading: ${Math.round(parseFloat(pctMatch[1]))}%`);
         });
-        proc.stderr.on('data', (data) => { stderr += data.toString(); });
-        proc.on('error', (err) => reject(new Error(`Process error: ${err.message}`)));
-        proc.on('close', (code) => {
-          if (code === 0) resolve({ stdout, stderr });
-          else reject(new Error(`Exit code ${code}: ${stderr.slice(-500)}`));
+        proc.stderr.on('data', (data) => {
+          stderr += data.toString();
+          // yt-dlp sends progress to stderr when piped
+          const pctMatch = data.toString().match(/(\d+\.?\d*)%/);
+          if (pctMatch) writeProgress(`Downloading: ${Math.round(parseFloat(pctMatch[1]))}%`);
+          // ffmpeg progress
+          const timeMatch = data.toString().match(/time=(\d+:\d+:\d+)/);
+          if (timeMatch) writeProgress(`Encoding: ${timeMatch[1]}`);
         });
-        // Timeout: kill process after specified time
-        if (options.timeout) {
-          setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} }, options.timeout);
-        }
+        proc.on('error', (err) => settle(reject, new Error(`${cmdLabel} process error: ${err.message}`)));
+        proc.on('close', (code, signal) => {
+          if (code === 0) settle(resolve, { stdout, stderr });
+          else settle(reject, new Error(`${cmdLabel} exit ${code}${signal ? '/'+signal : ''}: ${stderr.slice(-500)}`));
+        });
+
+        // Timeout: kill process
+        const timer = options.timeout ? setTimeout(() => {
+          console.error(`  ${cmdLabel} timed out after ${options.timeout/1000}s`);
+          try { proc.kill('SIGKILL'); } catch(e) {}
+          settle(reject, new Error(`${cmdLabel} timed out after ${options.timeout/1000}s`));
+        }, options.timeout) : null;
       });
     };
 
     // Process in background (non-blocking - keeps event loop alive for health checks)
     (async () => {
       const timeout = setTimeout(() => {
-        writeError('Clip generation timed out after 5 minutes. Try a moment closer to the start of the video.');
-      }, 300000);
+        writeError('Clip generation timed out after 8 minutes. Try a shorter moment or one closer to the start.');
+      }, 480000);
 
       try {
         writeProgress('Downloading video...');
@@ -1408,12 +1422,14 @@ router.post('/clip', requireAuth, async (req, res) => {
         // Overlay foreground centered on blurred background
         writeProgress('Creating vertical clip...');
 
+        // Optimized blur-background filter:
+        // Scale DOWN to tiny res first, blur there (16x faster), then scale UP
         const blurBgFilter = [
-          // Background: scale to fill, crop to 9:16, blur heavily
-          '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg]',
-          // Foreground: scale to fit within 1080x1920, keeping aspect ratio
+          // Background: scale down to small, blur cheaply, scale up to fill 9:16
+          '[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
+          // Foreground: scale to fit within 1080x1920, preserving aspect ratio
           '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
-          // Overlay foreground centered on blurred background
+          // Center foreground on blurred background
           '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1'
         ].join(';');
 
@@ -1626,6 +1642,25 @@ router.get('/clip/download/:filename', requireAuth, (req, res) => {
         try { fs.unlinkSync(filePath); } catch (e) {}
       }, 30000); // 30s delay to allow re-downloads
     });
+  }
+});
+
+// GET /clip/debug - Debug endpoint to see clip file states
+router.get('/clip/debug', requireAuth, (req, res) => {
+  try {
+    const files = fs.readdirSync(CLIPS_DIR);
+    const clipInfo = files.map(f => {
+      const fullPath = path.join(CLIPS_DIR, f);
+      const stat = fs.statSync(fullPath);
+      let content = '';
+      if (f.endsWith('.progress') || f.endsWith('.error')) {
+        try { content = fs.readFileSync(fullPath, 'utf8'); } catch(e) {}
+      }
+      return { name: f, size: stat.size, modified: stat.mtime, content };
+    });
+    res.json({ clips_dir: CLIPS_DIR, files: clipInfo });
+  } catch (err) {
+    res.json({ error: err.message, clips_dir: CLIPS_DIR });
   }
 });
 
