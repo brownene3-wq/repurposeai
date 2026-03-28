@@ -38,11 +38,23 @@ router.get('/', requireAuth, async (req, res) => {
       });
     }
 
+    // Platform brand colors
+    const platformColors = {
+      'Instagram': 'linear-gradient(90deg, #E1306C, #F77737)',
+      'TikTok': 'linear-gradient(90deg, #010101, #69C9D0)',
+      'Twitter/X': 'linear-gradient(90deg, #1DA1F2, #0d8bd9)',
+      'LinkedIn': 'linear-gradient(90deg, #0077B5, #00a0dc)',
+      'Facebook': 'linear-gradient(90deg, #1877F2, #42a5f5)',
+      'YouTube': 'linear-gradient(90deg, #FF0000, #ff4444)',
+      'Blog': 'linear-gradient(90deg, #6C3AED, #a78bfa)'
+    };
+
     // Build platform bars HTML
     const platformBarsHtml = platforms.map(p => {
       const count = platformCounts[p];
       const pct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
-      return `<div class="chart-bar"><div class="platform">${p}</div><div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div><div class="count">${count}</div></div>`;
+      const barColor = platformColors[p] || 'linear-gradient(90deg, #6c5ce7, #a29bfe)';
+      return `<div class="chart-bar"><div class="platform">${p}</div><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div><div class="count">${count}</div></div>`;
     }).join('\n        ');
 
     // Build recent activity HTML
@@ -63,24 +75,40 @@ router.get('/', requireAuth, async (req, res) => {
     .main { margin-left: 250px; flex: 1; padding: 30px; }
     .page-title { font-size: 1.8em; font-weight: 700; margin-bottom: 30px; }
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
-    .stat-card { background: #161616; border: 1px solid #222; border-radius: 12px; padding: 24px; }
-    .stat-card .label { color: #888; font-size: 0.85em; margin-bottom: 8px; }
-    .stat-card .value { font-size: 2em; font-weight: 700; color: #fff; }
-    .stat-card .change { font-size: 0.8em; color: #00b894; margin-top: 4px; }
-    .section { background: #161616; border: 1px solid #222; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
-    .section h2 { font-size: 1.2em; margin-bottom: 20px; color: #fff; }
-    .chart-bar { display: flex; align-items: center; margin-bottom: 12px; }
-    .chart-bar .platform { width: 100px; font-size: 0.85em; color: #888; }
-    .chart-bar .bar-bg { flex: 1; height: 24px; background: #222; border-radius: 6px; overflow: hidden; }
-    .chart-bar .bar-fill { height: 100%; background: linear-gradient(90deg, #6c5ce7, #a29bfe); border-radius: 6px; transition: width 0.5s; }
-    .chart-bar .count { width: 40px; text-align: right; font-size: 0.85em; color: #888; margin-left: 10px; }
+    .stat-card { background: #161616; border: 1px solid #222; border-radius: 16px; padding: 24px; position: relative; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .stat-card:nth-child(1)::before { background: linear-gradient(90deg, #6C3AED, #EC4899); }
+    .stat-card:nth-child(2)::before { background: linear-gradient(90deg, #0EA5E9, #6366F1); }
+    .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #F59E0B, #EF4444); }
+    .stat-card:nth-child(4)::before { background: linear-gradient(90deg, #10B981, #06B6D4); }
+    .stat-card .label { color: #888; font-size: 0.85em; margin-bottom: 8px; font-weight: 500; }
+    .stat-card .value { font-size: 2.2em; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+    .stat-card .change { font-size: 0.8em; color: #10B981; margin-top: 6px; font-weight: 600; }
+    .section { background: #161616; border: 1px solid #222; border-radius: 16px; padding: 28px; margin-bottom: 24px; }
+    .section h2 { font-size: 1.2em; margin-bottom: 20px; color: #fff; font-weight: 700; }
+    .chart-bar { display: flex; align-items: center; margin-bottom: 14px; }
+    .chart-bar .platform { width: 100px; font-size: 0.85em; color: #999; font-weight: 500; }
+    .chart-bar .bar-bg { flex: 1; height: 28px; background: #1e1e2e; border-radius: 8px; overflow: hidden; }
+    .chart-bar .bar-fill { height: 100%; border-radius: 8px; transition: width 0.6s ease; min-width: 4px; }
+    .chart-bar .count { width: 40px; text-align: right; font-size: 0.9em; color: #aaa; margin-left: 12px; font-weight: 600; }
     .empty-state { text-align: center; padding: 40px; color: #666; }
     .empty-state p { margin-top: 10px; }
-    body.light .stat-card, body.light .section { background: #fff; border-color: #e0e0e0; }
-    body.light .stat-card .value { color: #333; }
-    body.light .chart-bar .bar-bg { background: #e0e0e0; }
-    body.light table tr { border-color: #e0e0e0 !important; }
-    body.light table td { color: #333 !important; }
+
+    /* Light theme */
+    body.light .stat-card { background: #fff; border-color: #e8e8ef; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    body.light .stat-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+    body.light .stat-card .label { color: #64748b; }
+    body.light .stat-card .value { color: #1e293b; }
+    body.light .stat-card .change { color: #059669; }
+    body.light .section { background: #fff; border-color: #e8e8ef; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    body.light .section h2 { color: #1e293b; }
+    body.light .chart-bar .platform { color: #475569; }
+    body.light .chart-bar .bar-bg { background: #f1f5f9; }
+    body.light .chart-bar .count { color: #334155; }
+    body.light table tr { border-color: #e8e8ef !important; }
+    body.light table th { color: #64748b !important; }
+    body.light table td { color: #334155 !important; }
   </style>
 </head>
 <body>

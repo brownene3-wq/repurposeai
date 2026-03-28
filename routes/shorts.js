@@ -2414,12 +2414,11 @@ router.post('/clip', requireAuth, async (req, res) => {
             '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else if (style === 'pip') {
-          // Picture-in-Picture: cropped fullscreen background + small PiP in top-right
-          // Uses split to avoid reading input twice (much faster)
+          // Picture-in-Picture: cropped background + small PiP in top-right corner
+          // Uses two -i inputs of same file to avoid split filter deadlocks
           videoFilter = [
-            '[0:v]split=2[base][small]',
-            '[base]scale=1080:1920:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1920:(iw-1080)/2:(ih-1920)/2,setsar=1[bg]',
-            '[small]scale=380:-2:flags=lanczos,setsar=1[pip]',
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[bg]',
+            '[1:v]scale=384:216,setsar=1[pip]',
             '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else {
@@ -2431,10 +2430,13 @@ router.post('/clip', requireAuth, async (req, res) => {
           ].join(';');
         }
 
+        // PiP uses two inputs of same file to avoid split filter deadlocks
+        const isPip = style === 'pip';
         const ffmpegArgs = [
           '-y',
           '-ss', String(startSec),
           '-i', actualDownload,
+          ...(isPip ? ['-ss', String(startSec), '-i', actualDownload] : []),
           '-t', String(duration),
           ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
           '-c:v', 'libx264',
@@ -2470,6 +2472,7 @@ router.post('/clip', requireAuth, async (req, res) => {
           const retryArgs = [
             '-y',
             '-i', actualDownload,
+            ...(isPip ? ['-i', actualDownload] : []),
             '-ss', String(startSec),
             '-t', String(duration),
             ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
@@ -2814,13 +2817,16 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
         } else if (style === 'fit') {
           videoFilter = ['color=c=black:s=1080x1920:r=30[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else if (style === 'pip') {
-          videoFilter = ['[0:v]split=2[base][small]', '[base]scale=1080:1920:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1920:(iw-1080)/2:(ih-1920)/2,setsar=1[bg]', '[small]scale=380:-2:flags=lanczos,setsar=1[pip]', '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter].join(';');
+          videoFilter = ['[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[bg]', '[1:v]scale=384:216,setsar=1[pip]', '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else {
           videoFilter = ['[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter + watermarkFilter].join(';');
         }
 
+        const isPipBroll = style === 'pip';
         await runCommand(ffmpegPath, [
-          '-y', '-ss', String(startSec), '-i', actualDownload, '-t', String(duration),
+          '-y', '-ss', String(startSec), '-i', actualDownload,
+          ...(isPipBroll ? ['-ss', String(startSec), '-i', actualDownload] : []),
+          '-t', String(duration),
           ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
           '-c:v', 'libx264', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
           '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
