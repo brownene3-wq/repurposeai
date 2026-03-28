@@ -40,12 +40,13 @@ function extractVideoId(url) {
   return null;
 }
 
-// Helper: Format timestamp in seconds to HH:MM:SS
+// Helper: Format timestamp in seconds to HH:MM:SS.mmm (with millisecond precision)
 function formatTimestamp(seconds) {
   const hrs = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
-  return [hrs, mins, secs].map(x => String(x).padStart(2, '0')).join(':');
+  const ms = Math.round((seconds % 1) * 1000);
+  return [hrs, mins, secs].map(x => String(x).padStart(2, '0')).join(':') + '.' + String(ms).padStart(3, '0');
 }
 
 // Helper: Combine transcript segments into text with timestamps
@@ -57,15 +58,18 @@ function buildTranscriptText(segments) {
 }
 
 // Helper: Parse stored transcript text back into timed segments
-// Transcript format: "[HH:MM:SS] text [HH:MM:SS] text ..."
+// Transcript format: "[HH:MM:SS.mmm] text" or legacy "[HH:MM:SS] text"
 function parseTranscriptToSegments(transcriptText) {
   const segments = [];
-  const regex = /\[(\d{2}:\d{2}:\d{2})\]\s*(.*?)(?=\s*\[\d{2}:\d{2}:\d{2}\]|$)/g;
+  const regex = /\[(\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)\]\s*(.*?)(?=\s*\[\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?\]|$)/g;
   let match;
   while ((match = regex.exec(transcriptText)) !== null) {
     const [, timestamp, text] = match;
-    const parts = timestamp.split(':').map(Number);
-    const offsetSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    // Split "HH:MM:SS" or "HH:MM:SS.mmm"
+    const [timePart, msPart] = timestamp.split('.');
+    const parts = timePart.split(':').map(Number);
+    const ms = msPart ? parseInt(msPart.padEnd(3, '0')) / 1000 : 0;
+    const offsetSec = parts[0] * 3600 + parts[1] * 60 + parts[2] + ms;
     if (text.trim()) {
       segments.push({ offsetSec, text: text.trim() });
     }
@@ -1514,12 +1518,14 @@ router.get('/batch-status/:batchId', requireAuth, (req, res) => {
   }
 });
 
-// Helper for timestamp formatting
-function formatTimestamp(totalSeconds) {
+// Helper for timestamp formatting (with millisecond precision)
+// Note: primary formatTimestamp is defined at top of file, this is kept for backward compat
+function formatTimestampCompat(totalSeconds) {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = Math.floor(totalSeconds % 60);
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  const ms = Math.round((totalSeconds % 1) * 1000);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
 }
 
 // GET /export/:analysisId - Export all clips from an analysis as ZIP
@@ -1531,26 +1537,34 @@ router.get('/export/:analysisId', requireAuth, async (req, res) => {
     }
 
     // Find all clip files for this analysis
+    const analysisId = req.params.analysisId;
+    const analysisTag = `a${analysisId}`;
     const files = fs.readdirSync(CLIPS_DIR);
     const clipFiles = files.filter(f => f.endsWith('.mp4') && !f.includes('.encoding') && !f.includes('.temp'));
     const thumbFiles = files.filter(f => f.endsWith('.jpg') && f.startsWith('thumb_'));
 
-    // Include all recent clips (within last hour) - they're likely from this analysis
-    const oneHourAgo = Date.now() - 3600000;
-    const recentClips = clipFiles.filter(f => {
-      try {
-        const stat = fs.statSync(path.join(CLIPS_DIR, f));
-        return stat.mtimeMs > oneHourAgo && stat.size > 50000;
-      } catch (e) { return false; }
-    });
-    const recentThumbs = thumbFiles.filter(f => {
-      try {
-        const stat = fs.statSync(path.join(CLIPS_DIR, f));
-        return stat.mtimeMs > oneHourAgo && stat.size > 1000;
-      } catch (e) { return false; }
-    });
+    // First try to match clips by analysis ID tag in filename
+    let matchedClips = clipFiles.filter(f => f.includes(analysisTag));
+    let matchedThumbs = thumbFiles.filter(f => f.includes(analysisTag));
 
-    if (recentClips.length === 0 && recentThumbs.length === 0) {
+    // Fallback: if no tagged clips found, use recent clips (within last 24 hours) for backward compat
+    if (matchedClips.length === 0 && matchedThumbs.length === 0) {
+      const oneDayAgo = Date.now() - 86400000;
+      matchedClips = clipFiles.filter(f => {
+        try {
+          const stat = fs.statSync(path.join(CLIPS_DIR, f));
+          return stat.mtimeMs > oneDayAgo && stat.size > 50000;
+        } catch (e) { return false; }
+      });
+      matchedThumbs = thumbFiles.filter(f => {
+        try {
+          const stat = fs.statSync(path.join(CLIPS_DIR, f));
+          return stat.mtimeMs > oneDayAgo && stat.size > 1000;
+        } catch (e) { return false; }
+      });
+    }
+
+    if (matchedClips.length === 0 && matchedThumbs.length === 0) {
       return res.status(404).json({ error: 'No clips or thumbnails found. Generate some clips first!' });
     }
 
@@ -1565,11 +1579,11 @@ router.get('/export/:analysisId', requireAuth, async (req, res) => {
     archive.pipe(res);
 
     // Add clips
-    for (const clip of recentClips) {
+    for (const clip of matchedClips) {
       archive.file(path.join(CLIPS_DIR, clip), { name: `clips/${clip}` });
     }
     // Add thumbnails
-    for (const thumb of recentThumbs) {
+    for (const thumb of matchedThumbs) {
       archive.file(path.join(CLIPS_DIR, thumb), { name: `thumbnails/${thumb}` });
     }
 
@@ -1578,8 +1592,8 @@ router.get('/export/:analysisId', requireAuth, async (req, res) => {
       videoTitle: analysis.video_title,
       videoUrl: analysis.video_url,
       exportDate: new Date().toISOString(),
-      clips: recentClips.length,
-      thumbnails: recentThumbs.length,
+      clips: matchedClips.length,
+      thumbnails: matchedThumbs.length,
       moments: analysis.moments
     };
     archive.append(JSON.stringify(summary, null, 2), { name: 'summary.json' });
@@ -1861,7 +1875,8 @@ router.post('/thumbnail', requireAuth, async (req, res) => {
     const thumbBg = bgColor || '#000000';
     const thumbFontSize = fontSize || 72;
     const thumbStyle = style || 'gradient';
-    const filename = `thumb_${Date.now()}.jpg`;
+    const thumbAnalysisTag = `a${req.body.analysisId || 'unknown'}`;
+    const filename = `thumb_${thumbAnalysisTag}_${Date.now()}.jpg`;
     const outputPath = path.join(CLIPS_DIR, filename);
 
     // Parse time to get a frame
@@ -2199,7 +2214,8 @@ router.post('/clip', requireAuth, async (req, res) => {
 
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const safeTitle = (moment.title || 'clip').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
-    const filename = `${safeTitle}_${Date.now()}.mp4`;
+    const analysisTag = `a${req.body.analysisId || 'unknown'}`;
+    const filename = `${safeTitle}_${analysisTag}_${Date.now()}.mp4`;
     const outputPath = path.join(CLIPS_DIR, filename);
     const tempOutputPath = outputPath + '.encoding.mp4'; // Encode to temp file, rename when done
 
@@ -2390,10 +2406,11 @@ router.post('/clip', requireAuth, async (req, res) => {
           ].join(';');
         } else if (style === 'pip') {
           // Picture-in-Picture: full video large + small original in corner
+          // Use lanczos scaling for higher quality background + sharpen to compensate for upscale
           videoFilter = [
-            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
-            '[0:v]scale=340:-2,setsar=1[pip]',
-            '[bg][pip]overlay=W-w-30:30,setsar=1' + captionFilter + watermarkFilter
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,unsharp=3:3:0.5:3:3:0.5[bg]',
+            '[0:v]scale=440:-2:flags=lanczos,setsar=1[pip]',
+            '[bg][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else {
           // Default: blur background (most popular for repurposed content)
@@ -2418,8 +2435,8 @@ router.post('/clip', requireAuth, async (req, res) => {
           '-b:a', '128k',
           '-ar', '44100',
           '-ac', '2',
-          '-preset', 'fast',
-          '-crf', '23',
+          '-preset', 'medium',
+          '-crf', '20',
           '-movflags', '+faststart',
           '-max_muxing_queue_size', '2048',
           tempOutputPath
@@ -4897,9 +4914,31 @@ function renderShortsPage(user, analyses) {
       }
     }
 
-    function exportAllClips(analysisId) {
+    async function exportAllClips(analysisId) {
       showToast('Preparing ZIP download...');
-      window.location.href = '/shorts/export/' + analysisId;
+      try {
+        const resp = await fetch('/shorts/export/' + analysisId);
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          showToast(data.error || 'Export failed. Generate some clips first!', true);
+          return;
+        }
+        // Download the ZIP blob
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+        a.download = filenameMatch ? filenameMatch[1] : 'clips_export.zip';
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('ZIP downloaded!');
+      } catch (err) {
+        showToast('Export failed: ' + err.message, true);
+      }
     }
 
     // === Virality Score Breakdown ===
