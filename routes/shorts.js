@@ -3773,7 +3773,7 @@ function renderShortsPage(user, analyses) {
             <button class="btn btn-small" onclick="openAddEntry()" style="background:rgba(108,92,231,0.2);color:#a29bfe;">+ Add Entry</button>
           </div>
         </div>
-        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:rgba(255,255,255,0.05);border-radius:12px;overflow:hidden;"></div>
+        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.03);border-radius:12px;overflow:hidden;"></div>
       </div>
     </main>
 
@@ -4486,7 +4486,8 @@ function renderShortsPage(user, analyses) {
 
         const filename = data.filename;
         btn.textContent = 'Processing...';
-        btn.style.background = 'rgba(255,255,255,0.15)';
+        btn.style.background = 'linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%)';
+        btn.style.color = '#fff';
 
         // Poll for clip readiness
         let attempts = 0;
@@ -4648,7 +4649,7 @@ function renderShortsPage(user, analyses) {
 
       // Empty cells before first day
       for (let i = 0; i < firstDay; i++) {
-        html += '<div style="padding:8px;min-height:80px;background:rgba(0,0,0,0.2);"></div>';
+        html += '<div style="padding:8px;min-height:80px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03);"></div>';
       }
 
       const today = new Date();
@@ -4663,11 +4664,12 @@ function renderShortsPage(user, analyses) {
           return ed === dateStr;
         });
 
-        var bgColor = isToday ? 'rgba(108,92,231,0.1)' : 'rgba(0,0,0,0.3)';
+        var bgColor = isToday ? 'rgba(108,92,231,0.15)' : 'rgba(255,255,255,0.04)';
+        var borderStyle = isToday ? 'border:1px solid rgba(108,92,231,0.4)' : 'border:1px solid rgba(255,255,255,0.06)';
         html += '<div style="padding:6px;min-height:80px;background:' + bgColor +
-          ';cursor:pointer;transition:background 0.2s;" onclick="openAddEntry(' + "'" + dateStr + "'" + ')" ' +
-          'onmouseover="this.style.background=' + "'" + 'rgba(108,92,231,0.15)' + "'" + '" onmouseout="this.style.background=' + "'" + bgColor + "'" + '">' +
-          '<div style="font-size:12px;font-weight:' + (isToday ? '700' : '400') + ';color:' + (isToday ? '#a29bfe' : '#888') + ';margin-bottom:4px;">' + day + '</div>';
+          ';cursor:pointer;transition:background 0.2s;' + borderStyle + ';" onclick="openAddEntry(' + "'" + dateStr + "'" + ')" ' +
+          'onmouseover="this.style.background=' + "'" + 'rgba(108,92,231,0.12)' + "'" + '" onmouseout="this.style.background=' + "'" + bgColor + "'" + '">' +
+          '<div style="font-size:12px;font-weight:' + (isToday ? '700' : '500') + ';color:' + (isToday ? '#a29bfe' : '#bbb') + ';margin-bottom:4px;">' + day + '</div>';
 
         dayEntries.forEach(entry => {
           const sc = statusColors[entry.status] || '#6c5ce7';
