@@ -1684,20 +1684,25 @@ Emotion: ${moment.emotion || 'educational'}
 For each B-Roll scene, return:
 - "timestamp_hint": approximate point in the moment where this B-Roll should appear (e.g. "beginning", "middle", "end", "0:15")
 - "scene_description": what the viewer should see (1 sentence)
-- "search_query": the BEST 2-3 word Pexels search query to find this exact footage
+- "search_query": the BEST 2-4 word Pexels search query to find this exact footage. Be VERY specific — use concrete nouns and actions, NOT abstract concepts. For example: "person typing laptop" not "productivity", "cash register payment" not "business", "doctor stethoscope" not "health". Pexels works best with literal visual descriptions.
 - "why": brief reason this visual fits (1 sentence)
 
 Return a JSON array:
 [
   {
     "timestamp_hint": "beginning",
-    "scene_description": "Aerial view of a busy city intersection with cars and pedestrians",
-    "search_query": "busy city traffic",
-    "why": "Sets the scene for the discussion about urban life"
+    "scene_description": "Close-up of hands typing on a laptop keyboard",
+    "search_query": "typing laptop closeup",
+    "why": "Shows the work being discussed in the opening"
   }
 ]
 
-Pick visuals that DIRECTLY relate to what is being said at each point. Be specific — not generic stock footage.`;
+IMPORTANT RULES:
+- Pick visuals that DIRECTLY relate to what is being said at each point
+- Use CONCRETE, LITERAL search terms — describe what the camera would see
+- Avoid abstract/generic terms like "success", "motivation", "growth", "business"
+- Prefer close-up and medium shots over wide/aerial shots for short-form content
+- Think about what a human video editor would actually cut to`;
 
         const completion = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
@@ -1748,22 +1753,26 @@ Pick visuals that DIRECTLY relate to what is being said at each point. Be specif
 
       if (pexelsKey) {
         try {
-          const pxResp = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(scene.search_query)}&per_page=6&size=small`, {
+          const pxResp = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(scene.search_query)}&per_page=8&orientation=portrait`, {
             headers: { 'Authorization': pexelsKey }
           });
           if (pxResp.ok) {
             const pxData = await pxResp.json();
-            const videos = (pxData.videos || []).map(v => ({
-              id: v.id,
-              duration: v.duration,
-              thumbnail: v.image,
-              url: v.url,
-              videoFiles: (v.video_files || [])
-                .filter(f => f.quality === 'sd' || f.quality === 'hd')
-                .slice(0, 2)
-                .map(f => ({ quality: f.quality, link: f.link, width: f.width, height: f.height })),
-              user: v.user ? v.user.name : 'Pexels'
-            }));
+            const videos = (pxData.videos || []).map(v => {
+              // Prefer HD files, sorted by quality (hd first, then sd)
+              const allFiles = (v.video_files || [])
+                .filter(f => f.quality === 'hd' || f.quality === 'sd')
+                .sort((a, b) => (b.quality === 'hd' ? 1 : 0) - (a.quality === 'hd' ? 1 : 0));
+              return {
+                id: v.id,
+                duration: v.duration,
+                thumbnail: v.image,
+                url: v.url,
+                videoFiles: allFiles.slice(0, 2)
+                  .map(f => ({ quality: f.quality, link: f.link, width: f.width, height: f.height })),
+                user: v.user ? v.user.name : 'Pexels'
+              };
+            });
 
             // Auto-select the best (first) result
             if (videos.length > 0) {
@@ -2804,7 +2813,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
         } else if (style === 'fit') {
           videoFilter = ['color=c=black:s=1080x1920:r=30[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else if (style === 'pip') {
-          videoFilter = ['[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]', '[0:v]scale=340:-2,setsar=1[pip]', '[bg][pip]overlay=W-w-30:30,setsar=1' + captionFilter + watermarkFilter].join(';');
+          videoFilter = ['[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,unsharp=3:3:0.5:3:3:0.5[bg]', '[0:v]scale=440:-2:flags=lanczos,setsar=1[pip]', '[bg][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else {
           videoFilter = ['[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter + watermarkFilter].join(';');
         }
@@ -2814,7 +2823,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
           ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
           '-c:v', 'libx264', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
           '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-          '-preset', 'fast', '-crf', '23', '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
+          '-preset', 'medium', '-crf', '20', '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
           mainSegment
         ], { timeout: 240000 });
 
@@ -2842,8 +2851,8 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
             const brollDur = Math.min(scene.duration || 5, 8);
             await runCommand(ffmpegPath, [
               '-y', '-i', brollRaw, '-t', String(brollDur),
-              '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
-              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '23',
+              '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,setsar=1',
+              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
               '-an',
               '-movflags', '+faststart',
               brollFormatted
