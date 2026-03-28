@@ -2207,7 +2207,7 @@ router.get('/thumbnail/status/:filename', requireAuth, (req, res) => {
 // GET /thumbnail/download/:filename - Download generated thumbnail
 router.get('/thumbnail/download/:filename', requireAuth, (req, res) => {
   const filename = path.basename(req.params.filename);
-  if (!filename.endsWith('.jpg')) {
+  if (!filename.endsWith('.jpg') && !filename.endsWith('.png')) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
   const filePath = path.join(CLIPS_DIR, filename);
@@ -2215,6 +2215,120 @@ router.get('/thumbnail/download/:filename', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Thumbnail not found' });
   }
   res.download(filePath, filename);
+});
+
+// POST /thumbnail-ai - Generate an AI thumbnail using DALL-E
+router.post('/thumbnail-ai', requireAuth, async (req, res) => {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(503).json({ error: 'OpenAI API key not configured.' });
+    }
+
+    const { analysisId, momentIndex, customPrompt, aspectRatio } = req.body;
+
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not found or unauthorized' });
+    }
+
+    let moments = analysis.moments;
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIndex];
+    if (!moment) return res.status(404).json({ error: 'Moment not found' });
+
+    // Fetch brand kit for style context
+    let brandKit = null;
+    try { brandKit = await brandKitOps.getByUserId(req.user.id); } catch (e) {}
+
+    const thumbTitle = (moment.title || 'Viral Moment').substring(0, 60);
+    const thumbHook = (moment.hook || '').substring(0, 100);
+    const ratio = aspectRatio || 'landscape'; // landscape (1792x1024) or portrait (1024x1792) or square (1024x1024)
+
+    const dalleSize = ratio === 'portrait' ? '1024x1792' : ratio === 'square' ? '1024x1024' : '1792x1024';
+
+    const filename = `aithumb_a${analysisId}_${Date.now()}.png`;
+    const outputPath = path.join(CLIPS_DIR, filename);
+
+    res.json({ success: true, status: 'processing', filename });
+
+    // Background processing
+    (async () => {
+      try {
+        // Build a smart prompt based on moment content
+        let dallePrompt;
+        if (customPrompt && customPrompt.trim()) {
+          dallePrompt = customPrompt.trim().substring(0, 900);
+        } else {
+          // Use GPT to craft an optimal DALL-E prompt from the moment
+          const brandContext = brandKit ? `Brand colors: ${brandKit.primary_color || '#6c5ce7'}, ${brandKit.secondary_color || '#FF0050'}. Brand name: ${brandKit.watermark_text || ''}.` : '';
+          const promptResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 300,
+            messages: [
+              { role: 'system', content: `You are a YouTube thumbnail designer. Given a video moment title and hook, generate a DALL-E image prompt for an eye-catching, click-worthy thumbnail. The thumbnail should be bold, vibrant, and attention-grabbing. Do NOT include any text or words or letters in the image — only visual elements. Focus on expressive imagery, dramatic lighting, bold colors, and visual metaphors that relate to the topic. ${brandContext}` },
+              { role: 'user', content: `Moment title: "${thumbTitle}"\nHook: "${thumbHook}"\nVideo topic: "${(analysis.video_title || '').substring(0, 100)}"\n\nGenerate a DALL-E prompt for a stunning thumbnail image. Remember: NO TEXT in the image.` }
+            ]
+          });
+          dallePrompt = (promptResponse.choices[0]?.message?.content || '').trim().substring(0, 900);
+        }
+
+        if (!dallePrompt) {
+          dallePrompt = `A vibrant, eye-catching YouTube thumbnail background about "${thumbTitle}". Bold colors, dramatic lighting, no text or letters.`;
+        }
+
+        console.log(`  AI Thumbnail: generating with DALL-E for "${thumbTitle}" (${dalleSize})`);
+        console.log(`  Prompt: ${dallePrompt.substring(0, 100)}...`);
+
+        // Generate with DALL-E 3
+        const imageResponse = await openai.images.generate({
+          model: 'dall-e-3',
+          prompt: dallePrompt,
+          n: 1,
+          size: dalleSize,
+          quality: 'standard',
+          response_format: 'url'
+        });
+
+        const imageUrl = imageResponse.data[0]?.url;
+        if (!imageUrl) throw new Error('No image URL returned from DALL-E');
+
+        // Download the generated image
+        const https = require('https');
+        await new Promise((resolve, reject) => {
+          const file = fs.createWriteStream(outputPath);
+          https.get(imageUrl, (response) => {
+            if (response.statusCode === 200) {
+              response.pipe(file);
+              file.on('finish', () => { file.close(); resolve(); });
+            } else {
+              reject(new Error(`Failed to download: ${response.statusCode}`));
+            }
+          }).on('error', reject);
+        });
+
+        // If ffmpeg is available, overlay the title text on the AI image
+        if (ffmpegAvailable) {
+          const tempAiImg = outputPath + '.temp_ai.png';
+          fs.renameSync(outputPath, tempAiImg);
+
+          const titleColor = (brandKit && brandKit.primary_color) || '#FFFFFF';
+          await applyThumbnailOverlay(tempAiImg, outputPath, thumbTitle, titleColor, '#000000', 72, 'gradient', brandKit);
+          try { fs.unlinkSync(tempAiImg); } catch(e) {}
+        }
+
+        console.log(`  AI Thumbnail generated: ${filename}`);
+      } catch (err) {
+        console.error('  AI Thumbnail generation failed:', err.message);
+        try { fs.writeFileSync(outputPath + '.error', err.message); } catch(e) {}
+      }
+    })();
+
+  } catch (error) {
+    console.error('Error generating AI thumbnail:', error);
+    res.status(500).json({ error: 'Failed to start AI thumbnail generation' });
+  }
 });
 
 // POST /clip - Generate a video clip for a specific moment
@@ -4887,8 +5001,8 @@ function renderShortsPage(user, analyses) {
                   style="accent-color:#FF0050; width:14px; height:14px;">
                 <span>Captions</span>
               </label>
-              <select id="clip-style-\${idx}" style="font-size:11px; padding:4px 6px; background:#1a1a2e; color:#ccc;
-                border:1px solid #333; border-radius:4px; cursor:pointer;" title="Clip style">
+              <select id="clip-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
+                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Clip style">
                 <option value="blur">Blur BG</option>
                 <option value="crop">Center Crop</option>
                 <option value="fit">Fit (Black BG)</option>
@@ -4909,12 +5023,13 @@ function renderShortsPage(user, analyses) {
                 onclick="openNarrationModal('\${id}', \${idx})">
                 🎙️ Narrate
               </button>
-              <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:#1a1a2e; color:#ccc;
-                border:1px solid #333; border-radius:4px; cursor:pointer;" title="Thumbnail style">
+              <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
+                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Thumbnail style">
                 <option value="gradient">Gradient</option>
                 <option value="dark">Dark Overlay</option>
                 <option value="border">Color Border</option>
                 <option value="split">Split Design</option>
+                <option value="ai">AI Generated</option>
               </select>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
                 class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
@@ -6196,26 +6311,35 @@ function renderShortsPage(user, analyses) {
     async function generateThumbnail(analysisId, momentIndex, btn) {
       const originalText = btn.textContent;
       btn.disabled = true;
-      btn.textContent = 'Generating...';
 
       const styleSelect = document.getElementById('thumb-style-' + momentIndex);
       const thumbStyle = styleSelect ? styleSelect.value : 'gradient';
+      const isAI = thumbStyle === 'ai';
+
+      btn.textContent = isAI ? 'AI Generating...' : 'Generating...';
 
       try {
-        const response = await fetch('/shorts/thumbnail', {
+        const endpoint = isAI ? '/shorts/thumbnail-ai' : '/shorts/thumbnail';
+        const payload = isAI
+          ? { analysisId, momentIndex, aspectRatio: 'landscape' }
+          : { analysisId, momentIndex, style: thumbStyle };
+
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex, style: thumbStyle })
+          body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         if (!data.success) throw new Error(data.error || 'Failed');
 
         const filename = data.filename;
-        btn.textContent = 'Processing...';
+        const downloadBase = isAI ? '/shorts/thumbnail/download/' : '/shorts/thumbnail/download/';
+        btn.textContent = isAI ? 'AI Creating...' : 'Processing...';
 
         // Poll for readiness
         let attempts = 0;
+        const maxAttempts = isAI ? 90 : 60; // AI takes longer
         const poll = setInterval(async () => {
           attempts++;
           try {
@@ -6228,12 +6352,17 @@ function renderShortsPage(user, analyses) {
             } else if (statusData.ready) {
               clearInterval(poll);
 
-              // Show preview + download link
-              const previewHtml = '<div style="margin-top:12px;background:#000;border-radius:8px;padding:12px;position:relative;" id="thumb-preview-' + momentIndex + '">' +
-                '<img src="/shorts/thumbnail/download/' + filename + '" style="width:100%;border-radius:6px;display:block;" alt="Thumbnail">' +
-                '<div style="margin-top:8px;display:flex;gap:8px;">' +
-                  '<a href="/shorts/thumbnail/download/' + filename + '" download="' + filename + '" class="btn btn-small" ' +
+              // Show preview + download link + regenerate button for AI
+              const aiLabel = isAI ? '<div style="position:absolute;top:20px;right:20px;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;padding:4px 10px;border-radius:12px;font-size:10px;font-weight:700;">AI GENERATED</div>' : '';
+              const regenBtn = isAI ? '<button class="btn btn-small" style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;font-size:11px;" onclick="generateThumbnail(\\'' + analysisId + '\\', ' + momentIndex + ', document.getElementById(\\'thumb-btn-' + momentIndex + '\\'))">Regenerate</button>' : '';
+
+              const previewHtml = '<div style="margin-top:12px;background:var(--surface-light);border:1px solid var(--border-subtle);border-radius:8px;padding:12px;position:relative;" id="thumb-preview-' + momentIndex + '">' +
+                aiLabel +
+                '<img src="' + downloadBase + filename + '" style="width:100%;border-radius:6px;display:block;" alt="Thumbnail">' +
+                '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
+                  '<a href="' + downloadBase + filename + '" download="' + filename + '" class="btn btn-small" ' +
                     'style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:11px;">Download</a>' +
+                  regenBtn +
                   '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:11px;" ' +
                     'onclick="document.getElementById(' + "'thumb-preview-" + momentIndex + "'" + ').remove()">Close</button>' +
                 '</div>' +
@@ -6246,10 +6375,12 @@ function renderShortsPage(user, analyses) {
               btn.closest('.moment-card').insertAdjacentHTML('beforeend', previewHtml);
               btn.disabled = false;
               btn.textContent = originalText;
-              showToast('Thumbnail generated!');
-            } else if (attempts >= 60) {
+              showToast(isAI ? 'AI Thumbnail generated!' : 'Thumbnail generated!');
+            } else if (attempts >= maxAttempts) {
               clearInterval(poll);
               throw new Error('Timed out');
+            } else {
+              btn.textContent = isAI ? ('AI Creating' + '.'.repeat((attempts % 3) + 1)) : ('Processing' + '.'.repeat((attempts % 3) + 1));
             }
           } catch (pollError) {
             clearInterval(poll);
