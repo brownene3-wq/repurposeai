@@ -1389,6 +1389,319 @@ router.post('/brand-kit', requireAuth, async (req, res) => {
   }
 });
 
+// POST /thumbnail - Generate a thumbnail for a moment
+router.post('/thumbnail', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) {
+      return res.status(503).json({ error: 'ffmpeg is not available on this server.' });
+    }
+
+    const { analysisId, momentIndex, style, titleText, titleColor, bgColor, fontSize } = req.body;
+
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not found or unauthorized' });
+    }
+
+    let moments = analysis.moments;
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIndex];
+    if (!moment) return res.status(404).json({ error: 'Moment not found' });
+
+    const videoId = extractVideoId(analysis.video_url);
+    if (!videoId) return res.status(400).json({ error: 'Invalid video URL' });
+
+    // Fetch brand kit for colors
+    let brandKit = null;
+    try { brandKit = await brandKitOps.getByUserId(req.user.id); } catch (e) {}
+
+    const thumbTitle = (titleText || moment.title || 'Viral Moment').substring(0, 60);
+    const thumbColor = titleColor || (brandKit && brandKit.primary_color) || '#FFFFFF';
+    const thumbBg = bgColor || '#000000';
+    const thumbFontSize = fontSize || 72;
+    const thumbStyle = style || 'gradient';
+    const filename = `thumb_${Date.now()}.jpg`;
+    const outputPath = path.join(CLIPS_DIR, filename);
+
+    // Parse time to get a frame
+    const rangeParts = (moment.timeRange || '').split('-');
+    const parseTime = (str) => {
+      const parts = (str || '').trim().split(':').map(Number);
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      return parts[0] || 0;
+    };
+    const startSec = parseTime(rangeParts[0]);
+    // Use a point slightly into the moment for a better frame
+    const frameSec = startSec + 2;
+
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+    res.json({ success: true, status: 'processing', filename });
+
+    // Background processing
+    (async () => {
+      try {
+        // Download a short segment for frame extraction
+        const tempVideo = outputPath + '.temp.mkv';
+        try { fs.unlinkSync(tempVideo); } catch(e) {}
+
+        // Try to download just a few seconds
+        let ytdlpPath = 'yt-dlp';
+        try { execSync('which yt-dlp', { stdio: 'pipe' }); } catch (e) {
+          // If yt-dlp not available, use YouTube thumbnail API as fallback
+          console.log('  yt-dlp not available for thumbnail, using YouTube API thumbnail');
+          // Generate thumbnail from YouTube's static image
+          const https = require('https');
+          const thumbUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+          const tempImg = outputPath + '.temp.jpg';
+
+          await new Promise((resolve, reject) => {
+            const file = fs.createWriteStream(tempImg);
+            https.get(thumbUrl, (response) => {
+              if (response.statusCode === 200) {
+                response.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+              } else {
+                // Fallback to mqdefault
+                https.get(`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`, (r2) => {
+                  r2.pipe(file);
+                  file.on('finish', () => { file.close(); resolve(); });
+                });
+              }
+            }).on('error', reject);
+          });
+
+          // Apply text overlay to downloaded thumbnail
+          await applyThumbnailOverlay(tempImg, outputPath, thumbTitle, thumbColor, thumbBg, thumbFontSize, thumbStyle, brandKit);
+          try { fs.unlinkSync(tempImg); } catch(e) {}
+          return;
+        }
+
+        // Download video segment
+        const runCmd = (cmd, args, opts = {}) => {
+          return new Promise((resolve, reject) => {
+            const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+            let stdout = '', stderr = '';
+            let settled = false;
+            const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+            proc.stdout.on('data', d => stdout += d.toString());
+            proc.stderr.on('data', d => stderr += d.toString());
+            proc.on('error', e => settle(reject, e));
+            proc.on('close', code => code === 0 ? settle(resolve, { stdout, stderr }) : settle(reject, new Error(stderr.slice(-300))));
+            const timer = opts.timeout ? setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} settle(reject, new Error('timeout')); }, opts.timeout) : null;
+          });
+        };
+
+        try {
+          await runCmd(ytdlpPath, [
+            '--no-playlist', '-f', 'bestvideo[height<=1080]/best[height<=1080]/best',
+            '--merge-output-format', 'mkv', '-o', tempVideo,
+            '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
+            '--extractor-args', 'youtube:player_client=web,android',
+            '--download-sections', `*${frameSec}-${frameSec + 5}`,
+            videoUrl
+          ], { timeout: 120000 });
+        } catch (dlErr) {
+          // download-sections might not be supported, download full and seek
+          try {
+            await runCmd(ytdlpPath, [
+              '--no-playlist', '-f', 'bestvideo[height<=1080]/best[height<=1080]/best',
+              '--merge-output-format', 'mkv', '-o', tempVideo,
+              '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
+              '--extractor-args', 'youtube:player_client=web,android',
+              videoUrl
+            ], { timeout: 180000 });
+          } catch (e2) {
+            console.error('  Thumbnail: video download failed, falling back to YT thumbnail');
+            // Fallback: use YouTube thumbnail
+            const https = require('https');
+            const tempImg = outputPath + '.temp.jpg';
+            await new Promise((resolve, reject) => {
+              const file = fs.createWriteStream(tempImg);
+              https.get(`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, (response) => {
+                if (response.statusCode === 200) {
+                  response.pipe(file);
+                  file.on('finish', () => { file.close(); resolve(); });
+                } else {
+                  https.get(`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`, (r2) => {
+                    r2.pipe(file);
+                    file.on('finish', () => { file.close(); resolve(); });
+                  });
+                }
+              }).on('error', reject);
+            });
+            await applyThumbnailOverlay(tempImg, outputPath, thumbTitle, thumbColor, thumbBg, thumbFontSize, thumbStyle, brandKit);
+            try { fs.unlinkSync(tempImg); } catch(e) {}
+            return;
+          }
+        }
+
+        // Find actual download
+        let actualVideo = tempVideo;
+        if (!fs.existsSync(tempVideo)) {
+          const base = outputPath + '.temp';
+          for (const ext of ['.mkv', '.mp4', '.webm']) {
+            if (fs.existsSync(base + ext)) { actualVideo = base + ext; break; }
+          }
+        }
+
+        if (!fs.existsSync(actualVideo)) {
+          console.error('  Thumbnail: downloaded video not found');
+          return;
+        }
+
+        // Extract frame at timestamp
+        const frameImg = outputPath + '.frame.jpg';
+        try {
+          await runCmd(ffmpegPath, [
+            '-y', '-ss', String(frameSec), '-i', actualVideo,
+            '-frames:v', '1', '-q:v', '2',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
+            frameImg
+          ], { timeout: 30000 });
+        } catch (e) {
+          // Try without seek (beginning of video)
+          await runCmd(ffmpegPath, [
+            '-y', '-i', actualVideo, '-frames:v', '1', '-q:v', '2',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
+            frameImg
+          ], { timeout: 30000 });
+        }
+
+        try { fs.unlinkSync(actualVideo); } catch(e) {}
+
+        // Apply text overlay
+        await applyThumbnailOverlay(frameImg, outputPath, thumbTitle, thumbColor, thumbBg, thumbFontSize, thumbStyle, brandKit);
+        try { fs.unlinkSync(frameImg); } catch(e) {}
+
+        console.log(`  Thumbnail generated: ${filename}`);
+      } catch (err) {
+        console.error('  Thumbnail generation failed:', err.message);
+        try { fs.writeFileSync(outputPath + '.error', err.message); } catch(e) {}
+      }
+    })();
+
+  } catch (error) {
+    console.error('Error generating thumbnail:', error);
+    res.status(500).json({ error: 'Failed to start thumbnail generation' });
+  }
+});
+
+// Helper: Apply text overlay to create a styled thumbnail
+async function applyThumbnailOverlay(inputImg, outputPath, title, titleColor, bgColor, fontSize, style, brandKit) {
+  const runCmd = (cmd, args, opts = {}) => {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '';
+      let settled = false;
+      const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+      proc.stdout.on('data', d => stdout += d.toString());
+      proc.stderr.on('data', d => stderr += d.toString());
+      proc.on('error', e => settle(reject, e));
+      proc.on('close', code => code === 0 ? settle(resolve, { stdout, stderr }) : settle(reject, new Error(stderr.slice(-300))));
+      const timer = opts.timeout ? setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} settle(reject, new Error('timeout')); }, opts.timeout) : null;
+    });
+  };
+
+  const safeTitle = title.replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/\\/g, '\\\\');
+  const cleanColor = (titleColor || '#FFFFFF').replace('#', '');
+  const wmText = (brandKit && brandKit.watermark_text) ? brandKit.watermark_text.replace(/'/g, "'\\''").replace(/:/g, '\\:') : '';
+
+  // Split title into lines if too long (max ~25 chars per line)
+  const words = title.split(' ');
+  let lines = [];
+  let currentLine = '';
+  for (const word of words) {
+    if ((currentLine + ' ' + word).trim().length > 25) {
+      if (currentLine) lines.push(currentLine.trim());
+      currentLine = word;
+    } else {
+      currentLine = (currentLine + ' ' + word).trim();
+    }
+  }
+  if (currentLine) lines.push(currentLine.trim());
+
+  // Build drawtext filter chain for each line
+  const lineHeight = Math.round(fontSize * 1.3);
+  const totalTextHeight = lines.length * lineHeight;
+  const startY = Math.round((1080 - totalTextHeight) / 2);
+
+  let textFilters = lines.map((line, i) => {
+    const safeLine = line.replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/\\/g, '\\\\');
+    const y = startY + (i * lineHeight);
+    return `drawtext=text='${safeLine.toUpperCase()}':fontsize=${fontSize}:fontcolor=${cleanColor}:` +
+           `borderw=4:bordercolor=black:font=Liberation Sans Bold:x=(w-text_w)/2:y=${y}`;
+  }).join(',');
+
+  let filterStr;
+  if (style === 'dark') {
+    // Dark overlay + centered text
+    filterStr = `scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,` +
+                `colorbalance=bs=-0.3:gs=-0.3:rs=-0.3,eq=brightness=-0.3:contrast=1.2,${textFilters}`;
+  } else if (style === 'border') {
+    // Colored border frame + text
+    const borderColor = (brandKit && brandKit.primary_color) || '#FF0050';
+    const bc = borderColor.replace('#', '');
+    filterStr = `scale=1860:1020:force_original_aspect_ratio=decrease,pad=1920:1080:30:30:${bc},${textFilters}`;
+  } else if (style === 'split') {
+    // Left half colored, right half video frame, text on left
+    filterStr = `scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,` +
+                `drawbox=x=0:y=0:w=iw/2:h=ih:color=${cleanColor}@0.85:t=fill,${textFilters}`;
+  } else {
+    // gradient: bottom gradient overlay + text in lower half
+    filterStr = `scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,` +
+                `drawbox=x=0:y=ih/2:w=iw:h=ih/2:color=black@0.7:t=fill,${textFilters}`;
+  }
+
+  // Add watermark if brand kit has one
+  if (wmText) {
+    const wmColor = (brandKit.primary_color || '#FFFFFF').replace('#', '');
+    filterStr += `,drawtext=text='${wmText}':fontsize=32:fontcolor=${wmColor}@0.5:x=w-tw-40:y=h-th-30:font=Liberation Sans`;
+  }
+
+  await runCmd(ffmpegPath, [
+    '-y', '-i', inputImg, '-vf', filterStr,
+    '-q:v', '2', '-frames:v', '1', outputPath
+  ], { timeout: 30000 });
+}
+
+// GET /thumbnail/status/:filename - Check if thumbnail is ready
+router.get('/thumbnail/status/:filename', requireAuth, (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(CLIPS_DIR, filename);
+  const errorPath = filePath + '.error';
+
+  if (fs.existsSync(errorPath)) {
+    const msg = fs.readFileSync(errorPath, 'utf8');
+    res.json({ ready: false, failed: true, message: msg });
+  } else if (fs.existsSync(filePath)) {
+    const stats = fs.statSync(filePath);
+    if (stats.size > 1000) {
+      res.json({ ready: true, size: stats.size, filename });
+    } else {
+      res.json({ ready: false, message: 'Generating...' });
+    }
+  } else {
+    res.json({ ready: false, message: 'Generating thumbnail...' });
+  }
+});
+
+// GET /thumbnail/download/:filename - Download generated thumbnail
+router.get('/thumbnail/download/:filename', requireAuth, (req, res) => {
+  const filename = path.basename(req.params.filename);
+  if (!filename.endsWith('.jpg')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(CLIPS_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Thumbnail not found' });
+  }
+  res.download(filePath, filename);
+});
+
 // POST /clip - Generate a video clip for a specific moment
 router.post('/clip', requireAuth, async (req, res) => {
   try {
@@ -2658,6 +2971,18 @@ function renderShortsPage(user, analyses) {
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
+              <button class="btn btn-small" id="thumb-btn-\${idx}"
+                style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); color: #fff; font-size: 11px;"
+                onclick="generateThumbnail('\${id}', \${idx}, this)">
+                Thumbnail
+              </button>
+              <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:#1a1a2e; color:#ccc;
+                border:1px solid #333; border-radius:4px; cursor:pointer;" title="Thumbnail style">
+                <option value="gradient">Gradient</option>
+                <option value="dark">Dark Overlay</option>
+                <option value="border">Color Border</option>
+                <option value="split">Split Design</option>
+              </select>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
                 class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
                 Open on YouTube
@@ -2964,6 +3289,80 @@ function renderShortsPage(user, analyses) {
         btn.disabled = false;
         btn.textContent = originalText;
         btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
+      }
+    }
+
+    // === Thumbnail Generation ===
+    async function generateThumbnail(analysisId, momentIndex, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+
+      const styleSelect = document.getElementById('thumb-style-' + momentIndex);
+      const thumbStyle = styleSelect ? styleSelect.value : 'gradient';
+
+      try {
+        const response = await fetch('/shorts/thumbnail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ analysisId, momentIndex, style: thumbStyle })
+        });
+
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'Failed');
+
+        const filename = data.filename;
+        btn.textContent = 'Processing...';
+
+        // Poll for readiness
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          try {
+            const statusResp = await fetch('/shorts/thumbnail/status/' + filename);
+            const statusData = await statusResp.json();
+
+            if (statusData.failed) {
+              clearInterval(poll);
+              throw new Error(statusData.message || 'Failed');
+            } else if (statusData.ready) {
+              clearInterval(poll);
+
+              // Show preview + download link
+              const previewHtml = '<div style="margin-top:12px;background:#000;border-radius:8px;padding:12px;position:relative;" id="thumb-preview-' + momentIndex + '">' +
+                '<img src="/shorts/thumbnail/download/' + filename + '" style="width:100%;border-radius:6px;display:block;" alt="Thumbnail">' +
+                '<div style="margin-top:8px;display:flex;gap:8px;">' +
+                  '<a href="/shorts/thumbnail/download/' + filename + '" download="' + filename + '" class="btn btn-small" ' +
+                    'style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:11px;">Download</a>' +
+                  '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:11px;" ' +
+                    'onclick="this.closest(\'[id^=thumb-preview]\').remove()">Close</button>' +
+                '</div>' +
+              '</div>';
+
+              // Remove old preview if any
+              const old = document.getElementById('thumb-preview-' + momentIndex);
+              if (old) old.remove();
+
+              btn.closest('.moment-card').insertAdjacentHTML('beforeend', previewHtml);
+              btn.disabled = false;
+              btn.textContent = originalText;
+              showToast('Thumbnail generated!');
+            } else if (attempts >= 60) {
+              clearInterval(poll);
+              throw new Error('Timed out');
+            }
+          } catch (pollError) {
+            clearInterval(poll);
+            showToast('Error: ' + pollError.message);
+            btn.disabled = false;
+            btn.textContent = originalText;
+          }
+        }, 2000);
+
+      } catch (error) {
+        showToast(error.message || 'Failed to generate thumbnail');
+        btn.disabled = false;
+        btn.textContent = originalText;
       }
     }
 
