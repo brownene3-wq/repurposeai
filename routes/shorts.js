@@ -3018,6 +3018,10 @@ function renderShortsPage(user, analyses) {
           Workflow Templates
         </button>
         <div id="workflowPanel" style="display:none; margin-top:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <p style="color:#888;font-size:13px;">Select a workflow to auto-configure clip settings</p>
+            <button class="btn btn-small" onclick="toggleWorkflows()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
+          </div>
           <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">
             <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-tiktok')">
               <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x266C;</div>
@@ -3088,7 +3092,10 @@ function renderShortsPage(user, analyses) {
           Batch Analyze (Multiple Videos)
         </button>
         <div id="batchPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
-          <h3 style="margin-bottom:8px; font-size:16px; font-weight:600;">Batch Video Analysis</h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h3 style="font-size:16px; font-weight:600;">Batch Video Analysis</h3>
+            <button class="btn btn-small" onclick="toggleBatchInput()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
+          </div>
           <p style="color:#888; font-size:13px; margin-bottom:16px;">Paste up to 10 YouTube URLs (one per line) to analyze them all at once.</p>
           <textarea id="batchUrls" rows="6" placeholder="https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=..."
             style="width:100%; padding:12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:13px; resize:vertical; font-family:monospace;"></textarea>
@@ -3107,7 +3114,10 @@ function renderShortsPage(user, analyses) {
           Brand Kit Settings
         </button>
         <div id="brandKitPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
-          <h3 style="margin-bottom:16px; font-size:16px; font-weight:600;">Brand Kit</h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h3 style="font-size:16px; font-weight:600;">Brand Kit</h3>
+            <button class="btn btn-small" onclick="toggleBrandKit()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
+          </div>
           <p style="color:#888; font-size:13px; margin-bottom:20px;">Customize your clips with your brand identity. Watermark text appears on all generated clips.</p>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
             <div>
