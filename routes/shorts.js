@@ -1096,6 +1096,7 @@ router.post('/clip', requireAuth, async (req, res) => {
     const safeTitle = (moment.title || 'clip').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
     const filename = `${safeTitle}_${Date.now()}.mp4`;
     const outputPath = path.join(CLIPS_DIR, filename);
+    const tempOutputPath = outputPath + '.encoding.mp4'; // Encode to temp file, rename when done
 
     // Send initial response
     res.json({
@@ -1136,141 +1137,109 @@ router.post('/clip', requireAuth, async (req, res) => {
           return;
         }
 
-        // Download full video, then use ffmpeg for seeking/cutting/cropping/encoding.
-        // This avoids yt-dlp's --download-sections which produces broken timestamps.
-        // Use mkv as intermediate format since it handles any codec combination reliably.
+        // === STEP 1: Download full video ===
+        // Use yt-dlp's --download-sections to get just the section we need (faster than full video)
+        // but output as MKV to handle any codec
         const tempDownload = outputPath + '.temp.mkv';
-        const ytdlpArgs = [
-          '--no-playlist',
-          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-          '--merge-output-format', 'mkv',
-          '-o', tempDownload,
-          '--no-warnings',
-          '--no-check-certificates',
-          '--no-part',
-          '--force-overwrites',
-          videoUrl
-        ];
 
-        console.log(`  Running yt-dlp: downloading full video`);
-        const ytdlpProc = spawn(ytdlpPath, ytdlpArgs);
+        // Clean up any previous temp files
+        try { fs.unlinkSync(tempDownload); } catch(e) {}
 
-        let stderrLog = '';
-        ytdlpProc.stdout.on('data', (data) => {
-          const msg = data.toString().trim();
-          console.log(`  yt-dlp: ${msg}`);
-          const pctMatch = msg.match(/(\d+\.?\d*)%/);
-          if (pctMatch) {
-            writeProgress(`Downloading: ${Math.round(parseFloat(pctMatch[1]))}%`);
+        writeProgress('Downloading video...');
+        console.log(`  Downloading video section: start=${startSec}s, dur=${duration}s`);
+
+        try {
+          // Use execSync for download so we can properly chain operations
+          const dlCmd = [
+            ytdlpPath,
+            '--no-playlist',
+            '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+            '--merge-output-format', 'mkv',
+            '-o', tempDownload,
+            '--no-warnings',
+            '--no-check-certificates',
+            '--no-part',
+            '--force-overwrites',
+            videoUrl
+          ].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+
+          console.log('  Running yt-dlp...');
+          execSync(dlCmd, { timeout: 240000, stdio: 'pipe', shell: true });
+        } catch (dlErr) {
+          clearTimeout(timeout);
+          console.error('  yt-dlp failed:', dlErr.stderr ? dlErr.stderr.toString().slice(-500) : dlErr.message);
+          writeError('Video download failed. Please try again.');
+          return;
+        }
+
+        // Find the actual downloaded file
+        let actualDownload = tempDownload;
+        if (!fs.existsSync(tempDownload)) {
+          const base = outputPath + '.temp';
+          for (const ext of ['.mkv', '.mp4', '.webm']) {
+            if (fs.existsSync(base + ext)) { actualDownload = base + ext; break; }
           }
-        });
+        }
 
-        ytdlpProc.stderr.on('data', (data) => {
-          stderrLog += data.toString();
-          if (stderrLog.length > 2048) stderrLog = stderrLog.slice(-2048);
-        });
+        if (!fs.existsSync(actualDownload)) {
+          clearTimeout(timeout);
+          writeError('Downloaded file not found. Please try again.');
+          return;
+        }
 
-        ytdlpProc.on('close', (code) => {
-          if (code !== 0) {
-            clearTimeout(timeout);
-            try { fs.unlinkSync(progressPath); } catch (e) {}
-            console.error('yt-dlp stderr:', stderrLog.slice(-800));
-            writeError('Video download failed. Please try again.');
-            return;
-          }
+        const dlSize = fs.statSync(actualDownload).size;
+        console.log(`  Downloaded: ${(dlSize / 1024 / 1024).toFixed(1)}MB`);
 
-          // Find the actual downloaded file (yt-dlp may change extension)
-          let actualDownload = tempDownload;
-          if (!fs.existsSync(tempDownload)) {
-            // Try common extensions yt-dlp might produce
-            const base = outputPath + '.temp';
-            const exts = ['.mkv', '.mp4', '.webm', '.mp4.mkv'];
-            for (const ext of exts) {
-              if (fs.existsSync(base + ext)) { actualDownload = base + ext; break; }
-            }
-            if (!fs.existsSync(actualDownload)) {
-              // Broader search
-              const baseName = path.basename(outputPath, '.mp4');
-              const files = fs.readdirSync(CLIPS_DIR);
-              const match = files.find(f => f.includes(baseName) && f.includes('.temp'));
-              if (match) {
-                actualDownload = path.join(CLIPS_DIR, match);
-              } else {
-                console.error('  Downloaded file not found. Files in dir:', fs.readdirSync(CLIPS_DIR).filter(f => f.includes(baseName)).join(', '));
-                writeError('Downloaded file not found. Please try again.');
-                return;
-              }
-            }
-          }
+        // === STEP 2: Single ffmpeg command - seek, cut, crop, encode ===
+        // Use -ss BEFORE -i for fast seeking, output directly to H.264/AAC MP4
+        // This is the simplest and most reliable approach
+        writeProgress('Creating vertical clip...');
 
-          const dlSize = fs.statSync(actualDownload).size;
-          console.log(`  Downloaded: ${(dlSize / 1024 / 1024).toFixed(1)}MB`);
-          writeProgress('Creating vertical clip...');
+        const ffmpegCmd = [
+          ffmpegPath,
+          '-y',
+          '-ss', String(startSec),
+          '-i', actualDownload,
+          '-t', String(duration),
+          '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
+          '-c:v', 'libx264',
+          '-profile:v', 'high',
+          '-level', '4.0',
+          '-pix_fmt', 'yuv420p',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-ar', '44100',
+          '-ac', '2',
+          '-preset', 'fast',
+          '-crf', '18',
+          '-movflags', '+faststart',
+          '-max_muxing_queue_size', '2048',
+          tempOutputPath
+        ].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
 
-          // Two-step approach for reliable clip generation:
-          // Step 2a: Extract the segment (fast seek + stream copy = fast, preserves all data)
-          // Step 2b: Re-encode to vertical H.264 for QuickTime
+        console.log('  Running ffmpeg...');
 
-          // Use .mkv for segment since it handles any codec (VP9, AV1, H.264, etc.)
-          const segmentPath = outputPath + '.segment.mkv';
+        try {
+          execSync(ffmpegCmd, { timeout: 120000, stdio: 'pipe', shell: true });
+          console.log('  ffmpeg completed successfully');
+        } catch (ffErr) {
+          const ffStderr = ffErr.stderr ? ffErr.stderr.toString().slice(-1000) : '';
+          console.error('  ffmpeg failed:', ffStderr);
 
-          // Step 2a: Extract segment with stream copy (very fast)
-          const extractArgs = [
-            '-ss', String(startSec),
-            '-i', actualDownload,
-            '-t', String(duration),
-            '-c', 'copy',
-            '-avoid_negative_ts', 'make_zero',
-            '-y',
-            segmentPath
-          ];
-          console.log('  ffmpeg extract:', extractArgs.join(' '));
+          // Clean up failed temp output
+          try { fs.unlinkSync(tempOutputPath); } catch(e) {}
 
-          const ffmpegExtract = spawn(ffmpegPath, extractArgs);
-          let extractStderr = '';
-          ffmpegExtract.stderr.on('data', (d) => { extractStderr += d.toString(); if (extractStderr.length > 4096) extractStderr = extractStderr.slice(-4096); });
+          // If fast seek failed, try with -ss AFTER -i (slower but handles edge cases)
+          console.log('  Retrying with accurate seek...');
+          writeProgress('Encoding (retry)...');
 
-          ffmpegExtract.on('close', (extractCode) => {
-            if (extractCode !== 0 || !fs.existsSync(segmentPath) || fs.statSync(segmentPath).size < 1000) {
-              console.error('  Segment extraction failed (code ' + extractCode + '):', extractStderr.slice(-500));
-              // Fallback: try with -ss after -i (slower but more reliable for some containers)
-              console.log('  Retrying with slow seek...');
-              const fallbackArgs = [
-                '-i', actualDownload,
-                '-ss', String(startSec),
-                '-t', String(duration),
-                '-c', 'copy',
-                '-avoid_negative_ts', 'make_zero',
-                '-y',
-                segmentPath
-              ];
-              const fallbackProc = spawn(ffmpegPath, fallbackArgs);
-              let fbStderr = '';
-              fallbackProc.stderr.on('data', (d) => { fbStderr += d.toString(); });
-              fallbackProc.on('close', (fbCode) => {
-                if (fbCode !== 0 || !fs.existsSync(segmentPath) || fs.statSync(segmentPath).size < 1000) {
-                  console.error('  Fallback extraction also failed:', fbStderr.slice(-500));
-                  clearTimeout(timeout);
-                  try { fs.unlinkSync(actualDownload); } catch(e) {}
-                  writeError('Failed to extract video segment. Please try again.');
-                  return;
-                }
-                encodeSegment();
-              });
-              fallbackProc.on('error', (e) => { writeError('Extraction error: ' + e.message); });
-              return;
-            }
-            console.log(`  Segment extracted: ${(fs.statSync(segmentPath).size / 1024 / 1024).toFixed(1)}MB`);
-            encodeSegment();
-          });
-
-          ffmpegExtract.on('error', (err) => { writeError('Extraction error: ' + err.message); });
-
-          // Step 2b: Re-encode segment to vertical H.264
-          function encodeSegment() {
-            writeProgress('Encoding vertical clip...');
-            const encodeArgs = [
-              '-i', segmentPath,
+          try {
+            const retryCmd = [
+              ffmpegPath,
+              '-y',
+              '-i', actualDownload,
+              '-ss', String(startSec),
+              '-t', String(duration),
               '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
               '-c:v', 'libx264',
               '-profile:v', 'high',
@@ -1280,76 +1249,65 @@ router.post('/clip', requireAuth, async (req, res) => {
               '-b:a', '128k',
               '-ar', '44100',
               '-ac', '2',
-              '-preset', 'medium',
+              '-preset', 'fast',
               '-crf', '18',
               '-movflags', '+faststart',
-              '-brand', 'mp42',
-              '-max_muxing_queue_size', '1024',
-              '-y',
-              outputPath
-            ];
-            console.log('  ffmpeg encode:', encodeArgs.join(' '));
-            const ffmpegCrop = spawn(ffmpegPath, encodeArgs);
+              '-max_muxing_queue_size', '2048',
+              tempOutputPath
+            ].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
 
-            let ffmpegStderr = '';
-            ffmpegCrop.stderr.on('data', (data) => {
-              ffmpegStderr += data.toString();
-              if (ffmpegStderr.length > 4096) ffmpegStderr = ffmpegStderr.slice(-4096);
-              const msg = data.toString();
-              if (msg.includes('time=')) {
-                const timeMatch = msg.match(/time=(\S+)/);
-                if (timeMatch) writeProgress(`Encoding: ${timeMatch[1]}`);
-              }
-            });
+            execSync(retryCmd, { timeout: 180000, stdio: 'pipe', shell: true });
+            console.log('  ffmpeg retry succeeded');
+          } catch (retryErr) {
+            clearTimeout(timeout);
+            console.error('  ffmpeg retry also failed:', retryErr.stderr ? retryErr.stderr.toString().slice(-500) : retryErr.message);
+            try { fs.unlinkSync(tempOutputPath); } catch(e) {}
+            try { fs.unlinkSync(actualDownload); } catch(e) {}
+            writeError('Video encoding failed. Please try again.');
+            return;
+          }
+        }
 
-            ffmpegCrop.on('close', (ffCode) => {
-              clearTimeout(timeout);
+        // Clean up temp download
+        try { fs.unlinkSync(actualDownload); } catch(e) {}
+
+        // === STEP 3: Validate output and atomically rename to final path ===
+        clearTimeout(timeout);
+
+        if (fs.existsSync(tempOutputPath)) {
+          const size = fs.statSync(tempOutputPath).size;
+          const minSize = 50000; // 50KB minimum for a valid video
+
+          console.log(`  Temp output size: ${size} bytes`);
+
+          if (size > minSize) {
+            // Check for valid MP4 header
+            const fd = fs.openSync(tempOutputPath, 'r');
+            const header = Buffer.alloc(12);
+            fs.readSync(fd, header, 0, 12, 0);
+            fs.closeSync(fd);
+            const ftyp = header.toString('ascii', 4, 8);
+
+            if (ftyp === 'ftyp') {
+              // Atomically rename temp file to final output path
+              // This ensures the status endpoint never sees a partial file
+              fs.renameSync(tempOutputPath, outputPath);
+              // NOW remove the progress file to signal completion
               try { fs.unlinkSync(progressPath); } catch (e) {}
-              // Clean up all temp files
-              try { fs.unlinkSync(segmentPath); } catch (e) {}
-              try { fs.unlinkSync(actualDownload); } catch (e) {}
-              if (actualDownload !== tempDownload) {
-                try { fs.unlinkSync(tempDownload); } catch (e) {}
-              }
-
-              if (ffCode === 0 && fs.existsSync(outputPath)) {
-                const size = fs.statSync(outputPath).size;
-                // Validate: check the file has valid moov atom (not just ftyp header)
-                // A proper MP4 must be at least ~10KB for even a few seconds of video
-                const minSize = 10000; // 10KB minimum
-                const fd = fs.openSync(outputPath, 'r');
-                const header = Buffer.alloc(8);
-                fs.readSync(fd, header, 0, 8, 0);
-                fs.closeSync(fd);
-                const ftyp = header.toString('ascii', 4, 8);
-
-                if (size > minSize && ftyp === 'ftyp') {
-                  console.log(`  Clip ready: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB, ftyp OK)`);
-                } else {
-                  console.error(`  Invalid output: size=${size} (min ${minSize}), ftyp='${ftyp}'`);
-                  console.error('  ffmpeg stderr:', ffmpegStderr.slice(-800));
-                  try { fs.unlinkSync(outputPath); } catch (e) {}
-                  writeError('Video encoding produced invalid file (too small). Please try again.');
-                }
-              } else {
-                console.error('  ffmpeg failed (code ' + ffCode + '):', ffmpegStderr.slice(-800));
-                writeError(`Video encoding failed (code ${ffCode}). Please try again.`);
-              }
-            });
-
-            ffmpegCrop.on('error', (err) => {
-              clearTimeout(timeout);
-              try { fs.unlinkSync(segmentPath); } catch (e) {}
-              try { fs.unlinkSync(actualDownload); } catch (e) {}
-              writeError('Encoding error: ' + err.message);
-            });
-          } // end encodeSegment()
-        });
-
-        ytdlpProc.on('error', (err) => {
-          clearTimeout(timeout);
-          writeError('Download error: ' + err.message);
-        });
+              console.log(`  Clip ready: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
+            } else {
+              console.error(`  Invalid header: ftyp='${ftyp}', size=${size}`);
+              try { fs.unlinkSync(tempOutputPath); } catch (e) {}
+              writeError('Video encoding produced invalid file. Please try again.');
+            }
+          } else {
+            console.error(`  Output too small: ${size} bytes (need >${minSize})`);
+            try { fs.unlinkSync(tempOutputPath); } catch (e) {}
+            writeError('Video encoding produced empty file. Please try again.');
+          }
+        } else {
+          writeError('Video encoding produced no output. Please try again.');
+        }
 
       } catch (err) {
         clearTimeout(timeout);
@@ -1380,11 +1338,16 @@ router.get('/clip/status/:filename', requireAuth, (req, res) => {
 
   if (fs.existsSync(filePath)) {
     const stats = fs.statSync(filePath);
-    if (stats.size > 0) {
-      try { fs.unlinkSync(progressPath); } catch (e) {}
+    // Only report ready if: file has real content AND no progress file (encoding complete)
+    const stillProcessing = fs.existsSync(progressPath);
+    if (stats.size > 10000 && !stillProcessing) {
       res.json({ ready: true, size: stats.size, filename });
+    } else if (stillProcessing) {
+      let progressMsg = 'Still processing...';
+      try { progressMsg = fs.readFileSync(progressPath, 'utf8') || progressMsg; } catch (e) {}
+      res.json({ ready: false, message: progressMsg });
     } else {
-      res.json({ ready: false, message: 'Still processing...' });
+      res.json({ ready: false, message: 'Finalizing...' });
     }
   } else {
     // Check for progress file
