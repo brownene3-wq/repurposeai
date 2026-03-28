@@ -4636,7 +4636,15 @@ function renderShortsPage(user, analyses) {
           '</div>';
 
         if (data.message) {
-          html += '<p style="font-size:12px;color:#f39c12;margin-bottom:12px;padding:8px;background:rgba(243,156,18,0.08);border-radius:6px;">' + data.message + '</p>';
+          html += '<div style="margin-bottom:14px;padding:12px;background:rgba(243,156,18,0.08);border:1px solid rgba(243,156,18,0.2);border-radius:8px;">' +
+            '<p style="font-size:13px;color:#f39c12;margin:0 0 8px 0;font-weight:600;">How to use Auto B-Roll:</p>' +
+            '<div style="font-size:12px;color:#ccc;line-height:1.6;">' +
+              '<p style="margin:0 0 4px 0;">1. Click <strong style="color:#a29bfe;">"Browse on Pexels"</strong> for each scene below</p>' +
+              '<p style="margin:0 0 4px 0;">2. Find the video you like on Pexels and download it</p>' +
+              '<p style="margin:0 0 8px 0;">3. Add it to your video at the suggested timestamp</p>' +
+              '<p style="margin:0;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);font-size:11px;color:#888;">Want auto-previews + one-click downloads? Add a free <strong>PEXELS_API_KEY</strong> in your Railway environment variables. Get one at <a href="https://www.pexels.com/api/" target="_blank" style="color:#a29bfe;">pexels.com/api</a></p>' +
+            '</div>' +
+          '</div>';
         }
 
         if (data.scenes && data.scenes.length > 0) {
@@ -4695,12 +4703,12 @@ function renderShortsPage(user, analyses) {
               }
 
             } else {
-              // No Pexels key — show search link
-              html += '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;">' +
-                '<span style="font-size:24px;">🔍</span>' +
-                '<div>' +
-                  '<p style="font-size:12px;color:#aaa;margin:0;">Search: <strong style="color:#f39c12;">' + scene.search_query + '</strong></p>' +
-                  '<a href="' + scene.searchUrl + '" target="_blank" style="font-size:11px;color:#a29bfe;">Browse on Pexels &rarr;</a>' +
+              // No Pexels key — show prominent search button
+              html += '<div style="display:flex;align-items:center;gap:12px;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;">' +
+                '<a href="' + scene.searchUrl + '" target="_blank" class="btn btn-small" style="font-size:12px;background:linear-gradient(135deg,#f39c12,#e67e22);color:#fff;text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:8px 14px;flex-shrink:0;">🔍 Browse on Pexels</a>' +
+                '<div style="flex:1;">' +
+                  '<p style="font-size:12px;color:#e0e0e0;margin:0;">Search: <strong style="color:#f39c12;">' + scene.search_query + '</strong></p>' +
+                  '<p style="font-size:10px;color:#666;margin:2px 0 0 0;">Click to find and download matching B-Roll</p>' +
                 '</div>' +
               '</div>';
             }
