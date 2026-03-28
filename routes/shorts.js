@@ -2414,12 +2414,14 @@ router.post('/clip', requireAuth, async (req, res) => {
             '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else if (style === 'pip') {
-          // Picture-in-Picture: full video large + small original in corner
-          // Use lanczos scaling for higher quality background + sharpen to compensate for upscale
+          // Picture-in-Picture: blurred background + large sharp video + small PiP corner
+          // Uses blur background (like TikTok/Reels) to avoid quality loss from upscaling
           videoFilter = [
-            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,unsharp=3:3:0.5:3:3:0.5[bg]',
-            '[0:v]scale=440:-2:flags=lanczos,setsar=1[pip]',
-            '[bg][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter
+            '[0:v]scale=270:-2,boxblur=10:4,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1[main]',
+            '[bg][main]overlay=(W-w)/2:(H-h)/2[combined]',
+            '[0:v]scale=320:-2:flags=lanczos,setsar=1[pip]',
+            '[combined][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else {
           // Default: blur background (most popular for repurposed content)
@@ -2813,7 +2815,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
         } else if (style === 'fit') {
           videoFilter = ['color=c=black:s=1080x1920:r=30[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else if (style === 'pip') {
-          videoFilter = ['[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,unsharp=3:3:0.5:3:3:0.5[bg]', '[0:v]scale=440:-2:flags=lanczos,setsar=1[pip]', '[bg][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter].join(';');
+          videoFilter = ['[0:v]scale=270:-2,boxblur=10:4,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1[main]', '[bg][main]overlay=(W-w)/2:(H-h)/2[combined]', '[0:v]scale=320:-2:flags=lanczos,setsar=1[pip]', '[combined][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else {
           videoFilter = ['[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter + watermarkFilter].join(';');
         }
