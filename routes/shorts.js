@@ -1227,6 +1227,47 @@ router.post('/generate', requireAuth, async (req, res) => {
           "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
           "postingTips": "LinkedIn engagement strategy",
           "callToAction": "Professional CTA"
+        }`,
+
+        blog: `Write a compelling blog post based on this video moment: "${moment.script}"
+        Video title: "${analysis.video_title || 'Untitled'}"
+
+        Generate a JSON object with:
+        {
+          "title": "SEO-optimized blog post title",
+          "hook": "Attention-grabbing opening paragraph (2-3 sentences)",
+          "script": "Full blog post body (500-800 words, well-structured with subheadings marked with ##). Write in an engaging, conversational tone. Include insights, examples, and actionable takeaways.",
+          "caption": "Meta description for SEO (150-160 chars)",
+          "hashtags": ["keyword1", "keyword2", "keyword3"],
+          "postingTips": "SEO and distribution tips",
+          "outline": "Brief outline of the post structure"
+        }`,
+
+        newsletter: `Create an engaging email newsletter section based on this video moment: "${moment.script}"
+        Video title: "${analysis.video_title || 'Untitled'}"
+
+        Generate a JSON object with:
+        {
+          "title": "Compelling email subject line",
+          "hook": "Preview text / opening hook (1-2 sentences)",
+          "script": "Full newsletter body (300-500 words). Write in a personal, conversational tone. Include a story angle, key insights, and a clear call-to-action. Format with short paragraphs.",
+          "caption": "Preview text for email",
+          "hashtags": ["topic1", "topic2"],
+          "postingTips": "Email timing and segmentation tips",
+          "callToAction": "Clear CTA with link placeholder"
+        }`,
+
+        thread: `Create a viral Twitter/X thread (5-8 tweets) based on this video moment: "${moment.script}"
+        Video title: "${analysis.video_title || 'Untitled'}"
+
+        Generate a JSON object with:
+        {
+          "hook": "Thread opener tweet - must be curiosity-inducing (max 280 chars)",
+          "script": "Tweet 2 through 7, separated by \\n\\n---\\n\\n between each tweet. Each tweet must be under 280 characters. Build narrative tension. End with a call-to-action tweet.",
+          "caption": "Quote tweet text for sharing the thread",
+          "hashtags": ["hashtag1", "hashtag2"],
+          "postingTips": "Thread posting strategy (timing, replies, engagement)",
+          "threadStructure": "Numbered outline of each tweet's purpose"
         }`
       };
 
@@ -2488,56 +2529,204 @@ function renderShortsPage(user, analyses) {
     }
 
     async function generateContent(analysisId, momentId) {
-      const platforms = ['tiktok', 'instagram', 'shorts', 'twitter', 'linkedin'];
+      // Show content type selector
+      const html = \`
+        <div class="modal-header">
+          <h2 class="modal-title">Generate Content</h2>
+        </div>
+        <div style="padding: 16px;">
+          <p style="color: var(--text-muted); margin-bottom: 16px;">Choose what to generate:</p>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px;">
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="tiktok" checked style="accent-color:#FF0050;"> TikTok
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="instagram" checked style="accent-color:#FF0050;"> Instagram
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="shorts" checked style="accent-color:#FF0050;"> YT Shorts
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="twitter" checked style="accent-color:#FF0050;"> Twitter/X
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="linkedin" checked style="accent-color:#FF0050;"> LinkedIn
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="thread" style="accent-color:#FF0050;"> X Thread
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="blog" style="accent-color:#FF0050;"> Blog Post
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
+              <input type="checkbox" class="content-type-cb" value="newsletter" style="accent-color:#FF0050;"> Newsletter
+            </label>
+          </div>
+          <button class="btn btn-primary" id="gen-content-btn" onclick="doGenerateContent('\${analysisId}', '\${momentId}')"
+            style="width:100%;">
+            Generate Selected Content
+          </button>
+        </div>
+      \`;
+      document.getElementById('modalBody').innerHTML = html;
+      document.getElementById('analysisModal').classList.add('active');
+    }
 
-      showToast('Generating content for all platforms...');
+    async function doGenerateContent(analysisId, momentId) {
+      const checkboxes = document.querySelectorAll('.content-type-cb:checked');
+      const platforms = Array.from(checkboxes).map(cb => cb.value);
+      if (platforms.length === 0) { showToast('Select at least one content type'); return; }
+
+      const btn = document.getElementById('gen-content-btn');
+      btn.disabled = true;
+      btn.textContent = 'Generating ' + platforms.length + ' pieces...';
 
       try {
         const response = await fetch('/shorts/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            momentId,
-            analysisId,
-            platforms
-          })
+          body: JSON.stringify({ momentId, analysisId, platforms })
         });
 
         const data = await response.json();
         if (data.success) {
           showGeneratedContent(data.content);
+        } else {
+          throw new Error(data.error || 'Generation failed');
         }
       } catch (error) {
         showToast('Error: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = 'Generate Selected Content';
       }
     }
 
+    let _generatedContent = [];
+
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#10b981';
+        setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1500);
+      });
+    }
+
+    function copyField(panelIdx, field) {
+      const item = _generatedContent[panelIdx];
+      if (!item) return;
+      let text = '';
+      if (field === 'hook') text = item.hook || '';
+      else if (field === 'script') text = item.script || '';
+      else if (field === 'caption') text = item.caption || '';
+      else if (field === 'all') {
+        text = [item.hook, item.script, (item.hashtags||[]).map(h => h.startsWith('#') ? h : '#'+h).join(' ')].filter(Boolean).join('\\n\\n');
+      }
+      const btn = event.target;
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#10b981';
+        setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1500);
+      });
+    }
+
     function showGeneratedContent(content) {
+      _generatedContent = content;
+      const platformLabels = {
+        tiktok: 'TikTok', instagram: 'Instagram', shorts: 'YT Shorts',
+        twitter: 'Twitter/X', linkedin: 'LinkedIn', blog: 'Blog Post',
+        newsletter: 'Newsletter', thread: 'X Thread'
+      };
+      const platformColors = {
+        tiktok: '#FF0050', instagram: '#E1306C', shorts: '#FF0000',
+        twitter: '#000', linkedin: '#0077B5', blog: '#6c5ce7',
+        newsletter: '#f39c12', thread: '#1DA1F2'
+      };
+
+      // Build tabs
+      const tabs = content.map((item, i) => \`
+        <button class="content-tab" data-idx="\${i}"
+          style="padding:8px 14px; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;
+            background:\${i === 0 ? platformColors[item.platform] || '#6c5ce7' : 'rgba(255,255,255,0.08)'};
+            color:\${i === 0 ? '#fff' : 'var(--text-muted)'};"
+          onclick="switchContentTab(\${i})">
+          \${platformLabels[item.platform] || item.platform}
+        </button>
+      \`).join('');
+
+      // Build content panels
+      const panels = content.map((item, i) => {
+        const isLong = ['blog', 'newsletter', 'thread'].includes(item.platform);
+        const escHtml = (s) => (s||'N/A').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+        return \`
+          <div class="content-panel" id="content-panel-\${i}" style="display:\${i === 0 ? 'block' : 'none'};">
+            \${item.title ? '<h3 style="margin-bottom:12px;color:#fff;">' + escHtml(item.title) + '</h3>' : ''}
+
+            <div style="background:#0a0a0a;padding:14px;border-radius:8px;margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:11px;color:#888;text-transform:uppercase;">Hook</span>
+                <button class="btn btn-small" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,0.1);"
+                  onclick="copyField(\${i},'hook')">Copy</button>
+              </div>
+              <div style="font-size:14px;font-weight:600;">\${escHtml(item.hook)}</div>
+            </div>
+
+            <div style="background:#0a0a0a;padding:14px;border-radius:8px;margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:11px;color:#888;text-transform:uppercase;">\${isLong ? 'Full Content' : 'Script'}</span>
+                <button class="btn btn-small" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,0.1);"
+                  onclick="copyField(\${i},'script')">Copy</button>
+              </div>
+              <div style="font-size:13px;line-height:1.7;white-space:pre-wrap;\${isLong ? 'max-height:300px;overflow-y:auto;' : ''}">\${escHtml(item.script)}</div>
+            </div>
+
+            <div style="background:#0a0a0a;padding:14px;border-radius:8px;margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:11px;color:#888;text-transform:uppercase;">Caption / Description</span>
+                <button class="btn btn-small" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,0.1);"
+                  onclick="copyField(\${i},'caption')">Copy</button>
+              </div>
+              <div style="font-size:13px;">\${escHtml(item.caption)}</div>
+            </div>
+
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              \${(item.hashtags || []).map(h => '<span style="background:rgba(108,92,231,0.2);color:#a29bfe;padding:3px 8px;border-radius:4px;font-size:12px;">' + (h.startsWith('#') ? h : '#' + h) + '</span>').join('')}
+            </div>
+
+            \${item.postingTips ? '<div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:6px;font-size:12px;color:var(--text-muted);margin-bottom:10px;"><strong>Tips:</strong> ' + escHtml(item.postingTips) + '</div>' : ''}
+
+            <button class="btn btn-primary" style="width:100%;margin-top:4px;"
+              onclick="copyField(\${i},'all')">
+              Copy All Content
+            </button>
+          </div>
+        \`;
+      }).join('');
+
       const html = \`
         <div class="modal-header">
           <h2 class="modal-title">Generated Content</h2>
         </div>
-        <div style="max-height: 400px; overflow-y: auto;">
-          \${content.map(item => \`
-            <div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #222;">
-              <h4 style="text-transform: capitalize; margin-bottom: 12px; color: #6c5ce7;">\${item.platform}</h4>
-              <div style="background: #0a0a0a; padding: 12px; border-radius: 8px; margin-bottom: 8px;">
-                <div style="font-size: 12px; color: #888; margin-bottom: 4px;">Hook:</div>
-                <div style="font-size: 14px;">\${item.hook || 'N/A'}</div>
-              </div>
-              <div style="background: #0a0a0a; padding: 12px; border-radius: 8px; margin-bottom: 8px;">
-                <div style="font-size: 12px; color: #888; margin-bottom: 4px;">Script:</div>
-                <div style="font-size: 13px; line-height: 1.6;">\${(item.script || 'N/A').substring(0, 200)}...</div>
-              </div>
-              <div style="background: #0a0a0a; padding: 12px; border-radius: 8px;">
-                <div style="font-size: 12px; color: #888; margin-bottom: 4px;">Hashtags:</div>
-                <div style="font-size: 13px;">\${(item.hashtags || []).join(' ')}</div>
-              </div>
-            </div>
-          \`).join('')}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 12px;border-bottom:1px solid #222;">
+          \${tabs}
+        </div>
+        <div style="padding:16px;max-height:500px;overflow-y:auto;">
+          \${panels}
         </div>
       \`;
       document.getElementById('modalBody').innerHTML = html;
+    }
+
+    function switchContentTab(idx) {
+      document.querySelectorAll('.content-panel').forEach((p, i) => {
+        p.style.display = i === idx ? 'block' : 'none';
+      });
+      document.querySelectorAll('.content-tab').forEach((t, i) => {
+        t.style.background = i === idx ? t.dataset.color || '#6c5ce7' : 'rgba(255,255,255,0.08)';
+        t.style.color = i === idx ? '#fff' : 'var(--text-muted)';
+      });
     }
 
     async function downloadClip(analysisId, momentIndex, btn) {
