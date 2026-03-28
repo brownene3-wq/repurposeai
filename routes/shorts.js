@@ -1590,6 +1590,76 @@ router.get('/export/:analysisId', requireAuth, async (req, res) => {
   }
 });
 
+// POST /broll-suggestions - Get B-Roll stock footage suggestions for a moment
+router.post('/broll-suggestions', requireAuth, async (req, res) => {
+  try {
+    const { analysisId, momentIndex } = req.body;
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not found or unauthorized' });
+    }
+
+    let moments = analysis.moments;
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIndex];
+    if (!moment) return res.status(404).json({ error: 'Moment not found' });
+
+    // Use AI to generate search queries from moment context
+    const keywords = (moment.keyThemes || []).slice(0, 3);
+    const searchQueries = keywords.length > 0 ? keywords : [moment.title.split(' ').slice(0, 3).join(' ')];
+
+    const pexelsKey = process.env.PEXELS_API_KEY;
+    if (!pexelsKey) {
+      // Return mock suggestions with Pexels search URLs
+      const suggestions = searchQueries.map(query => ({
+        query,
+        videos: [],
+        searchUrl: `https://www.pexels.com/search/videos/${encodeURIComponent(query)}/`
+      }));
+      return res.json({
+        success: true,
+        suggestions,
+        message: 'Add PEXELS_API_KEY to get video previews. Browse suggestions on Pexels for now.'
+      });
+    }
+
+    // Fetch from Pexels Video API
+    const suggestions = [];
+    for (const query of searchQueries) {
+      try {
+        const pxResp = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=4&size=small`, {
+          headers: { 'Authorization': pexelsKey }
+        });
+        if (pxResp.ok) {
+          const pxData = await pxResp.json();
+          const videos = (pxData.videos || []).map(v => ({
+            id: v.id,
+            duration: v.duration,
+            thumbnail: v.image,
+            url: v.url,
+            videoFiles: (v.video_files || [])
+              .filter(f => f.quality === 'sd' || f.quality === 'hd')
+              .slice(0, 2)
+              .map(f => ({ quality: f.quality, link: f.link, width: f.width, height: f.height })),
+            user: v.user ? v.user.name : 'Pexels'
+          }));
+          suggestions.push({ query, videos, searchUrl: `https://www.pexels.com/search/videos/${encodeURIComponent(query)}/` });
+        }
+      } catch (e) {
+        console.error('Pexels API error for query:', query, e.message);
+        suggestions.push({ query, videos: [], searchUrl: `https://www.pexels.com/search/videos/${encodeURIComponent(query)}/` });
+      }
+    }
+
+    res.json({ success: true, suggestions });
+  } catch (error) {
+    console.error('B-Roll suggestions error:', error);
+    res.status(500).json({ error: 'Failed to get B-Roll suggestions' });
+  }
+});
+
 // === Content Calendar API ===
 router.get('/calendar', requireAuth, async (req, res) => {
   try {
@@ -3393,6 +3463,11 @@ function renderShortsPage(user, analyses) {
                 onclick="generateThumbnail('\${id}', \${idx}, this)">
                 Thumbnail
               </button>
+              <button class="btn btn-small" id="broll-btn-\${idx}"
+                style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: #fff; font-size: 11px;"
+                onclick="findBRoll('\${id}', \${idx}, this)">
+                B-Roll
+              </button>
               <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:#1a1a2e; color:#ccc;
                 border:1px solid #333; border-radius:4px; cursor:pointer;" title="Thumbnail style">
                 <option value="gradient">Gradient</option>
@@ -4122,6 +4197,72 @@ function renderShortsPage(user, analyses) {
     function exportAllClips(analysisId) {
       showToast('Preparing ZIP download...');
       window.location.href = '/shorts/export/' + analysisId;
+    }
+
+    // === B-Roll Finder ===
+    async function findBRoll(analysisId, momentIndex, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Searching...';
+
+      try {
+        const resp = await fetch('/shorts/broll-suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ analysisId, momentIndex })
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Build B-Roll panel
+        let html = '<div style="margin-top:12px;background:rgba(243,156,18,0.05);border:1px solid rgba(243,156,18,0.2);border-radius:8px;padding:12px;" id="broll-panel-' + momentIndex + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+            '<h4 style="font-size:14px;color:#f39c12;">B-Roll Suggestions</h4>' +
+            '<button class="btn btn-small" style="font-size:10px;background:rgba(255,255,255,0.1);" onclick="this.closest(\'[id^=broll-panel]\').remove()">Close</button>' +
+          '</div>';
+
+        if (data.message) {
+          html += '<p style="font-size:12px;color:#888;margin-bottom:10px;">' + data.message + '</p>';
+        }
+
+        data.suggestions.forEach(s => {
+          html += '<div style="margin-bottom:10px;">' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Search: <strong style="color:#f39c12;">' + s.query + '</strong>' +
+            ' <a href="' + s.searchUrl + '" target="_blank" style="color:#a29bfe;font-size:11px;">Browse on Pexels &rarr;</a></div>';
+
+          if (s.videos && s.videos.length > 0) {
+            html += '<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;">';
+            s.videos.forEach(v => {
+              html += '<div style="flex-shrink:0;width:140px;">' +
+                '<a href="' + v.url + '" target="_blank" style="display:block;">' +
+                  '<img src="' + v.thumbnail + '" style="width:140px;height:80px;object-fit:cover;border-radius:6px;display:block;" alt="B-Roll">' +
+                '</a>' +
+                '<div style="font-size:10px;color:#888;margin-top:3px;">' + v.duration + 's - ' + v.user + '</div>' +
+                (v.videoFiles && v.videoFiles[0] ? '<a href="' + v.videoFiles[0].link + '" target="_blank" style="font-size:10px;color:#a29bfe;">Download ' + v.videoFiles[0].quality.toUpperCase() + '</a>' : '') +
+              '</div>';
+            });
+            html += '</div>';
+          } else {
+            html += '<p style="font-size:11px;color:#666;">No preview available. Click "Browse on Pexels" to search manually.</p>';
+          }
+          html += '</div>';
+        });
+
+        html += '</div>';
+
+        // Remove old panel if exists
+        const old = document.getElementById('broll-panel-' + momentIndex);
+        if (old) old.remove();
+
+        btn.closest('.moment-card').insertAdjacentHTML('beforeend', html);
+        btn.disabled = false;
+        btn.textContent = originalText;
+
+      } catch (error) {
+        showToast(error.message || 'Failed to find B-Roll');
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
 
     // === Thumbnail Generation ===
