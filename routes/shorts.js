@@ -4589,7 +4589,8 @@ function renderShortsPage(user, analyses) {
         });
 
         const secs = line.time.split(':').reduce((a,b) => a*60 + parseInt(b), 0);
-        const ytLink = videoId ? " onclick=\"window.open(" + "'" + "https://youtube.com/watch?v=" + videoId + "&t=" + secs + "'" + ", " + "'" + "_blank" + "'" + ")\"" : '';
+        const sq = String.fromCharCode(39);
+        const ytLink = videoId ? ' onclick="window.open(' + sq + 'https://youtube.com/watch?v=' + videoId + '&t=' + secs + sq + ', ' + sq + '_blank' + sq + ')"' : '';
 
         return '<div class="transcript-line" style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;"' + ytLink + '>' +
           '<span style="color:#6c5ce7;font-size:12px;font-family:monospace;white-space:nowrap;min-width:65px;">' + line.time + '</span>' +
