@@ -59,7 +59,126 @@ function buildTranscriptText(segments) {
 async function fetchTranscriptInnerTube(videoId) {
   console.log('  InnerTube: Fetching transcript for', videoId);
 
-  // Step 1: Get the video page to extract API key and initial data
+  // Use InnerTube player API directly to get caption tracks - no HTML scraping needed
+  // This bypasses YouTube's bot detection on the video page
+  const apiKey = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
+  // Step 1: Get player data with caption tracks via InnerTube API
+  console.log('  InnerTube: Calling player API');
+  const playerResp = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'X-YouTube-Client-Name': '1',
+      'X-YouTube-Client-Version': '2.20240101.00.00',
+      'Origin': 'https://www.youtube.com',
+      'Referer': 'https://www.youtube.com/',
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20240101.00.00',
+          hl: 'en',
+          gl: 'US',
+        }
+      },
+      videoId: videoId
+    })
+  });
+
+  if (!playerResp.ok) throw new Error(`InnerTube player API returned ${playerResp.status}`);
+  const playerData = await playerResp.json();
+
+  // Check for playability issues
+  const playability = playerData?.playabilityStatus?.status;
+  console.log('  InnerTube: Playability status:', playability);
+
+  // Extract caption tracks from player response
+  const captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+  console.log(`  InnerTube: Found ${captionTracks.length} caption tracks`);
+
+  if (captionTracks.length > 0) {
+    console.log('  Caption tracks:', captionTracks.map(t => `${t.languageCode}(${t.kind||'manual'})`).join(', '));
+
+    // Prefer English auto-generated, then English manual, then any
+    let track = captionTracks.find(t => (t.languageCode || '').startsWith('en') && t.kind === 'asr');
+    if (!track) track = captionTracks.find(t => (t.languageCode || '').startsWith('en'));
+    if (!track) track = captionTracks.find(t => t.kind === 'asr');
+    if (!track) track = captionTracks[0];
+
+    let subtitleUrl = track.baseUrl;
+    if (!subtitleUrl) throw new Error('Caption track has no URL');
+
+    console.log(`  Using track: ${track.languageCode} (${track.kind || 'manual'})`);
+
+    // Try JSON3 format first (most structured)
+    let segments = [];
+    const json3Url = subtitleUrl + (subtitleUrl.includes('?') ? '&' : '?') + 'fmt=json3';
+    console.log('  Fetching JSON3 captions...');
+    try {
+      const subResp = await fetch(json3Url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+      });
+      if (subResp.ok) {
+        const subText = await subResp.text();
+        try {
+          const json = JSON.parse(subText);
+          const events = json.events || [];
+          for (const event of events) {
+            if (event.segs && event.tStartMs !== undefined) {
+              const text = event.segs.map(s => s.utf8 || '').join('').trim();
+              if (text && text !== '\n') {
+                segments.push({ offset: event.tStartMs, text: text.replace(/\n/g, ' ') });
+              }
+            }
+          }
+        } catch(e) {
+          console.log('  JSON3 parse failed, trying XML in same response...');
+          // Response might be XML
+          const textMatches = subText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
+          for (const m of textMatches) {
+            const startMs = Math.round(parseFloat(m[1]) * 1000);
+            const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+            if (text) segments.push({ offset: startMs, text });
+          }
+        }
+      }
+    } catch(e) {
+      console.log('  JSON3 fetch error:', e.message);
+    }
+
+    // Fall back to plain XML subtitle URL
+    if (segments.length === 0) {
+      console.log('  Trying XML captions...');
+      try {
+        const xmlResp = await fetch(subtitleUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (xmlResp.ok) {
+          const xmlText = await xmlResp.text();
+          const textMatches = xmlText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
+          for (const m of textMatches) {
+            const startMs = Math.round(parseFloat(m[1]) * 1000);
+            const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+            if (text) segments.push({ offset: startMs, text });
+          }
+        }
+      } catch(e) {
+        console.log('  XML fetch error:', e.message);
+      }
+    }
+
+    if (segments.length > 0) {
+      console.log(`  InnerTube: Got ${segments.length} transcript segments from caption tracks`);
+      return segments;
+    }
+  }
+
+  // Step 2: Try the get_transcript endpoint (for engagement panel transcript)
+  // First need to get the page to find the continuation token
+  console.log('  InnerTube: Caption tracks empty, trying page scraping for transcript panel...');
   const pageUrl = `https://www.youtube.com/watch?v=${videoId}`;
   const pageResp = await fetch(pageUrl, {
     headers: {
@@ -71,24 +190,82 @@ async function fetchTranscriptInnerTube(videoId) {
 
   if (!pageResp.ok) throw new Error(`YouTube page returned ${pageResp.status}`);
   const pageHtml = await pageResp.text();
+  console.log(`  InnerTube: Got page HTML (${pageHtml.length} bytes)`);
 
-  // Extract API key
-  const apiKeyMatch = pageHtml.match(/"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/);
-  const apiKey = apiKeyMatch ? apiKeyMatch[1] : 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'; // fallback public key
+  // Also try to extract caption tracks from HTML as fallback
+  let htmlCaptionTracks;
+  const startIdx = pageHtml.indexOf('"captionTracks":');
+  if (startIdx !== -1) {
+    const arrStart = pageHtml.indexOf('[', startIdx);
+    if (arrStart !== -1 && arrStart < startIdx + 30) {
+      let depth = 0, arrEnd = arrStart;
+      for (let i = arrStart; i < pageHtml.length && i < arrStart + 100000; i++) {
+        if (pageHtml[i] === '[') depth++;
+        if (pageHtml[i] === ']') depth--;
+        if (depth === 0) { arrEnd = i + 1; break; }
+      }
+      try {
+        htmlCaptionTracks = JSON.parse(pageHtml.substring(arrStart, arrEnd));
+        console.log(`  Found ${htmlCaptionTracks.length} caption tracks in HTML`);
+      } catch(e) {
+        console.log('  captionTracks parse error:', e.message);
+      }
+    }
+  }
 
-  // Extract serialized share entity for transcript panel (engagement panels)
-  // Look for the transcript button/panel params
-  const paramsMatch = pageHtml.match(/"serializedShareEntity"\s*:\s*"([^"]+)"/);
+  // Try fetching from HTML caption tracks
+  if (htmlCaptionTracks && htmlCaptionTracks.length > 0) {
+    let track = htmlCaptionTracks.find(t => (t.languageCode || '').startsWith('en'));
+    if (!track) track = htmlCaptionTracks.find(t => t.kind === 'asr');
+    if (!track) track = htmlCaptionTracks[0];
 
-  // Try to find the continuation token for transcript from engagement panels
+    let subtitleUrl = track.baseUrl;
+    if (subtitleUrl) {
+      let segments = [];
+      const json3Url = subtitleUrl + (subtitleUrl.includes('?') ? '&' : '?') + 'fmt=json3';
+      try {
+        const subResp = await fetch(json3Url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (subResp.ok) {
+          const subText = await subResp.text();
+          try {
+            const json = JSON.parse(subText);
+            for (const event of (json.events || [])) {
+              if (event.segs && event.tStartMs !== undefined) {
+                const text = event.segs.map(s => s.utf8 || '').join('').trim();
+                if (text && text !== '\n') {
+                  segments.push({ offset: event.tStartMs, text: text.replace(/\n/g, ' ') });
+                }
+              }
+            }
+          } catch(e) {
+            const textMatches = subText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
+            for (const m of textMatches) {
+              const startMs = Math.round(parseFloat(m[1]) * 1000);
+              const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+              if (text) segments.push({ offset: startMs, text });
+            }
+          }
+        }
+      } catch(e) {
+        console.log('  HTML caption fetch error:', e.message);
+      }
+
+      if (segments.length > 0) {
+        console.log(`  InnerTube/HTML captions: Got ${segments.length} transcript segments`);
+        return segments;
+      }
+    }
+  }
+
+  // Try transcript panel continuation token
   let continuationToken = null;
   const engagementIdx = pageHtml.indexOf('"engagementPanels"');
   if (engagementIdx !== -1) {
-    // Look for transcript panel continuation
     const searchArea = pageHtml.substring(engagementIdx, engagementIdx + 50000);
     const contMatch = searchArea.match(/"continuation"\s*:\s*"([^"]+)"[^}]*?"label"\s*:\s*"[^"]*[Tt]ranscript/);
     if (!contMatch) {
-      // Try alternative pattern
       const altMatch = searchArea.match(/Show transcript.*?"continuation"\s*:\s*"([^"]+)"/s);
       if (altMatch) continuationToken = altMatch[1];
     } else {
@@ -96,11 +273,9 @@ async function fetchTranscriptInnerTube(videoId) {
     }
   }
 
-  // Also try to find continuation in a broader search
   if (!continuationToken) {
     const allConts = pageHtml.matchAll(/"continuation"\s*:\s*"([^"]{50,})"/g);
     for (const m of allConts) {
-      // Transcript continuations tend to be longer
       if (m[1].length > 100) {
         continuationToken = m[1];
         break;
@@ -108,9 +283,8 @@ async function fetchTranscriptInnerTube(videoId) {
     }
   }
 
-  // Step 2: Try fetching via InnerTube get_transcript endpoint
   if (continuationToken) {
-    console.log('  InnerTube: Found continuation token, fetching transcript');
+    console.log('  InnerTube: Found continuation token, fetching transcript panel');
     const transcriptResp = await fetch(`https://www.youtube.com/youtubei/v1/get_transcript?key=${apiKey}`, {
       method: 'POST',
       headers: {
@@ -133,8 +307,6 @@ async function fetchTranscriptInnerTube(videoId) {
     if (transcriptResp.ok) {
       const data = await transcriptResp.json();
       const segments = [];
-
-      // Parse transcript segments from response
       const body = data?.actions?.[0]?.updateEngagementPanelAction?.content?.transcriptRenderer?.body?.transcriptBodyRenderer?.cueGroups ||
                    data?.actions?.[0]?.updateEngagementPanelAction?.content?.transcriptRenderer?.content?.transcriptSearchPanelRenderer?.body?.transcriptSegmentListRenderer?.initialSegments ||
                    [];
@@ -151,98 +323,13 @@ async function fetchTranscriptInnerTube(videoId) {
       }
 
       if (segments.length > 0) {
-        console.log(`  InnerTube: Got ${segments.length} transcript segments`);
+        console.log(`  InnerTube: Got ${segments.length} transcript segments from panel`);
         return segments;
       }
-      console.log('  InnerTube: get_transcript returned empty segments');
     }
   }
 
-  // Step 3: Fall back to captionTracks extraction (original Strategy A logic)
-  // Extract caption tracks using bracket-counting
-  let captionTracks;
-  const startIdx = pageHtml.indexOf('"captionTracks":');
-  if (startIdx !== -1) {
-    const arrStart = pageHtml.indexOf('[', startIdx);
-    if (arrStart !== -1 && arrStart < startIdx + 30) {
-      let depth = 0, arrEnd = arrStart;
-      for (let i = arrStart; i < pageHtml.length && i < arrStart + 100000; i++) {
-        if (pageHtml[i] === '[') depth++;
-        if (pageHtml[i] === ']') depth--;
-        if (depth === 0) { arrEnd = i + 1; break; }
-      }
-      try {
-        captionTracks = JSON.parse(pageHtml.substring(arrStart, arrEnd));
-      } catch(e) {
-        console.log('  captionTracks parse error:', e.message);
-      }
-    }
-  }
-
-  if (!captionTracks || captionTracks.length === 0) {
-    throw new Error('No caption tracks found in YouTube page');
-  }
-
-  console.log(`  Found ${captionTracks.length} caption tracks:`, captionTracks.map(t => `${t.languageCode}(${t.kind||'manual'})`).join(', '));
-
-  // Prefer English
-  let track = captionTracks.find(t => (t.languageCode || '').startsWith('en'));
-  if (!track) track = captionTracks.find(t => t.kind === 'asr');
-  if (!track) track = captionTracks[0];
-
-  let subtitleUrl = track.baseUrl;
-  if (!subtitleUrl) throw new Error('Caption track has no URL');
-
-  // Try JSON3 format first
-  const json3Url = subtitleUrl + (subtitleUrl.includes('?') ? '&' : '?') + 'fmt=json3';
-  const subResp = await fetch(json3Url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-  });
-
-  let segments = [];
-  if (subResp.ok) {
-    const subText = await subResp.text();
-    try {
-      const json = JSON.parse(subText);
-      const events = json.events || [];
-      for (const event of events) {
-        if (event.segs && event.tStartMs !== undefined) {
-          const text = event.segs.map(s => s.utf8 || '').join('').trim();
-          if (text && text !== '\n') {
-            segments.push({ offset: event.tStartMs, text: text.replace(/\n/g, ' ') });
-          }
-        }
-      }
-    } catch(e) {
-      // Try XML parsing
-      const textMatches = subText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
-      for (const m of textMatches) {
-        const startMs = Math.round(parseFloat(m[1]) * 1000);
-        const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
-        if (text) segments.push({ offset: startMs, text });
-      }
-    }
-  }
-
-  // If JSON3 failed, try plain XML
-  if (segments.length === 0) {
-    const xmlResp = await fetch(subtitleUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    if (xmlResp.ok) {
-      const xmlText = await xmlResp.text();
-      const textMatches = xmlText.matchAll(/<text start="([\d.]+)"[^>]*>(.*?)<\/text>/g);
-      for (const m of textMatches) {
-        const startMs = Math.round(parseFloat(m[1]) * 1000);
-        const text = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
-        if (text) segments.push({ offset: startMs, text });
-      }
-    }
-  }
-
-  if (segments.length === 0) throw new Error('All caption parsing methods returned empty');
-  console.log(`  InnerTube/captions: Got ${segments.length} transcript segments`);
-  return segments;
+  throw new Error('InnerTube: No transcript available from any method');
 }
 
 // Helper: Fetch transcript directly from YouTube's timedtext API (legacy)
@@ -469,10 +556,14 @@ async function fetchTranscriptWithYtdlp(videoId) {
 
   const baseArgs = ['--skip-download', '--no-warnings', '--no-check-certificates', '-o', outTemplate, videoUrl];
 
+  // Use extractor-args to try different YouTube player clients for better compatibility
+  const extraArgs = ['--extractor-args', 'youtube:player_client=web,android'];
+
   // Strategy 1: English auto-generated + manual subs in json3 (wildcard for en variants)
   console.log('  Trying: English json3 subtitles (wildcard)');
   let subFile = await tryYtdlpSubtitles(videoId, [
     '--skip-download', '--no-warnings', '--no-check-certificates',
+    ...extraArgs,
     '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en', '--sub-format', 'json3',
     '-o', outTemplate, videoUrl
   ], tmpDir);
@@ -482,6 +573,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
     console.log('  Trying: English vtt subtitles (wildcard)');
     subFile = await tryYtdlpSubtitles(videoId, [
       '--skip-download', '--no-warnings', '--no-check-certificates',
+      ...extraArgs,
       '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en', '--sub-format', 'vtt',
       '-o', outTemplate, videoUrl
     ], tmpDir);
@@ -492,6 +584,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
     console.log('  Trying: Any language auto-generated subtitles');
     subFile = await tryYtdlpSubtitles(videoId, [
       '--skip-download', '--no-warnings', '--no-check-certificates',
+      ...extraArgs,
       '--write-auto-subs', '--sub-langs', 'all', '--sub-format', 'json3',
       '-o', outTemplate, videoUrl
     ], tmpDir);
@@ -502,6 +595,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
     console.log('  Trying: Any manual subtitles');
     subFile = await tryYtdlpSubtitles(videoId, [
       '--skip-download', '--no-warnings', '--no-check-certificates',
+      ...extraArgs,
       '--write-subs', '--sub-langs', 'all', '--sub-format', 'json3',
       '-o', outTemplate, videoUrl
     ], tmpDir);
