@@ -1528,7 +1528,30 @@ function formatTimestampCompat(totalSeconds) {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
 }
 
-// GET /export/:analysisId - Export all clips from an analysis as ZIP
+// GET /analysis/:id - Get analysis data (used by client-side export)
+router.get('/analysis/:id', requireAuth, async (req, res) => {
+  try {
+    const analysis = await shortsOps.getById(req.params.id);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Analysis not found' });
+    }
+    let moments = analysis.moments || [];
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    res.json({
+      id: analysis.id,
+      video_title: analysis.video_title,
+      video_url: analysis.video_url,
+      moments
+    });
+  } catch (err) {
+    console.error('Get analysis error:', err);
+    res.status(500).json({ error: 'Failed to load analysis' });
+  }
+});
+
+// GET /export/:analysisId - Export all clips from an analysis as ZIP (legacy)
 router.get('/export/:analysisId', requireAuth, async (req, res) => {
   try {
     const analysis = await shortsOps.getById(req.params.analysisId);
@@ -2416,10 +2439,12 @@ router.post('/clip', requireAuth, async (req, res) => {
         } else if (style === 'pip') {
           // Picture-in-Picture: cropped background + small PiP in top-right corner
           // Uses two -i inputs of same file to avoid split filter deadlocks
+          // Background gets unsharp mask to recover sharpness lost in the crop-zoom
+          // PiP corner shows original framing with rounded appearance at 384x216
           videoFilter = [
-            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[bg]',
-            '[1:v]scale=384:216,setsar=1[pip]',
-            '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter
+            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,unsharp=5:5:0.8:5:5:0.4,setsar=1[bg]',
+            '[1:v]scale=384:216:flags=lanczos,setsar=1[pip]',
+            '[bg][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else {
           // Default: blur background (most popular for repurposed content)
@@ -2817,7 +2842,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
         } else if (style === 'fit') {
           videoFilter = ['color=c=black:s=1080x1920:r=30[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else if (style === 'pip') {
-          videoFilter = ['[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[bg]', '[1:v]scale=384:216,setsar=1[pip]', '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter].join(';');
+          videoFilter = ['[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,unsharp=5:5:0.8:5:5:0.4,setsar=1[bg]', '[1:v]scale=384:216:flags=lanczos,setsar=1[pip]', '[bg][pip]overlay=W-w-20:20,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else {
           videoFilter = ['[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter + watermarkFilter].join(';');
         }
@@ -3547,6 +3572,7 @@ function renderShortsPage(user, analyses) {
       }
     }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body class="dashboard">
   ${getThemeToggle()}
@@ -4948,29 +4974,89 @@ function renderShortsPage(user, analyses) {
     }
 
     async function exportAllClips(analysisId) {
-      showToast('Preparing ZIP download...');
+      // Client-side ZIP: generates each clip, downloads it, and bundles into ZIP
+      // This works reliably even after server restarts since clips are generated fresh
+      const exportBtn = document.querySelector('[onclick*="exportAllClips"]');
+      if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = 'Generating clips...'; }
+
       try {
-        const resp = await fetch('/shorts/export/' + analysisId);
-        if (!resp.ok) {
-          const data = await resp.json().catch(() => ({}));
-          showToast(data.error || 'Export failed. Generate some clips first!', true);
+        // Get analysis data to find all moments
+        const analysisResp = await fetch('/shorts/analysis/' + analysisId);
+        if (!analysisResp.ok) throw new Error('Could not load analysis');
+        const analysis = await analysisResp.json();
+        const moments = analysis.moments || [];
+        if (moments.length === 0) { showToast('No moments found to export', true); return; }
+
+        // Get current settings
+        const styleSelect = document.querySelector('select[onchange*="clipStyle"]') || {};
+        const captionsCheckbox = document.querySelector('input[type="checkbox"][onchange*="captions"]');
+        const clipStyle = styleSelect.value || 'blur';
+        const includeCaptions = captionsCheckbox ? captionsCheckbox.checked : true;
+
+        const zip = new JSZip();
+        let completed = 0;
+
+        for (let i = 0; i < moments.length; i++) {
+          const moment = moments[i];
+          if (exportBtn) exportBtn.textContent = 'Clip ' + (i+1) + '/' + moments.length + '...';
+          showToast('Generating clip ' + (i+1) + ' of ' + moments.length + ': ' + (moment.title || 'Clip'));
+
+          // Request clip generation
+          const genResp = await fetch('/shorts/clip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ analysisId, momentIndex: i, includeCaptions, clipStyle })
+          });
+          if (!genResp.ok) { console.error('Clip ' + i + ' generation failed'); continue; }
+          const genData = await genResp.json();
+          if (!genData.success) { console.error('Clip ' + i + ':', genData.error); continue; }
+
+          // Poll until ready (max 5 min per clip)
+          const filename = genData.filename;
+          let ready = false;
+          for (let attempt = 0; attempt < 150; attempt++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const statusResp = await fetch('/shorts/clip/status/' + filename);
+            const status = await statusResp.json();
+            if (status.failed) { console.error('Clip ' + i + ' failed:', status.message); break; }
+            if (status.ready) { ready = true; break; }
+            if (status.message && exportBtn) exportBtn.textContent = 'Clip ' + (i+1) + '/' + moments.length + ': ' + status.message;
+          }
+
+          if (!ready) continue;
+
+          // Download clip blob and add to ZIP
+          const clipResp = await fetch('/shorts/clip/download/' + filename);
+          if (clipResp.ok) {
+            const blob = await clipResp.blob();
+            const safeName = (moment.title || 'clip_' + (i+1)).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0,40);
+            zip.file(safeName + '.mp4', blob);
+            completed++;
+          }
+        }
+
+        if (completed === 0) {
+          showToast('No clips were generated successfully', true);
           return;
         }
-        // Download the ZIP blob
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
+
+        // Generate and download ZIP
+        if (exportBtn) exportBtn.textContent = 'Creating ZIP...';
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(zipBlob);
         const a = document.createElement('a');
-        const disposition = resp.headers.get('Content-Disposition') || '';
-        const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
-        a.download = filenameMatch ? filenameMatch[1] : 'clips_export.zip';
+        const safeTitle = (analysis.video_title || 'export').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0,30);
+        a.download = safeTitle + '_clips.zip';
         a.href = url;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast('ZIP downloaded!');
+        showToast(completed + ' clips exported as ZIP!');
       } catch (err) {
         showToast('Export failed: ' + err.message, true);
+      } finally {
+        if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export All (ZIP)'; }
       }
     }
 
