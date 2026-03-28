@@ -5056,7 +5056,7 @@ function renderShortsPage(user, analyses) {
       const tabs = content.map((item, i) => \`
         <button class="content-tab" data-idx="\${i}"
           style="padding:8px 14px; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;
-            background:\${i === 0 ? platformColors[item.platform] || '#6c5ce7' : 'rgba(255,255,255,0.08)'};
+            background:\${i === 0 ? platformColors[item.platform] || '#6c5ce7' : 'var(--surface-light)'};
             color:\${i === 0 ? '#fff' : 'var(--text-muted)'};"
           onclick="switchContentTab(\${i})">
           \${platformLabels[item.platform] || item.platform}
@@ -5070,33 +5070,33 @@ function renderShortsPage(user, analyses) {
 
         return \`
           <div class="content-panel" id="content-panel-\${i}" style="display:\${i === 0 ? 'block' : 'none'};">
-            \${item.title ? '<h3 style="margin-bottom:12px;color:#fff;">' + escHtml(item.title) + '</h3>' : ''}
+            \${item.title ? '<h3 style="margin-bottom:12px;color:var(--text);">' + escHtml(item.title) + '</h3>' : ''}
 
-            <div style="background:#0a0a0a;padding:14px;border-radius:8px;margin-bottom:10px;">
+            <div style="background:var(--surface-light);padding:14px;border-radius:8px;margin-bottom:10px;border:var(--border-subtle);">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <span style="font-size:11px;color:#888;text-transform:uppercase;">Hook</span>
                 <button class="btn btn-small" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,0.1);"
                   onclick="copyField(\${i},'hook')">Copy</button>
               </div>
-              <div style="font-size:14px;font-weight:600;">\${escHtml(item.hook)}</div>
+              <div style="font-size:14px;font-weight:600;color:var(--text);">\${escHtml(item.hook)}</div>
             </div>
 
-            <div style="background:#0a0a0a;padding:14px;border-radius:8px;margin-bottom:10px;">
+            <div style="background:var(--surface-light);padding:14px;border-radius:8px;margin-bottom:10px;border:var(--border-subtle);">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <span style="font-size:11px;color:#888;text-transform:uppercase;">\${isLong ? 'Full Content' : 'Script'}</span>
                 <button class="btn btn-small" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,0.1);"
                   onclick="copyField(\${i},'script')">Copy</button>
               </div>
-              <div style="font-size:13px;line-height:1.7;white-space:pre-wrap;\${isLong ? 'max-height:300px;overflow-y:auto;' : ''}">\${escHtml(item.script)}</div>
+              <div style="font-size:13px;line-height:1.7;white-space:pre-wrap;color:var(--text);\${isLong ? 'max-height:300px;overflow-y:auto;' : ''}">\${escHtml(item.script)}</div>
             </div>
 
-            <div style="background:#0a0a0a;padding:14px;border-radius:8px;margin-bottom:10px;">
+            <div style="background:var(--surface-light);padding:14px;border-radius:8px;margin-bottom:10px;border:var(--border-subtle);">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <span style="font-size:11px;color:#888;text-transform:uppercase;">Caption / Description</span>
                 <button class="btn btn-small" style="font-size:11px;padding:2px 8px;background:rgba(255,255,255,0.1);"
                   onclick="copyField(\${i},'caption')">Copy</button>
               </div>
-              <div style="font-size:13px;">\${escHtml(item.caption)}</div>
+              <div style="font-size:13px;color:var(--text);">\${escHtml(item.caption)}</div>
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
@@ -5123,7 +5123,7 @@ function renderShortsPage(user, analyses) {
         <div class="modal-header">
           <h2 class="modal-title">Generated Content</h2>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 12px;border-bottom:1px solid #222;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 12px;border-bottom:var(--border-subtle);">
           \${tabs}
         </div>
         <div style="padding:16px;max-height:500px;overflow-y:auto;">
