@@ -3172,10 +3172,16 @@ function renderShortsPage(user, analyses) {
 
             \${item.postingTips ? '<div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:6px;font-size:12px;color:var(--text-muted);margin-bottom:10px;"><strong>Tips:</strong> ' + escHtml(item.postingTips) + '</div>' : ''}
 
-            <button class="btn btn-primary" style="width:100%;margin-top:4px;"
-              onclick="copyField(\${i},'all')">
-              Copy All Content
-            </button>
+            <div style="display:flex;gap:8px;margin-top:4px;">
+              <button class="btn btn-primary" style="flex:1;"
+                onclick="copyField(\${i},'all')">
+                Copy All Content
+              </button>
+              <button class="btn" style="background:rgba(108,92,231,0.2);color:#a29bfe;"
+                onclick="showPlatformPreview(\${i})">
+                Preview
+              </button>
+            </div>
           </div>
         \`;
       }).join('');
@@ -3192,6 +3198,115 @@ function renderShortsPage(user, analyses) {
         </div>
       \`;
       document.getElementById('modalBody').innerHTML = html;
+    }
+
+    function showPlatformPreview(contentIdx) {
+      const item = _generatedContent[contentIdx];
+      if (!item) return;
+      const p = item.platform;
+      const escHtml = (s) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const caption = escHtml(item.caption || '').substring(0, 200);
+      const hook = escHtml(item.hook || '');
+      const hashtags = (item.hashtags || []).map(h => '<span style="color:#6c5ce7;">' + (h.startsWith('#') ? h : '#'+h) + '</span>').join(' ');
+      const truncScript = escHtml((item.script || '').substring(0, 140));
+
+      let mockup = '';
+      if (p === 'tiktok' || p === 'shorts') {
+        // Vertical phone mockup
+        mockup = '<div style="width:270px;height:480px;background:#000;border-radius:24px;border:3px solid #333;margin:auto;position:relative;overflow:hidden;padding:16px;">' +
+          '<div style="position:absolute;top:0;left:0;right:0;height:40px;background:linear-gradient(180deg,rgba(0,0,0,0.8),transparent);z-index:2;display:flex;align-items:center;justify-content:center;padding-top:8px;">' +
+            '<span style="font-size:10px;color:#fff;opacity:0.6;">' + (p==='tiktok'?'For You':'Shorts') + '</span>' +
+          '</div>' +
+          '<div style="background:linear-gradient(135deg,#1a1a2e,#16213e);width:100%;height:100%;border-radius:16px;display:flex;flex-direction:column;justify-content:flex-end;padding:12px;">' +
+            '<div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px;">@yourbrand</div>' +
+            '<div style="font-size:11px;color:#eee;line-height:1.4;margin-bottom:8px;">' + caption + '</div>' +
+            '<div style="font-size:10px;line-height:1.4;">' + hashtags + '</div>' +
+          '</div>' +
+          '<div style="position:absolute;right:8px;bottom:80px;display:flex;flex-direction:column;align-items:center;gap:16px;">' +
+            '<div style="width:28px;height:28px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;">&#x2764;</div>' +
+            '<div style="width:28px;height:28px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;">&#x1F4AC;</div>' +
+            '<div style="width:28px;height:28px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;">&#x27A1;</div>' +
+          '</div>' +
+        '</div>';
+      } else if (p === 'instagram') {
+        mockup = '<div style="width:320px;background:#000;border-radius:16px;border:3px solid #333;margin:auto;overflow:hidden;">' +
+          '<div style="padding:10px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #222;">' +
+            '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#f09433,#dc2743,#bc1888);"></div>' +
+            '<span style="font-size:12px;font-weight:600;color:#fff;">yourbrand</span>' +
+          '</div>' +
+          '<div style="width:100%;aspect-ratio:1;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;padding:20px;">' +
+            '<p style="font-size:16px;font-weight:700;color:#fff;text-align:center;line-height:1.4;">' + hook + '</p>' +
+          '</div>' +
+          '<div style="padding:10px 12px;">' +
+            '<div style="display:flex;gap:12px;margin-bottom:8px;">' +
+              '<span style="font-size:18px;">&#x2764;</span><span style="font-size:18px;">&#x1F4AC;</span><span style="font-size:18px;">&#x27A1;</span>' +
+            '</div>' +
+            '<div style="font-size:11px;color:#ccc;line-height:1.4;">' +
+              '<strong style="color:#fff;">yourbrand</strong> ' + caption.substring(0,120) + '...' +
+            '</div>' +
+            '<div style="font-size:10px;margin-top:4px;">' + hashtags + '</div>' +
+          '</div>' +
+        '</div>';
+      } else if (p === 'twitter' || p === 'thread') {
+        const tweetText = p === 'thread' ? escHtml((item.script||'').split('\\n')[0] || hook) : caption;
+        mockup = '<div style="width:360px;background:#000;border-radius:16px;border:1px solid #333;margin:auto;padding:16px;">' +
+          '<div style="display:flex;gap:10px;">' +
+            '<div style="width:36px;height:36px;border-radius:50%;background:#333;flex-shrink:0;"></div>' +
+            '<div style="flex:1;">' +
+              '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">' +
+                '<span style="font-size:13px;font-weight:700;color:#fff;">Your Brand</span>' +
+                '<span style="font-size:12px;color:#666;">@yourbrand</span>' +
+              '</div>' +
+              '<div style="font-size:14px;color:#e7e9ea;line-height:1.5;margin-bottom:10px;">' + tweetText.substring(0,280) + '</div>' +
+              (p==='thread' ? '<div style="font-size:11px;color:#6c5ce7;margin-bottom:8px;">Show this thread</div>' : '') +
+              '<div style="display:flex;gap:40px;margin-top:8px;">' +
+                '<span style="font-size:12px;color:#666;">&#x1F4AC; 24</span>' +
+                '<span style="font-size:12px;color:#666;">&#x1F504; 142</span>' +
+                '<span style="font-size:12px;color:#666;">&#x2764; 1.2K</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      } else if (p === 'linkedin') {
+        mockup = '<div style="width:360px;background:#1b1f23;border-radius:12px;border:1px solid #333;margin:auto;overflow:hidden;">' +
+          '<div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">' +
+            '<div style="width:40px;height:40px;border-radius:50%;background:#0077b5;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;font-weight:700;">Y</div>' +
+            '<div><div style="font-size:13px;font-weight:600;color:#fff;">Your Brand</div><div style="font-size:11px;color:#888;">Content Creator</div></div>' +
+          '</div>' +
+          '<div style="padding:0 16px 12px;font-size:13px;color:#ccc;line-height:1.6;">' + caption.substring(0,250) + '</div>' +
+          '<div style="padding:0 16px 8px;font-size:10px;">' + hashtags + '</div>' +
+          '<div style="border-top:1px solid #333;padding:8px 16px;display:flex;justify-content:space-around;">' +
+            '<span style="font-size:12px;color:#888;">Like</span><span style="font-size:12px;color:#888;">Comment</span><span style="font-size:12px;color:#888;">Share</span>' +
+          '</div>' +
+        '</div>';
+      } else {
+        // Blog / Newsletter - card preview
+        mockup = '<div style="width:380px;background:#fff;border-radius:12px;margin:auto;overflow:hidden;color:#111;">' +
+          '<div style="height:120px;background:linear-gradient(135deg,#6c5ce7,#a29bfe);display:flex;align-items:center;justify-content:center;">' +
+            '<span style="font-size:20px;font-weight:800;color:#fff;text-align:center;padding:0 20px;">' + hook + '</span>' +
+          '</div>' +
+          '<div style="padding:16px;">' +
+            '<p style="font-size:13px;color:#444;line-height:1.6;">' + truncScript + '...</p>' +
+            '<div style="margin-top:12px;padding-top:12px;border-top:1px solid #eee;font-size:11px;color:#888;">' +
+              (p==='newsletter' ? 'Email Newsletter Preview' : 'Blog Post Preview') +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      const previewModal = '<div id="platformPreviewOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;" onclick="this.remove()">' +
+        '<div style="margin-bottom:16px;text-align:center;">' +
+          '<h3 style="color:#fff;font-size:16px;margin-bottom:4px;">' +
+            ({'tiktok':'TikTok','instagram':'Instagram','shorts':'YouTube Shorts','twitter':'Twitter/X','linkedin':'LinkedIn','thread':'X Thread','blog':'Blog Post','newsletter':'Newsletter'}[p] || p) + ' Preview</h3>' +
+          '<p style="color:#888;font-size:12px;">Click anywhere to close</p>' +
+        '</div>' +
+        mockup +
+      '</div>';
+
+      // Remove existing overlay if any
+      const existing = document.getElementById('platformPreviewOverlay');
+      if (existing) existing.remove();
+      document.body.insertAdjacentHTML('beforeend', previewModal);
     }
 
     function switchContentTab(idx) {
