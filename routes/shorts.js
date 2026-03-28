@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const OpenAI = require('openai');
+const archiver = require('archiver');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
@@ -1389,6 +1390,206 @@ router.post('/brand-kit', requireAuth, async (req, res) => {
   }
 });
 
+// POST /batch-analyze - Analyze multiple YouTube videos
+router.post('/batch-analyze', requireAuth, async (req, res) => {
+  try {
+    const { videoUrls } = req.body;
+    if (!videoUrls || !Array.isArray(videoUrls) || videoUrls.length === 0) {
+      return res.status(400).json({ error: 'Provide an array of video URLs' });
+    }
+    if (videoUrls.length > 10) {
+      return res.status(400).json({ error: 'Maximum 10 videos per batch' });
+    }
+
+    // Validate all URLs first
+    const validUrls = [];
+    for (const url of videoUrls) {
+      const vid = extractVideoId(url.trim());
+      if (vid) validUrls.push({ url: url.trim(), videoId: vid });
+    }
+    if (validUrls.length === 0) {
+      return res.status(400).json({ error: 'No valid YouTube URLs found' });
+    }
+
+    // Return immediately with batch ID, process in background
+    const batchId = require('uuid').v4();
+    res.json({ success: true, batchId, totalVideos: validUrls.length, message: `Processing ${validUrls.length} videos...` });
+
+    // Process each video sequentially in background
+    (async () => {
+      const results = [];
+      for (let i = 0; i < validUrls.length; i++) {
+        const { url, videoId } = validUrls[i];
+        try {
+          // Simulate the analyze endpoint logic inline
+          const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+          // Fetch transcript
+          let transcript = null;
+          try {
+            // Try Supadata
+            if (process.env.SUPADATA_API_KEY) {
+              const supResp = await fetch(`https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(videoUrl)}&lang=en`, {
+                headers: { 'x-api-key': process.env.SUPADATA_API_KEY }
+              });
+              if (supResp.ok) {
+                const supData = await supResp.json();
+                if (supData.content && supData.content.length > 0) {
+                  transcript = supData.content.map(s => `[${formatTimestamp(s.offset / 1000)}] ${s.text}`).join(' ');
+                }
+              }
+            }
+          } catch (e) { console.log(`  Batch: transcript failed for ${videoId}:`, e.message); }
+
+          // Get video title
+          let videoTitle = 'Video ' + (i + 1);
+          try {
+            const pageResp = await fetch(`https://www.youtube.com/oembed?url=${videoUrl}&format=json`);
+            if (pageResp.ok) {
+              const oembed = await pageResp.json();
+              videoTitle = oembed.title || videoTitle;
+            }
+          } catch (e) {}
+
+          // Use AI to find moments
+          const promptText = transcript
+            ? `Analyze this YouTube video transcript and find the top 3-5 most viral-worthy moments.\n\nTranscript:\n${transcript.substring(0, 4000)}`
+            : `Analyze this YouTube video (ID: ${videoId}, Title: ${videoTitle}) and suggest 3-5 potential viral moments based on the title.`;
+
+          const completion = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: 'You are a viral content analyst. Return a JSON array of moments with: title, timeRange (HH:MM:SS-HH:MM:SS), description, viralityScore (0-100), keyThemes (array), platforms (array).' },
+              { role: 'user', content: promptText }
+            ],
+            response_format: { type: 'json_object' }
+          });
+
+          let moments = [];
+          try {
+            const parsed = JSON.parse(completion.choices[0].message.content);
+            moments = parsed.moments || parsed.clips || parsed.results || [];
+          } catch (e) {}
+
+          // Save to DB
+          const analysis = await shortsOps.create({
+            userId: req.user.id,
+            videoUrl,
+            videoTitle,
+            transcript: transcript || '',
+            moments,
+            status: 'completed'
+          });
+
+          results.push({ videoId, title: videoTitle, analysisId: analysis.id, momentCount: moments.length, status: 'completed' });
+          console.log(`  Batch [${i+1}/${validUrls.length}]: ${videoTitle} - ${moments.length} moments`);
+        } catch (err) {
+          console.error(`  Batch [${i+1}] failed:`, err.message);
+          results.push({ videoId, status: 'failed', error: err.message });
+        }
+      }
+      // Store batch results in a temp file
+      try {
+        fs.writeFileSync(path.join(CLIPS_DIR, `batch_${batchId}.json`), JSON.stringify(results));
+      } catch (e) {}
+    })();
+
+  } catch (error) {
+    console.error('Batch analyze error:', error);
+    res.status(500).json({ error: 'Batch analysis failed' });
+  }
+});
+
+// GET /batch-status/:batchId - Check batch progress
+router.get('/batch-status/:batchId', requireAuth, (req, res) => {
+  const batchId = req.params.batchId.replace(/[^a-f0-9-]/g, '');
+  const resultPath = path.join(CLIPS_DIR, `batch_${batchId}.json`);
+  if (fs.existsSync(resultPath)) {
+    const results = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    res.json({ complete: true, results });
+  } else {
+    res.json({ complete: false, message: 'Still processing...' });
+  }
+});
+
+// Helper for timestamp formatting
+function formatTimestamp(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// GET /export/:analysisId - Export all clips from an analysis as ZIP
+router.get('/export/:analysisId', requireAuth, async (req, res) => {
+  try {
+    const analysis = await shortsOps.getById(req.params.analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Analysis not found' });
+    }
+
+    // Find all clip files for this analysis
+    const files = fs.readdirSync(CLIPS_DIR);
+    const clipFiles = files.filter(f => f.endsWith('.mp4') && !f.includes('.encoding') && !f.includes('.temp'));
+    const thumbFiles = files.filter(f => f.endsWith('.jpg') && f.startsWith('thumb_'));
+
+    // Include all recent clips (within last hour) - they're likely from this analysis
+    const oneHourAgo = Date.now() - 3600000;
+    const recentClips = clipFiles.filter(f => {
+      try {
+        const stat = fs.statSync(path.join(CLIPS_DIR, f));
+        return stat.mtimeMs > oneHourAgo && stat.size > 50000;
+      } catch (e) { return false; }
+    });
+    const recentThumbs = thumbFiles.filter(f => {
+      try {
+        const stat = fs.statSync(path.join(CLIPS_DIR, f));
+        return stat.mtimeMs > oneHourAgo && stat.size > 1000;
+      } catch (e) { return false; }
+    });
+
+    if (recentClips.length === 0 && recentThumbs.length === 0) {
+      return res.status(404).json({ error: 'No clips or thumbnails found. Generate some clips first!' });
+    }
+
+    const safeTitle = (analysis.video_title || 'export').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+    const zipFilename = `${safeTitle}_export_${Date.now()}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.on('error', (err) => { console.error('Archive error:', err); res.status(500).end(); });
+    archive.pipe(res);
+
+    // Add clips
+    for (const clip of recentClips) {
+      archive.file(path.join(CLIPS_DIR, clip), { name: `clips/${clip}` });
+    }
+    // Add thumbnails
+    for (const thumb of recentThumbs) {
+      archive.file(path.join(CLIPS_DIR, thumb), { name: `thumbnails/${thumb}` });
+    }
+
+    // Add content summary JSON
+    const summary = {
+      videoTitle: analysis.video_title,
+      videoUrl: analysis.video_url,
+      exportDate: new Date().toISOString(),
+      clips: recentClips.length,
+      thumbnails: recentThumbs.length,
+      moments: analysis.moments
+    };
+    archive.append(JSON.stringify(summary, null, 2), { name: 'summary.json' });
+
+    await archive.finalize();
+
+  } catch (error) {
+    console.error('Export error:', error);
+    if (!res.headersSent) res.status(500).json({ error: 'Export failed' });
+  }
+});
+
 // POST /thumbnail - Generate a thumbnail for a moment
 router.post('/thumbnail', requireAuth, async (req, res) => {
   try {
@@ -2641,6 +2842,25 @@ function renderShortsPage(user, analyses) {
         </div>
       </div>
 
+      <!-- Batch Analysis -->
+      <div style="margin-bottom: 16px;">
+        <button class="btn" onclick="toggleBatchInput()" id="batchToggle"
+          style="background: rgba(255,0,80,0.12); color: #FF0050; border: 1px solid rgba(255,0,80,0.3); font-size: 13px; padding: 8px 16px;">
+          Batch Analyze (Multiple Videos)
+        </button>
+        <div id="batchPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+          <h3 style="margin-bottom:8px; font-size:16px; font-weight:600;">Batch Video Analysis</h3>
+          <p style="color:#888; font-size:13px; margin-bottom:16px;">Paste up to 10 YouTube URLs (one per line) to analyze them all at once.</p>
+          <textarea id="batchUrls" rows="6" placeholder="https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=..."
+            style="width:100%; padding:12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:13px; resize:vertical; font-family:monospace;"></textarea>
+          <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+            <button class="btn btn-primary" onclick="startBatchAnalysis()" id="batchBtn">Analyze All</button>
+            <span id="batchStatus" style="font-size:13px; color:#888;"></span>
+          </div>
+          <div id="batchResults" style="display:none; margin-top:16px;"></div>
+        </div>
+      </div>
+
       <!-- Brand Kit Settings -->
       <div style="margin-bottom: 24px;">
         <button class="btn" onclick="toggleBrandKit()" id="brandKitToggle"
@@ -2894,6 +3114,10 @@ function renderShortsPage(user, analyses) {
               <button class="btn btn-small" style="background:rgba(108,92,231,0.2);color:#a29bfe;font-size:12px;"
                 onclick="document.getElementById('transcriptPanel').style.display = document.getElementById('transcriptPanel').style.display === 'none' ? 'block' : 'none'">
                 View Transcript
+              </button>
+              <button class="btn btn-small" style="background:rgba(16,185,129,0.2);color:#10b981;font-size:12px;"
+                onclick="exportAllClips('\${id}')">
+                Export All (ZIP)
               </button>
             </div>
           </div>
@@ -3405,6 +3629,98 @@ function renderShortsPage(user, analyses) {
         btn.textContent = originalText;
         btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
       }
+    }
+
+    // === Batch Analysis & Export ===
+    function toggleBatchInput() {
+      const panel = document.getElementById('batchPanel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function startBatchAnalysis() {
+      const textarea = document.getElementById('batchUrls');
+      const urls = textarea.value.split('\\n').map(u => u.trim()).filter(u => u.length > 0);
+      if (urls.length === 0) { showToast('Enter at least one URL'); return; }
+
+      const btn = document.getElementById('batchBtn');
+      const status = document.getElementById('batchStatus');
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+      status.textContent = 'Sending ' + urls.length + ' videos for analysis...';
+
+      try {
+        const resp = await fetch('/shorts/batch-analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoUrls: urls })
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error);
+
+        status.textContent = 'Processing ' + data.totalVideos + ' videos... This may take a few minutes.';
+
+        // Poll for completion
+        const batchId = data.batchId;
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          try {
+            const sResp = await fetch('/shorts/batch-status/' + batchId);
+            const sData = await sResp.json();
+            if (sData.complete) {
+              clearInterval(poll);
+              const results = sData.results;
+              const completed = results.filter(r => r.status === 'completed').length;
+              const failed = results.filter(r => r.status === 'failed').length;
+
+              status.textContent = completed + ' completed, ' + failed + ' failed';
+              status.style.color = '#10b981';
+
+              // Show results
+              const resultsDiv = document.getElementById('batchResults');
+              resultsDiv.style.display = 'block';
+              resultsDiv.innerHTML = results.map(r =>
+                '<div style="padding:8px 12px;background:' + (r.status === 'completed' ? 'rgba(16,185,129,0.1)' : 'rgba(255,107,107,0.1)') +
+                ';border-radius:6px;margin-bottom:6px;font-size:13px;display:flex;justify-content:space-between;align-items:center;">' +
+                  '<span>' + (r.title || r.videoId) + '</span>' +
+                  (r.status === 'completed'
+                    ? '<span style="color:#10b981;">' + r.momentCount + ' moments</span>'
+                    : '<span style="color:#ff6b6b;">Failed</span>') +
+                '</div>'
+              ).join('');
+
+              btn.disabled = false;
+              btn.textContent = 'Analyze All';
+              showToast('Batch analysis complete! Refresh to see all analyses.');
+              setTimeout(() => location.reload(), 2000);
+            } else if (attempts >= 180) {
+              clearInterval(poll);
+              status.textContent = 'Timed out. Some videos may still be processing.';
+              btn.disabled = false;
+              btn.textContent = 'Analyze All';
+            } else {
+              const dots = '.'.repeat((attempts % 3) + 1);
+              status.textContent = 'Processing' + dots + ' (' + Math.round(attempts * 2/60) + ' min)';
+            }
+          } catch (e) {
+            clearInterval(poll);
+            status.textContent = 'Error checking status';
+            btn.disabled = false;
+            btn.textContent = 'Analyze All';
+          }
+        }, 2000);
+
+      } catch (error) {
+        showToast(error.message);
+        btn.disabled = false;
+        btn.textContent = 'Analyze All';
+        status.textContent = '';
+      }
+    }
+
+    function exportAllClips(analysisId) {
+      showToast('Preparing ZIP download...');
+      window.location.href = '/shorts/export/' + analysisId;
     }
 
     // === Thumbnail Generation ===
