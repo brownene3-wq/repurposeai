@@ -73,7 +73,7 @@ router.get('/', requireAuth, async (req, res) => {
     ${getBaseCSS()}
     .layout { display: flex; min-height: 100vh; }
     .main { margin-left: 250px; flex: 1; padding: 30px; }
-    .page-title { font-size: 1.8em; font-weight: 700; margin-bottom: 30px; }
+    .page-title { font-size: 1.8em; font-weight: 800; margin-bottom: 30px; background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
     .stat-card { background: #161616; border: 1px solid #222; border-radius: 16px; padding: 24px; position: relative; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
     .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
@@ -85,7 +85,7 @@ router.get('/', requireAuth, async (req, res) => {
     .stat-card .label { color: #888; font-size: 0.85em; margin-bottom: 8px; font-weight: 500; }
     .stat-card .value { font-size: 2.2em; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
     .stat-card .change { font-size: 0.8em; color: #10B981; margin-top: 6px; font-weight: 600; }
-    .section { background: #161616; border: 1px solid #222; border-radius: 16px; padding: 28px; margin-bottom: 24px; }
+    .section { background: #161616; border: 1px solid rgba(108,58,237,0.15); border-radius: 16px; padding: 28px; margin-bottom: 24px; }
     .section h2 { font-size: 1.2em; margin-bottom: 20px; color: #fff; font-weight: 700; }
     .chart-bar { display: flex; align-items: center; margin-bottom: 14px; }
     .chart-bar .platform { width: 100px; font-size: 0.85em; color: #999; font-weight: 500; }

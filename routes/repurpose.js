@@ -728,19 +728,19 @@ router.get('/', (req, res) => {
         .header h1 {
           font-size: 32px;
           margin-bottom: 10px;
-          background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
 
         .header p {
-          color: #888;
+          color: #a0aec0;
           font-size: 16px;
         }
 
         body.light .header p {
-          color: #999;
+          color: #4a5568;
         }
 
         .form-container {
@@ -752,25 +752,33 @@ router.get('/', (req, res) => {
 
         .form-section {
           background: #161616;
-          border: 1px solid #222;
-          border-radius: 12px;
+          border: 1px solid rgba(108,58,237,0.15);
+          border-radius: 16px;
           padding: 30px;
           backdrop-filter: blur(10px);
         }
 
         body.light .form-section {
           background: #fff;
-          border: 1px solid #e0e0e0;
+          border: 1px solid rgba(108,58,237,0.12);
+          box-shadow: 0 2px 12px rgba(108,58,237,0.06);
         }
 
         .form-section h2 {
           font-size: 18px;
           margin-bottom: 20px;
-          color: #e0e0e0;
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          font-weight: 700;
         }
 
         body.light .form-section h2 {
-          color: #1a1a1a;
+          background: linear-gradient(135deg, #5B21B6 0%, #DB2777 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
         }
 
         .form-group {
@@ -821,27 +829,59 @@ router.get('/', (req, res) => {
         .platform-card {
           padding: 16px;
           border: 2px solid #333;
-          border-radius: 8px;
+          border-radius: 12px;
           cursor: pointer;
           transition: all 0.3s;
           text-align: center;
           user-select: none;
           background: #0a0a0a;
+          position: relative;
+          overflow: hidden;
         }
 
         body.light .platform-card {
-          background: #f5f5f5;
-          border: 2px solid #ddd;
+          background: #f8f9fc;
+          border: 2px solid #e2e8f0;
         }
 
         .platform-card:hover {
           border-color: #6c5ce7;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(108,58,237,0.15);
         }
 
         .platform-card.selected {
-          background: #6c5ce7;
-          border-color: #6c5ce7;
           color: white;
+          border-color: transparent;
+        }
+
+        .platform-card[data-platform="Instagram"].selected {
+          background: linear-gradient(135deg, #833AB4, #E1306C, #F77737);
+          border-color: transparent;
+        }
+        .platform-card[data-platform="TikTok"].selected {
+          background: linear-gradient(135deg, #010101, #25F4EE, #FE2C55);
+          border-color: transparent;
+        }
+        .platform-card[data-platform="Twitter"].selected {
+          background: linear-gradient(135deg, #14171A, #1DA1F2);
+          border-color: transparent;
+        }
+        .platform-card[data-platform="LinkedIn"].selected {
+          background: linear-gradient(135deg, #0A66C2, #004182);
+          border-color: transparent;
+        }
+        .platform-card[data-platform="Facebook"].selected {
+          background: linear-gradient(135deg, #1877F2, #0D47A1);
+          border-color: transparent;
+        }
+        .platform-card[data-platform="YouTube"].selected {
+          background: linear-gradient(135deg, #FF0000, #CC0000);
+          border-color: transparent;
+        }
+        .platform-card[data-platform="Blog"].selected {
+          background: linear-gradient(135deg, #6C3AED, #EC4899);
+          border-color: transparent;
         }
 
         .platform-card input {
@@ -938,13 +978,14 @@ router.get('/', (req, res) => {
         }
 
         .btn-primary {
-          background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
           color: white;
+          border-radius: 50px;
         }
 
         .btn-primary:hover {
           transform: translateY(-2px);
-          box-shadow: 0 10px 30px rgba(108, 92, 231, 0.3);
+          box-shadow: 0 10px 30px rgba(108, 58, 237, 0.4);
         }
 
         .btn-primary:disabled {
@@ -1033,9 +1074,17 @@ router.get('/', (req, res) => {
 
         .platform-name {
           font-size: 16px;
-          font-weight: 600;
+          font-weight: 700;
           color: #6c5ce7;
         }
+        .platform-name[data-platform="Instagram"] { color: #E1306C; }
+        .platform-name[data-platform="TikTok"] { color: #25F4EE; }
+        body.light .platform-name[data-platform="TikTok"] { color: #010101; }
+        .platform-name[data-platform="Twitter"] { color: #1DA1F2; }
+        .platform-name[data-platform="LinkedIn"] { color: #0A66C2; }
+        .platform-name[data-platform="Facebook"] { color: #1877F2; }
+        .platform-name[data-platform="YouTube"] { color: #FF0000; }
+        .platform-name[data-platform="Blog"] { background: linear-gradient(135deg, #6C3AED, #EC4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
         .char-count {
           font-size: 12px;
@@ -1465,7 +1514,7 @@ router.get('/', (req, res) => {
             card.className = 'result-card';
             card.innerHTML = \`
               <div class="result-header">
-                <div class="platform-name">\${platform}</div>
+                <div class="platform-name" data-platform="\${platform}">\${platform}</div>
                 <div class="char-count">\${content.length} chars</div>
               </div>
               <div class="result-content">\${escapeHtml(content)}</div>
@@ -1501,7 +1550,7 @@ router.get('/', (req, res) => {
           card.style.animation = 'fadeIn 0.3s ease';
           card.innerHTML = \`
             <div class="result-header">
-              <div class="platform-name">\${platform}</div>
+              <div class="platform-name" data-platform="\${platform}">\${platform}</div>
               <div class="char-count">\${content.length} chars</div>
             </div>
             <div class="result-content">\${escapeHtml(content)}</div>

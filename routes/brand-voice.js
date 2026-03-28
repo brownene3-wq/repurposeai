@@ -22,19 +22,19 @@ router.get('/', requireAuth, (req, res) => {
         .header h1 {
           font-size: 32px;
           margin-bottom: 10px;
-          background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
 
         .header p {
-          color: #888;
+          color: #a0aec0;
           font-size: 16px;
         }
 
         body.light .header p {
-          color: #999;
+          color: #4a5568;
         }
 
         .content-wrapper {
@@ -46,25 +46,33 @@ router.get('/', requireAuth, (req, res) => {
 
         .form-section {
           background: #161616;
-          border: 1px solid #222;
-          border-radius: 12px;
+          border: 1px solid rgba(108,58,237,0.15);
+          border-radius: 16px;
           padding: 30px;
           backdrop-filter: blur(10px);
         }
 
         body.light .form-section {
           background: #fff;
-          border: 1px solid #e0e0e0;
+          border: 1px solid rgba(108,58,237,0.12);
+          box-shadow: 0 2px 12px rgba(108,58,237,0.06);
         }
 
         .form-section h2 {
           font-size: 20px;
           margin-bottom: 25px;
-          color: #e0e0e0;
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          font-weight: 700;
         }
 
         body.light .form-section h2 {
-          color: #1a1a1a;
+          background: linear-gradient(135deg, #5B21B6 0%, #DB2777 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
         }
 
         .form-group {
@@ -130,13 +138,14 @@ router.get('/', requireAuth, (req, res) => {
         }
 
         .btn-primary {
-          background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
           color: white;
+          border-radius: 50px;
         }
 
         .btn-primary:hover {
           transform: translateY(-2px);
-          box-shadow: 0 10px 30px rgba(108, 92, 231, 0.3);
+          box-shadow: 0 10px 30px rgba(108, 58, 237, 0.4);
         }
 
         .btn-secondary {

@@ -21,7 +21,7 @@ function getBaseCSS() {
     body.light .theme-toggle{background:#fff;border-color:#ddd}
     .main-content{flex:1;margin-left:250px;padding:2rem}
     .page-header{margin-bottom:2rem}
-    .page-header h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem}
+    .page-header h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .page-header p{color:var(--text-muted);font-size:.95rem}
     .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.8rem 1.8rem;border-radius:50px;font-weight:600;font-size:.9rem;cursor:pointer;border:none;transition:all .3s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 20px rgba(108,58,237,0.4)}

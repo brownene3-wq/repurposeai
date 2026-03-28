@@ -15,7 +15,8 @@ router.get('/', requireAuth, async (req, res) => {
   const html = `${getHeadHTML('Dashboard')}
   <style>
     ${getBaseCSS()}
-    .repurpose-card{background:var(--surface);border-radius:16px;padding:2rem;border:var(--border-subtle);margin-bottom:2rem}
+    .repurpose-card{background:var(--surface);border-radius:16px;padding:2rem;border:1px solid rgba(108,58,237,0.15);margin-bottom:2rem}
+    body.light .repurpose-card{border-color:rgba(108,58,237,0.12);box-shadow:0 2px 12px rgba(108,58,237,0.06)}
     .input-group{display:flex;gap:1rem;margin-bottom:1rem}
     .url-input{flex:1;padding:1rem 1.2rem;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:var(--text);font-size:1rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;outline:none;transition:border-color .3s}
     .url-input:focus{border-color:var(--primary)}
@@ -30,7 +31,7 @@ router.get('/', requireAuth, async (req, res) => {
     .results-section.show{display:block}
     .platform-tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap}
     .platform-tab{padding:.6rem 1.2rem;border-radius:10px;background:var(--surface);border:var(--border-subtle);color:var(--text-muted);cursor:pointer;font-size:.85rem;font-weight:500;transition:all .2s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
-    .platform-tab:hover,.platform-tab.active{background:rgba(108,58,237,0.2);color:var(--primary-light);border-color:rgba(108,58,237,0.3)}
+    .platform-tab:hover,.platform-tab.active{background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(236,72,153,0.1));color:var(--primary-light);border-color:rgba(108,58,237,0.3)}
     .platform-content{background:var(--dark);border-radius:12px;padding:1.5rem;border:var(--border-subtle);display:none}
     .platform-content.show{display:block}
     .platform-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
@@ -45,9 +46,17 @@ router.get('/', requireAuth, async (req, res) => {
     .spinner{width:40px;height:40px;border:3px solid var(--surface);border-top-color:var(--primary);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 1rem}
     @keyframes spin{to{transform:rotate(360deg)}}
     .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem}
-    .stat-card{background:var(--surface);border-radius:12px;padding:1.5rem;border:var(--border-subtle)}
+    .stat-card{background:var(--surface);border-radius:16px;padding:1.5rem;border:1px solid rgba(108,58,237,0.12);position:relative;overflow:hidden;transition:transform 0.2s,box-shadow 0.2s}
+    .stat-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(108,58,237,0.12)}
+    .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+    .stat-card:nth-child(1)::before{background:linear-gradient(90deg,#6C3AED,#EC4899)}
+    .stat-card:nth-child(2)::before{background:linear-gradient(90deg,#0EA5E9,#6366F1)}
+    .stat-card:nth-child(3)::before{background:linear-gradient(90deg,#F59E0B,#EF4444)}
+    .stat-card:nth-child(4)::before{background:linear-gradient(90deg,#10B981,#06B6D4)}
     .stat-card .stat-value{font-size:1.8rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
     .stat-card .stat-label{font-size:.8rem;color:var(--text-dim);margin-top:.3rem}
+    body.light .stat-card{border-color:rgba(108,58,237,0.1);box-shadow:0 2px 12px rgba(108,58,237,0.06)}
+    body.light .stat-card:hover{box-shadow:0 8px 24px rgba(108,58,237,0.12)}
     @media(max-width:768px){.stats-grid{grid-template-columns:repeat(2,1fr)}.input-group{flex-direction:column}.video-info{flex-direction:column}.video-thumb{width:100%;height:auto}}
   </style>
 </head>

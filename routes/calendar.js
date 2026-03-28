@@ -18,19 +18,19 @@ router.get('/', requireAuth, (req, res) => {
         .header h1 {
           font-size: 32px;
           margin-bottom: 10px;
-          background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
 
         .header p {
-          color: #888;
+          color: #a0aec0;
           font-size: 16px;
         }
 
         body.light .header p {
-          color: #999;
+          color: #4a5568;
         }
 
         .calendar-wrapper {
@@ -42,15 +42,16 @@ router.get('/', requireAuth, (req, res) => {
 
         .calendar-section {
           background: #161616;
-          border: 1px solid #222;
-          border-radius: 12px;
+          border: 1px solid rgba(108,58,237,0.15);
+          border-radius: 16px;
           padding: 30px;
           backdrop-filter: blur(10px);
         }
 
         body.light .calendar-section {
           background: #fff;
-          border: 1px solid #e0e0e0;
+          border: 1px solid rgba(108,58,237,0.12);
+          box-shadow: 0 2px 12px rgba(108,58,237,0.06);
         }
 
         .calendar-header {
@@ -152,12 +153,13 @@ router.get('/', requireAuth, (req, res) => {
         }
 
         .calendar-day.today {
-          border-color: #6c5ce7;
-          background: rgba(108, 92, 231, 0.1);
+          border-color: #6C3AED;
+          background: linear-gradient(135deg, rgba(108,58,237,0.12), rgba(236,72,153,0.08));
         }
 
         body.light .calendar-day.today {
-          background: rgba(108, 92, 231, 0.05);
+          background: linear-gradient(135deg, rgba(108,58,237,0.08), rgba(236,72,153,0.05));
+          border-color: #6C3AED;
         }
 
         .day-number {
