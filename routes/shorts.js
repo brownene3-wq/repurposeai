@@ -55,7 +55,85 @@ function buildTranscriptText(segments) {
   }).join(' ');
 }
 
-// Helper: Fetch transcript using YouTube's InnerTube API (most reliable method)
+// Helper: Fetch transcript using Supadata.ai API (most reliable - paid service, no YouTube blocking)
+async function fetchTranscriptSupadata(videoId) {
+  const apiKey = process.env.SUPADATA_API_KEY;
+  if (!apiKey) throw new Error('SUPADATA_API_KEY not configured');
+
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  console.log('  Supadata: Fetching transcript for', videoId);
+
+  const resp = await fetch(`https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(videoUrl)}&lang=en`, {
+    headers: {
+      'x-api-key': apiKey,
+    }
+  });
+
+  // Handle async job (HTTP 202 for long videos)
+  if (resp.status === 202) {
+    const jobData = await resp.json();
+    const jobId = jobData.jobId;
+    if (!jobId) throw new Error('Supadata returned 202 but no jobId');
+
+    console.log(`  Supadata: Long video, polling job ${jobId}...`);
+
+    // Poll for up to 2 minutes
+    for (let i = 0; i < 24; i++) {
+      await new Promise(r => setTimeout(r, 5000)); // Wait 5s between polls
+
+      const jobResp = await fetch(`https://api.supadata.ai/v1/transcript/${jobId}`, {
+        headers: { 'x-api-key': apiKey }
+      });
+
+      if (jobResp.status === 200) {
+        const result = await jobResp.json();
+        if (result.content) {
+          return parseSupadataResponse(result);
+        }
+      } else if (jobResp.status === 404) {
+        throw new Error('Supadata job expired or not found');
+      }
+      // Otherwise keep polling (202 = still processing)
+      console.log(`  Supadata: Job still processing (attempt ${i + 1}/24)...`);
+    }
+    throw new Error('Supadata job timed out after 2 minutes');
+  }
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw new Error(`Supadata API returned ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  return parseSupadataResponse(data);
+}
+
+function parseSupadataResponse(data) {
+  // If text mode was used, content is a string
+  if (typeof data.content === 'string') {
+    // Split into pseudo-segments
+    const sentences = data.content.split(/[.!?]+\s+/).filter(s => s.trim());
+    return sentences.map((text, i) => ({ offset: i * 5000, text: text.trim() }));
+  }
+
+  // Array mode: content is [{ text, offset, duration, lang }]
+  if (!Array.isArray(data.content) || data.content.length === 0) {
+    throw new Error('Supadata returned empty transcript');
+  }
+
+  const segments = data.content
+    .filter(seg => seg.text && seg.text.trim())
+    .map(seg => ({
+      offset: seg.offset || 0,
+      text: seg.text.trim()
+    }));
+
+  if (segments.length === 0) throw new Error('Supadata transcript had no text segments');
+  console.log(`  Supadata: Got ${segments.length} transcript segments`);
+  return segments;
+}
+
+// Helper: Fetch transcript using YouTube's InnerTube API (free fallback)
 async function fetchTranscriptInnerTube(videoId) {
   console.log('  InnerTube: Fetching transcript for', videoId);
 
@@ -808,41 +886,56 @@ router.post('/analyze', requireAuth, async (req, res) => {
       // Try multiple transcript sources with fallbacks
       let segments;
 
-      // Strategy 1: InnerTube API + captionTracks (most reliable, handles most cases)
-      try {
-        console.log('  Strategy 1: InnerTube API');
-        segments = await fetchTranscriptInnerTube(videoId);
-      } catch (innerErr) {
-        console.log('  InnerTube fetch failed:', innerErr.message);
-        segments = null;
+      // Strategy 1: Supadata.ai API (most reliable - paid service, bypasses YouTube blocking)
+      if (process.env.SUPADATA_API_KEY) {
+        try {
+          console.log('  Strategy 1: Supadata.ai API');
+          segments = await fetchTranscriptSupadata(videoId);
+        } catch (supadataErr) {
+          console.log('  Supadata fetch failed:', supadataErr.message);
+          segments = null;
+        }
+      } else {
+        console.log('  Strategy 1: Skipped (SUPADATA_API_KEY not set)');
       }
 
-      // Strategy 2: yt-dlp subtitle fetching (handles geo-restricted, etc)
+      // Strategy 2: InnerTube player API + captionTracks (free fallback)
       if (!segments || segments.length === 0) {
         sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript (trying alternate method)...' });
         try {
-          console.log('  Strategy 2: yt-dlp subtitles');
-          segments = await fetchTranscriptWithYtdlp(videoId);
-        } catch (ytdlpErr) {
-          console.error('  yt-dlp subtitle fetch also failed:', ytdlpErr.message);
+          console.log('  Strategy 2: InnerTube API');
+          segments = await fetchTranscriptInnerTube(videoId);
+        } catch (innerErr) {
+          console.log('  InnerTube fetch failed:', innerErr.message);
         }
       }
 
-      // Strategy 3: yt-dlp --dump-json to get subtitle URLs, then fetch directly
+      // Strategy 3: yt-dlp subtitle fetching (handles geo-restricted, etc)
+      if (!segments || segments.length === 0) {
+        sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript (trying another method)...' });
+        try {
+          console.log('  Strategy 3: yt-dlp subtitles');
+          segments = await fetchTranscriptWithYtdlp(videoId);
+        } catch (ytdlpErr) {
+          console.error('  yt-dlp subtitle fetch failed:', ytdlpErr.message);
+        }
+      }
+
+      // Strategy 4: yt-dlp --dump-json to get subtitle URLs, then fetch directly
       if (!segments || segments.length === 0) {
         sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript (trying final method)...' });
         try {
-          console.log('  Strategy 3: yt-dlp dump-json for subtitle URLs');
+          console.log('  Strategy 4: yt-dlp dump-json for subtitle URLs');
           segments = await fetchTranscriptFromYtdlpJson(videoId);
         } catch (jsonErr) {
           console.error('  yt-dlp json strategy failed:', jsonErr.message);
         }
       }
 
-      // Strategy 4: Legacy direct fetch (original method)
+      // Strategy 5: Legacy direct fetch (original method)
       if (!segments || segments.length === 0) {
         try {
-          console.log('  Strategy 4: Legacy direct fetch');
+          console.log('  Strategy 5: Legacy direct fetch');
           segments = await fetchTranscriptDirect(videoId);
         } catch (directErr) {
           console.log('  Legacy fetch failed:', directErr.message);
