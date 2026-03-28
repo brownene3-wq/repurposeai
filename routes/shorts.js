@@ -77,6 +77,88 @@ function parseTranscriptToSegments(transcriptText) {
   return segments;
 }
 
+// Supported languages for caption translation
+const SUPPORTED_LANGUAGES = {
+  en: 'English',
+  es: 'Spanish',
+  pt: 'Portuguese',
+  fr: 'French',
+  de: 'German',
+  it: 'Italian',
+  hi: 'Hindi',
+  ar: 'Arabic',
+  ja: 'Japanese',
+  ko: 'Korean',
+  zh: 'Chinese',
+  ru: 'Russian',
+  tr: 'Turkish',
+  nl: 'Dutch',
+  pl: 'Polish',
+  id: 'Indonesian',
+  th: 'Thai',
+  vi: 'Vietnamese',
+  fil: 'Filipino',
+  sv: 'Swedish'
+};
+
+// Helper: Translate caption segments using GPT-4o-mini
+async function translateSegments(segments, targetLang) {
+  if (!targetLang || targetLang === 'en') return segments;
+
+  const langName = SUPPORTED_LANGUAGES[targetLang] || targetLang;
+
+  // Batch segments into chunks to avoid token limits
+  const chunkSize = 30;
+  const translatedSegments = [];
+
+  for (let i = 0; i < segments.length; i += chunkSize) {
+    const chunk = segments.slice(i, i + chunkSize);
+    const textsToTranslate = chunk.map((s, idx) => `[${idx}] ${s.text}`).join('\n');
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 2000,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: `You are a professional subtitle translator. Translate the following subtitle lines to ${langName}. Keep each line short (suitable for on-screen captions). Preserve the [index] prefix exactly. Return ONLY the translated lines, one per line, with their [index] prefix. Do not add explanations.` },
+          { role: 'user', content: textsToTranslate }
+        ]
+      });
+
+      const translatedText = (response.choices[0]?.message?.content || '').trim();
+      const translatedLines = translatedText.split('\n').filter(l => l.trim());
+
+      // Parse translated lines back to segments
+      for (const line of translatedLines) {
+        const match = line.match(/^\[(\d+)\]\s*(.+)$/);
+        if (match) {
+          const idx = parseInt(match[1]);
+          if (idx < chunk.length) {
+            translatedSegments.push({
+              ...chunk[idx],
+              text: match[2].trim()
+            });
+          }
+        }
+      }
+
+      // If parsing failed for some segments, keep originals
+      if (translatedSegments.length < i + chunk.length) {
+        for (let j = translatedSegments.length - i; j < chunk.length; j++) {
+          translatedSegments.push(chunk[j]);
+        }
+      }
+    } catch (err) {
+      console.error(`  Translation chunk failed:`, err.message);
+      // Keep original segments on failure
+      translatedSegments.push(...chunk);
+    }
+  }
+
+  return translatedSegments;
+}
+
 // Helper: Generate ASS subtitle file for burned-in captions
 // Style: TikTok/Reels style - bold white text, black outline, centered in lower third
 function generateASSSubtitles(segments, clipStartSec, clipDuration) {
@@ -2331,6 +2413,146 @@ router.post('/thumbnail-ai', requireAuth, async (req, res) => {
   }
 });
 
+// POST /thumbnail-ab - Generate 3 AI thumbnail variants for A/B testing
+router.post('/thumbnail-ab', requireAuth, async (req, res) => {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(503).json({ error: 'OpenAI API key not configured.' });
+    }
+
+    const { analysisId, momentIndex } = req.body;
+
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not found or unauthorized' });
+    }
+
+    let moments = analysis.moments;
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIndex];
+    if (!moment) return res.status(404).json({ error: 'Moment not found' });
+
+    let brandKit = null;
+    try { brandKit = await brandKitOps.getByUserId(req.user.id); } catch (e) {}
+
+    const thumbTitle = (moment.title || 'Viral Moment').substring(0, 60);
+    const thumbHook = (moment.hook || '').substring(0, 100);
+    const videoTopic = (analysis.video_title || '').substring(0, 100);
+    const brandContext = brandKit ? `Brand colors: ${brandKit.primary_color || '#6c5ce7'}, ${brandKit.secondary_color || '#FF0050'}.` : '';
+
+    const batchId = `ab_${analysisId}_${Date.now()}`;
+    const filenames = [
+      `${batchId}_v1.png`,
+      `${batchId}_v2.png`,
+      `${batchId}_v3.png`
+    ];
+
+    res.json({ success: true, status: 'processing', batchId, filenames });
+
+    // Generate 3 variants in parallel with different visual styles
+    const variantStyles = [
+      { name: 'Bold & Dramatic', instruction: 'Create a BOLD, high-contrast, dramatic composition with intense lighting, deep shadows, and vivid saturated colors. Use cinematic angles and powerful visual impact.' },
+      { name: 'Clean & Modern', instruction: 'Create a CLEAN, minimalist, modern composition with bright colors, smooth gradients, and a professional polished look. Use geometric shapes and contemporary design elements.' },
+      { name: 'Energetic & Fun', instruction: 'Create a VIBRANT, energetic, playful composition with bright neon colors, dynamic angles, motion effects, and an exciting youthful feel. Use bold pop-art or comic-inspired elements.' }
+    ];
+
+    (async () => {
+      const promises = variantStyles.map(async (variant, i) => {
+        try {
+          // Generate unique prompt per variant
+          const promptResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 300,
+            messages: [
+              { role: 'system', content: `You are a YouTube thumbnail designer. Generate a DALL-E image prompt for a ${variant.name} style thumbnail. ${variant.instruction} Do NOT include any text, words, or letters in the image — only visual elements. ${brandContext}` },
+              { role: 'user', content: `Topic: "${videoTopic}"\nMoment: "${thumbTitle}"\nHook: "${thumbHook}"\n\nGenerate a DALL-E prompt. NO TEXT in the image.` }
+            ]
+          });
+
+          const dallePrompt = (promptResponse.choices[0]?.message?.content || '').trim().substring(0, 900) ||
+            `A ${variant.name.toLowerCase()} YouTube thumbnail about "${thumbTitle}". No text or letters.`;
+
+          console.log(`  A/B Thumbnail V${i+1} (${variant.name}): generating...`);
+
+          const imageResponse = await openai.images.generate({
+            model: 'dall-e-3',
+            prompt: dallePrompt,
+            n: 1,
+            size: '1792x1024',
+            quality: 'standard',
+            response_format: 'url'
+          });
+
+          const imageUrl = imageResponse.data[0]?.url;
+          if (!imageUrl) throw new Error('No image URL');
+
+          const outputPath = path.join(CLIPS_DIR, filenames[i]);
+          const https = require('https');
+          await new Promise((resolve, reject) => {
+            const file = fs.createWriteStream(outputPath);
+            https.get(imageUrl, (response) => {
+              if (response.statusCode === 200) {
+                response.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+              } else reject(new Error(`HTTP ${response.statusCode}`));
+            }).on('error', reject);
+          });
+
+          // Overlay title text if ffmpeg available
+          if (ffmpegAvailable) {
+            const tempImg = outputPath + '.temp_ab.png';
+            fs.renameSync(outputPath, tempImg);
+            const titleColor = (brandKit && brandKit.primary_color) || '#FFFFFF';
+            await applyThumbnailOverlay(tempImg, outputPath, thumbTitle, titleColor, '#000000', 72, 'gradient', brandKit);
+            try { fs.unlinkSync(tempImg); } catch(e) {}
+          }
+
+          console.log(`  A/B Thumbnail V${i+1} done: ${filenames[i]}`);
+        } catch (err) {
+          console.error(`  A/B Thumbnail V${i+1} failed:`, err.message);
+          const outputPath = path.join(CLIPS_DIR, filenames[i]);
+          try { fs.writeFileSync(outputPath + '.error', err.message); } catch(e) {}
+        }
+      });
+
+      await Promise.all(promises);
+      // Write a completion marker
+      fs.writeFileSync(path.join(CLIPS_DIR, `${batchId}_done`), 'complete');
+      console.log(`  A/B Thumbnail batch done: ${batchId}`);
+    })();
+
+  } catch (error) {
+    console.error('Error generating A/B thumbnails:', error);
+    res.status(500).json({ error: 'Failed to start A/B thumbnail generation' });
+  }
+});
+
+// GET /thumbnail-ab/status/:batchId - Check A/B batch status
+router.get('/thumbnail-ab/status/:batchId', requireAuth, (req, res) => {
+  const batchId = req.params.batchId.replace(/[^a-zA-Z0-9_-]/g, '');
+  const donePath = path.join(CLIPS_DIR, `${batchId}_done`);
+  const filenames = [`${batchId}_v1.png`, `${batchId}_v2.png`, `${batchId}_v3.png`];
+
+  const variants = filenames.map((fn, i) => {
+    const fp = path.join(CLIPS_DIR, fn);
+    const errorPath = fp + '.error';
+    if (fs.existsSync(errorPath)) {
+      return { variant: i + 1, ready: false, failed: true, message: fs.readFileSync(errorPath, 'utf8') };
+    } else if (fs.existsSync(fp) && fs.statSync(fp).size > 1000) {
+      return { variant: i + 1, ready: true, filename: fn };
+    } else {
+      return { variant: i + 1, ready: false };
+    }
+  });
+
+  const allDone = fs.existsSync(donePath);
+  const readyCount = variants.filter(v => v.ready).length;
+
+  res.json({ allDone, readyCount, totalVariants: 3, variants });
+});
+
 // POST /clip - Generate a video clip for a specific moment
 router.post('/clip', requireAuth, async (req, res) => {
   try {
@@ -2338,7 +2560,7 @@ router.post('/clip', requireAuth, async (req, res) => {
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
     }
 
-    const { analysisId, momentIndex, includeCaptions, clipStyle } = req.body;
+    const { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
       return res.status(400).json({ error: 'Analysis ID and moment index are required' });
@@ -2536,8 +2758,23 @@ router.post('/clip', requireAuth, async (req, res) => {
         if (includeCaptions && analysis.transcript) {
           try {
             console.log('  Generating captions...');
-            const segments = parseTranscriptToSegments(analysis.transcript);
+            let segments = parseTranscriptToSegments(analysis.transcript);
             console.log(`  Parsed ${segments.length} transcript segments`);
+
+            // Translate captions if a non-English language is selected
+            const lang = captionLanguage || 'en';
+            if (lang !== 'en' && SUPPORTED_LANGUAGES[lang]) {
+              console.log(`  Translating captions to ${SUPPORTED_LANGUAGES[lang]}...`);
+              const clipSegments = segments.filter(seg => seg.offsetSec >= startSec && seg.offsetSec < startSec + duration);
+              const translated = await translateSegments(clipSegments, lang);
+              // Replace matching segments with translations
+              segments = segments.map(seg => {
+                const match = translated.find(t => t.offsetSec === seg.offsetSec);
+                return match || seg;
+              });
+              console.log(`  Captions translated to ${SUPPORTED_LANGUAGES[lang]}`);
+            }
+
             const assContent = generateASSSubtitles(segments, startSec, duration);
             if (assContent) {
               assFilePath = outputPath + '.ass';
@@ -4323,9 +4560,13 @@ function renderShortsPage(user, analyses) {
         </div>
         <div class="upload-input-group">
           <input
-            type="text"
+            type="url"
             class="upload-input"
             id="videoUrl"
+            name="youtube_video_url"
+            autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
             placeholder="https://youtube.com/watch?v=..."
           >
           <button class="btn btn-primary" onclick="analyzeVideo()">
@@ -4349,7 +4590,7 @@ function renderShortsPage(user, analyses) {
             <button class="btn btn-small" onclick="document.getElementById('quickNarratePanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times;</button>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <input type="text" id="qn-videoUrl" placeholder="https://youtube.com/watch?v=... or YouTube Shorts URL"
+            <input type="url" id="qn-videoUrl" name="quick_narrate_url" autocomplete="off" placeholder="https://youtube.com/watch?v=... or YouTube Shorts URL"
               style="flex:1;padding:10px 12px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:14px;">
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
@@ -4474,7 +4715,7 @@ function renderShortsPage(user, analyses) {
             <button class="btn btn-small" onclick="toggleBatchInput()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
           </div>
           <p style="color:#888; font-size:13px; margin-bottom:16px;">Paste up to 10 YouTube URLs (one per line) to analyze them all at once.</p>
-          <textarea id="batchUrls" rows="6" placeholder="https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=..."
+          <textarea id="batchUrls" rows="6" autocomplete="off" placeholder="https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=...&#10;https://youtube.com/watch?v=..."
             style="width:100%; padding:12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:13px; resize:vertical; font-family:monospace;"></textarea>
           <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
             <button class="btn btn-primary" onclick="startBatchAnalysis()" id="batchBtn">Analyze All</button>
@@ -5001,6 +5242,29 @@ function renderShortsPage(user, analyses) {
                   style="accent-color:#FF0050; width:14px; height:14px;">
                 <span>Captions</span>
               </label>
+              <select id="caption-lang-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
+                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Caption language">
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="pt">Portuguese</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="hi">Hindi</option>
+                <option value="ar">Arabic</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+                <option value="ru">Russian</option>
+                <option value="tr">Turkish</option>
+                <option value="nl">Dutch</option>
+                <option value="pl">Polish</option>
+                <option value="id">Indonesian</option>
+                <option value="th">Thai</option>
+                <option value="vi">Vietnamese</option>
+                <option value="fil">Filipino</option>
+                <option value="sv">Swedish</option>
+              </select>
               <select id="clip-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
                 border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Clip style">
                 <option value="blur">Blur BG</option>
@@ -5030,6 +5294,7 @@ function renderShortsPage(user, analyses) {
                 <option value="border">Color Border</option>
                 <option value="split">Split Design</option>
                 <option value="ai">AI Generated</option>
+                <option value="ab">A/B Test (3 AI)</option>
               </select>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
                 class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
@@ -5377,13 +5642,15 @@ function renderShortsPage(user, analyses) {
       const includeCaptions = captionsCheckbox ? captionsCheckbox.checked : false;
       const styleSelect = document.getElementById('clip-style-' + momentIndex);
       const clipStyle = styleSelect ? styleSelect.value : 'blur';
+      const langSelect = document.getElementById('caption-lang-' + momentIndex);
+      const captionLanguage = langSelect ? langSelect.value : 'en';
 
       try {
         // Request clip generation
         const response = await fetch('/shorts/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle })
+          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage })
         });
 
         const data = await response.json();
@@ -6315,10 +6582,99 @@ function renderShortsPage(user, analyses) {
       const styleSelect = document.getElementById('thumb-style-' + momentIndex);
       const thumbStyle = styleSelect ? styleSelect.value : 'gradient';
       const isAI = thumbStyle === 'ai';
+      const isAB = thumbStyle === 'ab';
 
-      btn.textContent = isAI ? 'AI Generating...' : 'Generating...';
+      btn.textContent = isAB ? 'A/B Generating...' : isAI ? 'AI Generating...' : 'Generating...';
 
       try {
+        // A/B Test mode — generate 3 variants
+        if (isAB) {
+          const response = await fetch('/shorts/thumbnail-ab', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ analysisId, momentIndex })
+          });
+          const data = await response.json();
+          if (!data.success) throw new Error(data.error || 'Failed');
+
+          const batchId = data.batchId;
+          const filenames = data.filenames;
+          btn.textContent = 'Creating 3 variants...';
+
+          let attempts = 0;
+          const poll = setInterval(async () => {
+            attempts++;
+            try {
+              const statusResp = await fetch('/shorts/thumbnail-ab/status/' + batchId);
+              const statusData = await statusResp.json();
+
+              btn.textContent = 'Variants: ' + statusData.readyCount + '/3' + '.'.repeat((attempts % 3) + 1);
+
+              if (statusData.allDone || statusData.readyCount === 3) {
+                clearInterval(poll);
+
+                const readyVariants = statusData.variants.filter(v => v.ready);
+                if (readyVariants.length === 0) throw new Error('All variants failed');
+
+                // Build A/B comparison grid
+                const variantLabels = ['Bold & Dramatic', 'Clean & Modern', 'Energetic & Fun'];
+                let gridHtml = '<div style="margin-top:12px;background:var(--surface-light);border:1px solid var(--border-subtle);border-radius:12px;padding:16px;" id="thumb-preview-' + momentIndex + '">' +
+                  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+                    '<div style="font-weight:700;font-size:14px;color:var(--text);">A/B Thumbnail Test</div>' +
+                    '<div style="background:linear-gradient(135deg,#f39c12,#e67e22);color:#fff;padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;">3 VARIANTS</div>' +
+                  '</div>' +
+                  '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">';
+
+                for (let i = 0; i < 3; i++) {
+                  const v = statusData.variants[i];
+                  if (v && v.ready) {
+                    gridHtml += '<div style="border:2px solid var(--border-subtle);border-radius:8px;overflow:hidden;cursor:pointer;transition:all 0.2s;" ' +
+                      'onmouseover="this.style.borderColor=\\'#6c5ce7\\';this.style.transform=\\'scale(1.02)\\'" ' +
+                      'onmouseout="this.style.borderColor=\\'var(--border-subtle)\\';this.style.transform=\\'scale(1)\\'">' +
+                        '<img src="/shorts/thumbnail/download/' + v.filename + '" style="width:100%;display:block;" alt="Variant ' + (i+1) + '">' +
+                        '<div style="padding:8px;text-align:center;">' +
+                          '<div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px;">' + variantLabels[i] + '</div>' +
+                          '<a href="/shorts/thumbnail/download/' + v.filename + '" download="' + v.filename + '" class="btn btn-small" ' +
+                            'style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:10px;padding:4px 12px;">Download</a>' +
+                        '</div>' +
+                      '</div>';
+                  } else {
+                    gridHtml += '<div style="border:2px solid var(--border-subtle);border-radius:8px;padding:40px;text-align:center;">' +
+                      '<div style="color:var(--text-muted);font-size:12px;">' + (v && v.failed ? 'Failed' : 'Generating...') + '</div></div>';
+                  }
+                }
+
+                gridHtml += '</div>' +
+                  '<div style="margin-top:10px;display:flex;gap:8px;">' +
+                    '<button class="btn btn-small" style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;font-size:11px;" ' +
+                      'onclick="generateThumbnail(\'' + analysisId + '\', ' + momentIndex + ', document.getElementById(\'thumb-btn-' + momentIndex + '\'))">Regenerate All</button>' +
+                    '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:11px;" ' +
+                      'onclick="document.getElementById(\'thumb-preview-' + momentIndex + '\').remove()">Close</button>' +
+                  '</div>' +
+                '</div>';
+
+                const old = document.getElementById('thumb-preview-' + momentIndex);
+                if (old) old.remove();
+                btn.closest('.moment-card').insertAdjacentHTML('beforeend', gridHtml);
+                btn.disabled = false;
+                btn.textContent = originalText;
+                showToast('A/B Thumbnails ready! Pick your favorite.');
+              } else if (attempts >= 120) {
+                clearInterval(poll);
+                throw new Error('Timed out');
+              }
+            } catch (pollError) {
+              clearInterval(poll);
+              showToast('Error: ' + pollError.message);
+              btn.disabled = false;
+              btn.textContent = originalText;
+            }
+          }, 3000);
+
+          return;
+        }
+
+        // Single thumbnail (regular or AI)
         const endpoint = isAI ? '/shorts/thumbnail-ai' : '/shorts/thumbnail';
         const payload = isAI
           ? { analysisId, momentIndex, aspectRatio: 'landscape' }
@@ -6334,12 +6690,10 @@ function renderShortsPage(user, analyses) {
         if (!data.success) throw new Error(data.error || 'Failed');
 
         const filename = data.filename;
-        const downloadBase = isAI ? '/shorts/thumbnail/download/' : '/shorts/thumbnail/download/';
         btn.textContent = isAI ? 'AI Creating...' : 'Processing...';
 
-        // Poll for readiness
         let attempts = 0;
-        const maxAttempts = isAI ? 90 : 60; // AI takes longer
+        const maxAttempts = isAI ? 90 : 60;
         const poll = setInterval(async () => {
           attempts++;
           try {
@@ -6352,26 +6706,23 @@ function renderShortsPage(user, analyses) {
             } else if (statusData.ready) {
               clearInterval(poll);
 
-              // Show preview + download link + regenerate button for AI
               const aiLabel = isAI ? '<div style="position:absolute;top:20px;right:20px;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;padding:4px 10px;border-radius:12px;font-size:10px;font-weight:700;">AI GENERATED</div>' : '';
-              const regenBtn = isAI ? '<button class="btn btn-small" style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;font-size:11px;" onclick="generateThumbnail(\\'' + analysisId + '\\', ' + momentIndex + ', document.getElementById(\\'thumb-btn-' + momentIndex + '\\'))">Regenerate</button>' : '';
+              const regenBtn = isAI ? '<button class="btn btn-small" style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;font-size:11px;" onclick="generateThumbnail(\'' + analysisId + '\', ' + momentIndex + ', document.getElementById(\'thumb-btn-' + momentIndex + '\'))">Regenerate</button>' : '';
 
               const previewHtml = '<div style="margin-top:12px;background:var(--surface-light);border:1px solid var(--border-subtle);border-radius:8px;padding:12px;position:relative;" id="thumb-preview-' + momentIndex + '">' +
                 aiLabel +
-                '<img src="' + downloadBase + filename + '" style="width:100%;border-radius:6px;display:block;" alt="Thumbnail">' +
+                '<img src="/shorts/thumbnail/download/' + filename + '" style="width:100%;border-radius:6px;display:block;" alt="Thumbnail">' +
                 '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
-                  '<a href="' + downloadBase + filename + '" download="' + filename + '" class="btn btn-small" ' +
+                  '<a href="/shorts/thumbnail/download/' + filename + '" download="' + filename + '" class="btn btn-small" ' +
                     'style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:11px;">Download</a>' +
                   regenBtn +
                   '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:11px;" ' +
-                    'onclick="document.getElementById(' + "'thumb-preview-" + momentIndex + "'" + ').remove()">Close</button>' +
+                    'onclick="document.getElementById(\'' + 'thumb-preview-' + momentIndex + '\').remove()">Close</button>' +
                 '</div>' +
               '</div>';
 
-              // Remove old preview if any
               const old = document.getElementById('thumb-preview-' + momentIndex);
               if (old) old.remove();
-
               btn.closest('.moment-card').insertAdjacentHTML('beforeend', previewHtml);
               btn.disabled = false;
               btn.textContent = originalText;
