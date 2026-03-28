@@ -18,7 +18,7 @@ if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath
 const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
-const { shortsOps, brandKitOps } = require('../db/database');
+const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -1590,6 +1590,55 @@ router.get('/export/:analysisId', requireAuth, async (req, res) => {
   }
 });
 
+// === Content Calendar API ===
+router.get('/calendar', requireAuth, async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const startDate = start || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const endDate = end || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+    const entries = await calendarOps.getByUserId(req.user.id, startDate, endDate);
+    res.json({ success: true, entries });
+  } catch (error) {
+    console.error('Calendar fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar' });
+  }
+});
+
+router.post('/calendar', requireAuth, async (req, res) => {
+  try {
+    const { title, platform, scheduledDate, scheduledTime, contentText, analysisId, momentIndex, notes, color } = req.body;
+    if (!title || !scheduledDate) return res.status(400).json({ error: 'Title and date required' });
+    const entry = await calendarOps.create({
+      userId: req.user.id, title, platform, scheduledDate, scheduledTime, contentText, analysisId, momentIndex, notes, color
+    });
+    res.json({ success: true, entry });
+  } catch (error) {
+    console.error('Calendar create error:', error);
+    res.status(500).json({ error: 'Failed to create calendar entry' });
+  }
+});
+
+router.put('/calendar/:id', requireAuth, async (req, res) => {
+  try {
+    const entry = await calendarOps.update(req.params.id, req.user.id, req.body);
+    if (!entry) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ success: true, entry });
+  } catch (error) {
+    console.error('Calendar update error:', error);
+    res.status(500).json({ error: 'Failed to update entry' });
+  }
+});
+
+router.delete('/calendar/:id', requireAuth, async (req, res) => {
+  try {
+    await calendarOps.delete(req.params.id, req.user.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Calendar delete error:', error);
+    res.status(500).json({ error: 'Failed to delete entry' });
+  }
+});
+
 // POST /thumbnail - Generate a thumbnail for a moment
 router.post('/thumbnail', requireAuth, async (req, res) => {
   try {
@@ -2970,7 +3019,81 @@ function renderShortsPage(user, analyses) {
           </div>
         `}
       </div>
+
+      <!-- Content Calendar -->
+      <div style="margin-top: 32px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h2 style="font-size:22px;font-weight:700;">Content Calendar</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn btn-small" onclick="changeCalendarMonth(-1)" style="background:rgba(255,255,255,0.08);">&larr;</button>
+            <span id="calendarMonthLabel" style="font-size:14px;font-weight:600;min-width:140px;text-align:center;"></span>
+            <button class="btn btn-small" onclick="changeCalendarMonth(1)" style="background:rgba(255,255,255,0.08);">&rarr;</button>
+            <button class="btn btn-small" onclick="openAddEntry()" style="background:rgba(108,92,231,0.2);color:#a29bfe;">+ Add Entry</button>
+          </div>
+        </div>
+        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:rgba(255,255,255,0.05);border-radius:12px;overflow:hidden;"></div>
+      </div>
     </main>
+
+  <!-- Calendar Entry Modal -->
+  <div id="calendarEntryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#1a1a2e;border-radius:12px;padding:24px;max-width:400px;width:90%;margin:auto;margin-top:15vh;">
+      <h3 style="margin-bottom:16px;" id="calEntryTitle">Add Calendar Entry</h3>
+      <input type="hidden" id="cal-entry-id">
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Title</label>
+        <input type="text" id="cal-title" placeholder="Post title"
+          style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div>
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Date</label>
+          <input type="date" id="cal-date"
+            style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Time</label>
+          <input type="time" id="cal-time" value="12:00"
+            style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div>
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Platform</label>
+          <select id="cal-platform"
+            style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;">
+            <option value="tiktok">TikTok</option>
+            <option value="instagram">Instagram</option>
+            <option value="shorts">YouTube Shorts</option>
+            <option value="twitter">Twitter/X</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="blog">Blog</option>
+            <option value="newsletter">Newsletter</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Status</label>
+          <select id="cal-status"
+            style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;">
+            <option value="planned">Planned</option>
+            <option value="drafted">Drafted</option>
+            <option value="ready">Ready</option>
+            <option value="published">Published</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Notes</label>
+        <textarea id="cal-notes" rows="3" placeholder="Any notes..."
+          style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:13px;resize:vertical;"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="saveCalendarEntry()" style="flex:1;">Save</button>
+        <button class="btn" onclick="closeCalendarModal()" style="background:rgba(255,255,255,0.1);flex:1;">Cancel</button>
+        <button class="btn" id="cal-delete-btn" onclick="deleteCalendarEntry()" style="background:rgba(255,0,0,0.2);color:#ff6b6b;display:none;">Delete</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal for viewing analysis -->
   <div class="modal" id="analysisModal">
@@ -3630,6 +3753,159 @@ function renderShortsPage(user, analyses) {
         btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
       }
     }
+
+    // === Content Calendar ===
+    let calendarMonth = new Date().getMonth();
+    let calendarYear = new Date().getFullYear();
+    let calendarEntries = [];
+
+    const platformEmojis = {
+      tiktok: '&#9834;', instagram: '&#x1F4F7;', shorts: '&#x25B6;',
+      twitter: '&#x1F426;', linkedin: 'in', blog: '&#x270F;', newsletter: '&#x2709;'
+    };
+    const statusColors = {
+      planned: '#6c5ce7', drafted: '#f39c12', ready: '#10b981', published: '#00b894'
+    };
+
+    function changeCalendarMonth(delta) {
+      calendarMonth += delta;
+      if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+      if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
+      renderCalendar();
+    }
+
+    async function renderCalendar() {
+      const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      document.getElementById('calendarMonthLabel').textContent = months[calendarMonth] + ' ' + calendarYear;
+
+      const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+      const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+      const startDate = calendarYear + '-' + String(calendarMonth+1).padStart(2,'0') + '-01';
+      const endDate = calendarYear + '-' + String(calendarMonth+1).padStart(2,'0') + '-' + String(daysInMonth).padStart(2,'0');
+
+      try {
+        const resp = await fetch('/shorts/calendar?start=' + startDate + '&end=' + endDate);
+        const data = await resp.json();
+        calendarEntries = data.entries || [];
+      } catch (e) { calendarEntries = []; }
+
+      const grid = document.getElementById('calendarGrid');
+      let html = '';
+
+      // Day headers
+      ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => {
+        html += '<div style="padding:8px;text-align:center;font-size:11px;color:var(--text-muted);font-weight:600;background:rgba(255,255,255,0.03);">' + d + '</div>';
+      });
+
+      // Empty cells before first day
+      for (let i = 0; i < firstDay; i++) {
+        html += '<div style="padding:8px;min-height:80px;background:rgba(0,0,0,0.2);"></div>';
+      }
+
+      const today = new Date();
+      const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+
+      // Day cells
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = calendarYear + '-' + String(calendarMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+        const isToday = dateStr === todayStr;
+        const dayEntries = calendarEntries.filter(e => {
+          const ed = (e.scheduled_date || '').substring(0,10);
+          return ed === dateStr;
+        });
+
+        html += '<div style="padding:6px;min-height:80px;background:' + (isToday ? 'rgba(108,92,231,0.1)' : 'rgba(0,0,0,0.3)') +
+          ';cursor:pointer;transition:background 0.2s;" onclick="openAddEntry(\\'' + dateStr + '\\')" ' +
+          'onmouseover="this.style.background=\\'rgba(108,92,231,0.15)\\'" onmouseout="this.style.background=\\'' + (isToday ? 'rgba(108,92,231,0.1)' : 'rgba(0,0,0,0.3)') + '\\'">' +
+          '<div style="font-size:12px;font-weight:' + (isToday ? '700' : '400') + ';color:' + (isToday ? '#a29bfe' : '#888') + ';margin-bottom:4px;">' + day + '</div>';
+
+        dayEntries.forEach(entry => {
+          const sc = statusColors[entry.status] || '#6c5ce7';
+          html += '<div style="font-size:10px;padding:2px 4px;margin-bottom:2px;background:' + sc + '22;border-left:2px solid ' + sc +
+            ';border-radius:2px;color:#ccc;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" ' +
+            'onclick="event.stopPropagation();editCalendarEntry(\\'' + entry.id + '\\')" title="' + (entry.title || '').replace(/"/g,'&quot;') + '">' +
+            (platformEmojis[entry.platform] || '') + ' ' + (entry.title || '').substring(0,15) +
+          '</div>';
+        });
+
+        html += '</div>';
+      }
+
+      grid.innerHTML = html;
+    }
+
+    function openAddEntry(dateStr) {
+      document.getElementById('cal-entry-id').value = '';
+      document.getElementById('cal-title').value = '';
+      document.getElementById('cal-date').value = dateStr || new Date().toISOString().split('T')[0];
+      document.getElementById('cal-time').value = '12:00';
+      document.getElementById('cal-platform').value = 'tiktok';
+      document.getElementById('cal-status').value = 'planned';
+      document.getElementById('cal-notes').value = '';
+      document.getElementById('cal-delete-btn').style.display = 'none';
+      document.getElementById('calEntryTitle').textContent = 'Add Calendar Entry';
+      document.getElementById('calendarEntryModal').style.display = 'flex';
+    }
+
+    function editCalendarEntry(entryId) {
+      const entry = calendarEntries.find(e => e.id === entryId);
+      if (!entry) return;
+      document.getElementById('cal-entry-id').value = entry.id;
+      document.getElementById('cal-title').value = entry.title || '';
+      document.getElementById('cal-date').value = (entry.scheduled_date || '').substring(0,10);
+      document.getElementById('cal-time').value = entry.scheduled_time || '12:00';
+      document.getElementById('cal-platform').value = entry.platform || 'tiktok';
+      document.getElementById('cal-status').value = entry.status || 'planned';
+      document.getElementById('cal-notes').value = entry.notes || '';
+      document.getElementById('cal-delete-btn').style.display = 'block';
+      document.getElementById('calEntryTitle').textContent = 'Edit Calendar Entry';
+      document.getElementById('calendarEntryModal').style.display = 'flex';
+    }
+
+    function closeCalendarModal() {
+      document.getElementById('calendarEntryModal').style.display = 'none';
+    }
+
+    async function saveCalendarEntry() {
+      const entryId = document.getElementById('cal-entry-id').value;
+      const data = {
+        title: document.getElementById('cal-title').value,
+        scheduledDate: document.getElementById('cal-date').value,
+        scheduledTime: document.getElementById('cal-time').value,
+        platform: document.getElementById('cal-platform').value,
+        status: document.getElementById('cal-status').value,
+        notes: document.getElementById('cal-notes').value
+      };
+      if (!data.title || !data.scheduledDate) { showToast('Title and date required'); return; }
+
+      try {
+        const url = entryId ? '/shorts/calendar/' + entryId : '/shorts/calendar';
+        const method = entryId ? 'PUT' : 'POST';
+        const resp = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        const result = await resp.json();
+        if (result.success) {
+          closeCalendarModal();
+          renderCalendar();
+          showToast(entryId ? 'Entry updated' : 'Entry added');
+        } else {
+          throw new Error(result.error);
+        }
+      } catch (e) { showToast('Error: ' + e.message); }
+    }
+
+    async function deleteCalendarEntry() {
+      const entryId = document.getElementById('cal-entry-id').value;
+      if (!entryId || !confirm('Delete this entry?')) return;
+      try {
+        await fetch('/shorts/calendar/' + entryId, { method: 'DELETE' });
+        closeCalendarModal();
+        renderCalendar();
+        showToast('Entry deleted');
+      } catch (e) { showToast('Error: ' + e.message); }
+    }
+
+    // Initialize calendar
+    renderCalendar();
 
     // === Batch Analysis & Export ===
     function toggleBatchInput() {

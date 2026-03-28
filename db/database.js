@@ -129,6 +129,43 @@ const initDatabase = async () => {
       )
     `);
 
+    // Brand kit table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS brand_kits (
+        id TEXT PRIMARY KEY,
+        user_id TEXT UNIQUE NOT NULL,
+        brand_name TEXT DEFAULT '',
+        watermark_text TEXT DEFAULT '',
+        primary_color TEXT DEFAULT '#FF0050',
+        secondary_color TEXT DEFAULT '#6c5ce7',
+        font_style TEXT DEFAULT 'modern',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Content calendar entries
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS calendar_entries (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        platform TEXT DEFAULT 'tiktok',
+        scheduled_date DATE NOT NULL,
+        scheduled_time TEXT DEFAULT '12:00',
+        status TEXT DEFAULT 'planned',
+        content_text TEXT DEFAULT '',
+        analysis_id TEXT,
+        moment_index INTEGER,
+        notes TEXT DEFAULT '',
+        color TEXT DEFAULT '#6c5ce7',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -479,6 +516,73 @@ const shortsOps = {
   }
 };
 
+// Brand kit operations
+const brandKitOps = {
+  async getByUserId(userId) {
+    const result = await pool.query('SELECT * FROM brand_kits WHERE user_id = $1', [userId]);
+    return result.rows[0] || null;
+  },
+  async upsert(userId, data) {
+    const result = await pool.query(`
+      INSERT INTO brand_kits (id, user_id, brand_name, watermark_text, primary_color, secondary_color, font_style)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (user_id) DO UPDATE SET
+        brand_name = EXCLUDED.brand_name,
+        watermark_text = EXCLUDED.watermark_text,
+        primary_color = EXCLUDED.primary_color,
+        secondary_color = EXCLUDED.secondary_color,
+        font_style = EXCLUDED.font_style,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `, [uuidv4(), userId, data.brandName || '', data.watermarkText || '',
+        data.primaryColor || '#FF0050', data.secondaryColor || '#6c5ce7', data.fontStyle || 'modern']);
+    return result.rows[0];
+  }
+};
+
+// Calendar operations
+const calendarOps = {
+  async getByUserId(userId, startDate, endDate) {
+    const result = await pool.query(
+      'SELECT * FROM calendar_entries WHERE user_id = $1 AND scheduled_date >= $2 AND scheduled_date <= $3 ORDER BY scheduled_date, scheduled_time',
+      [userId, startDate, endDate]
+    );
+    return result.rows;
+  },
+  async create(data) {
+    const id = uuidv4();
+    const result = await pool.query(`
+      INSERT INTO calendar_entries (id, user_id, title, platform, scheduled_date, scheduled_time, status, content_text, analysis_id, moment_index, notes, color)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *
+    `, [id, data.userId, data.title, data.platform || 'tiktok', data.scheduledDate, data.scheduledTime || '12:00',
+        data.status || 'planned', data.contentText || '', data.analysisId || null, data.momentIndex ?? null,
+        data.notes || '', data.color || '#6c5ce7']);
+    return result.rows[0];
+  },
+  async update(id, userId, data) {
+    const result = await pool.query(`
+      UPDATE calendar_entries SET
+        title = COALESCE($3, title),
+        platform = COALESCE($4, platform),
+        scheduled_date = COALESCE($5, scheduled_date),
+        scheduled_time = COALESCE($6, scheduled_time),
+        status = COALESCE($7, status),
+        content_text = COALESCE($8, content_text),
+        notes = COALESCE($9, notes),
+        color = COALESCE($10, color),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND user_id = $2
+      RETURNING *
+    `, [id, userId, data.title, data.platform, data.scheduledDate, data.scheduledTime,
+        data.status, data.contentText, data.notes, data.color]);
+    return result.rows[0];
+  },
+  async delete(id, userId) {
+    await pool.query('DELETE FROM calendar_entries WHERE id = $1 AND user_id = $2', [id, userId]);
+  }
+};
+
 module.exports = {
   initDatabase,
   getDb,
@@ -488,5 +592,7 @@ module.exports = {
   outputOps,
   brandVoiceOps,
   contactOps,
-  shortsOps
+  shortsOps,
+  brandKitOps,
+  calendarOps
 };
