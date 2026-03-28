@@ -1565,7 +1565,7 @@ router.get('/export/:analysisId', requireAuth, async (req, res) => {
     }
 
     if (matchedClips.length === 0 && matchedThumbs.length === 0) {
-      return res.status(404).json({ error: 'No clips or thumbnails found. Generate some clips first!' });
+      return res.status(404).json({ error: 'No clips found. Clips are cleared on server updates — please download clips individually after generating them, or generate and export in the same session.' });
     }
 
     const safeTitle = (analysis.video_title || 'export').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
@@ -2414,12 +2414,12 @@ router.post('/clip', requireAuth, async (req, res) => {
             '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else if (style === 'pip') {
-          // Picture-in-Picture: cropped fullscreen background + small original in corner
-          // Background is center-cropped to fill 9:16 (like crop style), with a small
-          // PiP window showing the full original framing in the top-right corner
+          // Picture-in-Picture: cropped fullscreen background + small PiP in top-right
+          // Uses split to avoid reading input twice (much faster)
           videoFilter = [
-            '[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,setsar=1[bg]',
-            '[0:v]scale=380:-2:flags=lanczos,setsar=1[pip]',
+            '[0:v]split=2[base][small]',
+            '[base]scale=1080:1920:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1920:(iw-1080)/2:(ih-1920)/2,setsar=1[bg]',
+            '[small]scale=380:-2:flags=lanczos,setsar=1[pip]',
             '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter
           ].join(';');
         } else {
@@ -2445,8 +2445,8 @@ router.post('/clip', requireAuth, async (req, res) => {
           '-b:a', '128k',
           '-ar', '44100',
           '-ac', '2',
-          '-preset', 'medium',
-          '-crf', '20',
+          '-preset', 'fast',
+          '-crf', '22',
           '-movflags', '+faststart',
           '-max_muxing_queue_size', '2048',
           tempOutputPath
@@ -2814,7 +2814,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
         } else if (style === 'fit') {
           videoFilter = ['color=c=black:s=1080x1920:r=30[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else if (style === 'pip') {
-          videoFilter = ['[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,setsar=1[bg]', '[0:v]scale=380:-2:flags=lanczos,setsar=1[pip]', '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter].join(';');
+          videoFilter = ['[0:v]split=2[base][small]', '[base]scale=1080:1920:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=1080:1920:(iw-1080)/2:(ih-1920)/2,setsar=1[bg]', '[small]scale=380:-2:flags=lanczos,setsar=1[pip]', '[bg][pip]overlay=W-w-16:16,setsar=1' + captionFilter + watermarkFilter].join(';');
         } else {
           videoFilter = ['[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]', '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]', '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' + captionFilter + watermarkFilter].join(';');
         }
@@ -2824,7 +2824,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
           ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
           '-c:v', 'libx264', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
           '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-          '-preset', 'medium', '-crf', '20', '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
+          '-preset', 'fast', '-crf', '22', '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
           mainSegment
         ], { timeout: 240000 });
 
@@ -2853,7 +2853,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
             await runCommand(ffmpegPath, [
               '-y', '-i', brollRaw, '-t', String(brollDur),
               '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,setsar=1',
-              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '22',
               '-an',
               '-movflags', '+faststart',
               brollFormatted
