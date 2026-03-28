@@ -4668,7 +4668,7 @@ function renderShortsPage(user, analyses) {
         html += '<div style="padding:6px;min-height:80px;background:' + bgColor +
           ';cursor:pointer;transition:background 0.2s;' + borderStyle + ';" onclick="openAddEntry(' + "'" + dateStr + "'" + ')" ' +
           'onmouseover="this.style.background=' + "'" + 'rgba(108,92,231,0.12)' + "'" + '" onmouseout="this.style.background=' + "'" + bgColor + "'" + '">' +
-          '<div style="font-size:12px;font-weight:' + (isToday ? '700' : '500') + ';color:' + (isToday ? '#a29bfe' : '#bbb') + ';margin-bottom:4px;">' + day + '</div>';
+          '<div style="font-size:13px;font-weight:' + (isToday ? '700' : '600') + ';color:' + (isToday ? '#a29bfe' : '#e0e0e0') + ';margin-bottom:4px;">' + day + '</div>';
 
         dayEntries.forEach(entry => {
           const sc = statusColors[entry.status] || '#6c5ce7';
