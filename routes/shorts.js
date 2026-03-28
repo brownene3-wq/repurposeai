@@ -55,6 +55,100 @@ function buildTranscriptText(segments) {
   }).join(' ');
 }
 
+// Helper: Parse stored transcript text back into timed segments
+// Transcript format: "[HH:MM:SS] text [HH:MM:SS] text ..."
+function parseTranscriptToSegments(transcriptText) {
+  const segments = [];
+  const regex = /\[(\d{2}:\d{2}:\d{2})\]\s*(.*?)(?=\s*\[\d{2}:\d{2}:\d{2}\]|$)/g;
+  let match;
+  while ((match = regex.exec(transcriptText)) !== null) {
+    const [, timestamp, text] = match;
+    const parts = timestamp.split(':').map(Number);
+    const offsetSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (text.trim()) {
+      segments.push({ offsetSec, text: text.trim() });
+    }
+  }
+  return segments;
+}
+
+// Helper: Generate ASS subtitle file for burned-in captions
+// Style: TikTok/Reels style - bold white text, black outline, centered in lower third
+function generateASSSubtitles(segments, clipStartSec, clipDuration) {
+  const clipEndSec = clipStartSec + clipDuration;
+
+  // Filter segments that fall within the clip time range
+  const clipSegments = segments.filter(seg =>
+    seg.offsetSec >= clipStartSec && seg.offsetSec < clipEndSec
+  );
+
+  if (clipSegments.length === 0) return null;
+
+  // ASS header with TikTok-style formatting
+  // PlayResX/Y: 1080x1920 (9:16 vertical)
+  // Font: Bold, large, white with black outline, positioned in lower third
+  const assHeader = `[Script Info]
+Title: Auto Captions
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Liberation Sans,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,180,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
+
+  // Generate dialogue lines
+  const dialogueLines = [];
+
+  for (let i = 0; i < clipSegments.length; i++) {
+    const seg = clipSegments[i];
+    // Time relative to clip start
+    const relStart = seg.offsetSec - clipStartSec;
+
+    // End time: next segment start, or +3 seconds, whichever is smaller
+    let relEnd;
+    if (i + 1 < clipSegments.length) {
+      relEnd = Math.min(clipSegments[i + 1].offsetSec - clipStartSec, relStart + 4);
+    } else {
+      relEnd = Math.min(relStart + 4, clipDuration);
+    }
+
+    // Clamp to clip duration
+    if (relEnd > clipDuration) relEnd = clipDuration;
+    if (relStart >= clipDuration) continue;
+
+    // Format as H:MM:SS.cc (ASS time format)
+    const formatASSTime = (sec) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = Math.floor(sec % 60);
+      const cs = Math.round((sec % 1) * 100);
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+    };
+
+    // Break long text into max ~6 words per line for readability
+    const words = seg.text.split(/\s+/);
+    const lines = [];
+    for (let w = 0; w < words.length; w += 6) {
+      lines.push(words.slice(w, w + 6).join(' '));
+    }
+    // Use \N for line breaks in ASS, uppercase the text for TikTok style
+    const displayText = lines.join('\\N').toUpperCase();
+
+    dialogueLines.push(
+      `Dialogue: 0,${formatASSTime(relStart)},${formatASSTime(relEnd)},Default,,0,0,0,,${displayText}`
+    );
+  }
+
+  if (dialogueLines.length === 0) return null;
+
+  return assHeader + '\n' + dialogueLines.join('\n') + '\n';
+}
+
 // Helper: Fetch transcript using Supadata.ai API (most reliable - paid service, no YouTube blocking)
 async function fetchTranscriptSupadata(videoId) {
   const apiKey = process.env.SUPADATA_API_KEY;
@@ -1236,7 +1330,7 @@ router.post('/clip', requireAuth, async (req, res) => {
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
     }
 
-    const { analysisId, momentIndex } = req.body;
+    const { analysisId, momentIndex, includeCaptions } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
       return res.status(400).json({ error: 'Analysis ID and moment index are required' });
@@ -1422,15 +1516,39 @@ router.post('/clip', requireAuth, async (req, res) => {
         // Overlay foreground centered on blurred background
         writeProgress('Creating vertical clip...');
 
+        // === Generate captions if requested ===
+        let assFilePath = null;
+        if (includeCaptions && analysis.transcript) {
+          try {
+            console.log('  Generating captions...');
+            const segments = parseTranscriptToSegments(analysis.transcript);
+            console.log(`  Parsed ${segments.length} transcript segments`);
+            const assContent = generateASSSubtitles(segments, startSec, duration);
+            if (assContent) {
+              assFilePath = outputPath + '.ass';
+              fs.writeFileSync(assFilePath, assContent, 'utf8');
+              console.log(`  ASS subtitle file written: ${assFilePath}`);
+            } else {
+              console.log('  No caption segments found for this time range');
+            }
+          } catch (captionErr) {
+            console.error('  Caption generation failed:', captionErr.message);
+            // Continue without captions
+          }
+        }
+
         // Optimized blur-background filter:
         // Scale DOWN to tiny res first, blur there (16x faster), then scale UP
+        // If captions are available, burn them in with the ASS filter
         const blurBgFilter = [
           // Background: scale down to small, blur cheaply, scale up to fill 9:16
           '[0:v]scale=270:-2,boxblur=8:3,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]',
           // Foreground: scale to fit within 1080x1920, preserving aspect ratio
           '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[fg]',
           // Center foreground on blurred background
-          '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1'
+          '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1' +
+            // Burn in ASS captions if available (after compositing so text renders on final frame)
+            (assFilePath ? `,ass='${assFilePath.replace(/'/g, "'\\''").replace(/:/g, '\\:')}'` : '')
         ].join(';');
 
         const ffmpegArgs = [
@@ -1504,8 +1622,9 @@ router.post('/clip', requireAuth, async (req, res) => {
           }
         }
 
-        // Clean up downloaded video
+        // Clean up temp files
         try { fs.unlinkSync(actualDownload); } catch(e) {}
+        if (assFilePath) { try { fs.unlinkSync(assFilePath); } catch(e) {} }
 
         // === STEP 3: Validate output and atomically rename ===
         clearTimeout(timeout);
@@ -2333,7 +2452,7 @@ function renderShortsPage(user, analyses) {
             </div>
             \${videoEmbed}
             <div class="moment-card-desc">\${moment.description}</div>
-            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
               <button class="btn btn-small btn-primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
                 Generate Content
               </button>
@@ -2342,6 +2461,12 @@ function renderShortsPage(user, analyses) {
                 onclick="downloadClip('\${id}', \${idx}, this)">
                 Download Clip
               </button>
+              <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size:12px; color:var(--text-muted);"
+                title="Burn animated captions into the clip">
+                <input type="checkbox" id="captions-\${idx}" checked
+                  style="accent-color:#FF0050; width:14px; height:14px;">
+                <span>Captions</span>
+              </label>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
                 class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
                 Open on YouTube
@@ -2420,12 +2545,16 @@ function renderShortsPage(user, analyses) {
       btn.disabled = true;
       btn.textContent = 'Starting...';
 
+      // Check if captions checkbox is checked
+      const captionsCheckbox = document.getElementById('captions-' + momentIndex);
+      const includeCaptions = captionsCheckbox ? captionsCheckbox.checked : false;
+
       try {
         // Request clip generation
         const response = await fetch('/shorts/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex })
+          body: JSON.stringify({ analysisId, momentIndex, includeCaptions })
         });
 
         const data = await response.json();
