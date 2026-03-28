@@ -126,10 +126,43 @@ function getResend() {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       });
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       }
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      module.exports = {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        sendEmail,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          sendWelcomeEmail,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            sendContactNotification,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              sendContactConfirmation,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                sendUpgradeConfirmation
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                };const test = 'hello';
+function sendPostingReminder({ email, title, platform, scheduledDate, scheduledTime }) {
+  const platformNames = { tiktok: 'TikTok', instagram: 'Instagram', shorts: 'YouTube Shorts', twitter: 'Twitter/X', linkedin: 'LinkedIn', blog: 'Blog', newsletter: 'Newsletter' };
+  const platformName = platformNames[platform] || platform || 'your platform';
+  const dateObj = new Date(scheduledDate + 'T' + (scheduledTime || '12:00') + ':00');
+  const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const dateStr = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  return sendEmail({
+    to: email,
+    subject: `Reminder: Post "${title}" on ${platformName} soon!`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#f39c12,#e67e22);padding:28px;text-align:center">
+          <h2 style="color:#fff;margin:0;font-size:22px">Time to Post!</h2>
+        </div>
+        <div style="padding:28px">
+          <p style="font-size:16px;color:#333;margin-bottom:20px;">Your scheduled post is coming up soon:</p>
+          <div style="background:#f8fafc;border-radius:8px;padding:20px;border-left:4px solid #f39c12;margin-bottom:20px;">
+            <h3 style="margin:0 0 8px 0;color:#333;font-size:18px;">${title}</h3>
+            <p style="margin:4px 0;font-size:14px;color:#555;"><strong>Platform:</strong> ${platformName}</p>
+            <p style="margin:4px 0;font-size:14px;color:#555;"><strong>Scheduled:</strong> ${dateStr} at ${timeStr}</p>
+          </div>
+          <div style="text-align:center;margin:24px 0">
+            <a href="https://repurposeai.ai/shorts" style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;display:inline-block">Open RepurposeAI</a>
+          </div>
+          <p style="font-size:13px;color:#999;text-align:center;margin-top:20px;">This reminder was set from your Content Calendar.</p>
+        </div>
+      </div>
+    `
+  });
+}
+
+module.exports = {
+  sendEmail,
+  sendWelcomeEmail,
+  sendContactNotification,
+  sendContactConfirmation,
+  sendUpgradeConfirmation,
+  sendPostingReminder
+};

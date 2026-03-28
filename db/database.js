@@ -160,11 +160,23 @@ const initDatabase = async () => {
         moment_index INTEGER,
         notes TEXT DEFAULT '',
         color TEXT DEFAULT '#6c5ce7',
+        reminder_email TEXT DEFAULT '',
+        reminder_minutes INTEGER DEFAULT 0,
+        reminder_sent BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Migrations for existing tables
+    try {
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_email TEXT DEFAULT \'\'');
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_minutes INTEGER DEFAULT 0');
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT FALSE');
+    } catch (migErr) {
+      console.log('Calendar migration (may already exist):', migErr.message);
+    }
 
     console.log('Database initialized successfully');
   } catch (error) {
@@ -552,12 +564,12 @@ const calendarOps = {
   async create(data) {
     const id = uuidv4();
     const result = await pool.query(`
-      INSERT INTO calendar_entries (id, user_id, title, platform, scheduled_date, scheduled_time, status, content_text, analysis_id, moment_index, notes, color)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      INSERT INTO calendar_entries (id, user_id, title, platform, scheduled_date, scheduled_time, status, content_text, analysis_id, moment_index, notes, color, reminder_email, reminder_minutes, reminder_sent)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, FALSE)
       RETURNING *
     `, [id, data.userId, data.title, data.platform || 'tiktok', data.scheduledDate, data.scheduledTime || '12:00',
         data.status || 'planned', data.contentText || '', data.analysisId || null, data.momentIndex ?? null,
-        data.notes || '', data.color || '#6c5ce7']);
+        data.notes || '', data.color || '#6c5ce7', data.reminderEmail || '', data.reminderMinutes || 0]);
     return result.rows[0];
   },
   async update(id, userId, data) {
@@ -571,12 +583,32 @@ const calendarOps = {
         content_text = COALESCE($8, content_text),
         notes = COALESCE($9, notes),
         color = COALESCE($10, color),
+        reminder_email = $11,
+        reminder_minutes = $12,
+        reminder_sent = FALSE,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND user_id = $2
       RETURNING *
     `, [id, userId, data.title, data.platform, data.scheduledDate, data.scheduledTime,
-        data.status, data.contentText, data.notes, data.color]);
+        data.status, data.contentText, data.notes, data.color,
+        data.reminderEmail || '', data.reminderMinutes || 0]);
     return result.rows[0];
+  },
+  async getPendingReminders() {
+    // Get entries that need reminders sent: reminder_email is set, not sent yet, and within reminder window
+    const result = await pool.query(`
+      SELECT * FROM calendar_entries
+      WHERE reminder_email != '' AND reminder_email IS NOT NULL
+        AND reminder_sent = FALSE
+        AND status != 'published'
+        AND (scheduled_date + scheduled_time::time) - (reminder_minutes || ' minutes')::interval <= NOW()
+        AND (scheduled_date + scheduled_time::time) >= NOW()
+      ORDER BY scheduled_date, scheduled_time
+    `);
+    return result.rows;
+  },
+  async markReminderSent(id) {
+    await pool.query('UPDATE calendar_entries SET reminder_sent = TRUE WHERE id = $1', [id]);
   },
   async delete(id, userId) {
     await pool.query('DELETE FROM calendar_entries WHERE id = $1 AND user_id = $2', [id, userId]);

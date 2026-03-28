@@ -1794,10 +1794,11 @@ router.get('/calendar', requireAuth, async (req, res) => {
 
 router.post('/calendar', requireAuth, async (req, res) => {
   try {
-    const { title, platform, scheduledDate, scheduledTime, contentText, analysisId, momentIndex, notes, color } = req.body;
+    const { title, platform, scheduledDate, scheduledTime, contentText, analysisId, momentIndex, notes, color, reminderEmail, reminderMinutes } = req.body;
     if (!title || !scheduledDate) return res.status(400).json({ error: 'Title and date required' });
     const entry = await calendarOps.create({
-      userId: req.user.id, title, platform, scheduledDate, scheduledTime, contentText, analysisId, momentIndex, notes, color
+      userId: req.user.id, title, platform, scheduledDate, scheduledTime, contentText, analysisId, momentIndex, notes, color,
+      reminderEmail: reminderEmail || '', reminderMinutes: reminderMinutes || 0
     });
     res.json({ success: true, entry });
   } catch (error) {
@@ -3812,9 +3813,26 @@ function renderShortsPage(user, analyses) {
         <textarea id="cal-notes" rows="3" placeholder="Any notes..."
           style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:13px;resize:vertical;"></textarea>
       </div>
+      <div style="margin-bottom:12px;padding:12px;background:rgba(108,92,231,0.08);border:1px solid rgba(108,92,231,0.2);border-radius:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <input type="checkbox" id="cal-reminder" style="width:16px;height:16px;accent-color:#a29bfe;cursor:pointer;">
+          <label for="cal-reminder" style="font-size:13px;color:#e0e0e0;cursor:pointer;">📧 Email me a posting reminder</label>
+        </div>
+        <div id="cal-reminder-fields" style="display:none;">
+          <input type="email" id="cal-reminder-email" placeholder="your@email.com"
+            style="width:100%;padding:8px 10px;background:#111;border:1px solid #333;border-radius:6px;color:#fff;font-size:13px;margin-bottom:6px;">
+          <select id="cal-reminder-time" style="width:100%;padding:8px 10px;background:#111;border:1px solid #333;border-radius:6px;color:#fff;font-size:13px;">
+            <option value="30">30 minutes before</option>
+            <option value="60">1 hour before</option>
+            <option value="120">2 hours before</option>
+            <option value="1440">1 day before</option>
+          </select>
+          <p style="font-size:10px;color:#888;margin:6px 0 0 0;">We will send you a reminder email before your scheduled post time.</p>
+        </div>
+      </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-primary" onclick="saveCalendarEntry()" style="flex:1;">Save</button>
-        <button class="btn" onclick="closeCalendarModal()" style="background:rgba(255,255,255,0.1);flex:1;">Cancel</button>
+        <button class="btn" onclick="closeCalendarModal()" style="background:rgba(255,255,255,0.15);color:#fff;flex:1;border:1px solid rgba(255,255,255,0.2);">Cancel</button>
       </div>
       <button class="btn" id="cal-delete-btn" onclick="deleteCalendarEntry()" style="background:rgba(255,0,0,0.15);color:#ff6b6b;border:1px solid rgba(255,0,0,0.3);display:none;width:100%;margin-top:10px;padding:10px;">🗑️ Delete This Entry</button>
     </div>
@@ -4689,6 +4707,10 @@ function renderShortsPage(user, analyses) {
       document.getElementById('cal-platform').value = 'tiktok';
       document.getElementById('cal-status').value = 'planned';
       document.getElementById('cal-notes').value = '';
+      document.getElementById('cal-reminder').checked = false;
+      document.getElementById('cal-reminder-fields').style.display = 'none';
+      document.getElementById('cal-reminder-email').value = '';
+      document.getElementById('cal-reminder-time').value = '30';
       document.getElementById('cal-delete-btn').style.display = 'none';
       document.getElementById('calEntryTitle').textContent = 'Add Calendar Entry';
       document.getElementById('calendarEntryModal').style.display = 'flex';
@@ -4714,6 +4736,12 @@ function renderShortsPage(user, analyses) {
       document.getElementById('cal-platform').value = entry.platform || 'tiktok';
       document.getElementById('cal-status').value = entry.status || 'planned';
       document.getElementById('cal-notes').value = entry.notes || '';
+      // Load reminder settings
+      var hasReminder = entry.reminder_email && entry.reminder_email.trim();
+      document.getElementById('cal-reminder').checked = !!hasReminder;
+      document.getElementById('cal-reminder-fields').style.display = hasReminder ? 'block' : 'none';
+      document.getElementById('cal-reminder-email').value = entry.reminder_email || '';
+      document.getElementById('cal-reminder-time').value = entry.reminder_minutes || '30';
       document.getElementById('cal-delete-btn').style.display = 'block';
       document.getElementById('calEntryTitle').textContent = 'Edit Calendar Entry';
       document.getElementById('calendarEntryModal').style.display = 'flex';
@@ -4725,15 +4753,19 @@ function renderShortsPage(user, analyses) {
 
     async function saveCalendarEntry() {
       const entryId = document.getElementById('cal-entry-id').value;
+      const reminderChecked = document.getElementById('cal-reminder').checked;
       const data = {
         title: document.getElementById('cal-title').value,
         scheduledDate: document.getElementById('cal-date').value,
         scheduledTime: document.getElementById('cal-time').value,
         platform: document.getElementById('cal-platform').value,
         status: document.getElementById('cal-status').value,
-        notes: document.getElementById('cal-notes').value
+        notes: document.getElementById('cal-notes').value,
+        reminderEmail: reminderChecked ? document.getElementById('cal-reminder-email').value : '',
+        reminderMinutes: reminderChecked ? parseInt(document.getElementById('cal-reminder-time').value) : 0
       };
       if (!data.title || !data.scheduledDate) { showToast('Title and date required'); return; }
+      if (reminderChecked && !data.reminderEmail) { showToast('Please enter your email for the reminder'); return; }
 
       try {
         const url = entryId ? '/shorts/calendar/' + entryId : '/shorts/calendar';
@@ -4760,6 +4792,20 @@ function renderShortsPage(user, analyses) {
         showToast('Entry deleted');
       } catch (e) { showToast('Error: ' + e.message); }
     }
+
+    // Reminder checkbox toggle
+    (function() {
+      var cb = document.getElementById('cal-reminder');
+      if (cb) {
+        cb.addEventListener('change', function() {
+          document.getElementById('cal-reminder-fields').style.display = this.checked ? 'block' : 'none';
+          if (this.checked) {
+            var emailField = document.getElementById('cal-reminder-email');
+            if (!emailField.value) emailField.value = '${user.email || ''}';
+          }
+        });
+      }
+    })();
 
     // Initialize calendar
     renderCalendar();

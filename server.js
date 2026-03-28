@@ -165,4 +165,31 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Start calendar reminder checker (every 2 minutes)
+  const { calendarOps } = require('./db/database');
+  const { sendPostingReminder } = require('./utils/email');
+
+  setInterval(async () => {
+    try {
+      const pending = await calendarOps.getPendingReminders();
+      for (const entry of pending) {
+        try {
+          await sendPostingReminder({
+            email: entry.reminder_email,
+            title: entry.title,
+            platform: entry.platform,
+            scheduledDate: (entry.scheduled_date || '').toString().substring(0, 10),
+            scheduledTime: entry.scheduled_time
+          });
+          await calendarOps.markReminderSent(entry.id);
+          console.log(`[Reminder] Sent to ${entry.reminder_email} for "${entry.title}"`);
+        } catch (e) {
+          console.error(`[Reminder] Failed for entry ${entry.id}:`, e.message);
+        }
+      }
+    } catch (err) {
+      // Silently ignore if DB not ready yet
+    }
+  }, 120000); // Check every 2 minutes
 });
