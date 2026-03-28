@@ -332,6 +332,91 @@ async function fetchTranscriptWithYtdlp(videoId) {
   return segments;
 }
 
+// Helper: Strategy C - Use yt-dlp --dump-json to get subtitle URLs and fetch them
+async function fetchTranscriptFromYtdlpJson(videoId) {
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Get video info JSON which includes subtitle URLs
+  const jsonStr = await new Promise((resolve, reject) => {
+    let output = '';
+    const proc = spawn('yt-dlp', [
+      '--skip-download', '--dump-json', '--no-warnings', '--no-check-certificates',
+      videoUrl
+    ]);
+    proc.stdout.on('data', (data) => { output += data.toString(); });
+    proc.stderr.on('data', () => {});
+    proc.on('close', (code) => {
+      if (code === 0 && output.trim()) resolve(output.trim());
+      else reject(new Error(`yt-dlp dump-json exited with code ${code}`));
+    });
+    proc.on('error', (err) => reject(err));
+  });
+
+  const info = JSON.parse(jsonStr);
+
+  // Look for subtitles in automatic_captions or subtitles
+  const allSubs = { ...(info.automatic_captions || {}), ...(info.subtitles || {}) };
+
+  // Prefer English
+  let subLang = Object.keys(allSubs).find(k => k.startsWith('en'));
+  if (!subLang) subLang = Object.keys(allSubs)[0];
+
+  if (!subLang || !allSubs[subLang] || allSubs[subLang].length === 0) {
+    throw new Error('No subtitles found in video metadata');
+  }
+
+  console.log(`  Found subtitle language: ${subLang} with ${allSubs[subLang].length} formats`);
+
+  // Prefer json3 format, then vtt, then srv3
+  const formats = allSubs[subLang];
+  let subEntry = formats.find(f => f.ext === 'json3');
+  if (!subEntry) subEntry = formats.find(f => f.ext === 'vtt');
+  if (!subEntry) subEntry = formats.find(f => f.ext === 'srv3');
+  if (!subEntry) subEntry = formats[0];
+
+  if (!subEntry || !subEntry.url) {
+    throw new Error('No usable subtitle URL found');
+  }
+
+  console.log(`  Fetching subtitle format: ${subEntry.ext} from URL`);
+  const subResp = await fetch(subEntry.url);
+  if (!subResp.ok) throw new Error(`Subtitle fetch returned ${subResp.status}`);
+
+  const subText = await subResp.text();
+  let segments = [];
+
+  if (subEntry.ext === 'json3') {
+    const json = JSON.parse(subText);
+    const events = json.events || [];
+    for (const event of events) {
+      if (event.segs && event.tStartMs !== undefined) {
+        const text = event.segs.map(s => s.utf8 || '').join('').trim();
+        if (text && text !== '\n') {
+          segments.push({ offset: event.tStartMs, text: text.replace(/\n/g, ' ') });
+        }
+      }
+    }
+  } else {
+    // Parse VTT/SRT format
+    const lines = subText.split('\n');
+    let currentTime = 0;
+    for (const line of lines) {
+      const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})[.,](\d{3})/);
+      if (timeMatch) {
+        currentTime = parseInt(timeMatch[1]) * 3600000 + parseInt(timeMatch[2]) * 60000 +
+                     parseInt(timeMatch[3]) * 1000 + parseInt(timeMatch[4]);
+      } else if (line.trim() && !line.includes('-->') && !line.match(/^\d+$/) && !line.startsWith('WEBVTT')) {
+        const cleanText = line.trim().replace(/<[^>]*>/g, '');
+        if (cleanText) segments.push({ offset: currentTime, text: cleanText });
+      }
+    }
+  }
+
+  if (segments.length === 0) throw new Error('Parsed transcript was empty');
+  console.log(`  Strategy C got ${segments.length} transcript segments`);
+  return segments;
+}
+
 // Helper: Fetch video title using yt-dlp
 function fetchVideoTitle(videoId) {
   return new Promise((resolve) => {
@@ -459,13 +544,19 @@ router.post('/analyze', requireAuth, async (req, res) => {
         }
       }
 
+      // Strategy C: yt-dlp --dump-json to get subtitle URLs, then fetch directly
       if (!segments || segments.length === 0) {
-        sendUpdate({ status: 'error', message: 'Could not fetch transcript. Make sure the video has captions/subtitles enabled.' });
-        return res.end();
+        sendUpdate({ status: 'fetching_transcript', message: 'Fetching transcript (trying final method)...' });
+        try {
+          console.log('  Strategy C: yt-dlp dump-json for subtitle URLs');
+          segments = await fetchTranscriptFromYtdlpJson(videoId);
+        } catch (jsonErr) {
+          console.error('  yt-dlp json strategy failed:', jsonErr.message);
+        }
       }
 
       if (!segments || segments.length === 0) {
-        sendUpdate({ status: 'error', message: 'No transcript found for this video. The video may not have captions.' });
+        sendUpdate({ status: 'error', message: 'Could not fetch transcript. Make sure the video has captions/subtitles enabled.' });
         return res.end();
       }
 
@@ -845,21 +936,23 @@ router.post('/clip', requireAuth, async (req, res) => {
           return;
         }
 
-        // Download full video at 1080p, then use ffmpeg for seeking/cutting/cropping/encoding.
+        // Download full video, then use ffmpeg for seeking/cutting/cropping/encoding.
         // This avoids yt-dlp's --download-sections which produces broken timestamps.
-        const tempDownload = outputPath + '.temp.mp4';
+        // Use mkv as intermediate format since it handles any codec combination reliably.
+        const tempDownload = outputPath + '.temp.mkv';
         const ytdlpArgs = [
           '--no-playlist',
-          '-f', 'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-          '--merge-output-format', 'mp4',
+          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--merge-output-format', 'mkv',
           '-o', tempDownload,
           '--no-warnings',
           '--no-check-certificates',
           '--no-part',
+          '--force-overwrites',
           videoUrl
         ];
 
-        console.log(`  Running yt-dlp: downloading full video at 720p`);
+        console.log(`  Running yt-dlp: downloading full video`);
         const ytdlpProc = spawn(ytdlpPath, ytdlpArgs);
 
         let stderrLog = '';
@@ -886,17 +979,27 @@ router.post('/clip', requireAuth, async (req, res) => {
             return;
           }
 
-          // Find the actual downloaded file
+          // Find the actual downloaded file (yt-dlp may change extension)
           let actualDownload = tempDownload;
           if (!fs.existsSync(tempDownload)) {
-            const baseName = path.basename(outputPath, '.mp4');
-            const files = fs.readdirSync(CLIPS_DIR);
-            const match = files.find(f => f.includes(baseName) && f.includes('.temp'));
-            if (match) {
-              actualDownload = path.join(CLIPS_DIR, match);
-            } else {
-              writeError('Downloaded file not found. Please try again.');
-              return;
+            // Try common extensions yt-dlp might produce
+            const base = outputPath + '.temp';
+            const exts = ['.mkv', '.mp4', '.webm', '.mp4.mkv'];
+            for (const ext of exts) {
+              if (fs.existsSync(base + ext)) { actualDownload = base + ext; break; }
+            }
+            if (!fs.existsSync(actualDownload)) {
+              // Broader search
+              const baseName = path.basename(outputPath, '.mp4');
+              const files = fs.readdirSync(CLIPS_DIR);
+              const match = files.find(f => f.includes(baseName) && f.includes('.temp'));
+              if (match) {
+                actualDownload = path.join(CLIPS_DIR, match);
+              } else {
+                console.error('  Downloaded file not found. Files in dir:', fs.readdirSync(CLIPS_DIR).filter(f => f.includes(baseName)).join(', '));
+                writeError('Downloaded file not found. Please try again.');
+                return;
+              }
             }
           }
 
@@ -905,12 +1008,14 @@ router.post('/clip', requireAuth, async (req, res) => {
           writeProgress('Creating vertical clip...');
 
           // Step 2: ffmpeg does EVERYTHING: seek, cut, crop, encode
-          // -ss before -i = fast input seeking (no decoding until start point)
+          // -ss AFTER -i = accurate seek (slower but 100% reliable frame accuracy)
           // -t = duration to encode
+          // -fflags +genpts = regenerate timestamps from scratch (fixes broken timestamps)
           // -vf = scale to fill 1080x1920, center-crop to exact size
           const ffmpegArgs = [
-            '-ss', String(startSec),
+            '-fflags', '+genpts',
             '-i', actualDownload,
+            '-ss', String(startSec),
             '-t', String(duration),
             '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
             '-c:v', 'libx264',
@@ -924,6 +1029,7 @@ router.post('/clip', requireAuth, async (req, res) => {
             '-preset', 'medium',
             '-crf', '18',
             '-movflags', '+faststart',
+            '-brand', 'mp42',
             '-max_muxing_queue_size', '1024',
             '-y',
             outputPath
@@ -1030,6 +1136,7 @@ router.get('/clip/status/:filename', requireAuth, (req, res) => {
 });
 
 // GET /clip/download/:filename - Download generated clip
+// Supports Range requests for QuickTime/browser video player compatibility
 router.get('/clip/download/:filename', requireAuth, (req, res) => {
   const filename = path.basename(req.params.filename); // Prevent path traversal
   const filePath = path.join(CLIPS_DIR, filename);
@@ -1039,19 +1146,43 @@ router.get('/clip/download/:filename', requireAuth, (req, res) => {
   }
 
   const stat = fs.statSync(filePath);
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Content-Length', stat.size);
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const fileSize = stat.size;
 
-  const stream = fs.createReadStream(filePath);
-  stream.pipe(res);
+  // Support Range requests (required by QuickTime and most video players)
+  const range = req.headers.range;
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunkSize = (end - start) + 1;
 
-  // Clean up file after download (with delay to allow stream to finish)
-  stream.on('end', () => {
-    setTimeout(() => {
-      try { fs.unlinkSync(filePath); } catch (e) {}
-    }, 5000);
-  });
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type': 'video/mp4',
+    });
+
+    const stream = fs.createReadStream(filePath, { start, end });
+    stream.pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': 'video/mp4',
+      'Accept-Ranges': 'bytes',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+
+    // Clean up file after full download (with delay to allow stream to finish)
+    stream.on('end', () => {
+      setTimeout(() => {
+        try { fs.unlinkSync(filePath); } catch (e) {}
+      }, 30000); // 30s delay to allow re-downloads
+    });
+  }
 });
 
 // Main page renderer
