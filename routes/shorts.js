@@ -3231,6 +3231,15 @@ router.post('/narrate', requireAuth, async (req, res) => {
 
         console.log(`  Generated narration: ${narrationScript.substring(0, 100)}...`);
 
+      // Text-only mode: save script and skip video processing
+      if (!voiceEnabled) {
+        const scriptJsonPath = outputPath.replace('.mp4', '.script.json');
+        fs.writeFileSync(scriptJsonPath, JSON.stringify({ textOnly: true, script: narrationScript }));
+        try { fs.unlinkSync(outputPath + '.progress'); } catch(e) {}
+        clearTimeout(timeout);
+        return;
+      }
+
         // Step 2: Generate audio if voiceEnabled
         let audioPath = null;
         if (voiceEnabled) {
@@ -3587,6 +3596,17 @@ router.get('/narrate/status/:filename', requireAuth, (req, res) => {
     try { errorMsg = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
     return res.json({ ready: false, error: true, message: errorMsg });
   }
+
+    // Check for text-only narration result
+    const scriptJsonPath = filePath.replace('.mp4', '.script.json');
+    if (fs.existsSync(scriptJsonPath)) {
+      try {
+        const scriptData = JSON.parse(fs.readFileSync(scriptJsonPath, 'utf8'));
+        return res.json({ ready: true, textOnly: true, script: scriptData.script, filename });
+      } catch(e) {
+        return res.json({ ready: false, error: true, message: 'Failed to read narration script' });
+      }
+    }
 
   // Check if done
   if (fs.existsSync(filePath)) {
@@ -7111,16 +7131,31 @@ function renderShortsPage(user, analyses) {
           var sData = await sResp.json();
           if (sData.failed) throw new Error(sData.message || 'Narration failed');
           if (sData.ready) {
-            // Download narrated clip
-            progress.textContent = 'Downloading narrated clip...';
-            var link = document.createElement('a');
-            link.href = '/shorts/narrate/download/' + filename;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast('Narrated clip downloaded!');
-            closeNarrationModal();
+            if (sData.textOnly) {
+              // Display narration script in the modal
+              progress.innerHTML = '';
+              var scriptBox = document.createElement('div');
+              scriptBox.style.cssText = 'background:var(--card-bg,#f8f9fa);border:1px solid var(--border-color,#e0e0e0);border-radius:8px;padding:16px;margin-top:8px;font-size:14px;line-height:1.6;white-space:pre-wrap;max-height:200px;overflow-y:auto;';
+              scriptBox.textContent = sData.script;
+              var copyBtn = document.createElement('button');
+              copyBtn.textContent = '\ud83d\udccb Copy Script';
+              copyBtn.style.cssText = 'margin-top:8px;padding:8px 16px;background:var(--accent,#6c5ce7);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;';
+              copyBtn.onclick = function() { navigator.clipboard.writeText(sData.script).then(function() { showToast('Narration script copied to clipboard!'); }); };
+              progress.appendChild(scriptBox);
+              progress.appendChild(copyBtn);
+              showToast('Narration script generated!');
+            } else {
+              // Download narrated clip
+              progress.textContent = 'Downloading narrated clip...';
+              var link = document.createElement('a');
+              link.href = '/shorts/narrate/download/' + filename;
+              link.download = filename;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              showToast('Narrated clip downloaded!');
+              closeNarrationModal();
+            }
             break;
           }
           progress.textContent = sData.message || 'Processing...';
