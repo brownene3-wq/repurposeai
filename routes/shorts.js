@@ -3162,7 +3162,7 @@ router.post('/narrate', requireAuth, async (req, res) => {
     // Verify clip file exists
     const clipPath = path.join(CLIPS_DIR, clipFilename);
     if (!fs.existsSync(clipPath)) {
-      return res.status(404).json({ error: 'Clip file not found' });
+      return res.status(404).json({ error: 'Clip file not found', needsRegeneration: true });
     }
 
     // Generate output filename
@@ -4027,11 +4027,14 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
         const concatContent = parts.map(p => `file '${p}'`).join('\n');
         fs.writeFileSync(concatList, concatContent, 'utf8');
 
-        // Re-encode concat for consistent format
+        // Re-encode concat: use video from concat but audio from main segment (keeps original audio during B-Roll)
         await runCommand(ffmpegPath, [
           '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
+          '-i', mainSegment,
+          '-map', '0:v:0', '-map', '1:a:0',
           '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '23',
           '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+          '-shortest',
           '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
           tempOutputPath
         ], { timeout: 180000 });
@@ -6021,6 +6024,11 @@ function renderShortsPage(user, analyses) {
     }
 
     function openAddEntry(dateStr) {
+      // Default to today if no date provided (e.g. from header + Add Entry button)
+      if (!dateStr) {
+        var now = new Date();
+        dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+      }
       // Check if this day has existing entries
       var dayEntries = calendarEntries.filter(function(e) {
         return (e.scheduled_date || '').substring(0,10) === dateStr;
@@ -7429,7 +7437,7 @@ function renderShortsPage(user, analyses) {
           body: JSON.stringify(body)
         });
         var data = await resp.json();
-        if (!data.success) throw new Error(data.error || 'Narration failed');
+        if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; progress.textContent = 'Clip expired, regenerating...'; return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
 
         var filename = data.filename;
         // Poll for narration to be ready
