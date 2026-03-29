@@ -4985,15 +4985,53 @@ function renderShortsPage(user, analyses) {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div>
-          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Date</label>
-          <input type="date" id="cal-date"
-            style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;">
-        </div>
+              <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Date</label>
+              <div style="position:relative;">
+                <input type="text" id="cal-date-display" readonly
+                  style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;cursor:pointer;"
+                  onclick="toggleDatePicker()">
+                <input type="hidden" id="cal-date">
+                <div id="cal-date-picker" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:10000;background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:12px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <button type="button" onclick="changeMonth(-1)" style="background:none;border:1px solid #444;color:#fff;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:14px;">&lt;</button>
+                    <span id="cal-picker-month" style="color:#fff;font-size:14px;font-weight:600;"></span>
+                    <button type="button" onclick="changeMonth(1)" style="background:none;border:1px solid #444;color:#fff;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:14px;">&gt;</button>
+                  </div>
+                  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;margin-bottom:6px;">
+                    <span style="font-size:10px;color:#888;padding:4px;">Su</span><span style="font-size:10px;color:#888;padding:4px;">Mo</span><span style="font-size:10px;color:#888;padding:4px;">Tu</span><span style="font-size:10px;color:#888;padding:4px;">We</span><span style="font-size:10px;color:#888;padding:4px;">Th</span><span style="font-size:10px;color:#888;padding:4px;">Fr</span><span style="font-size:10px;color:#888;padding:4px;">Sa</span>
+                  </div>
+                  <div id="cal-picker-days" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;"></div>
+                </div>
+              </div>
+            </div>
         <div>
-          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Time</label>
-          <input type="time" id="cal-time" value="12:00"
-            style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;">
-        </div>
+              <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">Time</label>
+              <div style="position:relative;">
+                <input type="text" id="cal-time-display" readonly
+                  style="width:100%;padding:10px;background:#111;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px;cursor:pointer;"
+                  onclick="toggleTimePicker()">
+                <input type="hidden" id="cal-time" value="12:00">
+                <div id="cal-time-picker" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:10000;background:#1a1a2e;border:1px solid #444;border-radius:8px;padding:12px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+                  <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+                    <div style="text-align:center;">
+                      <button type="button" onclick="adjustTime('hour',1)" style="background:none;border:1px solid #444;color:#fff;border-radius:6px;width:36px;height:28px;cursor:pointer;font-size:16px;">&#9650;</button>
+                      <div id="cal-time-hour" style="font-size:24px;color:#fff;font-weight:600;padding:6px 0;">12</div>
+                      <button type="button" onclick="adjustTime('hour',-1)" style="background:none;border:1px solid #444;color:#fff;border-radius:6px;width:36px;height:28px;cursor:pointer;font-size:16px;">&#9660;</button>
+                    </div>
+                    <span style="font-size:24px;color:#fff;font-weight:600;">:</span>
+                    <div style="text-align:center;">
+                      <button type="button" onclick="adjustTime('min',1)" style="background:none;border:1px solid #444;color:#fff;border-radius:6px;width:36px;height:28px;cursor:pointer;font-size:16px;">&#9650;</button>
+                      <div id="cal-time-min" style="font-size:24px;color:#fff;font-weight:600;padding:6px 0;">00</div>
+                      <button type="button" onclick="adjustTime('min',-1)" style="background:none;border:1px solid #444;color:#fff;border-radius:6px;width:36px;height:28px;cursor:pointer;font-size:16px;">&#9660;</button>
+                    </div>
+                    <div style="text-align:center;margin-left:8px;">
+                      <button type="button" onclick="adjustTime('ampm',0)" id="cal-time-ampm" style="background:#6c5ce7;border:none;color:#fff;border-radius:6px;padding:8px 12px;cursor:pointer;font-size:14px;font-weight:600;">PM</button>
+                    </div>
+                  </div>
+                  <button type="button" onclick="confirmTime()" style="width:100%;margin-top:10px;padding:8px;background:#6c5ce7;border:none;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Done</button>
+                </div>
+              </div>
+            </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div>
@@ -6024,11 +6062,142 @@ function renderShortsPage(user, analyses) {
       }
     }
 
-    function openNewEntry(dateStr) {
+    
+
+        var calPickerDate = new Date();
+        
+        function toggleDatePicker() {
+          var picker = document.getElementById('cal-date-picker');
+          var timePicker = document.getElementById('cal-time-picker');
+          if (timePicker) timePicker.style.display = 'none';
+          if (picker.style.display === 'none') {
+            var val = document.getElementById('cal-date').value;
+            if (val) { var parts = val.split('-'); calPickerDate = new Date(parts[0], parts[1]-1, parts[2]); }
+            renderCalendarPicker();
+            picker.style.display = 'block';
+          } else {
+            picker.style.display = 'none';
+          }
+        }
+        
+        function changeMonth(dir) {
+          calPickerDate.setMonth(calPickerDate.getMonth() + dir);
+          renderCalendarPicker();
+        }
+        
+        function renderCalendarPicker() {
+          var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+          var y = calPickerDate.getFullYear();
+          var m = calPickerDate.getMonth();
+          document.getElementById('cal-picker-month').textContent = months[m] + ' ' + y;
+          var first = new Date(y, m, 1).getDay();
+          var days = new Date(y, m+1, 0).getDate();
+          var sel = document.getElementById('cal-date').value;
+          var html = '';
+          for (var i = 0; i < first; i++) html += '<span></span>';
+          for (var d = 1; d <= days; d++) {
+            var ds = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+            var isToday = ds === new Date().toISOString().split('T')[0];
+            var isSel = ds === sel;
+            var bg = isSel ? '#6c5ce7' : isToday ? 'rgba(108,92,231,0.3)' : 'transparent';
+            var border = isToday && !isSel ? '1px solid #6c5ce7' : '1px solid transparent';
+            html += '<button type="button" onclick="selectDate(\'' + ds + '\')" style="background:' + bg + ';border:' + border + ';color:#fff;border-radius:6px;padding:6px;cursor:pointer;font-size:13px;">' + d + '</button>';
+          }
+          document.getElementById('cal-picker-days').innerHTML = html;
+        }
+        
+        function selectDate(ds) {
+          document.getElementById('cal-date').value = ds;
+          var parts = ds.split('-');
+          var d = new Date(parts[0], parts[1]-1, parts[2]);
+          var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          document.getElementById('cal-date-display').value = days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+          document.getElementById('cal-date-picker').style.display = 'none';
+        }
+        
+        function toggleTimePicker() {
+          var picker = document.getElementById('cal-time-picker');
+          var datePicker = document.getElementById('cal-date-picker');
+          if (datePicker) datePicker.style.display = 'none';
+          if (picker.style.display === 'none') {
+            var val = document.getElementById('cal-time').value || '12:00';
+            var parts = val.split(':');
+            var h = parseInt(parts[0]); var m = parseInt(parts[1]);
+            var ampm = h >= 12 ? 'PM' : 'AM';
+            var h12 = h % 12; if (h12 === 0) h12 = 12;
+            document.getElementById('cal-time-hour').textContent = String(h12).padStart(2,'0');
+            document.getElementById('cal-time-min').textContent = String(m).padStart(2,'0');
+            document.getElementById('cal-time-ampm').textContent = ampm;
+            picker.style.display = 'block';
+          } else {
+            picker.style.display = 'none';
+          }
+        }
+        
+        function adjustTime(part, dir) {
+          var hEl = document.getElementById('cal-time-hour');
+          var mEl = document.getElementById('cal-time-min');
+          var apEl = document.getElementById('cal-time-ampm');
+          var h = parseInt(hEl.textContent);
+          var m = parseInt(mEl.textContent);
+          if (part === 'hour') { h += dir; if (h > 12) h = 1; if (h < 1) h = 12; hEl.textContent = String(h).padStart(2,'0'); }
+          if (part === 'min') { m += dir * 5; if (m >= 60) m = 0; if (m < 0) m = 55; mEl.textContent = String(m).padStart(2,'0'); }
+          if (part === 'ampm') { apEl.textContent = apEl.textContent === 'AM' ? 'PM' : 'AM'; }
+          updateTimeHidden();
+        }
+        
+        function updateTimeHidden() {
+          var h = parseInt(document.getElementById('cal-time-hour').textContent);
+          var m = parseInt(document.getElementById('cal-time-min').textContent);
+          var ap = document.getElementById('cal-time-ampm').textContent;
+          if (ap === 'PM' && h !== 12) h += 12;
+          if (ap === 'AM' && h === 12) h = 0;
+          document.getElementById('cal-time').value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+        }
+        
+        function confirmTime() {
+          updateTimeHidden();
+          var h = document.getElementById('cal-time-hour').textContent;
+          var m = document.getElementById('cal-time-min').textContent;
+          var ap = document.getElementById('cal-time-ampm').textContent;
+          document.getElementById('cal-time-display').value = h + ':' + m + ' ' + ap;
+          document.getElementById('cal-time-picker').style.display = 'none';
+        }
+        
+        function setDateDisplay(dateStr) {
+          if (!dateStr) { document.getElementById('cal-date-display').value = ''; return; }
+          var parts = dateStr.split('-');
+          var d = new Date(parts[0], parts[1]-1, parts[2]);
+          var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          document.getElementById('cal-date-display').value = days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+        }
+        
+        function setTimeDisplay(timeStr) {
+          if (!timeStr) { document.getElementById('cal-time-display').value = ''; return; }
+          var parts = timeStr.split(':');
+          var h = parseInt(parts[0]); var m = parseInt(parts[1]);
+          var ap = h >= 12 ? 'PM' : 'AM';
+          var h12 = h % 12; if (h12 === 0) h12 = 12;
+          document.getElementById('cal-time-display').value = String(h12).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' ' + ap;
+        }
+        
+        // Close pickers when clicking outside
+        document.addEventListener('click', function(e) {
+          var dp = document.getElementById('cal-date-picker');
+          var tp = document.getElementById('cal-time-picker');
+          if (dp && dp.style.display !== 'none' && !e.target.closest('#cal-date-picker') && e.target.id !== 'cal-date-display') dp.style.display = 'none';
+          if (tp && tp.style.display !== 'none' && !e.target.closest('#cal-time-picker') && e.target.id !== 'cal-time-display') tp.style.display = 'none';
+        });
+
+        function openNewEntry(dateStr) {
       document.getElementById('cal-entry-id').value = '';
       document.getElementById('cal-title').value = '';
       document.getElementById('cal-date').value = dateStr || new Date().toISOString().split('T')[0];
+        setDateDisplay(document.getElementById('cal-date').value);
       document.getElementById('cal-time').value = '12:00';
+        setTimeDisplay('12:00');
       document.getElementById('cal-platform').value = 'tiktok';
       document.getElementById('cal-status').value = 'planned';
       document.getElementById('cal-notes').value = '';
@@ -6057,7 +6226,9 @@ function renderShortsPage(user, analyses) {
       document.getElementById('cal-entry-id').value = entry.id;
       document.getElementById('cal-title').value = entry.title || '';
       document.getElementById('cal-date').value = (entry.scheduled_date || '').substring(0,10);
+        setDateDisplay(document.getElementById('cal-date').value);
       document.getElementById('cal-time').value = entry.scheduled_time || '12:00';
+        setTimeDisplay(entry.scheduled_time || '12:00');
       document.getElementById('cal-platform').value = entry.platform || 'tiktok';
       document.getElementById('cal-status').value = entry.status || 'planned';
       document.getElementById('cal-notes').value = entry.notes || '';
