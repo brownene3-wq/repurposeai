@@ -3352,7 +3352,7 @@ router.post('/narrate', requireAuth, async (req, res) => {
                     const escapedText = chunk.replace(/\\/g, '\\\\').replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/;/g, '\\;');
 
             drawTextFilters.push(
-              `drawtext=text='${escapedText}':fontsize=48:fontcolor=white:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-100:enable='between(t,${startTime},${endTime})'`
+              `drawtext=text='${escapedText}':fontsize=48:fontcolor=white:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-text_h-80:enable='between(t,${startTime},${endTime})'`
             );
           });
 
@@ -5009,7 +5009,7 @@ function renderShortsPage(user, analyses) {
         </div>
       </div>
 
-      <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">⚠️ You need to download the clip first, then narrate it. If you haven't downloaded yet, close this and click Download Clip first.</p>
+      <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">⚠️ Click Generate to create a narrated version of this clip. The clip will be processed automatically.</p>
 
       <button id="narrate-generate-btn" onclick="generateNarration()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;">
         🎙️ Generate Narration
