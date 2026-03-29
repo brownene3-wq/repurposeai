@@ -51,6 +51,21 @@ function decodeEntities(text) {
     .trim();
 }
 
+// Fetch YouTube video title using oEmbed API
+async function fetchVideoTitle(videoId) {
+  try {
+    const oembedUrl = 'https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + videoId + '&format=json';
+    const response = await httpsRequest(oembedUrl);
+    if (response.status === 200) {
+      const data = JSON.parse(response.data);
+      if (data.title) return data.title;
+    }
+  } catch (e) {
+    console.error('Failed to fetch video title for', videoId, ':', e.message);
+  }
+  return 'Video: ' + videoId;
+}
+
 // Parse transcript XML into text
 function parseTranscriptXml(xml) {
   const texts = [];
@@ -1685,6 +1700,7 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     }
 
     const videoId = url.match(youtubeRegex)[1];
+    const videoTitle = await fetchVideoTitle(videoId);
     const totalStart = Date.now();
     let transcript;
     try {
@@ -1708,7 +1724,7 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     }
 
     const dbStart = Date.now();
-    const content = await contentOps.create(userId, 'Video: ' + videoId, transcript, 'youtube', url);
+    const content = await contentOps.create(userId, videoTitle, transcript, 'youtube', url);
     console.log('[Timing] DB content create:', Date.now() - dbStart, 'ms');
 
     let brandVoice = null;
@@ -1756,6 +1772,7 @@ router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
 
     // Get transcript
     const videoId = url.match(youtubeRegex)[1];
+    const videoTitle = await fetchVideoTitle(videoId);
     let transcript;
     try {
       transcript = await fetchVideoTranscript(videoId);
@@ -1770,7 +1787,7 @@ router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
     // Create content item
     const content = await contentOps.create(
       userId,
-      `Video: ${videoId}`,
+      videoTitle,
       transcript,
       'youtube',
       url
