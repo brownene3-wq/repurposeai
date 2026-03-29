@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const archiver = require('archiver');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
-try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
+try { ytdl = require('@distube/ytdl-core'); } catch e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
 
 // Find ffmpeg binary: check local bin/, then ffmpeg-static, then system
 let ffmpegPath = null;
@@ -6111,7 +6111,7 @@ function renderShortsPage(user, analyses) {
             var isSel = ds === sel;
             var bg = isSel ? '#6c5ce7' : isToday ? 'rgba(108,92,231,0.3)' : 'transparent';
             var border = isToday && !isSel ? '1px solid #6c5ce7' : '1px solid transparent';
-            html += '<button type="button" onclick="selectDate(\'' + ds + '\')" style="background:' + bg + ';border:' + border + ';color:#fff;border-radius:6px;padding:6px;cursor:pointer;font-size:13px;">' + d + '</button>';
+            html += '<button type="button" onclick="selectDate(\\'' + ds + '\\')" style="background:' + bg + ';border:' + border + ';color:#fff;border-radius:6px;padding:6px;cursor:pointer;font-size:13px;">' + d + '</button>';
           }
           document.getElementById('cal-picker-days').innerHTML = html;
         }
