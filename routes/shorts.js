@@ -2248,11 +2248,18 @@ async function applyThumbnailOverlay(inputImg, outputPath, title, titleColor, bg
     // Left half colored, right half video frame, text on left
     filterStr = `scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,` +
                 `drawbox=x=0:y=0:w=iw/2:h=ih:color=${cleanColor}@0.85:t=fill,${textFilters}`;
-  } else {
-    // gradient: bottom gradient overlay + text in lower half
-    filterStr = `scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,` +
-                `drawbox=x=0:y=ih/2:w=iw:h=ih/2:color=black@0.7:t=fill,${textFilters}`;
-  }
+    } else {
+      // gradient: subtle bottom overlay + text positioned in lower third
+      const gradientStartY = Math.round(1080 * 0.73);
+  let textFilters = lines.map((line, i) => {
+    const safeLine = line.replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/\\/g, '\\\\');
+    const y = gradientStartY + (i * lineHeight);
+    return `drawtext=text='${safeLine.toUpperCase()}':fontsize=${fontSize}:fontcolor=${cleanColor}:` +
+           `borderw=4:bordercolor=black:font=Liberation Sans Bold:x=(w-text_w)/2:y=${y}`;
+  }).join(',');
+      filterStr = `scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,` +
+        `drawbox=x=0:y=ih*3/4:w=iw:h=ih/4:color=black@0.4:t=fill,${textFilters}`;
+    }
 
   // Add watermark if brand kit has one
   if (wmText) {
