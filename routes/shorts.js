@@ -3323,21 +3323,21 @@ router.post('/narrate', requireAuth, async (req, res) => {
 
         if (voiceEnabled && audioPath) {
           // Add audio to video (mix or replace)
-          const audioFilter = audioMix === 'replace'
-            ? '[1:a]' // Just use narration audio
-            : '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest'; // Mix with original at 30%
-
-          try {
+          if (audioMix === 'replace') {
+            // Replace: discard original audio, use only narration
             await runCommand(ffmpegPath, [
-              '-i', clipPath,
-              '-i', audioPath,
-              '-c:v', 'copy',
-              '-filter_complex', audioFilter,
-              '-c:a', 'aac',
-              '-shortest',
-              '-y',
-              tempOutput
+              '-i', clipPath, '-i', audioPath,
+              '-map', '0:v', '-map', '1:a',
+              '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-y', tempOutput
             ], { timeout: 120000 });
+          } else {
+            // Mix: blend original audio (30%) with narration
+            await runCommand(ffmpegPath, [
+              '-i', clipPath, '-i', audioPath, '-c:v', 'copy',
+              '-filter_complex', '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest',
+              '-c:a', 'aac', '-shortest', '-y', tempOutput
+            ], { timeout: 120000 });
+          }
           } catch (ffErr) {
             clearTimeout(timeout);
             writeError(`ffmpeg audio processing failed: ${ffErr.message}`);
@@ -3563,12 +3563,19 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
         writeProgress('Processing final video...');
         const tempOut = outputPath + '.temp.mp4';
         if (audioPath) {
-          const af = audioMix === 'replace' ? '[1:a]' :
-            '[0:a]volume=0.3[orig];[1:a]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=longest';
-          await runCommand(ffmpegPath, [
-            '-i', downloadPath, '-i', audioPath, '-c:v', 'copy',
-            '-filter_complex', af, '-c:a', 'aac', '-shortest', '-y', tempOut
-          ], { timeout: 120000 });
+          if (audioMix === 'replace') {
+            await runCommand(ffmpegPath, [
+              '-i', downloadPath, '-i', audioPath,
+              '-map', '0:v', '-map', '1:a',
+              '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-y', tempOut
+            ], { timeout: 120000 });
+          } else {
+            await runCommand(ffmpegPath, [
+              '-i', downloadPath, '-i', audioPath, '-c:v', 'copy',
+              '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=longest',
+              '-c:a', 'aac', '-shortest', '-y', tempOut
+            ], { timeout: 120000 });
+          }
         } else {
           // Text-only narration overlay
           const escaped = narrationScript.replace(/'/g, "'\\''").replace(/:/g, '\\:');
