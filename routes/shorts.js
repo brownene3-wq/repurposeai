@@ -3869,10 +3869,10 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
             // Reformat B-Roll to match main clip (1080x1920 vertical, 5s max)
             const brollDur = Math.min(scene.duration || 5, 8);
             await runCommand(ffmpegPath, [
-              '-y', '-i', brollRaw, '-t', String(brollDur),
+              '-y', '-i', brollRaw, '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100', '-t', String(brollDur),
               '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,setsar=1',
               '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '22',
-              '-an',
+              '-c:a', 'aac', '-b:a', '128k', '-map', '0:v:0', '-map', '1:a:0', '-shortest',
               '-movflags', '+faststart',
               brollFormatted
             ], { timeout: 60000 });
@@ -6372,7 +6372,7 @@ function renderShortsPage(user, analyses) {
               var v = scene.video;
               html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
                 '<div style="position:relative;flex-shrink:0;">' +
-                  '<img src="' + v.thumbnail + '" style="width:160px;height:90px;object-fit:cover;border-radius:6px;display:block;border:2px solid #f39c12;" alt="B-Roll">' +
+                  '<video src="' + v.videoFiles[0].link + '" poster="' + v.thumbnail + '" style="width:160px;height:90px;object-fit:cover;border-radius:6px;display:block;border:2px solid #f39c12;cursor:pointer;" muted playsinline onmouseenter="this.play()" onmouseleave="this.pause();this.currentTime=0;" onclick="this.paused?this.play():this.pause()"></video>' +
                   '<span style="position:absolute;top:4px;left:4px;background:#f39c12;color:#000;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;">AUTO-PICK</span>' +
                   '<span style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;">' + v.duration + 's</span>' +
                 '</div>' +
