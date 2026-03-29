@@ -1589,7 +1589,7 @@ router.post('/batch-analyze', requireAuth, async (req, res) => {
           } catch (e) {}
 
           // Save to DB
-          const analysisId = await shortsOps.create(req.user.id, videoUrl, videoTitle, transcript || '');
+        const analysisId = await shortsOps.create(req.user.id, videoUrl, videoTitle, transcript || '');
         await shortsOps.updateMoments(analysisId, moments);
         await shortsOps.updateStatus(analysisId, 'completed');
 
@@ -3042,9 +3042,7 @@ router.get('/clip/download/:filename', requireAuth, (req, res) => {
     stream.on('end', () => {
       setTimeout(() => {
         try { fs.unlinkSync(filePath); } catch (e) {}
-Page_DownP// POST /clip
-// age_Down 
-     }, 30000); // 30s delay to allow re-downloads
+      }, 30000); // 30s delay to allow re-downloads
     });
   }
 });
@@ -3068,11 +3066,10 @@ router.get('/clip/debug', requireAuth, (req, res) => {
   }
 });
 
-Page_Down// POST /narrate - Generate narration for a clip
+// POST /narrate - Generate narration for a clip
 router.post('/narrate', requireAuth, async (req, res) => {
-  try 
-PclipStyle
-OST /cliprouter.post('/clip')    if (!ffmpegAvailable) {
+  try {
+    if (!ffmpegAvailable) {
       return res.status(503).json({ error: 'ffmpeg not available on this server.' });
     }
 
@@ -3090,14 +3087,12 @@ OST /cliprouter.post('/clip')    if (!ffmpegAvailable) {
     }
 
     // Get analysis
- Page_Down   const analysis = await shortsOps.getById(analysisId);
+    const analysis = await shortsOps.getById(analysisId);
     if (!analysis || analysis.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Analysis not found or unauthorized' });
- router.post('/clip')
-   }
+    }
 
-Page_UpPage_Up 
-   // Get moment
+    // Get moment
     let moments = analysis.moments;
     if (typeof moments === 'string') {
       try { moments = JSON.parse(moments); } catch (e) { moments = []; }
@@ -3192,7 +3187,7 @@ Page_UpPage_Up
             const segmentTexts = segments.map(s => s.text).join(' ');
             transcriptExcerpt = segmentTexts.substring(0, 300); // First 300 chars
           }
-case 'gradient'switch.*clipStyle gradient       }
+        }
         if (!transcriptExcerpt) {
           transcriptExcerpt = moment.title || 'This video moment';
         }
@@ -3277,8 +3272,7 @@ case 'gradient'switch.*clipStyle gradient       }
               fs.writeFileSync(audioPath, buffer);
               console.log(`  ElevenLabs audio generated: ${audioPath} (${buffer.length} bytes)`);
             } else {
-              // OpenAI TTS 
-              // (default)
+              // OpenAI TTS (default)
               let voiceName = 'nova';
               if (narrationStyle === 'documentary' || narrationStyle === 'news') voiceName = 'onyx';
               else if (narrationStyle === 'storytime' || narrationStyle === 'poetic') voiceName = 'shimmer';
@@ -3302,23 +3296,12 @@ case 'gradient'switch.*clipStyle gradient       }
         }
 
         // Step 3: Process video with ffmpeg
-Page_Down        writeProgress('Processing video...');
+        writeProgress('Processing video...');
 
         const tempOutput = outputPath + '.temp.mp4';
 
         if (voiceEnabled && audioPath) {
- case clip
- Style
- :color=
-  case 'colorBorder':
-     let videoFilter
-      switch (clipStyle)
-       videoFilter =
-
- 
-       pad(w=
-
-        )    // Add audio to video (mix or replace)
+          // Add audio to video (mix or replace)
           const audioFilter = audioMix === 'replace'
             ? '[1:a]' // Just use narration audio
             : '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest'; // Mix with original at 30%
@@ -4829,7 +4812,7 @@ function renderShortsPage(user, analyses) {
             <div style="position:relative; width:200px; height:356px; background:#1a1a2e; border-radius:8px; overflow:hidden;">
               <div id="bk-preview-watermark" style="position:absolute; bottom:10px; right:10px; font-size:14px; opacity:0.6;"></div>
             </div>
-Page_DownPage_Down          </div>
+          </div>
         </div>
       </div>
 
@@ -7064,8 +7047,7 @@ Page_DownPage_Down          </div>
       var progress = document.getElementById('narration-progress');
 
       // First check if we need to generate the clip first
-4960
-Page_UpPage_Up      if (!narrationState.clipFilename) {
+      if (!narrationState.clipFilename) {
         // Generate clip first
         progress.style.display = 'block';
         progress.textContent = 'Generating clip first...';
@@ -7112,8 +7094,6 @@ Page_UpPage_Up      if (!narrationState.clipFilename) {
 
       // Now generate narration
       btn.disabled = true;
-
-
       btn.textContent = 'Generating narration...';
       progress.style.display = 'block';
       progress.textContent = 'Writing narration script...';
@@ -7134,7 +7114,7 @@ Page_UpPage_Up      if (!narrationState.clipFilename) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
-Page_UpPage_UpPage_UpPage_UpPage_Up        });
+        });
         var data = await resp.json();
         if (!data.success) throw new Error(data.error || 'Narration failed');
 
@@ -7146,19 +7126,6 @@ Page_UpPage_UpPage_UpPage_UpPage_Up        });
           var sData = await sResp.json();
           if (sData.failed) throw new Error(sData.message || 'Narration failed');
           if (sData.ready) {
-<<<<<<< HEAD
-            // Download narrated clip
-            progress.textContent = 'Downloading narrated clip...';
-            var link = document.createElement('a');
-            link.href = '/shorts/narrate/download/' + filename;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast('Narrated clip downloaded!');
-            closeNarrationModal();
-            break
-=======
             if (sData.textOnly) {
               // Display narration script in the modal
               progress.innerHTML = '';
@@ -7185,7 +7152,6 @@ Page_UpPage_UpPage_UpPage_UpPage_Up        });
               closeNarrationModal();
             }
             break;
->>>>>>> 02021d2b06b2ba2dbb7090951b6411b588a91272
           }
           progress.textContent = sData.message || 'Processing...';
         }
