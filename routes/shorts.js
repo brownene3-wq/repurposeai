@@ -9,13 +9,13 @@ const archiver = require('archiver');
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
 
-// Find ffmpeg binary: check locl bin/, then ffmpeg-static, then system
+// Find ffmpeg binary: check local bin/, then ffmpeg-static, then system
 let ffmpegPath = null;
 const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
 if (fs.existsSync(localFfmpeg)) { ffmpegPath = localFfmpeg; }
 if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
 if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
-const ffmpegAvailable = !!ffmpegath;
+const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
@@ -6660,7 +6660,7 @@ function renderShortsPage(user, analyses) {
                 gridHtml += '</div>' +
                   '<div style="margin-top:10px;display:flex;gap:8px;">' +
                     '<button class="btn btn-small" style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;font-size:11px;" ' +
-                      'onclick="generateThumbnail(\\'' + analysisId + '\\', ' + momentIndex + ', document.thumb-btn-' + momentIndex + '\\'))">Regenerate All</button>' +
+                      'onclick="generateThumbnail(\\'' + analysisId + '\\', ' + momentIndex + ', document.getElementById(\\'thumb-btn-' + momentIndex + '\\'))">Regenerate All</button>' +
                     '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);colorvar(--text-muted);font-size:11px;" ' +
                       'onclick="document.getElementById(\\'thumb-preview-' + momentIndex + '\\').remove()">Close</button>' +
                   '</div>' +
