@@ -1478,13 +1478,34 @@ router.post('/brand-kit', requireAuth, async (req, res) => {
   }
 });
 
+  // POST /save-settings - Save settings (ElevenLabs API key) without touching brand kit fields
+  router.post('/save-settings', requireAuth, async (req, res) => {
+    try {
+      const { elevenlabsApiKey } = req.body;
+      // First get existing brand kit to preserve other fields
+      const existing = await brandKitOps.getByUserId(req.user.id);
+      const kit = await brandKitOps.upsert(req.user.id, {
+        brandName: existing?.brand_name || '',
+        watermarkText: existing?.watermark_text || '',
+        primaryColor: existing?.primary_color || '#FF0050',
+        secondaryColor: existing?.secondary_color || '#6c5ce7',
+        fontStyle: existing?.font_style || 'modern',
+        elevenlabsApiKey
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      res.status(500).json({ error: 'Failed to save settings' });
+    }
+  });
+
 // GET /elevenlabs-voices - Fetch available ElevenLabs voices for the user
 router.get('/elevenlabs-voices', requireAuth, async (req, res) => {
   try {
     const brandKit = await brandKitOps.getByUserId(req.user.id);
     const apiKey = brandKit?.elevenlabs_api_key;
     if (!apiKey) {
-      return res.json({ voices: [], message: 'No ElevenLabs API key configured. Add it in Brand Kit settings.' });
+      return res.json({ voices: [], message: 'No ElevenLabs API key configured. Add it in Settings.' });
     }
     const elResp = await fetch('https://api.elevenlabs.io/v1/voices', {
       headers: { 'xi-api-key': apiKey }
@@ -4748,6 +4769,10 @@ function renderShortsPage(user, analyses) {
           style="background: rgba(108,92,231,0.15); color: #a29bfe; border: 1px solid rgba(108,92,231,0.3); font-size: 13px; padding: 8px 16px;">
           Brand Kit Settings
         </button>
+            <button class="btn" onclick="toggleSettings()" id="settingsToggle"
+              style="background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); font-size: 13px; padding: 8px 16px; margin-left: 8px;">
+              ⚙️ Settings
+            </button>
         <div id="brandKitPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h3 style="font-size:16px; font-weight:600;">Brand Kit</h3>
@@ -4795,12 +4820,6 @@ function renderShortsPage(user, analyses) {
                 <option value="handwritten">Handwritten</option>
               </select>
             </div>
-            <div style="grid-column:1/-1;">
-              <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">🎙️ ElevenLabs API Key <span style="color:#888;font-weight:400;">(optional — for premium AI voices in narration)</span></label>
-              <input type="password" id="bk-elevenlabsApiKey" placeholder="Enter your ElevenLabs API key..."
-                style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px;">
-              <p style="font-size:11px; color:#666; margin-top:4px;">Get your key at <a href="https://elevenlabs.io" target="_blank" style="color:#a29bfe;">elevenlabs.io</a> — enables custom AI voices for narrated clips</p>
-            </div>
           </div>
           <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
             <button class="btn btn-primary" onclick="saveBrandKit()" id="bk-saveBtn"
@@ -4815,6 +4834,28 @@ function renderShortsPage(user, analyses) {
           </div>
         </div>
       </div>
+
+            <!-- Settings Panel -->
+            <div style="margin-bottom: 24px;">
+            <div id="settingsPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="font-size:16px; font-weight:600;">⚙️ Settings</h3>
+                <button class="btn btn-small" onclick="toggleSettings()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
+              </div>
+              <p style="color:#888; font-size:13px; margin-bottom:20px;">Configure your API keys and integrations.</p>
+              <div style="max-width:500px;">
+                <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">🎙️ ElevenLabs API Key <span style="color:#888;font-weight:400;">(optional — for premium AI voices in narration)</span></label>
+                <input type="password" id="settings-elevenlabsApiKey" placeholder="Enter your ElevenLabs API key..."
+                  style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px;">
+                <p style="font-size:11px; color:#666; margin-top:4px;">Get your key at <a href="https://elevenlabs.io" target="_blank" style="color:#a29bfe;">elevenlabs.io</a> — enables custom AI voices for narrated clips</p>
+              </div>
+              <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
+                <button class="btn btn-primary" onclick="saveSettings()" id="settings-saveBtn"
+                  style="padding:10px 24px;">Save Settings</button>
+                <span id="settings-status" style="font-size:13px; color:#888;"></span>
+              </div>
+            </div>
+            </div>
 
       <!-- Analyses grid -->
       <div id="analysesContainer">
@@ -6796,7 +6837,7 @@ function renderShortsPage(user, analyses) {
           document.getElementById('bk-secondaryColor').value = kit.secondary_color || '#6c5ce7';
           document.getElementById('bk-secondaryColorText').value = kit.secondary_color || '#6c5ce7';
           document.getElementById('bk-fontStyle').value = kit.font_style || 'modern';
-          if (kit.elevenlabs_api_key) document.getElementById('bk-elevenlabsApiKey').value = kit.elevenlabs_api_key;
+          if (kit.elevenlabs_api_key) document.getElementById('settings-elevenlabsApiKey').value = kit.elevenlabs_api_key;
           updateBrandPreview();
         }
       } catch (e) { console.log('Brand kit load error:', e); }
@@ -6818,7 +6859,6 @@ function renderShortsPage(user, analyses) {
             primaryColor: document.getElementById('bk-primaryColor').value,
             secondaryColor: document.getElementById('bk-secondaryColor').value,
             fontStyle: document.getElementById('bk-fontStyle').value,
-            elevenlabsApiKey: document.getElementById('bk-elevenlabsApiKey').value
           })
         });
         const data = await resp.json();
@@ -6839,6 +6879,53 @@ function renderShortsPage(user, analyses) {
       btn.textContent = 'Save Brand Kit';
       setTimeout(() => { status.textContent = ''; }, 3000);
     }
+
+            function toggleSettings() {
+              var panel = document.getElementById('settingsPanel');
+              panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+              if (panel.style.display === 'block') loadSettings();
+            }
+
+            async function loadSettings() {
+              try {
+                const resp = await fetch('/shorts/brand-kit');
+                const data = await resp.json();
+                if (data.success && data.brandKit) {
+                  if (data.brandKit.elevenlabs_api_key) document.getElementById('settings-elevenlabsApiKey').value = data.brandKit.elevenlabs_api_key;
+                }
+              } catch (e) { console.log('Settings load error:', e); }
+            }
+
+            async function saveSettings() {
+              const btn = document.getElementById('settings-saveBtn');
+              const status = document.getElementById('settings-status');
+              btn.disabled = true;
+              btn.textContent = 'Saving...';
+              try {
+                const resp = await fetch('/shorts/save-settings', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    elevenlabsApiKey: document.getElementById('settings-elevenlabsApiKey').value
+                  })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                  status.textContent = 'Saved!';
+                  status.style.color = '#10b981';
+                  showToast('Settings saved!');
+                } else {
+                  throw new Error(data.error);
+                }
+              } catch (e) {
+                status.textContent = 'Error saving';
+                status.style.color = '#ff6b6b';
+                showToast('Error: ' + e.message);
+              }
+              btn.disabled = false;
+              btn.textContent = 'Save Settings';
+              setTimeout(() => { status.textContent = ''; }, 3000);
+            }
 
     function updateBrandPreview() {
       const watermark = document.getElementById('bk-watermarkText').value;
