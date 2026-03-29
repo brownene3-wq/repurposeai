@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const archiver = require('archiver');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
-try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
+try { ytdl = require('@distube/ytdl-core'); } catch e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
 
 // Find ffmpeg binary: check local bin/, then ffmpeg-static, then system
 let ffmpegPath = null;
@@ -6830,7 +6830,7 @@ function renderShortsPage(user, analyses) {
         if (data.success) {
           status.textContent = 'Saved!';
           status.style.color = '#10b981';
-          showToast('Brand Kit saved! Watermark will appear on future clips.');
+          var wmVal = document.getElementById('bk-watermarkText').value.trim(); showToast(wmVal ? 'Brand Kit saved! Watermark will appear on future clips.' : 'Brand Kit saved!');
           updateBrandPreview();
         } else {
           throw new Error(data.error);
