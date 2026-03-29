@@ -3323,6 +3323,7 @@ router.post('/narrate', requireAuth, async (req, res) => {
 
         if (voiceEnabled && audioPath) {
           // Add audio to video (mix or replace)
+        try {
           if (audioMix === 'replace') {
             // Replace: discard original audio, use only narration
             await runCommand(ffmpegPath, [
