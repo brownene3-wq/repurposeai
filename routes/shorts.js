@@ -3281,7 +3281,7 @@ router.post('/narrate', requireAuth, async (req, res) => {
                 },
                 body: JSON.stringify({
                   text: narrationScript,
-                  model_id: 'eleven_monolingual_v1',
+                  model_id: 'eleven_multilingual_v2',
                   voice_settings: { stability: 0.5, similarity_boost: 0.75 }
                 })
               });
@@ -3546,7 +3546,7 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
             const elResp = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + elevenlabsVoiceId, {
               method: 'POST',
               headers: { 'xi-api-key': userElevenLabsKey, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
-              body: JSON.stringify({ text: narrationScript, model_id: 'eleven_monolingual_v1', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
+              body: JSON.stringify({ text: narrationScript, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
             });
             if (!elResp.ok) throw new Error('ElevenLabs API error: ' + elResp.status);
             fs.writeFileSync(audioPath, Buffer.from(await elResp.arrayBuffer()));
@@ -5053,7 +5053,7 @@ function renderShortsPage(user, analyses) {
           <select id="elevenlabs-voice-select" style="width:100%;padding:8px 10px;background:var(--surface-light);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:12px;">
             <option value="">Loading voices...</option>
           </select>
-          <p style="font-size:10px;color:var(--text-dim);margin-top:4px;">Add your ElevenLabs API key in Brand Kit settings to use custom voices</p>
+          <p style="font-size:10px;color:var(--text-dim);margin-top:4px;">Add your ElevenLabs API key in Settings to use custom voices</p>
         </div>
       </div>
 
