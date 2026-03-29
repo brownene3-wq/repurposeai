@@ -5160,6 +5160,8 @@ function renderShortsPage(user, analyses) {
   </div>
 
   <script>
+    window.onerror = function(msg, src, line, col) { var d = document.createElement('div'); d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:red;color:white;padding:10px;z-index:99999;font-size:14px;'; d.textContent = 'JS Error: ' + msg + ' at line ' + line + ':' + col; document.body.appendChild(d); console.error('JS ERROR:', msg, 'line:', line, 'col:', col); };
+
     // Clear autofilled email from URL input (Chrome ignores autocomplete=off)
     (function() {
       var urlInput = document.getElementById('videoUrl');
