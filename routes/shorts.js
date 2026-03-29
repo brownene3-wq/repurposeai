@@ -161,19 +161,22 @@ async function translateSegments(segments, targetLang) {
 
 // Helper: Generate ASS subtitle file for burned-in captions
 // Style: TikTok/Reels style - bold white text, black outline, centered in lower third
-function generateASSSubtitles(segments, clipStartSec, clipDuration) {
+function generateASSSubtitles(segments, clipStartSec, clipDuration, captionStyle) {
+  captionStyle = captionStyle || 'classic';
   const clipEndSec = clipStartSec + clipDuration;
-
-  // Filter segments that fall within the clip time range
-  const clipSegments = segments.filter(seg =>
-    seg.offsetSec >= clipStartSec && seg.offsetSec < clipEndSec
-  );
-
+  const clipSegments = segments.filter(seg => seg.offsetSec >= clipStartSec && seg.offsetSec < clipEndSec);
   if (clipSegments.length === 0) return null;
 
-  // ASS header with TikTok-style formatting
-  // PlayResX/Y: 1080x1920 (9:16 vertical)
-  // Font: Bold, large, white with black outline, positioned in lower third
+  const styleConfigs = {
+    classic: { fontName:'Liberation Sans', fontSize:72, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&H80000000', bold:-1, outline:4, shadow:0, alignment:2, marginV:180, wordsPerLine:6, uppercase:true },
+    trending: { fontName:'Liberation Sans', fontSize:85, primaryColor:'&H0000FFFF', outlineColor:'&H00000000', backColor:'&H80000000', bold:-1, outline:5, shadow:2, alignment:2, marginV:200, wordsPerLine:3, uppercase:true },
+    karaoke: { fontName:'Liberation Sans', fontSize:78, primaryColor:'&H00FFFFFF', outlineColor:'&H000050FF', backColor:'&H80000000', bold:-1, outline:4, shadow:0, alignment:2, marginV:180, wordsPerLine:1, uppercase:true },
+    minimal: { fontName:'Liberation Sans', fontSize:60, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&H00000000', bold:0, outline:2, shadow:0, alignment:2, marginV:160, wordsPerLine:8, uppercase:false },
+    bold: { fontName:'Liberation Sans', fontSize:90, primaryColor:'&H0000FF00', outlineColor:'&H00000000', backColor:'&H80000000', bold:-1, outline:6, shadow:3, alignment:2, marginV:200, wordsPerLine:2, uppercase:true },
+    neon: { fontName:'Liberation Sans', fontSize:80, primaryColor:'&H00FF50FF', outlineColor:'&H00FF0080', backColor:'&H00000000', bold:-1, outline:4, shadow:4, alignment:2, marginV:190, wordsPerLine:4, uppercase:true }
+  };
+  const cfg = styleConfigs[captionStyle] || styleConfigs.classic;
+
   const assHeader = `[Script Info]
 Title: Auto Captions
 ScriptType: v4.00+
@@ -183,32 +186,23 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Liberation Sans,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,180,1
+Style: Default,${cfg.fontName},${cfg.fontSize},${cfg.primaryColor},&H000000FF,${cfg.outlineColor},${cfg.backColor},${cfg.bold},0,0,0,100,100,0,0,1,${cfg.outline},${cfg.shadow},${cfg.alignment},40,40,${cfg.marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
-  // Generate dialogue lines
   const dialogueLines = [];
-
   for (let i = 0; i < clipSegments.length; i++) {
     const seg = clipSegments[i];
-    // Time relative to clip start
     const relStart = seg.offsetSec - clipStartSec;
-
-    // End time: next segment start, or +3 seconds, whichever is smaller
     let relEnd;
     if (i + 1 < clipSegments.length) {
       relEnd = Math.min(clipSegments[i + 1].offsetSec - clipStartSec, relStart + 4);
     } else {
       relEnd = Math.min(relStart + 4, clipDuration);
     }
-
-    // Clamp to clip duration
     if (relEnd > clipDuration) relEnd = clipDuration;
     if (relStart >= clipDuration) continue;
-
-    // Format as H:MM:SS.cc (ASS time format)
     const formatASSTime = (sec) => {
       const h = Math.floor(sec / 3600);
       const m = Math.floor((sec % 3600) / 60);
@@ -216,23 +210,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
       const cs = Math.round((sec % 1) * 100);
       return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
     };
-
-    // Break long text into max ~6 words per line for readability
     const words = seg.text.split(/\s+/);
-    const lines = [];
-    for (let w = 0; w < words.length; w += 6) {
-      lines.push(words.slice(w, w + 6).join(' '));
-    }
-    // Use \N for line breaks in ASS, uppercase the text for TikTok style
-    const displayText = lines.join('\\N').toUpperCase();
-
-    dialogueLines.push(
-      `Dialogue: 0,${formatASSTime(relStart)},${formatASSTime(relEnd)},Default,,0,0,0,,${displayText}`
-    );
+    const wpl = cfg.wordsPerLine;
+    const lineArr = [];
+    for (let w = 0; w < words.length; w += wpl) { lineArr.push(words.slice(w, w + wpl).join(' ')); }
+    const displayText = cfg.uppercase ? lineArr.join('\\N').toUpperCase() : lineArr.join('\\N');
+    dialogueLines.push(`Dialogue: 0,${formatASSTime(relStart)},${formatASSTime(relEnd)},Default,,0,0,0,,${displayText}`);
   }
-
   if (dialogueLines.length === 0) return null;
-
   return assHeader + '\n' + dialogueLines.join('\n') + '\n';
 }
 
@@ -2379,15 +2364,29 @@ router.post('/thumbnail-ai', requireAuth, async (req, res) => {
         console.log(`  AI Thumbnail: generating with DALL-E for "${thumbTitle}" (${dalleSize})`);
         console.log(`  Prompt: ${dallePrompt.substring(0, 100)}...`);
 
-        // Generate with DALL-E 3
-        const imageResponse = await openai.images.generate({
-          model: 'dall-e-3',
-          prompt: dallePrompt,
-          n: 1,
-          size: dalleSize,
-          quality: 'standard',
-          response_format: 'url'
-        });
+            // Generate with DALL-E 3 (with retry on content policy rejection)
+            let imageResponse;
+            let retries = 0;
+            const maxRetries = 2;
+            while (retries <= maxRetries) {
+              try {
+                imageResponse = await openai.images.generate({
+                  model: 'dall-e-3',
+                  prompt: dallePrompt,
+                  n: 1,
+                  size: dalleSize,
+                  quality: 'standard',
+                  response_format: 'url'
+                });
+                break;
+              } catch (dalleErr) {
+                retries++;
+                console.error(`  DALL-E attempt ${retries} failed: ${dalleErr.message}`);
+                if (retries > maxRetries) throw dalleErr;
+                dallePrompt = `A vibrant, eye-catching YouTube thumbnail background. Bold colors, dramatic lighting, professional graphic design. Abstract modern design with geometric shapes and gradients. No text, no faces, no people. Clean and striking.`;
+                console.log('  Retrying with simplified prompt...');
+              }
+            }
 
         const imageUrl = imageResponse.data[0]?.url;
         if (!imageUrl) throw new Error('No image URL returned from DALL-E');
@@ -2576,7 +2575,7 @@ router.post('/clip', requireAuth, async (req, res) => {
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
     }
 
-    const { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage } = req.body;
+    const { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
       return res.status(400).json({ error: 'Analysis ID and moment index are required' });
@@ -2791,7 +2790,7 @@ router.post('/clip', requireAuth, async (req, res) => {
               console.log(`  Captions translated to ${SUPPORTED_LANGUAGES[lang]}`);
             }
 
-            const assContent = generateASSSubtitles(segments, startSec, duration);
+            const assContent = generateASSSubtitles(segments, startSec, duration, captionStyle);
             if (assContent) {
               assFilePath = outputPath + '.ass';
               fs.writeFileSync(assFilePath, assContent, 'utf8');
@@ -3709,7 +3708,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
       return res.status(503).json({ error: 'ffmpeg not available on this server.' });
     }
 
-    const { analysisId, momentIndex, includeCaptions, clipStyle, brollScenes } = req.body;
+    const { analysisId, momentIndex, includeCaptions, clipStyle, captionStyle, brollScenes } = req.body;
     if (!analysisId || momentIndex === undefined || !brollScenes || brollScenes.length === 0) {
       return res.status(400).json({ error: 'Analysis ID, moment index, and B-Roll scenes are required' });
     }
@@ -3830,7 +3829,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
         if (includeCaptions && analysis.transcript) {
           try {
             const segments = parseTranscriptToSegments(analysis.transcript);
-            const assContent = generateASSSubtitles(segments, startSec, duration);
+            const assContent = generateASSSubtitles(segments, startSec, duration, captionStyle);
             if (assContent) {
               const assFile = outputPath + '.ass';
               fs.writeFileSync(assFile, assContent, 'utf8');
@@ -5318,6 +5317,15 @@ function renderShortsPage(user, analyses) {
                 <input type="checkbox" id="captions-\${idx}" checked
                   style="accent-color:#FF0050; width:14px; height:14px;">
                 <span>Captions</span>
+                <select id="caption-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
+                  border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Caption style">
+                  <option value="classic">Classic</option>
+                  <option value="trending">Trending</option>
+                  <option value="karaoke">Word Pop</option>
+                  <option value="minimal">Minimal</option>
+                  <option value="bold">Bold</option>
+                  <option value="neon">Neon Glow</option>
+                </select>
               </label>
               <select id="caption-lang-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
                 border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Caption language">
@@ -5349,6 +5357,15 @@ function renderShortsPage(user, analyses) {
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
+              <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
+                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Thumbnail style">
+                <option value="gradient">Gradient</option>
+                <option value="dark">Dark Overlay</option>
+                <option value="border">Color Border</option>
+                <option value="split">Split Design</option>
+                <option value="ai">AI Generated</option>
+                <option value="ab">A/B Test (3 AI)</option>
+              </select>
               <button class="btn btn-small" id="thumb-btn-\${idx}"
                 style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); color: #fff; font-size: 11px;"
                 onclick="generateThumbnail('\${id}', \${idx}, this)">
@@ -5364,15 +5381,6 @@ function renderShortsPage(user, analyses) {
                 onclick="openNarrationModal('\${id}', \${idx})">
                 🎙️ Narrate
               </button>
-              <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
-                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Thumbnail style">
-                <option value="gradient">Gradient</option>
-                <option value="dark">Dark Overlay</option>
-                <option value="border">Color Border</option>
-                <option value="split">Split Design</option>
-                <option value="ai">AI Generated</option>
-                <option value="ab">A/B Test (3 AI)</option>
-              </select>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
                 class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
                 Open on YouTube
@@ -5721,13 +5729,15 @@ function renderShortsPage(user, analyses) {
       const clipStyle = styleSelect ? styleSelect.value : 'blur';
       const langSelect = document.getElementById('caption-lang-' + momentIndex);
       const captionLanguage = langSelect ? langSelect.value : 'en';
+                const captionStyleSelect = document.getElementById('caption-style-' + momentIndex);
+                const captionStyle = captionStyleSelect ? captionStyleSelect.value : 'classic';
 
       try {
         // Request clip generation
         const response = await fetch('/shorts/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage })
+          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle })
         });
 
         const data = await response.json();
