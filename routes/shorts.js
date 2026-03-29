@@ -2151,7 +2151,7 @@ router.post('/thumbnail', requireAuth, async (req, res) => {
         }
 
         // Extract frame at timestamp
-        const frameImg = outputPath + '.frame.jpg';
+        const frameImg = outputPath.replace(/\.jpg$/, '') + '.frame.jpg';
         try {
           await runCmd(ffmpegPath, [
             '-y', '-ss', String(frameSec), '-i', actualVideo,
