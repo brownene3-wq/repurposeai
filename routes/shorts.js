@@ -6730,7 +6730,7 @@ function renderShortsPage(user, analyses) {
                     'style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-decoration:none;font-size:11px;">Download</a>' +
                   regenBtn +
                   '<button class="btn btn-small" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:11px;" ' +
-                    'onclick="document.getElementById(\'' + 'thumb-preview-' + momentIndex + '\\').remove()">Close</button>' +
+                    'onclick="document.getElementById(\\'' + 'thumb-preview-' + momentIndex + '\\').remove()">Close</button>' +
                 '</div>' +
               '</div>';
 
