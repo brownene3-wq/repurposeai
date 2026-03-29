@@ -3349,7 +3349,7 @@ router.post('/narrate', requireAuth, async (req, res) => {
           chunks.forEach((chunk, idx) => {
             const startTime = idx * chunkDuration;
             const endTime = (idx + 1) * chunkDuration;
-            const escapedText = chunk.replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/\\/g, '\\\\');
+                    const escapedText = chunk.replace(/\\/g, '\\\\').replace(/'/g, "'\\''").replace(/:/g, '\\:').replace(/;/g, '\\;');
 
             drawTextFilters.push(
               `drawtext=text='${escapedText}':fontsize=48:fontcolor=white:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-100:enable='between(t,${startTime},${endTime})'`
