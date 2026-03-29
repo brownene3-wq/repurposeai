@@ -2151,29 +2151,59 @@ router.post('/thumbnail', requireAuth, async (req, res) => {
           return;
         }
 
-        // Extract frame at timestamp
-        const frameImg = outputPath.replace(/\.jpg$/, '') + '.frame.jpg';
+      // Extract frame at timestamp
+      const frameImg = outputPath.replace(/\.jpg$/, '') + '.frame.jpg';
+      let frameExtracted = false;
+      try {
+        await runCmd(ffmpegPath, [
+          '-y', '-ss', String(frameSec), '-i', actualVideo,
+          '-frames:v', '1', '-q:v', '2',
+          '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
+          frameImg
+        ], { timeout: 30000 });
+        frameExtracted = fs.existsSync(frameImg);
+      } catch (e) {
+        // Try without seek (beginning of video)
         try {
-          await runCmd(ffmpegPath, [
-            '-y', '-ss', String(frameSec), '-i', actualVideo,
-            '-frames:v', '1', '-q:v', '2',
-            '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
-            frameImg
-          ], { timeout: 30000 });
-        } catch (e) {
-          // Try without seek (beginning of video)
           await runCmd(ffmpegPath, [
             '-y', '-i', actualVideo, '-frames:v', '1', '-q:v', '2',
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black',
             frameImg
           ], { timeout: 30000 });
+          frameExtracted = fs.existsSync(frameImg);
+        } catch (e2) {
+          console.error('  Frame extraction failed:', e2.message);
         }
+      }
 
-        try { fs.unlinkSync(actualVideo); } catch(e) {}
+      try { fs.unlinkSync(actualVideo); } catch(e) {}
 
-        // Apply text overlay
+      if (frameExtracted) {
+        // Apply text overlay to extracted frame
         await applyThumbnailOverlay(frameImg, outputPath, thumbTitle, thumbColor, thumbBg, thumbFontSize, thumbStyle, brandKit);
         try { fs.unlinkSync(frameImg); } catch(e) {}
+      } else {
+        // Fallback: use YouTube thumbnail image instead of video frame
+        console.log('  Frame extraction failed, falling back to YouTube thumbnail');
+        const https2 = require('https');
+        const fallbackImg = outputPath + '.fallback.jpg';
+        await new Promise((resolve, reject) => {
+          const file = fs.createWriteStream(fallbackImg);
+          https2.get(`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, (response) => {
+            if (response.statusCode === 200) {
+              response.pipe(file);
+              file.on('finish', () => { file.close(); resolve(); });
+            } else {
+              https2.get(`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`, (r2) => {
+                r2.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+              });
+            }
+          }).on('error', reject);
+        });
+        await applyThumbnailOverlay(fallbackImg, outputPath, thumbTitle, thumbColor, thumbBg, thumbFontSize, thumbStyle, brandKit);
+        try { fs.unlinkSync(fallbackImg); } catch(e) {}
+      }
 
         console.log(`  Thumbnail generated: ${filename}`);
       } catch (err) {
