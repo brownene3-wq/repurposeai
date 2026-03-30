@@ -973,10 +973,13 @@ function parseTimeRange(rangeStr) {
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const limit = 12;
-    const offset = 0;
+    const limit = 15;
+    const page = parseInt(req.query.page) || 1;
+    const offset = (page - 1) * limit;
 
-    const analyses = await shortsOps.getByUserId(userId, limit, offset);
+    const analyses = await shortsOps.getByUserId(userId, limit + 1, offset);
+    const hasMore = analyses.length > limit;
+    if (hasMore) analyses.pop();
 
     // Parse moments JSON for each analysis
     for (const a of analyses) {
@@ -985,7 +988,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
-    const html = renderShortsPage(req.user, analyses);
+    const html = renderShortsPage(req.user, analyses, page, hasMore);
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (error) {
@@ -4088,10 +4091,16 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
   }
 });
 
-// Main page renderer
-function renderShortsPage(user, analyses) {
+// Main page rendererfunction renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
+  let paginationHtml = '';
+  if (currentPage > 1 || hasMore) 
+    const prevBtn = currentPage > 1 ? '<a href="/shorts?page=' + (currentPage - 1) + '" style="padding:8px 16px;background:#333;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;">&larr; Previous</a>' : '<span></span>';
+    const nextBtn = hasMore ? '<a href="/shorts?page=' + (currentPage + 1) + '" style="padding:8px 16px;background:#333;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;">Next &rarr;</a>' : '<span></span>';
+    paginationHtml = '<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:24px;padding-bottom:16px;">' + prevBtn + '<span style="color:#888;font-size:14px;">Page ' + currentPage + '</span>' + nextBtn + '</div>';
+  }
+
   const platformColors = {
-    tiktok: '#ff0050',
+    tiktok: '#ff0050'
     instagram: 'linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)',
     shorts: '#ff0000',
     twitter: '#000000',
@@ -4969,7 +4978,8 @@ function renderShortsPage(user, analyses) {
         `}
       </div>
 
-<!-- Floating Calendar Button -->
+${paginationHtml}
+          <!-- Floating Calendar Button -->
     <button id="calendarFloatBtn" onclick="document.getElementById('calendarModal').style.display='flex';" style="position:fixed;bottom:90px;right:30px;z-index:9990;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:14px 22px;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
       <span style="font-size:18px;">&#128197;</span> Calendar
     </button>
