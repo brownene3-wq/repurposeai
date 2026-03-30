@@ -10,7 +10,8 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
 // Price ID mapping for tiers
 const PRICE_MAP = {
   starter: process.env.STRIPE_PRICE_STARTER,
-  pro: process.env.STRIPE_PRICE_PRO
+  pro: process.env.STRIPE_PRICE_PRO,
+  teams: process.env.STRIPE_PRICE_TEAMS
 };
 
 // GET /billing - Billing management page
@@ -20,7 +21,7 @@ router.get('/', requireAuth, (req, res) => {
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap');
       ${getBaseCSS()}
-      .billing-page{max-width:900px;margin:0 auto;padding:3rem 2rem}
+      .billing-page{max-width:1100px;margin:0 auto;padding:3rem 2rem}
       .back-link{color:var(--primary-light);text-decoration:none;font-size:.9rem;font-weight:500;display:inline-flex;align-items:center;gap:.5rem}
       .back-link:hover{text-decoration:underline}
       .page-header{margin-bottom:3rem}
@@ -30,27 +31,28 @@ router.get('/', requireAuth, (req, res) => {
       .plan-info h3{font-size:1.1rem;font-weight:700;margin-bottom:.3rem}
       .plan-info p{color:var(--text-muted);font-size:.9rem}
       .plan-badge{padding:.4rem 1rem;border-radius:50px;font-size:.8rem;font-weight:600;background:rgba(16,185,129,0.15);color:var(--success)}
-      .pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-bottom:3rem}
-      .price-card{background:var(--surface);border-radius:16px;padding:2rem;border:var(--border-subtle);transition:all .3s;position:relative}
+      .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.2rem;margin-bottom:3rem}
+      .price-card{background:var(--surface);border-radius:16px;padding:1.8rem;border:var(--border-subtle);transition:all .3s;position:relative}
       .price-card.featured{border-color:var(--primary);box-shadow:0 0 40px rgba(108,58,237,0.2);transform:scale(1.02)}
-      .price-card.featured::before{content:'BEST VALUE';position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--gradient-1);color:#fff;padding:.3rem 1rem;border-radius:20px;font-size:.7rem;font-weight:700;letter-spacing:.5px}
-      .price-card h3{font-size:1.1rem;font-weight:700;margin-bottom:.5rem}
-      .price-card .price{font-size:2.5rem;font-weight:800;margin:.8rem 0}
-      .price-card .price span{font-size:.9rem;font-weight:400;color:var(--text-muted)}
-      .price-card .desc{color:var(--text-muted);font-size:.85rem;margin-bottom:1.2rem}
+      .price-card.featured::before{content:'MOST POPULAR';position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--gradient-1);color:#fff;padding:.3rem 1rem;border-radius:20px;font-size:.7rem;font-weight:700;letter-spacing:.5px}
+      .price-card h3{font-size:1.05rem;font-weight:700;margin-bottom:.5rem}
+      .price-card .price{font-size:2.2rem;font-weight:800;margin:.8rem 0}
+      .price-card .price span{font-size:.85rem;font-weight:400;color:var(--text-muted)}
+      .price-card .desc{color:var(--text-muted);font-size:.82rem;margin-bottom:1.2rem}
       .features-list{list-style:none;margin-bottom:1.5rem}
-      .features-list li{padding:.4rem 0;color:var(--text-muted);font-size:.85rem;display:flex;align-items:center;gap:.5rem}
-      .features-list li::before{content:'\\2713';color:var(--primary-light);font-weight:700;font-size:.9rem}
-      .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;border-radius:50px;font-weight:600;font-size:.9rem;cursor:pointer;border:none;transition:all .3s}
+      .features-list li{padding:.35rem 0;color:var(--text-muted);font-size:.8rem;display:flex;align-items:center;gap:.5rem}
+      .features-list li::before{content:'\\2713';color:var(--primary-light);font-weight:700;font-size:.85rem}
+      .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;border-radius:50px;font-weight:600;font-size:.85rem;cursor:pointer;border:none;transition:all .3s}
       .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 15px rgba(108,58,237,0.3)}
       .btn-primary:hover{transform:translateY(-1px)}
       .btn-outline{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.15)}
       .btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
       .btn-current{background:rgba(16,185,129,0.15);color:var(--success);border:1px solid rgba(16,185,129,0.3);cursor:default}
-      @media(max-width:768px){.pricing-grid{grid-template-columns:1fr}.price-card.featured{transform:none}.current-plan{flex-direction:column;text-align:center;gap:1rem}}
+      @media(max-width:900px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
+      @media(max-width:600px){.pricing-grid{grid-template-columns:1fr}.price-card.featured{transform:none}.current-plan{flex-direction:column;text-align:center;gap:1rem}}
     </style>
-    </head>
-    <body>
+  </head>
+  <body>
     ${getSidebar('billing')}
     ${getThemeToggle()}
     <div class="billing-page" style="margin-left:250px">
@@ -59,20 +61,22 @@ router.get('/', requireAuth, (req, res) => {
         <h1>Billing & Plans</h1>
         <p>Manage your subscription and billing details</p>
       </div>
+
       <div class="current-plan">
         <div class="plan-info">
           <h3>Current Plan: ${userPlan.charAt(0).toUpperCase() + userPlan.slice(1)}</h3>
-          <p>${userPlan === 'free' ? 'Upgrade to unlock more features' : userPlan === 'starter' ? 'Great for growing creators' : 'You have full access to all features'}</p>
+          <p>${userPlan === 'free' ? 'Upgrade to unlock more features' : userPlan === 'starter' ? 'Great for growing creators' : userPlan === 'pro' ? 'You have full access to all features' : 'Team plan with priority processing'}</p>
         </div>
         <div class="plan-badge">${userPlan.toUpperCase()}</div>
       </div>
+
       <div class="pricing-grid">
         <div class="price-card">
           <h3>Free</h3>
           <div class="price">$0<span>/month</span></div>
           <p class="desc">Get started with the basics</p>
           <ul class="features-list">
-            <li>3 Smart Shorts/month</li>
+            <li>3 videos/month</li>
             <li>5 repurposes/month</li>
             <li>1 brand voice</li>
             <li>7-day history</li>
@@ -80,42 +84,63 @@ router.get('/', requireAuth, (req, res) => {
           </ul>
           ${userPlan === 'free' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-outline" disabled>Free Tier</button>'}
         </div>
-        <div class="price-card featured">
+
+        <div class="price-card${userPlan === 'free' ? ' featured' : ''}">
           <h3>Starter</h3>
           <div class="price">$19<span>/month</span></div>
           <p class="desc">Perfect for consistent creators</p>
           <ul class="features-list">
-            <li>15 Smart Shorts/month</li>
+            <li>15 videos/month</li>
             <li>30 repurposes/month</li>
             <li>3 brand voices</li>
-            <li>Unlimited AI narrations</li>
+            <li>Quick Narrate (your API key)</li>
             <li>10 AI thumbnails/month</li>
-            <li>5 clips/month</li>
+            <li>30 clips/month</li>
             <li>Analytics dashboard</li>
             <li>Brand kit & calendar</li>
             <li>30-day history</li>
             <li>No watermark</li>
           </ul>
-          ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\'starter\')">Upgrade to Starter</button>'}
+          ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'starter\\')">Upgrade to Starter</button>'}
         </div>
-        <div class="price-card">
+
+        <div class="price-card${userPlan === 'starter' ? ' featured' : ''}">
           <h3>Pro</h3>
           <div class="price">$39<span>/month</span></div>
           <p class="desc">For creators serious about growth</p>
           <ul class="features-list">
-            <li>50 Smart Shorts/month</li>
+            <li>50 videos/month</li>
             <li>100 repurposes/month</li>
             <li>10 brand voices</li>
             <li>Unlimited AI narrations</li>
             <li>50 AI thumbnails/month</li>
-            <li>25 clips/month</li>
+            <li>150 clips/month</li>
             <li>Batch analysis</li>
             <li>A/B thumbnail testing</li>
             <li>Clips with B-roll</li>
             <li>Full analytics & calendar</li>
             <li>Unlimited history</li>
           </ul>
-          ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\'pro\')">Upgrade to Pro</button>'}
+          ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'pro\\')">Upgrade to Pro</button>'}
+        </div>
+
+        <div class="price-card">
+          <h3>Teams</h3>
+          <div class="price">$79<span>/month</span></div>
+          <p class="desc">Scale with your whole team</p>
+          <ul class="features-list">
+            <li>200 videos/month</li>
+            <li>500 repurposes/month</li>
+            <li>25 brand voices</li>
+            <li>Unlimited AI narrations</li>
+            <li>150 AI thumbnails/month</li>
+            <li>500 clips/month</li>
+            <li>5 team seats</li>
+            <li>Priority processing</li>
+            <li>All premium features</li>
+            <li>Unlimited history</li>
+          </ul>
+          ${userPlan === 'teams' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'teams\\')">Upgrade to Teams</button>'}
         </div>
       </div>
     </div>
@@ -139,8 +164,8 @@ router.get('/', requireAuth, (req, res) => {
         }
       }
     </script>
-    </body>
-    </html>`;
+  </body>
+</html>`;
   res.send(html);
 });
 
@@ -148,14 +173,18 @@ router.get('/', requireAuth, (req, res) => {
 router.post('/create-checkout', requireAuth, async (req, res) => {
   try {
     const { plan } = req.body;
+
     if (!STRIPE_SECRET) {
       return res.json({ message: 'Payment system is being configured. Please check back soon!' });
     }
+
     if (!PRICE_MAP[plan]) {
       return res.json({ message: 'Invalid plan selected.' });
     }
+
     const stripe = require('stripe')(STRIPE_SECRET);
     const priceId = PRICE_MAP[plan];
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
@@ -165,6 +194,7 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
       cancel_url: process.env.APP_URL + '/billing?canceled=true',
       metadata: { userId: req.user.id.toString(), plan }
     });
+
     res.json({ url: session.url });
   } catch (err) {
     console.error('Checkout error:', err);
@@ -177,6 +207,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   const stripe = require('stripe')(STRIPE_SECRET);
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
   let event;
   try {
     if (webhookSecret && sig) {
@@ -188,6 +219,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
     console.error('Webhook signature verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
+
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -202,6 +234,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               const priceId = lineItems.data[0]?.price?.id;
               if (priceId === process.env.STRIPE_PRICE_STARTER) plan = 'starter';
               else if (priceId === process.env.STRIPE_PRICE_PRO) plan = 'pro';
+              else if (priceId === process.env.STRIPE_PRICE_TEAMS) plan = 'teams';
             }
             if (plan) {
               await userOps.updatePlan(user.id, plan);
@@ -227,6 +260,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   } catch (err) {
     console.error('Webhook processing error:', err);
   }
+
   res.json({ received: true });
 });
 
