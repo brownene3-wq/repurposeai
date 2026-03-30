@@ -3570,6 +3570,9 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
           narrationScript = resp.choices[0]?.message?.content || 'What an incredible moment captured on camera.';
         }
 
+      // Save narration script text for user to copy/download
+      try { fs.writeFileSync(outputPath + '.narration.txt', narrationScript); } catch(e) {}
+
         // Step 4: Generate TTS audio if voice enabled
         let audioPath = null;
         if (voiceEnabled !== false) {
@@ -3673,7 +3676,8 @@ router.get('/narrate/status/:filename', requireAuth, (req, res) => {
     const stats = fs.statSync(filePath);
     const stillProcessing = fs.existsSync(progressPath);
     if (stats.size > 10000 && !stillProcessing) {
-      res.json({ ready: true, size: stats.size, filename });
+      let _ns = ''; try { _ns = fs.readFileSync(filePath + '.narration.txt', 'utf8'); } catch(e) {}
+          res.json({ ready: true, size: stats.size, filename, narrationScript: _ns });
     } else if (stillProcessing) {
       let progressMsg = 'Still processing...';
       try { progressMsg = fs.readFileSync(progressPath, 'utf8') || progressMsg; } catch (e) {}
@@ -7537,16 +7541,43 @@ function renderShortsPage(user, analyses) {
           var sData = await sResp.json();
           if (sData.failed) throw new Error(sData.message || 'Failed');
           if (sData.ready) {
-            status.textContent = 'Downloading...';
-            var link = document.createElement('a');
-            link.href = '/shorts/narrate/download/' + data.filename;
-            link.download = data.filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast('Narrated video downloaded!');
-            status.textContent = 'Done!';
-            break;
+              status.textContent = 'Downloading...';
+              var link = document.createElement('a');
+              link.href = '/shorts/narrate/download/' + data.filename;
+              link.download = data.filename;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              showToast('Narrated video downloaded!');
+              status.textContent = 'Done!';
+              if (sData.narrationScript) {
+                var sc = document.getElementById('qn-script-output');
+                if (!sc) {
+                  sc = document.createElement('div');
+                  sc.id = 'qn-script-output';
+                  sc.style.cssText = 'margin-top:16px;';
+                  var hdr = document.createElement('div');
+                  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+                  var lbl = document.createElement('span');
+                  lbl.style.cssText = 'font-weight:600;color:var(--text-primary,#fff);font-size:14px;';
+                  lbl.textContent = 'Narration Script';
+                  var cpBtn = document.createElement('button');
+                  cpBtn.textContent = 'Copy Script';
+                  cpBtn.style.cssText = 'background:var(--accent-color,#6C3AED);color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;';
+                  cpBtn.onclick = function() { navigator.clipboard.writeText(document.getElementById('qn-script-text').textContent).then(function(){ showToast('Script copied to clipboard!'); }); };
+                  hdr.appendChild(lbl);
+                  hdr.appendChild(cpBtn);
+                  sc.appendChild(hdr);
+                  var txt = document.createElement('div');
+                  txt.id = 'qn-script-text';
+                  txt.style.cssText = 'background:var(--card-bg,#1a1a1a);border:1px solid var(--border-color,#333);border-radius:8px;padding:14px;font-size:14px;line-height:1.6;white-space:pre-wrap;color:var(--text-primary,#fff);max-height:200px;overflow-y:auto;';
+                  sc.appendChild(txt);
+                  document.getElementById('quickNarratePanel').appendChild(sc);
+                }
+                document.getElementById('qn-script-text').textContent = sData.narrationScript;
+                sc.style.display = 'block';
+              }
+              break;
           }
           status.textContent = sData.message || 'Processing...';
         }
