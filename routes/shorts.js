@@ -5870,7 +5870,7 @@ function renderShortsPage(user, analyses) {
 
             if (statusData.failed) {
               clearInterval(pollInterval);
-              throw new Error(statusData.message || 'Clip generation failed');
+              showToast(statusData.message || 'Clip generation failed'); btn.disabled = false; btn.textContent = originalText; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)'; return;
             } else if (statusData.ready) {
               clearInterval(pollInterval);
               btn.textContent = 'Downloading...';
@@ -5894,7 +5894,7 @@ function renderShortsPage(user, analyses) {
               btn.dataset.lastFilename = filename;
             } else if (attempts >= maxAttempts) {
               clearInterval(pollInterval);
-              throw new Error('Clip generation timed out');
+              showToast('Clip generation timed out. Please try again.'); btn.disabled = false; btn.textContent = originalText; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)'; return;
             } else {
               // Update progress with server message
               const msg = statusData.message || '';
@@ -5909,7 +5909,7 @@ function renderShortsPage(user, analyses) {
             }
           } catch (pollError) {
             clearInterval(pollInterval);
-            throw pollError;
+            showToast(pollError.message || 'Failed to check clip status'); btn.disabled = false; btn.textContent = originalText; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
           }
         }, 2000);
 
