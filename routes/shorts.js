@@ -2095,7 +2095,7 @@ router.post('/thumbnail', requireAuth, async (req, res) => {
 
         try {
           await runCmd(ytdlpPath, [
-            '--no-playlist', '-f', 'bestvideo[height<=1080]/best[height<=1080]/best',
+            '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempVideo,
             '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
             '--extractor-args', 'youtube:player_client=web,android',
@@ -2106,7 +2106,7 @@ router.post('/thumbnail', requireAuth, async (req, res) => {
           // download-sections might not be supported, download full and seek
           try {
             await runCmd(ytdlpPath, [
-              '--no-playlist', '-f', 'bestvideo[height<=1080]/best[height<=1080]/best',
+              '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
               '--merge-output-format', 'mkv', '-o', tempVideo,
               '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
               '--extractor-args', 'youtube:player_client=web,android',
@@ -2755,7 +2755,7 @@ router.post('/clip', requireAuth, async (req, res) => {
         try {
           await runCommand(ytdlpPath, [
             '--no-playlist',
-            '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+            '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv',
             '-o', tempDownload,
             '--no-warnings',
@@ -2904,8 +2904,8 @@ router.post('/clip', requireAuth, async (req, res) => {
           '-b:a', '128k',
           '-ar', '44100',
           '-ac', '2',
-          '-preset', 'fast',
-          '-crf', '22',
+          '-preset', 'medium',
+          '-crf', '18',
           '-movflags', '+faststart',
           '-max_muxing_queue_size', '2048',
           tempOutputPath
@@ -2941,8 +2941,8 @@ router.post('/clip', requireAuth, async (req, res) => {
             '-b:a', '128k',
             '-ar', '44100',
             '-ac', '2',
-            '-preset', 'fast',
-            '-crf', '23',
+            '-preset', 'medium',
+            '-crf', '18',
             '-movflags', '+faststart',
             '-max_muxing_queue_size', '2048',
             tempOutputPath
@@ -3426,7 +3426,7 @@ router.post('/narrate', requireAuth, async (req, res) => {
               '-vf', videoFilter,
               '-c:a', 'copy',
               '-c:v', 'libx264',
-              '-preset', 'fast',
+              '-preset', 'medium',
               '-y',
               tempOutput
             ], { timeout: 120000 });
@@ -3531,7 +3531,7 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
         writeProgress('Downloading video...');
         const downloadPath = outputPath + '.download.mkv';
         await runCommand('yt-dlp', [
-          '--no-playlist', '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
           '--merge-output-format', 'mkv', '-o', downloadPath, '--no-warnings', '--no-check-certificates',
           '--no-part', '--force-overwrites', '--extractor-args', 'youtube:player_client=web,android', videoUrl
         ], { timeout: 240000 });
@@ -3619,7 +3619,7 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
           await runCommand(ffmpegPath, [
             '-i', downloadPath,
             '-vf', "drawtext=text='" + escaped.substring(0, 200) + "':fontsize=36:fontcolor=white:bordercolor=black:borderw=2:x=(w-text_w)/2:y=h-80",
-            '-c:a', 'copy', '-c:v', 'libx264', '-preset', 'fast', '-y', tempOut
+            '-c:a', 'copy', '-c:v', 'libx264', '-preset', 'medium', '-y', tempOut
           ], { timeout: 120000 });
         }
 
@@ -3833,7 +3833,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
 
         try {
           await runCommand('yt-dlp', [
-            '--no-playlist', '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+            '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempDownload,
             '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
             '--extractor-args', 'youtube:player_client=web,android',
@@ -3902,7 +3902,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
           ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
           '-c:v', 'libx264', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
           '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-          '-preset', 'fast', '-crf', '22', '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
+          '-preset', 'medium', '-crf', '18', '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
           mainSegment
         ], { timeout: 240000 });
 
@@ -3931,7 +3931,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
             await runCommand(ffmpegPath, [
               '-y', '-i', brollRaw, '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100', '-t', String(brollDur),
               '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,setsar=1',
-              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '22',
+              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '18',
               '-c:a', 'aac', '-b:a', '128k', '-map', '0:v:0', '-map', '1:a:0', '-shortest',
               '-movflags', '+faststart',
               brollFormatted
@@ -4032,7 +4032,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
           '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
           '-i', mainSegment,
           '-map', '0:v:0', '-map', '1:a:0',
-          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '23',
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '18',
           '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
           '-shortest',
           '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
