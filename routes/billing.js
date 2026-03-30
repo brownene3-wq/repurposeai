@@ -147,7 +147,7 @@ router.get('/', requireAuth, (req, res) => {
         </div>
       </div>
     </div>
-    ${getThemeScript()}
+    <script>${getThemeScript()}</script>
     <script>
       async function handleCheckout(plan) {
         try {
