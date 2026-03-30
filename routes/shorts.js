@@ -3494,7 +3494,6 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
 
       } catch (err) {
         clearTimeout(timeout);
- router.get('/shorts'
          writeError(err.message || 'Unknown error during narration processing');
       }
     })();
