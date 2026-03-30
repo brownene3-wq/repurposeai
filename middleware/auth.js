@@ -98,7 +98,7 @@ const PLAN_LIMITS = {
     brandVoices: 3,
     narrationsPerMonth: Infinity,
     thumbnailsPerMonth: 10,
-    clipsPerMonth: 5,
+    clipsPerMonth: 30,
     batchAnalysis: false,
     thumbnailAB: false,
     clipWithBroll: false,
@@ -114,7 +114,7 @@ const PLAN_LIMITS = {
     brandVoices: 10,
     narrationsPerMonth: Infinity,
     thumbnailsPerMonth: 50,
-    clipsPerMonth: 25,
+    clipsPerMonth: 150,
     batchAnalysis: true,
     thumbnailAB: true,
     clipWithBroll: true,
@@ -123,7 +123,25 @@ const PLAN_LIMITS = {
     hasCalendarEdit: true,
     historyDays: Infinity,
     watermark: false
-  }
+  },
+    teams: {
+              videosPerMonth: 200,
+                  repurposesPerMonth: 500,
+                      brandVoices: 25,
+                          narrationsPerMonth: Infinity,
+                              thumbnailsPerMonth: 150,
+                                  clipsPerMonth: 500,
+                                      teamSeats: 5,
+                                          priorityProcessing: true,
+                                              batchAnalysis: true,
+                                                  thumbnailAB: true,
+                                                      clipWithBroll: true,
+                                                          hasAnalytics: true,
+                                                              hasBrandKit: true,
+                                                                  hasCalendarEdit: true,
+                                                                      historyDays: Infinity,
+                                                                          watermark: false
+    }
 };
 
 function getPlanLimits(plan) {

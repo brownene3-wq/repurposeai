@@ -17,7 +17,7 @@ if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
 if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
 const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
-const { requireAuth, checkPlanLimit } = require('../middleware/auth');
+const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require('../middleware/auth');
 const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
@@ -3141,7 +3141,7 @@ router.get('/clip/debug', requireAuth, (req, res) => {
 });
 
 // POST /narrate - Generate narration for a clip
-router.post('/narrate', requireAuth, async (req, res) => {
+router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async (req, res) => {
   try {
     if (!ffmpegAvailable) {
       return res.status(503).json({ error: 'ffmpeg not available on this server.' });
@@ -3501,7 +3501,7 @@ router.post('/narrate', requireAuth, async (req, res) => {
 });
 
 // POST /quick-narrate - Download a YouTube video and add narration (standalone, no analysis needed)
-router.post('/quick-narrate', requireAuth, async (req, res) => {
+router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async (req, res) => {
   try {
     if (!ffmpegAvailable) return res.status(503).json({ error: 'ffmpeg not available' });
 
@@ -4138,9 +4138,8 @@ function renderShortsPage(user, analyses) {
       gap: 24px;
       margin-top: 24px;
     }
-
     .card {
-      background: var(--surface-light);
+      background: var(--surface-light)
       border: var(--border-subtle);
       border-radius: 12px;
       padding: 24px;
