@@ -3146,9 +3146,11 @@ router.get('/clip/debug', requireAuth, (req, res) => {
 // POST /narrate - Generate narration for a clip
 router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async (req, res) => {
   try {
-    if (!ffmpegAvailable) {
+    // Only require ffmpeg when voice/video processing is needed (text-only scripts don't need it)
+    if (!ffmpegAvailable && req.body.voiceEnabled !== false) {
       return res.status(503).json({ error: 'ffmpeg not available on this server.' });
     }
+
 
     const { analysisId, momentIndex, narrationStyle, voiceEnabled, audioMix, clipFilename,
             ttsProvider, elevenlabsVoiceId } = req.body;
