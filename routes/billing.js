@@ -101,7 +101,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>30-day history</li>
             <li>No watermark</li>
           </ul>
-          ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'starter\\')">Upgrade to Starter</button>'}
+          ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;starter&apos;)">Upgrade to Starter</button>'}
         </div>
 
         <div class="price-card${userPlan === 'starter' ? ' featured' : ''}">
@@ -121,7 +121,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>Full analytics & calendar</li>
             <li>Unlimited history</li>
           </ul>
-          ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'pro\\')">Upgrade to Pro</button>'}
+          ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;pro&apos;)">Upgrade to Pro</button>'}
         </div>
 
         <div class="price-card">
@@ -140,7 +140,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>All premium features</li>
             <li>Unlimited history</li>
           </ul>
-          ${userPlan === 'teams' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'teams\\')">Upgrade to Teams</button>'}
+          ${userPlan === 'teams' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;teams&apos;)">Upgrade to Teams</button>'}
         </div>
       </div>
     </div>
