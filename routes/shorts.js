@@ -2006,9 +2006,6 @@ router.delete('/calendar/:id', requireAuth, async (req, res) => {
   }
 });
 
-<script>
-
-</script>/startBatchAnalysis/router.get('/shorts')Unexpected token POST /thumbnail - Generate a thumbnail for a moment
 router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), async (req, res) => {
   try {
     if (!ffmpegAvailable) {
