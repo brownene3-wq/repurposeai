@@ -14,20 +14,20 @@ router.get('/', optionalAuth, (req, res) => {
       .pricing-hero h1{font-family:'Playfair Display',serif;font-size:3rem;font-weight:800;margin-bottom:1rem}
       .pricing-hero p{color:var(--text-muted);font-size:1.2rem;max-width:600px;margin:0 auto}
       .pricing-container{max-width:1100px;margin:0 auto;padding:0 2rem 5rem}
-      .pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;margin-bottom:4rem}
-      .price-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:1px solid var(--border-subtle);transition:all .3s;position:relative}
-      .price-card.featured{border-color:var(--primary);box-shadow:0 0 60px rgba(108,58,237,0.2);transform:scale(1.05)}
+      .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;margin-bottom:4rem}
+      .price-card{background:var(--surface);border-radius:20px;padding:2rem;border:1px solid var(--border-subtle);transition:all .3s;position:relative}
+      .price-card.featured{border-color:var(--primary);box-shadow:0 0 60px rgba(108,58,237,0.2);transform:scale(1.03)}
       .price-card.featured::before{content:'MOST POPULAR';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gradient-1);color:#fff;padding:.4rem 1.2rem;border-radius:20px;font-size:.75rem;font-weight:700;letter-spacing:.5px}
-      .price-card h3{font-size:1.3rem;font-weight:700;margin-bottom:.5rem}
-      .price-card .price{font-size:3rem;font-weight:800;margin:1rem 0}
+      .price-card h3{font-size:1.2rem;font-weight:700;margin-bottom:.5rem}
+      .price-card .price{font-size:2.5rem;font-weight:800;margin:1rem 0}
       .price-card .price span{font-size:1rem;font-weight:400;color:var(--text-muted)}
-      .price-card .desc{color:var(--text-muted);font-size:.95rem;margin-bottom:1.5rem;line-height:1.5}
+      .price-card .desc{color:var(--text-muted);font-size:.9rem;margin-bottom:1.5rem;line-height:1.5}
       .features-list{list-style:none;margin-bottom:2rem}
-      .features-list li{padding:.5rem 0;color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;gap:.6rem}
-      .features-list li::before{content:'\\2713';color:var(--primary-light);font-weight:700;font-size:1rem}
+      .features-list li{padding:.4rem 0;color:var(--text-muted);font-size:.85rem;display:flex;align-items:center;gap:.6rem}
+      .features-list li::before{content:'\\2713';color:var(--primary-light);font-weight:700;font-size:.95rem}
       .features-list li.disabled{opacity:.4}
       .features-list li.disabled::before{content:'\\2717';color:var(--text-muted)}
-      .btn{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:1rem;border-radius:50px;font-weight:700;font-size:1rem;cursor:pointer;border:none;transition:all .3s;text-decoration:none}
+      .btn{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:1rem;border-radius:50px;font-weight:700;font-size:.95rem;cursor:pointer;border:none;transition:all .3s;text-decoration:none}
       .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 20px rgba(108,58,237,0.3)}
       .btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 25px rgba(108,58,237,0.4)}
       .btn-outline{background:transparent;color:var(--text);border:2px solid rgba(255,255,255,0.15)}
@@ -43,10 +43,11 @@ router.get('/', optionalAuth, (req, res) => {
       .nav-links a{color:var(--text-muted);text-decoration:none;font-size:.9rem;font-weight:500}
       .nav-links a:hover{color:var(--primary-light)}
       .nav-links .btn-sm{padding:.5rem 1.2rem;border-radius:25px;background:var(--gradient-1);color:#fff;font-weight:600}
-      @media(max-width:768px){.pricing-grid{grid-template-columns:1fr}.price-card.featured{transform:none}.pricing-hero h1{font-size:2rem}.nav-bar{padding:1rem 1.5rem}}
+      @media(max-width:900px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
+      @media(max-width:600px){.pricing-grid{grid-template-columns:1fr}.price-card.featured{transform:none}.pricing-hero h1{font-size:2rem}.nav-bar{padding:1rem 1.5rem}}
     </style>
-    </head>
-    <body>
+  </head>
+  <body>
     <nav class="nav-bar">
       <a href="/" class="nav-logo">RepurposeAI</a>
       <div class="nav-links">
@@ -56,10 +57,12 @@ router.get('/', optionalAuth, (req, res) => {
       </div>
     </nav>
     ${getThemeToggle()}
+
     <div class="pricing-hero">
       <h1>Simple, Transparent Pricing</h1>
       <p>Start free. Upgrade when you are ready to grow. No hidden fees.</p>
     </div>
+
     <div class="pricing-container">
       <div class="pricing-grid">
         <div class="price-card">
@@ -77,6 +80,7 @@ router.get('/', optionalAuth, (req, res) => {
           </ul>
           <a href="/auth/register" class="btn btn-outline">Start Free</a>
         </div>
+
         <div class="price-card featured">
           <h3>Starter</h3>
           <div class="price">$19<span>/month</span></div>
@@ -85,16 +89,17 @@ router.get('/', optionalAuth, (req, res) => {
             <li>15 Smart Shorts/month</li>
             <li>30 content repurposes/month</li>
             <li>3 brand voice profiles</li>
-            <li>Unlimited AI narrations</li>
+            <li>Quick Narrate (your API key)</li>
             <li>10 AI thumbnails/month</li>
-            <li>5 video clips/month</li>
+            <li>30 clips/month</li>
             <li>Analytics dashboard</li>
-            <li>Brand kit and content calendar</li>
+            <li>Brand kit &amp; content calendar</li>
             <li>30-day history</li>
             <li>No watermark</li>
           </ul>
-          <a href="/auth/register" class="btn btn-primary">Get Started</a>
+          <a href="/auth/register?plan=starter" class="btn btn-primary">Get Started</a>
         </div>
+
         <div class="price-card">
           <h3>Pro</h3>
           <div class="price">$39<span>/month</span></div>
@@ -105,17 +110,37 @@ router.get('/', optionalAuth, (req, res) => {
             <li>10 brand voice profiles</li>
             <li>Unlimited AI narrations</li>
             <li>50 AI thumbnails/month</li>
-            <li>25 video clips/month</li>
+            <li>150 clips/month</li>
             <li>Batch content analysis</li>
             <li>A/B thumbnail testing</li>
             <li>Clips with B-roll</li>
-            <li>Full analytics and calendar</li>
+            <li>Full analytics &amp; calendar</li>
             <li>Unlimited history</li>
           </ul>
-          <a href="/auth/register" class="btn btn-primary">Go Pro</a>
+          <a href="/auth/register?plan=pro" class="btn btn-primary">Go Pro</a>
+        </div>
+
+        <div class="price-card">
+          <h3>Teams</h3>
+          <div class="price">$79<span>/month</span></div>
+          <p class="desc">Scale with your whole team. Priority processing and all premium features.</p>
+          <ul class="features-list">
+            <li>200 Smart Shorts/month</li>
+            <li>500 content repurposes/month</li>
+            <li>25 brand voice profiles</li>
+            <li>Unlimited AI narrations</li>
+            <li>150 AI thumbnails/month</li>
+            <li>500 clips/month</li>
+            <li>5 team seats</li>
+            <li>Priority processing</li>
+            <li>All premium features</li>
+            <li>Unlimited history</li>
+          </ul>
+          <a href="/auth/register?plan=teams" class="btn btn-primary">Start Teams</a>
         </div>
       </div>
     </div>
+
     <div class="faq-section">
       <h2>Frequently Asked Questions</h2>
       <div class="faq-item">
@@ -123,8 +148,8 @@ router.get('/', optionalAuth, (req, res) => {
         <p>Yes! You can cancel your subscription at any time. Your plan will remain active until the end of your billing period.</p>
       </div>
       <div class="faq-item">
-        <h4>How do AI narrations work?</h4>
-        <p>AI narrations are powered by ElevenLabs. You connect your own ElevenLabs API key and get access to premium AI voices for your content.</p>
+        <h4>What is Quick Narrate?</h4>
+        <p>Quick Narrate lets you add AI voiceover narration to any YouTube video. On the Starter plan, you use your own API key (OpenAI or ElevenLabs). Pro and Teams plans include unlimited narrations at no extra cost.</p>
       </div>
       <div class="faq-item">
         <h4>What happens when I hit my limit?</h4>
@@ -136,8 +161,8 @@ router.get('/', optionalAuth, (req, res) => {
       </div>
     </div>
     ${getThemeScript()}
-    </body>
-    </html>`;
+  </body>
+</html>`;
   res.send(html);
 });
 
