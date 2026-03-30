@@ -1437,7 +1437,7 @@ router.get('/', requireAuth, (req, res) => {
             showError('Please enter a YouTube URL');
             return;
           }
-          if (platforms.length === 0) 
+          if (platforms.length === 0) { 
             showError('Please select at least one platform');
             return;
           }
