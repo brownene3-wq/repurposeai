@@ -1,4 +1,4 @@
-const express = require('express');
+const express = require('express'); // v1.0.1
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const { initDatabase } = require('./db/database');
