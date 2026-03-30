@@ -4730,7 +4730,7 @@ function renderShortsPage(user, analyses) {
             <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()" style="background:linear-gradient(135deg,#00b894,#00cec9);padding:10px 24px;">
               🎙️ Generate Narrated Video
             </button>
-            <span id="qn-status" style="font-size:13px;color:var(--text-muted);"></span>
+            <button class="btn" onclick="downloadQuickNarrateScript()" style="background:transparent;border:1px solid var(--text-muted);color:var(--text-muted);padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;">📄 Download Script</button> <span id="qn-status" style="font-size:13px;color:var(--text-muted);"></span>
           </div>
         </div>
       </div>
@@ -7531,7 +7531,7 @@ function renderShortsPage(user, analyses) {
       } catch(e) { sel.innerHTML = '<option value="">Error</option>'; }
     }
 
-    async function quickNarrate() {
+    function downloadQuickNarrateScript() { var script = document.getElementById('qn-customScript').value; if (!script) { showToast('No script to download. Write or generate a script first.'); return; } var blob = new Blob([script], {type: 'text/plain'}); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'narration-script.txt'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); showToast('Script downloaded!'); } async function quickNarrate() {
       var btn = document.getElementById('qn-btn');
       var status = document.getElementById('qn-status');
       var url = document.getElementById('qn-videoUrl').value.trim();
