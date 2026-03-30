@@ -71,7 +71,7 @@ app.use('/', pagesRouter);
 app.use('/auth', authRouter);
 app.use('/dashboard/analytics', analyticsRouter);
 app.use('/dashboard/scheduled', scheduledRouter);
-app.use('/dashboard/calendar', calendarRouter);
+app.use('/calendar', calendarRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
@@ -154,7 +154,7 @@ app.use((req, res) => {
       <div class="container">
         <h1>404</h1>
         <p>Page not found</p>
-        <a href="/">← Back to Home</a>
+        <a href="/">â Back to Home</a>
       </div>
     </body>
     </html>
