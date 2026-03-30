@@ -7,7 +7,7 @@ router.get('/', optionalAuth, (req, res) => {
   const html = `${getHeadHTML('Pricing - RepurposeAI')}
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap');
-      ${getBaseCSS()
+      ${getBaseCSS()}
       *{margin:0;padding:0;box-sizing:border-box}
       body{min-height:100vh;display:flex;flex-direction:column}
       .pricing-hero{text-align:center;padding:5rem 2rem 3rem}
