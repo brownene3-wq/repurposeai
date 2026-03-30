@@ -9,13 +9,13 @@ const { injectChatWidget } = require('./middleware/chatWidget');
 // Middleware - skip JSON parsing for Stripe webhook (needs raw body)
 app.use((req, res, next) => {
   if (req.originalUrl === '/billing/webhook') return next();
-  express.json()(req, res, next);
+  express.json()(req, res, next)
 });
 app.use((req, res, next) => {
   if (req.originalUrl === '/billing/webhook') return next();
   express.urlencoded({ extended: true })(req, res, next);
 });
-app.use(cookieParser());
+app.use(cookieParser())
 
 // Inject chat widget into all HTML pages
 app.use((req, res, next) => {
@@ -71,7 +71,7 @@ app.use('/', pagesRouter);
 app.use('/auth', authRouter);
 app.use('/dashboard/analytics', analyticsRouter);
 app.use('/dashboard/scheduled', scheduledRouter);
-app.use('/calendar', calendarRouter);
+app.use('/dashboard/calendar', calendarRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
