@@ -6,7 +6,7 @@ const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = 
 
 // Helper: make an HTTPS request (GET or POST)
 function httpsRequest(url, options = {}) {
-  return new Promise((resolve, reject) => 
+  return new Promise((resolve, reject) =>  {
     const parsedUrl = new URL(url);
     const reqOptions = {
       hostname: parsedUrl.hostname,
