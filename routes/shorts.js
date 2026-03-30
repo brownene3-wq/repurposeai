@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const archiver = require('archiver');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
-try { ytdl = require('@distube/ytdl-core'); } catch e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
+try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
 
 // Find ffmpeg binary: check local bin/, then ffmpeg-static, then system
 let ffmpegPath = null;
