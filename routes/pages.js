@@ -44,7 +44,7 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .section-title{font-family:'Playfair Display',serif;font-size:clamp(2rem,4vw,3rem);font-weight:800;margin-bottom:1rem;line-height:1.2}
 .section-subtitle{font-size:1.1rem;color:var(--text-muted);max-width:600px;line-height:1.7}
 .section-header{text-align:center;margin-bottom:4rem}.section-header .section-subtitle{margin:0 auto}
-.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;margin-top:3rem}
+.steps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;margin-top:3rem}
 .step-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .4s}
 .step-card:hover{transform:translateY(-4px);border-color:rgba(108,58,237,0.3)}
 .step-number{width:50px;height:50px;border-radius:15px;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;margin-bottom:1.5rem}
@@ -209,22 +209,28 @@ router.get('/', (req, res) => {
       </div>
       <div class="pricing-grid">
         <div class="price-card">
-          <h3>Starter</h3><div class="price">Free</div>
-          <p class="price-desc">Perfect for trying out RepurposeAI</p>
-          <ul class="price-features"><li>3 videos per month</li><li>All 7 platforms</li><li>AI-generated content</li><li>Copy &amp; share content</li><li>Content library</li></ul>
-          <a href="/auth/register" class="btn btn-outline">Get Started</a>
+          <h3>Free</h3><div class="price">$0<span>/month</span></div>
+          <p class="price-desc">Get started with AI content repurposing</p>
+          <ul class="price-features"><li>3 videos per month</li><li>5 repurposes/month</li><li>1 brand voice</li><li>7-day history</li></ul>
+          <a href="/auth/register" class="btn btn-outline">Start Free</a>
         </div>
         <div class="price-card featured">
-          <h3>Pro</h3><div class="price">$29<span>/month</span></div>
-          <p class="price-desc">For creators serious about growth</p>
-          <ul class="price-features"><li>Unlimited videos</li><li>All 7 platforms</li><li>Smart Shorts AI analysis</li><li>Up to 10 brand voice profiles</li><li>Content calendar</li><li>Analytics dashboard</li><li>Hashtag optimization</li></ul>
-          <a href="/auth/register?plan=pro" class="btn btn-primary">Start Pro Trial</a>
+          <h3>Starter</h3><div class="price">$19<span>/month</span></div>
+          <p class="price-desc">Everything you need to grow</p>
+          <ul class="price-features"><li>15 videos/month</li><li>30 repurposes/month</li><li>3 brand voices</li><li>Quick Narrate (your API key)</li><li>10 AI thumbnails/month</li><li>30 clips/month</li><li>Analytics &amp; calendar</li><li>No watermark</li></ul>
+          <a href="/auth/register?plan=starter" class="btn btn-primary">Get Started</a>
         </div>
         <div class="price-card">
-          <h3>Enterprise</h3><div class="price">Custom</div>
-          <p class="price-desc">For agencies and teams</p>
-          <ul class="price-features"><li>Everything in Pro</li><li>Unlimited brand voices</li><li>Unlimited Smart Shorts</li><li>Advanced analytics</li><li>Priority email support</li><li>Custom onboarding</li></ul>
-          <a href="/contact" class="btn btn-outline">Contact Sales</a>
+          <h3>Pro</h3><div class="price">$39<span>/month</span></div>
+          <p class="price-desc">For creators serious about growth</p>
+          <ul class="price-features"><li>50 videos/month</li><li>100 repurposes/month</li><li>10 brand voices</li><li>Unlimited narrations</li><li>50 thumbnails/month</li><li>150 clips/month</li><li>A/B testing &amp; batch analysis</li><li>Unlimited history</li></ul>
+          <a href="/auth/register?plan=pro" class="btn btn-primary">Go Pro</a>
+        </div>
+        <div class="price-card">
+          <h3>Teams</h3><div class="price">$79<span>/month</span></div>
+          <p class="price-desc">Scale with your whole team</p>
+          <ul class="price-features"><li>200 videos/month</li><li>500 repurposes/month</li><li>25 brand voices</li><li>Unlimited narrations</li><li>150 thumbnails/month</li><li>500 clips/month</li><li>5 team seats</li><li>Priority processing</li></ul>
+          <a href="/auth/register?plan=teams" class="btn btn-primary">Start Teams</a>
         </div>
       </div>
     </div>
