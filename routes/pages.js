@@ -223,13 +223,13 @@ router.get('/', (req, res) => {
         <div class="price-card">
           <h3>Pro</h3><div class="price">$39<span>/month</span></div>
           <p class="price-desc">For creators serious about growth</p>
-          <ul class="price-features"><li>50 videos/month</li><li>100 repurposes/month</li><li>10 brand voices</li><li>Unlimited narrations</li><li>50 thumbnails/month</li><li>150 clips/month</li><li>A/B testing &amp; batch analysis</li><li>Unlimited history</li></ul>
+          <ul class="price-features"><li>50 videos/month</li><li>100 repurposes/month</li><li>10 brand voices</li><li>Unlimited narrations</li><li>50 thumbnails/month</li><li>150 clips/month</li><li>A/B testing &amp; batch analysis</li><li>Unlimited history</li><li>Full analytics &amp; calendar</li></ul>
           <a href="/auth/register?plan=pro" class="btn btn-primary">Go Pro</a>
         </div>
         <div class="price-card">
           <h3>Teams</h3><div class="price">$79<span>/month</span></div>
           <p class="price-desc">Scale with your whole team</p>
-          <ul class="price-features"><li>200 videos/month</li><li>500 repurposes/month</li><li>25 brand voices</li><li>Unlimited narrations</li><li>150 thumbnails/month</li><li>500 clips/month</li><li>5 team seats</li><li>Priority processing</li></ul>
+          <ul class="price-features"><li>200 videos/month</li><li>500 repurposes/month</li><li>25 brand voices</li><li>Unlimited narrations</li><li>150 thumbnails/month</li><li>500 clips/month</li><li>5 team seats</li><li>Priority processing</li><li>A/B thumbnail testing</li><li>Batch content analysis</li><li>Full analytics &amp; calendar</li><li>Unlimited history</li></ul>
           <a href="/auth/register?plan=teams" class="btn btn-primary">Start Teams</a>
         </div>
       </div>
