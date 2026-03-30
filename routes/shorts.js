@@ -4103,7 +4103,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
   }
 
   const platformColors = {
-    tiktok: '#ff0050'
+    tiktok: '#ff0050',
     instagram: 'linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)',
     shorts: '#ff0000',
     twitter: '#000000',
@@ -5633,7 +5633,7 @@ ${paginationHtml}
         newsletter: 'Newsletter', thread: 'X Thread'
       };
       const platformColors = {
-        tiktok: '#FF0050', instagram: '#E1306C', shorts: '#FF0000',
+        tiktok: '#ff0050',, instagram: '#E1306C', shorts: '#FF0000',
         twitter: '#000', linkedin: '#0077B5', blog: '#6c5ce7',
         newsletter: '#f39c12', thread: '#1DA1F2'
       };
