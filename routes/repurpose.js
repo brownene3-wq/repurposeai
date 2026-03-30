@@ -104,7 +104,7 @@ async function fetchTranscriptViaSupadata(videoId) {
   }
   console.log('[Transcript] Trying Supadata API for', videoId);
   const videoUrl = encodeURIComponent('https://www.youtube.com/watch?v=' + videoId);
-      const response = await httpsRequest('https://api.supadata.ai/v1/transcript?url=' + videoUrl, {
+          const response = await httpsRequest('https://api.supadata.ai/v1/transcript?url=https://www.youtube.com/watch?v=' + videoId, {)
     method: 'GET',
     headers: {
       'x-api-key': apiKey,
