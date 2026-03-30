@@ -31,50 +31,50 @@ async function requireAuth(req, res, next) {
     return res.redirect('/auth/login');
   }
 
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    res.clearCookie('token');
+  try {
+    const decoded = verifyToken(token);
+    if (!decoded) throw new Error('Invalid token');
+
+    const user = await userOps.getById(decoded.id);
+    if (!user) throw new Error('User not found');
+
+    req.user = user;
+    next();
+  } catch (err) {
     if (req.headers.accept?.includes('application/json')) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    return res.redirect('/auth/login');
+    res.redirect('/auth/login');
   }
-
-  const user = await userOps.getById(decoded.id);
-  if (!user) {
-    res.clearCookie('token');
-    return res.redirect('/auth/login');
-  }
-
-  req.user = user;
-  next();
 }
 
-// Middleware: optional auth (sets req.user if logged in)
-async function optionalAuth(req, res, next) {
+// Optional auth - attaches user if token present
+function optionalAuth(req, res, next) {
   const token = req.cookies?.token;
   if (token) {
-    const decoded = verifyToken(token);
-    if (decoded) {
-      req.user = await userOps.getById(decoded.id);
-    }
+    try {
+      const decoded = verifyToken(token);
+      if (decoded) req.user = decoded;
+    } catch (err) {}
   }
   next();
 }
 
-// Middleware: redirect if already logged in
+// Redirect if already logged in
 function redirectIfAuth(req, res, next) {
   const token = req.cookies?.token;
   if (token) {
-    const decoded = verifyToken(token);
-    if (decoded) {
-      return res.redirect('/dashboard');
-    }
+    try {
+      const decoded = verifyToken(token);
+      if (decoded) return res.redirect('/dashboard');
+    } catch (err) {}
   }
   next();
 }
 
-// Plan limits - Updated pricing tiers
+// Plan limits - pricing tiers
+// Narrations use customer's own ElevenLabs API key (no cost to us)
+// Thumbnails use our Stability AI / DALL-E key (our cost)
 const PLAN_LIMITS = {
   free: {
     videosPerMonth: 3,
@@ -96,7 +96,7 @@ const PLAN_LIMITS = {
     videosPerMonth: 15,
     repurposesPerMonth: 30,
     brandVoices: 3,
-    narrationsPerMonth: 5,
+    narrationsPerMonth: Infinity,
     thumbnailsPerMonth: 10,
     clipsPerMonth: 5,
     batchAnalysis: false,
@@ -109,12 +109,12 @@ const PLAN_LIMITS = {
     watermark: false
   },
   pro: {
-    videosPerMonth: Infinity,
-    repurposesPerMonth: Infinity,
+    videosPerMonth: 50,
+    repurposesPerMonth: 100,
     brandVoices: 10,
     narrationsPerMonth: Infinity,
-    thumbnailsPerMonth: Infinity,
-    clipsPerMonth: Infinity,
+    thumbnailsPerMonth: 50,
+    clipsPerMonth: 25,
     batchAnalysis: true,
     thumbnailAB: true,
     clipWithBroll: true,
@@ -130,103 +130,83 @@ function getPlanLimits(plan) {
   return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 }
 
-// Generic plan limit checker - pass the limit key and current count
-async function checkPlanLimit(req, res, next) {
-  const limits = getPlanLimits(req.user.plan);
-  const { contentOps } = require('../db/database');
-
-  // Check monthly video limit
-  if (limits.videosPerMonth !== Infinity) {
-    try {
-      const count = await contentOps.countByUserIdThisMonth(req.user.id);
-      if (count >= limits.videosPerMonth) {
-        return res.status(403).json({
-          error: 'Plan limit reached',
-          message: `Your ${req.user.plan || 'free'} plan allows ${limits.videosPerMonth} videos per month. Upgrade for more.`,
-          upgrade: true,
-          currentPlan: req.user.plan || 'free'
-        });
-      }
-    } catch (err) {
-      console.error('Error checking plan limit:', err);
-    }
-  }
-  req.planLimits = limits;
-  next();
-}
-
-// Feature-specific middleware: check if a feature is available on the user's plan
-function requireFeature(featureKey) {
-  return (req, res, next) => {
-    const limits = getPlanLimits(req.user.plan);
-    const value = limits[featureKey];
-
-    // Boolean features (e.g., batchAnalysis, thumbnailAB)
-    if (value === false) {
-      return res.status(403).json({
-        error: 'Feature not available',
-        message: `This feature is not available on your ${req.user.plan || 'free'} plan. Please upgrade to access it.`,
-        upgrade: true,
-        feature: featureKey,
-        currentPlan: req.user.plan || 'free'
-      });
-    }
-
-    // Numeric features with 0 limit (e.g., narrationsPerMonth: 0 for free)
-    if (value === 0) {
-      return res.status(403).json({
-        error: 'Feature not available',
-        message: `This feature is not included in your ${req.user.plan || 'free'} plan. Upgrade to Starter or Pro to unlock it.`,
-        upgrade: true,
-        feature: featureKey,
-        currentPlan: req.user.plan || 'free'
-      });
-    }
-
-    req.planLimits = limits;
-    next();
-  };
-}
-
-// Check a specific usage counter against its plan limit
-function checkUsageLimit(limitKey, countFn) {
+// Check plan limit middleware (numeric limits)
+function checkPlanLimit(limitKey) {
   return async (req, res, next) => {
     const limits = getPlanLimits(req.user.plan);
     const maxAllowed = limits[limitKey];
-
-    if (maxAllowed === Infinity || maxAllowed === undefined) {
-      req.planLimits = limits;
-      return next();
-    }
-
+    if (maxAllowed === Infinity) return next();
     if (maxAllowed === 0) {
       return res.status(403).json({
         error: 'Feature not available',
         message: `This feature is not included in your ${req.user.plan || 'free'} plan. Upgrade to unlock it.`,
-        upgrade: true,
+        upgradeUrl: '/billing',
         currentPlan: req.user.plan || 'free'
       });
     }
+    next();
+  };
+}
 
+// Middleware: check boolean feature flag
+function requireFeature(featureKey) {
+  return (req, res, next) => {
+    const limits = getPlanLimits(req.user.plan);
+    const allowed = limits[featureKey];
+    if (allowed === false || allowed === 0) {
+      return res.status(403).json({
+        error: 'Feature not available',
+        message: `This feature is not available on your ${req.user.plan || 'free'} plan. Please upgrade to access it.`,
+        upgradeUrl: '/billing',
+        currentPlan: req.user.plan || 'free'
+      });
+    }
+    next();
+  };
+}
+
+// Middleware: check usage count against plan limit
+function checkUsageLimit(limitKey, countFn) {
+  return async (req, res, next) => {
+    const limits = getPlanLimits(req.user.plan);
+    const maxAllowed = limits[limitKey];
+    if (maxAllowed === Infinity) return next();
+    if (maxAllowed === 0) {
+      return res.status(403).json({
+        error: 'Feature not available',
+        message: `This feature is not included in your ${req.user.plan || 'free'} plan. Upgrade to unlock it.`,
+        upgradeUrl: '/billing',
+        currentPlan: req.user.plan || 'free'
+      });
+    }
     try {
       const count = await countFn(req.user.id);
       if (count >= maxAllowed) {
         return res.status(403).json({
           error: 'Usage limit reached',
           message: `You've used ${count}/${maxAllowed} allowed this month on your ${req.user.plan || 'free'} plan. Upgrade for more.`,
-          upgrade: true,
+          upgradeUrl: '/billing',
           currentPlan: req.user.plan || 'free',
           used: count,
-          limit: maxAllowed
+          allowed: maxAllowed
         });
       }
+      next();
     } catch (err) {
       console.error(`Error checking ${limitKey} limit:`, err);
+      next();
     }
-
-    req.planLimits = limits;
-    next();
   };
 }
 
-module.exports = { generateToken, verifyToken, requireAuth, optionalAuth, redirectIfAuth, getPlanLimits, checkPlanLimit, requireFeature, checkUsageLimit };
+module.exports = {
+  generateToken,
+  verifyToken,
+  requireAuth,
+  optionalAuth,
+  redirectIfAuth,
+  getPlanLimits,
+  checkPlanLimit,
+  requireFeature,
+  checkUsageLimit
+};
