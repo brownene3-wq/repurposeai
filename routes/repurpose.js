@@ -724,7 +724,7 @@ function getOpenAIClient() {
 }
 
 // GET - Premium repurpose form page
-router.get('/', (req, res) => {
+router.get('/', requireAuth, (req, res) => {
   res.send(`
     ${getHeadHTML('Repurpose')}
       <style>
@@ -1448,12 +1448,11 @@ router.get('/', (req, res) => {
             return;
           }
 
-          showLoading();
-          document.getElementById('resultsGrid').innerHTML = '';
-          let resultCount = 0;
-          let hadError = false;
-
           try {
+            showLoading();
+            document.getElementById('resultsGrid').innerHTML = '';
+            let resultCount = 0;
+            let hadError = false;
             const response = await fetch('/repurpose/process-stream', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
