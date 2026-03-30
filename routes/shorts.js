@@ -2006,7 +2006,9 @@ router.delete('/calendar/:id', requireAuth, async (req, res) => {
   }
 });
 
-// POST /thumbnail - Generate a thumbnail for a moment
+<script>
+
+</script>/startBatchAnalysis/router.get('/shorts')Unexpected token POST /thumbnail - Generate a thumbnail for a moment
 router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), async (req, res) => {
   try {
     if (!ffmpegAvailable) {
@@ -2575,7 +2577,8 @@ router.post('/thumbnail-ab', requireAuth, requireFeature('thumbnailAB'), async (
           // Overlay title text if ffmpeg available
           if (ffmpegAvailable) {
             const tempImg = outputPath + '.temp_ab.png';
-            fs.renameSync(outputPath, tempImg);
+ async function analyzeVideo
+applyThumbnailOverlay(tempImg)  , )          fs.renameSync(outputPath, tempImg);
             const titleColor = (brandKit && brandKit.primary_color) || '#FFFFFF';
             await applyThumbnailOverlay(tempImg, outputPath, thumbTitle, titleColor, '#000000', 72, 'gradient', brandKit);
             try { fs.unlinkSync(tempImg); } catch(e) {}
@@ -3495,7 +3498,8 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
 
       } catch (err) {
         clearTimeout(timeout);
-        writeError(err.message || 'Unknown error during narration processing');
+ router.get('/shorts'
+         writeError(err.message || 'Unknown error during narration processing');
       }
     })();
 
@@ -5633,7 +5637,7 @@ ${paginationHtml}
         newsletter: 'Newsletter', thread: 'X Thread'
       };
       const platformColors = {
-        tiktok: '#ff0050',, instagram: '#E1306C', shorts: '#FF0000',
+        tiktok: '#ff0050', instagram: '#E1306C', shorts: '#FF0000',
         twitter: '#000', linkedin: '#0077B5', blog: '#6c5ce7',
         newsletter: '#f39c12', thread: '#1DA1F2'
       };
