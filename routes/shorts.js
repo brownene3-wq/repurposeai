@@ -2574,9 +2574,8 @@ router.post('/thumbnail-ab', requireAuth, requireFeature('thumbnailAB'), async (
           // Overlay title text if ffmpeg available
           if (ffmpegAvailable) {
             const tempImg = outputPath + '.temp_ab.png';
- async function analyzeVideo
-applyThumbnailOverlay(tempImg)  , )          fs.renameSync(outputPath, tempImg);
-            const titleColor = (brandKit && brandKit.primary_color) || '#FFFFFF';
+                fs.renameSync(outputPath, tempImg);
+                            const titleColor = (brandKit && brandKit.primary_color) || '#FFFFFF';
             await applyThumbnailOverlay(tempImg, outputPath, thumbTitle, titleColor, '#000000', 72, 'gradient', brandKit);
             try { fs.unlinkSync(tempImg); } catch(e) {}
           }
