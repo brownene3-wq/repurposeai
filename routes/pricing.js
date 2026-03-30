@@ -24,9 +24,9 @@ router.get('/', optionalAuth, (req, res) => {
       .price-card .desc{color:var(--text-muted);font-size:.95rem;margin-bottom:1.5rem;line-height:1.5}
       .features-list{list-style:none;margin-bottom:2rem}
       .features-list li{padding:.5rem 0;color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;gap:.6rem}
-      .features-list li::before{content:'\2713';color:var(--primary-light);font-weight:700;font-size:1rem}
+      .features-list li::before{content:'\\2713';color:var(--primary-light);font-weight:700;font-size:1rem}
       .features-list li.disabled{opacity:.4}
-      .features-list li.disabled::before{content:'\2717';color:var(--text-muted)}
+      .features-list li.disabled::before{content:'\\2717';color:var(--text-muted)}
       .btn{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:1rem;border-radius:50px;font-weight:700;font-size:1rem;cursor:pointer;border:none;transition:all .3s;text-decoration:none}
       .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 20px rgba(108,58,237,0.3)}
       .btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 25px rgba(108,58,237,0.4)}
