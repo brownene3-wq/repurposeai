@@ -88,7 +88,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>15 Smart Shorts/month</li>
             <li>30 repurposes/month</li>
             <li>3 brand voices</li>
-            <li>5 AI narrations/month</li>
+            <li>Unlimited AI narrations</li>
             <li>10 AI thumbnails/month</li>
             <li>5 clips/month</li>
             <li>Analytics dashboard</li>
