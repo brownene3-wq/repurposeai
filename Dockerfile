@@ -17,4 +17,5 @@ RUN npm ci --omit=dev
 COPY . .
 
 # Railway sets PORT dynamically
-CMD ["node", "server.js"]
+# Update yt-dlp at startup to keep up with YouTube API changes
+CMD pip3 install --break-system-packages --upgrade yt-dlp 2>/dev/null; node server.js
