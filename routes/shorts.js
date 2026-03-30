@@ -4093,7 +4093,8 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
   }
 });
 
-// Main page rendererfunction renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
+// Main page renderer
+function renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
   let paginationHtml = '';
   if (currentPage > 1 || hasMore) 
     const prevBtn = currentPage > 1 ? '<a href="/shorts?page=' + (currentPage - 1) + '" style="padding:8px 16px;background:#333;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;">&larr; Previous</a>' : '<span></span>';
