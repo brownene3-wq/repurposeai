@@ -1717,7 +1717,7 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
         console.log('[Timing] Transcript truncated from', words.length, 'to 8000 words');
       }
     } catch (error) {
-Page_DownPage_DownPage_Downrevert file      console.error('All transcript methods failed for', videoId, ':', error.message);
+        console.error('All transcript methods failed for', videoId, ':', error.message);
       res.write('data: ' + JSON.stringify({ error: 'Could not fetch transcript. Make sure the video has captions enabled.' }) + '\n\n');
       return res.end();
     }
