@@ -45,7 +45,7 @@ router.get('/', requireAuth, (req, res) => {
       .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;border-radius:50px;font-weight:600;font-size:.85rem;cursor:pointer;border:none;transition:all .3s}
       .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 15px rgba(108,58,237,0.3)}
       .btn-primary:hover{transform:translateY(-1px)}
-      .btn-outline{background:transparent;colorevert file:var(--text);border:1px solid rgba(255,255,255,0.15)}
+      .btn-outline{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.15)}
       .btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
       .btn-current{background:rgba(16,185,129,0.15);color:var(--success);border:1px solid rgba(16,185,129,0.3);cursor:default}
       @media(max-width:900px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
@@ -101,15 +101,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>30-day history</li>
             <li>No watermark</li>
           </ul>
-<<<<<<< HEAD
-<<<<<<< HEAD
-          ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;starter&apos;)">Upgrade to Starter</button>'
-=======
-          ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'starter\\')">Upgrade to Starter</button>'}
->>>>>>> c71b415b0d82e0c1d9cd9cef1d3967aa4fd52f80
-=======
           ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;starter&apos;)">Upgrade to Starter</button>'}
->>>>>>> e32954e0d3217484e288e9f812880aca7bf8a7c0
         </div>
 
         <div class="price-card${userPlan === 'starter' ? ' featured' : ''}">
@@ -129,15 +121,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>Full analytics & calendar</li>
             <li>Unlimited history</li>
           </ul>
-<<<<<<< HEAD
-<<<<<<< HEAD
           ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;pro&apos;)">Upgrade to Pro</button>'}
-=======
-          ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(\\'pro\\')">Upgrade to Pro</button>'}
->>>>>>> c71b415b0d82e0c1d9cd9cef1d3967aa4fd52f80
-=======
-          ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;pro&apos;)">Upgrade to Pro</button>'}
->>>>>>> e32954e0d3217484e288e9f812880aca7bf8a7c0
         </div>
 
         <div class="price-card">
@@ -153,7 +137,10 @@ router.get('/', requireAuth, (req, res) => {
             <li>500 clips/month</li>
             <li>5 team seats</li>
             <li>Priority processing</li>
-            <li>All premium features</li>
+            <li>Batch analysis</li>
+            <li>A/B thumbnail testing</li>
+            <li>Clips with B-roll</li>
+            <li>Full analytics & calendar</li>
             <li>Unlimited history</li>
           </ul>
           ${userPlan === 'teams' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;teams&apos;)">Upgrade to Teams</button>'}
