@@ -40,13 +40,13 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Platform brand colors
     const platformColors = {
-      'Instagram': 'linear-gradient(90deg, #6C3AED, #a78bfa)',
-      'TikTok': 'linear-gradient(90deg, #06B6D4, #22d3ee)',
-      'Twitter/X': 'linear-gradient(90deg, #0EA5E9, #6366F1)',
-      'LinkedIn': 'linear-gradient(90deg, #6C3AED, #EC4899)',
-      'Facebook': 'linear-gradient(90deg, #10B981, #06B6D4)',
-      'YouTube': 'linear-gradient(90deg, #0EA5E9, #38bdf8)',
-      'Blog': 'linear-gradient(90deg, #10B981, #34d399)'
+      'Instagram': 'linear-gradient(90deg, #E1306C, #F77737)',
+      'TikTok': 'linear-gradient(90deg, #00F2EA, #FF0050)',
+      'Twitter/X': 'linear-gradient(90deg, #1DA1F2, #0d8bd9)',
+      'LinkedIn': 'linear-gradient(90deg, #0077B5, #00a0dc)',
+      'Facebook': 'linear-gradient(90deg, #1877F2, #42a5f5)',
+      'YouTube': 'linear-gradient(90deg, #FF0000, #ff4444)',
+      'Blog': 'linear-gradient(90deg, #6C3AED, #a78bfa)'
     };
 
     // Build platform bars HTML
@@ -80,8 +80,8 @@ router.get('/', requireAuth, async (req, res) => {
     .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
     .stat-card:nth-child(1)::before { background: linear-gradient(90deg, #6C3AED, #EC4899); }
     .stat-card:nth-child(2)::before { background: linear-gradient(90deg, #0EA5E9, #6366F1); }
-    .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #10B981, #06B6D4); }
-    .stat-card:nth-child(4)::before { background: linear-gradient(90deg, #10B981, #06B6D4); }
+    .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #F59E0B, #F97316); }
+    .stat-card:nth-child(4)::before { background: linear-gradient(90deg, #EF4444, #F97316); }
     .stat-card .label { color: #888; font-size: 0.85em; margin-bottom: 8px; font-weight: 500; }
     .stat-card .value { font-size: 2.2em; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
     .stat-card .change { font-size: 0.8em; color: #10B981; margin-top: 6px; font-weight: 600; }
