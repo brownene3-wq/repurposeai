@@ -7,7 +7,7 @@ router.get('/', optionalAuth, (req, res) => {
   const html = `${getHeadHTML('Pricing - RepurposeAI')}
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap');
-      ${getBaseCSS()}
+      ${getBaseCSS()
       *{margin:0;padding:0;box-sizing:border-box}
       body{min-height:100vh;display:flex;flex-direction:column}
       .pricing-hero{text-align:center;padding:5rem 2rem 3rem}
@@ -133,7 +133,10 @@ router.get('/', optionalAuth, (req, res) => {
             <li>500 clips/month</li>
             <li>5 team seats</li>
             <li>Priority processing</li>
-            <li>All premium features</li>
+            <li>Batch content analysis</li>
+                    <li>A/B thumbnail testing</li>
+                    <li>Clips with B-roll</li>
+                    <li>Full analytics &amp; calendar</li>
             <li>Unlimited history</li>
           </ul>
           <a href="/auth/register?plan=teams" class="btn btn-primary">Start Teams</a>
