@@ -3365,12 +3365,12 @@ router.post('/narrate', requireAuth, async (req, res) => {
             await runCommand(ffmpegPath, [
               '-i', clipPath, '-i', audioPath,
               '-map', '0:v', '-map', '1:a',
-              '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-y', tempOutput
+              '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOutput
             ], { timeout: 120000 });
           } else {
             // Mix: blend original audio (30%) with narration
             await runCommand(ffmpegPath, [
-              '-i', clipPath, '-i', audioPath, '-c:v', 'copy',
+              '-i', clipPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p',
               '-filter_complex', '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest',
               '-c:a', 'aac', '-shortest', '-y', tempOutput
             ], { timeout: 120000 });
@@ -3604,11 +3604,11 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
             await runCommand(ffmpegPath, [
               '-i', downloadPath, '-i', audioPath,
               '-map', '0:v', '-map', '1:a',
-              '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-y', tempOut
+              '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOut
             ], { timeout: 120000 });
           } else {
             await runCommand(ffmpegPath, [
-              '-i', downloadPath, '-i', audioPath, '-c:v', 'copy',
+              '-i', downloadPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p',
               '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=longest',
               '-c:a', 'aac', '-shortest', '-y', tempOut
             ], { timeout: 120000 });
@@ -3619,7 +3619,7 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
           await runCommand(ffmpegPath, [
             '-i', downloadPath,
             '-vf', "drawtext=text='" + escaped.substring(0, 200) + "':fontsize=36:fontcolor=white:bordercolor=black:borderw=2:x=(w-text_w)/2:y=h-80",
-            '-c:a', 'copy', '-c:v', 'libx264', '-preset', 'medium', '-y', tempOut
+            '-c:a', 'copy', '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-y', tempOut
           ], { timeout: 120000 });
         }
 
