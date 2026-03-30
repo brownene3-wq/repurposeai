@@ -1517,7 +1517,7 @@ router.get('/elevenlabs-voices', requireAuth, async (req, res) => {
 });
 
 // POST /batch-analyze - Analyze multiple YouTube videos
-router.post('/batch-analyze', requireAuth, async (req, res) => {
+router.post('/batch-analyze', requireAuth, requireFeature('batchAnalysis'), async (req, res) => {
   try {
     const { videoUrls } = req.body;
     if (!videoUrls || !Array.isArray(videoUrls) || videoUrls.length === 0) {
@@ -2007,7 +2007,7 @@ router.delete('/calendar/:id', requireAuth, async (req, res) => {
 });
 
 // POST /thumbnail - Generate a thumbnail for a moment
-router.post('/thumbnail', requireAuth, async (req, res) => {
+router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), async (req, res) => {
   try {
     if (!ffmpegAvailable) {
       return res.status(503).json({ error: 'ffmpeg is not available on this server.' });
@@ -2358,7 +2358,7 @@ router.get('/thumbnail/download/:filename', requireAuth, (req, res) => {
 });
 
 // POST /thumbnail-ai - Generate an AI thumbnail using DALL-E
-router.post('/thumbnail-ai', requireAuth, async (req, res) => {
+router.post('/thumbnail-ai', requireAuth, checkPlanLimit('thumbnailsPerMonth'), async (req, res) => {
   try {
     if (!process.env.OPENAI_API_KEY) {
       return res.status(503).json({ error: 'OpenAI API key not configured.' });
@@ -2486,7 +2486,7 @@ router.post('/thumbnail-ai', requireAuth, async (req, res) => {
 });
 
 // POST /thumbnail-ab - Generate 3 AI thumbnail variants for A/B testing
-router.post('/thumbnail-ab', requireAuth, async (req, res) => {
+router.post('/thumbnail-ab', requireAuth, requireFeature('thumbnailAB'), async (req, res) => {
   try {
     if (!process.env.OPENAI_API_KEY) {
       return res.status(503).json({ error: 'OpenAI API key not configured.' });
@@ -2626,7 +2626,7 @@ router.get('/thumbnail-ab/status/:batchId', requireAuth, (req, res) => {
 });
 
 // POST /clip - Generate a video clip for a specific moment
-router.post('/clip', requireAuth, async (req, res) => {
+router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, res) => {
   try {
     if (!ytdl || !ffmpegAvailable) {
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
@@ -3765,7 +3765,7 @@ router.get('/narrate/download/:filename', requireAuth, (req, res) => {
 });
 
 // POST /clip-with-broll - Generate clip with B-Roll scenes spliced in
-router.post('/clip-with-broll', requireAuth, async (req, res) => {
+router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), async (req, res) => {
   try {
     if (!ffmpegAvailable) {
       return res.status(503).json({ error: 'ffmpeg not available on this server.' });
