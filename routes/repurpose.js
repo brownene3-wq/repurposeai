@@ -1699,12 +1699,12 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     }
 
     const videoId = url.match(youtubeRegex)[1];
-    const videoTitle = await fetchVideoTitle(videoId);
+    const videoTitle = await Promise.race([fetchVideoTitle(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Title fetch timed out")), 15000))]);
     const totalStart = Date.now();
     let transcript;
     try {
       const transcriptStart = Date.now();
-      transcript = await fetchVideoTranscript(videoId);
+      transcript = await Promise.race([fetchVideoTranscript(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Transcript fetch timed out after 30 seconds")), 30000))]);
       console.log('[Timing] Transcript fetch:', Date.now() - transcriptStart, 'ms');
       if (!transcript || transcript.trim().length === 0) {
         res.write('data: ' + JSON.stringify({ error: 'Video transcript is empty.' }) + '\n\n');
