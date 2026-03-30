@@ -79,8 +79,8 @@ router.get('/', requireAuth, async (req, res) => {
     .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
     .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
     .stat-card:nth-child(1)::before { background: linear-gradient(90deg, #6C3AED, #EC4899); }
-    .stat-card:nth-child(2)::before { background: linear-gradient(90deg, #0EA5E9, #6366F1); }
-    .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #F59E0B, #F97316); }
+    .stat-card:nth-child(2)::before { background: linear-gradient(90deg, #F59E0B, #F97316); }
+    .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #0EA5E9, #6366F1); }
     .stat-card:nth-child(4)::before { background: linear-gradient(90deg, #EF4444, #F97316); }
     .stat-card .label { color: #888; font-size: 0.85em; margin-bottom: 8px; font-weight: 500; }
     .stat-card .value { font-size: 2.2em; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
