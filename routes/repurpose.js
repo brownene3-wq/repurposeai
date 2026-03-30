@@ -1437,8 +1437,7 @@ router.get('/', requireAuth, (req, res) => {
             showError('Please enter a YouTube URL');
             return;
           }
-
-          if (platforms.length === 0) {
+          if (platforms.length === 0) 
             showError('Please select at least one platform');
             return;
           }
@@ -1628,6 +1627,7 @@ router.get('/', requireAuth, (req, res) => {
         function showLoading() {
           document.getElementById('resultsContainer').classList.add('show');
           document.getElementById('loadingState').classList.add('show');
+          document.getElementById('resultsContainer').scrollIntoView({behavior: 'smooth', block: 'start'});
           document.getElementById('resultsContent').style.display = 'none';
           document.getElementById('errorMessage').classList.remove('show');
         }

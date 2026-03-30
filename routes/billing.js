@@ -45,7 +45,7 @@ router.get('/', requireAuth, (req, res) => {
       .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;border-radius:50px;font-weight:600;font-size:.85rem;cursor:pointer;border:none;transition:all .3s}
       .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 15px rgba(108,58,237,0.3)}
       .btn-primary:hover{transform:translateY(-1px)}
-      .btn-outline{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.15)}
+      .btn-outline{background:transparent;colorevert file:var(--text);border:1px solid rgba(255,255,255,0.15)}
       .btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
       .btn-current{background:rgba(16,185,129,0.15);color:var(--success);border:1px solid rgba(16,185,129,0.3);cursor:default}
       @media(max-width:900px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
