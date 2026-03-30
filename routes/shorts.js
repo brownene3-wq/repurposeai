@@ -1589,10 +1589,27 @@ router.post('/batch-analyze', requireAuth, async (req, res) => {
           });
 
           let moments = [];
+        try {
+          const parsed = JSON.parse(completion.choices[0].message.content);
+          if (Array.isArray(parsed)) {
+            moments = parsed;
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            // json_object format returns an object - find the first array value
+            for (const key of Object.keys(parsed)) {
+              if (Array.isArray(parsed[key]) && parsed[key].length > 0) {
+                moments = parsed[key];
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          // Fallback: extract JSON array from raw text
           try {
-            const parsed = JSON.parse(completion.choices[0].message.content);
-            moments = Array.isArray(parsed) ? parsed : (parsed.moments || parsed.clips || parsed.results || []);
-          } catch (e) {}
+            const raw = completion.choices[0].message.content;
+            const m = raw.match(/\[[\s\S]*\]/);
+            if (m) moments = JSON.parse(m[0]);
+          } catch (e2) {}
+        }
 
           // Save to DB
         const analysisId = await shortsOps.create(req.user.id, videoUrl, videoTitle, transcript || '');
@@ -4953,20 +4970,28 @@ function renderShortsPage(user, analyses) {
         `}
       </div>
 
-      <!-- Content Calendar -->
-      <div style="margin-top: 32px;">
+<!-- Floating Calendar Button -->
+    <button id="calendarFloatBtn" onclick="document.getElementById('calendarModal').style.display='flex';" style="position:fixed;bottom:90px;right:30px;z-index:9990;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:14px 22px;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
+      <span style="font-size:18px;">&#128197;</span> Calendar
+    </button>
+
+    <!-- Calendar Modal -->
+    <div id="calendarModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9995;align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none';">
+      <div style="background:#1a1a2e;border-radius:16px;padding:28px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <h2 style="font-size:22px;font-weight:700;">Content Calendar</h2>
           <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn btn-small" onclick="changeCalendarMonth(-1)" style="background:rgba(255,255,255,0.08);">&larr;</button>
             <span id="calendarMonthLabel" style="font-size:14px;font-weight:600;min-width:140px;text-align:center;"></span>
             <button class="btn btn-small" onclick="changeCalendarMonth(1)" style="background:rgba(255,255,255,0.08);">&rarr;</button>
-            <button class="btn btn-small" onclick="openAddEntry()" style="background:rgba(108,92,231,0.2);color:#a29bfe;">+ Add Entry</button>
+            <button class="btn btn-small" onclick="openAddEntry()" style="background:rgba(108,92,231,0.2);color:#a29bfe;border:1px solid rgba(108,92,231,0.3);">+ Add Entry</button>
+            <button onclick="document.getElementById('calendarModal').style.display='none';" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 8px;">&times;</button>
           </div>
         </div>
-        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.03);border-radius:12px;overflow:hidden;"></div>
+        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.05);border-radius:8px;overflow:hidden;"></div>
       </div>
-    </main>
+    </div>
+</main>
 
   <!-- Calendar Entry Modal -->
   <!-- Day entries list modal (shows when clicking a day with entries) -->
