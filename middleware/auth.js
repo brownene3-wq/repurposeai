@@ -74,18 +74,63 @@ function redirectIfAuth(req, res, next) {
   next();
 }
 
-// Plan limits
+// Plan limits - Updated pricing tiers
 const PLAN_LIMITS = {
-  free:       { videosPerMonth: 3, brandVoices: 1, hasAnalytics: false },
-  starter:    { videosPerMonth: 3, brandVoices: 1, hasAnalytics: false },
-  pro:        { videosPerMonth: Infinity, brandVoices: 10, hasAnalytics: true },
-  enterprise: { videosPerMonth: Infinity, brandVoices: Infinity, hasAnalytics: true }
+  free: {
+    videosPerMonth: 3,
+    repurposesPerMonth: 5,
+    brandVoices: 1,
+    narrationsPerMonth: 0,
+    thumbnailsPerMonth: 0,
+    clipsPerMonth: 0,
+    batchAnalysis: false,
+    thumbnailAB: false,
+    clipWithBroll: false,
+    hasAnalytics: false,
+    hasBrandKit: false,
+    hasCalendarEdit: false,
+    historyDays: 7,
+    watermark: true
+  },
+  starter: {
+    videosPerMonth: 15,
+    repurposesPerMonth: 30,
+    brandVoices: 3,
+    narrationsPerMonth: 5,
+    thumbnailsPerMonth: 10,
+    clipsPerMonth: 5,
+    batchAnalysis: false,
+    thumbnailAB: false,
+    clipWithBroll: false,
+    hasAnalytics: true,
+    hasBrandKit: true,
+    hasCalendarEdit: true,
+    historyDays: 30,
+    watermark: false
+  },
+  pro: {
+    videosPerMonth: Infinity,
+    repurposesPerMonth: Infinity,
+    brandVoices: 10,
+    narrationsPerMonth: Infinity,
+    thumbnailsPerMonth: Infinity,
+    clipsPerMonth: Infinity,
+    batchAnalysis: true,
+    thumbnailAB: true,
+    clipWithBroll: true,
+    hasAnalytics: true,
+    hasBrandKit: true,
+    hasCalendarEdit: true,
+    historyDays: Infinity,
+    watermark: false
+  }
 };
 
 function getPlanLimits(plan) {
   return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 }
 
+// Generic plan limit checker - pass the limit key and current count
 async function checkPlanLimit(req, res, next) {
   const limits = getPlanLimits(req.user.plan);
   const { contentOps } = require('../db/database');
@@ -97,8 +142,9 @@ async function checkPlanLimit(req, res, next) {
       if (count >= limits.videosPerMonth) {
         return res.status(403).json({
           error: 'Plan limit reached',
-          message: `Your free plan allows ${limits.videosPerMonth} videos per month. Upgrade to Pro for unlimited videos.`,
-          upgrade: true
+          message: `Your ${req.user.plan || 'free'} plan allows ${limits.videosPerMonth} videos per month. Upgrade for more.`,
+          upgrade: true,
+          currentPlan: req.user.plan || 'free'
         });
       }
     } catch (err) {
@@ -109,4 +155,78 @@ async function checkPlanLimit(req, res, next) {
   next();
 }
 
-module.exports = { generateToken, verifyToken, requireAuth, optionalAuth, redirectIfAuth, getPlanLimits, checkPlanLimit };
+// Feature-specific middleware: check if a feature is available on the user's plan
+function requireFeature(featureKey) {
+  return (req, res, next) => {
+    const limits = getPlanLimits(req.user.plan);
+    const value = limits[featureKey];
+
+    // Boolean features (e.g., batchAnalysis, thumbnailAB)
+    if (value === false) {
+      return res.status(403).json({
+        error: 'Feature not available',
+        message: `This feature is not available on your ${req.user.plan || 'free'} plan. Please upgrade to access it.`,
+        upgrade: true,
+        feature: featureKey,
+        currentPlan: req.user.plan || 'free'
+      });
+    }
+
+    // Numeric features with 0 limit (e.g., narrationsPerMonth: 0 for free)
+    if (value === 0) {
+      return res.status(403).json({
+        error: 'Feature not available',
+        message: `This feature is not included in your ${req.user.plan || 'free'} plan. Upgrade to Starter or Pro to unlock it.`,
+        upgrade: true,
+        feature: featureKey,
+        currentPlan: req.user.plan || 'free'
+      });
+    }
+
+    req.planLimits = limits;
+    next();
+  };
+}
+
+// Check a specific usage counter against its plan limit
+function checkUsageLimit(limitKey, countFn) {
+  return async (req, res, next) => {
+    const limits = getPlanLimits(req.user.plan);
+    const maxAllowed = limits[limitKey];
+
+    if (maxAllowed === Infinity || maxAllowed === undefined) {
+      req.planLimits = limits;
+      return next();
+    }
+
+    if (maxAllowed === 0) {
+      return res.status(403).json({
+        error: 'Feature not available',
+        message: `This feature is not included in your ${req.user.plan || 'free'} plan. Upgrade to unlock it.`,
+        upgrade: true,
+        currentPlan: req.user.plan || 'free'
+      });
+    }
+
+    try {
+      const count = await countFn(req.user.id);
+      if (count >= maxAllowed) {
+        return res.status(403).json({
+          error: 'Usage limit reached',
+          message: `You've used ${count}/${maxAllowed} allowed this month on your ${req.user.plan || 'free'} plan. Upgrade for more.`,
+          upgrade: true,
+          currentPlan: req.user.plan || 'free',
+          used: count,
+          limit: maxAllowed
+        });
+      }
+    } catch (err) {
+      console.error(`Error checking ${limitKey} limit:`, err);
+    }
+
+    req.planLimits = limits;
+    next();
+  };
+}
+
+module.exports = { generateToken, verifyToken, requireAuth, optionalAuth, redirectIfAuth, getPlanLimits, checkPlanLimit, requireFeature, checkUsageLimit };
