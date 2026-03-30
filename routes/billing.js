@@ -40,7 +40,7 @@ router.get('/', requireAuth, (req, res) => {
       .price-card .desc{color:var(--text-muted);font-size:.85rem;margin-bottom:1.2rem}
       .features-list{list-style:none;margin-bottom:1.5rem}
       .features-list li{padding:.4rem 0;color:var(--text-muted);font-size:.85rem;display:flex;align-items:center;gap:.5rem}
-      .features-list li::before{content:'\2713';color:var(--primary-light);font-weight:700;font-size:.9rem}
+      .features-list li::before{content:'\\2713';color:var(--primary-light);font-weight:700;font-size:.9rem}
       .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;border-radius:50px;font-weight:600;font-size:.9rem;cursor:pointer;border:none;transition:all .3s}
       .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 15px rgba(108,58,237,0.3)}
       .btn-primary:hover{transform:translateY(-1px)}
