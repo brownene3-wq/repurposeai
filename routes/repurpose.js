@@ -6,7 +6,7 @@ const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = 
 
 // Helper: make an HTTPS request (GET or POST)
 function httpsRequest(url, options = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => 
     const parsedUrl = new URL(url);
     const reqOptions = {
       hostname: parsedUrl.hostname,
@@ -98,13 +98,13 @@ function parseTranscriptXml(xml) {
 
 // Method 0: Fetch transcript via Supadata API (paid, reliable)
 async function fetchTranscriptViaSupadata(videoId) {
-  const apiKey = process.env.SUPADATA_API_KEY;
+  const apiKey = process.env.SUPADATA_API_KEY || 'sd_18fdc58ae29bb5969c690d748c5ce1bd';
   if (!apiKey) {
     throw new Error('SUPADATA_API_KEY not configured');
   }
   console.log('[Transcript] Trying Supadata API for', videoId);
   const videoUrl = encodeURIComponent('https://www.youtube.com/watch?v=' + videoId);
-  const response = await httpsRequest('https://api.supadata.ai/v1/transcript?url=https://www.youtube.com/watch?v=' + videoId, {
+      const response = await httpsRequest('https://api.supadata.ai/v1/transcript?url=' + videoUrl, {
     method: 'GET',
     headers: {
       'x-api-key': apiKey,
