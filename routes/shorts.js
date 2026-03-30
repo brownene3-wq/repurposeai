@@ -801,7 +801,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
   const baseArgs = ['--skip-download', '--no-warnings', '--no-check-certificates', '-o', outTemplate, videoUrl];
 
   // Use extractor-args to try different YouTube player clients for better compatibility
-  const extraArgs = ['--extractor-args', 'youtube:player_client=android'];
+  const extraArgs = ['--extractor-args', 'youtube:player_client=web_creator,ios,android_vr'];
 
   // Strategy 1: English auto-generated + manual subs in json3 (wildcard for en variants)
   console.log('  Trying: English json3 subtitles (wildcard)');
@@ -868,7 +868,7 @@ async function fetchTranscriptFromYtdlpJson(videoId) {
   const jsonStr = await new Promise((resolve, reject) => {
     let output = '';
     const proc = spawn('yt-dlp', [
-      '--skip-download', '--dump-json', '--no-warnings', '--no-check-certificates', '--extractor-args', 'youtube:player_client=android',
+      '--skip-download', '--dump-json', '--no-warnings', '--no-check-certificates', '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
       videoUrl
     ]);
     proc.stdout.on('data', (data) => { output += data.toString(); });
@@ -949,7 +949,7 @@ async function fetchTranscriptFromYtdlpJson(videoId) {
 function fetchVideoTitle(videoId) {
   return new Promise((resolve) => {
     const proc = spawn('yt-dlp', [
-      '--skip-download', '--print', 'title', '--no-warnings', '--extractor-args', 'youtube:player_client=android',
+      '--skip-download', '--print', 'title', '--no-warnings', '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
       `https://www.youtube.com/watch?v=${videoId}`
     ]);
     let title = '';
@@ -2115,7 +2115,7 @@ router.post('/thumbnail', requireAuth, async (req, res) => {
             '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempVideo,
             '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
-            '--extractor-args', 'youtube:player_client=android',
+            '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
             '--download-sections', `*${frameSec}-${frameSec + 5}`,
             videoUrl
           ], { timeout: 120000 });
@@ -2126,7 +2126,7 @@ router.post('/thumbnail', requireAuth, async (req, res) => {
               '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
               '--merge-output-format', 'mkv', '-o', tempVideo,
               '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
-              '--extractor-args', 'youtube:player_client=android',
+              '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
               videoUrl
             ], { timeout: 180000 });
           } catch (e2) {
@@ -2779,7 +2779,7 @@ router.post('/clip', requireAuth, async (req, res) => {
             '--no-check-certificates',
             '--no-part',
             '--force-overwrites',
-            '--extractor-args', 'youtube:player_client=android',
+            '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
             videoUrl
           ], { timeout: 240000 });
         } catch (dlErr) {
@@ -3550,14 +3550,14 @@ router.post('/quick-narrate', requireAuth, async (req, res) => {
         await runCommand('yt-dlp', [
           '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
           '--merge-output-format', 'mkv', '-o', downloadPath, '--no-warnings', '--no-check-certificates',
-          '--no-part', '--force-overwrites', '--extractor-args', 'youtube:player_client=android', videoUrl
+          '--no-part', '--force-overwrites', '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr', videoUrl
         ], { timeout: 240000 });
 
         // Step 2: Get transcript for context (optional, best-effort)
         let transcriptText = '';
         try {
           const titleProc = require('child_process').execSync(
-            'yt-dlp --get-title --no-warnings --extractor-args youtube:player_client=android "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
+            'yt-dlp --get-title --no-warnings --extractor-args youtube:player_client=web_creator,ios,android_vr "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
           ).trim();
           transcriptText = titleProc || 'Short video';
         } catch(e) { transcriptText = 'Short video'; }
@@ -3857,7 +3857,7 @@ router.post('/clip-with-broll', requireAuth, async (req, res) => {
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempDownload,
             '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
-            '--extractor-args', 'youtube:player_client=android',
+            '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
             videoUrl
           ], { timeout: 240000 });
         } catch (e) {
