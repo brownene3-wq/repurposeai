@@ -1735,12 +1735,13 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     const promises = platforms.map(async (platform) => {
       try {
         const genStart = Date.now();
-        const generatedContent = await generatePlatformContent(transcript, platform, tone, brandVoice);
+        const generatedContent = await Promise.race([generatePlatformContent(transcript, platform, tone, brandVoice), new Promise((_, reject) => setTimeout(() => reject(new Error('AI generation timed out for ' + platform)), 60000))]);
         console.log('[Timing] OpenAI generation for', platform, ':', Date.now() - genStart, 'ms');
         const output = await outputOps.create(content.id, userId, 'generated', generatedContent, platform, tone);
         res.write('data: ' + JSON.stringify({ platform: output.platform, generated_content: output.generated_content, id: output.id }) + '\n\n');
       } catch (err) {
         console.error('Error generating ' + platform + ':', err.message);
+        res.write('data: ' + JSON.stringify({ platform: platform, error: err.message }) + '\n\n');
       }
     });
 
