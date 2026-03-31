@@ -67,6 +67,7 @@ const chatbotRouter = require('./routes/chatbot');
 const shortsRouter = require('./routes/shorts');
 const staticPagesRouter = require('./routes/static-pages');
 const adminRouter = require('./routes/admin');
+const adminEmailRouter = require('./routes/admin-email');
 
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
@@ -84,6 +85,7 @@ app.use('/chatbot', chatbotRouter);
 app.use('/shorts', shortsRouter);
 app.use('/', staticPagesRouter);
 app.use('/admin', adminRouter);
+app.use('/admin/email', adminEmailRouter);
 
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {

@@ -35,6 +35,7 @@ function getAdminSidebar(activePage) {
     { href: '/admin/blog', icon: '&#x270D;&#xFE0F;', label: 'Blog CMS', key: 'blog' },
     { href: '/admin/team', icon: '&#x1F91D;', label: 'Team', key: 'team' },
     { href: '/admin/messages', icon: '&#x1F4E9;', label: 'Messages', key: 'messages' },
+    { href: '/admin/email', icon: '&#x1F4E7;', label: 'Email Inbox', key: 'email' },
   ];
   const navLinks = links.map(l => {
     const cls = l.key === activePage ? ' class="active"' : '';
@@ -558,6 +559,8 @@ router.get('/team', requireAuth, requireAdmin, async (req, res) => {
       { key: 'view_subscribers', label: 'View Subscribers' },
       { key: 'view_analytics', label: 'View Analytics' },
       { key: 'view_messages', label: 'View Messages' },
+      { key: 'view_emails', label: 'View Emails' },
+      { key: 'reply_emails', label: 'Reply to Emails' },
       { key: 'manage_team', label: 'Manage Team' },
     ];
 
