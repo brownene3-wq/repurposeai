@@ -931,7 +931,18 @@ router.get('/', requireAuth, (req, res) => {
           border-color: #6c5ce7;
         }
 
+        body.light .tone-option:hover {
+          border-color: #6c5ce7;
+          background: #f0eeff;
+        }
+
         .tone-option.selected {
+          background: #6c5ce7;
+          border-color: #6c5ce7;
+          color: white;
+        }
+
+        body.light .tone-option.selected {
           background: #6c5ce7;
           border-color: #6c5ce7;
           color: white;
