@@ -1681,13 +1681,12 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // POST - Stream content generation (Server-Sent Events)
-router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => {
+router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth'), async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    console.log("[DEBUG] process-stream: handler entered try block");
     const { url, brandVoiceId } = req.body;
     const platforms = req.body.platforms || ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'];
     const tone = req.body.tone || 'Professional';
@@ -1700,16 +1699,12 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     }
 
     const videoId = url.match(youtubeRegex)[1];
-    console.log("[DEBUG] process-stream: videoId extracted:", videoId);
     const videoTitle = await Promise.race([fetchVideoTitle(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Title fetch timed out")), 15000))]);
-    console.log("[DEBUG] process-stream: videoTitle fetched:", videoTitle);
     const totalStart = Date.now();
     let transcript;
     try {
-      console.log("[DEBUG] process-stream: about to fetch transcript for videoId:", videoId);
       const transcriptStart = Date.now();
       transcript = await Promise.race([fetchVideoTranscript(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Transcript fetch timed out after 30 seconds")), 30000))]);
-      console.log("[DEBUG] process-stream: transcript fetched, length:", transcript ? transcript.length : "null");
       console.log('[Timing] Transcript fetch:', Date.now() - transcriptStart, 'ms');
       if (!transcript || transcript.trim().length === 0) {
         res.write('data: ' + JSON.stringify({ error: 'Video transcript is empty.' }) + '\n\n');
@@ -1729,7 +1724,6 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
 
     const dbStart = Date.now();
     const content = await contentOps.create(userId, videoTitle, transcript, 'youtube', url);
-    console.log("[DEBUG] process-stream: DB content created, id:", content.id);
     console.log('[Timing] DB content create:', Date.now() - dbStart, 'ms');
 
     let brandVoice = null;
@@ -1738,7 +1732,6 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     }
 
     // Send each platform as it completes
-    console.log("[DEBUG] process-stream: about to generate for platforms:", platforms);
     const promises = platforms.map(async (platform) => {
       try {
         const genStart = Date.now();
@@ -1753,12 +1746,10 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
     });
 
     await Promise.allSettled(promises);
-    console.log("[DEBUG] process-stream: Promise.allSettled completed");
     console.log('[Timing] Total process-stream:', Date.now() - totalStart, 'ms');
     res.write('data: ' + JSON.stringify({ done: true }) + '\n\n');
     res.end();
   } catch (error) {
-    console.log("[DEBUG] process-stream: OUTER CATCH triggered");
     console.error('Stream error:', error);
     res.write('data: ' + JSON.stringify({ error: error.message || 'Processing failed' }) + '\n\n');
     res.end();
@@ -1766,7 +1757,7 @@ router.post('/process-stream', requireAuth, checkPlanLimit, async (req, res) => 
 });
 
 // POST - Process and generate content
-router.post('/process', requireAuth, checkPlanLimit, async (req, res) => {
+router.post('/process', requireAuth, checkPlanLimit('repurposesPerMonth'), async (req, res) => {
   try {
     const { url, brandVoiceId } = req.body;
     const platforms = req.body.platforms || ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'];
