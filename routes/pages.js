@@ -44,7 +44,7 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .section-title{font-family:'Playfair Display',serif;font-size:clamp(2rem,4vw,3rem);font-weight:800;margin-bottom:1rem;line-height:1.2}
 .section-subtitle{font-size:1.1rem;color:var(--text-muted);max-width:600px;line-height:1.7}
 .section-header{text-align:center;margin-bottom:4rem}.section-header .section-subtitle{margin:0 auto}
-.steps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;margin-top:3rem}
+.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;margin-top:3rem;max-width:1100px;margin-left:auto;margin-right:auto}
 .step-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .4s}
 .step-card:hover{transform:translateY(-4px);border-color:rgba(108,58,237,0.3)}
 .step-number{width:50px;height:50px;border-radius:15px;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;margin-bottom:1.5rem}
