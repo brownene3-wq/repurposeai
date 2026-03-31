@@ -74,7 +74,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
     <a href="/">Home</a>
     <a href="/pricing">Pricing</a>
     <a href="/contact">Contact</a>
-    ${user ? '<a href="/dashboard" style="padding:10px 24px;border-radius:99px;background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;font-weight:600;font-size:.85rem">Dashboard</a>' : '<a href="/login" style="color:var(--accent2);font-weight:600">Log In</a>'}
+    ${user ? '<a href="/dashboard" style="padding:10px 24px;border-radius:99px;background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;font-weight:600;font-size:.85rem">Dashboard</a>' : '<a href="/auth/login" style="color:var(--accent2);font-weight:600">Log In</a>'}
   </div>
 </div></nav>
 
