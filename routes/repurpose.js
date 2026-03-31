@@ -924,6 +924,7 @@ router.get('/', requireAuth, (req, res) => {
         body.light .tone-option {
           background: #f5f5f5;
           border: 1px solid #ddd;
+          color: #1a1a2e;
         }
 
         .tone-option:hover {
@@ -2336,6 +2337,7 @@ router.get('/history', requireAuth, (req, res) => {
       <script>
         ${getThemeScript()}
         let allContent = [];
+        let filteredContent = [];
         let currentPage = 1;
         const itemsPerPage = 9;
 
@@ -2344,6 +2346,7 @@ router.get('/history', requireAuth, (req, res) => {
             const response = await fetch('/repurpose/api/history');
             const data = await response.json();
             allContent = data;
+            filteredContent = data;
             renderPage();
           } catch (error) {
             console.error('Error loading history:', error);
@@ -2354,7 +2357,7 @@ router.get('/history', requireAuth, (req, res) => {
           const grid = document.getElementById('contentGrid');
           const emptyState = document.getElementById('emptyState');
 
-          if (allContent.length === 0) {
+          if (filteredContent.length === 0) {
             grid.innerHTML = '';
             emptyState.style.display = 'block';
             document.querySelector('.pagination').style.display = 'none';
@@ -2366,7 +2369,7 @@ router.get('/history', requireAuth, (req, res) => {
 
           const startIdx = (currentPage - 1) * itemsPerPage;
           const endIdx = startIdx + itemsPerPage;
-          const pageItems = allContent.slice(startIdx, endIdx);
+          const pageItems = filteredContent.slice(startIdx, endIdx);
 
           grid.innerHTML = pageItems.map(item => \`
             <div class="content-card" onclick="viewContent('\${item.id}')">
@@ -2381,7 +2384,7 @@ router.get('/history', requireAuth, (req, res) => {
 
           document.getElementById('pageInfo').textContent = \`Page \${currentPage}\`;
           document.getElementById('prevBtn').disabled = currentPage === 1;
-          document.getElementById('nextBtn').disabled = endIdx >= allContent.length;
+          document.getElementById('nextBtn').disabled = endIdx >= filteredContent.length;
         }
 
         function previousPage() {
@@ -2393,7 +2396,7 @@ router.get('/history', requireAuth, (req, res) => {
         }
 
         function nextPage() {
-          const maxPage = Math.ceil(allContent.length / itemsPerPage);
+          const maxPage = Math.ceil(filteredContent.length / itemsPerPage);
           if (currentPage < maxPage) {
             currentPage++;
             renderPage();
@@ -2469,6 +2472,22 @@ router.get('/history', requireAuth, (req, res) => {
           };
           return text.replace(/[&<>"']/g, m => map[m]);
         }
+
+        document.getElementById('searchInput').addEventListener('input', function(e) {
+          const searchTerm = e.target.value.toLowerCase().trim();
+          if (!searchTerm) {
+            filteredContent = allContent;
+          } else {
+            filteredContent = allContent.filter(function(item) {
+              const title = (item.title || '').toLowerCase();
+              const preview = (item.preview || '').toLowerCase();
+              const platforms = (item.platforms || []).join(' ').toLowerCase();
+              return title.includes(searchTerm) || preview.includes(searchTerm) || platforms.includes(searchTerm);
+            });
+          }
+          currentPage = 1;
+          renderPage();
+        });
 
         loadHistory();
       </script>

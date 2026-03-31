@@ -27,6 +27,143 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
 
+// Shared video download cache — download each YouTube video once and reuse for all clips
+const videoDownloadCache = new Map(); // videoId -> { path, refCount, timer }
+
+async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
+  const cacheKey = videoId;
+  const cachedVideoPath = path.join(CLIPS_DIR, `_cached_${videoId}.mkv`);
+  const lockPath = cachedVideoPath + '.downloading';
+
+  // If already cached on disk with valid size, reuse it
+  if (fs.existsSync(cachedVideoPath) && !fs.existsSync(lockPath)) {
+    try {
+      const stat = fs.statSync(cachedVideoPath);
+      if (stat.size > 10000) {
+        // Bump ref count
+        const entry = videoDownloadCache.get(cacheKey) || { path: cachedVideoPath, refCount: 0 };
+        entry.refCount++;
+        if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+        videoDownloadCache.set(cacheKey, entry);
+        console.log(`  Using cached video for ${videoId} (refs: ${entry.refCount})`);
+        return cachedVideoPath;
+      }
+    } catch (e) {}
+  }
+
+  // If another clip is currently downloading this video, wait for it
+  if (fs.existsSync(lockPath)) {
+    writeProgress('Waiting for video download...');
+    for (let i = 0; i < 120; i++) { // Wait up to 4 min
+      await new Promise(r => setTimeout(r, 2000));
+      if (!fs.existsSync(lockPath) && fs.existsSync(cachedVideoPath)) {
+        try {
+          const stat = fs.statSync(cachedVideoPath);
+          if (stat.size > 10000) {
+            const entry = videoDownloadCache.get(cacheKey) || { path: cachedVideoPath, refCount: 0 };
+            entry.refCount++;
+            if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+            videoDownloadCache.set(cacheKey, entry);
+            console.log(`  Video ready after wait for ${videoId} (refs: ${entry.refCount})`);
+            return cachedVideoPath;
+          }
+        } catch (e) {}
+      }
+    }
+    // If still not ready, fall through and try downloading ourselves
+  }
+
+  // Download the video with a lock file
+  try { fs.writeFileSync(lockPath, String(Date.now())); } catch (e) {}
+  try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+
+  const { spawn: spawnProc } = require('child_process');
+  const runDl = (cmd, args, options = {}) => {
+    return new Promise((resolve, reject) => {
+      const proc = spawnProc(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '';
+      let settled = false;
+      const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+      proc.stdout.on('data', (d) => {
+        stdout += d.toString();
+        const pct = d.toString().match(/(\\d+\\.?\\d*)%/);
+        if (pct) writeProgress('Downloading: ' + Math.round(parseFloat(pct[1])) + '%');
+      });
+      proc.stderr.on('data', (d) => {
+        stderr += d.toString();
+        const pct = d.toString().match(/(\\d+\\.?\\d*)%/);
+        if (pct) writeProgress('Downloading: ' + Math.round(parseFloat(pct[1])) + '%');
+      });
+      proc.on('error', (err) => settle(reject, err));
+      proc.on('close', (code) => {
+        if (code === 0) settle(resolve, { stdout, stderr });
+        else settle(reject, new Error('yt-dlp exit ' + code + ': ' + stderr.slice(-300)));
+      });
+      const timer = options.timeout ? setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch(e) {}
+        settle(reject, new Error('Download timed out'));
+      }, options.timeout) : null;
+    });
+  };
+
+  try {
+    writeProgress('Downloading video...');
+    await runDl(ytdlpPath, [
+      '--no-playlist',
+      '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
+      '--merge-output-format', 'mkv',
+      '-o', cachedVideoPath,
+      '--no-warnings',
+      '--no-check-certificates',
+      '--no-part',
+      '--force-overwrites',
+      '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
+      videoUrl
+    ], { timeout: 240000 });
+
+    // yt-dlp may change extension — find the actual file
+    if (!fs.existsSync(cachedVideoPath)) {
+      const base = path.join(CLIPS_DIR, `_cached_${videoId}`);
+      for (const ext of ['.mkv', '.mp4', '.webm']) {
+        if (fs.existsSync(base + ext)) {
+          fs.renameSync(base + ext, cachedVideoPath);
+          break;
+        }
+      }
+    }
+
+    try { fs.unlinkSync(lockPath); } catch (e) {}
+
+    if (!fs.existsSync(cachedVideoPath) || fs.statSync(cachedVideoPath).size < 10000) {
+      throw new Error('Downloaded file is missing or too small');
+    }
+
+    const entry = { path: cachedVideoPath, refCount: 1, timer: null };
+    videoDownloadCache.set(cacheKey, entry);
+    console.log(`  Video cached for ${videoId} (${(fs.statSync(cachedVideoPath).size / 1024 / 1024).toFixed(1)}MB)`);
+    return cachedVideoPath;
+
+  } catch (err) {
+    try { fs.unlinkSync(lockPath); } catch (e) {}
+    try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+    throw err;
+  }
+}
+
+function releaseVideoCache(videoId) {
+  const entry = videoDownloadCache.get(videoId);
+  if (!entry) return;
+  entry.refCount = Math.max(0, entry.refCount - 1);
+  if (entry.refCount === 0) {
+    // Clean up cached video after 2 minutes of no references
+    entry.timer = setTimeout(() => {
+      try { fs.unlinkSync(entry.path); } catch (e) {}
+      videoDownloadCache.delete(videoId);
+      console.log(`  Cleaned up cached video for ${videoId}`);
+    }, 120000);
+  }
+}
+
 // Helper: Extract video ID from YouTube URL
 function extractVideoId(url) {
   const regexPatterns = [
@@ -2765,57 +2902,21 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
           return;
         }
 
-        // === STEP 1: Download full video (non-blocking spawn) ===
-        const tempDownload = outputPath + '.temp.mkv';
-        try { fs.unlinkSync(tempDownload); } catch(e) {}
-
+        // === STEP 1: Download full video (shared cache — one download per video) ===
         console.log(`  Downloading video: start=${startSec}s, dur=${duration}s`);
 
+        let actualDownload;
         try {
-          await runCommand(ytdlpPath, [
-            '--no-playlist',
-            '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
-            '--merge-output-format', 'mkv',
-            '-o', tempDownload,
-            '--no-warnings',
-            '--no-check-certificates',
-            '--no-part',
-            '--force-overwrites',
-            '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
-            videoUrl
-          ], { timeout: 240000 });
+          actualDownload = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress);
         } catch (dlErr) {
           clearTimeout(timeout);
-          console.error('  yt-dlp failed:', dlErr.message);
+          console.error('  Video download failed:', dlErr.message);
           writeError('Video download failed. Please try again.');
           return;
         }
 
-        // Find the actual downloaded file (yt-dlp may change extension)
-        let actualDownload = tempDownload;
-        if (!fs.existsSync(tempDownload)) {
-          const base = outputPath + '.temp';
-          for (const ext of ['.mkv', '.mp4', '.webm']) {
-            if (fs.existsSync(base + ext)) { actualDownload = base + ext; break; }
-          }
-        }
-
-        if (!fs.existsSync(actualDownload)) {
-          clearTimeout(timeout);
-          writeError('Downloaded file not found. Please try again.');
-          return;
-        }
-
         const dlSize = fs.statSync(actualDownload).size;
-        console.log(`  Downloaded: ${(dlSize / 1024 / 1024).toFixed(1)}MB`);
-
-        if (dlSize < 10000) {
-          clearTimeout(timeout);
-          console.error(`  Download too small: ${dlSize} bytes`);
-          try { fs.unlinkSync(actualDownload); } catch(e) {}
-          writeError('Video download was too small - the video may be unavailable.');
-          return;
-        }
+        console.log(`  Using video: ${(dlSize / 1024 / 1024).toFixed(1)}MB`);
 
         // === STEP 2: ffmpeg encode (non-blocking spawn) ===
         // Blur-background style: full video centered with blurred background
@@ -2975,14 +3076,14 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
             clearTimeout(timeout);
             console.error('  ffmpeg retry also failed:', retryErr.message);
             try { fs.unlinkSync(tempOutputPath); } catch(e) {}
-            try { fs.unlinkSync(actualDownload); } catch(e) {}
+            releaseVideoCache(videoId);
             writeError('Video encoding failed. Please try again.');
             return;
           }
         }
 
-        // Clean up temp files
-        try { fs.unlinkSync(actualDownload); } catch(e) {}
+        // Clean up temp files (release shared video cache instead of deleting directly)
+        releaseVideoCache(videoId);
         if (assFilePath) { try { fs.unlinkSync(assFilePath); } catch(e) {} }
 
         // === STEP 3: Validate output and atomically rename ===
@@ -3099,6 +3200,7 @@ router.get('/clip/download/:filename', requireAuth, (req, res) => {
       'Accept-Ranges': 'bytes',
       'Content-Length': chunkSize,
       'Content-Type': 'video/mp4',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
     });
 
     const stream = fs.createReadStream(filePath, { start, end });
@@ -3109,6 +3211,7 @@ router.get('/clip/download/:filename', requireAuth, (req, res) => {
       'Content-Type': 'video/mp4',
       'Accept-Ranges': 'bytes',
       'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
     });
 
     const stream = fs.createReadStream(filePath);
