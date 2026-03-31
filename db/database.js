@@ -180,6 +180,60 @@ const initDatabase = async () => {
       console.log('Calendar migration (may already exist):', migErr.message);
     }
 
+    // Admin role column on users
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'`);
+    } catch (e) { /* already exists */ }
+
+    // Blog posts table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS blog_posts (
+        id TEXT PRIMARY KEY,
+        author_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        excerpt TEXT DEFAULT '',
+        content TEXT DEFAULT '',
+        cover_image TEXT DEFAULT '',
+        tag TEXT DEFAULT 'General',
+        status TEXT DEFAULT 'draft',
+        published_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Team invitations table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS team_invitations (
+        id TEXT PRIMARY KEY,
+        invited_by TEXT NOT NULL,
+        email TEXT NOT NULL,
+        role TEXT DEFAULT 'editor',
+        permissions TEXT DEFAULT '{}',
+        status TEXT DEFAULT 'pending',
+        token TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP,
+        FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Team members table (accepted invitations)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS team_members (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        added_by TEXT NOT NULL,
+        role TEXT DEFAULT 'editor',
+        permissions TEXT DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -619,6 +673,188 @@ const calendarOps = {
   }
 };
 
+// Blog post operations
+const blogOps = {
+  async create(authorId, title, slug, excerpt, content, tag, coverImage, status) {
+    const id = uuidv4();
+    const publishedAt = status === 'published' ? new Date() : null;
+    const result = await pool.query(
+      `INSERT INTO blog_posts (id, author_id, title, slug, excerpt, content, cover_image, tag, status, published_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [id, authorId, title, slug, excerpt, content, coverImage || '', tag || 'General', status || 'draft', publishedAt]
+    );
+    return result.rows[0];
+  },
+  async update(id, data) {
+    const publishedAt = data.status === 'published' ? 'COALESCE(published_at, CURRENT_TIMESTAMP)' : 'published_at';
+    const result = await pool.query(
+      `UPDATE blog_posts SET title=$2, slug=$3, excerpt=$4, content=$5, cover_image=$6, tag=$7, status=$8,
+       published_at = ${data.status === 'published' ? 'COALESCE(published_at, CURRENT_TIMESTAMP)' : 'published_at'},
+       updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING *`,
+      [id, data.title, data.slug, data.excerpt || '', data.content, data.coverImage || '', data.tag || 'General', data.status || 'draft']
+    );
+    return result.rows[0];
+  },
+  async getAll(limit = 50, offset = 0) {
+    const result = await pool.query(
+      `SELECT bp.*, u.name as author_name, u.email as author_email FROM blog_posts bp
+       LEFT JOIN users u ON bp.author_id = u.id ORDER BY bp.created_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    return result.rows;
+  },
+  async getPublished(limit = 20, offset = 0) {
+    const result = await pool.query(
+      `SELECT bp.*, u.name as author_name FROM blog_posts bp
+       LEFT JOIN users u ON bp.author_id = u.id
+       WHERE bp.status = 'published' ORDER BY bp.published_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    return result.rows;
+  },
+  async getById(id) {
+    const result = await pool.query(
+      `SELECT bp.*, u.name as author_name, u.email as author_email FROM blog_posts bp
+       LEFT JOIN users u ON bp.author_id = u.id WHERE bp.id = $1`,
+      [id]
+    );
+    return result.rows[0];
+  },
+  async getBySlug(slug) {
+    const result = await pool.query(
+      `SELECT bp.*, u.name as author_name FROM blog_posts bp
+       LEFT JOIN users u ON bp.author_id = u.id WHERE bp.slug = $1 AND bp.status = 'published'`,
+      [slug]
+    );
+    return result.rows[0];
+  },
+  async delete(id) {
+    const result = await pool.query(`DELETE FROM blog_posts WHERE id = $1 RETURNING *`, [id]);
+    return result.rows[0];
+  },
+  async count() {
+    const result = await pool.query(`SELECT COUNT(*) FROM blog_posts`);
+    return parseInt(result.rows[0].count, 10);
+  }
+};
+
+// Team invitation operations
+const teamOps = {
+  async createInvitation(invitedBy, email, role, permissions) {
+    const id = uuidv4();
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const result = await pool.query(
+      `INSERT INTO team_invitations (id, invited_by, email, role, permissions, status, token, expires_at)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7) RETURNING *`,
+      [id, invitedBy, email, role, JSON.stringify(permissions), token, expiresAt]
+    );
+    return result.rows[0];
+  },
+  async getInvitationByToken(token) {
+    const result = await pool.query(
+      `SELECT ti.*, u.name as inviter_name, u.email as inviter_email FROM team_invitations ti
+       LEFT JOIN users u ON ti.invited_by = u.id WHERE ti.token = $1`,
+      [token]
+    );
+    return result.rows[0];
+  },
+  async getInvitations(limit = 50) {
+    const result = await pool.query(
+      `SELECT ti.*, u.name as inviter_name FROM team_invitations ti
+       LEFT JOIN users u ON ti.invited_by = u.id ORDER BY ti.created_at DESC LIMIT $1`,
+      [limit]
+    );
+    return result.rows;
+  },
+  async updateInvitationStatus(id, status) {
+    const result = await pool.query(
+      `UPDATE team_invitations SET status = $2 WHERE id = $1 RETURNING *`,
+      [id, status]
+    );
+    return result.rows[0];
+  },
+  async deleteInvitation(id) {
+    await pool.query(`DELETE FROM team_invitations WHERE id = $1`, [id]);
+  },
+  async addMember(userId, addedBy, role, permissions) {
+    const id = uuidv4();
+    const result = await pool.query(
+      `INSERT INTO team_members (id, user_id, added_by, role, permissions)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [id, userId, addedBy, role, JSON.stringify(permissions)]
+    );
+    return result.rows[0];
+  },
+  async getMembers() {
+    const result = await pool.query(
+      `SELECT tm.*, u.name, u.email, u.plan, u.created_at as user_created_at FROM team_members tm
+       LEFT JOIN users u ON tm.user_id = u.id ORDER BY tm.created_at DESC`
+    );
+    return result.rows;
+  },
+  async getMemberByUserId(userId) {
+    const result = await pool.query(`SELECT * FROM team_members WHERE user_id = $1`, [userId]);
+    return result.rows[0];
+  },
+  async updateMember(id, role, permissions) {
+    const result = await pool.query(
+      `UPDATE team_members SET role = $2, permissions = $3 WHERE id = $1 RETURNING *`,
+      [id, role, JSON.stringify(permissions)]
+    );
+    return result.rows[0];
+  },
+  async removeMember(id) {
+    await pool.query(`DELETE FROM team_members WHERE id = $1`, [id]);
+  }
+};
+
+// Admin operations
+const adminOps = {
+  async getAllUsers(limit = 100, offset = 0) {
+    const result = await pool.query(
+      `SELECT id, email, name, plan, role, created_at, stripe_customer_id FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    return result.rows;
+  },
+  async countUsers() {
+    const result = await pool.query(`SELECT COUNT(*) FROM users`);
+    return parseInt(result.rows[0].count, 10);
+  },
+  async countUsersByPlan() {
+    const result = await pool.query(
+      `SELECT plan, COUNT(*) as count FROM users GROUP BY plan ORDER BY count DESC`
+    );
+    return result.rows;
+  },
+  async setUserRole(userId, role) {
+    const result = await pool.query(
+      `UPDATE users SET role = $2 WHERE id = $1 RETURNING id, email, name, plan, role`,
+      [userId, role]
+    );
+    return result.rows[0];
+  },
+  async getStats() {
+    const [users, content, outputs, shorts] = await Promise.all([
+      pool.query(`SELECT COUNT(*) FROM users`),
+      pool.query(`SELECT COUNT(*) FROM content_items`),
+      pool.query(`SELECT COUNT(*) FROM generated_outputs`),
+      pool.query(`SELECT COUNT(*) FROM smart_shorts`)
+    ]);
+    const recentUsers = await pool.query(
+      `SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'`
+    );
+    return {
+      totalUsers: parseInt(users.rows[0].count, 10),
+      totalContent: parseInt(content.rows[0].count, 10),
+      totalOutputs: parseInt(outputs.rows[0].count, 10),
+      totalShorts: parseInt(shorts.rows[0].count, 10),
+      newUsersThisMonth: parseInt(recentUsers.rows[0].count, 10)
+    };
+  }
+};
+
 module.exports = {
   initDatabase,
   getDb,
@@ -630,5 +866,8 @@ module.exports = {
   contactOps,
   shortsOps,
   brandKitOps,
-  calendarOps
+  calendarOps,
+  blogOps,
+  teamOps,
+  adminOps
 };

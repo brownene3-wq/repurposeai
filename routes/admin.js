@@ -1,0 +1,912 @@
+const express = require('express');
+const router = express.Router();
+const { requireAuth } = require('../middleware/auth');
+const { adminOps, blogOps, teamOps, userOps, contactOps } = require('../db/database');
+const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../utils/theme');
+
+// Admin auth middleware — checks role is admin
+async function requireAdmin(req, res, next) {
+  // Re-fetch full user to get role (req.user from JWT may not have it)
+  const fullUser = await userOps.getById(req.user.id);
+  if (!fullUser || fullUser.role !== 'admin') {
+    if (req.headers.accept?.includes('application/json')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    return res.redirect('/dashboard');
+  }
+  req.user = fullUser;
+  next();
+}
+
+// Check if user has specific permission (for team members)
+function hasPermission(user, member, permission) {
+  if (user.role === 'admin') return true;
+  if (!member) return false;
+  try {
+    const perms = JSON.parse(member.permissions || '{}');
+    return perms[permission] === true;
+  } catch { return false; }
+}
+
+function getAdminSidebar(activePage) {
+  const links = [
+    { href: '/admin', icon: '&#x1F4CA;', label: 'Overview', key: 'overview' },
+    { href: '/admin/subscribers', icon: '&#x1F465;', label: 'Subscribers', key: 'subscribers' },
+    { href: '/admin/blog', icon: '&#x270D;&#xFE0F;', label: 'Blog CMS', key: 'blog' },
+    { href: '/admin/team', icon: '&#x1F91D;', label: 'Team', key: 'team' },
+    { href: '/admin/messages', icon: '&#x1F4E9;', label: 'Messages', key: 'messages' },
+  ];
+  const navLinks = links.map(l => {
+    const cls = l.key === activePage ? ' class="active"' : '';
+    return `<a href="${l.href}"${cls}>${l.icon} ${l.label}</a>`;
+  }).join('\n');
+
+  return `
+    <aside class="sidebar" style="display:flex;flex-direction:column;">
+      <div style="padding:0 20px 20px;">
+        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <div style="margin-top:8px;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:#6C3AED;font-weight:700;">Admin Panel</div>
+      </div>
+      ${navLinks}
+      <div style="margin-top:auto;padding:0;">
+        <a href="/dashboard" style="color:var(--text-muted);font-size:.85rem;">&#x2190; Back to App</a>
+        <a href="/auth/logout" style="color:#ef4444;opacity:0.7;font-size:0.85rem;">Sign Out</a>
+      </div>
+    </aside>`;
+}
+
+function getAdminCSS() {
+  return `
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.2rem;margin-bottom:2rem}
+    .stat-card{background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:1.5rem;transition:transform .2s}
+    .stat-card:hover{transform:translateY(-2px)}
+    .stat-card .label{font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem}
+    .stat-card .value{font-size:2rem;font-weight:800;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .stat-card .sub{font-size:.8rem;color:var(--text-dim);margin-top:.3rem}
+    .data-table{width:100%;border-collapse:collapse;font-size:.9rem}
+    .data-table th{text-align:left;padding:.8rem 1rem;border-bottom:2px solid rgba(108,58,237,0.2);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
+    .data-table td{padding:.8rem 1rem;border-bottom:var(--border-subtle)}
+    .data-table tr:hover td{background:rgba(108,58,237,0.04)}
+    .badge{display:inline-block;padding:.2rem .6rem;border-radius:20px;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+    .badge-free{background:rgba(113,128,150,0.15);color:#A0AEC0}
+    .badge-starter{background:rgba(6,182,212,0.15);color:#06B6D4}
+    .badge-pro{background:rgba(108,58,237,0.15);color:#8B5CF6}
+    .badge-teams{background:rgba(236,72,153,0.15);color:#EC4899}
+    .badge-admin{background:rgba(239,68,68,0.15);color:#EF4444}
+    .badge-editor{background:rgba(16,185,129,0.15);color:#10B981}
+    .badge-viewer{background:rgba(245,158,11,0.15);color:#F59E0B}
+    .badge-published{background:rgba(16,185,129,0.15);color:#10B981}
+    .badge-draft{background:rgba(245,158,11,0.15);color:#F59E0B}
+    .badge-pending{background:rgba(245,158,11,0.15);color:#F59E0B}
+    .badge-accepted{background:rgba(16,185,129,0.15);color:#10B981}
+    .badge-expired{background:rgba(239,68,68,0.15);color:#EF4444}
+    .card{background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:1.5rem;margin-bottom:1.5rem}
+    .card h2{font-size:1.1rem;font-weight:700;margin-bottom:1rem}
+    .form-group{margin-bottom:1rem}
+    .form-group label{display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.03em}
+    .form-group input,.form-group textarea,.form-group select{width:100%;padding:.7rem 1rem;background:var(--surface-light);border:var(--border-subtle);border-radius:10px;color:var(--text);font-size:.9rem;font-family:inherit;outline:none;transition:border-color .3s}
+    .form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:#6C3AED}
+    .form-row{display:flex;gap:1rem}
+    .form-row .form-group{flex:1}
+    .btn-sm{padding:.45rem .9rem;font-size:.8rem;border-radius:8px;cursor:pointer;border:none;font-weight:600;transition:all .2s}
+    .btn-primary-sm{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff}
+    .btn-primary-sm:hover{transform:translateY(-1px);box-shadow:0 4px 15px rgba(108,58,237,0.3)}
+    .btn-danger-sm{background:rgba(239,68,68,0.15);color:#EF4444}
+    .btn-danger-sm:hover{background:rgba(239,68,68,0.25)}
+    .btn-outline-sm{background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text-muted)}
+    .btn-outline-sm:hover{border-color:#6C3AED;color:#8B5CF6}
+    .search-bar{display:flex;gap:.8rem;margin-bottom:1.5rem;align-items:center}
+    .search-bar input{flex:1;padding:.7rem 1rem;background:var(--surface);border:var(--border-subtle);border-radius:10px;color:var(--text);font-size:.9rem;outline:none}
+    .search-bar input:focus{border-color:#6C3AED}
+    .empty-state{text-align:center;padding:3rem 1rem;color:var(--text-muted)}
+    .empty-state .icon{font-size:3rem;margin-bottom:1rem}
+    .tab-bar{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:var(--border-subtle);padding-bottom:.5rem}
+    .tab-bar .tab{padding:.5rem 1rem;border-radius:8px 8px 0 0;font-size:.85rem;font-weight:600;color:var(--text-muted);cursor:pointer;border:none;background:none;transition:all .2s}
+    .tab-bar .tab.active{color:#6C3AED;border-bottom:2px solid #6C3AED}
+    .tab-bar .tab:hover{color:var(--text)}
+    .perm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.5rem}
+    .perm-item{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;background:var(--surface-light);border-radius:8px;font-size:.82rem}
+    .perm-item input[type="checkbox"]{accent-color:#6C3AED}
+    .toast{position:fixed;bottom:2rem;right:2rem;background:var(--success);color:#fff;padding:1rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:500;display:none;z-index:9999;animation:slideUp .3s ease}
+    @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .ql-toolbar.ql-snow{border-color:rgba(255,255,255,0.1)!important;background:var(--surface-light);border-radius:10px 10px 0 0}
+    .ql-container.ql-snow{border-color:rgba(255,255,255,0.1)!important;background:var(--surface-light);border-radius:0 0 10px 10px;min-height:300px;font-size:.95rem;color:var(--text)}
+    .ql-editor{min-height:300px;color:var(--text)}
+    .ql-editor.ql-blank::before{color:var(--text-dim)}
+    .ql-snow .ql-stroke{stroke:var(--text-muted)!important}
+    .ql-snow .ql-fill{fill:var(--text-muted)!important}
+    .ql-snow .ql-picker-label{color:var(--text-muted)!important}
+    .ql-snow .ql-picker-options{background:var(--surface)!important;border-color:rgba(255,255,255,0.1)!important}
+    body.light .ql-toolbar.ql-snow,html.light .ql-toolbar.ql-snow{border-color:rgba(0,0,0,0.1)!important;background:#f8f9fc}
+    body.light .ql-container.ql-snow,html.light .ql-container.ql-snow{border-color:rgba(0,0,0,0.1)!important;background:#fff}
+    body.light .ql-snow .ql-stroke,html.light .ql-snow .ql-stroke{stroke:#374151!important}
+    body.light .ql-snow .ql-fill,html.light .ql-snow .ql-fill{fill:#374151!important}
+    body.light .ql-snow .ql-picker-label,html.light .ql-snow .ql-picker-label{color:#374151!important}
+    body.light .ql-snow .ql-picker-options,html.light .ql-snow .ql-picker-options{background:#fff!important;border-color:rgba(0,0,0,0.1)!important}
+    @media(max-width:768px){.stat-grid{grid-template-columns:1fr 1fr}.form-row{flex-direction:column}.data-table{font-size:.8rem}}
+  `;
+}
+
+// ========================
+// OVERVIEW PAGE
+// ========================
+router.get('/', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const stats = await adminOps.getStats();
+    const planBreakdown = await adminOps.countUsersByPlan();
+    const recentUsers = await adminOps.getAllUsers(5, 0);
+
+    res.send(`
+      ${getHeadHTML('Admin Dashboard')}
+      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      </head><body>
+      <div class="dashboard">
+        ${getAdminSidebar('overview')}
+        ${getThemeToggle()}
+        <div class="main-content">
+          <div class="page-header">
+            <h1>Admin Overview</h1>
+            <p>Platform stats and quick insights</p>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="label">Total Users</div>
+              <div class="value">${stats.totalUsers}</div>
+              <div class="sub">+${stats.newUsersThisMonth} this month</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Content Items</div>
+              <div class="value">${stats.totalContent}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Generated Outputs</div>
+              <div class="value">${stats.totalOutputs}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Smart Shorts</div>
+              <div class="value">${stats.totalShorts}</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Users by Plan</h2>
+            <div class="stat-grid">
+              ${planBreakdown.map(p => `
+                <div class="stat-card">
+                  <div class="label">${p.plan || 'free'}</div>
+                  <div class="value">${p.count}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Recent Signups</h2>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Joined</th></tr></thead>
+              <tbody>
+                ${recentUsers.map(u => `
+                  <tr>
+                    <td>${u.name || '—'}</td>
+                    <td>${u.email}</td>
+                    <td><span class="badge badge-${u.plan || 'free'}">${u.plan || 'free'}</span></td>
+                    <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <script>${getThemeScript()}</script>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error('Admin overview error:', err);
+    res.status(500).send('Error loading admin dashboard');
+  }
+});
+
+// ========================
+// SUBSCRIBERS PAGE
+// ========================
+router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await adminOps.getAllUsers(200, 0);
+    const totalUsers = await adminOps.countUsers();
+
+    res.send(`
+      ${getHeadHTML('Subscribers - Admin')}
+      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      </head><body>
+      <div class="dashboard">
+        ${getAdminSidebar('subscribers')}
+        ${getThemeToggle()}
+        <div class="main-content">
+          <div class="page-header">
+            <h1>Subscribers</h1>
+            <p>${totalUsers} total users</p>
+          </div>
+
+          <div class="search-bar">
+            <input type="text" id="userSearch" placeholder="Search by name or email...">
+            <select id="planFilter" style="padding:.7rem 1rem;background:var(--surface);border:var(--border-subtle);border-radius:10px;color:var(--text);font-size:.9rem">
+              <option value="">All Plans</option>
+              <option value="free">Free</option>
+              <option value="starter">Starter</option>
+              <option value="pro">Pro</option>
+              <option value="teams">Teams</option>
+            </select>
+          </div>
+
+          <div class="card" style="overflow-x:auto">
+            <table class="data-table" id="usersTable">
+              <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead>
+              <tbody>
+                ${users.map(u => `
+                  <tr data-name="${(u.name || '').toLowerCase()}" data-email="${u.email.toLowerCase()}" data-plan="${u.plan || 'free'}">
+                    <td>${u.name || '—'}</td>
+                    <td>${u.email}</td>
+                    <td><span class="badge badge-${u.plan || 'free'}">${u.plan || 'free'}</span></td>
+                    <td><span class="badge badge-${u.role || 'user'}">${u.role || 'user'}</span></td>
+                    <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                    <td>
+                      <button class="btn-sm btn-outline-sm" onclick="toggleRole('${u.id}','${u.role || 'user'}')">
+                        ${u.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+      <script>
+        ${getThemeScript()}
+
+        // Search and filter
+        document.getElementById('userSearch').addEventListener('input', filterUsers);
+        document.getElementById('planFilter').addEventListener('change', filterUsers);
+        function filterUsers() {
+          const q = document.getElementById('userSearch').value.toLowerCase().trim();
+          const plan = document.getElementById('planFilter').value;
+          document.querySelectorAll('#usersTable tbody tr').forEach(function(row) {
+            const name = row.getAttribute('data-name');
+            const email = row.getAttribute('data-email');
+            const rowPlan = row.getAttribute('data-plan');
+            const matchSearch = !q || name.includes(q) || email.includes(q);
+            const matchPlan = !plan || rowPlan === plan;
+            row.style.display = (matchSearch && matchPlan) ? '' : 'none';
+          });
+        }
+
+        async function toggleRole(userId, currentRole) {
+          const newRole = currentRole === 'admin' ? 'user' : 'admin';
+          if (!confirm('Set this user role to ' + newRole + '?')) return;
+          try {
+            const res = await fetch('/admin/api/set-role', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, role: newRole })
+            });
+            if (!res.ok) throw new Error('Failed');
+            showToast('Role updated to ' + newRole);
+            setTimeout(function() { location.reload(); }, 800);
+          } catch (e) {
+            showToast('Error updating role');
+          }
+        }
+
+        function showToast(msg) {
+          var t = document.getElementById('toast');
+          t.textContent = msg; t.style.display = 'block';
+          setTimeout(function() { t.style.display = 'none'; }, 3000);
+        }
+      </script>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error('Subscribers error:', err);
+    res.status(500).send('Error loading subscribers');
+  }
+});
+
+// ========================
+// BLOG CMS PAGE
+// ========================
+router.get('/blog', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const posts = await blogOps.getAll();
+
+    res.send(`
+      ${getHeadHTML('Blog CMS - Admin')}
+      <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      </head><body>
+      <div class="dashboard">
+        ${getAdminSidebar('blog')}
+        ${getThemeToggle()}
+        <div class="main-content">
+          <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <h1>Blog CMS</h1>
+              <p>Create and manage blog posts</p>
+            </div>
+            <button class="btn-sm btn-primary-sm" onclick="showEditor()" style="padding:.6rem 1.2rem;font-size:.85rem">+ New Post</button>
+          </div>
+
+          <!-- POST LIST -->
+          <div id="postList">
+            ${posts.length === 0 ? `
+              <div class="empty-state">
+                <div class="icon">&#x270D;&#xFE0F;</div>
+                <p>No blog posts yet. Create your first one!</p>
+              </div>
+            ` : `
+              <div class="card" style="overflow-x:auto">
+                <table class="data-table">
+                  <thead><tr><th>Title</th><th>Author</th><th>Tag</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    ${posts.map(p => `
+                      <tr>
+                        <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.title}</td>
+                        <td>${p.author_name || 'Unknown'}</td>
+                        <td><span class="badge badge-starter">${p.tag}</span></td>
+                        <td><span class="badge badge-${p.status}">${p.status}</span></td>
+                        <td>${new Date(p.created_at).toLocaleDateString()}</td>
+                        <td style="white-space:nowrap">
+                          <button class="btn-sm btn-outline-sm" onclick="editPost('${p.id}')">Edit</button>
+                          <button class="btn-sm btn-danger-sm" onclick="deletePost('${p.id}')">Delete</button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+
+          <!-- POST EDITOR (hidden by default) -->
+          <div id="postEditor" style="display:none">
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                <h2 id="editorTitle">New Blog Post</h2>
+                <button class="btn-sm btn-outline-sm" onclick="hideEditor()">&#x2190; Back to posts</button>
+              </div>
+              <input type="hidden" id="postId" value="">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Title</label>
+                  <input type="text" id="postTitleInput" placeholder="Enter post title..." oninput="autoSlug()">
+                </div>
+                <div class="form-group" style="max-width:200px">
+                  <label>Tag</label>
+                  <select id="postTag">
+                    <option>General</option>
+                    <option>Content Strategy</option>
+                    <option>AI & Automation</option>
+                    <option>Growth</option>
+                    <option>Product Update</option>
+                    <option>Tips & Tricks</option>
+                    <option>Case Study</option>
+                    <option>Brand Voice</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>URL Slug</label>
+                  <input type="text" id="postSlug" placeholder="auto-generated-from-title">
+                </div>
+                <div class="form-group">
+                  <label>Cover Image URL (optional)</label>
+                  <input type="text" id="postCover" placeholder="https://...">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Excerpt</label>
+                <input type="text" id="postExcerpt" placeholder="Short summary for the blog listing page..." maxlength="300">
+              </div>
+              <div class="form-group">
+                <label>Content</label>
+                <div id="quillEditor"></div>
+              </div>
+              <div style="display:flex;gap:.8rem;margin-top:1rem">
+                <button class="btn-sm btn-primary-sm" onclick="savePost('published')" style="padding:.6rem 1.5rem">Publish</button>
+                <button class="btn-sm btn-outline-sm" onclick="savePost('draft')" style="padding:.6rem 1.5rem">Save as Draft</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+      <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+      <script>
+        ${getThemeScript()}
+
+        var quill = new Quill('#quillEditor', {
+          theme: 'snow',
+          placeholder: 'Write your blog post here...',
+          modules: {
+            toolbar: [
+              [{ header: [1, 2, 3, false] }],
+              ['bold', 'italic', 'underline', 'strike'],
+              [{ list: 'ordered' }, { list: 'bullet' }],
+              ['blockquote', 'code-block'],
+              ['link', 'image'],
+              [{ color: [] }, { background: [] }],
+              ['clean']
+            ]
+          }
+        });
+
+        function autoSlug() {
+          var title = document.getElementById('postTitleInput').value;
+          var slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          document.getElementById('postSlug').value = slug;
+        }
+
+        function showEditor(postData) {
+          document.getElementById('postList').style.display = 'none';
+          document.getElementById('postEditor').style.display = 'block';
+          if (postData) {
+            document.getElementById('editorTitle').textContent = 'Edit Post';
+            document.getElementById('postId').value = postData.id;
+            document.getElementById('postTitleInput').value = postData.title;
+            document.getElementById('postSlug').value = postData.slug;
+            document.getElementById('postExcerpt').value = postData.excerpt || '';
+            document.getElementById('postCover').value = postData.cover_image || '';
+            document.getElementById('postTag').value = postData.tag || 'General';
+            quill.root.innerHTML = postData.content || '';
+          } else {
+            document.getElementById('editorTitle').textContent = 'New Blog Post';
+            document.getElementById('postId').value = '';
+            document.getElementById('postTitleInput').value = '';
+            document.getElementById('postSlug').value = '';
+            document.getElementById('postExcerpt').value = '';
+            document.getElementById('postCover').value = '';
+            document.getElementById('postTag').value = 'General';
+            quill.root.innerHTML = '';
+          }
+        }
+
+        function hideEditor() {
+          document.getElementById('postList').style.display = 'block';
+          document.getElementById('postEditor').style.display = 'none';
+        }
+
+        async function editPost(id) {
+          try {
+            const res = await fetch('/admin/api/blog/' + id);
+            const post = await res.json();
+            showEditor(post);
+          } catch (e) {
+            showToast('Error loading post');
+          }
+        }
+
+        async function savePost(status) {
+          const id = document.getElementById('postId').value;
+          const data = {
+            title: document.getElementById('postTitleInput').value,
+            slug: document.getElementById('postSlug').value,
+            excerpt: document.getElementById('postExcerpt').value,
+            content: quill.root.innerHTML,
+            coverImage: document.getElementById('postCover').value,
+            tag: document.getElementById('postTag').value,
+            status: status
+          };
+          if (!data.title || !data.slug) { showToast('Title and slug are required'); return; }
+          try {
+            const url = id ? '/admin/api/blog/' + id : '/admin/api/blog';
+            const method = id ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+              method: method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed'); }
+            showToast(status === 'published' ? 'Post published!' : 'Draft saved!');
+            setTimeout(function() { location.reload(); }, 800);
+          } catch (e) {
+            showToast('Error: ' + e.message);
+          }
+        }
+
+        async function deletePost(id) {
+          if (!confirm('Delete this blog post?')) return;
+          try {
+            const res = await fetch('/admin/api/blog/' + id, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed');
+            showToast('Post deleted');
+            setTimeout(function() { location.reload(); }, 800);
+          } catch (e) {
+            showToast('Error deleting post');
+          }
+        }
+
+        function showToast(msg) {
+          var t = document.getElementById('toast');
+          t.textContent = msg; t.style.display = 'block';
+          setTimeout(function() { t.style.display = 'none'; }, 3000);
+        }
+      </script>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error('Blog CMS error:', err);
+    res.status(500).send('Error loading blog CMS');
+  }
+});
+
+// ========================
+// TEAM MANAGEMENT PAGE
+// ========================
+router.get('/team', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const members = await teamOps.getMembers();
+    const invitations = await teamOps.getInvitations();
+
+    const allPermissions = [
+      { key: 'blog_create', label: 'Create Blog Posts' },
+      { key: 'blog_edit', label: 'Edit Blog Posts' },
+      { key: 'blog_delete', label: 'Delete Blog Posts' },
+      { key: 'blog_publish', label: 'Publish Blog Posts' },
+      { key: 'view_subscribers', label: 'View Subscribers' },
+      { key: 'view_analytics', label: 'View Analytics' },
+      { key: 'view_messages', label: 'View Messages' },
+      { key: 'manage_team', label: 'Manage Team' },
+    ];
+
+    res.send(`
+      ${getHeadHTML('Team Management - Admin')}
+      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      </head><body>
+      <div class="dashboard">
+        ${getAdminSidebar('team')}
+        ${getThemeToggle()}
+        <div class="main-content">
+          <div class="page-header">
+            <h1>Team Management</h1>
+            <p>Invite workers and manage permissions</p>
+          </div>
+
+          <!-- INVITE FORM -->
+          <div class="card">
+            <h2>Invite New Team Member</h2>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="inviteEmail" placeholder="worker@example.com">
+              </div>
+              <div class="form-group" style="max-width:200px">
+                <label>Role</label>
+                <select id="inviteRole">
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Custom Permissions</label>
+              <div class="perm-grid" id="invitePerms">
+                ${allPermissions.map(p => `
+                  <label class="perm-item">
+                    <input type="checkbox" name="perm" value="${p.key}"> ${p.label}
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+            <button class="btn-sm btn-primary-sm" onclick="sendInvite()" style="padding:.6rem 1.5rem">Send Invitation</button>
+          </div>
+
+          <!-- CURRENT TEAM MEMBERS -->
+          <div class="card">
+            <h2>Team Members (${members.length})</h2>
+            ${members.length === 0 ? '<p style="color:var(--text-muted)">No team members yet.</p>' : `
+              <table class="data-table">
+                <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Permissions</th><th>Actions</th></tr></thead>
+                <tbody>
+                  ${members.map(m => {
+                    let perms = {};
+                    try { perms = JSON.parse(m.permissions || '{}'); } catch(e) {}
+                    const permLabels = Object.keys(perms).filter(k => perms[k]).map(k => k.replace(/_/g,' ')).join(', ');
+                    return `
+                      <tr>
+                        <td>${m.name || '—'}</td>
+                        <td>${m.email}</td>
+                        <td><span class="badge badge-${m.role}">${m.role}</span></td>
+                        <td style="max-width:200px;font-size:.8rem;color:var(--text-muted)">${permLabels || 'None'}</td>
+                        <td>
+                          <button class="btn-sm btn-danger-sm" onclick="removeMember('${m.id}')">Remove</button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            `}
+          </div>
+
+          <!-- PENDING INVITATIONS -->
+          <div class="card">
+            <h2>Pending Invitations (${invitations.filter(i => i.status === 'pending').length})</h2>
+            ${invitations.length === 0 ? '<p style="color:var(--text-muted)">No invitations sent yet.</p>' : `
+              <table class="data-table">
+                <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Invited By</th><th>Sent</th><th>Actions</th></tr></thead>
+                <tbody>
+                  ${invitations.map(i => `
+                    <tr>
+                      <td>${i.email}</td>
+                      <td><span class="badge badge-${i.role}">${i.role}</span></td>
+                      <td><span class="badge badge-${i.status}">${i.status}</span></td>
+                      <td>${i.inviter_name || '—'}</td>
+                      <td>${new Date(i.created_at).toLocaleDateString()}</td>
+                      <td>
+                        ${i.status === 'pending' ? `<button class="btn-sm btn-danger-sm" onclick="revokeInvite('${i.id}')">Revoke</button>` : ''}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `}
+          </div>
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+      <script>
+        ${getThemeScript()}
+
+        async function sendInvite() {
+          const email = document.getElementById('inviteEmail').value.trim();
+          const role = document.getElementById('inviteRole').value;
+          if (!email) { showToast('Email is required'); return; }
+          var perms = {};
+          document.querySelectorAll('#invitePerms input[type="checkbox"]').forEach(function(cb) {
+            if (cb.checked) perms[cb.value] = true;
+          });
+          try {
+            const res = await fetch('/admin/api/team/invite', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, role, permissions: perms })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed');
+            showToast('Invitation sent! Link: ' + window.location.origin + '/admin/invite/' + data.token);
+            setTimeout(function() { location.reload(); }, 2000);
+          } catch (e) {
+            showToast('Error: ' + e.message);
+          }
+        }
+
+        async function removeMember(id) {
+          if (!confirm('Remove this team member?')) return;
+          try {
+            await fetch('/admin/api/team/member/' + id, { method: 'DELETE' });
+            showToast('Member removed');
+            setTimeout(function() { location.reload(); }, 800);
+          } catch (e) { showToast('Error removing member'); }
+        }
+
+        async function revokeInvite(id) {
+          if (!confirm('Revoke this invitation?')) return;
+          try {
+            await fetch('/admin/api/team/invite/' + id, { method: 'DELETE' });
+            showToast('Invitation revoked');
+            setTimeout(function() { location.reload(); }, 800);
+          } catch (e) { showToast('Error revoking invitation'); }
+        }
+
+        function showToast(msg) {
+          var t = document.getElementById('toast');
+          t.textContent = msg; t.style.display = 'block';
+          setTimeout(function() { t.style.display = 'none'; }, 4000);
+        }
+      </script>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error('Team page error:', err);
+    res.status(500).send('Error loading team page');
+  }
+});
+
+// ========================
+// MESSAGES PAGE (Contact form submissions)
+// ========================
+router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const messages = await contactOps.getAll(100, 0);
+
+    res.send(`
+      ${getHeadHTML('Messages - Admin')}
+      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      </head><body>
+      <div class="dashboard">
+        ${getAdminSidebar('messages')}
+        ${getThemeToggle()}
+        <div class="main-content">
+          <div class="page-header">
+            <h1>Contact Messages</h1>
+            <p>${messages.length} messages from your contact form</p>
+          </div>
+
+          ${messages.length === 0 ? `
+            <div class="empty-state">
+              <div class="icon">&#x1F4E9;</div>
+              <p>No messages yet.</p>
+            </div>
+          ` : messages.map(m => `
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.8rem">
+                <div>
+                  <strong>${m.name}</strong> <span style="color:var(--text-muted);font-size:.85rem">&lt;${m.email}&gt;</span>
+                </div>
+                <span style="font-size:.8rem;color:var(--text-dim)">${new Date(m.created_at).toLocaleString()}</span>
+              </div>
+              <div style="font-size:.85rem;color:var(--primary-light);margin-bottom:.5rem">${m.subject}</div>
+              <p style="font-size:.9rem;color:var(--text-muted);line-height:1.6">${m.message}</p>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <script>${getThemeScript()}</script>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error('Messages error:', err);
+    res.status(500).send('Error loading messages');
+  }
+});
+
+// ========================
+// INVITATION ACCEPT PAGE (public)
+// ========================
+router.get('/invite/:token', async (req, res) => {
+  try {
+    const invitation = await teamOps.getInvitationByToken(req.params.token);
+    if (!invitation || invitation.status !== 'pending') {
+      return res.send(`<html><body style="font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#06060f;color:#fff">
+        <div style="text-align:center"><h1>Invalid Invitation</h1><p style="color:#a0a0c0">This invitation is invalid or has expired.</p><a href="/" style="color:#7c3aed">Go Home</a></div>
+      </body></html>`);
+    }
+    if (new Date(invitation.expires_at) < new Date()) {
+      await teamOps.updateInvitationStatus(invitation.id, 'expired');
+      return res.send(`<html><body style="font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#06060f;color:#fff">
+        <div style="text-align:center"><h1>Invitation Expired</h1><p style="color:#a0a0c0">This invitation has expired. Please ask the admin to send a new one.</p><a href="/" style="color:#7c3aed">Go Home</a></div>
+      </body></html>`);
+    }
+    // Redirect to registration with the invite token
+    res.redirect(`/auth/register?invite=${req.params.token}`);
+  } catch (err) {
+    console.error('Invite error:', err);
+    res.status(500).send('Error processing invitation');
+  }
+});
+
+// ========================
+// API ENDPOINTS
+// ========================
+
+// Set user role
+router.post('/api/set-role', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId, role } = req.body;
+    if (!['admin', 'user', 'editor', 'viewer'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+    const user = await adminOps.setUserRole(userId, role);
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update role' });
+  }
+});
+
+// Blog CRUD API
+router.get('/api/blog/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const post = await blogOps.getById(req.params.id);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    res.json(post);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get post' });
+  }
+});
+
+router.post('/api/blog', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { title, slug, excerpt, content, coverImage, tag, status } = req.body;
+    if (!title || !slug) return res.status(400).json({ error: 'Title and slug required' });
+    const post = await blogOps.create(req.user.id, title, slug, excerpt, content, tag, coverImage, status);
+    res.json(post);
+  } catch (err) {
+    console.error('Blog create error:', err);
+    if (err.code === '23505') return res.status(400).json({ error: 'A post with this slug already exists' });
+    res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+router.put('/api/blog/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const post = await blogOps.update(req.params.id, req.body);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    res.json(post);
+  } catch (err) {
+    console.error('Blog update error:', err);
+    if (err.code === '23505') return res.status(400).json({ error: 'A post with this slug already exists' });
+    res.status(500).json({ error: 'Failed to update post' });
+  }
+});
+
+router.delete('/api/blog/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await blogOps.delete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete post' });
+  }
+});
+
+// Team API
+router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, role, permissions } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    const invitation = await teamOps.createInvitation(req.user.id, email, role || 'editor', permissions || {});
+    res.json({ success: true, token: invitation.token });
+  } catch (err) {
+    console.error('Invite error:', err);
+    res.status(500).json({ error: 'Failed to send invitation' });
+  }
+});
+
+router.delete('/api/team/invite/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await teamOps.deleteInvitation(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to revoke invitation' });
+  }
+});
+
+router.delete('/api/team/member/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await teamOps.removeMember(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove member' });
+  }
+});
+
+// Accept invitation API (called after registration/login)
+router.post('/api/team/accept', requireAuth, async (req, res) => {
+  try {
+    const { token } = req.body;
+    const invitation = await teamOps.getInvitationByToken(token);
+    if (!invitation || invitation.status !== 'pending') {
+      return res.status(400).json({ error: 'Invalid or expired invitation' });
+    }
+    if (new Date(invitation.expires_at) < new Date()) {
+      await teamOps.updateInvitationStatus(invitation.id, 'expired');
+      return res.status(400).json({ error: 'Invitation has expired' });
+    }
+    // Add as team member
+    let perms = {};
+    try { perms = JSON.parse(invitation.permissions || '{}'); } catch(e) {}
+    await teamOps.addMember(req.user.id, invitation.invited_by, invitation.role, perms);
+    await teamOps.updateInvitationStatus(invitation.id, 'accepted');
+    // Set user role
+    await adminOps.setUserRole(req.user.id, invitation.role);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Accept invite error:', err);
+    res.status(500).json({ error: 'Failed to accept invitation' });
+  }
+});
+
+module.exports = router;

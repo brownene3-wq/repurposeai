@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { optionalAuth } = require('../middleware/auth');
+let blogOps;
+try { blogOps = require('../db/database').blogOps; } catch(e) { blogOps = null; }
 
 const BRAND = { name: 'RepurposeAI' };
 
@@ -135,53 +137,64 @@ router.get('/about', optionalAuth, (req, res) => {
 `));
 });
 
-// ======== BLOG PAGE ========
-router.get('/blog', optionalAuth, (req, res) => {
+// ======== BLOG PAGE (dynamic from DB) ========
+router.get('/blog', optionalAuth, async (req, res) => {
+  let posts = [];
+  try { if (blogOps) posts = await blogOps.getPublished(20, 0); } catch(e) { /* fallback to empty */ }
+
+  const postCards = posts.length > 0
+    ? posts.map(p => {
+        const date = p.published_at ? new Date(p.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
+        return `<a href="/blog/${p.slug}" class="blog-card" style="display:block;text-decoration:none;color:inherit">
+          <span class="tag">${p.tag || 'General'}</span>
+          <h3>${p.title}</h3>
+          <p>${p.excerpt || ''}</p>
+          <div class="meta">${date}${p.author_name ? ' &middot; ' + p.author_name : ''}</div>
+        </a>`;
+      }).join('')
+    : `<div style="text-align:center;padding:3rem 0;color:var(--text2)">
+        <div style="font-size:2.5rem;margin-bottom:1rem">&#x270D;&#xFE0F;</div>
+        <p>Blog posts coming soon! Check back later for tips, strategies, and product updates.</p>
+      </div>`;
+
   res.send(pageShell('Blog', req.user, `
   <h1>Blog</h1>
   <p class="subtitle">Tips, strategies, and insights to help you create better content and grow your audience.</p>
-
-  <div class="blog-card">
-    <span class="tag">Content Strategy</span>
-    <h3>How to Repurpose One YouTube Video Into 10 Pieces of Content</h3>
-    <p>Learn the framework top creators use to turn a single long-form video into tweets, LinkedIn posts, Instagram carousels, blog articles, and more — without sounding repetitive.</p>
-    <div class="meta">March 15, 2025 &middot; 6 min read</div>
-  </div>
-
-  <div class="blog-card">
-    <span class="tag">AI & Automation</span>
-    <h3>The Creator's Guide to AI-Powered Content: What Works in 2025</h3>
-    <p>AI tools are transforming how content is created and distributed. Here's what's actually working for creators right now and how to stay ahead of the curve.</p>
-    <div class="meta">February 28, 2025 &middot; 8 min read</div>
-  </div>
-
-  <div class="blog-card">
-    <span class="tag">Growth</span>
-    <h3>Why Multi-Platform Presence Is No Longer Optional for Creators</h3>
-    <p>Data shows creators who post consistently across 3+ platforms see 4x more audience growth. Here's how to do it without burning out.</p>
-    <div class="meta">February 10, 2025 &middot; 5 min read</div>
-  </div>
-
-  <div class="blog-card">
-    <span class="tag">Product Update</span>
-    <h3>Introducing Smart Shorts: Auto-Extract the Best Clips From Your Videos</h3>
-    <p>Our new Smart Shorts feature uses AI to find the most engaging moments in your videos and turn them into platform-ready short-form clips.</p>
-    <div class="meta">January 22, 2025 &middot; 4 min read</div>
-  </div>
-
-  <div class="blog-card">
-    <span class="tag">Brand Voice</span>
-    <h3>How to Maintain Your Authentic Voice While Using AI Tools</h3>
-    <p>The biggest concern creators have with AI is losing their unique voice. Here's how RepurposeAI's Brand Voice feature solves that problem.</p>
-    <div class="meta">January 8, 2025 &middot; 7 min read</div>
-  </div>
-
+  ${postCards}
   <div class="cta-box">
     <h2>Never miss an update</h2>
     <p>Follow us for the latest tips and product updates to level up your content game.</p>
     <a href="/auth/register" class="btn-cta">Join RepurposeAI &#x2192;</a>
   </div>
 `));
+});
+
+// ======== INDIVIDUAL BLOG POST PAGE ========
+router.get('/blog/:slug', optionalAuth, async (req, res) => {
+  try {
+    if (!blogOps) return res.status(404).send('Not found');
+    const post = await blogOps.getBySlug(req.params.slug);
+    if (!post) return res.redirect('/blog');
+    const date = post.published_at ? new Date(post.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
+    res.send(pageShell(post.title, req.user, `
+      <div style="margin-bottom:1.5rem">
+        <a href="/blog" style="color:var(--accent2);text-decoration:none;font-size:.9rem">&larr; Back to Blog</a>
+      </div>
+      ${post.cover_image ? '<img src="' + post.cover_image + '" alt="" style="width:100%;border-radius:16px;margin-bottom:2rem;max-height:400px;object-fit:cover">' : ''}
+      <span class="tag" style="display:inline-block;background:rgba(124,58,237,0.15);color:#7c3aed;font-size:.75rem;font-weight:600;padding:4px 10px;border-radius:20px;margin-bottom:1rem">${post.tag || 'General'}</span>
+      <h1>${post.title}</h1>
+      <div style="color:var(--text3);font-size:.85rem;margin-bottom:2rem">${date}${post.author_name ? ' &middot; ' + post.author_name : ''}</div>
+      <div class="blog-body" style="color:var(--text2);line-height:1.9;font-size:1.02rem">${post.content}</div>
+      <div class="cta-box" style="margin-top:3rem">
+        <h2>Enjoyed this post?</h2>
+        <p>Try RepurposeAI free and turn your videos into content for every platform.</p>
+        <a href="/auth/register" class="btn-cta">Get Started Free &#x2192;</a>
+      </div>
+    `));
+  } catch(e) {
+    console.error('Blog post error:', e);
+    res.redirect('/blog');
+  }
 });
 
 // ======== CAREERS PAGE ========

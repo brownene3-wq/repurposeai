@@ -66,6 +66,7 @@ const calendarRouter = require('./routes/calendar');
 const chatbotRouter = require('./routes/chatbot');
 const shortsRouter = require('./routes/shorts');
 const staticPagesRouter = require('./routes/static-pages');
+const adminRouter = require('./routes/admin');
 
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
@@ -82,6 +83,7 @@ app.use(pricingRouter);
 app.use('/chatbot', chatbotRouter);
 app.use('/shorts', shortsRouter);
 app.use('/', staticPagesRouter);
+app.use('/admin', adminRouter);
 
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {
@@ -96,6 +98,21 @@ app.post('/admin/upgrade-plan', async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found - they need to sign up first' });
   await userOps.updatePlan(user.id, plan);
   res.json({ success: true, message: `${email} upgraded to ${plan}` });
+});
+
+// Admin endpoint - set user role by email (secured by admin secret)
+app.post('/admin/set-role', async (req, res) => {
+  const adminSecret = process.env.ADMIN_SECRET || 'repurposeai-admin-2024';
+  if (req.headers['x-admin-secret'] !== adminSecret) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const { email, role } = req.body;
+  if (!email || !role) return res.status(400).json({ error: 'email and role required' });
+  const { userOps, adminOps } = require('./db/database');
+  const user = await userOps.getByEmail(email);
+  if (!user) return res.status(404).json({ error: 'User not found - they need to sign up first' });
+  await adminOps.setUserRole(user.id, role);
+  res.json({ success: true, message: `${email} role set to ${role}` });
 });
 
 // Error handling middleware

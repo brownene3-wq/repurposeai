@@ -62,7 +62,7 @@ function getHeadHTML(title) {
   </script>`;
 }
 
-function getSidebar(activePage) {
+function getSidebar(activePage, user) {
   const links = [
     { href: '/dashboard', icon: '&#x1F3AC;', label: 'Dashboard', key: 'dashboard' },
     { href: '/repurpose', icon: '&#x1F504;', label: 'Repurpose', key: 'repurpose' },
@@ -73,6 +73,12 @@ function getSidebar(activePage) {
     { href: '/brand-voice', icon: '&#x1F399;', label: 'Brand Voice', key: 'brand-voice' },
     { href: '/billing', icon: '&#x1F4B3;', label: 'Billing', key: 'billing' },
   ];
+
+  // Show Admin Panel link for admin users
+  const isAdmin = user && user.role === 'admin';
+  if (isAdmin) {
+    links.push({ href: '/admin', icon: '&#x1F6E1;&#xFE0F;', label: 'Admin Panel', key: 'admin' });
+  }
 
   const navLinks = links.map(link => {
     const activeClass = link.key === activePage ? ' class="active"' : '';
