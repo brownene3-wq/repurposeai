@@ -1268,7 +1268,7 @@ router.get('/', requireAuth, (req, res) => {
     </head>
     <body>
       <div class="container">
-        ${getSidebar('repurpose')}
+        ${getSidebar('repurpose', req.user)}
 
         <div class="main-content">
           ${getThemeToggle()}
@@ -2308,7 +2308,7 @@ router.get('/history', requireAuth, (req, res) => {
     </head>
     <body>
       <div class="container">
-        ${getSidebar('library')}
+        ${getSidebar('library', req.user)}
 
         <div class="main-content">
           ${getThemeToggle()}

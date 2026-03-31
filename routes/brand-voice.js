@@ -420,7 +420,7 @@ router.get('/', requireAuth, (req, res) => {
     </head>
     <body>
       <div class="dashboard">
-        ${getSidebar('brand-voice')}
+        ${getSidebar('brand-voice', req.user)}
 
         <div class="main-content">
           ${getThemeToggle()}

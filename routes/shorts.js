@@ -4760,7 +4760,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
 </head>
 <body class="dashboard">
   ${getThemeToggle()}
-  ${getSidebar('shorts')}
+  ${getSidebar('shorts', req.user)}
 
   <!-- Main content -->
   <main class="main-content">

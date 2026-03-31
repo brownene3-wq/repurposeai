@@ -509,7 +509,7 @@ router.get('/', requireAuth, (req, res) => {
     </head>
     <body>
       <div class="dashboard">
-        ${getSidebar('calendar')}
+        ${getSidebar('calendar', req.user)}
 
         <div class="main-content">
           ${getThemeToggle()}

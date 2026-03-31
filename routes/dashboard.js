@@ -62,7 +62,7 @@ router.get('/', requireAuth, async (req, res) => {
 </head>
 <body>
  <div class="dashboard">
-    ${getSidebar('dashboard')}
+    ${getSidebar('dashboard', req.user)}
 
     <main class="main-content">
       ${getThemeToggle()}
