@@ -55,7 +55,7 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .feature-card:hover{border-color:rgba(108,58,237,0.3);transform:translateY(-2px)}
 .feature-icon{width:48px;height:48px;border-radius:12px;background:rgba(108,58,237,0.15);display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:1.2rem}
 .feature-card h3{font-size:1.05rem;font-weight:700;margin-bottom:.6rem}.feature-card p{color:var(--text-muted);font-size:.9rem;line-height:1.6}
-.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;align-items:start}
+.pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;align-items:start}
 .price-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .3s;position:relative}
 .price-card.featured{border-color:var(--primary);box-shadow:var(--shadow-glow);transform:scale(1.02)}
 .price-card.featured::before{content:'MOST POPULAR';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gradient-1);padding:.3rem 1.2rem;border-radius:50px;font-size:.7rem;font-weight:700;letter-spacing:.1em}
@@ -88,6 +88,7 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .demo-platforms{display:flex;gap:1rem;flex-wrap:wrap}
 .demo-platform{padding:.8rem 1.2rem;border-radius:10px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);font-size:.85rem;color:var(--primary-light)}
 .theme-toggle{background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:32px;height:32px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:var(--text-muted);transition:all .3s;flex-shrink:0}[data-theme="light"] .theme-toggle,body.light .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{display:none}.theme-toggle .toggle-thumb{display:none}
+@media(max-width:1024px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:768px){.nav-links{display:none}.steps-grid,.features-grid,.pricing-grid,.testimonials-grid{grid-template-columns:1fr}.footer-grid{grid-template-columns:1fr 1fr}.hero-stats{flex-direction:column;gap:1.5rem}.hero h1{font-size:2.2rem}.price-card.featured{transform:none}.demo-input-group{flex-direction:column}}
 `;
 }
