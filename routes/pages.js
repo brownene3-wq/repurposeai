@@ -279,8 +279,8 @@ router.get('/', (req, res) => {
         <p>AI-powered content repurposing platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a></div>
-      <div><h4>Company</h4><a href="/contact">Contact</a><a href="#">About</a><a href="#">Blog</a><a href="#">Careers</a></div>
-      <div><h4>Legal</h4><a href="#">Privacy Policy</a><a href="#">Terms of Service</a><a href="#">Cookie Policy</a></div>
+      <div><h4>Company</h4><a href="/contact">Contact</a><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
+      <div><h4>Legal</h4><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/cookies">Cookie Policy</a></div>
     </div>
     <div class="footer-bottom">
       <span>&copy; 2025 ${BRAND.name}. All rights reserved.</span>
