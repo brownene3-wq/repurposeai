@@ -35,6 +35,10 @@ function getBaseCSS() {
     [data-theme="light"] .url-input,body.light .url-input,html.light .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}
     [data-theme="light"] .content-textarea,body.light .content-textarea,html.light .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}
     [data-theme="light"] select,body.light select,html.light select{background:#F8F9FC;border-color:rgba(0,0,0,0.12);color:#1A1A2E}
+    .ptr-indicator{position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-60px);z-index:9998;background:var(--surface);border:var(--border-subtle);border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;box-shadow:0 4px 15px rgba(0,0,0,0.3);transition:transform .2s ease,opacity .2s;opacity:0;pointer-events:none}
+    .ptr-indicator.pulling{opacity:1;pointer-events:none}
+    .ptr-indicator.refreshing{opacity:1;animation:ptr-spin .8s linear infinite}
+    @keyframes ptr-spin{from{transform:translateX(-50%) translateY(20px) rotate(0deg)}to{transform:translateX(-50%) translateY(20px) rotate(360deg)}}
     .mobile-menu-btn{display:none;position:fixed;top:1rem;left:1rem;z-index:1001;background:#222;border:1px solid #333;color:#fff;width:40px;height:40px;border-radius:10px;cursor:pointer;font-size:1.2em;align-items:center;justify-content:center}
     body.light .mobile-menu-btn,html.light .mobile-menu-btn{background:#fff;border-color:#ddd;color:#333}
     .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999}
@@ -124,7 +128,8 @@ ${navLinks}
 }
 
 function getThemeToggle() {
-  return `<button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+  return `<div class="ptr-indicator" id="ptrIndicator">&#x21BB;</div>
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileMenu()"></div>
     <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>`;
 }
@@ -138,6 +143,47 @@ function getThemeScript() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(function(){});
     }
+
+    // Pull-to-refresh for iOS PWA
+    (function(){
+      var startY = 0;
+      var pulling = false;
+      var ptr = document.getElementById('ptrIndicator');
+      if (!ptr) return;
+
+      document.addEventListener('touchstart', function(e) {
+        if (window.scrollY === 0) {
+          startY = e.touches[0].pageY;
+          pulling = true;
+        }
+      }, {passive: true});
+
+      document.addEventListener('touchmove', function(e) {
+        if (!pulling || !ptr) return;
+        var dy = e.touches[0].pageY - startY;
+        if (dy > 0 && dy < 150 && window.scrollY === 0) {
+          var progress = Math.min(dy / 80, 1);
+          ptr.style.transform = 'translateX(-50%) translateY(' + (dy * 0.5 - 20) + 'px) rotate(' + (progress * 180) + 'deg)';
+          ptr.classList.add('pulling');
+          ptr.classList.remove('refreshing');
+        }
+      }, {passive: true});
+
+      document.addEventListener('touchend', function(e) {
+        if (!pulling || !ptr) return;
+        var dy = (e.changedTouches[0] ? e.changedTouches[0].pageY : 0) - startY;
+        if (dy > 80 && window.scrollY === 0) {
+          ptr.classList.remove('pulling');
+          ptr.classList.add('refreshing');
+          setTimeout(function() { window.location.reload(); }, 400);
+        } else {
+          ptr.classList.remove('pulling');
+          ptr.style.transform = 'translateX(-50%) translateY(-60px)';
+          ptr.style.opacity = '0';
+        }
+        pulling = false;
+      }, {passive: true});
+    })();
 
     function toggleMobileMenu(){
       var sb = document.querySelector('.sidebar');
