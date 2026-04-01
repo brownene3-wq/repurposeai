@@ -49,6 +49,7 @@ router.get('/', requireAuth, (req, res) => {
       .btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
       .btn-current{background:rgba(16,185,129,0.15);color:var(--success);border:1px solid rgba(16,185,129,0.3);cursor:default}
       @media(max-width:900px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
+      @media(max-width:768px){.billing-page{margin-left:0 !important;padding:1rem !important;padding-top:3.5rem !important}.page-header h1{font-size:1.4rem}}
       @media(max-width:600px){.pricing-grid{grid-template-columns:1fr}.price-card.featured{transform:none}.current-plan{flex-direction:column;text-align:center;gap:1rem}}
     </style>
   </head>

@@ -109,13 +109,25 @@ router.get('/', requireAuth, async (req, res) => {
     body.light table tr { border-color: #e8e8ef !important; }
     body.light table th { color: #64748b !important; }
     body.light table td { color: #334155 !important; }
+    @media(max-width:768px){
+      .main{margin-left:0 !important;padding:1rem !important;padding-top:3.5rem !important}
+      .page-title{font-size:1.4em}
+      .stats-grid{grid-template-columns:1fr 1fr;gap:12px}
+      .stat-card{padding:16px}
+      .stat-card .value{font-size:1.6em}
+      .chart-bar .platform{width:70px;font-size:.75em}
+      .section{padding:16px}
+    }
+    @media(max-width:480px){
+      .stats-grid{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
   <div class="layout">
     ${getSidebar('analytics', req.user)}
+    ${getThemeToggle()}
     <div class="main">
-      ${getThemeToggle()}
       <div class="page-title">&#x1F4CA; Analytics</div>
       <div class="stats-grid">
         <div class="stat-card"><div class="label">Videos This Month</div><div class="value">${videosThisMonth}</div><div class="change">${videosThisMonth > 0 ? '&#x2705; Active' : '-'}</div></div>

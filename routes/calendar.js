@@ -480,21 +480,9 @@ router.get('/', requireAuth, (req, res) => {
         }
 
         @media (max-width: 768px) {
-          .sidebar {
-            width: 100%;
-            height: auto;
-            position: relative;
-            border-right: none;
-            border-bottom: 1px solid #222;
-          }
-
           .main-content {
             margin-left: 0;
-          }
-
-          .theme-toggle {
-            position: static;
-            margin-top: 20px;
+            padding-top: 3.5rem;
           }
 
           .calendar-day {
@@ -504,15 +492,18 @@ router.get('/', requireAuth, (req, res) => {
           .day-number {
             font-size: 12px;
           }
+
+          .calendar-grid {
+            font-size: .85rem;
+          }
         }
       </style>
     </head>
     <body>
       <div class="dashboard">
         ${getSidebar('calendar', req.user)}
-
+        ${getThemeToggle()}
         <div class="main-content">
-          ${getThemeToggle()}
           <div class="header">
             <h1>Content Calendar</h1>
             <p>Visualize your content generation timeline</p>
