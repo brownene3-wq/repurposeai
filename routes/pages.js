@@ -296,13 +296,45 @@ router.get('/', (req, res) => {
     </div>
   </section>
 
+  <!-- Get the App Section -->
+  <section id="get-app" style="padding:80px 2rem;text-align:center;background:linear-gradient(180deg,var(--dark) 0%,rgba(108,58,237,0.08) 50%,var(--dark) 100%);">
+    <div style="max-width:700px;margin:0 auto;">
+      <div style="font-size:3rem;margin-bottom:1rem;">&#x1F4F1;</div>
+      <h2 class="section-title" style="margin-bottom:.8rem;">Get the RepurposeAI App</h2>
+      <p style="color:var(--text-dim);font-size:1.05rem;line-height:1.8;margin-bottom:2rem;">
+        Install RepurposeAI on your phone for the full app experience — no app store needed. Access all features, get notifications, and repurpose content on the go.
+      </p>
+      <div style="display:flex;gap:1.5rem;justify-content:center;flex-wrap:wrap;margin-bottom:2.5rem;">
+        <div style="background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:24px 28px;flex:1;min-width:250px;max-width:320px;text-align:left;">
+          <div style="font-size:1.8rem;margin-bottom:.8rem;">&#xF8FF;</div>
+          <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">iPhone / iPad</div>
+          <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
+            <li>Open <strong style="color:var(--text)">repurposeai.ai</strong> in Safari</li>
+            <li>Tap the <strong style="color:var(--text)">Share</strong> button &#x2191;</li>
+            <li>Tap <strong style="color:var(--text)">Add to Home Screen</strong></li>
+          </ol>
+        </div>
+        <div style="background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:24px 28px;flex:1;min-width:250px;max-width:320px;text-align:left;">
+          <div style="font-size:1.8rem;margin-bottom:.8rem;">&#x1F4F1;</div>
+          <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">Android</div>
+          <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
+            <li>Open <strong style="color:var(--text)">repurposeai.ai</strong> in Chrome</li>
+            <li>Tap the <strong style="color:var(--text)">menu</strong> &#x22EE; (three dots)</li>
+            <li>Tap <strong style="color:var(--text)">Install app</strong> or <strong style="color:var(--text)">Add to Home Screen</strong></li>
+          </ol>
+        </div>
+      </div>
+      <p style="color:var(--text-dim);font-size:.85rem;">Works like a native app — no download from the App Store or Google Play required.</p>
+    </div>
+  </section>
+
   <footer class="footer">
     <div class="footer-grid">
       <div class="footer-brand">
         <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
         <p>AI-powered content repurposing platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
-      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a></div>
+      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)">&#x1F4F1; Get the App</a></div>
       <div><h4>Company</h4><a href="/contact">Contact</a><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
       <div><h4>Legal</h4><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/cookies">Cookie Policy</a></div>
     </div>
@@ -312,7 +344,74 @@ router.get('/', (req, res) => {
     </div>
   </footer>
 
+  <!-- Mobile Install Banner -->
+  <div id="installBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#6C3AED,#EC4899);padding:14px 20px;text-align:center;box-shadow:0 -4px 20px rgba(0,0,0,0.3);">
+    <div style="display:flex;align-items:center;justify-content:center;gap:12px;max-width:600px;margin:0 auto;">
+      <div style="font-size:1.5rem;">&#x26A1;</div>
+      <div style="flex:1;text-align:left;">
+        <div style="font-weight:700;font-size:.9rem;color:#fff;">Get the RepurposeAI App</div>
+        <div style="font-size:.75rem;color:rgba(255,255,255,0.8);" id="installHint">Install for the best experience</div>
+      </div>
+      <button id="installBtn" onclick="installApp()" style="padding:8px 20px;background:#fff;color:#6C3AED;border:none;border-radius:50px;font-weight:700;font-size:.82rem;cursor:pointer;white-space:nowrap;">Install</button>
+      <button onclick="dismissInstallBanner()" style="background:none;border:none;color:rgba(255,255,255,0.7);font-size:1.2rem;cursor:pointer;padding:4px;">&#x2715;</button>
+    </div>
+  </div>
+
   <script>
+    // PWA Install Banner Logic
+    var deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      deferredPrompt = e;
+      showInstallBanner();
+    });
+
+    function showInstallBanner() {
+      if (localStorage.getItem('installDismissed')) return;
+      if (window.matchMedia('(display-mode: standalone)').matches) return;
+      var banner = document.getElementById('installBanner');
+      var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      var isAndroid = /Android/.test(navigator.userAgent);
+      if (isIOS) {
+        document.getElementById('installHint').textContent = 'Tap Share ↑ then "Add to Home Screen"';
+        document.getElementById('installBtn').textContent = 'How To';
+        document.getElementById('installBtn').onclick = function() { document.getElementById('get-app').scrollIntoView({behavior:'smooth'}); };
+        banner.style.display = 'block';
+      } else if (deferredPrompt || isAndroid) {
+        banner.style.display = 'block';
+      }
+    }
+
+    function installApp() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function(result) {
+          deferredPrompt = null;
+          document.getElementById('installBanner').style.display = 'none';
+        });
+      } else {
+        document.getElementById('get-app').scrollIntoView({behavior:'smooth'});
+      }
+    }
+
+    function dismissInstallBanner() {
+      document.getElementById('installBanner').style.display = 'none';
+      localStorage.setItem('installDismissed', '1');
+    }
+
+    // Show banner on mobile after a short delay
+    setTimeout(function() {
+      var isMobile = window.innerWidth <= 768;
+      if (isMobile && !window.matchMedia('(display-mode: standalone)').matches && !localStorage.getItem('installDismissed')) {
+        showInstallBanner();
+      }
+    }, 3000);
+
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(function(){});
+    }
+
     function toggleTheme(){var isLight=!document.body.classList.contains('light');document.body.classList.toggle('light',isLight);document.documentElement.setAttribute('data-theme',isLight?'light':'dark');localStorage.setItem('theme',isLight?'light':'dark');var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent=isLight?'☀️':'🌙'}(function(){var s=localStorage.getItem('theme');if(s==='light'){document.body.classList.add('light');document.documentElement.setAttribute('data-theme','light');var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent='☀️'}})();
  document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => { e.preventDefault(); const t = document.querySelector(a.getAttribute('href')); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); });
