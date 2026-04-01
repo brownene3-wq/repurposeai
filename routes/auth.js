@@ -326,14 +326,113 @@ router.post('/api/login', async (req, res) => {
  const user = await userOps.getByEmail(email);
  if (!user) return res.status(401).json({ error: 'Invalid email or password. If you signed up with Google, please use the Continue with Google button above.' });
 
- const valid = await bcrypt.compare(password, user.password_hash);
- if (!valid) return res.status(401).json({ error: 'Invalid email or password. If you signed up with Google, please use the Continue with Google button above.' });
+ const valid = user.password_hash ? await bcrypt.compare(password, user.password_hash) : false;
+ if (!valid) {
+  const msg = user.google_id
+    ? 'Invalid password. This account uses Google login. Please use the Continue with Google button, or go to Settings to create a password.'
+    : 'Invalid email or password.';
+  return res.status(401).json({ error: msg });
+ }
 
  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
  res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
  } catch (err) {
  console.error('Login error:', err);
  res.status(500).json({ error: 'Login failed. Please try again.' });
+ }
+});
+
+// API: Set password (for Google-only users who want to add email/password login)
+router.post('/api/set-password', async (req, res) => {
+ try {
+  const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const decoded = jwt.verify(token, JWT_SECRET);
+  const user = await userOps.getById(decoded.id);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+
+  const { password, confirmPassword } = req.body;
+  if (!password) return res.status(400).json({ error: 'Password is required' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (password !== confirmPassword) return res.status(400).json({ error: 'Passwords do not match' });
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  await userOps.updatePassword(user.id, hashedPassword);
+  res.json({ success: true, message: 'Password created successfully! You can now log in with your email and password.' });
+ } catch (err) {
+  console.error('Set password error:', err);
+  res.status(500).json({ error: 'Failed to set password. Please try again.' });
+ }
+});
+
+// API: Change password (for users who already have a password)
+router.post('/api/change-password', async (req, res) => {
+ try {
+  const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const decoded = jwt.verify(token, JWT_SECRET);
+  const user = await userOps.getById(decoded.id);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new passwords are required' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  if (newPassword !== confirmPassword) return res.status(400).json({ error: 'New passwords do not match' });
+
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await userOps.updatePassword(user.id, hashedPassword);
+  res.json({ success: true, message: 'Password changed successfully!' });
+ } catch (err) {
+  console.error('Change password error:', err);
+  res.status(500).json({ error: 'Failed to change password. Please try again.' });
+ }
+});
+
+// API: Update profile name
+router.post('/api/update-name', async (req, res) => {
+ try {
+  const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const decoded = jwt.verify(token, JWT_SECRET);
+  const user = await userOps.getById(decoded.id);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+
+  await userOps.updateName(user.id, name.trim());
+  res.json({ success: true, message: 'Name updated successfully!' });
+ } catch (err) {
+  console.error('Update name error:', err);
+  res.status(500).json({ error: 'Failed to update name. Please try again.' });
+ }
+});
+
+// API: Check if user has a real password (not OAuth random)
+router.get('/api/has-password', async (req, res) => {
+ try {
+  const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const decoded = jwt.verify(token, JWT_SECRET);
+  const user = await userOps.getById(decoded.id);
+  if (!user) return res.status(401).json({ error: 'User not found' });
+
+  // Check if password starts with OAUTH_ prefix hash — if so, user doesn't have a real password
+  // We test by trying to match against a known pattern. If google_id exists and user never set a password, they're OAuth-only
+  const hasGoogle = !!user.google_id;
+  // Try to verify if the password is the random OAuth one by checking if it can match any normal input
+  // Simpler approach: if user has google_id, check if they can login with any reasonable password
+  // Best approach: just check if google_id is set — if yes, show "create password", otherwise show "change password"
+  res.json({ hasGoogle, hasPassword: !hasGoogle || user.password_hash !== null });
+ } catch (err) {
+  res.status(500).json({ error: 'Failed to check password status' });
  }
 });
 

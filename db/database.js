@@ -298,6 +298,22 @@ const userOps = {
       [stripeCustomerId, userId]
     );
     return result.rows[0];
+  },
+
+  async updatePassword(userId, passwordHash) {
+    const result = await pool.query(
+      `UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING *`,
+      [passwordHash, userId]
+    );
+    return result.rows[0];
+  },
+
+  async updateName(userId, name) {
+    const result = await pool.query(
+      `UPDATE users SET name = $1 WHERE id = $2 RETURNING *`,
+      [name, userId]
+    );
+    return result.rows[0];
   }
 };
 

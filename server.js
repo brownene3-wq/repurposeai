@@ -68,6 +68,7 @@ const shortsRouter = require('./routes/shorts');
 const staticPagesRouter = require('./routes/static-pages');
 const adminRouter = require('./routes/admin');
 const adminEmailRouter = require('./routes/admin-email');
+const settingsRouter = require('./routes/settings');
 
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
@@ -84,6 +85,7 @@ app.use(pricingRouter);
 app.use('/chatbot', chatbotRouter);
 app.use('/shorts', shortsRouter);
 app.use('/', staticPagesRouter);
+app.use('/settings', settingsRouter);
 app.use('/admin', adminRouter);
 app.use('/admin/email', adminEmailRouter);
 

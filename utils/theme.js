@@ -113,6 +113,7 @@ function getSidebar(activePage, user) {
     { href: '/dashboard/calendar', icon: '&#x1F4C5;', label: 'Calendar', key: 'calendar' },
     { href: '/brand-voice', icon: '&#x1F399;', label: 'Brand Voice', key: 'brand-voice' },
     { href: '/billing', icon: '&#x1F4B3;', label: 'Billing', key: 'billing' },
+    { href: '/settings', icon: '&#x2699;&#xFE0F;', label: 'Settings', key: 'settings' },
   ];
 
   // Show Admin Panel link for admin users
