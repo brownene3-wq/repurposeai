@@ -79,6 +79,74 @@ const adminEmailRouter = require('./routes/admin-email');
 const settingsRouter = require('./routes/settings');
 const feedbackRouter = require('./routes/feedback');
 
+// Team permission enforcement middleware
+// Restricts team members to only the features they have permission for
+const { loadTeamPermissions } = require('./middleware/auth');
+const { teamOps } = require('./db/database');
+
+app.use(async (req, res, next) => {
+  // Only check authenticated routes (those with a token)
+  const token = req.cookies?.token;
+  if (!token) return next();
+
+  // Skip public/auth routes
+  const publicPaths = ['/auth', '/chatbot', '/contact', '/feedback', '/manifest.json', '/sw.js', '/offline', '/icons'];
+  if (publicPaths.some(p => req.path.startsWith(p))) return next();
+
+  try {
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { userOps } = require('./db/database');
+    const user = await userOps.getById(decoded.id);
+    if (!user) return next();
+
+    // Admins and account owners pass through
+    if (user.role === 'admin') return next();
+
+    const member = await teamOps.getMemberByUserId(user.id);
+    if (!member) return next(); // Not a team member = account owner = full access
+
+    let perms = {};
+    try { perms = JSON.parse(member.permissions || '{}'); } catch {}
+
+    // Attach team info to req so routes can use it (e.g., for sidebar filtering)
+    req.teamPermissions = perms;
+    req.isTeamMember = true;
+
+    // Define which routes require which permissions
+    const routePermMap = {
+      '/repurpose': ['use_repurpose'],
+      '/shorts': ['use_shorts'],
+      '/dashboard/analytics': ['view_analytics'],
+      '/dashboard/calendar': ['use_calendar'],
+      '/brand-voice': ['use_brand_voice'],
+      '/billing': ['view_billing'],
+      '/settings': ['manage_settings'],
+      '/admin': ['manage_team'],
+    };
+
+    // Check if this route is restricted
+    for (const [route, requiredPerms] of Object.entries(routePermMap)) {
+      if (req.path.startsWith(route)) {
+        const hasAny = requiredPerms.some(p => perms[p] === true);
+        if (!hasAny) {
+          // For API requests, return JSON error
+          if (req.headers.accept?.includes('application/json') || req.path.includes('/api/')) {
+            return res.status(403).json({ error: 'You don\'t have permission to access this feature. Contact your team admin.' });
+          }
+          // For page requests, redirect to limited dashboard
+          return res.redirect('/dashboard?restricted=1');
+        }
+        break;
+      }
+    }
+  } catch (err) {
+    // Token invalid, let the route's own auth handle it
+  }
+  next();
+});
+
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
 app.use('/auth', authRouter);

@@ -125,7 +125,7 @@ router.get('/', requireAuth, async (req, res) => {
 </head>
 <body>
   <div class="layout">
-    ${getSidebar('analytics', req.user)}
+    ${getSidebar('analytics', req.user, req.teamPermissions)}
     ${getThemeToggle()}
     <div class="main">
       <div class="page-title">&#x1F4CA; Analytics</div>

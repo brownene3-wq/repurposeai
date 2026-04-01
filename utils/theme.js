@@ -103,18 +103,33 @@ function getHeadHTML(title) {
   </script>`;
 }
 
-function getSidebar(activePage, user) {
-  const links = [
-    { href: '/dashboard', icon: '&#x1F3AC;', label: 'Dashboard', key: 'dashboard' },
-    { href: '/repurpose', icon: '&#x1F504;', label: 'Repurpose', key: 'repurpose' },
-    { href: '/repurpose/history', icon: '&#x1F4DA;', label: 'Library', key: 'library' },
-    { href: '/shorts', icon: '&#x2702;&#xFE0F;', label: 'Smart Shorts', key: 'shorts' },
-    { href: '/dashboard/analytics', icon: '&#x1F4CA;', label: 'Analytics', key: 'analytics' },
-    { href: '/dashboard/calendar', icon: '&#x1F4C5;', label: 'Calendar', key: 'calendar' },
-    { href: '/brand-voice', icon: '&#x1F399;', label: 'Brand Voice', key: 'brand-voice' },
-    { href: '/billing', icon: '&#x1F4B3;', label: 'Billing', key: 'billing' },
-    { href: '/settings', icon: '&#x2699;&#xFE0F;', label: 'Settings', key: 'settings' },
+function getSidebar(activePage, user, teamPermissions) {
+  // Map sidebar links to required permissions
+  // null permission = always visible
+  const allLinks = [
+    { href: '/dashboard', icon: '&#x1F3AC;', label: 'Dashboard', key: 'dashboard', perm: null },
+    { href: '/repurpose', icon: '&#x1F504;', label: 'Repurpose', key: 'repurpose', perm: 'use_repurpose' },
+    { href: '/repurpose/history', icon: '&#x1F4DA;', label: 'Library', key: 'library', perm: 'use_repurpose' },
+    { href: '/shorts', icon: '&#x2702;&#xFE0F;', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
+    { href: '/dashboard/analytics', icon: '&#x1F4CA;', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
+    { href: '/dashboard/calendar', icon: '&#x1F4C5;', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
+    { href: '/brand-voice', icon: '&#x1F399;', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    { href: '/billing', icon: '&#x1F4B3;', label: 'Billing', key: 'billing', perm: 'view_billing' },
+    { href: '/settings', icon: '&#x2699;&#xFE0F;', label: 'Settings', key: 'settings', perm: 'manage_settings' },
   ];
+
+  // Filter links based on team permissions
+  // If teamPermissions is provided (team member), only show links they have access to
+  // If not provided (account owner or admin), show all
+  let links;
+  if (teamPermissions && typeof teamPermissions === 'object' && Object.keys(teamPermissions).length > 0) {
+    links = allLinks.filter(link => {
+      if (link.perm === null) return true; // Always show dashboard
+      return teamPermissions[link.perm] === true;
+    });
+  } else {
+    links = allLinks;
+  }
 
   // Show Admin Panel link for admin users
   const isAdmin = user && user.role === 'admin';

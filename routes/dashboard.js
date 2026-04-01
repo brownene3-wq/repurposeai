@@ -62,10 +62,11 @@ router.get('/', requireAuth, async (req, res) => {
 </head>
 <body>
  <div class="dashboard">
-    ${getSidebar('dashboard', req.user)}
+    ${getSidebar('dashboard', req.user, req.teamPermissions)}
 
     <main class="main-content">
       ${getThemeToggle()}
+      ${req.query.restricted === '1' ? '<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:1rem 1.5rem;margin-bottom:1.5rem;color:#EF4444;font-size:.9rem;">You don\'t have permission to access that page. Contact your team admin to request access.</div>' : ''}
       <div class="page-header">
         <h1>&#x1F3AC; Content Studio</h1>
         <p>Paste a YouTube link and let AI create content for every platform.</p>
@@ -78,7 +79,7 @@ router.get('/', requireAuth, async (req, res) => {
         <div class="stat-card"><div class="stat-value">${planLabel}</div><div class="stat-label">Current Plan</div></div>
       </div>
 
-      <div class="repurpose-card">
+      <div class="repurpose-card" ${req.isTeamMember && (!req.teamPermissions || !req.teamPermissions.use_repurpose) ? 'style="display:none"' : ''}>
         <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x1F680; Repurpose a Video</h2>
         <div class="input-group">
           <input type="url" class="url-input" id="youtubeUrl" name="yt_dashboard_url" autocomplete="one-time-code" data-form-type="other" data-lpignore="true" placeholder="Paste YouTube URL here... (e.g. https://youtube.com/watch?v=...)">

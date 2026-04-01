@@ -55,7 +55,7 @@ router.get('/', requireAuth, (req, res) => {
   </head>
   <body>
   <div class="dashboard">
-    ${getSidebar('billing', req.user)}
+    ${getSidebar('billing', req.user, req.teamPermissions)}
     ${getThemeToggle()}
     <div class="billing-page main-content" style="margin-left:250px">
       <a href="/dashboard" class="back-link">&#x2190; Back to Dashboard</a>

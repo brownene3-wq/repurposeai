@@ -563,12 +563,18 @@ router.get('/team', requireAuth, requireAdmin, async (req, res) => {
     const invitations = await teamOps.getInvitations();
 
     const allPermissions = [
+      { key: 'use_repurpose', label: 'Use Repurpose Tool' },
+      { key: 'use_shorts', label: 'Use Smart Shorts' },
+      { key: 'use_calendar', label: 'Use Calendar' },
+      { key: 'use_brand_voice', label: 'Use Brand Voice' },
+      { key: 'view_analytics', label: 'View Analytics' },
+      { key: 'view_billing', label: 'View Billing' },
+      { key: 'manage_settings', label: 'Manage Settings' },
       { key: 'blog_create', label: 'Create Blog Posts' },
       { key: 'blog_edit', label: 'Edit Blog Posts' },
       { key: 'blog_delete', label: 'Delete Blog Posts' },
       { key: 'blog_publish', label: 'Publish Blog Posts' },
       { key: 'view_subscribers', label: 'View Subscribers' },
-      { key: 'view_analytics', label: 'View Analytics' },
       { key: 'view_messages', label: 'View Messages' },
       { key: 'view_emails', label: 'View Emails' },
       { key: 'reply_emails', label: 'Reply to Emails' },

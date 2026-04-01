@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { userOps } = require('../db/database');
+const { userOps, teamOps } = require('../db/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const JWT_EXPIRY = '7d';
@@ -217,6 +217,59 @@ function checkUsageLimit(limitKey, countFn) {
   };
 }
 
+// Load team member info and permissions onto req
+async function loadTeamPermissions(req, res, next) {
+  try {
+    // Admins and account owners get full access
+    if (req.user.role === 'admin') {
+      req.teamMember = null;
+      req.isTeamMember = false;
+      return next();
+    }
+    const member = await teamOps.getMemberByUserId(req.user.id);
+    if (member) {
+      req.teamMember = member;
+      req.isTeamMember = true;
+      try {
+        req.teamPermissions = JSON.parse(member.permissions || '{}');
+      } catch { req.teamPermissions = {}; }
+    } else {
+      // Regular account owner (not a team member added by someone else)
+      req.teamMember = null;
+      req.isTeamMember = false;
+    }
+    next();
+  } catch (err) {
+    console.error('Error loading team permissions:', err);
+    // Fail open for account owners, fail closed for potential team members
+    req.teamMember = null;
+    req.isTeamMember = false;
+    next();
+  }
+}
+
+// Middleware factory: require specific permission(s) for team members
+// Account owners (non-team-members) and admins pass through
+// Team members must have at least one of the specified permissions
+function requirePermission(...permissionKeys) {
+  return (req, res, next) => {
+    // Admins always pass
+    if (req.user.role === 'admin') return next();
+    // Not a team member = account owner = full access
+    if (!req.isTeamMember) return next();
+    // Team member — check permissions
+    const perms = req.teamPermissions || {};
+    const hasAny = permissionKeys.some(key => perms[key] === true);
+    if (hasAny) return next();
+
+    // Blocked
+    if (req.headers.accept?.includes('application/json')) {
+      return res.status(403).json({ error: 'You don\'t have permission to access this feature. Contact your team admin.' });
+    }
+    return res.redirect('/dashboard/limited');
+  };
+}
+
 module.exports = {
   generateToken,
   verifyToken,
@@ -226,5 +279,7 @@ module.exports = {
   getPlanLimits,
   checkPlanLimit,
   requireFeature,
-  checkUsageLimit
+  checkUsageLimit,
+  loadTeamPermissions,
+  requirePermission
 };
