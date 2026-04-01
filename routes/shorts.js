@@ -30,7 +30,9 @@ const YTDLP_COMMON_ARGS = [
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  '--extractor-args', 'youtube:player_client=web_creator;youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+  '--extractor-args', 'youtube:player_client=web_creator',
+  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+  '--js-runtimes', 'node',
   '--retries', '3',
   '--extractor-retries', '3',
 ];
@@ -3670,7 +3672,7 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
         let transcriptText = '';
         try {
           const titleProc = require('child_process').execSync(
-            'yt-dlp --get-title --no-warnings --no-check-certificates --geo-bypass --extractor-args "youtube:player_client=web_creator;youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
+            'yt-dlp --get-title ' + YTDLP_COMMON_ARGS.map(a => JSON.stringify(a)).join(' ') + ' "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
           ).trim();
           transcriptText = titleProc || 'Short video';
         } catch(e) { transcriptText = 'Short video'; }
