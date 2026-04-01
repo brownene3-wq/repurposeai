@@ -6,7 +6,8 @@ function getBaseCSS() {
     :root{--primary:#6C3AED;--primary-light:#8B5CF6;--dark:#0a0a0a;--dark-2:#111111;--surface:#161616;--surface-light:#1e1e1e;--text:#FFF;--text-muted:#A0AEC0;--text-dim:#718096;--gradient-1:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);--border-subtle:1px solid rgba(255,255,255,0.06);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
     [data-theme="light"],body.light,html.light{--dark:#F8F9FC;--dark-2:#EDF0F7;--surface:#FFFFFF;--surface-light:#F1F5F9;--text:#1A1A2E;--text-muted:#4A5568;--text-dim:#718096;--border-subtle:1px solid rgba(0,0,0,0.08);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;background:var(--dark);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
+    body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;background:var(--dark);color:var(--text);min-height:100vh}
+    body.theme-ready{transition:background .3s,color .3s}
     .dashboard{display:flex;min-height:100vh}
     .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:20px 0;position:fixed;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
     .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
@@ -90,6 +91,14 @@ function getHeadHTML(title) {
         document.documentElement.classList.add('light');
         document.documentElement.setAttribute('data-theme','light');
       }
+      // Apply light class to body as soon as it exists
+      document.addEventListener('DOMContentLoaded', function(){
+        if(t==='light') document.body.classList.add('light');
+        // Enable transitions only AFTER first paint to prevent flash
+        requestAnimationFrame(function(){ requestAnimationFrame(function(){
+          document.body.classList.add('theme-ready');
+        }); });
+      });
     })();
   </script>`;
 }
