@@ -33,6 +33,6 @@ CMD pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provi
     sleep 2 && \
     echo "=== yt-dlp plugin check ===" && \
     yt-dlp --list-extractors 2>&1 | grep -i "pot\|bgutil" || echo "No POT plugin found in extractors" && \
-    yt-dlp -v --skip-download --js-runtimes node --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" "https://www.youtube.com/watch?v=jNQXAC9IVRw" 2>&1 | tail -30 || echo "Plugin test done" && \
+    yt-dlp -v --skip-download --js-runtimes node --remote-components ejs:github --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" "https://www.youtube.com/watch?v=jNQXAC9IVRw" 2>&1 | tail -30 || echo "Plugin test done" && \
     echo "=== Starting server ===" && \
     node server.js

@@ -32,6 +32,7 @@ const YTDLP_COMMON_ARGS = [
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
   '--js-runtimes', 'node',
+  '--remote-components', 'ejs:github',
   '--retries', '3',
   '--extractor-retries', '3',
 ];
