@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { google } = require('googleapis');
 const { requireAuth } = require('../middleware/auth');
 const { adminOps, blogOps, teamOps, userOps, contactOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../utils/theme');
@@ -744,8 +745,8 @@ router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
               <div class="icon">&#x1F4E9;</div>
               <p>No messages yet.</p>
             </div>
-          ` : messages.map(m => `
-            <div class="card">
+          ` : messages.map((m, i) => `
+            <div class="card" id="msg-${i}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.8rem">
                 <div>
                   <strong>${m.name}</strong> <span style="color:var(--text-muted);font-size:.85rem">&lt;${m.email}&gt;</span>
@@ -753,17 +754,126 @@ router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
                 <span style="font-size:.8rem;color:var(--text-dim)">${new Date(m.created_at).toLocaleString()}</span>
               </div>
               <div style="font-size:.85rem;color:var(--primary-light);margin-bottom:.5rem">${m.subject}</div>
-              <p style="font-size:.9rem;color:var(--text-muted);line-height:1.6">${m.message}</p>
+              <p style="font-size:.9rem;color:var(--text-muted);line-height:1.6;margin-bottom:1rem">${m.message}</p>
+              <div id="reply-area-${i}">
+                <button class="btn-sm btn-primary-sm" onclick="showReplyForm(${i}, '${m.email.replace(/'/g, "\\'")}', '${(m.subject || 'General Inquiry').replace(/'/g, "\\'")}')">Reply</button>
+              </div>
             </div>
           `).join('')}
         </div>
       </div>
-      <script>${getThemeScript()}</script>
+      <div class="toast" id="toast" style="position:fixed;bottom:2rem;right:2rem;background:#10B981;color:#fff;padding:1rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:500;display:none;z-index:9999"></div>
+      <script>
+        ${getThemeScript()}
+
+        function showReplyForm(idx, email, subject) {
+          var area = document.getElementById('reply-area-' + idx);
+          area.innerHTML = '<div style="margin-top:.8rem;border-top:1px solid rgba(255,255,255,0.06);padding-top:1rem">' +
+            '<div style="font-size:.85rem;font-weight:600;margin-bottom:.5rem">Reply to ' + escapeHtml(email) + '</div>' +
+            '<textarea id="reply-body-' + idx + '" placeholder="Type your reply..." style="width:100%;padding:.8rem 1rem;background:rgba(255,255,255,0.04);border:1px solid rgba(124,58,237,0.15);border-radius:10px;color:var(--text);font-size:.9rem;font-family:inherit;outline:none;min-height:100px;resize:vertical;margin-bottom:.5rem"></textarea>' +
+            '<div style="display:flex;gap:.5rem">' +
+              '<button id="reply-btn-' + idx + '" class="btn-sm btn-primary-sm" onclick="sendReply(' + idx + ', \\'' + email.replace(/'/g, "\\\\'") + '\\', \\'' + subject.replace(/'/g, "\\\\'") + '\\')">Send Reply</button>' +
+              '<button class="btn-sm btn-outline-sm" onclick="cancelReply(' + idx + ', \\'' + email.replace(/'/g, "\\\\'") + '\\', \\'' + subject.replace(/'/g, "\\\\'") + '\\')">Cancel</button>' +
+            '</div>' +
+          '</div>';
+          document.getElementById('reply-body-' + idx).focus();
+        }
+
+        function cancelReply(idx, email, subject) {
+          var area = document.getElementById('reply-area-' + idx);
+          area.innerHTML = '<button class="btn-sm btn-primary-sm" onclick="showReplyForm(' + idx + ', \\'' + email.replace(/'/g, "\\\\'") + '\\', \\'' + subject.replace(/'/g, "\\\\'") + '\\')">Reply</button>';
+        }
+
+        async function sendReply(idx, email, subject) {
+          var body = document.getElementById('reply-body-' + idx).value.trim();
+          if (!body) { showToast('Please type a reply'); return; }
+
+          var btn = document.getElementById('reply-btn-' + idx);
+          btn.disabled = true;
+          btn.textContent = 'Sending...';
+
+          try {
+            var res = await fetch('/admin/messages/reply', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to: email, subject: subject, body: body })
+            });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to send');
+
+            var area = document.getElementById('reply-area-' + idx);
+            area.innerHTML = '<div style="margin-top:.8rem;padding:1rem;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:10px;text-align:center">' +
+              '<span style="color:#10B981;font-weight:600;font-size:.85rem">&#x2705; Reply sent to ' + escapeHtml(email) + '</span>' +
+            '</div>';
+            showToast('Reply sent!');
+          } catch(e) {
+            showToast('Error: ' + e.message);
+            btn.disabled = false;
+            btn.textContent = 'Send Reply';
+          }
+        }
+
+        function escapeHtml(s) {
+          if (!s) return '';
+          return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function showToast(msg) {
+          var t = document.getElementById('toast');
+          t.textContent = msg; t.style.display = 'block';
+          setTimeout(function() { t.style.display = 'none'; }, 3000);
+        }
+      </script>
       </body></html>
     `);
   } catch (err) {
     console.error('Messages error:', err);
     res.status(500).send('Error loading messages');
+  }
+});
+
+// ========================
+// REPLY TO CONTACT MESSAGE (via Gmail)
+// ========================
+router.post('/messages/reply', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { to, subject, body } = req.body;
+    if (!to || !body) return res.status(400).json({ error: 'Recipient and message body are required' });
+
+    const clientId = process.env.GMAIL_CLIENT_ID;
+    const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+    const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+    if (!clientId || !clientSecret || !refreshToken) {
+      return res.status(400).json({ error: 'Gmail not configured. Set up Gmail in Email Inbox settings first.' });
+    }
+
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    const replySubject = subject?.startsWith('Re:') ? subject : 'Re: ' + (subject || 'Your message');
+
+    const rawEmail = [
+      'From: support@repurposeai.ai',
+      'To: ' + to,
+      'Subject: ' + replySubject,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      body
+    ].join('\r\n');
+
+    const encodedMessage = Buffer.from(rawEmail).toString('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: encodedMessage }
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Message reply error:', err);
+    res.status(500).json({ error: 'Failed to send reply: ' + err.message });
   }
 });
 
