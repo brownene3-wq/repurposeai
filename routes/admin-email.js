@@ -519,6 +519,29 @@ router.get('/oauth-callback', requireAuth, async (req, res) => {
 });
 
 // ========================
+// BLOCKED SENDERS (system/automated emails hidden from team)
+// ========================
+const BLOCKED_SENDERS = [
+  'noreply@google.com',
+  'no-reply@accounts.google.com',
+  'mail-noreply@google.com',
+  'gmail-noreply@google.com',
+  'googleworkspace-noreply@google.com',
+  'workspace-noreply@google.com',
+  'calendar-notification@google.com',
+  'drive-shares-dm-noreply@google.com',
+  'comments-noreply@docs.google.com',
+  'apps-scripts-notifications@google.com',
+  'admin@google.com',
+  'postmaster@google.com',
+];
+
+// Build a Gmail query to exclude blocked senders
+function getBlockedSendersQuery() {
+  return BLOCKED_SENDERS.map(s => `-from:${s}`).join(' ');
+}
+
+// ========================
 // API ENDPOINTS
 // ========================
 
@@ -530,7 +553,13 @@ router.get('/api/list', requireAuth, requireAdminOrEmailPerm, async (req, res) =
 
     const maxResults = parseInt(req.query.maxResults) || 20;
     const pageToken = req.query.pageToken || undefined;
-    const q = req.query.q || '';
+    const userQuery = req.query.q || '';
+    const isAdmin = req.user.role === 'admin';
+
+    // For team members, always filter out system/Google emails
+    // For admins, only filter if they haven't typed a specific search
+    const blockQuery = (!isAdmin || !userQuery) ? getBlockedSendersQuery() : '';
+    const q = [userQuery, blockQuery, 'in:inbox'].filter(Boolean).join(' ');
 
     const listRes = await gmail.users.messages.list({
       userId: 'me',
@@ -601,6 +630,16 @@ router.get('/api/message/:id', requireAuth, requireAdminOrEmailPerm, async (req,
 
     const headers = detail.data.payload?.headers || [];
     const getHeader = (name) => (headers.find(h => h.name.toLowerCase() === name.toLowerCase()) || {}).value || '';
+
+    // Block team members from viewing system/Google emails
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin) {
+      const fromHeader = getHeader('From').toLowerCase();
+      const isBlocked = BLOCKED_SENDERS.some(blocked => fromHeader.includes(blocked.toLowerCase()));
+      if (isBlocked) {
+        return res.status(403).json({ error: 'This email is not accessible' });
+      }
+    }
 
     // Extract body
     let bodyHtml = '';
