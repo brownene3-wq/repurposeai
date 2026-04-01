@@ -243,6 +243,27 @@ function extractVideoId(url) {
   return null;
 }
 
+// Validate URLs from all supported platforms (YouTube, Instagram, TikTok, Facebook, Twitter/X, LinkedIn, Snapchat)
+function isValidVideoUrl(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+    const validHosts = [
+      'youtube.com', 'youtu.be',
+      'instagram.com',
+      'tiktok.com', 'vm.tiktok.com',
+      'facebook.com', 'fb.watch',
+      'twitter.com', 'x.com',
+      'linkedin.com',
+      'snapchat.com'
+    ];
+    return validHosts.some(h => host === h || host.endsWith('.' + h));
+  } catch(e) {
+    return false;
+  }
+}
+
 // Helper: Format timestamp in seconds to HH:MM:SS.mmm (with millisecond precision)
 function formatTimestamp(seconds) {
   const hrs = Math.floor(seconds / 3600);
@@ -3682,8 +3703,9 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
       return res.status(400).json({ error: 'Invalid narration style' });
     }
 
-    const videoId = extractVideoId(videoUrl);
-    if (!videoId) return res.status(400).json({ error: 'Invalid YouTube URL' });
+    if (!isValidVideoUrl(videoUrl)) {
+      return res.status(400).json({ error: 'Invalid video URL. Supported platforms: YouTube, Instagram, TikTok, Facebook, Twitter/X, LinkedIn, Snapchat' });
+    }
 
     const filename = `quicknarrate_${Date.now()}.mp4`;
     const outputPath = path.join(CLIPS_DIR, filename);
@@ -3726,7 +3748,9 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
           downloadSuccess = true;
         } catch (dlErr) {
           console.log(`  Quick Narrate yt-dlp failed: ${dlErr.message.slice(0, 150)}`);
-          if (ytdl) {
+          // ytdl-core fallback only works for YouTube URLs
+          const isYouTube = extractVideoId(videoUrl);
+          if (ytdl && isYouTube) {
             writeProgress('Trying alternative download...');
             await new Promise((resolve, reject) => {
               const ws = fs.createWriteStream(downloadPath);
@@ -4911,12 +4935,12 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <div>
               <h3 style="font-size:16px; font-weight:600;">🎙️ Quick Narrate</h3>
-              <p style="color:#888; font-size:12px; margin-top:2px;">Paste any YouTube video URL and add AI narration over it — perfect for narration-style content</p>
+              <p style="color:#888; font-size:12px; margin-top:2px;">Paste any video URL (YouTube, Instagram, TikTok, Facebook, Twitter/X, LinkedIn, Snapchat) and add AI narration over it</p>
             </div>
             <button class="btn btn-small" onclick="document.getElementById('quickNarratePanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times;</button>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <input type="url" id="qn-videoUrl" name="quick_narrate_url" autocomplete="off" placeholder="https://youtube.com/watch?v=... or YouTube Shorts URL"
+            <input type="url" id="qn-videoUrl" name="quick_narrate_url" autocomplete="off" placeholder="Paste video URL — YouTube, Instagram, TikTok, Facebook, Twitter/X..."
               style="flex:1;padding:10px 12px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:14px;">
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
@@ -7756,7 +7780,7 @@ ${paginationHtml}
       var btn = document.getElementById('qn-btn');
       var status = document.getElementById('qn-status');
       var url = document.getElementById('qn-videoUrl').value.trim();
-      if (!url) { showToast('Please enter a YouTube URL', true); return; }
+      if (!url) { showToast('Please enter a video URL', true); return; }
 
       btn.disabled = true; btn.textContent = 'Processing...';
       status.textContent = 'Starting...';
