@@ -156,9 +156,63 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     return cachedVideoPath;
 
   } catch (err) {
+    console.log(`  yt-dlp failed for ${videoId}: ${err.message.slice(0, 150)}`);
+
+    // Fallback: try @distube/ytdl-core if yt-dlp fails (e.g. datacenter IP blocked)
+    if (ytdl) {
+      try {
+        writeProgress('Trying alternative download method...');
+        console.log(`  Attempting ytdl-core fallback for ${videoId}`);
+
+        await new Promise((resolve, reject) => {
+          const writeStream = fs.createWriteStream(cachedVideoPath);
+          const stream = ytdl(videoUrl, {
+            quality: 'highest',
+            filter: 'audioandvideo',
+          });
+
+          let downloadedBytes = 0;
+          stream.on('progress', (chunkLength, downloaded, total) => {
+            downloadedBytes = downloaded;
+            if (total) {
+              writeProgress('Downloading: ' + Math.round((downloaded / total) * 100) + '%');
+            }
+          });
+
+          stream.on('error', (e) => {
+            writeStream.destroy();
+            reject(e);
+          });
+
+          writeStream.on('finish', () => resolve());
+          writeStream.on('error', (e) => reject(e));
+
+          stream.pipe(writeStream);
+
+          // Timeout after 4 minutes
+          setTimeout(() => {
+            stream.destroy();
+            writeStream.destroy();
+            reject(new Error('ytdl-core download timed out'));
+          }, 240000);
+        });
+
+        if (fs.existsSync(cachedVideoPath) && fs.statSync(cachedVideoPath).size > 10000) {
+          try { fs.unlinkSync(lockPath); } catch (e) {}
+          const entry = { path: cachedVideoPath, refCount: 1, timer: null };
+          videoDownloadCache.set(cacheKey, entry);
+          console.log(`  ytdl-core fallback succeeded for ${videoId} (${(fs.statSync(cachedVideoPath).size / 1024 / 1024).toFixed(1)}MB)`);
+          return cachedVideoPath;
+        }
+        throw new Error('ytdl-core downloaded file is missing or too small');
+      } catch (ytdlErr) {
+        console.log(`  ytdl-core fallback also failed for ${videoId}: ${ytdlErr.message.slice(0, 150)}`);
+      }
+    }
+
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
-    throw err;
+    throw new Error('Video download failed. Please try again.');
   }
 }
 
@@ -3659,14 +3713,37 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
     (async () => {
       const timeout = setTimeout(() => writeError('Timed out after 8 minutes'), 480000);
       try {
-        // Step 1: Download video
+        // Step 1: Download video (try yt-dlp first, then ytdl-core fallback)
         writeProgress('Downloading video...');
         const downloadPath = outputPath + '.download.mkv';
-        await runCommand('yt-dlp', [
-          '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
-          '--merge-output-format', 'mkv', '-o', downloadPath,
-          '--no-part', '--force-overwrites', ...YTDLP_COMMON_ARGS, videoUrl
-        ], { timeout: 240000 });
+        let downloadSuccess = false;
+        try {
+          await runCommand('yt-dlp', [
+            '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
+            '--merge-output-format', 'mkv', '-o', downloadPath,
+            '--no-part', '--force-overwrites', ...YTDLP_COMMON_ARGS, videoUrl
+          ], { timeout: 240000 });
+          downloadSuccess = true;
+        } catch (dlErr) {
+          console.log(`  Quick Narrate yt-dlp failed: ${dlErr.message.slice(0, 150)}`);
+          if (ytdl) {
+            writeProgress('Trying alternative download...');
+            await new Promise((resolve, reject) => {
+              const ws = fs.createWriteStream(downloadPath);
+              const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
+              stream.on('progress', (_, dl, tot) => { if (tot) writeProgress('Downloading: ' + Math.round((dl / tot) * 100) + '%'); });
+              stream.on('error', e => { ws.destroy(); reject(e); });
+              ws.on('finish', () => resolve());
+              ws.on('error', e => reject(e));
+              stream.pipe(ws);
+              setTimeout(() => { stream.destroy(); ws.destroy(); reject(new Error('Download timed out')); }, 240000);
+            });
+            downloadSuccess = true;
+          } else {
+            throw dlErr;
+          }
+        }
+        if (!downloadSuccess) throw new Error('Video download failed');
 
         // Step 2: Get transcript for context (optional, best-effort)
         let transcriptText = '';
@@ -3976,9 +4053,31 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
             videoUrl
           ], { timeout: 240000 });
         } catch (e) {
-          clearTimeout(timeout);
-          writeError('Video download failed.');
-          return;
+          console.log(`  B-Roll yt-dlp failed: ${e.message.slice(0, 150)}`);
+          if (ytdl) {
+            try {
+              writeProgress('Trying alternative download...');
+              await new Promise((resolve, reject) => {
+                const ws = fs.createWriteStream(tempDownload);
+                const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
+                stream.on('progress', (_, dl, tot) => { if (tot) writeProgress('Downloading: ' + Math.round((dl / tot) * 100) + '%'); });
+                stream.on('error', err => { ws.destroy(); reject(err); });
+                ws.on('finish', () => resolve());
+                ws.on('error', err => reject(err));
+                stream.pipe(ws);
+                setTimeout(() => { stream.destroy(); ws.destroy(); reject(new Error('Download timed out')); }, 240000);
+              });
+            } catch (e2) {
+              console.log(`  B-Roll ytdl-core also failed: ${e2.message.slice(0, 150)}`);
+              clearTimeout(timeout);
+              writeError('Video download failed.');
+              return;
+            }
+          } else {
+            clearTimeout(timeout);
+            writeError('Video download failed.');
+            return;
+          }
         }
 
         // Find actual downloaded file
