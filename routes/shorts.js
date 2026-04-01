@@ -23,6 +23,17 @@ const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = 
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Common yt-dlp args to handle YouTube's anti-bot measures
+const YTDLP_COMMON_ARGS = [
+  '--no-warnings',
+  '--no-check-certificates',
+  '--geo-bypass',
+  '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtube:player_client=mediaconnect,web_creator',
+  '--retries', '3',
+  '--extractor-retries', '3',
+];
+
 // Clips directory
 const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
@@ -113,11 +124,9 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
       '--merge-output-format', 'mkv',
       '-o', cachedVideoPath,
-      '--no-warnings',
-      '--no-check-certificates',
       '--no-part',
       '--force-overwrites',
-      '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
+      ...YTDLP_COMMON_ARGS,
       videoUrl
     ], { timeout: 240000 });
 
@@ -935,16 +944,15 @@ async function fetchTranscriptWithYtdlp(videoId) {
     existing.forEach(f => { try { fs.unlinkSync(path.join(tmpDir, f)); } catch(e) {} });
   } catch(e) {}
 
-  const baseArgs = ['--skip-download', '--no-warnings', '--no-check-certificates', '-o', outTemplate, videoUrl];
+  const baseArgs = ['--skip-download', ...YTDLP_COMMON_ARGS, '-o', outTemplate, videoUrl];
 
-  // Use extractor-args to try different YouTube player clients for better compatibility
-  const extraArgs = ['--extractor-args', 'youtube:player_client=web_creator,ios,android_vr'];
+  // extraArgs is now included in YTDLP_COMMON_ARGS
+  const extraArgs = [];
 
   // Strategy 1: English auto-generated + manual subs in json3 (wildcard for en variants)
   console.log('  Trying: English json3 subtitles (wildcard)');
   let subFile = await tryYtdlpSubtitles(videoId, [
-    '--skip-download', '--no-warnings', '--no-check-certificates',
-    ...extraArgs,
+    '--skip-download', ...YTDLP_COMMON_ARGS,
     '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en', '--sub-format', 'json3',
     '-o', outTemplate, videoUrl
   ], tmpDir);
@@ -953,8 +961,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
   if (!subFile) {
     console.log('  Trying: English vtt subtitles (wildcard)');
     subFile = await tryYtdlpSubtitles(videoId, [
-      '--skip-download', '--no-warnings', '--no-check-certificates',
-      ...extraArgs,
+      '--skip-download', ...YTDLP_COMMON_ARGS,
       '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en', '--sub-format', 'vtt',
       '-o', outTemplate, videoUrl
     ], tmpDir);
@@ -964,8 +971,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
   if (!subFile) {
     console.log('  Trying: Any language auto-generated subtitles');
     subFile = await tryYtdlpSubtitles(videoId, [
-      '--skip-download', '--no-warnings', '--no-check-certificates',
-      ...extraArgs,
+      '--skip-download', ...YTDLP_COMMON_ARGS,
       '--write-auto-subs', '--sub-langs', 'all', '--sub-format', 'json3',
       '-o', outTemplate, videoUrl
     ], tmpDir);
@@ -975,8 +981,7 @@ async function fetchTranscriptWithYtdlp(videoId) {
   if (!subFile) {
     console.log('  Trying: Any manual subtitles');
     subFile = await tryYtdlpSubtitles(videoId, [
-      '--skip-download', '--no-warnings', '--no-check-certificates',
-      ...extraArgs,
+      '--skip-download', ...YTDLP_COMMON_ARGS,
       '--write-subs', '--sub-langs', 'all', '--sub-format', 'json3',
       '-o', outTemplate, videoUrl
     ], tmpDir);
@@ -1005,7 +1010,7 @@ async function fetchTranscriptFromYtdlpJson(videoId) {
   const jsonStr = await new Promise((resolve, reject) => {
     let output = '';
     const proc = spawn('yt-dlp', [
-      '--skip-download', '--dump-json', '--no-warnings', '--no-check-certificates', '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
+      '--skip-download', '--dump-json', ...YTDLP_COMMON_ARGS,
       videoUrl
     ]);
     proc.stdout.on('data', (data) => { output += data.toString(); });
@@ -1086,7 +1091,7 @@ async function fetchTranscriptFromYtdlpJson(videoId) {
 function fetchVideoTitle(videoId) {
   return new Promise((resolve) => {
     const proc = spawn('yt-dlp', [
-      '--skip-download', '--print', 'title', '--no-warnings', '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
+      '--skip-download', '--print', 'title', ...YTDLP_COMMON_ARGS,
       `https://www.youtube.com/watch?v=${videoId}`
     ]);
     let title = '';
@@ -2253,8 +2258,8 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
           await runCmd(ytdlpPath, [
             '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempVideo,
-            '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
-            '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
+            '--no-part', '--force-overwrites',
+            ...YTDLP_COMMON_ARGS,
             '--download-sections', `*${frameSec}-${frameSec + 5}`,
             videoUrl
           ], { timeout: 120000 });
@@ -2264,8 +2269,8 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
             await runCmd(ytdlpPath, [
               '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
               '--merge-output-format', 'mkv', '-o', tempVideo,
-              '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
-              '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
+              '--no-part', '--force-overwrites',
+              ...YTDLP_COMMON_ARGS,
               videoUrl
             ], { timeout: 180000 });
           } catch (e2) {
@@ -3656,15 +3661,15 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
         const downloadPath = outputPath + '.download.mkv';
         await runCommand('yt-dlp', [
           '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
-          '--merge-output-format', 'mkv', '-o', downloadPath, '--no-warnings', '--no-check-certificates',
-          '--no-part', '--force-overwrites', '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr', videoUrl
+          '--merge-output-format', 'mkv', '-o', downloadPath,
+          '--no-part', '--force-overwrites', ...YTDLP_COMMON_ARGS, videoUrl
         ], { timeout: 240000 });
 
         // Step 2: Get transcript for context (optional, best-effort)
         let transcriptText = '';
         try {
           const titleProc = require('child_process').execSync(
-            'yt-dlp --get-title --no-warnings --extractor-args youtube:player_client=web_creator,ios,android_vr "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
+            'yt-dlp --get-title --no-warnings --no-check-certificates --geo-bypass --extractor-args "youtube:player_client=mediaconnect,web_creator" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
           ).trim();
           transcriptText = titleProc || 'Short video';
         } catch(e) { transcriptText = 'Short video'; }
@@ -3963,8 +3968,8 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
           await runCommand('yt-dlp', [
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempDownload,
-            '--no-warnings', '--no-check-certificates', '--no-part', '--force-overwrites',
-            '--extractor-args', 'youtube:player_client=web_creator,ios,android_vr',
+            '--no-part', '--force-overwrites',
+            ...YTDLP_COMMON_ARGS,
             videoUrl
           ], { timeout: 240000 });
         } catch (e) {

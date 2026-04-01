@@ -7,6 +7,12 @@ RUN apt-get update && \
     pip3 install --break-system-packages --upgrade yt-dlp && \
     rm -rf /var/lib/apt/lists/*
 
+# Configure yt-dlp defaults for YouTube anti-bot measures
+RUN mkdir -p /etc/yt-dlp && \
+    echo '--geo-bypass' > /etc/yt-dlp/config && \
+    echo '--no-check-certificates' >> /etc/yt-dlp/config && \
+    echo '--extractor-args youtube:player_client=mediaconnect,web_creator' >> /etc/yt-dlp/config
+
 WORKDIR /app
 
 # Copy package files and install dependencies
