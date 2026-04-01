@@ -40,8 +40,8 @@ function getBaseCSS() {
     .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999}
     .sidebar-overlay.active{display:block}
     @media(max-width:768px){
-      .sidebar{display:none;position:fixed;z-index:1000;width:260px;top:0;left:0;height:100vh;transform:translateX(-100%);transition:transform .3s ease}
-      .sidebar.mobile-open{display:flex;transform:translateX(0)}
+      .sidebar{display:none !important;position:fixed;z-index:1000;width:260px;top:0;left:0;height:100vh;transform:translateX(-100%);transition:transform .3s ease}
+      .sidebar.mobile-open{display:flex !important;transform:translateX(0)}
       .mobile-menu-btn{display:flex}
       .main-content{margin-left:0;padding:1rem;padding-top:3.5rem}
       .page-header h1{font-size:1.4rem}
