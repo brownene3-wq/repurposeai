@@ -39,11 +39,17 @@ function httpsGet(url, headers) {
 }
 
 // Helper: find or create OAuth user
-async function findOrCreateOAuthUser(email, name) {
+async function findOrCreateOAuthUser(email, name, googleId) {
  let user = await userOps.getByEmail(email);
  if (!user) {
   const randomPass = await require('bcryptjs').hash('OAUTH_' + require('crypto').randomBytes(32).toString('hex'), 10);
   user = await userOps.create(email, name || email.split('@')[0], randomPass);
+ }
+ // Ensure google_id is set for Google OAuth users
+ if (googleId && !user.google_id) {
+  const { pool } = require('../db/database');
+  await pool.query('UPDATE users SET google_id = $1 WHERE id = $2', [googleId, user.id]);
+  user.google_id = googleId;
  }
  return user;
 }
@@ -87,7 +93,7 @@ router.get('/google/callback', async (req, res) => {
 
   if (!profile.email) return res.redirect('/auth/login?error=Could+not+get+email+from+Google');
 
-  const user = await findOrCreateOAuthUser(profile.email, profile.name);
+  const user = await findOrCreateOAuthUser(profile.email, profile.name, profile.id);
   loginAndRedirect(res, user);
  } catch (err) {
   console.error('Google OAuth error:', err);
