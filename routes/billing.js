@@ -11,7 +11,7 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
 const PRICE_MAP = {
   starter: process.env.STRIPE_PRICE_STARTER || 'price_1THUStLldgJv5lq6uzQGCicb',
   pro: process.env.STRIPE_PRICE_PRO || 'price_1THUVMLldgJv5lq6lXvOzEAH',
-  teams: process.env.STRIPE_PRICE_TEAMS || 'price_1THUW4LldgJv5lq64EmlBemC'
+  teams: process.env.STRIPE_PRICE_TEAMS || 'price_1THUW4LldgJv5lq64EmIBemC'
 };
 
 // GET /billing - Billing management page
@@ -244,25 +244,6 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
       ? 'You already have an active subscription. Please cancel your current plan first or contact support@repurposeai.ai to switch plans.'
       : 'Failed to create checkout session: ' + (err.message || 'Unknown error');
     res.status(500).json({ message: msg });
-  }
-});
-
-// Temporary: List Stripe prices (admin only) - REMOVE after fixing
-router.get('/debug-prices', requireAuth, async (req, res) => {
-  if (!req.user.role || req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-  try {
-    const stripe = require('stripe')(STRIPE_SECRET);
-    const prices = await stripe.prices.list({ active: true, limit: 20, expand: ['data.product'] });
-    const result = prices.data.map(p => ({
-      priceId: p.id,
-      product: p.product?.name || p.product,
-      amount: (p.unit_amount / 100).toFixed(2),
-      currency: p.currency,
-      interval: p.recurring?.interval
-    }));
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
 
