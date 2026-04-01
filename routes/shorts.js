@@ -3711,7 +3711,7 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
     };
 
     (async () => {
-      const timeout = setTimeout(() => writeError('Timed out after 8 minutes'), 480000);
+      const timeout = setTimeout(() => writeError('Timed out after 12 minutes'), 720000);
       try {
         // Step 1: Download video (try yt-dlp first, then ytdl-core fallback)
         writeProgress('Downloading video...');
@@ -3816,14 +3816,14 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
             await runCommand(ffmpegPath, [
               '-i', downloadPath, '-i', audioPath,
               '-map', '0:v', '-map', '1:a',
-              '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOut
-            ], { timeout: 120000 });
+              '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOut
+            ], { timeout: 360000 });
           } else {
             await runCommand(ffmpegPath, [
-              '-i', downloadPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p',
+              '-i', downloadPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
               '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=longest',
               '-c:a', 'aac', '-shortest', '-y', tempOut
-            ], { timeout: 120000 });
+            ], { timeout: 360000 });
           }
         } else {
           // Text-only narration overlay
@@ -3831,8 +3831,8 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
           await runCommand(ffmpegPath, [
             '-i', downloadPath,
             '-vf', "drawtext=text='" + escaped.substring(0, 200) + "':fontsize=36:fontcolor=white:bordercolor=black:borderw=2:x=(w-text_w)/2:y=h-80",
-            '-c:a', 'copy', '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-y', tempOut
-          ], { timeout: 120000 });
+            '-c:a', 'copy', '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-y', tempOut
+          ], { timeout: 360000 });
         }
 
         if (fs.existsSync(tempOut)) fs.renameSync(tempOut, outputPath);
