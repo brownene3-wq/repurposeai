@@ -9,9 +9,9 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
 
 // Price ID mapping for tiers
 const PRICE_MAP = {
-  starter: process.env.STRIPE_PRICE_STARTER,
-  pro: process.env.STRIPE_PRICE_PRO,
-  teams: process.env.STRIPE_PRICE_TEAMS
+  starter: process.env.STRIPE_PRICE_STARTER || 'price_1THUStLldgJv5lq6uzQGCicb',
+  pro: process.env.STRIPE_PRICE_PRO || 'price_1THUVMLldgJv5lq6lXvOzEAH',
+  teams: process.env.STRIPE_PRICE_TEAMS || 'price_1THUW4LldgJv5lq64EmlBemC'
 };
 
 // GET /billing - Billing management page
@@ -274,9 +274,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             if (!plan) {
               const lineItems = await stripe.checkout.sessions.listLineItems(session.id);
               const priceId = lineItems.data[0]?.price?.id;
-              if (priceId === process.env.STRIPE_PRICE_STARTER) plan = 'starter';
-              else if (priceId === process.env.STRIPE_PRICE_PRO) plan = 'pro';
-              else if (priceId === process.env.STRIPE_PRICE_TEAMS) plan = 'teams';
+              if (priceId === PRICE_MAP.starter) plan = 'starter';
+              else if (priceId === PRICE_MAP.pro) plan = 'pro';
+              else if (priceId === PRICE_MAP.teams) plan = 'teams';
             }
             if (plan) {
               await userOps.updatePlan(user.id, plan);
