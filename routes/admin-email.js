@@ -245,7 +245,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
             '<div class="email-from">' + escapeHtml(e.from) + '</div>' +
             '<div class="email-subject">' + escapeHtml(e.subject || '(no subject)') + '</div>' +
             '<div class="email-snippet">' + escapeHtml(e.snippet || '') + '</div>' +
-            '<div class="email-date">' + e.date + '</div>' +
+            '<div class="email-date">' + formatLocalDate(e.date) + '</div>' +
           '</div>';
         }).join('') + '</div>';
       }
@@ -316,7 +316,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
               '<div class="from">From: ' + escapeHtml(email.from) + '</div>' +
               '<div class="to-info">To: ' + escapeHtml(email.to || 'support@repurposeai.ai') + '</div>' +
             '</div>' +
-            '<div class="date">' + email.date + '</div>' +
+            '<div class="date">' + formatLocalDateFull(email.date) + '</div>' +
           '</div>' +
           '<div class="body">' + (email.bodyHtml || escapeHtml(email.bodyText || '').replace(/\\n/g, '<br>')) + '</div>' +
           replyHtml;
@@ -344,6 +344,26 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
       function backToList() {
         document.getElementById('emailListView').style.display = 'block';
         document.getElementById('emailDetailView').style.display = 'none';
+      }
+
+      function formatLocalDate(isoStr) {
+        try {
+          var d = new Date(isoStr);
+          var now = new Date();
+          if (d.toDateString() === now.toDateString()) {
+            return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+          }
+          return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } catch(e) { return isoStr; }
+      }
+
+      function formatLocalDateFull(isoStr) {
+        try {
+          return new Date(isoStr).toLocaleString('en-US', {
+            weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+            hour: 'numeric', minute: '2-digit'
+          });
+        } catch(e) { return isoStr; }
       }
 
       function escapeHtml(str) {
@@ -584,16 +604,10 @@ router.get('/api/list', requireAuth, requireAdminOrEmailPerm, async (req, res) =
         const getHeader = (name) => (headers.find(h => h.name.toLowerCase() === name.toLowerCase()) || {}).value || '';
         const unread = (detail.data.labelIds || []).includes('UNREAD');
         const dateStr = getHeader('Date');
-        let shortDate = '';
+        let isoDate = '';
         try {
-          const d = new Date(dateStr);
-          const now = new Date();
-          if (d.toDateString() === now.toDateString()) {
-            shortDate = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-          } else {
-            shortDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          }
-        } catch(e) { shortDate = dateStr; }
+          isoDate = new Date(dateStr).toISOString();
+        } catch(e) { isoDate = dateStr; }
 
         return {
           id: msg.id,
@@ -601,7 +615,7 @@ router.get('/api/list', requireAuth, requireAdminOrEmailPerm, async (req, res) =
           from: getHeader('From').replace(/<.*>/, '').trim() || getHeader('From'),
           subject: getHeader('Subject'),
           snippet: detail.data.snippet || '',
-          date: shortDate,
+          date: isoDate,
           unread
         };
       } catch(e) {
@@ -669,10 +683,7 @@ router.get('/api/message/:id', requireAuth, requireAdminOrEmailPerm, async (req,
     const dateStr = getHeader('Date');
     let formattedDate = dateStr;
     try {
-      formattedDate = new Date(dateStr).toLocaleString('en-US', {
-        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-        hour: 'numeric', minute: '2-digit'
-      });
+      formattedDate = new Date(dateStr).toISOString();
     } catch(e) {}
 
     res.json({
