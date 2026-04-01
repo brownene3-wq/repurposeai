@@ -408,9 +408,15 @@ router.get('/blog', requireAuth, requireAdmin, async (req, res) => {
                   <input type="text" id="postCover" placeholder="https://...">
                 </div>
               </div>
-              <div class="form-group">
-                <label>Excerpt</label>
-                <input type="text" id="postExcerpt" placeholder="Short summary for the blog listing page..." maxlength="300">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Excerpt</label>
+                  <input type="text" id="postExcerpt" placeholder="Short summary for the blog listing page..." maxlength="300">
+                </div>
+                <div class="form-group" style="max-width:250px">
+                  <label>Author Name (optional)</label>
+                  <input type="text" id="postAuthorName" placeholder="Leave blank for your name">
+                </div>
               </div>
               <div class="form-group">
                 <label>Content</label>
@@ -462,6 +468,7 @@ router.get('/blog', requireAuth, requireAdmin, async (req, res) => {
             document.getElementById('postExcerpt').value = postData.excerpt || '';
             document.getElementById('postCover').value = postData.cover_image || '';
             document.getElementById('postTag').value = postData.tag || 'General';
+            document.getElementById('postAuthorName').value = postData.author_name || '';
             quill.root.innerHTML = postData.content || '';
           } else {
             document.getElementById('editorTitle').textContent = 'New Blog Post';
@@ -471,6 +478,7 @@ router.get('/blog', requireAuth, requireAdmin, async (req, res) => {
             document.getElementById('postExcerpt').value = '';
             document.getElementById('postCover').value = '';
             document.getElementById('postTag').value = 'General';
+            document.getElementById('postAuthorName').value = '';
             quill.root.innerHTML = '';
           }
         }
@@ -499,6 +507,7 @@ router.get('/blog', requireAuth, requireAdmin, async (req, res) => {
             content: quill.root.innerHTML,
             coverImage: document.getElementById('postCover').value,
             tag: document.getElementById('postTag').value,
+            authorName: document.getElementById('postAuthorName').value,
             status: status
           };
           if (!data.title || !data.slug) { showToast('Title and slug are required'); return; }
@@ -933,9 +942,9 @@ router.get('/api/blog/:id', requireAuth, requireAdmin, async (req, res) => {
 
 router.post('/api/blog', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { title, slug, excerpt, content, coverImage, tag, status } = req.body;
+    const { title, slug, excerpt, content, coverImage, tag, status, authorName } = req.body;
     if (!title || !slug) return res.status(400).json({ error: 'Title and slug required' });
-    const post = await blogOps.create(req.user.id, title, slug, excerpt, content, tag, coverImage, status);
+    const post = await blogOps.create(req.user.id, title, slug, excerpt, content, tag, coverImage, status, authorName);
     res.json(post);
   } catch (err) {
     console.error('Blog create error:', err);

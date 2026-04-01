@@ -197,12 +197,18 @@ const initDatabase = async () => {
         cover_image TEXT DEFAULT '',
         tag TEXT DEFAULT 'General',
         status TEXT DEFAULT 'draft',
+        author_name TEXT DEFAULT '',
         published_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Add author_name column if it doesn't exist (migration)
+    await pool.query(`
+      ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS author_name TEXT DEFAULT ''
+    `).catch(() => {});
 
     // Team invitations table
     await pool.query(`
@@ -675,13 +681,13 @@ const calendarOps = {
 
 // Blog post operations
 const blogOps = {
-  async create(authorId, title, slug, excerpt, content, tag, coverImage, status) {
+  async create(authorId, title, slug, excerpt, content, tag, coverImage, status, authorName) {
     const id = uuidv4();
     const publishedAt = status === 'published' ? new Date() : null;
     const result = await pool.query(
-      `INSERT INTO blog_posts (id, author_id, title, slug, excerpt, content, cover_image, tag, status, published_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [id, authorId, title, slug, excerpt, content, coverImage || '', tag || 'General', status || 'draft', publishedAt]
+      `INSERT INTO blog_posts (id, author_id, title, slug, excerpt, content, cover_image, tag, status, published_at, author_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [id, authorId, title, slug, excerpt, content, coverImage || '', tag || 'General', status || 'draft', publishedAt, authorName || '']
     );
     return result.rows[0];
   },
@@ -689,15 +695,16 @@ const blogOps = {
     const publishedAt = data.status === 'published' ? 'COALESCE(published_at, CURRENT_TIMESTAMP)' : 'published_at';
     const result = await pool.query(
       `UPDATE blog_posts SET title=$2, slug=$3, excerpt=$4, content=$5, cover_image=$6, tag=$7, status=$8,
+       author_name=$9,
        published_at = ${data.status === 'published' ? 'COALESCE(published_at, CURRENT_TIMESTAMP)' : 'published_at'},
        updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING *`,
-      [id, data.title, data.slug, data.excerpt || '', data.content, data.coverImage || '', data.tag || 'General', data.status || 'draft']
+      [id, data.title, data.slug, data.excerpt || '', data.content, data.coverImage || '', data.tag || 'General', data.status || 'draft', data.authorName || '']
     );
     return result.rows[0];
   },
   async getAll(limit = 50, offset = 0) {
     const result = await pool.query(
-      `SELECT bp.*, u.name as author_name, u.email as author_email FROM blog_posts bp
+      `SELECT bp.*, COALESCE(NULLIF(bp.author_name, ''), u.name) as author_name, u.email as author_email FROM blog_posts bp
        LEFT JOIN users u ON bp.author_id = u.id ORDER BY bp.created_at DESC LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
@@ -705,7 +712,7 @@ const blogOps = {
   },
   async getPublished(limit = 20, offset = 0) {
     const result = await pool.query(
-      `SELECT bp.*, u.name as author_name FROM blog_posts bp
+      `SELECT bp.*, COALESCE(NULLIF(bp.author_name, ''), u.name) as author_name FROM blog_posts bp
        LEFT JOIN users u ON bp.author_id = u.id
        WHERE bp.status = 'published' ORDER BY bp.published_at DESC LIMIT $1 OFFSET $2`,
       [limit, offset]
@@ -714,7 +721,7 @@ const blogOps = {
   },
   async getById(id) {
     const result = await pool.query(
-      `SELECT bp.*, u.name as author_name, u.email as author_email FROM blog_posts bp
+      `SELECT bp.*, COALESCE(NULLIF(bp.author_name, ''), u.name) as author_name, u.email as author_email FROM blog_posts bp
        LEFT JOIN users u ON bp.author_id = u.id WHERE bp.id = $1`,
       [id]
     );
@@ -722,7 +729,7 @@ const blogOps = {
   },
   async getBySlug(slug) {
     const result = await pool.query(
-      `SELECT bp.*, u.name as author_name FROM blog_posts bp
+      `SELECT bp.*, COALESCE(NULLIF(bp.author_name, ''), u.name) as author_name FROM blog_posts bp
        LEFT JOIN users u ON bp.author_id = u.id WHERE bp.slug = $1 AND bp.status = 'published'`,
       [slug]
     );
