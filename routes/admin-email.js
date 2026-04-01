@@ -304,7 +304,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
             '<h3 style="font-size:.95rem;font-weight:600;margin-bottom:.8rem">Reply</h3>' +
             '<textarea id="replyBody" placeholder="Type your reply..."></textarea>' +
             '<div class="reply-actions">' +
-              '<button class="btn-sm btn-primary-sm" onclick="sendReply(\\'' + email.id + '\\', \\'' + escapeHtml(email.from).replace(/'/g, "\\\\'") + '\\', \\'' + escapeHtml(email.subject).replace(/'/g, "\\\\'") + '\\')">Send Reply</button>' +
+              '<button id="replyBtn" class="btn-sm btn-primary-sm" onclick="sendReply(\\'' + email.id + '\\', \\'' + escapeHtml(email.from).replace(/'/g, "\\\\'") + '\\', \\'' + escapeHtml(email.subject).replace(/'/g, "\\\\'") + '\\')">Send Reply</button>' +
             '</div>' +
           '</div>';
         }
@@ -326,6 +326,10 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
         var body = document.getElementById('replyBody').value.trim();
         if (!body) { showToast('Please type a reply'); return; }
 
+        var btn = document.getElementById('replyBtn');
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+
         try {
           const res = await fetch('/admin/email/api/reply', {
             method: 'POST',
@@ -334,10 +338,21 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Failed to send');
-          document.getElementById('replyBody').value = '';
+
+          // Replace the reply box with a success message
+          var replyBox = document.querySelector('.reply-box');
+          if (replyBox) {
+            replyBox.innerHTML = '<div style="text-align:center;padding:1.5rem;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:12px">' +
+              '<div style="font-size:1.5rem;margin-bottom:.5rem">&#x2705;</div>' +
+              '<div style="color:#10B981;font-weight:600;font-size:.95rem">Reply sent successfully!</div>' +
+              '<div style="color:var(--text-dim);font-size:.8rem;margin-top:.4rem">Your reply to ' + escapeHtml(to) + ' has been delivered.</div>' +
+            '</div>';
+          }
           showToast('Reply sent!');
         } catch(e) {
           showToast('Error: ' + e.message);
+          btn.disabled = false;
+          btn.textContent = 'Send Reply';
         }
       }
 
