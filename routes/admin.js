@@ -971,6 +971,69 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
     const { email, role, permissions } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
     const invitation = await teamOps.createInvitation(req.user.id, email, role || 'editor', permissions || {});
+    const inviteLink = 'https://repurposeai.ai/admin/invite/' + invitation.token;
+
+    // Send invitation email via Gmail
+    const clientId = process.env.GMAIL_CLIENT_ID;
+    const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+    const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+    if (clientId && clientSecret && refreshToken) {
+      try {
+        const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+        oauth2Client.setCredentials({ refresh_token: refreshToken });
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+        const roleName = (role || 'editor').charAt(0).toUpperCase() + (role || 'editor').slice(1);
+        const htmlBody = `
+          <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;background:#0c0c1d;color:#f0f0ff;border-radius:16px;overflow:hidden">
+            <div style="background:linear-gradient(135deg,#7c3aed,#06b6d4);padding:30px 40px">
+              <h1 style="margin:0;font-size:24px;font-weight:800;color:#fff">RepurposeAI</h1>
+            </div>
+            <div style="padding:40px">
+              <h2 style="margin:0 0 16px;font-size:20px;color:#f0f0ff">You're Invited!</h2>
+              <p style="color:#a0a0c0;font-size:15px;line-height:1.7;margin:0 0 8px">
+                You've been invited to join <strong style="color:#f0f0ff">RepurposeAI</strong> as a <strong style="color:#8B5CF6">${roleName}</strong>.
+              </p>
+              <p style="color:#a0a0c0;font-size:15px;line-height:1.7;margin:0 0 24px">
+                Click the button below to accept your invitation and get started.
+              </p>
+              <a href="${inviteLink}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#7c3aed,#EC4899);color:#fff;text-decoration:none;border-radius:99px;font-weight:700;font-size:15px">
+                Accept Invitation &rarr;
+              </a>
+              <p style="color:#6a6a8e;font-size:13px;margin-top:24px;line-height:1.6">
+                This invitation expires in 7 days. If you didn't expect this email, you can safely ignore it.
+              </p>
+              <hr style="border:none;border-top:1px solid rgba(124,58,237,0.15);margin:24px 0">
+              <p style="color:#6a6a8e;font-size:12px;margin:0">
+                If the button doesn't work, copy this link: ${inviteLink}
+              </p>
+            </div>
+          </div>
+        `;
+
+        const rawEmail = [
+          'From: support@repurposeai.ai',
+          'To: ' + email,
+          'Subject: You\'re invited to join RepurposeAI',
+          'MIME-Version: 1.0',
+          'Content-Type: text/html; charset=utf-8',
+          '',
+          htmlBody
+        ].join('\r\n');
+
+        const encodedMessage = Buffer.from(rawEmail).toString('base64')
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+        await gmail.users.messages.send({
+          userId: 'me',
+          requestBody: { raw: encodedMessage }
+        });
+        console.log('Invitation email sent to:', email);
+      } catch (emailErr) {
+        console.error('Failed to send invitation email (invite still created):', emailErr.message);
+      }
+    }
+
     res.json({ success: true, token: invitation.token });
   } catch (err) {
     console.error('Invite error:', err);
