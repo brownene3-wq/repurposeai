@@ -122,8 +122,8 @@ async function fetchTranscriptViaSupadata(videoId) {
     console.log('[Transcript] Supadata async job:', jobId, '- polling...');
 
     // Poll up to 30 seconds
-    for (let i = 0; i < 15; i++) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    for (let i = 0; i < 20; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
       const pollResponse = await httpsRequest('https://api.supadata.ai/v1/transcript/' + jobId, {
         method: 'GET',
         headers: { 'x-api-key': apiKey, 'Accept': 'application/json' }
@@ -1711,13 +1711,20 @@ router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth')
     }
 
     const videoId = url.match(youtubeRegex)[1];
-    const videoTitle = await Promise.race([fetchVideoTitle(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Title fetch timed out")), 15000))]);
     const totalStart = Date.now();
+
+    // Fetch title and transcript IN PARALLEL to save 2-4 seconds
+    const titlePromise = Promise.race([fetchVideoTitle(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Title fetch timed out")), 15000))]).catch(() => 'Untitled Video');
+    const transcriptPromise = Promise.race([fetchVideoTranscript(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Transcript fetch timed out after 30 seconds")), 30000))]);
+
     let transcript;
+    let videoTitle;
     try {
-      const transcriptStart = Date.now();
-      transcript = await Promise.race([fetchVideoTranscript(videoId), new Promise((_, reject) => setTimeout(() => reject(new Error("Transcript fetch timed out after 30 seconds")), 30000))]);
-      console.log('[Timing] Transcript fetch:', Date.now() - transcriptStart, 'ms');
+      const fetchStart = Date.now();
+      const [titleResult, transcriptResult] = await Promise.all([titlePromise, transcriptPromise]);
+      videoTitle = titleResult;
+      transcript = transcriptResult;
+      console.log('[Timing] Parallel title+transcript fetch:', Date.now() - fetchStart, 'ms');
       if (!transcript || transcript.trim().length === 0) {
         res.write('data: ' + JSON.stringify({ error: 'Video transcript is empty.' }) + '\n\n');
         return res.end();
@@ -1734,14 +1741,13 @@ router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth')
       return res.end();
     }
 
+    // DB write and brand voice fetch IN PARALLEL
     const dbStart = Date.now();
-    const content = await contentOps.create(userId, videoTitle, transcript, 'youtube', url);
-    console.log('[Timing] DB content create:', Date.now() - dbStart, 'ms');
-
-    let brandVoice = null;
-    if (brandVoiceId) {
-      brandVoice = await brandVoiceOps.getById(brandVoiceId);
-    }
+    const [content, brandVoice] = await Promise.all([
+      contentOps.create(userId, videoTitle, transcript, 'youtube', url),
+      brandVoiceId ? brandVoiceOps.getById(brandVoiceId) : Promise.resolve(null)
+    ]);
+    console.log('[Timing] DB + brand voice:', Date.now() - dbStart, 'ms');
 
     // Send each platform as it completes
     const promises = platforms.map(async (platform) => {
@@ -1782,12 +1788,14 @@ router.post('/process', requireAuth, checkPlanLimit('repurposesPerMonth'), async
       return res.status(400).json({ error: 'Invalid YouTube URL' });
     }
 
-    // Get transcript
+    // Get title and transcript IN PARALLEL
     const videoId = url.match(youtubeRegex)[1];
-    const videoTitle = await fetchVideoTitle(videoId);
-    let transcript;
+    const titlePromise = fetchVideoTitle(videoId).catch(() => 'Untitled Video');
+    const transcriptPromise = fetchVideoTranscript(videoId);
+
+    let videoTitle, transcript;
     try {
-      transcript = await fetchVideoTranscript(videoId);
+      [videoTitle, transcript] = await Promise.all([titlePromise, transcriptPromise]);
       if (!transcript || transcript.trim().length === 0) {
         return res.status(400).json({ error: 'Video transcript is empty. Please try a video with spoken content and captions enabled.' });
       }
@@ -1796,20 +1804,11 @@ router.post('/process', requireAuth, checkPlanLimit('repurposesPerMonth'), async
       return res.status(400).json({ error: 'Could not fetch video transcript. Make sure the video has captions/subtitles enabled. YouTube Shorts may not have auto-generated captions — try a regular YouTube video instead.' });
     }
 
-    // Create content item
-    const content = await contentOps.create(
-      userId,
-      videoTitle,
-      transcript,
-      'youtube',
-      url
-    );
-
-    // Get brand voice if provided
-    let brandVoice = null;
-    if (brandVoiceId) {
-      brandVoice = await brandVoiceOps.getById(brandVoiceId);
-    }
+    // Create content item + fetch brand voice IN PARALLEL
+    const [content, brandVoice] = await Promise.all([
+      contentOps.create(userId, videoTitle, transcript, 'youtube', url),
+      brandVoiceId ? brandVoiceOps.getById(brandVoiceId) : Promise.resolve(null)
+    ]);
 
     // Generate content for all platforms in parallel
     const results = await Promise.allSettled(
