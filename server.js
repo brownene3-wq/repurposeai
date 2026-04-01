@@ -87,6 +87,87 @@ app.use('/', staticPagesRouter);
 app.use('/admin', adminRouter);
 app.use('/admin/email', adminEmailRouter);
 
+// ========================
+// PWA MANIFEST & SERVICE WORKER
+// ========================
+app.get('/manifest.json', (req, res) => {
+  res.json({
+    name: 'RepurposeAI',
+    short_name: 'RepurposeAI',
+    description: 'AI-powered content repurposing for creators',
+    start_url: '/dashboard',
+    display: 'standalone',
+    background_color: '#0a0a0a',
+    theme_color: '#6C3AED',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+    ],
+    categories: ['productivity', 'social'],
+    shortcuts: [
+      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] },
+      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] }
+    ]
+  });
+});
+
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.send(`
+    const CACHE_NAME = 'repurposeai-v1';
+    const OFFLINE_URL = '/offline';
+
+    self.addEventListener('install', (event) => {
+      event.waitUntil(
+        caches.open(CACHE_NAME).then((cache) => cache.addAll([OFFLINE_URL]))
+      );
+      self.skipWaiting();
+    });
+
+    self.addEventListener('activate', (event) => {
+      event.waitUntil(
+        caches.keys().then((keys) => Promise.all(
+          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+        ))
+      );
+      self.clients.claim();
+    });
+
+    self.addEventListener('fetch', (event) => {
+      if (event.request.mode === 'navigate') {
+        event.respondWith(
+          fetch(event.request).catch(() => caches.match(OFFLINE_URL))
+        );
+      }
+    });
+  `);
+});
+
+app.get('/offline', (req, res) => {
+  res.send(\`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>RepurposeAI - Offline</title>
+    <style>body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}
+    .box{padding:2rem}h1{font-size:2rem;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem}
+    p{color:#a0aec0;font-size:1.1rem;line-height:1.7}button{margin-top:1.5rem;padding:12px 32px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:600;cursor:pointer}</style>
+    </head><body><div class="box"><h1>You're Offline</h1><p>Check your internet connection and try again.</p><button onclick="location.reload()">Retry</button></div></body></html>\`);
+});
+
+// Generate PWA icons dynamically (SVG-based)
+app.get('/icons/:filename', (req, res) => {
+  const size = req.params.filename.includes('512') ? 512 : 192;
+  const svg = \`<svg xmlns="http://www.w3.org/2000/svg" width="\${size}" height="\${size}" viewBox="0 0 \${size} \${size}">
+    <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#6C3AED"/><stop offset="100%" style="stop-color:#EC4899"/></linearGradient></defs>
+    <rect width="\${size}" height="\${size}" rx="\${size * 0.2}" fill="url(#g)"/>
+    <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="Arial,sans-serif" font-weight="800" font-size="\${size * 0.35}" fill="white">R</text>
+  </svg>\`;
+  // Convert SVG to PNG would require sharp/canvas, so serve SVG with PNG mime type hint
+  // Most browsers handle SVG icons fine for PWA
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.send(svg);
+});
+
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {
   const adminSecret = process.env.ADMIN_SECRET || 'repurposeai-admin-2024';

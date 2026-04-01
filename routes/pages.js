@@ -89,7 +89,24 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .demo-platform{padding:.8rem 1.2rem;border-radius:10px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);font-size:.85rem;color:var(--primary-light)}
 .theme-toggle{background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:32px;height:32px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:var(--text-muted);transition:all .3s;flex-shrink:0}[data-theme="light"] .theme-toggle,body.light .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{display:none}.theme-toggle .toggle-thumb{display:none}
 @media(max-width:1024px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:768px){.nav-links{display:none}.steps-grid,.features-grid,.pricing-grid,.testimonials-grid{grid-template-columns:1fr}.footer-grid{grid-template-columns:1fr 1fr}.hero-stats{flex-direction:column;gap:1.5rem}.hero h1{font-size:2.2rem}.price-card.featured{transform:none}.demo-input-group{flex-direction:column}}
+.mobile-nav-toggle{display:none;background:none;border:none;color:var(--text);font-size:1.5rem;cursor:pointer;padding:4px}
+@media(max-width:1024px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:768px){
+  .nav-links{display:none;position:absolute;top:100%;left:0;right:0;background:rgba(6,6,15,.97);backdrop-filter:blur(20px);flex-direction:column;padding:1.5rem 2rem;gap:1rem;border-bottom:1px solid var(--border)}
+  .nav-links.mobile-open{display:flex}
+  .mobile-nav-toggle{display:block}
+  .steps-grid,.features-grid,.pricing-grid,.testimonials-grid{grid-template-columns:1fr}
+  .footer-grid{grid-template-columns:1fr 1fr}
+  .hero-stats{flex-direction:column;gap:1.5rem}
+  .hero h1{font-size:2rem}
+  .hero-content p{font-size:.95rem}
+  .price-card.featured{transform:none}
+  .demo-input-group{flex-direction:column}
+  .demo-preview{margin:2rem auto 0;border-radius:12px}
+  .footer-bottom{flex-direction:column;gap:.5rem;text-align:center}
+  section{padding:60px 0 !important}
+  .section-title{font-size:1.6rem}
+}
 `;
 }
 
@@ -102,11 +119,18 @@ router.get('/', (req, res) => {
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="AI-powered content repurposing. Paste a YouTube link, get content for Instagram, TikTok, Facebook, LinkedIn, Twitter.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RepurposeAI">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <style>${getStyles()}</style>
 </head>
 <body>
  <nav class="nav"><div class="nav-inner">
     <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
+    <button class="mobile-nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mobile-open')">&#9776;</button>
     <div class="nav-links">
       <a href="#how-it-works">How It Works</a>
       <a href="#features">Features</a>

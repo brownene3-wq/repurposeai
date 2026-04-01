@@ -35,7 +35,29 @@ function getBaseCSS() {
     [data-theme="light"] .url-input,body.light .url-input,html.light .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}
     [data-theme="light"] .content-textarea,body.light .content-textarea,html.light .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}
     [data-theme="light"] select,body.light select,html.light select{background:#F8F9FC;border-color:rgba(0,0,0,0.12);color:#1A1A2E}
-    @media(max-width:768px){.sidebar{display:none}.main-content{margin-left:0}}
+    .mobile-menu-btn{display:none;position:fixed;top:1rem;left:1rem;z-index:1001;background:#222;border:1px solid #333;color:#fff;width:40px;height:40px;border-radius:10px;cursor:pointer;font-size:1.2em;align-items:center;justify-content:center}
+    body.light .mobile-menu-btn,html.light .mobile-menu-btn{background:#fff;border-color:#ddd;color:#333}
+    .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999}
+    .sidebar-overlay.active{display:block}
+    @media(max-width:768px){
+      .sidebar{display:none;position:fixed;z-index:1000;width:260px;top:0;left:0;height:100vh;transform:translateX(-100%);transition:transform .3s ease}
+      .sidebar.mobile-open{display:flex;transform:translateX(0)}
+      .mobile-menu-btn{display:flex}
+      .main-content{margin-left:0;padding:1rem;padding-top:3.5rem}
+      .page-header h1{font-size:1.4rem}
+      .page-header p{font-size:.85rem}
+      .theme-toggle{top:.9rem;right:1rem;width:32px;height:32px;font-size:.85em}
+      .btn{padding:.6rem 1.2rem;font-size:.82rem}
+      .card{padding:1rem !important;border-radius:12px !important}
+      table{font-size:.8rem}
+      table th,table td{padding:.5rem .4rem}
+    }
+    @media(max-width:480px){
+      .main-content{padding:.75rem;padding-top:3.5rem}
+      .page-header{margin-bottom:1rem}
+      .page-header h1{font-size:1.2rem}
+      .btn{padding:.5rem 1rem;font-size:.78rem}
+    }
   `;
 }
 
@@ -50,6 +72,12 @@ function getHeadHTML(title) {
   <meta http-equiv="Expires" content="0">
   <title>${title} - RepurposeAI</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RepurposeAI">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <script>
     // Apply theme BEFORE body renders to prevent flash of wrong theme (FOUC)
     (function(){
@@ -96,13 +124,29 @@ ${navLinks}
 }
 
 function getThemeToggle() {
-  return '<button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>';
+  return `<button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileMenu()"></div>
+    <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>`;
 }
 
 function getThemeScript() {
   return `
     // Force reload if served from browser back-forward cache
     window.addEventListener('pageshow', function(e) { if (e.persisted) window.location.reload(); });
+
+    // Register PWA service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(function(){});
+    }
+
+    function toggleMobileMenu(){
+      var sb = document.querySelector('.sidebar');
+      var ov = document.getElementById('sidebarOverlay');
+      if(sb){
+        sb.classList.toggle('mobile-open');
+        if(ov) ov.classList.toggle('active', sb.classList.contains('mobile-open'));
+      }
+    }
 
     function toggleTheme(){
       const isLight = !document.body.classList.contains('light');

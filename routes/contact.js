@@ -27,6 +27,9 @@ function renderContactPage(user) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#06060f">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Contact — RepurposeAI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -80,11 +83,18 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
 @media(max-width:768px){
   .contact__grid{grid-template-columns:1fr}
   .form-row{flex-direction:column}
+  .nav-links{display:none;position:absolute;top:100%;left:0;right:0;background:rgba(6,6,15,.97);flex-direction:column;padding:1rem 1.5rem;gap:.8rem}
+  .nav-links.mob-open{display:flex}
+  .mob-toggle{display:block !important}
+  .contact{padding:100px 0 40px}
+  .contact__info h1{font-size:1.8rem}
+  .contact-form{padding:24px}
 }
 </style></head><body>
 <div class="bg-orb bg-orb--1"></div><div class="bg-orb bg-orb--2"></div>
 <nav><div class="nav-inner">
   <a href="/" class="logo">Repurpose<span>AI</span></a>
+  <button style="display:none;background:none;border:none;color:var(--text);font-size:1.5rem;cursor:pointer" class="mob-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mob-open')">&#9776;</button>
   <div class="nav-links">
     <a href="/">Home</a>
     <a href="/pricing">Pricing</a>
