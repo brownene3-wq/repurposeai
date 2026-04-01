@@ -5,6 +5,7 @@ const { initDatabase } = require('./db/database');
 
 const app = express();
 const { injectChatWidget } = require('./middleware/chatWidget');
+const { injectFeedbackWidget } = require('./middleware/feedbackWidget');
 
 // Middleware - skip JSON parsing for Stripe webhook (needs raw body)
 app.use((req, res, next) => {
@@ -22,6 +23,13 @@ app.use((req, res, next) => {
   const skip = req.path.includes('/api/') || req.path.includes('/process-stream') || req.path === '/billing/webhook' || req.path.startsWith('/chatbot') || req.path.startsWith('/shorts/analyze') || req.path.startsWith('/shorts/clip');
   if (skip) return next();
   injectChatWidget(req, res, next);
+});
+
+// Inject feedback widget into all HTML pages
+app.use((req, res, next) => {
+  const skip = req.path.includes('/api/') || req.path.includes('/process-stream') || req.path === '/billing/webhook' || req.path.startsWith('/chatbot') || req.path.startsWith('/shorts/analyze') || req.path.startsWith('/shorts/clip');
+  if (skip) return next();
+  injectFeedbackWidget(req, res, next);
 });
 
 // Disable caching on HTML pages so browser refresh always fetches fresh content
@@ -69,6 +77,7 @@ const staticPagesRouter = require('./routes/static-pages');
 const adminRouter = require('./routes/admin');
 const adminEmailRouter = require('./routes/admin-email');
 const settingsRouter = require('./routes/settings');
+const feedbackRouter = require('./routes/feedback');
 
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
@@ -86,6 +95,7 @@ app.use('/chatbot', chatbotRouter);
 app.use('/shorts', shortsRouter);
 app.use('/', staticPagesRouter);
 app.use('/settings', settingsRouter);
+app.use('/feedback', feedbackRouter);
 app.use('/admin', adminRouter);
 app.use('/admin/email', adminEmailRouter);
 

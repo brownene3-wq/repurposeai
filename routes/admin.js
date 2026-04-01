@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { google } = require('googleapis');
 const { requireAuth } = require('../middleware/auth');
-const { adminOps, blogOps, teamOps, userOps, contactOps } = require('../db/database');
+const { adminOps, blogOps, teamOps, userOps, contactOps, bugReportOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 // Admin auth middleware — checks role is admin
@@ -37,6 +37,7 @@ function getAdminSidebar(activePage) {
     { href: '/admin/team', icon: '&#x1F91D;', label: 'Team', key: 'team' },
     { href: '/admin/messages', icon: '&#x1F4E9;', label: 'Messages', key: 'messages' },
     { href: '/admin/email', icon: '&#x1F4E7;', label: 'Email Inbox', key: 'email' },
+    { href: '/admin/bugs', icon: '&#x1F41B;', label: 'Bug Reports', key: 'bugs' },
   ];
   const navLinks = links.map(l => {
     const cls = l.key === activePage ? ' class="active"' : '';
@@ -1091,6 +1092,171 @@ router.post('/api/team/accept', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Accept invite error:', err);
     res.status(500).json({ error: 'Failed to accept invitation' });
+  }
+});
+
+// ========================
+// BUG REPORTS PAGE
+// ========================
+router.get('/bugs', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const reports = await bugReportOps.getAll();
+    const openCount = reports.filter(r => r.status === 'open').length;
+    const resolvedCount = reports.filter(r => r.status === 'resolved').length;
+
+    const reportRows = reports.map(r => {
+      const statusBadge = r.status === 'open' ? 'badge-pending' : r.status === 'resolved' ? 'badge-published' : 'badge-draft';
+      const categoryIcons = { bug: '&#x1F41B;', feature: '&#x1F4A1;', ui: '&#x1F3A8;', performance: '&#x26A1;', other: '&#x1F4AC;' };
+      const catIcon = categoryIcons[r.category] || '&#x1F4AC;';
+      const date = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const email = r.user_email || 'Anonymous';
+      const desc = (r.description || '').length > 120 ? r.description.substring(0, 120) + '...' : r.description;
+      return `<tr>
+        <td>${catIcon} ${r.category}</td>
+        <td style="max-width:300px">${desc}</td>
+        <td>${r.page || '-'}</td>
+        <td>${email}</td>
+        <td><span class="badge ${statusBadge}">${r.status}</span></td>
+        <td>${date}</td>
+        <td>
+          ${r.status === 'open' ? `<button class="btn-sm btn-primary-sm" onclick="updateBugStatus('${r.id}','resolved')">Resolve</button>` : `<button class="btn-sm btn-outline-sm" onclick="updateBugStatus('${r.id}','open')">Reopen</button>`}
+          <button class="btn-sm btn-danger-sm" onclick="deleteBug('${r.id}')" style="margin-left:4px">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    res.send(`
+      ${getHeadHTML('Bug Reports')}
+      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      </head>
+      <body>
+      <div class="dashboard">
+        ${getAdminSidebar('bugs')}
+        ${getThemeToggle()}
+        <main class="main-content">
+          <div class="page-header">
+            <h1>&#x1F41B; Bug Reports</h1>
+            <p>User-submitted feedback and bug reports</p>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-card"><div class="label">Total Reports</div><div class="value">${reports.length}</div></div>
+            <div class="stat-card"><div class="label">Open</div><div class="value">${openCount}</div></div>
+            <div class="stat-card"><div class="label">Resolved</div><div class="value">${resolvedCount}</div></div>
+          </div>
+
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+              <h2>All Reports</h2>
+              <div>
+                <button class="btn-sm btn-outline-sm" onclick="filterBugs('all')" id="filterAll" style="margin-right:4px">All</button>
+                <button class="btn-sm btn-outline-sm" onclick="filterBugs('open')" id="filterOpen" style="margin-right:4px">Open</button>
+                <button class="btn-sm btn-outline-sm" onclick="filterBugs('resolved')" id="filterResolved">Resolved</button>
+              </div>
+            </div>
+            ${reports.length === 0 ? `
+              <div class="empty-state">
+                <div class="icon">&#x1F389;</div>
+                <p>No bug reports yet. That's a good sign!</p>
+              </div>
+            ` : `
+              <div style="overflow-x:auto">
+                <table class="data-table" id="bugsTable">
+                  <thead><tr>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Page</th>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr></thead>
+                  <tbody>${reportRows}</tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </main>
+      </div>
+      <div class="toast" id="toast"></div>
+      <script>
+        ${getThemeScript()}
+
+        function showToast(msg, color) {
+          var t = document.getElementById('toast');
+          t.textContent = msg;
+          t.style.background = color || 'var(--success)';
+          t.style.display = 'block';
+          setTimeout(function() { t.style.display = 'none'; }, 3000);
+        }
+
+        function updateBugStatus(id, status) {
+          fetch('/admin/api/bugs/' + id + '/status', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: status })
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.success) { showToast('Status updated!'); window.location.reload(); }
+            else showToast(data.error || 'Failed', '#EF4444');
+          })
+          .catch(function() { showToast('Error updating status', '#EF4444'); });
+        }
+
+        function deleteBug(id) {
+          if (!confirm('Delete this report permanently?')) return;
+          fetch('/admin/api/bugs/' + id, { method: 'DELETE' })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.success) { showToast('Report deleted'); window.location.reload(); }
+            else showToast(data.error || 'Failed', '#EF4444');
+          })
+          .catch(function() { showToast('Error', '#EF4444'); });
+        }
+
+        function filterBugs(status) {
+          var rows = document.querySelectorAll('#bugsTable tbody tr');
+          rows.forEach(function(row) {
+            var badge = row.querySelector('.badge');
+            if (!badge) return;
+            var rowStatus = badge.textContent.trim();
+            if (status === 'all') row.style.display = '';
+            else row.style.display = rowStatus === status ? '' : 'none';
+          });
+          document.querySelectorAll('[id^="filter"]').forEach(function(b) { b.style.borderColor = ''; b.style.color = ''; });
+          var active = document.getElementById('filter' + status.charAt(0).toUpperCase() + status.slice(1));
+          if (active) { active.style.borderColor = '#6C3AED'; active.style.color = '#8B5CF6'; }
+        }
+      </script>
+      </body></html>
+    `);
+  } catch (err) {
+    console.error('Admin bugs error:', err);
+    res.status(500).send('Error loading bug reports');
+  }
+});
+
+// API: Update bug status
+router.put('/api/bugs/:id/status', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+    await bugReportOps.updateStatus(req.params.id, status, notes || '');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Update bug status error:', err);
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// API: Delete bug report
+router.delete('/api/bugs/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await bugReportOps.delete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete bug error:', err);
+    res.status(500).json({ error: 'Failed to delete report' });
   }
 });
 

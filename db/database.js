@@ -210,6 +210,22 @@ const initDatabase = async () => {
       ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS author_name TEXT DEFAULT ''
     `).catch(() => {});
 
+    // Bug reports table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bug_reports (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        user_email TEXT,
+        category TEXT DEFAULT 'bug',
+        page TEXT DEFAULT '',
+        description TEXT NOT NULL,
+        status TEXT DEFAULT 'open',
+        admin_notes TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP
+      )
+    `);
+
     // Team invitations table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_invitations (
@@ -878,6 +894,48 @@ const adminOps = {
   }
 };
 
+// Bug report operations
+const bugReportOps = {
+  async create(userId, userEmail, category, page, description) {
+    const id = uuidv4();
+    const result = await pool.query(
+      `INSERT INTO bug_reports (id, user_id, user_email, category, page, description)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [id, userId || null, userEmail || '', category || 'bug', page || '', description]
+    );
+    return result.rows[0];
+  },
+  async getAll(limit = 50, offset = 0) {
+    const result = await pool.query(
+      `SELECT * FROM bug_reports ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    return result.rows;
+  },
+  async getOpen() {
+    const result = await pool.query(
+      `SELECT * FROM bug_reports WHERE status = 'open' ORDER BY created_at DESC`
+    );
+    return result.rows;
+  },
+  async updateStatus(id, status, adminNotes) {
+    const resolvedAt = status === 'resolved' ? new Date() : null;
+    const result = await pool.query(
+      `UPDATE bug_reports SET status=$2, admin_notes=$3, resolved_at=$4 WHERE id=$1 RETURNING *`,
+      [id, status, adminNotes || '', resolvedAt]
+    );
+    return result.rows[0];
+  },
+  async count() {
+    const result = await pool.query(`SELECT COUNT(*) FROM bug_reports WHERE status = 'open'`);
+    return parseInt(result.rows[0].count, 10);
+  },
+  async delete(id) {
+    const result = await pool.query(`DELETE FROM bug_reports WHERE id = $1 RETURNING *`, [id]);
+    return result.rows[0];
+  }
+};
+
 module.exports = {
   initDatabase,
   getDb,
@@ -891,6 +949,7 @@ module.exports = {
   brandKitOps,
   calendarOps,
   blogOps,
+  bugReportOps,
   teamOps,
   adminOps
 };
