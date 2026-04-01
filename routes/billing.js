@@ -149,10 +149,39 @@ router.get('/', requireAuth, (req, res) => {
         </div>
       </div>
     </div>
+    </div>
     <script>${getThemeScript()}</script>
+    <div id="checkoutMsg" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:2rem 2.5rem;max-width:420px;width:90%;text-align:center;z-index:9999;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+      <div id="checkoutMsgIcon" style="font-size:2rem;margin-bottom:.8rem"></div>
+      <div id="checkoutMsgText" style="font-size:.95rem;color:var(--text-muted);line-height:1.5"></div>
+      <button onclick="document.getElementById('checkoutMsg').style.display='none';document.getElementById('checkoutOverlay').style.display='none'" style="margin-top:1.2rem;padding:.6rem 2rem;border-radius:50px;border:none;background:var(--gradient-1);color:#fff;font-weight:600;cursor:pointer;font-size:.85rem">OK</button>
+    </div>
+    <div id="checkoutOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9998"></div>
     <script>
+      function showCheckoutMsg(icon, text) {
+        document.getElementById('checkoutMsgIcon').innerHTML = icon;
+        document.getElementById('checkoutMsgText').innerHTML = text;
+        document.getElementById('checkoutMsg').style.display = 'block';
+        document.getElementById('checkoutOverlay').style.display = 'block';
+      }
+
+      // Handle success/canceled URL params from Stripe redirect
+      (function() {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('success') === 'true') {
+          showCheckoutMsg('&#x2705;', 'Payment successful! Your plan has been upgraded. It may take a moment to reflect.');
+          history.replaceState({}, '', '/billing');
+        } else if (params.get('canceled') === 'true') {
+          showCheckoutMsg('&#x274C;', 'Checkout was canceled. No charges were made.');
+          history.replaceState({}, '', '/billing');
+        }
+      })();
+
       async function handleCheckout(plan) {
         try {
+          const btn = event.target;
+          btn.disabled = true;
+          btn.innerHTML = 'Processing...';
           const res = await fetch('/billing/create-checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -162,10 +191,12 @@ router.get('/', requireAuth, (req, res) => {
           if (data.url) {
             window.location.href = data.url;
           } else {
-            alert(data.message || 'Could not start checkout. Please try again.');
+            btn.disabled = false;
+            btn.innerHTML = 'Upgrade to ' + plan.charAt(0).toUpperCase() + plan.slice(1);
+            showCheckoutMsg('&#x26A0;&#xFE0F;', data.message || 'Could not start checkout. Please try again.');
           }
         } catch (err) {
-          alert('Error connecting to payment system. Please try again.');
+          showCheckoutMsg('&#x26A0;&#xFE0F;', 'Error connecting to payment system. Please try again.');
         }
       }
     </script>
@@ -178,13 +209,19 @@ router.get('/', requireAuth, (req, res) => {
 router.post('/create-checkout', requireAuth, async (req, res) => {
   try {
     const { plan } = req.body;
+    const validPlans = ['starter', 'pro', 'teams'];
+
+    if (!validPlans.includes(plan)) {
+      return res.json({ message: 'Invalid plan selected.' });
+    }
 
     if (!STRIPE_SECRET) {
       return res.json({ message: 'Payment system is being configured. Please check back soon!' });
     }
 
     if (!PRICE_MAP[plan]) {
-      return res.json({ message: 'Invalid plan selected.' });
+      console.warn(`Stripe price ID not configured for plan: ${plan}. Set STRIPE_PRICE_${plan.toUpperCase()} env var.`);
+      return res.json({ message: 'This plan is not yet available for purchase. Please contact support@repurposeai.ai for assistance.' });
     }
 
     const stripe = require('stripe')(STRIPE_SECRET);
