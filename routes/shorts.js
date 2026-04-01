@@ -3447,7 +3447,7 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
           poetic: "Write a beautiful, poetic narration with metaphors and lyrical language. Almost like spoken word poetry. Max 4-5 sentences."
         };
 
-        const systemPrompt = `You are a creative narration writer for short-form video content. Write engaging, authentic voiceover scripts that match the specified style.`;
+        const systemPrompt = `You are a creative narration writer for short-form video content. Write engaging, authentic voiceover scripts that match the specified style. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice.`;
         const userPrompt = `${stylePrompts[narrationStyle]}\n\nBased on this video transcript excerpt: ${transcriptExcerpt}`;
 
         const narrationResponse = await openai.chat.completions.create({
@@ -3771,7 +3771,7 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
           const resp = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
-              { role: 'system', content: 'You are a creative narration writer for short-form video content.' },
+              { role: 'system', content: 'You are a creative narration writer for short-form video content. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice.' },
               { role: 'user', content: (stylePrompts[narrationStyle] || stylePrompts.funny) + '\\nVideo title/context: ' + transcriptText }
             ],
             max_tokens: 300, temperature: 0.8
