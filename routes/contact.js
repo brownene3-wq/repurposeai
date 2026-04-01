@@ -102,7 +102,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
     <div class="info-cards">
       <div class="info-card">
         <div class="info-card__icon info-card__icon--purple">&#9993;</div>
-        <div><div class="info-card__title">Email</div><div class="info-card__text">hello@repurposeai.com</div></div>
+        <div><div class="info-card__title">Email</div><div class="info-card__text">support@repurposeai.ai</div></div>
       </div>
       <div class="info-card">
         <div class="info-card__icon info-card__icon--cyan">&#128172;</div>

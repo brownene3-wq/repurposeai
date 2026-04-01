@@ -261,13 +261,13 @@ router.get('/privacy', optionalAuth, (req, res) => {
     <p>We retain your personal data only for as long as necessary to fulfill the purposes for which it was collected, including to satisfy any legal, accounting, or reporting requirements.</p>
 
     <h2>8. Your Rights</h2>
-    <p>You have the right to access, update, or delete your personal information at any time. You may also request a copy of the data we hold about you. To exercise these rights, please contact us at hello@repurposeai.com.</p>
+    <p>You have the right to access, update, or delete your personal information at any time. You may also request a copy of the data we hold about you. To exercise these rights, please contact us at support@repurposeai.ai.</p>
 
     <h2>9. Changes to This Policy</h2>
     <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the "Last updated" date.</p>
 
     <h2>10. Contact Us</h2>
-    <p>If you have any questions about this Privacy Policy, please contact us at <a href="/contact">our contact page</a> or email hello@repurposeai.com.</p>
+    <p>If you have any questions about this Privacy Policy, please contact us at <a href="/contact">our contact page</a> or email support@repurposeai.ai.</p>
   </div>
 `));
 });
@@ -307,7 +307,7 @@ router.get('/terms', optionalAuth, (req, res) => {
     <p>These Terms shall be governed by and construed in accordance with the laws of the United States, without regard to its conflict of law provisions.</p>
 
     <h2>10. Contact</h2>
-    <p>If you have any questions about these Terms, please contact us at <a href="/contact">our contact page</a> or email hello@repurposeai.com.</p>
+    <p>If you have any questions about these Terms, please contact us at <a href="/contact">our contact page</a> or email support@repurposeai.ai.</p>
   </div>
 `));
 });
@@ -348,7 +348,7 @@ router.get('/cookies', optionalAuth, (req, res) => {
     <p>We may update this Cookie Policy from time to time. Any changes will be posted on this page with an updated revision date.</p>
 
     <h2>7. Contact Us</h2>
-    <p>If you have questions about our use of cookies, please contact us at <a href="/contact">our contact page</a> or email hello@repurposeai.com.</p>
+    <p>If you have questions about our use of cookies, please contact us at <a href="/contact">our contact page</a> or email support@repurposeai.ai.</p>
   </div>
 `));
 });

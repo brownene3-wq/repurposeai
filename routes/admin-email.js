@@ -151,7 +151,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
           <div class="setup-box">
             <div style="font-size:3rem;margin-bottom:1rem">&#x1F4E7;</div>
             <h2>Gmail Setup Required</h2>
-            <p>To view emails from <code>hello@repurposeai.com</code> in this panel, you need to set up 3 environment variables in Railway:</p>
+            <p>To view emails from <code>support@repurposeai.ai</code> in this panel, you need to set up 3 environment variables in Railway:</p>
             <ol>
               <li><code>GMAIL_CLIENT_ID</code> — from Google Cloud Console</li>
               <li><code>GMAIL_CLIENT_SECRET</code> — from Google Cloud Console</li>
@@ -176,7 +176,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
       <div class="main-content">
         <div class="page-header">
           <h1>Email Inbox</h1>
-          <p>Emails from hello@repurposeai.com</p>
+          <p>Emails from support@repurposeai.ai</p>
         </div>
 
         <div class="search-bar">
@@ -314,7 +314,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
           '<div class="meta">' +
             '<div>' +
               '<div class="from">From: ' + escapeHtml(email.from) + '</div>' +
-              '<div class="to-info">To: ' + escapeHtml(email.to || 'hello@repurposeai.com') + '</div>' +
+              '<div class="to-info">To: ' + escapeHtml(email.to || 'support@repurposeai.ai') + '</div>' +
             '</div>' +
             '<div class="date">' + email.date + '</div>' +
           '</div>' +
@@ -394,7 +394,7 @@ router.get('/setup', requireAuth, async (req, res) => {
       <div class="main-content">
         <div class="page-header">
           <h1>Gmail Setup Guide</h1>
-          <p>Connect hello@repurposeai.com to your admin panel</p>
+          <p>Connect support@repurposeai.ai to your admin panel</p>
         </div>
 
         <div class="step">
@@ -712,7 +712,7 @@ router.post('/api/reply', requireAuth, requireAdminOrEmailPerm, async (req, res)
 
     // Build raw email
     const rawEmail = [
-      `From: hello@repurposeai.com`,
+      `From: support@repurposeai.ai`,
       `To: ${toEmail}`,
       `Subject: ${replySubject}`,
       `In-Reply-To: ${messageId}`,
