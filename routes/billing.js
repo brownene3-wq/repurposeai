@@ -247,6 +247,25 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
   }
 });
 
+// Temporary: List Stripe prices (admin only) - REMOVE after fixing
+router.get('/debug-prices', requireAuth, async (req, res) => {
+  if (!req.user.role || req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  try {
+    const stripe = require('stripe')(STRIPE_SECRET);
+    const prices = await stripe.prices.list({ active: true, limit: 20, expand: ['data.product'] });
+    const result = prices.data.map(p => ({
+      priceId: p.id,
+      product: p.product?.name || p.product,
+      amount: (p.unit_amount / 100).toFixed(2),
+      currency: p.currency,
+      interval: p.recurring?.interval
+    }));
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Stripe Webhook
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const stripe = require('stripe')(STRIPE_SECRET);
