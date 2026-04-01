@@ -239,8 +239,11 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
 
     res.json({ url: session.url });
   } catch (err) {
-    console.error('Checkout error:', err);
-    res.status(500).json({ message: 'Failed to create checkout session' });
+    console.error('Checkout error:', err.message || err);
+    const msg = err.message && err.message.includes('exist')
+      ? 'You already have an active subscription. Please cancel your current plan first or contact support@repurposeai.ai to switch plans.'
+      : 'Failed to create checkout session: ' + (err.message || 'Unknown error');
+    res.status(500).json({ message: msg });
   }
 });
 
