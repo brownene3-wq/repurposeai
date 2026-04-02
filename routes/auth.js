@@ -58,6 +58,7 @@ async function findOrCreateOAuthUser(email, name, googleId) {
 function loginAndRedirect(res, user) {
  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
  res.cookie('token', token, { httpOnly: false, maxAge: 7 * 24 * 60 * 60 * 1000, path: '/' });
+  userOps.trackLogin(user.id).catch(() => {});
  res.redirect('/dashboard');
 }
 
