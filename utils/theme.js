@@ -8,6 +8,7 @@ function getBaseCSS() {
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;background:var(--dark);color:var(--text);min-height:100vh}
     body.theme-ready{transition:background .3s,color .3s}
+    html.light{background:var(--dark)}
     .dashboard{display:flex;min-height:100vh}
     .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:20px 0;position:fixed;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
     .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
