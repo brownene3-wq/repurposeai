@@ -17,7 +17,7 @@ const FEEDBACK_WIDGET_HTML = `
 <style>
   .feedback-btn {
     position: fixed;
-    bottom: 24px;
+    bottom: 100px;
     right: 24px;
     height: 42px;
     padding: 0 16px;
@@ -197,7 +197,7 @@ const FEEDBACK_WIDGET_HTML = `
   }
   @media (max-width: 480px) {
     .feedback-btn {
-      bottom: 16px;
+      bottom: 80px;
       right: 16px;
       height: 38px;
       padding: 0 12px;
