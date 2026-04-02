@@ -710,8 +710,8 @@ router.get('/team', requireAuth, requireAdmin, async (req, res) => {
                     const permLabels = Object.keys(perms).filter(k => perms[k]).map(k => k.replace(/_/g,' ')).join(', ');
                     return `
                       <tr>
-                        <td>${m.name || 'â'}</td>
-                        <td>${m.email}</td>
+                        <td>${escapeHtml(m.name || 'â')}</td>
+                        <td>${escapeHtml(m.email)}</td>
                         <td><span class="badge badge-${m.role}">${m.role}</span></td>
                         <td style="max-width:200px;font-size:.8rem;color:var(--text-muted)">${permLabels || 'None'}</td>
                         <td>
@@ -848,13 +848,13 @@ router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
             <div class="card ${m.is_read ? '' : 'unread'}" id="msg-${i}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.8rem">
                 <div>
-                  <strong>${m.name}</strong> <span style="color:var(--text-muted);font-size:.85rem">&lt;${m.email}&gt;</span>
+                  <strong>${escapeHtml(m.name)}</strong> <span style="color:var(--text-muted);font-size:.85rem">&lt;${escapeHtml(m.email)}&gt;</span>
                 </div>
                 <span style="font-size:.8rem;color:var(--text-dim)">${new Date(m.created_at).toLocaleString()}</span>
                 <span class="read-badge ${m.is_read ? 'read' : 'unread'}">${m.is_read ? 'Read' : 'New'}</span>
               </div>
-              <div style="font-size:.85rem;color:var(--primary-light);margin-bottom:.5rem">${m.subject}</div>
-              <p style="font-size:.9rem;color:var(--text-muted);line-height:1.6;margin-bottom:1rem">${m.message}</p>
+              <div style="font-size:.85rem;color:var(--primary-light);margin-bottom:.5rem">${escapeHtml(m.subject)}</div>
+              <p style="font-size:.9rem;color:var(--text-muted);line-height:1.6;margin-bottom:1rem">${escapeHtml(m.message)}</p>
               <div id="reply-area-${i}">
                 <button class="btn-sm" style="margin-right:8px;background:${m.is_read ? 'var(--border-color,#374151)' : '#7c3aed'};color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;" onclick="markRead('${m.id}',${i})">${m.is_read ? '\u2713 Read' : 'Mark Read'}</button>
                 <button class="btn-sm btn-primary-sm" onclick="showReplyForm(${i}, '${m.email.replace(/'/g, "\\'")}', '${(m.subject || 'General Inquiry').replace(/'/g, "\\'")}')">Reply</button>
@@ -1414,7 +1414,7 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
       const lastActivity = u.last_activity ? new Date(u.last_activity).toLocaleDateString() : 'Never';
       const joined = new Date(u.created_at).toLocaleDateString();
       return `<tr>
-        <td><strong>${u.name || 'No Name'}</strong><br><span style="font-size:.75rem;color:var(--text-muted)">${u.email}</span></td>
+        <td><strong>${escapeHtml(u.name || 'No Name')}</strong><br><span style="font-size:.75rem;color:var(--text-muted)">${escapeHtml(u.email)}</span></td>
         <td><span class="badge ${badgeClass}">${plan}</span></td>
         <td class="value">${u.repurpose_count || 0}</td>
         <td class="value">${u.content_items_count || 0}</td>
