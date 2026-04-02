@@ -230,10 +230,12 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
   try {
     const users = await adminOps.getAllUsers(200, 0);
     const totalUsers = await adminOps.countUsers();
+    const planStats = await adminOps.countUsersByPlan();
 
     res.send(`
       ${getHeadHTML('Subscribers - Admin')}
       <style>${getBaseCSS()}${getAdminCSS()}</style>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
       </head><body>
       <div class="dashboard">
         ${getAdminSidebar('subscribers')}
@@ -243,6 +245,84 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
             <h1>Subscribers</h1>
             <p>${totalUsers} total users</p>
           </div>
+
+          <div class="dashboard-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.5rem;margin:2rem 0;">
+            <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);border-radius:16px;padding:1.5rem;color:#fff;">
+              <div style="font-size:.85rem;opacity:.85;margin-bottom:.5rem;">Total Subscribers</div>
+              <div style="font-size:2.2rem;font-weight:700;">${totalUsers}</div>
+            </div>
+            ${(planStats || []).map(p => `
+            <div style="background:var(--card-bg, #fff);border:1px solid var(--border-color, #e5e7eb);border-radius:16px;padding:1.5rem;">
+              <div style="font-size:.85rem;color:var(--text-secondary, #6b7280);margin-bottom:.5rem;">${(p.plan || 'free').charAt(0).toUpperCase() + (p.plan || 'free').slice(1)} Plan</div>
+              <div style="font-size:2.2rem;font-weight:700;color:var(--text-primary, #111827);">${p.count}</div>
+            </div>
+            `).join('')}
+          </div>
+
+          <div style="background:var(--card-bg, #fff);border:1px solid var(--border-color, #e5e7eb);border-radius:16px;padding:2rem;margin-bottom:2rem;">
+            <h2 style="margin:0 0 1.5rem;font-size:1.3rem;font-weight:600;color:var(--text-primary, #111827);">Subscriber Growth</h2>
+            <canvas id="growthChart" height="100"></canvas>
+          </div>
+          <script>
+          (function(){
+            const users = [${users.map(u => `{created: "${u.created_at}"}`).join(',')}];
+            const dailyCounts = {};
+            users.forEach(u => {
+              const d = new Date(u.created).toISOString().split('T')[0];
+              dailyCounts[d] = (dailyCounts[d] || 0) + 1;
+            });
+            const sortedDates = Object.keys(dailyCounts).sort();
+            let cumulative = 0;
+            const labels = [];
+            const data = [];
+            sortedDates.forEach(d => {
+              cumulative += dailyCounts[d];
+              labels.push(d);
+              data.push(cumulative);
+            });
+            const ctx = document.getElementById('growthChart');
+            if(ctx) {
+              const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+              new Chart(ctx, {
+                type: 'line',
+                data: {
+                  labels: labels.map(l => new Date(l).toLocaleDateString()),
+                  datasets: [{
+                    label: 'Total Subscribers',
+                    data: data,
+                    borderColor: '#a855f7',
+                    backgroundColor: 'rgba(168,85,247,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 3,
+                    pointBackgroundColor: '#7c3aed',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  plugins: {
+                    legend: { display: false }
+                  },
+                  scales: {
+                    x: {
+                      grid: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' },
+                      ticks: { color: isDark ? '#9ca3af' : '#6b7280' }
+                    },
+                    y: {
+                      beginAtZero: true,
+                      grid: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' },
+                      ticks: { color: isDark ? '#9ca3af' : '#6b7280', stepSize: 1 }
+                    }
+                  }
+                }
+              });
+            }
+          })();
+          <\/script>
 
           <div class="search-bar">
             <input type="text" id="userSearch" placeholder="Search by name or email...">
