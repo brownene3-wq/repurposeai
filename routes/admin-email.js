@@ -59,6 +59,7 @@ function getAdminSidebar(activePage) {
     { href: '/admin/team', icon: '&#x1F91D;', label: 'Team', key: 'team' },
     { href: '/admin/messages', icon: '&#x1F4E9;', label: 'Messages', key: 'messages' },
     { href: '/admin/email', icon: '&#x1F4E7;', label: 'Email Inbox', key: 'email' },
+    { href: '/admin/bugs', icon: '&#x1F41B;', label: 'Bug Reports', key: 'bugs' },
   ];
   const navLinks = links.map(l => {
     const cls = l.key === activePage ? ' class="active"' : '';
