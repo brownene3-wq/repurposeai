@@ -11,15 +11,15 @@ function pageShell(title, user, content) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
-<title>${title} — ${BRAND.name}</title>
+<title>${title} â ${BRAND.name}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#06060f;--bg2:#0c0c1d;--bg3:#11112a;--accent:#7c3aed;--accent2:#06b6d4;--accent3:#f472b6;--text:#f0f0ff;--text2:#a0a0c0;--text3:#6a6a8e;--border:rgba(124,58,237,0.15);--gradient:linear-gradient(135deg,#7c3aed,#06b6d4)}
+:root{--bg:#06060f;--bg2:#0c0c1d;--bg3:#11112a;--accent:#7c3aed;--accent2:#EC4899;--accent3:#f472b6;--text:#f0f0ff;--text2:#a0a0c0;--text3:#6a6a8e;--border:rgba(124,58,237,0.15);--gradient:linear-gradient(135deg,#7c3aed,#EC4899)}
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
 .bg-orb{position:fixed;border-radius:50%;filter:blur(120px);opacity:.3;pointer-events:none;animation:f 20s ease-in-out infinite}
 .bg-orb--1{width:500px;height:500px;background:#7c3aed;top:-150px;right:-100px}
-.bg-orb--2{width:400px;height:400px;background:#06b6d4;bottom:-100px;left:-100px;animation-delay:-7s}
+.bg-orb--2{width:400px;height:400px;background:#EC4899;bottom:-100px;left:-100px;animation-delay:-7s}
 @keyframes f{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,-20px)}}
 nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rgba(6,6,15,.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
 .nav-inner{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;justify-content:space-between;align-items:center}
@@ -74,7 +74,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
     <a href="/">Home</a>
     <a href="/pricing">Pricing</a>
     <a href="/contact">Contact</a>
-    ${user ? '<a href="/dashboard" style="padding:10px 24px;border-radius:99px;background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;font-weight:600;font-size:.85rem">Dashboard</a>' : '<a href="/auth/login" style="color:var(--accent2);font-weight:600">Log In</a>'}
+    ${user ? '<a href="/dashboard" style="padding:10px 24px;border-radius:99px;background:linear-gradient(135deg,#7c3aed,#EC4899);color:#fff;font-weight:600;font-size:.85rem">Dashboard</a>' : '<a href="/auth/login" style="color:var(--accent2);font-weight:600">Log In</a>'}
   </div>
 </div></nav>
 
@@ -88,18 +88,18 @@ ${content}
 router.get('/about', optionalAuth, (req, res) => {
   res.send(pageShell('About', req.user, `
   <h1>About RepurposeAI</h1>
-  <p class="subtitle">We're on a mission to help creators do more with less. One video, unlimited content — powered by AI.</p>
+  <p class="subtitle">We're on a mission to help creators do more with less. One video, unlimited content â powered by AI.</p>
 
   <div class="card-grid">
     <div class="card">
       <div class="icon">&#x1F3AF;</div>
       <h3>Our Mission</h3>
-      <p>Content creation shouldn't mean spending hours reformatting the same ideas for every platform. We built RepurposeAI to let creators focus on what they do best — creating — while AI handles the rest.</p>
+      <p>Content creation shouldn't mean spending hours reformatting the same ideas for every platform. We built RepurposeAI to let creators focus on what they do best â creating â while AI handles the rest.</p>
     </div>
     <div class="card">
       <div class="icon">&#x26A1;</div>
       <h3>What We Do</h3>
-      <p>RepurposeAI takes a single YouTube video and transforms it into platform-optimized content for Twitter/X, LinkedIn, Instagram, Facebook, TikTok, and more — in seconds, not hours.</p>
+      <p>RepurposeAI takes a single YouTube video and transforms it into platform-optimized content for Twitter/X, LinkedIn, Instagram, Facebook, TikTok, and more â in seconds, not hours.</p>
     </div>
     <div class="card">
       <div class="icon">&#x1F680;</div>
@@ -109,7 +109,7 @@ router.get('/about', optionalAuth, (req, res) => {
   </div>
 
   <h2>Why Creators Choose Us</h2>
-  <p>Thousands of content creators, marketers, and businesses trust RepurposeAI to save time, stay consistent, and grow their audience across platforms. Our AI understands tone, context, and platform best practices — so every piece of content feels native, not copy-pasted.</p>
+  <p>Thousands of content creators, marketers, and businesses trust RepurposeAI to save time, stay consistent, and grow their audience across platforms. Our AI understands tone, context, and platform best practices â so every piece of content feels native, not copy-pasted.</p>
 
   <div class="card-grid">
     <div class="card">
