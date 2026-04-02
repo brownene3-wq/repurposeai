@@ -234,7 +234,10 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
 
     res.send(`
       ${getHeadHTML('Subscribers - Admin')}
-      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      <style>${getBaseCSS()}${getAdminCSS()}
+        [data-theme='dark'] { --card-bg: #1a1a2e; --border-color: #2a2a3e; --text-primary: #f1f1f1; --text-secondary: #9ca3af; }
+        [data-theme='light'] { --card-bg: #fff; --border-color: #e5e7eb; --text-primary: #111827; --text-secondary: #6b7280; }
+      </style>
       <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
       </head><body>
       <div class="dashboard">
