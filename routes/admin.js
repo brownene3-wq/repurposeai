@@ -248,14 +248,14 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
           </div>
 
           <div class="dashboard-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1.5rem;margin:2rem 0;">
-            <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);border-radius:16px;padding:1.5rem;color:#fff;">
-              <div style="font-size:.85rem;opacity:.85;margin-bottom:.5rem;">Total Subscribers</div>
-              <div style="font-size:2.2rem;font-weight:700;">${totalUsers}</div>
+            <div style="background:var(--surface-light);border:1px solid var(--surface);border-radius:16px;padding:1.5rem;">
+              <div style="font-size:.75rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-bottom:.5rem;">Total Subscribers</div>
+              <div style="font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">${totalUsers}</div>
             </div>
             ${(planStats || []).map(p => `
             <div style="background:var(--surface-light);border:1px solid var(--surface);border-radius:16px;padding:1.5rem;">
-              <div style="font-size:.85rem;color:var(--text-secondary, #6b7280);margin-bottom:.5rem;">${(p.plan || 'free').charAt(0).toUpperCase() + (p.plan || 'free').slice(1)} Plan</div>
-              <div style="font-size:2.2rem;font-weight:700;color:var(--text-primary, #111827);">${p.count}</div>
+              <div style="font-size:.75rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);margin-bottom:.5rem;">${(p.plan || 'free').charAt(0).toUpperCase() + (p.plan || 'free').slice(1)} Plan</div>
+              <div style="font-size:2.2rem;font-weight:700;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">${p.count}</div>
             </div>
             `).join('')}
           </div>
