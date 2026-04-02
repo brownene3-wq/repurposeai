@@ -7,7 +7,7 @@ const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../
 
 function escapeHtml(s) {
   if (!s) return '';
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;h').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // Admin auth middleware â checks role is admin
@@ -235,8 +235,6 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
     res.send(`
       ${getHeadHTML('Subscribers - Admin')}
       <style>${getBaseCSS()}${getAdminCSS()}
-        [data-theme='dark'] { --card-bg: #1a1a2e; --border-color: #2a2a3e; --text-primary: #f1f1f1; --text-secondary: #9ca3af; }
-        [data-theme='light'] { --card-bg: #fff; --border-color: #e5e7eb; --text-primary: #111827; --text-secondary: #6b7280; }
       </style>
       <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
       </head><body>
@@ -255,14 +253,14 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
               <div style="font-size:2.2rem;font-weight:700;">${totalUsers}</div>
             </div>
             ${(planStats || []).map(p => `
-            <div style="background:var(--card-bg, #fff);border:1px solid var(--border-color, #e5e7eb);border-radius:16px;padding:1.5rem;">
+            <div style="background:var(--surface-light);border:1px solid var(--surface);border-radius:16px;padding:1.5rem;">
               <div style="font-size:.85rem;color:var(--text-secondary, #6b7280);margin-bottom:.5rem;">${(p.plan || 'free').charAt(0).toUpperCase() + (p.plan || 'free').slice(1)} Plan</div>
               <div style="font-size:2.2rem;font-weight:700;color:var(--text-primary, #111827);">${p.count}</div>
             </div>
             `).join('')}
           </div>
 
-          <div style="background:var(--card-bg, #fff);border:1px solid var(--border-color, #e5e7eb);border-radius:16px;padding:2rem;margin-bottom:2rem;">
+          <div style="background:var(--surface-light);border:1px solid var(--surface);border-radius:16px;padding:2rem;margin-bottom:2rem;">
             <h2 style="margin:0 0 1.5rem;font-size:1.3rem;font-weight:600;color:var(--text-primary, #111827);">Subscriber Growth</h2>
             <canvas id="growthChart" height="100"></canvas>
           </div>
