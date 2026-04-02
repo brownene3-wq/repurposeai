@@ -163,7 +163,7 @@ router.get('/', optionalAuth, (req, res) => {
         <p>Annual plans are coming soon with a significant discount. Sign up for our newsletter to be notified!</p>
       </div>
     </div>
-    ${getThemeScript()}
+    <script>${getThemeScript()}</script>
   </body>
 </html>`;
   res.send(html);
