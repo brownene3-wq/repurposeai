@@ -284,6 +284,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             if (plan) {
               await userOps.updatePlan(user.id, plan);
               console.log(`Upgraded ${customerEmail} to ${plan} plan`);
+              // Save Stripe customer ID for tracking
+              if (session.customer) {
+                await userOps.updateStripeCustomerId(user.id, session.customer);
+              }
             }
           }
         }
