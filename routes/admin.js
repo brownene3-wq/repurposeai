@@ -262,7 +262,7 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
           </div>
 
           <div style="background:var(--surface-light);border:1px solid var(--surface);border-radius:16px;padding:2rem;margin-bottom:2rem;">
-            <h2 style="margin:0 0 1.5rem;font-size:1.3rem;font-weight:600;color:var(--text-primary, #111827);">Subscriber Growth</h2>
+            <h2 style="margin:0 0 1.5rem;font-size:1.3rem;font-weight:600;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Subscriber Growth</h2>
             <canvas id="growthChart" height="100"></canvas>
           </div>
           <script>
