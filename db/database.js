@@ -919,7 +919,7 @@ const adminOps = {
   async getUserUsageStats() {
     const result = await pool.query(`
       SELECT 
-        u.id, u.name, u.email, u.plan, u.created_at, u.last_login_at, u.login_count,
+        u.id, u.name, u.email, u.plan, u.stripe_customer_id, u.created_at, u.last_login_at, u.login_count,
         COALESCE(go_count.total, 0) as repurpose_count,
         COALESCE(ci_count.total, 0) as content_items_count,
         COALESCE(ss_count.total, 0) as smart_shorts_count,
