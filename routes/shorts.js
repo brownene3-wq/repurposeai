@@ -4,7 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const OpenAI = require('openai');
-const archiver = require('archiver'); x
+const archiver = require('archiver');
+const { downloadWithCobalt } = require('../utils/cobalt');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
@@ -3735,10 +3736,22 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
     (async () => {
       const timeout = setTimeout(() => writeError('Timed out after 12 minutes'), 720000);
       try {
-        // Step 1: Download video (try yt-dlp first, then ytdl-core fallback)
+        // Step 1: Download video (try Cobalt API first, then yt-dlp, then ytdl-core fallback)
         writeProgress('Downloading video...');
         const downloadPath = outputPath + '.download.mkv';
         let downloadSuccess = false;
+
+        // Try Cobalt API first
+        try {
+          await downloadWithCobalt(videoUrl, downloadPath);
+          downloadSuccess = true;
+          console.log('  Quick Narrate: Downloaded via Cobalt API');
+        } catch (cobaltErr) {
+          console.log('  Quick Narrate Cobalt failed: ' + String(cobaltErr.message || cobaltErr).slice(0, 150));
+        }
+
+        // Fallback to yt-dlp + ytdl-core if Cobalt failed
+        if (!downloadSuccess) {
         try {
           await runCommand('yt-dlp', [
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
@@ -3766,6 +3779,7 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
           } else {
             throw dlErr;
           }
+        }
         }
         if (!downloadSuccess) throw new Error('Video download failed');
 
