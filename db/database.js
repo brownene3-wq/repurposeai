@@ -263,6 +263,10 @@ const initDatabase = async () => {
     await pool.query(`ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false`).catch(() => {});
     await pool.query(`ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS responded_at TIMESTAMP`).catch(() => {});
 
+    // Login tracking columns
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`).catch(() => {});
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0`).catch(() => {});
+
 console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -860,7 +864,11 @@ const teamOps = {
   async removeMember(id) {
     await pool.query(`DELETE FROM team_members WHERE id = $1`, [id]);
   }
-};
+,
+
+  async trackLogin(userId) {
+    await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, login_count = COALESCE(login_count, 0) + 1 WHERE id = $1', [userId]);
+  }};
 
 // Admin operations
 const adminOps = {
@@ -955,7 +963,50 @@ const bugReportOps = {
   async markAsResponded(id) {
     await pool.query('UPDATE bug_reports SET responded_at = CURRENT_TIMESTAMP WHERE id = $1 AND responded_at IS NULL', [id]);
   }
-};
+,
+
+  async getUserUsageStats() {
+    const result = await pool.query(`
+      SELECT 
+        u.id, u.name, u.email, u.plan, u.created_at, u.last_login_at, u.login_count,
+        COALESCE(go_count.total, 0) as repurpose_count,
+        COALESCE(ci_count.total, 0) as content_items_count,
+        COALESCE(ss_count.total, 0) as smart_shorts_count,
+        COALESCE(bv_count.total, 0) as brand_voices_count,
+        COALESCE(cal_count.total, 0) as calendar_entries_count,
+        COALESCE(go_recent.last_used, u.created_at) as last_activity
+      FROM users u
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM generated_outputs GROUP BY user_id) go_count ON u.id = go_count.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM content_items GROUP BY user_id) ci_count ON u.id = ci_count.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM smart_shorts GROUP BY user_id) ss_count ON u.id = ss_count.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM brand_voices GROUP BY user_id) bv_count ON u.id = bv_count.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM calendar_entries GROUP BY user_id) cal_count ON u.id = cal_count.user_id
+      LEFT JOIN (SELECT user_id, MAX(created_at) as last_used FROM generated_outputs GROUP BY user_id) go_recent ON u.id = go_recent.user_id
+      ORDER BY u.created_at DESC
+    `);
+    return result.rows;
+  },
+
+  async getPlatformBreakdown() {
+    const result = await pool.query(`
+      SELECT platform, COUNT(*) as count FROM generated_outputs GROUP BY platform ORDER BY count DESC
+    `);
+    return result.rows;
+  },
+
+  async getUsageSummary() {
+    const result = await pool.query(`
+      SELECT 
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM generated_outputs) as total_outputs,
+        (SELECT COUNT(*) FROM content_items) as total_content,
+        (SELECT COUNT(*) FROM smart_shorts) as total_shorts,
+        (SELECT COUNT(*) FROM users WHERE last_login_at > NOW() - INTERVAL '7 days') as active_7d,
+        (SELECT COUNT(*) FROM users WHERE last_login_at > NOW() - INTERVAL '30 days') as active_30d,
+        (SELECT COUNT(*) FROM generated_outputs WHERE created_at > NOW() - INTERVAL '30 days') as outputs_30d
+    `);
+    return result.rows[0];
+  }};
 
 module.exports = {
   initDatabase,
