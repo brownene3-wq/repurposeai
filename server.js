@@ -158,7 +158,7 @@ app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
 app.use('/repurpose', repurposeRouter);
 app.use('/brand-voice', brandVoiceRouter);
-app.use(pricingRouter);
+app.use('/pricing', pricingRouter);
 app.use('/chatbot', chatbotRouter);
 app.use('/shorts', shortsRouter);
 app.use('/', staticPagesRouter);
