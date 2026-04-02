@@ -43,6 +43,7 @@ function getAdminSidebar(activePage) {
     { href: '/admin/messages', icon: '&#x1F4E9;', label: 'Messages', key: 'messages' },
     { href: '/admin/email', icon: '&#x1F4E7;', label: 'Email Inbox', key: 'email' },
     { href: '/admin/bugs', icon: '&#x1F41B;', label: 'Bug Reports', key: 'bugs' },
+    { href: '/admin/usage', icon: '&#x1F4C8;', label: 'Usage', key: 'usage' },
   ];
   const navLinks = links.map(l => {
     const cls = l.key === activePage ? ' class="active"' : '';
@@ -1413,6 +1414,178 @@ router.post('/bugs/:id/responded', requireAuth, requireAdmin, async (req, res) =
     await bugReportOps.markAsResponded(req.params.id);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// ==================== USAGE ====================
+router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const [usageStats, platformBreakdown, summary] = await Promise.all([
+      adminOps.getUserUsageStats(),
+      adminOps.getPlatformBreakdown(),
+      adminOps.getUsageSummary()
+    ]);
+
+    const platformRows = platformBreakdown.map(p => `<tr><td>${p.platform || 'Unknown'}</td><td class="value">${p.count}</td></tr>`).join('');
+
+    const userRows = usageStats.map(u => {
+      const plan = (u.plan || 'free').toLowerCase();
+      const badgeClass = plan === 'pro' ? 'badge-pro' : plan === 'starter' ? 'badge-starter' : plan === 'teams' ? 'badge-teams' : 'badge-free';
+      const lastLogin = u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never';
+      const lastActivity = u.last_activity ? new Date(u.last_activity).toLocaleDateString() : 'Never';
+      const joined = new Date(u.created_at).toLocaleDateString();
+      return `<tr>
+        <td><strong>${u.name || 'No Name'}</strong><br><span style="font-size:.75rem;color:var(--text-muted)">${u.email}</span></td>
+        <td><span class="badge ${badgeClass}">${plan}</span></td>
+        <td class="value">${u.repurpose_count || 0}</td>
+        <td class="value">${u.content_items_count || 0}</td>
+        <td class="value">${u.smart_shorts_count || 0}</td>
+        <td class="value">${u.brand_voices_count || 0}</td>
+        <td class="value">${u.calendar_entries_count || 0}</td>
+        <td>${u.login_count || 0}</td>
+        <td>${lastLogin}</td>
+        <td>${lastActivity}</td>
+        <td>${joined}</td>
+      </tr>`;
+    }).join('');
+
+    res.send(`
+      ${getHeadHTML('Usage - Admin')}
+      <style>${getBaseCSS()}${getAdminCSS()}
+        .usage-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:2rem}
+        .usage-table-wrap{overflow-x:auto;margin-bottom:2rem;background:var(--surface);border-radius:16px;border:var(--border-subtle);padding:1.5rem}
+        .usage-table-wrap h3{margin:0 0 1rem;font-size:1.1rem;color:var(--text)}
+        .platform-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem}
+        .platform-card{background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:1.5rem}
+        .platform-card h3{margin:0 0 1rem;font-size:1.1rem;color:var(--text)}
+        .platform-table{width:100%;border-collapse:collapse}
+        .platform-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(108,58,237,0.1)}
+        .platform-table td.value{text-align:right;font-weight:700;color:#6C3AED}
+        .search-box{background:var(--surface);border:var(--border-subtle);border-radius:10px;padding:.6rem 1rem;color:var(--text);font-size:.9rem;width:300px;margin-bottom:1rem}
+        .search-box:focus{outline:none;border-color:#6C3AED}
+        .data-table td.value{font-weight:700;text-align:center;color:#6C3AED}
+        .data-table th{white-space:nowrap}
+        .export-btn{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:.5rem 1.2rem;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600}
+        .export-btn:hover{opacity:.9}
+      </style>
+      <script>${getThemeScript()}</script>
+      </head><body>
+      <div class="dashboard">
+        ${getAdminSidebar('usage')}
+        ${getThemeToggle()}
+        <div class="main-content">
+          <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+            <div>
+              <h1>Usage Analytics</h1>
+              <p>Customer usage tracking for billing and refund decisions</p>
+            </div>
+            <button class="export-btn" onclick="exportCSV()">Export CSV</button>
+          </div>
+
+          <div class="usage-summary">
+            <div class="stat-card">
+              <div class="label">Total Users</div>
+              <div class="value">${summary.total_users || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Active (7 days)</div>
+              <div class="value">${summary.active_7d || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Active (30 days)</div>
+              <div class="value">${summary.active_30d || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Total Repurposes</div>
+              <div class="value">${summary.total_outputs || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Repurposes (30d)</div>
+              <div class="value">${summary.outputs_30d || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Content Items</div>
+              <div class="value">${summary.total_content || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Smart Shorts</div>
+              <div class="value">${summary.total_shorts || 0}</div>
+            </div>
+          </div>
+
+          <div class="usage-table-wrap">
+            <h3>Per-User Usage Details</h3>
+            <input type="text" class="search-box" placeholder="Search by name or email..." oninput="filterTable(this.value)">
+            <div style="overflow-x:auto">
+              <table class="data-table" id="usageTable">
+                <thead><tr>
+                  <th>User</th><th>Plan</th><th>Repurposes</th><th>Content</th><th>Shorts</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th>
+                </tr></thead>
+                <tbody>${userRows}</tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="platform-grid">
+            <div class="platform-card">
+              <h3>Platform Breakdown</h3>
+              <table class="platform-table">
+                <tbody>${platformRows}</tbody>
+              </table>
+            </div>
+            <div class="platform-card">
+              <h3>Quick Refund Check</h3>
+              <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 .8rem">Users with low or zero usage are highlighted for easy refund decisions.</p>
+              <div id="lowUsageList"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <script>
+        function filterTable(q) {
+          const rows = document.querySelectorAll('#usageTable tbody tr');
+          q = q.toLowerCase();
+          rows.forEach(r => { r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+        }
+        function exportCSV() {
+          const table = document.getElementById('usageTable');
+          const rows = table.querySelectorAll('tr');
+          let csv = [];
+          rows.forEach(r => {
+            const cols = r.querySelectorAll('th, td');
+            const row = [];
+            cols.forEach(c => row.push('"' + c.textContent.trim().replace(/"/g, '""') + '"'));
+            csv.push(row.join(','));
+          });
+          const blob = new Blob([csv.join('\n')], {type:'text/csv'});
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'usage_export_' + new Date().toISOString().split('T')[0] + '.csv';
+          a.click();
+        }
+        // Highlight low usage users
+        (function(){
+          const rows = document.querySelectorAll('#usageTable tbody tr');
+          const lowUsers = [];
+          rows.forEach(r => {
+            const cells = r.querySelectorAll('td');
+            const repurposes = parseInt(cells[2].textContent) || 0;
+            if (repurposes <= 2) {
+              r.style.background = 'rgba(239,68,68,0.06)';
+              lowUsers.push(cells[0].textContent.trim().split('\n')[0]);
+            }
+          });
+          const el = document.getElementById('lowUsageList');
+          if (lowUsers.length === 0) el.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem">No low-usage users found.</p>';
+          else el.innerHTML = lowUsers.map(n => '<div style="padding:.3rem 0;font-size:.85rem;color:#ef4444">\u2022 ' + n + '</div>').join('');
+        })();
+      </script>
+      </body></html>
+    `);
+  } catch(e) {
+    console.error('Usage page error:', e);
+    res.status(500).send('Error loading usage page');
+  }
 });
 
 module.exports = router;
