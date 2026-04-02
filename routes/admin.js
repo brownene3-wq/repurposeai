@@ -199,7 +199,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
                 ${recentUsers.map(u => `
                   <tr>
                     <td>${escapeHtml(u.name || 'â')}</td>
-                    <td>${u.email}</td>
+                    <td>${escapeHtml(u.email)}</td>
                     <td><span class="badge badge-${u.plan || 'free'}">${u.plan || 'free'}</span></td>
                     <td>${new Date(u.created_at).toLocaleDateString()}</td>
                   </tr>
@@ -256,7 +256,7 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
               <tbody>
                 ${users.map(u => `
                   <tr data-name="${escapeHtml((u.name || '').toLowerCase())}" data-email="${escapeHtml(u.email.toLowerCase())}" data-plan="${u.plan || 'free'}">
-                    <td>${u.name || 'â'}</td>
+                    <td>${escapeHtml(u.name || 'â')}</td>
                     <td>${escapeHtml(u.email)}</td>
                     <td><span class="badge badge-${u.plan || 'free'}">${u.plan || 'free'}</span></td>
                     <td><span class="badge badge-${u.role || 'user'}">${u.role || 'user'}</span></td>
