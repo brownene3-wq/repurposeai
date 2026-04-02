@@ -5,6 +5,11 @@ const { requireAuth } = require('../middleware/auth');
 const { adminOps, blogOps, teamOps, userOps, contactOps, bugReportOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../utils/theme');
 
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // Admin auth middleware â checks role is admin
 async function requireAdmin(req, res, next) {
   // Re-fetch full user to get role (req.user from JWT may not have it)
