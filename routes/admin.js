@@ -1425,6 +1425,7 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
         <td>${lastLogin}</td>
         <td>${lastActivity}</td>
         <td>${joined}</td>
+        <td>${u.stripe_customer_id ? '<span style="color:#10b981;font-size:.75rem" title="' + u.stripe_customer_id + '">\u2705 Paid</span>' : '<span style="color:var(--text-muted);font-size:.75rem">\u274C None</span>'}</td>
       </tr>`;
     }).join('');
 
@@ -1498,7 +1499,7 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
             <div style="overflow-x:auto">
               <table class="data-table" id="usageTable">
                 <thead><tr>
-                  <th>User</th><th>Plan</th><th>Repurposes</th><th>Content</th><th>Shorts</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th>
+                  <th>User</th><th>Plan</th><th>Repurposes</th><th>Content</th><th>Shorts</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th><th>Stripe</th>
                 </tr></thead>
                 <tbody>${userRows}</tbody>
               </table>
