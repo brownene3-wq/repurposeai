@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const OpenAI = require('openai');
-const archiver = require('archiver'); 
+const archiver = require('archiver'); x
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
