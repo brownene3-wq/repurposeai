@@ -256,7 +256,14 @@ const initDatabase = async () => {
       )
     `);
 
-    console.log('Database initialized successfully');
+    
+    // Add read/unread and response tracking columns
+    await pool.query(`ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false`).catch(() => {});
+    await pool.query(`ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS responded_at TIMESTAMP`).catch(() => {});
+    await pool.query(`ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false`).catch(() => {});
+    await pool.query(`ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS responded_at TIMESTAMP`).catch(() => {});
+
+console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
     throw error;
@@ -573,6 +580,13 @@ const contactOps = {
       [messageId]
     );
     return result.rows[0];
+  }
+,
+  async markAsRead(id) {
+    await pool.query('UPDATE contact_messages SET is_read = true WHERE id = $1', [id]);
+  },
+  async markAsResponded(id) {
+    await pool.query('UPDATE contact_messages SET responded_at = CURRENT_TIMESTAMP WHERE id = $1 AND responded_at IS NULL', [id]);
   }
 };
 
@@ -933,6 +947,13 @@ const bugReportOps = {
   async delete(id) {
     const result = await pool.query(`DELETE FROM bug_reports WHERE id = $1 RETURNING *`, [id]);
     return result.rows[0];
+  }
+,
+  async markAsRead(id) {
+    await pool.query('UPDATE bug_reports SET is_read = true WHERE id = $1', [id]);
+  },
+  async markAsResponded(id) {
+    await pool.query('UPDATE bug_reports SET responded_at = CURRENT_TIMESTAMP WHERE id = $1 AND responded_at IS NULL', [id]);
   }
 };
 
