@@ -262,35 +262,84 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
           </div>
 
           <div style="background:var(--surface-light);border:1px solid var(--surface);border-radius:16px;padding:2rem;margin-bottom:2rem;">
-            <h2 style="margin:0 0 1.5rem;font-size:1.3rem;font-weight:600;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Subscriber Growth</h2>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;">
+              <h2 style="margin:0;font-size:1.3rem;font-weight:600;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Subscriber Growth</h2>
+              <div id="rangeButtons" style="display:flex;gap:.4rem;flex-wrap:wrap;">
+                <button onclick="setRange('7d')" class="range-btn" data-range="7d">1W</button>
+                <button onclick="setRange('30d')" class="range-btn" data-range="30d">1M</button>
+                <button onclick="setRange('90d')" class="range-btn" data-range="90d">3M</button>
+                <button onclick="setRange('180d')" class="range-btn" data-range="180d">6M</button>
+                <button onclick="setRange('365d')" class="range-btn" data-range="365d">1Y</button>
+                <button onclick="setRange('all')" class="range-btn active" data-range="all">All</button>
+              </div>
+            </div>
+            <style>
+              .range-btn{background:var(--surface);border:1px solid rgba(108,58,237,0.2);color:var(--text-muted);padding:.35rem .8rem;border-radius:8px;cursor:pointer;font-size:.78rem;font-weight:600;transition:all .2s}
+              .range-btn:hover{border-color:#6C3AED;color:#6C3AED}
+              .range-btn.active{background:linear-gradient(135deg,#6C3AED,#a855f7);color:#fff;border-color:transparent}
+            </style>
             <canvas id="growthChart" height="100"></canvas>
           </div>
           <script>
           (function(){
-            const users = [${users.map(u => `{created: "${u.created_at}"}`).join(',')}];
-            const dailyCounts = {};
-            users.forEach(u => {
-              const d = new Date(u.created).toISOString().split('T')[0];
-              dailyCounts[d] = (dailyCounts[d] || 0) + 1;
-            });
-            const sortedDates = Object.keys(dailyCounts).sort();
-            let cumulative = 0;
-            const labels = [];
-            const data = [];
-            sortedDates.forEach(d => {
-              cumulative += dailyCounts[d];
-              labels.push(d);
-              data.push(cumulative);
-            });
-            const ctx = document.getElementById('growthChart');
-            if(ctx) {
-              const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-              new Chart(ctx, {
+            const allUsers = [${users.map(u => `{created: "${u.created_at}"}`).join(',')}];
+            let growthChartInstance = null;
+
+            function buildChart(rangeDays) {
+              const now = new Date();
+              const users = rangeDays === 'all' ? allUsers : allUsers.filter(u => {
+                const diff = (now - new Date(u.created)) / (1000*60*60*24);
+                return diff <= parseInt(rangeDays);
+              });
+
+              const dailyCounts = {};
+              allUsers.forEach(u => {
+                const d = new Date(u.created).toISOString().split('T')[0];
+                dailyCounts[d] = (dailyCounts[d] || 0) + 1;
+              });
+              const allSortedDates = Object.keys(dailyCounts).sort();
+
+              let cutoffDate = null;
+              if (rangeDays !== 'all') {
+                cutoffDate = new Date(now);
+                cutoffDate.setDate(cutoffDate.getDate() - parseInt(rangeDays));
+              }
+
+              let cumulative = 0;
+              const labels = [];
+              const data = [];
+              let priorCount = 0;
+
+              allSortedDates.forEach(d => {
+                cumulative += dailyCounts[d];
+                if (cutoffDate && new Date(d) < cutoffDate) {
+                  priorCount = cumulative;
+                  return;
+                }
+                labels.push(new Date(d).toLocaleDateString());
+                data.push(cumulative);
+              });
+
+              if (cutoffDate && priorCount > 0 && data.length > 0 && data[0] !== priorCount) {
+                labels.unshift(cutoffDate.toLocaleDateString());
+                data.unshift(priorCount);
+              }
+
+              if (labels.length === 0) {
+                labels.push(now.toLocaleDateString());
+                data.push(cumulative);
+              }
+
+              const isDark = !document.body.classList.contains('light');
+              const ctx = document.getElementById('growthChart').getContext('2d');
+              if (growthChartInstance) growthChartInstance.destroy();
+
+              growthChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                  labels: labels.map(l => new Date(l).toLocaleDateString()),
+                  labels: labels,
                   datasets: [{
-                    label: 'Total Subscribers',
+                    label: 'Subscribers',
                     data: data,
                     borderColor: '#a855f7',
                     backgroundColor: 'rgba(168,85,247,0.1)',
@@ -323,86 +372,16 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
                 }
               });
             }
+
+            window.setRange = function(range) {
+              document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+              document.querySelector('.range-btn[data-range="' + range + '"]').classList.add('active');
+              buildChart(range);
+            };
+
+            buildChart('all');
           })();
-          <\/script>
-
-          <div class="search-bar">
-            <input type="text" id="userSearch" placeholder="Search by name or email...">
-            <select id="planFilter" style="padding:.7rem 1rem;background:var(--surface);border:var(--border-subtle);border-radius:10px;color:var(--text);font-size:.9rem">
-              <option value="">All Plans</option>
-              <option value="free">Free</option>
-              <option value="starter">Starter</option>
-              <option value="pro">Pro</option>
-              <option value="teams">Teams</option>
-            </select>
-          </div>
-
-          <div class="card" style="overflow-x:auto">
-            <table class="data-table" id="usersTable">
-              <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead>
-              <tbody>
-                ${users.map(u => `
-                  <tr data-name="${escapeHtml((u.name || '').toLowerCase())}" data-email="${escapeHtml(u.email.toLowerCase())}" data-plan="${u.plan || 'free'}">
-                    <td>${escapeHtml(u.name || 'â')}</td>
-                    <td>${escapeHtml(u.email)}</td>
-                    <td><span class="badge badge-${u.plan || 'free'}">${u.plan || 'free'}</span></td>
-                    <td><span class="badge badge-${u.role || 'user'}">${u.role || 'user'}</span></td>
-                    <td>${new Date(u.created_at).toLocaleDateString()}</td>
-                    <td>
-                      <button class="btn-sm btn-outline-sm" onclick="toggleRole('${u.id}','${u.role || 'user'}')">
-                        ${u.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
-                      </button>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <div class="toast" id="toast"></div>
-      <script>
-        ${getThemeScript()}
-
-        // Search and filter
-        document.getElementById('userSearch').addEventListener('input', filterUsers);
-        document.getElementById('planFilter').addEventListener('change', filterUsers);
-        function filterUsers() {
-          const q = document.getElementById('userSearch').value.toLowerCase().trim();
-          const plan = document.getElementById('planFilter').value;
-          document.querySelectorAll('#usersTable tbody tr').forEach(function(row) {
-            const name = row.getAttribute('data-name');
-            const email = row.getAttribute('data-email');
-            const rowPlan = row.getAttribute('data-plan');
-            const matchSearch = !q || name.includes(q) || email.includes(q);
-            const matchPlan = !plan || rowPlan === plan;
-            row.style.display = (matchSearch && matchPlan) ? '' : 'none';
-          });
-        }
-
-        async function toggleRole(userId, currentRole) {
-          const newRole = currentRole === 'admin' ? 'user' : 'admin';
-          if (!confirm('Set this user role to ' + newRole + '?')) return;
-          try {
-            const res = await fetch('/admin/api/set-role', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId, role: newRole })
-            });
-            if (!res.ok) throw new Error('Failed');
-            showToast('Role updated to ' + newRole);
-            setTimeout(function() { location.reload(); }, 800);
-          } catch (e) {
-            showToast('Error updating role');
-          }
-        }
-
-        function showToast(msg) {
-          var t = document.getElementById('toast');
-          t.textContent = msg; t.style.display = 'block';
-          setTimeout(function() { t.style.display = 'none'; }, 3000);
-        }
-      </script>
+          </script>
       </body></html>
     `);
   } catch (err) {
