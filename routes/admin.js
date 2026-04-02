@@ -1584,7 +1584,7 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
     `);
   } catch(e) {
     console.error('Usage page error:', e);
-    res.status(500).send('Error loading usage page');
+    res.status(500).send('Error: ' + e.message);
   }
 });
 
