@@ -837,7 +837,17 @@ router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
 
     res.send(`
       ${getHeadHTML('Messages - Admin')}
-      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      <style>${getBaseCSS()}${getAdminCSS()}
+        .card.unread { border-left: 4px solid #a855f7; }
+        .card.unread .msg-name { font-weight: 700; }
+        .read-badge { display:inline-block;padding:2px 10px;border-radius:12px;font-size:.75rem;font-weight:600; }
+        .read-badge.unread { background:#7c3aed;color:#fff; }
+        .read-badge.read { background:var(--border-color,#374151);color:var(--text-dim,#9ca3af); }
+        .response-badge { display:inline-block;padding:2px 10px;border-radius:12px;font-size:.75rem;font-weight:600;margin-left:8px; }
+        .response-badge.within { background:#059669;color:#fff; }
+        .response-badge.over { background:#dc2626;color:#fff; }
+        .response-badge.pending { background:#d97706;color:#fff; }
+      </style>
       </head><body>
       <div class="dashboard">
         ${getAdminSidebar('messages')}
@@ -854,16 +864,18 @@ router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
               <p>No messages yet.</p>
             </div>
           ` : messages.map((m, i) => `
-            <div class="card" id="msg-${i}">
+            <div class="card ${m.is_read ? '' : 'unread'}" id="msg-${i}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.8rem">
                 <div>
                   <strong>${m.name}</strong> <span style="color:var(--text-muted);font-size:.85rem">&lt;${m.email}&gt;</span>
                 </div>
                 <span style="font-size:.8rem;color:var(--text-dim)">${new Date(m.created_at).toLocaleString()}</span>
+                <span class="read-badge ${m.is_read ? 'read' : 'unread'}">${m.is_read ? 'Read' : 'New'}</span>
               </div>
               <div style="font-size:.85rem;color:var(--primary-light);margin-bottom:.5rem">${m.subject}</div>
               <p style="font-size:.9rem;color:var(--text-muted);line-height:1.6;margin-bottom:1rem">${m.message}</p>
               <div id="reply-area-${i}">
+                <button class="btn-sm" style="margin-right:8px;background:${m.is_read ? 'var(--border-color,#374151)' : '#7c3aed'};color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;" onclick="markRead('${m.id}',${i})">${m.is_read ? '\u2713 Read' : 'Mark Read'}</button>
                 <button class="btn-sm btn-primary-sm" onclick="showReplyForm(${i}, '${m.email.replace(/'/g, "\\'")}', '${(m.subject || 'General Inquiry').replace(/'/g, "\\'")}')">Reply</button>
               </div>
             </div>
@@ -874,6 +886,13 @@ router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
       <script>
         ${getThemeScript()}
 
+        async function markRead(id, idx) {
+          await fetch('/admin/messages/' + id + '/read', { method: 'POST' });
+          location.reload();
+        }
+        async function markResponded(id) {
+          await fetch('/admin/messages/' + id + '/responded', { method: 'POST' });
+        }
         function showReplyForm(idx, email, subject) {
           var area = document.getElementById('reply-area-' + idx);
           area.innerHTML = '<div style="margin-top:.8rem;border-top:1px solid rgba(255,255,255,0.06);padding-top:1rem">' +
@@ -942,6 +961,21 @@ router.get('/messages', requireAuth, requireAdmin, async (req, res) => {
 
 // ========================
 // REPLY TO CONTACT MESSAGE (via Gmail)
+
+router.post('/messages/:id/read', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await contactOps.markAsRead(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/messages/:id/responded', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await contactOps.markAsResponded(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ========================
 router.post('/messages/reply', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -1209,7 +1243,7 @@ router.get('/bugs', requireAuth, requireAdmin, async (req, res) => {
       const date = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const email = r.user_email || 'Anonymous';
       const desc = (r.description || '').length > 120 ? r.description.substring(0, 120) + '...' : r.description;
-      return `<tr>
+      return `<tr class="${r.is_read ? '' : 'unread-row'}">
         <td>${catIcon} ${r.category}</td>
         <td style="max-width:300px">${desc}</td>
         <td>${r.page || '-'}</td>
@@ -1219,13 +1253,16 @@ router.get('/bugs', requireAuth, requireAdmin, async (req, res) => {
         <td>
           ${r.status === 'open' ? `<button class="btn-sm btn-primary-sm" onclick="updateBugStatus('${r.id}','resolved')">Resolve</button>` : `<button class="btn-sm btn-outline-sm" onclick="updateBugStatus('${r.id}','open')">Reopen</button>`}
           <button class="btn-sm btn-danger-sm" onclick="deleteBug('${r.id}')" style="margin-left:4px">Delete</button>
-        </td>
+         <button class="btn-sm" style="margin-top:4px;background:${r.is_read ? 'var(--border-color,#374151)' : '#7c3aed'};color:#fff;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.75rem;" onclick="markBugRead('${r.id}')">${r.is_read ? '\u2713' : 'Mark Read'}</button></td>
       </tr>`;
     }).join('');
 
     res.send(`
       ${getHeadHTML('Bug Reports')}
-      <style>${getBaseCSS()}${getAdminCSS()}</style>
+      <style>${getBaseCSS()}${getAdminCSS()}
+        tr.unread-row { background: rgba(124,58,237,0.08) !important; }
+        tr.unread-row td:first-child { border-left: 3px solid #a855f7; }
+      </style>
       </head>
       <body>
       <div class="dashboard">
@@ -1288,6 +1325,10 @@ router.get('/bugs', requireAuth, requireAdmin, async (req, res) => {
           setTimeout(function() { t.style.display = 'none'; }, 3000);
         }
 
+        async function markBugRead(id) {
+          await fetch('/admin/bugs/' + id + '/read', { method: 'POST' });
+          location.reload();
+        }
         function updateBugStatus(id, status) {
           fetch('/admin/api/bugs/' + id + '/status', {
             method: 'PUT',
@@ -1356,6 +1397,21 @@ router.delete('/api/bugs/:id', requireAuth, requireAdmin, async (req, res) => {
     console.error('Delete bug error:', err);
     res.status(500).json({ error: 'Failed to delete report' });
   }
+});
+
+
+router.post('/bugs/:id/read', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await bugReportOps.markAsRead(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/bugs/:id/responded', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await bugReportOps.markAsResponded(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;
