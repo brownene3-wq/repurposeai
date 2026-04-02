@@ -5,7 +5,7 @@ const { requireAuth } = require('../middleware/auth');
 const { adminOps, blogOps, teamOps, userOps, contactOps, bugReportOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../utils/theme');
 
-// Admin auth middleware — checks role is admin
+// Admin auth middleware â checks role is admin
 async function requireAdmin(req, res, next) {
   // Re-fetch full user to get role (req.user from JWT may not have it)
   const fullUser = await userOps.getById(req.user.id);
@@ -101,6 +101,7 @@ function getAdminCSS() {
     .search-bar{display:flex;gap:.8rem;margin-bottom:1.5rem;align-items:center}
     .search-bar input{flex:1;padding:.7rem 1rem;background:var(--surface);border:var(--border-subtle);border-radius:10px;color:var(--text);font-size:.9rem;outline:none}
     .search-bar input:focus{border-color:#6C3AED}
+    body.light .search-bar select,html.light .search-bar select{background:#F8F9FC;border-color:rgba(0,0,0,0.12);color:#1A1A2E}
     .empty-state{text-align:center;padding:3rem 1rem;color:var(--text-muted)}
     .empty-state .icon{font-size:3rem;margin-bottom:1rem}
     .tab-bar{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:var(--border-subtle);padding-bottom:.5rem}
@@ -191,7 +192,7 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
               <tbody>
                 ${recentUsers.map(u => `
                   <tr>
-                    <td>${u.name || '—'}</td>
+                    <td>${u.name || 'â'}</td>
                     <td>${u.email}</td>
                     <td><span class="badge badge-${u.plan || 'free'}">${u.plan || 'free'}</span></td>
                     <td>${new Date(u.created_at).toLocaleDateString()}</td>
@@ -249,7 +250,7 @@ router.get('/subscribers', requireAuth, requireAdmin, async (req, res) => {
               <tbody>
                 ${users.map(u => `
                   <tr data-name="${(u.name || '').toLowerCase()}" data-email="${u.email.toLowerCase()}" data-plan="${u.plan || 'free'}">
-                    <td>${u.name || '—'}</td>
+                    <td>${u.name || 'â'}</td>
                     <td>${u.email}</td>
                     <td><span class="badge badge-${u.plan || 'free'}">${u.plan || 'free'}</span></td>
                     <td><span class="badge badge-${u.role || 'user'}">${u.role || 'user'}</span></td>
@@ -637,7 +638,7 @@ router.get('/team', requireAuth, requireAdmin, async (req, res) => {
                     const permLabels = Object.keys(perms).filter(k => perms[k]).map(k => k.replace(/_/g,' ')).join(', ');
                     return `
                       <tr>
-                        <td>${m.name || '—'}</td>
+                        <td>${m.name || 'â'}</td>
                         <td>${m.email}</td>
                         <td><span class="badge badge-${m.role}">${m.role}</span></td>
                         <td style="max-width:200px;font-size:.8rem;color:var(--text-muted)">${permLabels || 'None'}</td>
@@ -664,7 +665,7 @@ router.get('/team', requireAuth, requireAdmin, async (req, res) => {
                       <td>${i.email}</td>
                       <td><span class="badge badge-${i.role}">${i.role}</span></td>
                       <td><span class="badge badge-${i.status}">${i.status}</span></td>
-                      <td>${i.inviter_name || '—'}</td>
+                      <td>${i.inviter_name || 'â'}</td>
                       <td>${new Date(i.created_at).toLocaleDateString()}</td>
                       <td>
                         ${i.status === 'pending' ? `<button class="btn-sm btn-danger-sm" onclick="revokeInvite('${i.id}')">Revoke</button>` : ''}
