@@ -1208,7 +1208,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
-    const html = renderShortsPage(req.user, analyses, page, hasMore);
+    const html = renderShortsPage(req.user, analyses, page, hasMore, req.teamPermissions);
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (error) {
@@ -4327,7 +4327,7 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
 });
 
 // Main page renderer
-function renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
+function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, teamPermissions = null) {
   let paginationHtml = '';
   if (currentPage > 1 || hasMore) { 
     const prevBtn = currentPage > 1 ? '<a href="/shorts?page=' + (currentPage - 1) + '" style="padding:8px 16px;background:#333;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;">&larr; Previous</a>' : '<span></span>';
@@ -4891,7 +4891,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false) {
 </head>
 <body class="dashboard">
   ${getThemeToggle()}
-  ${getSidebar('shorts', user, req.teamPermissions)}
+  ${getSidebar('shorts', user, teamPermissions)}
 
   <!-- Main content -->
   <main class="main-content">
