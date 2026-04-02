@@ -102,6 +102,12 @@ function getAdminCSS() {
     .search-bar input{flex:1;padding:.7rem 1rem;background:var(--surface);border:var(--border-subtle);border-radius:10px;color:var(--text);font-size:.9rem;outline:none}
     .search-bar input:focus{border-color:#6C3AED}
     body.light .search-bar select,html.light .search-bar select{background:#F8F9FC;border-color:rgba(0,0,0,0.12);color:#1A1A2E}
+body.light .btn-outline-sm,html.light .btn-outline-sm{border-color:rgba(0,0,0,0.15);color:var(--text-muted)}
+body.light .data-table th,html.light .data-table th{border-bottom-color:rgba(108,58,237,0.15)}
+body.light .data-table tr:hover td,html.light .data-table tr:hover td{background:rgba(108,58,237,0.06)}
+body.light .card,html.light .card{background:var(--surface);border-color:rgba(0,0,0,0.08)}
+body.light .stat-card,html.light .stat-card{background:var(--surface);border-color:rgba(0,0,0,0.08)}
+body.light .toast,html.light .toast{background:var(--success)}
     .empty-state{text-align:center;padding:3rem 1rem;color:var(--text-muted)}
     .empty-state .icon{font-size:3rem;margin-bottom:1rem}
     .tab-bar{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:var(--border-subtle);padding-bottom:.5rem}
