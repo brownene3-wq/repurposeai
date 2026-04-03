@@ -1043,6 +1043,32 @@ router.post('/api/set-role', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// Set user plan
+router.post('/api/set-plan', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId, email, plan } = req.body;
+    if (!['free', 'starter', 'pro', 'teams'].includes(plan)) {
+      return res.status(400).json({ error: 'Invalid plan. Must be: free, starter, pro, or teams' });
+    }
+    // Find user by email if no userId provided
+    let targetUserId = userId;
+    if (!targetUserId && email) {
+      const { userOps } = require('../db/database');
+      const user = await userOps.getByEmail(email);
+      if (!user) return res.status(404).json({ error: 'User not found with that email' });
+      targetUserId = user.id;
+    }
+    if (!targetUserId) return res.status(400).json({ error: 'Provide userId or email' });
+    const { userOps } = require('../db/database');
+    const updated = await userOps.updatePlan(targetUserId, plan);
+    if (!updated) return res.status(404).json({ error: 'User not found' });
+    res.json({ success: true, user: { id: updated.id, email: updated.email, plan: updated.plan } });
+  } catch (err) {
+    console.error('Set plan error:', err);
+    res.status(500).json({ error: 'Failed to update plan' });
+  }
+});
+
 // Blog CRUD API
 router.get('/api/blog/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
