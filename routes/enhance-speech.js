@@ -2,6 +2,26 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { spawn, execSync } = require('child_process');
+
+// FFmpeg path detection
+let ffmpegPath = null;
+const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
+if (fs.existsSync(localFfmpeg)) { ffmpegPath = localFfmpeg; }
+if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
+if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
+
+// Directory setup
+const uploadDir = path.join('/tmp', 'repurpose-uploads');
+const outputDir = path.join('/tmp', 'repurpose-outputs');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+// Multer configuration
+const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
 
 // GET - Main page
 router.get('/', requireAuth, (req, res) => {
@@ -202,15 +222,20 @@ router.get('/', requireAuth, (req, res) => {
         cursor: not-allowed;
         transform: none;
       }
-      .coming-soon-badge {
+      .btn-enhance.processing {
+        pointer-events: none;
+      }
+      .spinner {
         display: inline-block;
-        background: var(--warning);
-        color: #000;
-        padding: 0.3rem 0.8rem;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-left: 0.5rem;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
       }
       .results-section {
         margin-top: 2rem;
@@ -334,7 +359,6 @@ ${pageStyles}
           <div class="action-buttons">
             <button class="btn-enhance" id="enhanceBtn" disabled>
               Enhance Audio
-              <span class="coming-soon-badge">Coming Soon</span>
             </button>
           </div>
         </div>
@@ -347,17 +371,17 @@ ${pageStyles}
             <div>
               <div class="player-label">Before Enhancement</div>
               <div class="audio-player">
-                <audio controls style="width: 100%; margin-bottom: 0.5rem;"></audio>
+                <audio id="beforeAudio" controls style="width: 100%; margin-bottom: 0.5rem;"></audio>
               </div>
             </div>
             <div>
               <div class="player-label">After Enhancement</div>
               <div class="audio-player">
-                <audio controls style="width: 100%; margin-bottom: 0.5rem;"></audio>
+                <audio id="afterAudio" controls style="width: 100%; margin-bottom: 0.5rem;"></audio>
               </div>
             </div>
           </div>
-          <button class="download-btn">Download Enhanced Audio</button>
+          <button class="download-btn" id="downloadBtn">Download Enhanced Audio</button>
         </div>
       </div>
     </main>
@@ -379,6 +403,9 @@ ${pageStyles}
     const uploadSection = document.getElementById('uploadSection');
     const fileName = document.getElementById('fileName');
     const enhanceBtn = document.getElementById('enhanceBtn');
+    const resultsSection = document.getElementById('resultsSection');
+    const downloadBtn = document.getElementById('downloadBtn');
+    let currentDownloadUrl = null;
 
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
@@ -422,7 +449,53 @@ ${pageStyles}
         return;
       }
 
-      showToast('Audio enhancement processing is being set up. Check back soon!', 4000);
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      formData.append('noiseLevel', document.getElementById('noiseLevel').value);
+      formData.append('voiceBoost', document.getElementById('voiceBoost').checked);
+      formData.append('outputFormat', document.getElementById('outputFormat').value);
+
+      enhanceBtn.disabled = true;
+      enhanceBtn.classList.add('processing');
+      enhanceBtn.innerHTML = '<span class="spinner"></span> Processing...';
+
+      try {
+        const response = await fetch('/enhance-speech/process', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Processing failed');
+        }
+
+        document.getElementById('beforeAudio').src = data.originalUrl;
+        document.getElementById('afterAudio').src = data.enhancedUrl;
+        currentDownloadUrl = data.enhancedUrl;
+        resultsSection.classList.add('show');
+        showToast('Audio enhanced successfully!');
+      } catch (error) {
+        showToast('Error: ' + error.message, 4000);
+      } finally {
+        enhanceBtn.disabled = false;
+        enhanceBtn.classList.remove('processing');
+        enhanceBtn.textContent = 'Enhance Audio';
+      }
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      if (!currentDownloadUrl) {
+        showToast('No file to download');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = currentDownloadUrl;
+      a.download = 'enhanced-audio.mp3';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     });
 
     ${themeScript}
@@ -433,9 +506,130 @@ ${pageStyles}
   res.send(html);
 });
 
-// POST - Process audio (placeholder)
-router.post('/process', requireAuth, (req, res) => {
-  res.json({ success: false, message: 'Audio enhancement coming soon' });
+// Helper function to process audio with ffmpeg
+function processAudioWithFfmpeg(inputPath, outputPath, noiseLevel, voiceBoost) {
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) {
+      return reject(new Error('FFmpeg not found. Please install FFmpeg.'));
+    }
+
+    const noiseFilters = {
+      '1': 'afftdn=nf=-25',
+      '2': 'afftdn=nf=-40',
+      '3': 'afftdn=nf=-60'
+    };
+
+    const noiseFilter = noiseFilters[String(noiseLevel)] || noiseFilters['2'];
+    let audioFilters = `${noiseFilter},highpass=f=80`;
+
+    if (voiceBoost) {
+      audioFilters += ',equalizer=f=1000:t=q:w=1:g=3,equalizer=f=3000:t=q:w=1:g=2,compand=attacks=0.02:decays=0.15:points=-80/-80|-45/-15|-27/-9|0/-3|20/-3:gain=3';
+    }
+
+    const ffmpegArgs = [
+      '-i', inputPath,
+      '-af', audioFilters,
+      '-q:a', '0',
+      '-y',
+      outputPath
+    ];
+
+    const ffmpeg = spawn(ffmpegPath, ffmpegArgs, {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stderr = '';
+
+    ffmpeg.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg error: ${stderr}`));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      reject(new Error(`FFmpeg process error: ${err.message}`));
+    });
+  });
+}
+
+// POST - Process audio
+router.post('/process', requireAuth, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const noiseLevel = req.body.noiseLevel || '2';
+    const voiceBoost = req.body.voiceBoost === 'true';
+    const outputFormat = req.body.outputFormat || 'original';
+
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+    const timestamp = Date.now();
+    const baseName = `enhanced_${timestamp}`;
+
+    let outputPath;
+    if (outputFormat === 'mp3') {
+      outputPath = path.join(outputDir, `${baseName}.mp3`);
+    } else if (outputFormat === 'wav') {
+      outputPath = path.join(outputDir, `${baseName}.wav`);
+    } else {
+      outputPath = path.join(outputDir, `${baseName}${fileExtension}`);
+    }
+
+    await processAudioWithFfmpeg(req.file.path, outputPath, noiseLevel, voiceBoost);
+
+    const originalUrl = `/enhance-speech/serve/${req.file.filename}`;
+    const enhancedUrl = `/enhance-speech/download/${path.basename(outputPath)}`;
+
+    res.json({
+      success: true,
+      originalUrl: originalUrl,
+      enhancedUrl: enhancedUrl
+    });
+  } catch (error) {
+    console.error('Audio processing error:', error);
+    res.status(500).json({ error: error.message || 'Audio processing failed' });
+  }
+});
+
+// GET - Download processed file
+router.get('/download/:filename', requireAuth, (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const filepath = path.join(outputDir, filename);
+
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    res.download(filepath, filename);
+  } catch (error) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Download failed' });
+  }
+});
+
+// GET - Serve uploaded file (for before comparison)
+router.get('/serve/:filename', requireAuth, (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const filepath = path.join(uploadDir, filename);
+
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    res.sendFile(filepath);
+  } catch (error) {
+    console.error('Serve error:', error);
+    res.status(500).json({ error: 'File serve failed' });
+  }
 });
 
 module.exports = router;

@@ -4,6 +4,15 @@ require('dotenv').config();
 const { initDatabase } = require('./db/database');
 
 const app = express();
+const fs = require('fs');
+const path = require('path');
+
+// Ensure upload/output directories exist
+const uploadDir = path.join('/tmp', 'repurpose-uploads');
+const outputDir = path.join('/tmp', 'repurpose-outputs');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
 const { injectChatWidget } = require('./middleware/chatWidget');
 const { injectFeedbackWidget } = require('./middleware/feedbackWidget');
 

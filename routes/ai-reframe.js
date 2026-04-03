@@ -1,7 +1,145 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { spawn, execSync } = require('child_process');
+const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+
+// Find ffmpeg
+let ffmpegPath = null;
+const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
+if (fs.existsSync(localFfmpeg)) {
+  ffmpegPath = localFfmpeg;
+}
+if (!ffmpegPath) {
+  try {
+    ffmpegPath = require('ffmpeg-static');
+  } catch (e) {}
+}
+if (!ffmpegPath) {
+  try {
+    execSync('which ffmpeg', { stdio: 'pipe' });
+    ffmpegPath = 'ffmpeg';
+  } catch (e) {}
+}
+
+// Setup directories
+const uploadDir = path.join('/tmp', 'repurpose-uploads');
+const outputDir = path.join('/tmp', 'repurpose-outputs');
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+if (!fs.existsSync(outputDir)) {
+  fs.mkdirSync(outputDir, { recursive: true });
+}
+
+// Multer configuration
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: 500 * 1024 * 1024 }
+});
+
+// Aspect ratio configurations: [width, height, name]
+const aspectRatios = {
+  '9:16': { width: 1080, height: 1920, name: '9-16-vertical' },
+  '1:1': { width: 1080, height: 1080, name: '1-1-square' },
+  '4:5': { width: 1080, height: 1350, name: '4-5-portrait' },
+  '16:9': { width: 1920, height: 1080, name: '16-9-landscape' }
+};
+
+// Get video dimensions
+function getVideoDimensions(filePath) {
+  return new Promise((resolve, reject) => {
+    const args = ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0', filePath];
+    const ffprobe = spawn(ffmpegPath === 'ffmpeg' ? 'ffprobe' : ffmpegPath.replace('ffmpeg', 'ffprobe'), args);
+    let output = '';
+
+    ffprobe.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        const [width, height] = output.trim().split('x').map(Number);
+        resolve({ width, height });
+      } else {
+        reject(new Error('Failed to get video dimensions'));
+      }
+    });
+
+    ffprobe.on('error', reject);
+  });
+}
+
+// Calculate center crop dimensions
+function calculateCropDimensions(inputWidth, inputHeight, targetWidth, targetHeight) {
+  const inputAspect = inputWidth / inputHeight;
+  const targetAspect = targetWidth / targetHeight;
+
+  let cropWidth, cropHeight;
+
+  if (inputAspect > targetAspect) {
+    // Input is wider, crop width
+    cropHeight = inputHeight;
+    cropWidth = Math.floor(inputHeight * targetAspect);
+  } else {
+    // Input is taller, crop height
+    cropWidth = inputWidth;
+    cropHeight = Math.floor(inputWidth / targetAspect);
+  }
+
+  const x = Math.floor((inputWidth - cropWidth) / 2);
+  const y = Math.floor((inputHeight - cropHeight) / 2);
+
+  return { cropWidth, cropHeight, x, y };
+}
+
+// Process video with ffmpeg
+function processVideo(inputPath, outputPath, aspectRatio) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const dimensions = await getVideoDimensions(inputPath);
+      const { width: targetWidth, height: targetHeight } = aspectRatios[aspectRatio];
+      const { cropWidth, cropHeight, x, y } = calculateCropDimensions(dimensions.width, dimensions.height, targetWidth, targetHeight);
+
+      const filterComplex = `crop=${cropWidth}:${cropHeight}:${x}:${y},scale=${targetWidth}:${targetHeight}`;
+
+      const args = [
+        '-i', inputPath,
+        '-vf', filterComplex,
+        '-c:v', 'libx264',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputPath
+      ];
+
+      const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
+      let errorOutput = '';
+
+      ffmpeg.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`FFmpeg failed with code ${code}: ${errorOutput}`));
+        }
+      });
+
+      ffmpeg.on('error', reject);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
 
 // GET - Main page
 router.get('/', requireAuth, (req, res) => {
@@ -211,7 +349,7 @@ router.get('/', requireAuth, (req, res) => {
         justify-content: center;
         gap: 0.5rem;
       }
-      .action-button:hover {
+      .action-button:hover:not(:disabled) {
         transform: translateY(-2px);
         box-shadow: 0 6px 30px rgba(108, 58, 237, 0.5);
       }
@@ -220,15 +358,20 @@ router.get('/', requireAuth, (req, res) => {
         cursor: not-allowed;
         transform: none;
       }
-      .coming-soon-badge {
+      .action-button.loading {
+        pointer-events: none;
+      }
+      .spinner {
         display: inline-block;
-        background: var(--warning);
-        color: #000;
-        padding: 0.3rem 0.8rem;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-left: 0.5rem;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
       }
       .preview-section {
         margin-top: 2rem;
@@ -239,7 +382,7 @@ router.get('/', requireAuth, (req, res) => {
       }
       .preview-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
         gap: 2rem;
       }
       .preview-container {
@@ -255,10 +398,35 @@ router.get('/', requireAuth, (req, res) => {
         margin-bottom: 1rem;
         font-weight: 600;
       }
+      .download-link {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.75rem 1.5rem;
+        background: var(--primary);
+        color: #fff;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.3s;
+      }
+      .download-link:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(108, 58, 237, 0.4);
+      }
       .empty-state {
         text-align: center;
         padding: 2rem;
         color: var(--text-muted);
+      }
+      .error-message {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #ef4444;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+        font-size: 0.9rem;
       }
       @media (max-width: 1024px) {
         .aspect-ratio-grid {
@@ -297,91 +465,85 @@ ${pageStyles}
       </div>
 
       <div class="input-section">
-        <div class="input-tabs">
-          <button class="input-tab active" data-tab="url">YouTube URL</button>
-          <button class="input-tab" data-tab="upload">Upload File</button>
-        </div>
-
-        <div id="urlTab" class="tab-content active">
-          <input type="text" class="url-input" id="youtubeUrl" placeholder="Paste YouTube video URL here...">
-        </div>
-
-        <div id="uploadTab" class="tab-content">
-          <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-            <div class="upload-icon">🎬</div>
-            <div class="upload-text">Drop your video file here</div>
-            <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
-            <input type="file" id="fileInput" class="file-input" accept="video/*">
-            <div id="fileName" class="file-name" style="display: none;"></div>
+        <form id="reframeForm" enctype="multipart/form-data">
+          <div class="input-tabs">
+            <button type="button" class="input-tab active" data-tab="url">YouTube URL</button>
+            <button type="button" class="input-tab" data-tab="upload">Upload File</button>
           </div>
-        </div>
 
-        <div class="aspect-ratio-section">
-          <label class="aspect-ratio-label">Select Aspect Ratios to Generate</label>
-          <div class="aspect-ratio-grid">
-            <div class="aspect-ratio-card">
-              <input type="checkbox" id="ratio-9-16" name="aspect" value="9:16">
-              <div class="aspect-ratio-preview">
-                <div style="width: 60px; height: 106px; background: var(--primary); border-radius: 4px;"></div>
-              </div>
-              <div class="aspect-ratio-info">
-                <div class="aspect-ratio-title">9:16 Vertical</div>
-                <div class="aspect-ratio-platforms">TikTok, Reels, Shorts</div>
-              </div>
-            </div>
+          <div id="urlTab" class="tab-content active">
+            <input type="text" class="url-input" id="youtubeUrl" name="youtubeUrl" placeholder="Paste YouTube video URL here...">
+          </div>
 
-            <div class="aspect-ratio-card">
-              <input type="checkbox" id="ratio-1-1" name="aspect" value="1:1">
-              <div class="aspect-ratio-preview">
-                <div style="width: 80px; height: 80px; background: var(--primary); border-radius: 4px;"></div>
-              </div>
-              <div class="aspect-ratio-info">
-                <div class="aspect-ratio-title">1:1 Square</div>
-                <div class="aspect-ratio-platforms">Instagram Feed, Facebook</div>
-              </div>
-            </div>
-
-            <div class="aspect-ratio-card">
-              <input type="checkbox" id="ratio-4-5" name="aspect" value="4:5">
-              <div class="aspect-ratio-preview">
-                <div style="width: 64px; height: 80px; background: var(--primary); border-radius: 4px;"></div>
-              </div>
-              <div class="aspect-ratio-info">
-                <div class="aspect-ratio-title">4:5 Portrait</div>
-                <div class="aspect-ratio-platforms">Instagram, Facebook</div>
-              </div>
-            </div>
-
-            <div class="aspect-ratio-card">
-              <input type="checkbox" id="ratio-16-9" name="aspect" value="16:9">
-              <div class="aspect-ratio-preview">
-                <div style="width: 106px; height: 60px; background: var(--primary); border-radius: 4px;"></div>
-              </div>
-              <div class="aspect-ratio-info">
-                <div class="aspect-ratio-title">16:9 Landscape</div>
-                <div class="aspect-ratio-platforms">YouTube, LinkedIn</div>
-              </div>
+          <div id="uploadTab" class="tab-content">
+            <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+              <div class="upload-icon">🎬</div>
+              <div class="upload-text">Drop your video file here</div>
+              <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
+              <input type="file" id="fileInput" name="videoFile" class="file-input" accept="video/*">
+              <div id="fileName" class="file-name" style="display: none;"></div>
             </div>
           </div>
-        </div>
 
-        <button class="action-button" id="reframeBtn" disabled>
-          Reframe Video
-          <span class="coming-soon-badge">Coming Soon</span>
-        </button>
+          <div class="aspect-ratio-section">
+            <label class="aspect-ratio-label">Select Aspect Ratios to Generate</label>
+            <div class="aspect-ratio-grid">
+              <div class="aspect-ratio-card">
+                <input type="checkbox" id="ratio-9-16" name="aspect" value="9:16">
+                <div class="aspect-ratio-preview">
+                  <div style="width: 60px; height: 106px; background: var(--primary); border-radius: 4px;"></div>
+                </div>
+                <div class="aspect-ratio-info">
+                  <div class="aspect-ratio-title">9:16 Vertical</div>
+                  <div class="aspect-ratio-platforms">TikTok, Reels, Shorts</div>
+                </div>
+              </div>
+
+              <div class="aspect-ratio-card">
+                <input type="checkbox" id="ratio-1-1" name="aspect" value="1:1">
+                <div class="aspect-ratio-preview">
+                  <div style="width: 80px; height: 80px; background: var(--primary); border-radius: 4px;"></div>
+                </div>
+                <div class="aspect-ratio-info">
+                  <div class="aspect-ratio-title">1:1 Square</div>
+                  <div class="aspect-ratio-platforms">Instagram Feed, Facebook</div>
+                </div>
+              </div>
+
+              <div class="aspect-ratio-card">
+                <input type="checkbox" id="ratio-4-5" name="aspect" value="4:5">
+                <div class="aspect-ratio-preview">
+                  <div style="width: 64px; height: 80px; background: var(--primary); border-radius: 4px;"></div>
+                </div>
+                <div class="aspect-ratio-info">
+                  <div class="aspect-ratio-title">4:5 Portrait</div>
+                  <div class="aspect-ratio-platforms">Instagram, Facebook</div>
+                </div>
+              </div>
+
+              <div class="aspect-ratio-card">
+                <input type="checkbox" id="ratio-16-9" name="aspect" value="16:9">
+                <div class="aspect-ratio-preview">
+                  <div style="width: 106px; height: 60px; background: var(--primary); border-radius: 4px;"></div>
+                </div>
+                <div class="aspect-ratio-info">
+                  <div class="aspect-ratio-title">16:9 Landscape</div>
+                  <div class="aspect-ratio-platforms">YouTube, LinkedIn</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="action-button" id="reframeBtn" disabled>
+            Reframe Video
+          </button>
+          <div id="errorMessage" style="display: none;"></div>
+        </form>
       </div>
 
       <div class="preview-section" id="previewSection">
-        <h2 style="margin-bottom: 1.5rem; color: var(--text);">Preview</h2>
-        <div class="preview-grid">
-          <div class="preview-container">
-            <div class="preview-label">Original</div>
-            <div class="empty-state">Video preview will appear here</div>
-          </div>
-          <div class="preview-container">
-            <div class="preview-label">Selected Formats</div>
-            <div class="empty-state">Reframed versions will appear here</div>
-          </div>
+        <h2 style="margin-bottom: 1.5rem; color: var(--text);">Your Reframed Videos</h2>
+        <div class="preview-grid" id="previewGrid">
         </div>
       </div>
     </main>
@@ -397,6 +559,17 @@ ${pageStyles}
       setTimeout(() => {
         toast.style.display = 'none';
       }, duration);
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById('errorMessage');
+      errorDiv.innerHTML = '<div class="error-message">' + message + '</div>';
+      errorDiv.style.display = 'block';
+    }
+
+    function clearError() {
+      const errorDiv = document.getElementById('errorMessage');
+      errorDiv.style.display = 'none';
     }
 
     // Tab switching
@@ -416,6 +589,7 @@ ${pageStyles}
     const fileName = document.getElementById('fileName');
     const reframeBtn = document.getElementById('reframeBtn');
     const youtubeUrl = document.getElementById('youtubeUrl');
+    const form = document.getElementById('reframeForm');
 
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
@@ -463,23 +637,76 @@ ${pageStyles}
       reframeBtn.disabled = !(hasUrl || hasFile) || !hasAspectRatio;
     }
 
-    reframeBtn.addEventListener('click', async () => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError();
+
       const hasUrl = youtubeUrl.value.trim().length > 0;
       const hasFile = fileInput.files.length > 0;
 
       if (!hasUrl && !hasFile) {
-        showToast('Please provide a YouTube URL or upload a video');
+        showError('Please provide a YouTube URL or upload a video');
         return;
       }
 
       const selectedRatios = Array.from(document.querySelectorAll('input[name="aspect"]:checked')).map(c => c.value);
       if (selectedRatios.length === 0) {
-        showToast('Please select at least one aspect ratio');
+        showError('Please select at least one aspect ratio');
         return;
       }
 
-      showToast('Video reframing is being set up. Check back soon!', 4000);
+      const formData = new FormData(form);
+      formData.set('aspects', JSON.stringify(selectedRatios));
+
+      reframeBtn.disabled = true;
+      reframeBtn.classList.add('loading');
+      reframeBtn.innerHTML = '<span class="spinner"></span> Processing...';
+
+      try {
+        const response = await fetch('/ai-reframe/process', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Processing failed');
+        }
+
+        displayResults(data.files);
+        showToast('Video reframing complete!', 4000);
+      } catch (error) {
+        showError('Error: ' + error.message);
+      } finally {
+        reframeBtn.disabled = false;
+        reframeBtn.classList.remove('loading');
+        reframeBtn.innerHTML = 'Reframe Video';
+      }
     });
+
+    function displayResults(files) {
+      const previewSection = document.getElementById('previewSection');
+      const previewGrid = document.getElementById('previewGrid');
+      previewGrid.innerHTML = '';
+
+      files.forEach(file => {
+        const container = document.createElement('div');
+        container.className = 'preview-container';
+        container.innerHTML = \`
+          <div class="preview-label">\${file.ratio}</div>
+          <div style="text-align: center;">
+            <div style="color: var(--text); font-size: 0.9rem; margin-bottom: 1rem;">\${file.dimensions}</div>
+            <a href="/ai-reframe/download/\${file.filename}" class="download-link" download>
+              Download
+            </a>
+          </div>
+        \`;
+        previewGrid.appendChild(container);
+      });
+
+      previewSection.classList.add('show');
+    }
 
     ${themeScript}
   </script>
@@ -489,9 +716,95 @@ ${pageStyles}
   res.send(html);
 });
 
-// POST - Process video (placeholder)
-router.post('/process', requireAuth, (req, res) => {
-  res.json({ success: false, message: 'Video reframing coming soon' });
+// POST - Process video
+router.post('/process', requireAuth, upload.single('videoFile'), async (req, res) => {
+  try {
+    const youtubeUrl = req.body.youtubeUrl || '';
+    const aspects = JSON.parse(req.body.aspects || '[]');
+    const videoFile = req.file;
+
+    if (!youtubeUrl && !videoFile) {
+      return res.status(400).json({ success: false, message: 'Please provide a YouTube URL or upload a video' });
+    }
+
+    if (!aspects || aspects.length === 0) {
+      return res.status(400).json({ success: false, message: 'Please select at least one aspect ratio' });
+    }
+
+    let inputPath = videoFile ? videoFile.path : null;
+
+    // If YouTube URL provided, download it first
+    if (youtubeUrl && !videoFile) {
+      return res.status(400).json({ success: false, message: 'YouTube URL processing not yet implemented. Please upload a video file.' });
+    }
+
+    if (!inputPath) {
+      return res.status(400).json({ success: false, message: 'No video file provided' });
+    }
+
+    if (!fs.existsSync(inputPath)) {
+      return res.status(400).json({ success: false, message: 'Uploaded file not found' });
+    }
+
+    const jobId = uuidv4();
+    const results = [];
+
+    for (const aspectRatio of aspects) {
+      if (!aspectRatios[aspectRatio]) {
+        continue;
+      }
+
+      const config = aspectRatios[aspectRatio];
+      const filename = `${jobId}-${config.name}.mp4`;
+      const outputPath = path.join(outputDir, filename);
+
+      try {
+        await processVideo(inputPath, outputPath, aspectRatio);
+        results.push({
+          ratio: aspectRatio,
+          dimensions: `${config.width}x${config.height}`,
+          filename: filename
+        });
+      } catch (error) {
+        console.error(`Failed to process ${aspectRatio}:`, error.message);
+      }
+    }
+
+    // Clean up uploaded file
+    try {
+      fs.unlinkSync(inputPath);
+    } catch (e) {}
+
+    if (results.length === 0) {
+      return res.status(500).json({ success: false, message: 'Video processing failed' });
+    }
+
+    res.json({ success: true, files: results });
+  } catch (error) {
+    console.error('Processing error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Processing failed' });
+  }
+});
+
+// GET - Download processed file
+router.get('/download/:filename', requireAuth, (req, res) => {
+  try {
+    const filename = req.params.filename;
+    // Validate filename to prevent directory traversal
+    if (!filename.match(/^[\w\-]+\.mp4$/)) {
+      return res.status(400).json({ success: false, message: 'Invalid filename' });
+    }
+
+    const filePath = path.join(outputDir, filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+
+    res.download(filePath);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Download failed' });
+  }
 });
 
 module.exports = router;
