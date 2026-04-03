@@ -465,14 +465,14 @@ router.get('/', requireAuth, async (req, res) => {
 
       // Apply theme live
       function applyTheme(theme) {
-        if (theme === 'light') {
-          document.body.classList.add('light');
-          document.documentElement.classList.add('light');
-        } else {
-          document.body.classList.remove('light');
-          document.documentElement.classList.remove('light');
-        }
+        var isLight = theme === 'light';
+        document.body.classList.toggle('light', isLight);
+        document.documentElement.classList.toggle('light', isLight);
+        document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
         localStorage.setItem('theme', theme);
+        // Update the moon/sun toggle button in the top-right
+        var btn = document.querySelector('.theme-toggle');
+        if (btn) btn.innerHTML = isLight ? '&#x2600;&#xFE0F;' : '&#x1F319;';
       }
 
       // Profile functions
