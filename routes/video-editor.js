@@ -288,6 +288,7 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-button" data-tool="filters">🎨 Filters</button>
               <button class="tool-button" data-tool="speed">⚡ Speed</button>
               <button class="tool-button" data-tool="audio">🔊 Audio</button>
+              <button class="tool-button" data-tool="voiceover">🎙️ AI Voice</button>
               <button class="tool-button" data-tool="text">📝 Text Overlay</button>
               <button class="tool-button" data-tool="transitions">✨ Transitions</button>
             </div>
@@ -368,7 +369,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="tool-panel" id="audioPanel">
-            <div class="panel-title">🔊 Audio Volume</div>
+            <div class="panel-title">🔊 Audio Controls</div>
             <div class="slider-group">
               <div class="slider-label">
                 <span>Volume</span>
@@ -376,7 +377,84 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
               <input type="range" class="slider" id="volumeSlider" min="0" max="200" value="100">
             </div>
-            <button class="tool-action-button" id="audioButton" disabled>Apply Audio</button>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Fade In</span>
+                <span class="slider-value" id="fadeInValue">0s</span>
+              </div>
+              <input type="range" class="slider" id="fadeInSlider" min="0" max="10" value="0" step="0.5">
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Fade Out</span>
+                <span class="slider-value" id="fadeOutValue">0s</span>
+              </div>
+              <input type="range" class="slider" id="fadeOutSlider" min="0" max="10" value="0" step="0.5">
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Bass Boost</span>
+                <span class="slider-value" id="bassValue">0dB</span>
+              </div>
+              <input type="range" class="slider" id="bassSlider" min="-10" max="10" value="0" step="1">
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Treble</span>
+                <span class="slider-value" id="trebleValue">0dB</span>
+              </div>
+              <input type="range" class="slider" id="trebleSlider" min="-10" max="10" value="0" step="1">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:.6rem;margin-bottom:1rem">
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
+                <input type="checkbox" id="noiseReduction" style="accent-color:#6C3AED"> Noise Reduction
+              </label>
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
+                <input type="checkbox" id="audioDucking" style="accent-color:#6C3AED"> Audio Ducking <span style="font-size:.7rem;color:var(--text-muted)">(lower music during speech)</span>
+              </label>
+            </div>
+            <button class="tool-action-button" id="audioButton" disabled>🔊 Apply Audio</button>
+          </div>
+
+          <div class="tool-panel" id="voiceoverPanel">
+            <div class="panel-title">🎙️ AI Voiceover</div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Generate AI voiceover and overlay it on your video</p>
+            <div class="form-group-ve" style="margin-bottom:.8rem">
+              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Voice</label>
+              <select id="voiceSelect" style="width:100%;padding:.5rem .7rem;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.82rem;outline:none">
+                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Female, Calm)</option>
+                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Female, Warm)</option>
+                <option value="ErXwobaYiN019PkySvjV">Antoni (Male, Calm)</option>
+                <option value="VR6AewLTigWG4xSOukaG">Arnold (Male, Deep)</option>
+                <option value="pNInz6obpgDQGcFmaJgB">Adam (Male, Clear)</option>
+                <option value="yoZ06aMxZJJ28mfd3POQ">Sam (Male, Raspy)</option>
+                <option value="jBpfuIE2acCO8z3wKNLl">Gigi (Female, Animated)</option>
+                <option value="ThT5KcBeYPX3keUQqHPh">Dorothy (Female, British)</option>
+              </select>
+            </div>
+            <div class="form-group-ve" style="margin-bottom:.8rem">
+              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Script</label>
+              <textarea id="voiceoverScript" placeholder="Type your voiceover script here..." style="width:100%;height:100px;padding:.6rem;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.82rem;resize:vertical;outline:none;font-family:inherit"></textarea>
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Voice Volume</span>
+                <span class="slider-value" id="voiceVolumeValue">100%</span>
+              </div>
+              <input type="range" class="slider" id="voiceVolumeSlider" min="0" max="200" value="100">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:.6rem;margin-bottom:1rem">
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
+                <input type="checkbox" id="duckOriginal" checked style="accent-color:#6C3AED"> Duck original audio during voiceover
+              </label>
+            </div>
+            <div style="display:flex;gap:.5rem">
+              <button class="tool-action-button" id="previewVoiceButton" disabled style="flex:1;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1)">🔈 Preview</button>
+              <button class="tool-action-button" id="voiceoverButton" disabled style="flex:1">🎙️ Apply to Video</button>
+            </div>
+            <div id="voiceoverApiNote" style="margin-top:.8rem;padding:.6rem;background:rgba(108,58,237,0.08);border-radius:8px;font-size:.75rem;color:var(--text-muted)">
+              Uses your ElevenLabs API key from <a href="/brand-voice" style="color:#6C3AED;text-decoration:none;font-weight:600">Brand Voice</a> settings.
+            </div>
           </div>
 
           <div class="tool-panel" id="textPanel">
@@ -525,6 +603,8 @@ router.get('/', requireAuth, async (req, res) => {
         document.getElementById('filterButton').disabled = false;
         document.getElementById('speedButton').disabled = false;
         document.getElementById('audioButton').disabled = false;
+        document.getElementById('previewVoiceButton').disabled = false;
+        document.getElementById('voiceoverButton').disabled = false;
         document.getElementById('textButton').disabled = false;
         document.getElementById('speedSelect').disabled = false;
 
@@ -546,6 +626,26 @@ router.get('/', requireAuth, async (req, res) => {
       if (slider.id === 'volumeSlider') {
         slider.addEventListener('input', function() {
           document.getElementById('volumeValue').textContent = this.value + '%';
+        });
+      } else if (slider.id === 'fadeInSlider') {
+        slider.addEventListener('input', function() {
+          document.getElementById('fadeInValue').textContent = this.value + 's';
+        });
+      } else if (slider.id === 'fadeOutSlider') {
+        slider.addEventListener('input', function() {
+          document.getElementById('fadeOutValue').textContent = this.value + 's';
+        });
+      } else if (slider.id === 'bassSlider') {
+        slider.addEventListener('input', function() {
+          document.getElementById('bassValue').textContent = this.value + 'dB';
+        });
+      } else if (slider.id === 'trebleSlider') {
+        slider.addEventListener('input', function() {
+          document.getElementById('trebleValue').textContent = this.value + 'dB';
+        });
+      } else if (slider.id === 'voiceVolumeSlider') {
+        slider.addEventListener('input', function() {
+          document.getElementById('voiceVolumeValue').textContent = this.value + '%';
         });
       } else if (slider.id === 'fontSize') {
         slider.addEventListener('input', function() {
@@ -800,6 +900,12 @@ router.get('/', requireAuth, async (req, res) => {
       }
 
       const volume = parseFloat(document.getElementById('volumeSlider').value);
+      const fadeIn = parseFloat(document.getElementById('fadeInSlider').value);
+      const fadeOut = parseFloat(document.getElementById('fadeOutSlider').value);
+      const bass = parseInt(document.getElementById('bassSlider').value);
+      const treble = parseInt(document.getElementById('trebleSlider').value);
+      const noiseReduction = document.getElementById('noiseReduction').checked;
+      const audioDucking = document.getElementById('audioDucking').checked;
 
       const button = document.getElementById('audioButton');
       button.disabled = true;
@@ -811,7 +917,13 @@ router.get('/', requireAuth, async (req, res) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             filename: currentVideoFile.filename,
-            volume: volume
+            volume,
+            fadeIn,
+            fadeOut,
+            bass,
+            treble,
+            noiseReduction,
+            audioDucking
           })
         });
 
@@ -822,12 +934,88 @@ router.get('/', requireAuth, async (req, res) => {
         videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
 
-        showToast('Audio volume adjusted successfully!', 'success');
+        showToast('Audio enhanced successfully!', 'success');
       } catch (error) {
-        showToast('Audio adjustment failed: ' + error.message, 'error');
+        showToast('Audio processing failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
         button.innerHTML = '🔊 Apply Audio';
+      }
+    });
+
+    // Voiceover preview handler
+    document.getElementById('previewVoiceButton').addEventListener('click', async () => {
+      var script = document.getElementById('voiceoverScript').value.trim();
+      if (!script) { showToast('Please enter a voiceover script', 'error'); return; }
+
+      var voice = document.getElementById('voiceSelect').value;
+      var btn = document.getElementById('previewVoiceButton');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Generating...';
+
+      try {
+        var response = await fetch('/video-editor/voiceover-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: script, voiceId: voice })
+        });
+        if (!response.ok) {
+          var err = await response.json();
+          throw new Error(err.error || 'Preview failed');
+        }
+        var blob = await response.blob();
+        var url = URL.createObjectURL(blob);
+        var audio = new Audio(url);
+        audio.play();
+        showToast('Playing voiceover preview', 'success');
+      } catch (error) {
+        showToast('Preview failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔈 Preview';
+      }
+    });
+
+    // Voiceover apply handler
+    document.getElementById('voiceoverButton').addEventListener('click', async () => {
+      if (!currentVideoFile) { showToast('Please upload a video first', 'error'); return; }
+      var script = document.getElementById('voiceoverScript').value.trim();
+      if (!script) { showToast('Please enter a voiceover script', 'error'); return; }
+
+      var voice = document.getElementById('voiceSelect').value;
+      var voiceVolume = parseFloat(document.getElementById('voiceVolumeSlider').value);
+      var duckOriginal = document.getElementById('duckOriginal').checked;
+
+      var btn = document.getElementById('voiceoverButton');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Generating & Mixing...';
+
+      try {
+        var response = await fetch('/video-editor/voiceover-apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            text: script,
+            voiceId: voice,
+            voiceVolume: voiceVolume,
+            duckOriginal: duckOriginal
+          })
+        });
+        if (!response.ok) {
+          var err = await response.json();
+          throw new Error(err.error || 'Voiceover failed');
+        }
+        var data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+        showToast('Voiceover applied successfully!', 'success');
+      } catch (error) {
+        showToast('Voiceover failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🎙️ Apply to Video';
       }
     });
 
@@ -1311,32 +1499,84 @@ router.post('/speed', requireAuth, async (req, res) => {
 // POST: Adjust audio volume
 router.post('/audio', requireAuth, async (req, res) => {
   try {
-    const { filename, volume } = req.body;
+    const { filename, volume, fadeIn, fadeOut, bass, treble, noiseReduction, audioDucking } = req.body;
 
-    if (!filename || volume === undefined) {
-      return res.status(400).json({ error: 'Missing required parameters' });
+    if (!filename) {
+      return res.status(400).json({ error: 'Missing filename' });
     }
 
-    const inputPath = path.join(uploadDir, filename);
-    const trimmedPath = path.join(outputDir, filename);
-    const source = fs.existsSync(trimmedPath) ? trimmedPath : inputPath;
-
+    // Check both output and upload directories
+    let source = path.join(outputDir, filename);
+    if (!fs.existsSync(source)) {
+      source = path.join(uploadDir, filename);
+    }
     if (!fs.existsSync(source)) {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    const outputFilename = 'audio_' + Date.now() + '_' + req.user.id + path.extname(filename);
+    const outputFilename = 'audio_' + Date.now() + '_' + req.user.id + '.mp4';
     const outputPath = path.join(outputDir, outputFilename);
 
-    const volumeValue = (parseFloat(volume) / 100).toFixed(2);
+    // Build audio filter chain
+    const audioFilters = [];
+
+    // Volume adjustment
+    const volumeValue = (parseFloat(volume || 100) / 100).toFixed(2);
+    audioFilters.push('volume=' + volumeValue);
+
+    // Fade in
+    const fadeInDur = parseFloat(fadeIn || 0);
+    if (fadeInDur > 0) {
+      audioFilters.push('afade=t=in:d=' + fadeInDur);
+    }
+
+    // Fade out (needs video duration — we get it from metadata)
+    const fadeOutDur = parseFloat(fadeOut || 0);
+    if (fadeOutDur > 0) {
+      try {
+        const meta = await getVideoMetadata(source);
+        const startTime = Math.max(0, (meta.duration || 30) - fadeOutDur);
+        audioFilters.push('afade=t=out:st=' + startTime.toFixed(2) + ':d=' + fadeOutDur);
+      } catch (e) {
+        // If we can't get duration, apply fade out starting at 0 (won't be ideal but won't break)
+        audioFilters.push('afade=t=out:st=0:d=' + fadeOutDur);
+      }
+    }
+
+    // Bass boost / cut using equalizer
+    const bassVal = parseInt(bass || 0);
+    if (bassVal !== 0) {
+      audioFilters.push('equalizer=f=100:width_type=o:width=2:g=' + bassVal);
+    }
+
+    // Treble boost / cut using equalizer
+    const trebleVal = parseInt(treble || 0);
+    if (trebleVal !== 0) {
+      audioFilters.push('equalizer=f=8000:width_type=o:width=2:g=' + trebleVal);
+    }
+
+    // Noise reduction using highpass + lowpass to remove extreme frequencies
+    if (noiseReduction) {
+      audioFilters.push('highpass=f=80');
+      audioFilters.push('lowpass=f=12000');
+      audioFilters.push('afftdn=nf=-25');
+    }
+
+    // Audio ducking: compress dynamics so loud parts (music) get quieter relative to speech
+    if (audioDucking) {
+      audioFilters.push('acompressor=threshold=0.05:ratio=4:attack=5:release=50:makeup=2');
+    }
+
+    const filterString = audioFilters.join(',');
 
     await runFFmpeg([
       '-i', source,
-      '-af', 'volume=' + volumeValue,
+      '-af', filterString,
       '-c:v', 'libx264',
       '-preset', 'fast',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-b:a', '192k',
       '-y',
       outputPath
     ]);
@@ -1402,6 +1642,157 @@ router.post('/text-overlay', requireAuth, async (req, res) => {
       serveUrl: '/video-editor/download/' + outputFilename
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== AI VOICEOVER ENDPOINTS =====
+
+// Helper: Get user's ElevenLabs API key from brand_kits
+async function getElevenLabsKey(userId) {
+  try {
+    const { getDb } = require('../db/database');
+    const db = getDb();
+    const result = await db.query('SELECT elevenlabs_api_key FROM brand_kits WHERE user_id = $1', [userId]);
+    if (result.rows.length > 0 && result.rows[0].elevenlabs_api_key) {
+      return result.rows[0].elevenlabs_api_key;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Helper: Generate speech via ElevenLabs API
+async function generateSpeech(apiKey, text, voiceId) {
+  const https = require('https');
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({
+      text: text,
+      model_id: 'eleven_monolingual_v1',
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.75
+      }
+    });
+
+    const options = {
+      hostname: 'api.elevenlabs.io',
+      port: 443,
+      path: '/v1/text-to-speech/' + voiceId,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey,
+        'Accept': 'audio/mpeg'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      if (res.statusCode !== 200) {
+        let body = '';
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => {
+          reject(new Error('ElevenLabs API error (' + res.statusCode + '): ' + body.slice(0, 200)));
+        });
+        return;
+      }
+
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+
+    req.on('error', reject);
+    req.setTimeout(60000, () => { req.destroy(); reject(new Error('ElevenLabs API timeout')); });
+    req.write(postData);
+    req.end();
+  });
+}
+
+// POST - Preview voiceover (returns audio only)
+router.post('/voiceover-preview', requireAuth, async (req, res) => {
+  try {
+    const { text, voiceId } = req.body;
+    if (!text) return res.status(400).json({ error: 'Please enter a script' });
+
+    const apiKey = await getElevenLabsKey(req.user.id);
+    if (!apiKey) {
+      return res.status(400).json({ error: 'No ElevenLabs API key found. Add one in Brand Voice settings.' });
+    }
+
+    const audioBuffer = await generateSpeech(apiKey, text, voiceId || '21m00Tcm4TlvDq8ikWAM');
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', audioBuffer.length);
+    res.send(audioBuffer);
+  } catch (error) {
+    console.error('Voiceover preview error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST - Apply voiceover to video
+router.post('/voiceover-apply', requireAuth, async (req, res) => {
+  try {
+    const { filename, text, voiceId, voiceVolume, duckOriginal } = req.body;
+    if (!filename || !text) return res.status(400).json({ error: 'Missing filename or script' });
+
+    const apiKey = await getElevenLabsKey(req.user.id);
+    if (!apiKey) {
+      return res.status(400).json({ error: 'No ElevenLabs API key found. Add one in Brand Voice settings.' });
+    }
+
+    // Check both directories for source video
+    let source = path.join(outputDir, filename);
+    if (!fs.existsSync(source)) {
+      source = path.join(uploadDir, filename);
+    }
+    if (!fs.existsSync(source)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Generate speech audio
+    const audioBuffer = await generateSpeech(apiKey, text, voiceId || '21m00Tcm4TlvDq8ikWAM');
+
+    // Save speech audio to temp file
+    const voiceAudioPath = path.join(outputDir, 'voice_' + Date.now() + '.mp3');
+    fs.writeFileSync(voiceAudioPath, audioBuffer);
+
+    const outputFilename = 'voiceover_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    // Mix voice audio with video
+    const voiceVol = ((voiceVolume || 100) / 100).toFixed(2);
+    const originalVol = duckOriginal ? '0.3' : '1.0';
+
+    await runFFmpeg([
+      '-i', source,
+      '-i', voiceAudioPath,
+      '-filter_complex',
+      '[0:a]volume=' + originalVol + '[a0];[1:a]volume=' + voiceVol + '[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=2[aout]',
+      '-map', '0:v',
+      '-map', '[aout]',
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-shortest',
+      '-y',
+      outputPath
+    ]);
+
+    // Clean up temp voice file
+    try { fs.unlinkSync(voiceAudioPath); } catch (e) {}
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Voiceover apply error:', error);
     res.status(500).json({ error: error.message });
   }
 });
