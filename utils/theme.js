@@ -115,6 +115,11 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/dashboard/analytics', icon: '&#x1F4CA;', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
     { href: '/dashboard/calendar', icon: '&#x1F4C5;', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
     { href: '/brand-voice', icon: '&#x1F399;', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    { href: '/ai-hook', icon: '&#x1F3A3;', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
+    { href: '/caption-presets', icon: '&#x1F4DD;', label: 'Captions', key: 'caption-presets', perm: 'use_repurpose' },
+    { href: '/ai-reframe', icon: '&#x1F5BC;', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
+    { href: '/video-editor', icon: '&#x1F3AC;', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
+    { href: '/enhance-speech', icon: '&#x1F50A;', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     { href: '/billing', icon: '&#x1F4B3;', label: 'Billing', key: 'billing', perm: 'view_billing' },
     { href: '/settings', icon: '&#x2699;&#xFE0F;', label: 'Settings', key: 'settings', perm: 'manage_settings' },
   ];

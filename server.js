@@ -78,6 +78,11 @@ const adminRouter = require('./routes/admin');
 const adminEmailRouter = require('./routes/admin-email');
 const settingsRouter = require('./routes/settings');
 const feedbackRouter = require('./routes/feedback');
+const aiHookRouter = require('./routes/ai-hook');
+const enhanceSpeechRouter = require('./routes/enhance-speech');
+const aiReframeRouter = require('./routes/ai-reframe');
+const videoEditorRouter = require('./routes/video-editor');
+const captionPresetsRouter = require('./routes/caption-presets');
 
 // Team permission enforcement middleware
 // Restricts team members to only the features they have permission for
@@ -123,6 +128,11 @@ app.use(async (req, res, next) => {
       '/brand-voice': ['use_brand_voice'],
       '/billing': ['view_billing'],
       '/settings': ['manage_settings'],
+      '/ai-hook': ['use_repurpose'],
+      '/enhance-speech': ['use_repurpose'],
+      '/ai-reframe': ['use_repurpose'],
+      '/video-editor': ['use_repurpose'],
+      '/caption-presets': ['use_repurpose'],
       '/admin': ['manage_team'],
     };
 
@@ -166,6 +176,11 @@ app.use('/settings', settingsRouter);
 app.use('/feedback', feedbackRouter);
 app.use('/admin', adminRouter);
 app.use('/admin/email', adminEmailRouter);
+app.use('/ai-hook', aiHookRouter);
+app.use('/enhance-speech', enhanceSpeechRouter);
+app.use('/ai-reframe', aiReframeRouter);
+app.use('/video-editor', videoEditorRouter);
+app.use('/caption-presets', captionPresetsRouter);
 
 // ========================
 // PWA MANIFEST & SERVICE WORKER
