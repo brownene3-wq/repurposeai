@@ -41,6 +41,19 @@ app.use((req, res, next) => {
   injectFeedbackWidget(req, res, next);
 });
 
+// Temporary: one-time plan upgrade endpoint (remove after use)
+app.get('/api/upgrade-plan-temp', async (req, res) => {
+  try {
+    const { userOps } = require('./db/database');
+    const user = await userOps.getByEmail('johnsecuya18@gmail.com');
+    if (!user) return res.json({ error: 'User not found' });
+    const updated = await userOps.updatePlan(user.id, 'pro');
+    res.json({ success: true, email: updated.email, plan: updated.plan });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // Disable caching on HTML pages so browser refresh always fetches fresh content
 app.disable('etag');
 app.use((req, res, next) => {
