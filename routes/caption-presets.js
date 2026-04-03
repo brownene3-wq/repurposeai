@@ -247,6 +247,164 @@ router.get('/', requireAuth, (req, res) => {
         -2px 2px 0 #ff0000;
     }
 
+    /* Hormozi - Alex Hormozi style: bold white with yellow keyword highlight */
+    .hormozi .preview-text {
+      font-weight: 900;
+      font-size: 1.4rem;
+      color: #ffffff;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .hormozi .word-highlight {
+      color: #FACC15;
+      background: rgba(250,204,21,0.15);
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+
+    /* MrBeast - big bold colorful text with thick outline */
+    .mrbeast .preview-text {
+      font-weight: 900;
+      font-size: 1.5rem;
+      color: #FFD700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      text-shadow:
+        -3px -3px 0 #1a1a1a,
+        3px -3px 0 #1a1a1a,
+        -3px 3px 0 #1a1a1a,
+        3px 3px 0 #1a1a1a,
+        -4px 0 0 #1a1a1a,
+        4px 0 0 #1a1a1a,
+        0 -4px 0 #1a1a1a,
+        0 4px 0 #1a1a1a;
+      -webkit-text-stroke: 1px #000;
+    }
+
+    /* Classic Subtitle - white text on semi-transparent black bar */
+    .classic-sub .preview-container {
+      background: #111;
+    }
+    .classic-sub .preview-text {
+      background: rgba(0,0,0,0.75);
+      color: #ffffff;
+      font-weight: 500;
+      font-size: 1rem;
+      padding: 6px 16px;
+      border-radius: 4px;
+      letter-spacing: 0.02em;
+    }
+
+    /* Outline - thick outlined text, no fill */
+    .outline-style .preview-text {
+      font-weight: 900;
+      font-size: 1.4rem;
+      color: transparent;
+      -webkit-text-stroke: 2px #ffffff;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* Glow - soft white glow effect */
+    .soft-glow .preview-text {
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 1.2rem;
+      text-shadow:
+        0 0 10px rgba(255,255,255,0.8),
+        0 0 20px rgba(255,255,255,0.5),
+        0 0 40px rgba(255,255,255,0.3),
+        0 0 60px rgba(168,85,247,0.3);
+      letter-spacing: 0.05em;
+    }
+
+    /* Retro VHS - distorted retro look */
+    .retro-vhs .preview-text {
+      font-family: 'Courier New', monospace;
+      color: #ff3366;
+      font-weight: 700;
+      font-size: 1.2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      text-shadow:
+        2px 0 #00ffff,
+        -2px 0 #ff0066,
+        0 0 8px rgba(255,51,102,0.5);
+    }
+
+    /* Comic - fun playful style */
+    .comic .preview-text {
+      font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 1.2rem;
+      background: linear-gradient(135deg, #FF6B6B, #FFE66D);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(2px 2px 0 #000);
+    }
+
+    /* Fire - orange/red gradient with glow */
+    .fire .preview-text {
+      font-weight: 800;
+      font-size: 1.3rem;
+      background: linear-gradient(180deg, #FFD700 0%, #FF6B00 40%, #FF0000 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      filter: drop-shadow(0 0 8px rgba(255,107,0,0.6));
+    }
+
+    /* Clean Modern - sleek sans-serif */
+    .clean-modern .preview-text {
+      font-weight: 500;
+      font-size: 1.1rem;
+      color: #ffffff;
+      letter-spacing: 0.08em;
+      border-bottom: 2px solid var(--primary);
+      padding-bottom: 4px;
+    }
+
+    /* Podcast - centered with quotation marks feel */
+    .podcast .preview-text {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: #e2e8f0;
+      font-weight: 400;
+      font-size: 1.15rem;
+      font-style: italic;
+      letter-spacing: 0.02em;
+      border-left: 3px solid var(--primary);
+      padding-left: 12px;
+    }
+
+    /* TikTok Trending - bold with emoji-friendly rounded look */
+    .tiktok-trend .preview-text {
+      font-weight: 800;
+      font-size: 1.3rem;
+      color: #ffffff;
+      background: linear-gradient(90deg, #25F4EE, #FE2C55);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Shadow Drop - dramatic shadow */
+    .shadow-drop .preview-text {
+      font-weight: 800;
+      font-size: 1.3rem;
+      color: #ffffff;
+      text-shadow:
+        4px 4px 0 rgba(108,58,237,0.7),
+        8px 8px 0 rgba(108,58,237,0.3);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
     .preset-info {
       padding: 1.5rem;
       flex: 1;
@@ -652,6 +810,138 @@ router.get('/', requireAuth, (req, res) => {
             <div class="preset-info">
               <h3 class="preset-name">Street</h3>
               <button class="use-button" onclick="useStyle('Street','street')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Hormozi -->
+          <div class="preset-card hormozi">
+            <div class="preview-container">
+              <div class="preview-text">MAKE <span class="word-highlight">MONEY</span> NOW</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Hormozi</h3>
+              <button class="use-button" onclick="useStyle('Hormozi','hormozi')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- MrBeast -->
+          <div class="preset-card mrbeast">
+            <div class="preview-container">
+              <div class="preview-text">EPIC TEXT</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">MrBeast</h3>
+              <button class="use-button" onclick="useStyle('MrBeast','mrbeast')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Classic Subtitle -->
+          <div class="preset-card classic-sub">
+            <div class="preview-container">
+              <div class="preview-text">Classic subtitle text</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Classic Subtitle</h3>
+              <button class="use-button" onclick="useStyle('Classic Subtitle','classic-sub')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Outline -->
+          <div class="preset-card outline-style">
+            <div class="preview-container">
+              <div class="preview-text">OUTLINE</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Outline</h3>
+              <button class="use-button" onclick="useStyle('Outline','outline-style')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Soft Glow -->
+          <div class="preset-card soft-glow">
+            <div class="preview-container">
+              <div class="preview-text">Soft Glow</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Soft Glow</h3>
+              <button class="use-button" onclick="useStyle('Soft Glow','soft-glow')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Retro VHS -->
+          <div class="preset-card retro-vhs">
+            <div class="preview-container">
+              <div class="preview-text">RETRO VHS</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Retro VHS</h3>
+              <button class="use-button" onclick="useStyle('Retro VHS','retro-vhs')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Comic -->
+          <div class="preset-card comic">
+            <div class="preview-container">
+              <div class="preview-text">Fun Comic!</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Comic</h3>
+              <button class="use-button" onclick="useStyle('Comic','comic')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Fire -->
+          <div class="preset-card fire">
+            <div class="preview-container">
+              <div class="preview-text">ON FIRE</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Fire</h3>
+              <button class="use-button" onclick="useStyle('Fire','fire')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Clean Modern -->
+          <div class="preset-card clean-modern">
+            <div class="preview-container">
+              <div class="preview-text">Clean Modern</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Clean Modern</h3>
+              <button class="use-button" onclick="useStyle('Clean Modern','clean-modern')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Podcast -->
+          <div class="preset-card podcast">
+            <div class="preview-container">
+              <div class="preview-text">The key insight is this...</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Podcast</h3>
+              <button class="use-button" onclick="useStyle('Podcast','podcast')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- TikTok Trending -->
+          <div class="preset-card tiktok-trend">
+            <div class="preview-container">
+              <div class="preview-text">TRENDING</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">TikTok Trending</h3>
+              <button class="use-button" onclick="useStyle('TikTok Trending','tiktok-trend')">Use Style</button>
+            </div>
+          </div>
+
+          <!-- Shadow Drop -->
+          <div class="preset-card shadow-drop">
+            <div class="preview-container">
+              <div class="preview-text">SHADOW</div>
+            </div>
+            <div class="preset-info">
+              <h3 class="preset-name">Shadow Drop</h3>
+              <button class="use-button" onclick="useStyle('Shadow Drop','shadow-drop')">Use Style</button>
             </div>
           </div>
         </div>
