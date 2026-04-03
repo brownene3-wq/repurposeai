@@ -33,6 +33,8 @@ function getBaseCSS() {
     .btn-outline{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,0.2)}
     .btn-outline:hover{border-color:var(--primary-light);color:var(--primary-light)}
     .toast{position:fixed;bottom:2rem;right:2rem;background:var(--success);color:#fff;padding:1rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:500;display:none;z-index:9999;animation:slideUp .3s ease}
+    .toast.error{background:var(--error)}
+    .toast.info{background:var(--primary)}
     @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
     [data-theme="light"] .url-input,body.light .url-input,html.light .url-input{border-color:rgba(0,0,0,0.12);background:#F8F9FC}
     [data-theme="light"] .content-textarea,body.light .content-textarea,html.light .content-textarea{background:#F8F9FC;border-color:rgba(0,0,0,0.08)}

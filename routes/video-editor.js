@@ -194,7 +194,7 @@ router.get('/', requireAuth, async (req, res) => {
             <div class="upload-zone" id="uploadZone">
               <h3>📹 Upload Your Video</h3>
               <p>Drop your video here or click to browse</p>
-              <button class="upload-button">Select Video</button>
+              <button type="button" class="upload-button">Select Video</button>
               <input type="file" id="fileInput" style="display:none" accept="video/*">
             </div>
 
@@ -317,6 +317,7 @@ router.get('/', requireAuth, async (req, res) => {
     function showToast(message, type = 'success') {
       const toast = document.createElement('div');
       toast.className = 'toast ' + type;
+      toast.style.display = 'block';
       toast.textContent = message;
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 3000);
@@ -328,7 +329,15 @@ router.get('/', requireAuth, async (req, res) => {
     const videoPlayer = document.getElementById('videoPlayer');
     const videoPreviewArea = document.getElementById('videoPreviewArea');
 
-    document.querySelector('.upload-button').addEventListener('click', () => fileInput.click());
+    document.querySelector('.upload-button').addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+
+    uploadZone.addEventListener('click', (e) => {
+      if (e.target === fileInput) return;
+      fileInput.click();
+    });
 
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
@@ -354,6 +363,13 @@ router.get('/', requireAuth, async (req, res) => {
     });
 
     async function uploadVideo(file) {
+      var uploadBtn = document.querySelector('.upload-button');
+      var originalText = uploadBtn.textContent;
+      uploadBtn.textContent = 'Uploading...';
+      uploadBtn.disabled = true;
+      uploadZone.style.opacity = '0.6';
+      uploadZone.style.pointerEvents = 'none';
+
       const formData = new FormData();
       formData.append('video', file);
 
@@ -363,7 +379,11 @@ router.get('/', requireAuth, async (req, res) => {
           body: formData
         });
 
-        if (!response.ok) throw new Error('Upload failed');
+        if (!response.ok) {
+          var errData = {};
+          try { errData = await response.json(); } catch(e) {}
+          throw new Error(errData.error || 'Upload failed (status ' + response.status + ')');
+        }
 
         const data = await response.json();
         currentVideoFile = data;
@@ -380,6 +400,10 @@ router.get('/', requireAuth, async (req, res) => {
 
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
+        uploadBtn.textContent = originalText;
+        uploadBtn.disabled = false;
+        uploadZone.style.opacity = '1';
+        uploadZone.style.pointerEvents = 'auto';
         showToast('Failed to upload video: ' + error.message, 'error');
       }
     }
@@ -496,6 +520,10 @@ router.get('/', requireAuth, async (req, res) => {
       btn.addEventListener('click', function() {
         document.querySelectorAll('.tool-button').forEach(b => b.classList.remove('active'));
         this.classList.add('active');
+        var tool = this.dataset.tool;
+        if (tool !== 'trim') {
+          showToast(this.textContent.trim() + ' — coming soon!', 'info');
+        }
       });
     });
   </script>
