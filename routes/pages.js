@@ -36,25 +36,67 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .hero h1 .gradient-text{background:var(--gradient-3);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .hero p{font-size:1.2rem;color:var(--text-muted);max-width:600px;margin:0 auto 2.5rem;line-height:1.7}
 .hero-cta{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem}
-.hero-stats{display:flex;gap:3rem;justify-content:center;margin-top:3rem;padding-top:3rem;border-top:var(--border-subtle)}
-.hero-stat .number{font-size:2rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.hero-stat .label{font-size:.85rem;color:var(--text-dim);margin-top:.3rem}
+.hero-input-group{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem;max-width:700px;margin-left:auto;margin-right:auto}
+.hero-input{flex:1;min-width:250px;padding:1rem 1.5rem;background:var(--surface);border:1px solid rgba(108,58,237,0.3);border-radius:50px;color:var(--text);font-size:.95rem}
+.carousel-container{position:relative;margin-top:4rem;max-width:1000px;margin-left:auto;margin-right:auto}
+.carousel{display:flex;gap:2rem;overflow:hidden;scroll-behavior:smooth;transition:transform .5s ease-in-out}
+.carousel-slide{flex:0 0 100%;display:flex;justify-content:center}
+.carousel-mockup{width:100%;max-width:600px;height:400px;background:var(--surface);border-radius:20px;border:2px solid rgba(108,58,237,0.4);display:flex;align-items:center;justify-content:center;font-size:3rem;position:relative;overflow:hidden}
+.carousel-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.1) 0%,rgba(236,72,153,0.05) 100%)}
+.carousel-controls{display:flex;gap:1.5rem;justify-content:center;align-items:center;margin-top:3rem;flex-wrap:wrap}
+.carousel-btn{background:var(--surface);border:1px solid rgba(108,58,237,0.3);color:var(--primary-light);width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s;font-size:1.2rem}
+.carousel-btn:hover{border-color:var(--primary);background:rgba(108,58,237,0.1)}
+.carousel-labels{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;margin-top:2rem}
+.carousel-label{padding:.6rem 1.2rem;border-radius:50px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);color:var(--text-muted);font-size:.85rem;cursor:pointer;transition:all .3s}
+.carousel-label.active{background:var(--gradient-1);color:#fff;border-color:var(--primary)}
+.stats-marquee{overflow:hidden;background:var(--dark-2);padding:2.5rem 0;margin:4rem 0}
+.marquee-content{display:flex;gap:4rem;animation:scroll-marquee 25s linear infinite;white-space:nowrap}
+.marquee-item{display:flex;align-items:center;gap:1rem;font-weight:600;color:var(--text-muted)}
+.marquee-item::before{content:'•';color:var(--primary-light);margin-right:.5rem}
+@keyframes scroll-marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.feature-showcase{display:grid;gap:6rem;margin:6rem 0}
+.feature-row{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;padding:4rem 0;border-bottom:var(--border-subtle)}
+.feature-row.reverse{grid-template-columns:1fr 1fr;direction:rtl}
+.feature-row.reverse>*{direction:ltr}
+.feature-content h3{font-size:.9rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--primary-light);margin-bottom:1rem}
+.feature-content h2{font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:800;margin-bottom:1.5rem;line-height:1.2}
+.feature-content p{font-size:1.05rem;color:var(--text-muted);line-height:1.8;margin-bottom:2rem}
+.feature-mockup{width:100%;aspect-ratio:4/3;background:var(--surface);border-radius:16px;border:2px solid rgba(108,58,237,0.3);display:flex;align-items:center;justify-content:center;font-size:4rem;position:relative;overflow:hidden}
+.feature-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.15) 0%,rgba(236,72,153,0.08) 100%)}
+.workflow-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3rem;margin-top:3rem;max-width:1000px;margin-left:auto;margin-right:auto}
+.workflow-card{text-align:center}
+.workflow-number{width:60px;height:60px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem;margin:0 auto 1.5rem}
+.workflow-card h3{font-size:1.3rem;font-weight:700;margin-bottom:.8rem}
+.workflow-card p{color:var(--text-muted);line-height:1.7}
+.teams-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5rem;margin-top:3rem}
+.team-card{background:var(--surface);border-radius:20px;border:var(--border-subtle);padding:2.5rem;transition:all .3s}
+.team-card:hover{transform:translateY(-4px);border-color:rgba(108,58,237,0.3)}
+.team-card-icon{font-size:2.5rem;margin-bottom:1.5rem}
+.team-card h3{font-size:1.1rem;font-weight:700;margin-bottom:.8rem}
+.team-card p{color:var(--text-muted);font-size:.95rem;line-height:1.6;margin-bottom:2rem}
+.team-card-mockup{width:100%;height:200px;background:linear-gradient(135deg,rgba(108,58,237,0.1) 0%,rgba(236,72,153,0.05) 100%);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:3rem;color:var(--text-dim)}
+.marquee-testimonials{overflow:hidden;padding:4rem 0;margin:4rem 0}
+.marquee-container{display:flex;gap:2rem;animation:scroll-marquee 30s linear infinite}
+.testimonial-marquee-card{flex:0 0 350px;background:var(--surface);border-radius:16px;border:var(--border-subtle);padding:2rem}
+.testimonial-stars{color:var(--accent);margin-bottom:1rem;font-size:1.1rem}
+.testimonial-quote{color:var(--text-muted);font-size:.95rem;line-height:1.7;margin-bottom:1.5rem;font-style:italic}
+.testimonial-author-name{font-weight:600;font-size:.9rem}
+.testimonial-author-role{font-size:.8rem;color:var(--text-dim)}
+.faq-container{max-width:700px;margin:0 auto;margin-top:3rem}
+.faq-item{background:var(--surface);border-radius:12px;border:var(--border-subtle);margin-bottom:1.5rem;overflow:hidden}
+.faq-header{padding:1.5rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:all .3s}
+.faq-header:hover{background:rgba(108,58,237,0.05)}
+.faq-header h3{font-size:1rem;font-weight:600;margin:0}
+.faq-toggle{font-size:1.5rem;transition:transform .3s}
+.faq-item.open .faq-toggle{transform:rotate(45deg)}
+.faq-content{max-height:0;overflow:hidden;transition:max-height .3s ease-out;padding:0 1.5rem}
+.faq-item.open .faq-content{max-height:300px;padding:0 1.5rem 1.5rem}
+.faq-content p{color:var(--text-muted);font-size:.95rem;line-height:1.7}
 section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .section-label{display:inline-block;font-size:.8rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--primary-light);margin-bottom:1rem}
 .section-title{font-family:'Playfair Display',serif;font-size:clamp(2rem,4vw,3rem);font-weight:800;margin-bottom:1rem;line-height:1.2}
 .section-subtitle{font-size:1.1rem;color:var(--text-muted);max-width:600px;line-height:1.7}
 .section-header{text-align:center;margin-bottom:4rem}.section-header .section-subtitle{margin:0 auto}
-.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;margin-top:3rem;max-width:1100px;margin-left:auto;margin-right:auto}
-.step-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .4s}
-.step-card:hover{transform:translateY(-4px);border-color:rgba(108,58,237,0.3)}
-.step-number{width:50px;height:50px;border-radius:15px;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;margin-bottom:1.5rem}
-.step-card h3{font-size:1.2rem;font-weight:700;margin-bottom:.8rem}.step-card p{color:var(--text-muted);font-size:.95rem;line-height:1.6}
-.step-icon{font-size:2rem;margin-bottom:1rem}
-.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
-.feature-card{background:var(--surface);border-radius:16px;padding:2rem;border:var(--border-subtle);transition:all .3s}
-.feature-card:hover{border-color:rgba(108,58,237,0.3);transform:translateY(-2px)}
-.feature-icon{width:48px;height:48px;border-radius:12px;background:rgba(108,58,237,0.15);display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:1.2rem}
-.feature-card h3{font-size:1.05rem;font-weight:700;margin-bottom:.6rem}.feature-card p{color:var(--text-muted);font-size:.9rem;line-height:1.6}
 .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;align-items:start}
 .price-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .3s;position:relative}
 .price-card.featured{border-color:var(--primary);box-shadow:var(--shadow-glow);transform:scale(1.02)}
@@ -66,13 +108,6 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .price-features li{padding:.5rem 0;color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;gap:.7rem}
 .price-features li::before{content:'✓';color:var(--primary-light);font-weight:700}
 .price-card .btn{width:100%;justify-content:center}
-.testimonials-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2rem}
-.testimonial-card{background:var(--surface);border-radius:16px;padding:2rem;border:var(--border-subtle)}
-.testimonial-stars{color:var(--accent);margin-bottom:1rem;font-size:1.1rem}
-.testimonial-card p{color:var(--text-muted);font-size:.95rem;line-height:1.7;margin-bottom:1.5rem;font-style:italic}
-.testimonial-author{display:flex;align-items:center;gap:.8rem}
-.testimonial-avatar{width:40px;height:40px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem}
-.testimonial-name{font-weight:600;font-size:.9rem}.testimonial-role{font-size:.8rem;color:var(--text-dim)}
 .cta-section{text-align:center;padding:6rem 2rem;background:linear-gradient(180deg,transparent 0%,rgba(108,58,237,0.08) 50%,transparent 100%)}
 .footer{padding:4rem 2rem 2rem;border-top:var(--border-subtle);background:var(--dark-2)}
 .footer-grid{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:3rem;margin-bottom:3rem}
@@ -80,32 +115,29 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .footer h4{font-size:.85rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:1.2rem;color:var(--text-muted)}
 .footer a{display:block;color:var(--text-dim);text-decoration:none;font-size:.9rem;padding:.3rem 0;transition:color .3s}.footer a:hover{color:var(--primary-light)}
 .footer-bottom{max-width:1200px;margin:0 auto;padding-top:2rem;border-top:var(--border-subtle);display:flex;justify-content:space-between;align-items:center;font-size:.85rem;color:var(--text-dim)}
-.demo-preview{max-width:900px;margin:4rem auto 0;background:var(--surface);border-radius:20px;border:var(--border-subtle);overflow:hidden;box-shadow:var(--shadow-glow)}
-.demo-bar{display:flex;align-items:center;gap:.5rem;padding:1rem 1.5rem;background:var(--dark-2);border-bottom:var(--border-subtle)}
-.demo-dot{width:10px;height:10px;border-radius:50%}
-.demo-body{padding:2rem}.demo-input-group{display:flex;gap:1rem;margin-bottom:1.5rem}
-.demo-input{flex:1;padding:1rem 1.2rem;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:var(--text);font-size:.95rem}
-.demo-platforms{display:flex;gap:1rem;flex-wrap:wrap}
-.demo-platform{padding:.8rem 1.2rem;border-radius:10px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);font-size:.85rem;color:var(--primary-light)}
 .theme-toggle{background:var(--surface);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:32px;height:32px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:var(--text-muted);transition:all .3s;flex-shrink:0}[data-theme="light"] .theme-toggle,body.light .theme-toggle{border-color:rgba(0,0,0,0.1)}.theme-toggle:hover{border-color:var(--primary-light);color:var(--text)}.theme-toggle .toggle-track{display:none}.theme-toggle .toggle-thumb{display:none}
-@media(max-width:1024px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1024px){.pricing-grid{grid-template-columns:repeat(2,1fr)}.feature-row,.feature-row.reverse{grid-template-columns:1fr},.feature-row.reverse{direction:ltr}}
 .mobile-nav-toggle{display:none;background:none;border:none;color:var(--text);font-size:1.5rem;cursor:pointer;padding:4px}
-@media(max-width:1024px){.pricing-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:768px){
   .nav-links{display:none;position:absolute;top:100%;left:0;right:0;background:rgba(6,6,15,.97);backdrop-filter:blur(20px);flex-direction:column;padding:1.5rem 2rem;gap:1rem;border-bottom:1px solid var(--border)}
   .nav-links.mobile-open{display:flex}
   .mobile-nav-toggle{display:block}
-  .steps-grid,.features-grid,.pricing-grid,.testimonials-grid{grid-template-columns:1fr}
+  .pricing-grid{grid-template-columns:1fr}
   .footer-grid{grid-template-columns:1fr 1fr}
-  .hero-stats{flex-direction:column;gap:1.5rem}
   .hero h1{font-size:2rem}
   .hero-content p{font-size:.95rem}
   .price-card.featured{transform:none}
-  .demo-input-group{flex-direction:column}
-  .demo-preview{margin:2rem auto 0;border-radius:12px}
   .footer-bottom{flex-direction:column;gap:.5rem;text-align:center}
-  section{padding:60px 0 !important}
+  section{padding:4rem 0 !important}
   .section-title{font-size:1.6rem}
+  .feature-row{gap:2rem;padding:2rem 0}
+  .carousel-mockup{height:250px;font-size:2rem}
+  .workflow-grid{grid-template-columns:1fr;gap:2rem}
+  .teams-grid{grid-template-columns:1fr}
+  .carousel-labels{gap:.5rem}
+  .carousel-label{padding:.5rem 1rem;font-size:.8rem}
+  .marquee-testimonials{padding:2rem 0}
+  .testimonial-marquee-card{flex:0 0 90vw}
 }
 `;
 }
@@ -132,8 +164,8 @@ router.get('/', (req, res) => {
     <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
     <button class="mobile-nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mobile-open')">&#9776;</button>
     <div class="nav-links">
-      <a href="#how-it-works">How It Works</a>
       <a href="#features">Features</a>
+      <a href="#how-it-works">How It Works</a>
       <a href="#pricing">Pricing</a>
       <a href="/auth/login" class="btn btn-outline">Log In</a>
       <a href="/auth/register" class="btn btn-primary">Start Free</a>
@@ -147,35 +179,106 @@ router.get('/', (req, res) => {
       <div class="hero-badge">&#x2728; AI-Powered Content Engine</div>
       <h1>Turn One Video Into<br><span class="gradient-text">Unlimited Content</span></h1>
       <p>Paste a YouTube link. Our AI instantly creates optimized posts for every major platform. Save hours of work. Grow everywhere.</p>
-      <div class="hero-cta">
-        <a href="/auth/register" class="btn btn-primary btn-large">Get Started Free &#x2192;</a>
-        <a href="#how-it-works" class="btn btn-outline btn-large">See How It Works</a>
+      <div class="hero-input-group">
+        <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
+        <button class="btn btn-primary">Repurpose &#x26A1;</button>
+        <button class="btn btn-outline">Upload Files</button>
       </div>
-      <div class="demo-preview">
-        <div class="demo-bar">
-          <div class="demo-dot" style="background:#FF5F57"></div>
-          <div class="demo-dot" style="background:#FEBC2E"></div>
-          <div class="demo-dot" style="background:#28C840"></div>
-        </div>
-        <div class="demo-body">
-          <div class="demo-input-group">
-            <input class="demo-input" value="https://youtube.com/watch?v=your-video" readonly>
-            <button class="btn btn-primary">Repurpose &#x26A1;</button>
-          </div>
-          <div class="demo-platforms">
-            <div class="demo-platform">&#x1F4F7; Instagram Reel</div>
-            <div class="demo-platform">&#x1F3B5; TikTok</div>
-            <div class="demo-platform">&#x1F4D8; Facebook Post</div>
-            <div class="demo-platform">&#x1F4BC; LinkedIn Article</div>
-            <div class="demo-platform">&#x1F426; Twitter Thread</div>
-            <div class="demo-platform">&#x2702;&#xFE0F; Smart Shorts</div>
-          </div>
+      <div class="carousel-container">
+        <div class="carousel" id="carousel">
+          <div class="carousel-slide"><div class="carousel-mockup">📎</div></div>
+          <div class="carousel-slide"><div class="carousel-mockup">✂️</div></div>
+          <div class="carousel-slide"><div class="carousel-mockup">📝</div></div>
+          <div class="carousel-slide"><div class="carousel-mockup">🎬</div></div>
+          <div class="carousel-slide"><div class="carousel-mockup">📅</div></div>
+          <div class="carousel-slide"><div class="carousel-mockup">🎙️</div></div>
         </div>
       </div>
-      <div class="hero-stats">
-        <div class="hero-stat"><div class="number">10K+</div><div class="label">Videos Repurposed</div></div>
-        <div class="hero-stat"><div class="number">50K+</div><div class="label">Posts Generated</div></div>
-        <div class="hero-stat"><div class="number">7</div><div class="label">Platforms Supported</div></div>
+      <div class="carousel-controls">
+        <button class="carousel-btn" onclick="prevSlide()">←</button>
+        <span style="color:var(--text-muted);font-size:.9rem" id="slideCounter">1 / 6</span>
+        <button class="carousel-btn" onclick="nextSlide()">→</button>
+      </div>
+      <div class="carousel-labels">
+        <div class="carousel-label active" onclick="goToSlide(0)">AI Clipping</div>
+        <div class="carousel-label" onclick="goToSlide(1)">AI Captions</div>
+        <div class="carousel-label" onclick="goToSlide(2)">AI Reframe</div>
+        <div class="carousel-label" onclick="goToSlide(3)">AI B-Roll</div>
+        <div class="carousel-label" onclick="goToSlide(4)">Social Scheduler</div>
+        <div class="carousel-label" onclick="goToSlide(5)">Brand Voice</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="stats-marquee">
+    <div class="marquee-content">
+      <div class="marquee-item">10,000+ Videos Repurposed</div>
+      <div class="marquee-item">50,000+ Posts Generated</div>
+      <div class="marquee-item">7 Platforms Supported</div>
+      <div class="marquee-item">AI-Powered</div>
+      <div class="marquee-item">10,000+ Videos Repurposed</div>
+      <div class="marquee-item">50,000+ Posts Generated</div>
+      <div class="marquee-item">7 Platforms Supported</div>
+      <div class="marquee-item">AI-Powered</div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="section-inner">
+      <div class="section-header">
+        <div class="section-label">Core Features</div>
+        <h2 class="section-title">Everything You Need to Scale</h2>
+        <p class="section-subtitle">Professional-grade tools designed for creators, agencies, and businesses.</p>
+      </div>
+      <div class="feature-showcase">
+        <div class="feature-row">
+          <div class="feature-content">
+            <h3>Smart Shorts</h3>
+            <h2>AI that finds viral moments in any video</h2>
+            <p>Auto-identify the best clips from long videos. Our AI analyzes engagement patterns and cuts them into perfectly optimized short-form content for TikTok, Instagram Reels, and YouTube Shorts.</p>
+          </div>
+          <div class="feature-mockup">✂️</div>
+        </div>
+        <div class="feature-row reverse">
+          <div class="feature-content">
+            <h3>AI Reframe</h3>
+            <h2>Resize any video for every platform in 1 click</h2>
+            <p>Auto-resize 16:9 to 9:16, 1:1, and any other aspect ratio. Automatically reframe for Instagram, TikTok, LinkedIn, YouTube, and more. No manual cropping needed.</p>
+          </div>
+          <div class="feature-mockup">📐</div>
+        </div>
+        <div class="feature-row">
+          <div class="feature-content">
+            <h3>Animated Captions</h3>
+            <h2>Trendy animated subtitles that boost engagement</h2>
+            <p>Auto-add stylized captions with built-in animations. Choose from trending caption styles that match your brand. Increase engagement by up to 40% with captions.</p>
+          </div>
+          <div class="feature-mockup">📝</div>
+        </div>
+        <div class="feature-row reverse">
+          <div class="feature-content">
+            <h3>AI B-Roll</h3>
+            <h2>Get relevant stock footage in 1 click</h2>
+            <p>Auto-insert contextual B-roll footage from our library of millions of clips. Our AI analyzes your script and finds the perfect visuals to enhance your content automatically.</p>
+          </div>
+          <div class="feature-mockup">🎬</div>
+        </div>
+        <div class="feature-row">
+          <div class="feature-content">
+            <h3>Social Scheduler</h3>
+            <h2>Schedule a month's posts in 10 minutes</h2>
+            <p>Plan and auto-publish everywhere. Schedule repurposed content across all platforms with one click. Auto-optimize posting times for maximum engagement.</p>
+          </div>
+          <div class="feature-mockup">📅</div>
+        </div>
+        <div class="feature-row reverse">
+          <div class="feature-content">
+            <h3>Brand Voice</h3>
+            <h2>Every piece of content sounds like you</h2>
+            <p>Custom tone profiles that match your unique voice. Train our AI on your best content and we'll replicate your style across all repurposed posts.</p>
+          </div>
+          <div class="feature-mockup">🎙️</div>
+        </div>
       </div>
     </div>
   </section>
@@ -187,40 +290,52 @@ router.get('/', (req, res) => {
         <h2 class="section-title">Three Steps to Everywhere</h2>
         <p class="section-subtitle">From YouTube to every platform in under 60 seconds. No editing skills required.</p>
       </div>
-      <div class="steps-grid">
-        <div class="step-card">
-          <div class="step-number">1</div><div class="step-icon">&#x1F517;</div>
-          <h3>Paste Your Link</h3>
+      <div class="workflow-grid">
+        <div class="workflow-card">
+          <div class="workflow-number">1</div>
+          <h3>Paste Link</h3>
           <p>Drop any YouTube video URL into RepurposeAI. We extract transcripts, key moments, and visual context automatically.</p>
         </div>
-        <div class="step-card">
-          <div class="step-number">2</div><div class="step-icon">&#x2728;</div>
-          <h3>AI Creates Content</h3>
-          <p>Our AI engine generates platform-optimized content: Instagram captions, TikTok scripts, LinkedIn articles, tweet threads, and Smart Shorts clips — all optimized for each platform.</p>
+        <div class="workflow-card">
+          <div class="workflow-number">2</div>
+          <h3>AI Creates</h3>
+          <p>Our AI engine generates platform-optimized content: Instagram captions, TikTok scripts, LinkedIn articles, tweets, and Smart Shorts clips.</p>
         </div>
-        <div class="step-card">
-          <div class="step-number">3</div><div class="step-icon">&#x1F680;</div>
-          <h3>Copy &amp; Share</h3>
-          <p>Review, edit if needed, then copy or share your content directly to Twitter, LinkedIn, Facebook, and more with one click.</p>
+        <div class="workflow-card">
+          <div class="workflow-number">3</div>
+          <h3>Publish Everywhere</h3>
+          <p>Review, edit if needed, then publish directly to Twitter, LinkedIn, Facebook, Instagram, TikTok, and more with one click.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="features">
+  <section style="background:var(--dark)">
     <div class="section-inner">
       <div class="section-header">
-        <div class="section-label">Features</div>
-        <h2 class="section-title">Everything You Need to Scale</h2>
-        <p class="section-subtitle">Professional-grade tools designed for creators, agencies, and businesses.</p>
+        <div class="section-label">Teams</div>
+        <h2 class="section-title">Scale Your Creative Output</h2>
+        <p class="section-subtitle">Scale your creative output without scaling overhead</p>
       </div>
-      <div class="features-grid">
-        <div class="feature-card"><div class="feature-icon">&#x1F9E0;</div><h3>Smart AI Engine</h3><p>Advanced AI understands context, tone, and audience to create platform-perfect content every time.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x2702;&#xFE0F;</div><h3>Smart Shorts</h3><p>Automatically identify viral-worthy moments in any YouTube video and generate short-form content for TikTok, Reels, and Shorts.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F399;</div><h3>Brand Voice</h3><p>Create custom brand voice profiles so every piece of content matches your unique tone and style.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F4C5;</div><h3>Content Calendar</h3><p>Plan and schedule your repurposed content across all platforms with an intuitive visual calendar.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F4CA;</div><h3>Analytics Dashboard</h3><p>Track your content generation across all platforms with analytics and activity history.</p></div>
-        <div class="feature-card"><div class="feature-icon">&#x1F3A8;</div><h3>Platform Optimization</h3><p>Content is automatically tailored for each platform's format, character limits, and best practices.</p></div>
+      <div class="teams-grid">
+        <div class="team-card">
+          <div class="team-card-icon">🎨</div>
+          <h3>Brand Templates</h3>
+          <p>Save your best content styles as reusable templates. Apply consistent branding across all repurposed content automatically.</p>
+          <div class="team-card-mockup">🎨</div>
+        </div>
+        <div class="team-card">
+          <div class="team-card-icon">👥</div>
+          <h3>Team Workspace</h3>
+          <p>Collaborate with your team in real-time. Assign tasks, review content, and publish together on one unified platform.</p>
+          <div class="team-card-mockup">👥</div>
+        </div>
+        <div class="team-card">
+          <div class="team-card-icon">⚙️</div>
+          <h3>API Integration</h3>
+          <p>Connect RepurposeAI to your existing tools. Use our powerful API to build custom workflows that fit your process.</p>
+          <div class="team-card-mockup">⚙️</div>
+        </div>
       </div>
     </div>
   </section>
@@ -261,28 +376,123 @@ router.get('/', (req, res) => {
     </div>
   </section>
 
-  <section>
+  <section style="background:var(--dark-2)">
     <div class="section-inner">
       <div class="section-header">
         <div class="section-label">Testimonials</div>
         <h2 class="section-title">Loved by Creators</h2>
         <p class="section-subtitle">See what our users are saying about RepurposeAI.</p>
       </div>
-      <div class="testimonials-grid">
-        <div class="testimonial-card">
-          <div class="testimonial-stars">&#x2B50;&#x2B50;&#x2B50;&#x2B50;&#x2B50;</div>
-          <p>"RepurposeAI saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
-          <div class="testimonial-author"><div class="testimonial-avatar">JM</div><div><div class="testimonial-name">Jake Morrison</div><div class="testimonial-role">YouTube Creator, 500K subs</div></div></div>
+      <div class="marquee-testimonials">
+        <div class="marquee-container">
+          <div class="testimonial-marquee-card">
+            <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+            <p class="testimonial-quote">"RepurposeAI saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
+            <div class="testimonial-author-name">Jake Morrison</div>
+            <div class="testimonial-author-role">YouTube Creator, 500K subs</div>
+          </div>
+          <div class="testimonial-marquee-card">
+            <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+            <p class="testimonial-quote">"Our agency manages 20+ clients. RepurposeAI turned a 3-person job into something one person handles easily."</p>
+            <div class="testimonial-author-name">Sarah Rodriguez</div>
+            <div class="testimonial-author-role">Digital Agency Owner</div>
+          </div>
+          <div class="testimonial-marquee-card">
+            <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+            <p class="testimonial-quote">"The AI understands my brand voice perfectly. The captions it generates get more engagement than what I wrote manually."</p>
+            <div class="testimonial-author-name">David Kim</div>
+            <div class="testimonial-author-role">E-commerce Entrepreneur</div>
+          </div>
+          <div class="testimonial-marquee-card">
+            <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+            <p class="testimonial-quote">"I went from 2-3 posts per week to 15+ posts. The time I save is incredible and the quality is just as good."</p>
+            <div class="testimonial-author-name">Alex Turner</div>
+            <div class="testimonial-author-role">Content Creator</div>
+          </div>
+          <div class="testimonial-marquee-card">
+            <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+            <p class="testimonial-quote">"Finally, a tool that understands platform differences. No more manual resizing and editing for each platform."</p>
+            <div class="testimonial-author-name">Maria Chen</div>
+            <div class="testimonial-author-role">Marketing Manager</div>
+          </div>
+          <div class="testimonial-marquee-card">
+            <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+            <p class="testimonial-quote">"The ROI was immediate. We cut production costs by 60% while actually increasing output quality and quantity."</p>
+            <div class="testimonial-author-name">James Wilson</div>
+            <div class="testimonial-author-role">Startup Founder</div>
+          </div>
+          <div class="testimonial-marquee-card">
+            <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+            <p class="testimonial-quote">"RepurposeAI saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
+            <div class="testimonial-author-name">Jake Morrison</div>
+            <div class="testimonial-author-role">YouTube Creator, 500K subs</div>
+          </div>
         </div>
-        <div class="testimonial-card">
-          <div class="testimonial-stars">&#x2B50;&#x2B50;&#x2B50;&#x2B50;&#x2B50;</div>
-          <p>"Our agency manages 20+ clients. RepurposeAI turned a 3-person job into something one person handles easily."</p>
-          <div class="testimonial-author"><div class="testimonial-avatar">SR</div><div><div class="testimonial-name">Sarah Rodriguez</div><div class="testimonial-role">Digital Agency Owner</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <div class="section-header">
+        <div class="section-label">FAQ</div>
+        <h2 class="section-title">Got Questions?</h2>
+        <p class="section-subtitle">Find answers to common questions about RepurposeAI.</p>
+      </div>
+      <div class="faq-container">
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <div class="faq-header">
+            <h3>How does RepurposeAI work?</h3>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-content">
+            <p>Simply paste your YouTube link or upload a video file. Our AI analyzes the content, extracts key moments, and generates optimized posts for all major social platforms in under 60 seconds. You can review, edit, and publish directly from our dashboard.</p>
+          </div>
         </div>
-        <div class="testimonial-card">
-          <div class="testimonial-stars">&#x2B50;&#x2B50;&#x2B50;&#x2B50;&#x2B50;</div>
-          <p>"The AI understands my brand voice perfectly. The captions it generates get more engagement than what I wrote manually."</p>
-          <div class="testimonial-author"><div class="testimonial-avatar">DK</div><div><div class="testimonial-name">David Kim</div><div class="testimonial-role">E-commerce Entrepreneur</div></div></div>
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <div class="faq-header">
+            <h3>What videos can I upload?</h3>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-content">
+            <p>You can repurpose any YouTube video (yours or any public video), or upload your own video files. We support MP4, MOV, AVI, and WebM formats. Videos can be any length, from short clips to hour-long interviews and livestreams.</p>
+          </div>
+        </div>
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <div class="faq-header">
+            <h3>Which platforms are supported?</h3>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-content">
+            <p>RepurposeAI supports Instagram Reels, TikTok, YouTube Shorts, Facebook, LinkedIn, Twitter, Pinterest, and more. Each post is automatically optimized for that platform's unique format and requirements.</p>
+          </div>
+        </div>
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <div class="faq-header">
+            <h3>Can I add captions automatically?</h3>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-content">
+            <p>Yes! Our AI automatically generates captions with trendy animations. You can choose from various caption styles, adjust timing, change colors, and customize the animations to match your brand aesthetic.</p>
+          </div>
+        </div>
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <div class="faq-header">
+            <h3>Is there a free plan?</h3>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-content">
+            <p>Yes! Our Free plan includes 3 videos per month and 5 repurposes. Upgrade to Starter ($19/month) for 15 videos and 30 repurposes, or higher tiers for unlimited content creation.</p>
+          </div>
+        </div>
+        <div class="faq-item" onclick="toggleFaq(this)">
+          <div class="faq-header">
+            <h3>How do I get help?</h3>
+            <span class="faq-toggle">+</span>
+          </div>
+          <div class="faq-content">
+            <p>We offer 24/7 email support for all users, with live chat support for Premium and Teams plans. Check out our knowledge base, video tutorials, and community forum for additional help and best practices.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -290,9 +500,12 @@ router.get('/', (req, res) => {
 
   <section class="cta-section">
     <div class="section-inner">
-      <h2 class="section-title">Ready to Multiply Your Content?</h2>
+      <h2 class="section-title">Get Started with RepurposeAI</h2>
       <p class="section-subtitle" style="margin:1rem auto 2rem">Join thousands of creators who save hours every week with AI-powered content repurposing.</p>
-      <a href="/auth/register" class="btn btn-primary btn-large">Start Free Today &#x2192;</a>
+      <div class="hero-input-group" style="margin-bottom:0">
+        <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
+        <button class="btn btn-primary">Repurpose &#x26A1;</button>
+      </div>
     </div>
   </section>
 
@@ -358,6 +571,45 @@ router.get('/', (req, res) => {
   </div>
 
   <script>
+    // Carousel functionality
+    let currentSlide = 0;
+    const carousel = document.getElementById('carousel');
+    const totalSlides = 6;
+
+    function updateCarousel() {
+      carousel.style.transform = 'translateX(-' + (currentSlide * 100) + '%)';
+      document.getElementById('slideCounter').textContent = (currentSlide + 1) + ' / ' + totalSlides;
+      updateCarouselLabels();
+    }
+
+    function updateCarouselLabels() {
+      document.querySelectorAll('.carousel-label').forEach((label, idx) => {
+        label.classList.toggle('active', idx === currentSlide);
+      });
+    }
+
+    function nextSlide() {
+      currentSlide = (currentSlide + 1) % totalSlides;
+      updateCarousel();
+    }
+
+    function prevSlide() {
+      currentSlide = (currentSlide - 1 + totalSlides) % totalSlides;
+      updateCarousel();
+    }
+
+    function goToSlide(n) {
+      currentSlide = n;
+      updateCarousel();
+    }
+
+    // FAQ accordion functionality
+    function toggleFaq(item) {
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach(el => el.classList.remove('open'));
+      if (!isOpen) item.classList.add('open');
+    }
+
     // PWA Install Banner Logic
     var deferredPrompt = null;
     window.addEventListener('beforeinstallprompt', function(e) {
@@ -413,7 +665,7 @@ router.get('/', (req, res) => {
     }
 
     function toggleTheme(){var isLight=!document.body.classList.contains('light');document.body.classList.toggle('light',isLight);document.documentElement.setAttribute('data-theme',isLight?'light':'dark');localStorage.setItem('theme',isLight?'light':'dark');var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent=isLight?'☀️':'🌙'}(function(){var s=localStorage.getItem('theme');if(s==='light'){document.body.classList.add('light');document.documentElement.setAttribute('data-theme','light');var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent='☀️'}})();
- document.querySelectorAll('a[href^="#"]').forEach(a => {
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => { e.preventDefault(); const t = document.querySelector(a.getAttribute('href')); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); });
     });
     window.addEventListener('scroll', () => { var isLight = document.body.classList.contains('light'); var nav = document.querySelector('.nav'); if(isLight){ nav.style.background = window.scrollY > 50 ? 'rgba(248,249,252,0.95)' : 'rgba(248,249,252,0.85)'; } else { nav.style.background = window.scrollY > 50 ? 'rgba(15,15,26,0.95)' : 'rgba(15,15,26,0.8)'; } });
