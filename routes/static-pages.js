@@ -353,4 +353,298 @@ router.get('/cookies', optionalAuth, (req, res) => {
 `));
 });
 
+// ======== HELP CENTER ========
+const helpArticles = [
+  {
+    id: 'getting-started',
+    icon: '🚀',
+    category: 'Getting Started',
+    title: 'Getting Started with RepurposeAI',
+    summary: 'Learn how to sign up, navigate the dashboard, and repurpose your first video.',
+    content: `
+      <h2>Creating Your Account</h2>
+      <p>Visit <a href="/auth/register">repurposeai.ai/register</a> and sign up using Google OAuth (one-click) or create an account with your email and password. Once registered, you'll land on your Dashboard.</p>
+
+      <h2>Navigating the Dashboard</h2>
+      <p>Your Dashboard is the central hub. You'll see an <strong>AI Tools grid</strong> with quick access to every feature: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar. The sidebar also has links to all major sections.</p>
+
+      <h2>Repurposing Your First Video</h2>
+      <p>Go to the <strong>Repurpose</strong> page, paste any YouTube video URL, select the platforms you want content for (Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube, Blog), choose a tone, and click <strong>Repurpose Now</strong>. Content is generated in seconds — just copy and post!</p>
+
+      <h2>Tips</h2>
+      <p>Make sure your YouTube video has captions/subtitles enabled for best results. Longer videos give the AI more material to work with. Try creating a Brand Voice first to keep your content consistent.</p>
+    `
+  },
+  {
+    id: 'repurpose',
+    icon: '🔄',
+    category: 'Core Features',
+    title: 'How to Repurpose a YouTube Video',
+    summary: 'Turn any YouTube video into optimized social media posts for 7+ platforms.',
+    content: `
+      <h2>Step 1: Paste Your Link</h2>
+      <p>Go to the <strong>Repurpose</strong> page from the sidebar or Dashboard. Paste any YouTube video URL — regular videos and YouTube Shorts both work.</p>
+
+      <h2>Step 2: Choose Your Platforms</h2>
+      <p>Select which platforms you want content for: Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube descriptions, and Blog posts. Each platform gets content tailored to its format.</p>
+
+      <h2>Step 3: Set Your Tone</h2>
+      <p>Choose from Professional, Casual, Humorous, Inspirational, or Educational tone. You can also select a Brand Voice you've created for consistent messaging.</p>
+
+      <h2>Step 4: Generate & Copy</h2>
+      <p>Click <strong>Repurpose Now</strong> and your content is generated in seconds. Each platform gets unique, optimized content — hashtags for Instagram, thread-style for Twitter, professional tone for LinkedIn, etc. Copy any piece with one click.</p>
+
+      <h2>How It Works</h2>
+      <p>The AI extracts the video transcript, analyzes the content, and creates platform-specific posts. The video must have captions enabled on YouTube for transcript extraction.</p>
+    `
+  },
+  {
+    id: 'smart-shorts',
+    icon: '🎬',
+    category: 'Core Features',
+    title: 'Using Smart Shorts to Create Viral Clips',
+    summary: 'Analyze videos to find the best moments, generate clips with captions and narration.',
+    content: `
+      <h2>Analyzing a Video</h2>
+      <p>Go to <strong>Smart Shorts</strong> from the sidebar. Paste a YouTube video URL and click <strong>Analyze Video</strong>. The AI identifies viral-worthy moments with timestamps, titles, and virality scores.</p>
+
+      <h2>Generating Clips</h2>
+      <p>Select any suggested clip, choose a caption style, and click <strong>Generate Clip</strong>. The clip is created with burned-in captions in a TikTok/Reels style. Download the finished MP4 when ready.</p>
+
+      <h2>Tool Panel Features</h2>
+      <p>At the top of Smart Shorts, you'll find 5 quick-access tool cards:</p>
+      <ul>
+        <li><strong>Quick Narrate</strong> — Add AI voiceover to any video using ElevenLabs voices</li>
+        <li><strong>Workflow Templates</strong> — Save and reuse your favorite editing workflows</li>
+        <li><strong>Batch Analyze</strong> — Analyze multiple YouTube videos at once</li>
+        <li><strong>Brand Kit</strong> — Set brand colors, fonts, and styles for consistent branding</li>
+        <li><strong>Settings</strong> — Configure your Smart Shorts preferences</li>
+      </ul>
+
+      <h2>Additional Features</h2>
+      <p>Caption translation to 20+ languages, AI thumbnails with DALL-E, thumbnail A/B testing, B-roll suggestions, and virality analysis are all available within Smart Shorts.</p>
+    `
+  },
+  {
+    id: 'video-editor',
+    icon: '✂️',
+    category: 'Tools',
+    title: 'Video Editor — Trim, Adjust & Export',
+    summary: 'Upload videos to trim, adjust colors, change speed, add text, and export at up to 4K.',
+    content: `
+      <h2>Uploading a Video</h2>
+      <p>Open the <strong>Video Editor</strong> from the Dashboard AI Tools grid. Click the upload area or drag-and-drop a video file. Your video loads into the preview player.</p>
+
+      <h2>Trimming</h2>
+      <p>Click <strong>Trim</strong> to set start and end points. Use the time inputs to specify exact timestamps, then apply the trim.</p>
+
+      <h2>Color Adjustments</h2>
+      <p>Use the Brightness, Contrast, and Saturation sliders (0–200 range, 100 = no change). Changes preview in real-time before export.</p>
+
+      <h2>Other Tools</h2>
+      <ul>
+        <li><strong>Speed</strong> — Speed up or slow down your video (0.25x to 4x)</li>
+        <li><strong>Text Overlay</strong> — Add custom text on top of your video</li>
+        <li><strong>Audio</strong> — Mute or adjust audio levels</li>
+      </ul>
+
+      <h2>Exporting</h2>
+      <p>Click <strong>Export</strong> and choose your resolution: 720p, 1080p, or 4K. The editor preserves your video's original aspect ratio — portrait videos stay portrait. Exported videos use the universal yuv420p format compatible with all players.</p>
+    `
+  },
+  {
+    id: 'ai-hooks',
+    icon: '🪝',
+    category: 'Tools',
+    title: 'AI Hooks — Generate Viral Opening Lines',
+    summary: 'Create attention-grabbing hooks for YouTube intros, TikTok openings, and social posts.',
+    content: `
+      <h2>How to Generate Hooks</h2>
+      <p>Open <strong>AI Hooks</strong> from the Dashboard. Enter your topic or paste a video description. Choose a hook style: Question, Bold Statement, Story, Statistic, or Controversial.</p>
+
+      <h2>Using Your Hooks</h2>
+      <p>The AI generates multiple hook variations. Copy any hook with one click and use it as your YouTube intro, TikTok opening, Instagram caption opener, or any content that needs a strong first line.</p>
+
+      <h2>Tips</h2>
+      <p>Try generating hooks in different styles for the same topic — you might be surprised which style resonates best. Question hooks tend to drive curiosity, while Bold Statements create authority.</p>
+    `
+  },
+  {
+    id: 'ai-reframe',
+    icon: '📐',
+    category: 'Tools',
+    title: 'AI Reframe — Resize Videos for Any Platform',
+    summary: 'Convert landscape videos to vertical, square, or any aspect ratio with smart AI cropping.',
+    content: `
+      <h2>How to Reframe</h2>
+      <p>Open <strong>AI Reframe</strong> from the Dashboard. Upload your video, then select your target format: 9:16 (TikTok/Reels), 1:1 (Instagram Square), 4:5 (Instagram Portrait), or 16:9 (YouTube).</p>
+
+      <h2>Smart Cropping</h2>
+      <p>The AI automatically keeps the subject in frame when converting between aspect ratios — no manual cropping needed. It's perfect for repurposing landscape YouTube videos into vertical TikTok or Reels content.</p>
+
+      <h2>Output</h2>
+      <p>Download the reframed video as an MP4. Processing time depends on video length.</p>
+    `
+  },
+  {
+    id: 'caption-presets',
+    icon: '💬',
+    category: 'Tools',
+    title: 'AI Caption Presets — Trendy Subtitle Styles',
+    summary: 'Browse and apply trending caption styles like Karaoke, Bold, Neon, and more.',
+    content: `
+      <h2>Choosing a Style</h2>
+      <p>Open <strong>Caption Presets</strong> from the Dashboard. Browse the available styles: Karaoke (highlighted word-by-word), Bold, Minimal, Neon, and more. Each style shows a preview.</p>
+
+      <h2>Applying Captions</h2>
+      <p>Select a preset to apply it to your video clips. Captions are automatically generated from the video transcript and timed to match spoken words.</p>
+
+      <h2>Tips</h2>
+      <p>Karaoke-style captions (where words highlight as they're spoken) tend to get the highest engagement on TikTok and Instagram Reels.</p>
+    `
+  },
+  {
+    id: 'speech-enhance',
+    icon: '🎙️',
+    category: 'Tools',
+    title: 'Speech Enhancement — Clean Up Audio with AI',
+    summary: 'Remove background noise and enhance vocal clarity in your videos.',
+    content: `
+      <h2>How It Works</h2>
+      <p>Open <strong>Speech Enhance</strong> from the Dashboard. Upload a video with noisy or unclear audio. The AI processes the audio to reduce background noise and enhance vocal clarity.</p>
+
+      <h2>When to Use It</h2>
+      <p>Use Speech Enhancement for videos recorded in noisy environments, interviews with background chatter, or any content where the speaker's voice needs to be clearer.</p>
+
+      <h2>Output</h2>
+      <p>Download your video with enhanced audio. The video quality remains unchanged — only the audio is improved.</p>
+    `
+  },
+  {
+    id: 'brand-voice',
+    icon: '🎤',
+    category: 'Content',
+    title: 'Brand Voice — Keep Your Tone Consistent',
+    summary: 'Create custom voice profiles so all repurposed content matches your brand style.',
+    content: `
+      <h2>Creating a Brand Voice</h2>
+      <p>Go to <strong>Brand Voice</strong> from the sidebar. Enter a voice name, select a tone (Professional, Casual, Humorous, Inspirational, Educational), write a description of the style, and paste example content that represents the voice. Click <strong>Create Voice</strong>.</p>
+
+      <h2>Using Your Brand Voice</h2>
+      <p>When repurposing content, select your brand voice from the dropdown. The AI will match that style across all generated content, ensuring every post sounds authentically like your brand.</p>
+
+      <h2>Managing Voices</h2>
+      <p>You can create multiple brand voices for different brands, clients, or content types. Edit or delete any voice at any time from the Brand Voice page.</p>
+    `
+  },
+  {
+    id: 'analytics-calendar',
+    icon: '📊',
+    category: 'Content',
+    title: 'Analytics & Content Calendar',
+    summary: 'Track your content generation stats and plan your posting schedule.',
+    content: `
+      <h2>Analytics</h2>
+      <p>Access <strong>Analytics</strong> from the sidebar to see statistics on how many pieces of content you've generated, broken down by platform and content type. Monitor your usage patterns over time.</p>
+
+      <h2>Content Calendar</h2>
+      <p>Access the <strong>Calendar</strong> from the sidebar. View all your generated content organized by date on a monthly calendar. Click any date to see content created that day. Use it to plan and track your posting schedule.</p>
+    `
+  },
+  {
+    id: 'billing',
+    icon: '💳',
+    category: 'Account',
+    title: 'Billing, Plans & Pricing',
+    summary: 'Understand the Free, Starter, Pro, and Teams plans and how to upgrade.',
+    content: `
+      <h2>Available Plans</h2>
+      <ul>
+        <li><strong>Free ($0/month)</strong> — 3 videos/month, 5 repurposes, 1 brand voice, 7-day history</li>
+        <li><strong>Starter ($19/month)</strong> — 15 videos, 30 repurposes, 3 brand voices, Quick Narrate, 10 AI thumbnails, 30 clips, analytics, no watermark</li>
+        <li><strong>Pro ($39/month)</strong> — 50 videos, 100 repurposes, 10 brand voices, unlimited narrations, 50 thumbnails, 150 clips, A/B testing, batch analysis, unlimited history</li>
+        <li><strong>Teams ($79/month)</strong> — 200 videos, 500 repurposes, 25 brand voices, 150 thumbnails, 500 clips, 5 team seats, priority processing</li>
+      </ul>
+
+      <h2>Upgrading</h2>
+      <p>Go to <strong>Billing</strong> from the sidebar. Click the upgrade button on the plan you want. Payments are processed securely through Stripe. You can upgrade, downgrade, or cancel at any time.</p>
+
+      <h2>Features by Plan</h2>
+      <p>All plans include access to Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhancement, Video Editor, Brand Voice, Analytics, and Calendar. Higher plans unlock greater usage limits and premium features like batch analysis and A/B testing.</p>
+    `
+  },
+  {
+    id: 'troubleshooting',
+    icon: '🔧',
+    category: 'Support',
+    title: 'Troubleshooting Common Issues',
+    summary: 'Solutions for content generation errors, video issues, and other common problems.',
+    content: `
+      <h2>Content Generation Fails</h2>
+      <p>Make sure the YouTube video has captions/subtitles enabled. YouTube Shorts may not always have auto-generated captions — try a regular YouTube video instead. If the transcript is empty, the video needs spoken content with captions.</p>
+
+      <h2>Video Editor Issues</h2>
+      <p>If exported video has distorted colors, re-export with default brightness/contrast/saturation (100 each). If trim shows no preview, refresh the page and re-upload the video.</p>
+
+      <h2>Smart Shorts Processing</h2>
+      <p>Longer processing times are normal for longer clips. If thumbnails fail, the system automatically falls back to the YouTube thumbnail.</p>
+
+      <h2>General Tips</h2>
+      <ul>
+        <li>Make sure you're logged in to access all features</li>
+        <li>Clear your browser cache if the interface seems unresponsive</li>
+        <li>AI Reframe processing time depends on video length</li>
+        <li>Use the chat assistant (bottom-right corner) for instant help</li>
+      </ul>
+    `
+  }
+];
+
+router.get('/help', optionalAuth, (req, res) => {
+  const categories = {};
+  helpArticles.forEach(a => {
+    if (!categories[a.category]) categories[a.category] = [];
+    categories[a.category].push(a);
+  });
+
+  let cardsHtml = '';
+  Object.keys(categories).forEach(cat => {
+    cardsHtml += '<h2 style="margin-top:2.5rem;margin-bottom:1rem">' + cat + '</h2><div class="card-grid">';
+    categories[cat].forEach(a => {
+      cardsHtml += '<a href="/help/' + a.id + '" class="card" style="text-decoration:none;color:inherit"><div class="icon">' + a.icon + '</div><h3>' + a.title + '</h3><p>' + a.summary + '</p></a>';
+    });
+    cardsHtml += '</div>';
+  });
+
+  res.send(pageShell('Help Center', req.user, `
+    <h1>Help Center</h1>
+    <p class="subtitle">Step-by-step guides for every feature in RepurposeAI. Can't find what you need? Use the chat assistant in the bottom-right corner for instant help.</p>
+    ${cardsHtml}
+    <div class="cta-box">
+      <h2>Still need help?</h2>
+      <p>Our AI assistant is available 24/7 to answer your questions.</p>
+      <a href="/contact" class="btn-cta">Contact Us</a>
+    </div>
+  `));
+});
+
+router.get('/help/:id', optionalAuth, (req, res) => {
+  const article = helpArticles.find(a => a.id === req.params.id);
+  if (!article) return res.redirect('/help');
+
+  res.send(pageShell(article.title, req.user, `
+    <p style="margin-bottom:1.5rem"><a href="/help" style="color:var(--accent2);text-decoration:none">&larr; Back to Help Center</a></p>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span style="font-size:2.2rem">${article.icon}</span><span style="font-size:.8rem;font-weight:600;background:rgba(124,58,237,.15);color:var(--accent);padding:4px 12px;border-radius:20px">${article.category}</span></div>
+    <h1>${article.title}</h1>
+    <div class="legal-section" style="margin-top:2rem">
+      ${article.content}
+    </div>
+    <div class="cta-box">
+      <h2>Need more help?</h2>
+      <p>Click the chat bubble in the bottom-right corner for instant AI assistance.</p>
+      <a href="/help" class="btn-cta">Browse All Articles</a>
+    </div>
+  `));
+});
+
 module.exports = router;

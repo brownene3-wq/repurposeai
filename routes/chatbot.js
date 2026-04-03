@@ -6,12 +6,14 @@ const KNOWLEDGE_BASE = `
 RepurposeAI is an AI-powered content repurposing SaaS platform. Here is everything you need to know:
 
 ## What RepurposeAI Does
-RepurposeAI helps content creators save time by automatically transforming YouTube videos into ready-to-post social media content for multiple platforms. It also includes Smart Shorts, an advanced tool for creating short-form video clips with captions, narration, thumbnails, and more.
+RepurposeAI helps content creators save time by automatically transforming YouTube videos into ready-to-post social media content for multiple platforms. It includes Smart Shorts for creating short-form video clips, a full Video Editor for trimming and exporting videos, AI Hooks for generating viral hooks, AI Reframe for resizing videos to any aspect ratio, AI Caption Presets for trendy subtitle styles, and Speech Enhancement for cleaning up audio.
 
 ## Getting Started
 1. Visit repurposeai.ai and sign up using Google OAuth (one-click sign in) or create an account with email and password
-2. After logging in, you will see the Dashboard with quick access to all features
+2. After logging in, you will see the Dashboard with quick access to all features via the AI Tools grid
 3. The sidebar navigation includes: Dashboard, Repurpose, Library, Smart Shorts, Analytics, Calendar, Brand Voice, and Billing
+4. The Dashboard AI Tools grid gives quick access to: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
+5. You can also visit the Help Center at /help for step-by-step guides on how to use every feature
 
 ## Repurpose Feature (Content Generation)
 This is the core feature for turning YouTube videos into social media posts.
@@ -64,6 +66,14 @@ Smart Shorts is a powerful tool for creating short-form video content from YouTu
 - Click "Generate Clip" to create the short video
 - The clip is created with burned-in captions in a TikTok/Reels style
 - Download the finished clip when ready
+
+### Smart Shorts Tool Panel
+The Smart Shorts page has a premium tool card grid at the top with 5 quick-access tools:
+- **Quick Narrate**: Add AI voiceover narration to any video quickly
+- **Workflow Templates**: Save and reuse your favorite editing workflows
+- **Batch Analyze**: Analyze multiple YouTube videos at once — paste several URLs
+- **Brand Kit**: Set up brand colors, fonts, and style for consistent branding
+- **Settings**: Configure your Smart Shorts preferences
 
 ### Smart Shorts Sub-Features:
 
@@ -163,17 +173,62 @@ Smart Shorts is a powerful tool for creating short-form video content from YouTu
 ## Dashboard
 - The main landing page after logging in
 - Quick overview of your recent activity
-- Quick access links to all features
+- Quick access links to all features via an AI Tools grid
 - Shows recent content and quick stats
+- The AI Tools grid provides one-click access to: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
+
+## Video Editor
+- Access from the Dashboard AI Tools grid or the sidebar
+- Upload any video file to edit it directly in the browser
+- Features include:
+  - **Trim/Cut**: Set start and end points to trim your video to the exact clip you need
+  - **Brightness, Contrast, Saturation**: Adjust video color settings with sliders (0-200 range, 100 = no change)
+  - **Speed Control**: Speed up or slow down your video
+  - **Text Overlay**: Add text on top of your video
+  - **Audio Control**: Mute or adjust audio
+  - **Export**: Export your edited video at 720p, 1080p, or 4K resolution
+  - The editor preserves aspect ratio on export — portrait videos stay portrait, landscape stays landscape
+  - Exported videos use universal format (yuv420p) compatible with all video players
+  - Video seeking/scrubbing is fully supported with range request downloads
+
+## AI Hooks Generator
+- Access from the Dashboard AI Tools grid
+- Generate viral hooks and opening lines for your content
+- Paste any topic or video description and the AI creates attention-grabbing hooks
+- Choose from different hook styles: Question, Bold Statement, Story, Statistic, Controversial
+- Great for YouTube intros, TikTok openings, and social media captions
+- Copy any generated hook with one click
+
+## AI Reframe
+- Access from the Dashboard AI Tools grid
+- Automatically resize any video to different aspect ratios
+- Supported output formats: 9:16 (TikTok/Reels), 1:1 (Instagram Square), 4:5 (Instagram Portrait), 16:9 (YouTube/Landscape)
+- AI-powered smart cropping keeps the subject in frame
+- Perfect for repurposing landscape videos into vertical content
+- One-click reframe — no manual cropping needed
+
+## AI Caption Presets
+- Access from the Dashboard AI Tools grid
+- Browse and apply trendy caption/subtitle styles to your videos
+- Preset styles include: Karaoke (highlighted word-by-word), Bold, Minimal, Neon, and more
+- Preview how each style looks before applying
+- Consistent with TikTok and Instagram Reels trending caption styles
+
+## Speech Enhancement
+- Access from the Dashboard AI Tools grid
+- Clean up audio quality in your videos using AI
+- Reduce background noise, enhance vocal clarity
+- Great for videos recorded in noisy environments
+- One-click enhancement — upload and let AI improve the audio
 
 ## Billing & Pricing Plans
 - Access from "Billing" in the sidebar
-- Free Plan: Limited usage to try the platform
-- Pro Plan: Higher limits for regular content creators
-- Enterprise Plan: Unlimited usage for teams and agencies
-- All plans include access to all platforms and features
+- **Free Plan ($0/month)**: 3 videos/month, 5 repurposes/month, 1 brand voice, 7-day history
+- **Starter Plan ($19/month)**: 15 videos/month, 30 repurposes/month, 3 brand voices, Quick Narrate (your API key), 10 AI thumbnails/month, 30 clips/month, analytics & calendar, no watermark
+- **Pro Plan ($39/month)**: 50 videos/month, 100 repurposes/month, 10 brand voices, unlimited narrations, 50 thumbnails/month, 150 clips/month, A/B testing & batch analysis, unlimited history, full analytics & calendar
+- **Teams Plan ($79/month)**: 200 videos/month, 500 repurposes/month, 25 brand voices, unlimited narrations, 150 thumbnails/month, 500 clips/month, 5 team seats, priority processing, A/B thumbnail testing, batch content analysis
 - Upgrade or manage your subscription from the Billing page
-- Payments are processed securely
+- Payments are processed securely through Stripe
 
 ## Account & Login
 - Sign up with Google OAuth (one-click sign in with Google)
@@ -204,6 +259,10 @@ Smart Shorts is a powerful tool for creating short-form video content from YouTu
 - If thumbnails fail to generate, the system will automatically try using the YouTube thumbnail as a fallback
 - Make sure you are logged in to access all features
 - Clear your browser cache if the interface seems unresponsive
+- Video Editor: If exported video has distorted colors, re-export with default brightness/contrast/saturation (100 each)
+- Video Editor: If trim shows no preview, try refreshing the page and re-uploading the video
+- AI Reframe: Processing time depends on video length — longer videos take more time
+- For step-by-step help with any feature, visit the Help Center at /help
 
 ## Contact & Support
 - Use this AI assistant for any questions about how to use RepurposeAI
