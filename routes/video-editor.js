@@ -45,24 +45,58 @@ const upload = multer({
   }
 });
 
-// Helper: Get video metadata
+// Helper: Get video metadata using ffmpeg (not ffprobe)
 function getVideoMetadata(filePath) {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) {
       return reject(new Error('FFmpeg not found'));
     }
 
-    const ffprobe = spawn(ffmpegPath, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1:nokey=1', filePath]);
-    let output = '';
-    ffprobe.stdout.on('data', (data) => { output += data.toString(); });
-    ffprobe.on('close', (code) => {
-      if (code === 0) {
-        resolve({ duration: parseFloat(output) || 0 });
-      } else {
-        resolve({ duration: 0 });
+    // First try ffprobe if available
+    let ffprobePath = null;
+    try {
+      execSync('which ffprobe', { stdio: 'pipe' });
+      ffprobePath = 'ffprobe';
+    } catch (e) {
+      // Try ffprobe next to ffmpeg
+      const ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      if (fs.existsSync(ffprobeLocal)) {
+        ffprobePath = ffprobeLocal;
       }
-    });
-    ffprobe.on('error', () => reject(new Error('Failed to get video metadata')));
+    }
+
+    if (ffprobePath) {
+      const proc = spawn(ffprobePath, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath]);
+      let output = '';
+      proc.stdout.on('data', (data) => { output += data.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0 && parseFloat(output) > 0) {
+          resolve({ duration: parseFloat(output) });
+        } else {
+          resolve({ duration: 0 });
+        }
+      });
+      proc.on('error', () => resolve({ duration: 0 }));
+    } else {
+      // Fallback: use ffmpeg stderr output to parse duration
+      const proc = spawn(ffmpegPath, ['-i', filePath, '-f', 'null', '-t', '0', '-']);
+      let stderrOutput = '';
+      proc.stderr.on('data', (data) => { stderrOutput += data.toString(); });
+      proc.on('close', () => {
+        const match = stderrOutput.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/);
+        if (match) {
+          const hours = parseInt(match[1]);
+          const minutes = parseInt(match[2]);
+          const seconds = parseInt(match[3]);
+          const centiseconds = parseInt(match[4]);
+          const totalSeconds = hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
+          resolve({ duration: totalSeconds });
+        } else {
+          resolve({ duration: 0 });
+        }
+      });
+      proc.on('error', () => resolve({ duration: 0 }));
+    }
   });
 }
 
@@ -161,9 +195,9 @@ router.get('/', requireAuth, async (req, res) => {
     .export-button:disabled{opacity:0.5;cursor:not-allowed}
     .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .toast{position:fixed;bottom:20px;right:20px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:8px;padding:1rem 1.5rem;font-size:.9rem;z-index:1000;animation:slideIn 0.3s ease-out}
-    .toast.success{border-color:#10B981;color:#10B981}
-    .toast.error{border-color:#EF4444;color:#EF4444}
+    .toast{position:fixed;bottom:20px;right:20px;background:#1a1a2e;border:1px solid var(--border-subtle);border-radius:8px;padding:1rem 1.5rem;font-size:.9rem;z-index:1000;animation:slideIn 0.3s ease-out;display:block!important;color:white;max-width:400px;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+    .toast.success{border-color:#10B981;background:#064e3b;color:#6ee7b7}
+    .toast.error{border-color:#EF4444;background:#7f1d1d;color:#fca5a5}
     @keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}
     .hidden{display:none}
     body.light .video-container{border-color:rgba(108,58,237,0.2);background:rgba(108,58,237,0.02)}
@@ -875,7 +909,9 @@ router.post('/trim', requireAuth, async (req, res) => {
       '-to', endTime.toString(),
       '-c:v', 'libx264',
       '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-y',
       outputPath
     ]);
 
@@ -920,12 +956,16 @@ router.post('/export', requireAuth, async (req, res) => {
     const resolutionValue = resolutionMap[resolution] || '1280x720';
     const [width, height] = resolutionValue.split('x').map(Number);
 
-    // Normalize brightness/contrast/saturation (convert from 0-200 to -1 to 1 range for eq filter)
+    // Normalize brightness/contrast/saturation for ffmpeg eq filter
+    // brightness: slider 0-200 → ffmpeg -1.0 to 1.0 (default 0 = no change)
+    // contrast: slider 0-200 → ffmpeg 0.0 to 2.0 (default 1.0 = no change)
+    // saturation: slider 0-200 → ffmpeg 0.0 to 2.0 (default 1.0 = no change)
     const b = ((brightness - 100) / 100).toFixed(2);
-    const c = ((contrast - 100) / 100).toFixed(2);
+    const c = (contrast / 100).toFixed(2);
     const s = (saturation / 100).toFixed(2);
 
-    const filterComplex = 'eq=brightness=' + b + ':contrast=' + c + ':saturation=' + s + ',scale=' + width + ':' + height;
+    // Use scale with aspect ratio preservation + padding to avoid stretching
+    const filterComplex = 'eq=brightness=' + b + ':contrast=' + c + ':saturation=' + s + ',scale=' + width + ':' + height + ':force_original_aspect_ratio=decrease,pad=' + width + ':' + height + ':(ow-iw)/2:(oh-ih)/2:color=black';
 
     const ext = format === 'gif' ? '.gif' : ('.' + format);
     const outputFilename = 'exported_' + Date.now() + '_' + req.user.id + ext;
@@ -940,9 +980,9 @@ router.post('/export', requireAuth, async (req, res) => {
 
     // Format-specific settings
     if (format === 'mp4') {
-      ffmpegArgs = ['-i', source, '-vf', filterComplex, '-c:v', 'libx264', '-preset', 'medium', '-c:a', 'aac', '-y', outputPath];
+      ffmpegArgs = ['-i', source, '-vf', filterComplex, '-c:v', 'libx264', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-y', outputPath];
     } else if (format === 'mov') {
-      ffmpegArgs = ['-i', source, '-vf', filterComplex, '-c:v', 'libx264', '-c:a', 'aac', '-y', outputPath];
+      ffmpegArgs = ['-i', source, '-vf', filterComplex, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-y', outputPath];
     } else if (format === 'webm') {
       ffmpegArgs = ['-i', source, '-vf', filterComplex, '-c:v', 'libvpx-vp9', '-c:a', 'libopus', '-y', outputPath];
     } else if (format === 'gif') {
@@ -976,7 +1016,34 @@ router.get('/download/:filename', requireAuth, (req, res) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    res.download(filePath);
+    // Serve file for video playback (not just download)
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = { '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.avi': 'video/x-msvideo', '.gif': 'image/gif' };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    const stat = fs.statSync(filePath);
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+      const chunkSize = (end - start) + 1;
+      const stream = fs.createReadStream(filePath, { start, end });
+      res.writeHead(206, {
+        'Content-Range': 'bytes ' + start + '-' + end + '/' + stat.size,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': contentType
+      });
+      stream.pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': stat.size,
+        'Content-Type': contentType
+      });
+      fs.createReadStream(filePath).pipe(res);
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1008,7 +1075,9 @@ router.post('/split', requireAuth, async (req, res) => {
       '-to', splitTime.toString(),
       '-c:v', 'libx264',
       '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-y',
       part1Path
     ]);
 
@@ -1017,7 +1086,9 @@ router.post('/split', requireAuth, async (req, res) => {
       '-ss', splitTime.toString(),
       '-c:v', 'libx264',
       '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-y',
       part2Path
     ]);
 
@@ -1076,7 +1147,11 @@ router.post('/filter', requireAuth, async (req, res) => {
     await runFFmpeg([
       '-i', source,
       '-vf', filterStr,
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-y',
       outputPath
     ]);
 
@@ -1130,7 +1205,9 @@ router.post('/speed', requireAuth, async (req, res) => {
       '-af', audioFilters,
       '-c:v', 'libx264',
       '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-y',
       outputPath
     ]);
 
@@ -1173,7 +1250,9 @@ router.post('/audio', requireAuth, async (req, res) => {
       '-af', 'volume=' + volumeValue,
       '-c:v', 'libx264',
       '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-y',
       outputPath
     ]);
 
@@ -1224,7 +1303,9 @@ router.post('/text-overlay', requireAuth, async (req, res) => {
       '-vf', drawFilter,
       '-c:v', 'libx264',
       '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-y',
       outputPath
     ]);
 
