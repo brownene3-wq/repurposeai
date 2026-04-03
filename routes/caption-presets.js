@@ -52,7 +52,8 @@ router.get('/', requireAuth, (req, res) => {
 
     .dashboard {
       display: flex;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
 
     .sidebar {

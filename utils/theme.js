@@ -9,7 +9,7 @@ function getBaseCSS() {
     body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;background:var(--dark);color:var(--text);min-height:100vh}
     body.theme-ready{transition:background .3s,color .3s}
     html.light{background:var(--dark)}
-    .dashboard{display:flex;min-height:100vh}
+    .dashboard{display:flex;height:100vh;overflow:hidden}
     .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:20px 0;position:fixed;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
     .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .sidebar .logo span{-webkit-text-fill-color:transparent}
@@ -21,7 +21,7 @@ function getBaseCSS() {
     body.light .sidebar a,html.light .sidebar a{color:#666}
     body.light .sidebar a.active,html.light .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.08)}
     body.light .theme-toggle,html.light .theme-toggle{background:#fff;border-color:#ddd}
-    .main-content{flex:1;margin-left:250px;padding:2rem}
+    .main-content{flex:1;margin-left:250px;padding:2rem;overflow-y:auto;height:100vh}
     .page-header{margin-bottom:2rem}
     .page-header h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .page-header p{color:var(--text-muted);font-size:.95rem}
