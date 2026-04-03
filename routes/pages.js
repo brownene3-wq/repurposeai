@@ -41,28 +41,51 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .carousel-container{position:relative;margin-top:4rem;max-width:1000px;margin-left:auto;margin-right:auto}
 .carousel{display:flex;gap:2rem;overflow:hidden;scroll-behavior:smooth;transition:transform .5s ease-in-out}
 .carousel-slide{flex:0 0 100%;display:flex;justify-content:center}
-.carousel-mockup{width:100%;max-width:600px;height:400px;background:var(--surface);border-radius:20px;border:2px solid rgba(108,58,237,0.4);display:flex;align-items:center;justify-content:center;font-size:3rem;position:relative;overflow:hidden}
-.carousel-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.1) 0%,rgba(236,72,153,0.05) 100%)}
+.carousel-mockup{width:100%;max-width:700px;height:420px;background:linear-gradient(145deg,#1a1a35 0%,#1e1e3a 50%,#1a1a35 100%);border-radius:20px;border:2px solid rgba(108,58,237,0.5);display:flex;align-items:center;justify-content:center;font-size:3rem;position:relative;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.4),0 0 40px rgba(108,58,237,0.15),inset 0 1px 0 rgba(255,255,255,0.05)}
+.carousel-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.2) 0%,rgba(236,72,153,0.1) 50%,rgba(59,130,246,0.1) 100%)}
+.carousel-mockup::after{content:'';position:absolute;top:-1px;left:20%;right:20%;height:1px;background:linear-gradient(90deg,transparent,rgba(108,58,237,0.6),transparent)}
+.carousel-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:1rem;text-align:center;padding:2rem}
+.carousel-inner .mock-icon{font-size:4rem;filter:drop-shadow(0 0 20px rgba(108,58,237,0.4))}
+.carousel-inner .mock-title{font-size:1.3rem;font-weight:700;color:var(--text)}
+.carousel-inner .mock-desc{font-size:.9rem;color:var(--text-muted);max-width:400px;line-height:1.6}
+.carousel-inner .mock-ui{display:flex;gap:.8rem;margin-top:.5rem}
+.carousel-inner .mock-btn{padding:.5rem 1.2rem;border-radius:50px;font-size:.8rem;font-weight:600;border:none;cursor:default}
+.carousel-inner .mock-btn.primary{background:var(--gradient-1);color:#fff}
+.carousel-inner .mock-btn.outline{background:transparent;border:1px solid rgba(255,255,255,0.2);color:var(--text-muted)}
+.mock-preview{width:85%;height:120px;border-radius:12px;background:rgba(108,58,237,0.08);border:1px solid rgba(108,58,237,0.2);margin-top:.5rem;display:flex;align-items:center;justify-content:center;gap:1rem;padding:1rem}
+.mock-preview-bar{flex:1;height:8px;border-radius:4px;background:linear-gradient(90deg,var(--primary),var(--primary-light));opacity:.5}
+.mock-preview-block{width:60px;height:60px;border-radius:8px;background:linear-gradient(135deg,rgba(108,58,237,0.3),rgba(236,72,153,0.2))}
 .carousel-controls{display:flex;gap:1.5rem;justify-content:center;align-items:center;margin-top:3rem;flex-wrap:wrap}
 .carousel-btn{background:var(--surface);border:1px solid rgba(108,58,237,0.3);color:var(--primary-light);width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s;font-size:1.2rem}
 .carousel-btn:hover{border-color:var(--primary);background:rgba(108,58,237,0.1)}
 .carousel-labels{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;margin-top:2rem}
 .carousel-label{padding:.6rem 1.2rem;border-radius:50px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);color:var(--text-muted);font-size:.85rem;cursor:pointer;transition:all .3s}
 .carousel-label.active{background:var(--gradient-1);color:#fff;border-color:var(--primary)}
-.stats-marquee{overflow:hidden;background:var(--dark-2);padding:2.5rem 0;margin:4rem 0}
+.stats-marquee{overflow:hidden;background:linear-gradient(180deg,rgba(108,58,237,0.06) 0%,var(--dark-2) 50%,rgba(108,58,237,0.06) 100%);padding:2.5rem 0;margin:4rem 0;border-top:1px solid rgba(108,58,237,0.15);border-bottom:1px solid rgba(108,58,237,0.15)}
 .marquee-content{display:flex;gap:4rem;animation:scroll-marquee 25s linear infinite;white-space:nowrap}
-.marquee-item{display:flex;align-items:center;gap:1rem;font-weight:600;color:var(--text-muted)}
-.marquee-item::before{content:'•';color:var(--primary-light);margin-right:.5rem}
+.marquee-item{display:flex;align-items:center;gap:1rem;font-weight:700;font-size:1.05rem;color:var(--text);letter-spacing:.02em}
+.marquee-item .marquee-num{background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:800;font-size:1.15rem}
+.marquee-item::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--gradient-1);margin-right:.5rem;flex-shrink:0}
 @keyframes scroll-marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-.feature-showcase{display:grid;gap:6rem;margin:6rem 0}
-.feature-row{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;padding:4rem 0;border-bottom:var(--border-subtle)}
+.feature-showcase{display:grid;gap:0;margin:6rem 0}
+.feature-row{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;padding:5rem 3rem;border-bottom:1px solid rgba(108,58,237,0.08);position:relative}
+.feature-row:nth-child(even){background:linear-gradient(180deg,rgba(108,58,237,0.03) 0%,rgba(30,30,50,0.5) 50%,rgba(108,58,237,0.03) 100%)}
+.feature-row:hover{background:rgba(108,58,237,0.02)}
 .feature-row.reverse{grid-template-columns:1fr 1fr;direction:rtl}
 .feature-row.reverse>*{direction:ltr}
-.feature-content h3{font-size:.9rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--primary-light);margin-bottom:1rem}
+.feature-content h3{font-size:.85rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem;display:inline-block}
 .feature-content h2{font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:800;margin-bottom:1.5rem;line-height:1.2}
 .feature-content p{font-size:1.05rem;color:var(--text-muted);line-height:1.8;margin-bottom:2rem}
-.feature-mockup{width:100%;aspect-ratio:4/3;background:var(--surface);border-radius:16px;border:2px solid rgba(108,58,237,0.3);display:flex;align-items:center;justify-content:center;font-size:4rem;position:relative;overflow:hidden}
-.feature-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.15) 0%,rgba(236,72,153,0.08) 100%)}
+.feature-content .feature-tag{display:inline-flex;align-items:center;gap:.4rem;padding:.4rem 1rem;border-radius:50px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);color:var(--primary-light);font-size:.8rem;font-weight:600}
+.feature-mockup{width:100%;aspect-ratio:4/3;background:linear-gradient(145deg,#161628 0%,#1c1c38 50%,#161628 100%);border-radius:16px;border:2px solid rgba(108,58,237,0.35);display:flex;align-items:center;justify-content:center;font-size:4rem;position:relative;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,0.4),0 0 30px rgba(108,58,237,0.1),inset 0 1px 0 rgba(255,255,255,0.04)}
+.feature-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.18) 0%,rgba(236,72,153,0.1) 50%,rgba(59,130,246,0.08) 100%)}
+.feature-mockup::after{content:'';position:absolute;top:-1px;left:15%;right:15%;height:1px;background:linear-gradient(90deg,transparent,rgba(108,58,237,0.5),transparent)}
+.feature-mock-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:.8rem;padding:2rem}
+.feature-mock-inner .fm-icon{font-size:3.5rem;filter:drop-shadow(0 0 15px rgba(108,58,237,0.3))}
+.feature-mock-inner .fm-label{font-size:1rem;font-weight:600;color:var(--text-muted)}
+.feature-mock-inner .fm-preview{width:80%;height:80px;border-radius:10px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.15);display:flex;align-items:center;gap:.8rem;padding:.8rem}
+.feature-mock-inner .fm-bar{flex:1;height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(108,58,237,.4),rgba(236,72,153,.3));opacity:.6}
+.feature-mock-inner .fm-dot{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,rgba(108,58,237,.25),rgba(236,72,153,.15))}
 .workflow-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3rem;margin-top:3rem;max-width:1000px;margin-left:auto;margin-right:auto}
 .workflow-card{text-align:center}
 .workflow-number{width:60px;height:60px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem;margin:0 auto 1.5rem}
@@ -74,16 +97,21 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .team-card-icon{font-size:2.5rem;margin-bottom:1.5rem}
 .team-card h3{font-size:1.1rem;font-weight:700;margin-bottom:.8rem}
 .team-card p{color:var(--text-muted);font-size:.95rem;line-height:1.6;margin-bottom:2rem}
-.team-card-mockup{width:100%;height:200px;background:linear-gradient(135deg,rgba(108,58,237,0.1) 0%,rgba(236,72,153,0.05) 100%);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:3rem;color:var(--text-dim)}
+.team-card{background:linear-gradient(145deg,var(--surface) 0%,rgba(30,30,50,1) 100%);border:1px solid rgba(108,58,237,0.15)}
+.team-card:hover{border-color:rgba(108,58,237,0.4);box-shadow:0 10px 40px rgba(108,58,237,0.15)}
+.team-card-mockup{width:100%;height:200px;background:linear-gradient(145deg,rgba(108,58,237,0.12) 0%,rgba(236,72,153,0.06) 50%,rgba(59,130,246,0.08) 100%);border-radius:12px;border:1px solid rgba(108,58,237,0.15);display:flex;align-items:center;justify-content:center;font-size:3rem;color:var(--text-dim);position:relative;overflow:hidden}
+.team-card-mockup::before{content:'';position:absolute;top:0;left:20%;right:20%;height:1px;background:linear-gradient(90deg,transparent,rgba(108,58,237,0.3),transparent)}
 .marquee-testimonials{overflow:hidden;padding:4rem 0;margin:4rem 0}
 .marquee-container{display:flex;gap:2rem;animation:scroll-marquee 30s linear infinite}
-.testimonial-marquee-card{flex:0 0 350px;background:var(--surface);border-radius:16px;border:var(--border-subtle);padding:2rem}
+.testimonial-marquee-card{flex:0 0 350px;background:linear-gradient(145deg,var(--surface) 0%,rgba(30,30,50,1) 100%);border-radius:16px;border:1px solid rgba(108,58,237,0.12);padding:2rem;transition:border-color .3s}
+.testimonial-marquee-card:hover{border-color:rgba(108,58,237,0.3)}
 .testimonial-stars{color:var(--accent);margin-bottom:1rem;font-size:1.1rem}
 .testimonial-quote{color:var(--text-muted);font-size:.95rem;line-height:1.7;margin-bottom:1.5rem;font-style:italic}
 .testimonial-author-name{font-weight:600;font-size:.9rem}
 .testimonial-author-role{font-size:.8rem;color:var(--text-dim)}
 .faq-container{max-width:700px;margin:0 auto;margin-top:3rem}
-.faq-item{background:var(--surface);border-radius:12px;border:var(--border-subtle);margin-bottom:1.5rem;overflow:hidden}
+.faq-item{background:linear-gradient(145deg,var(--surface) 0%,rgba(30,30,50,1) 100%);border-radius:12px;border:1px solid rgba(108,58,237,0.1);margin-bottom:1.5rem;overflow:hidden;transition:border-color .3s}
+.faq-item:hover{border-color:rgba(108,58,237,0.25)}
 .faq-header{padding:1.5rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:all .3s}
 .faq-header:hover{background:rgba(108,58,237,0.05)}
 .faq-header h3{font-size:1rem;font-weight:600;margin:0}
@@ -98,8 +126,9 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 .section-subtitle{font-size:1.1rem;color:var(--text-muted);max-width:600px;line-height:1.7}
 .section-header{text-align:center;margin-bottom:4rem}.section-header .section-subtitle{margin:0 auto}
 .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;align-items:start}
-.price-card{background:var(--surface);border-radius:20px;padding:2.5rem;border:var(--border-subtle);transition:all .3s;position:relative}
-.price-card.featured{border-color:var(--primary);box-shadow:var(--shadow-glow);transform:scale(1.02)}
+.price-card{background:linear-gradient(145deg,var(--surface) 0%,rgba(30,30,50,1) 100%);border-radius:20px;padding:2.5rem;border:1px solid rgba(108,58,237,0.1);transition:all .3s;position:relative}
+.price-card:hover{border-color:rgba(108,58,237,0.25);transform:translateY(-2px)}
+.price-card.featured{border-color:var(--primary);box-shadow:var(--shadow-glow),0 0 80px rgba(108,58,237,0.15);transform:scale(1.02)}
 .price-card.featured::before{content:'MOST POPULAR';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gradient-1);padding:.3rem 1.2rem;border-radius:50px;font-size:.7rem;font-weight:700;letter-spacing:.1em}
 .price-card h3{font-size:1.2rem;font-weight:700;margin-bottom:.5rem}
 .price-card .price{font-size:3rem;font-weight:800;margin:1rem 0}.price-card .price span{font-size:1rem;font-weight:400;color:var(--text-muted)}
@@ -131,7 +160,11 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
   section{padding:4rem 0 !important}
   .section-title{font-size:1.6rem}
   .feature-row{gap:2rem;padding:2rem 0}
-  .carousel-mockup{height:250px;font-size:2rem}
+  .carousel-mockup{height:280px;font-size:2rem}
+  .carousel-inner .mock-title{font-size:1rem}
+  .carousel-inner .mock-desc{font-size:.8rem}
+  .mock-preview{height:80px}
+  .feature-row{padding:3rem 1.5rem}
   .workflow-grid{grid-template-columns:1fr;gap:2rem}
   .teams-grid{grid-template-columns:1fr}
   .carousel-labels{gap:.5rem}
@@ -186,12 +219,12 @@ router.get('/', (req, res) => {
       </div>
       <div class="carousel-container">
         <div class="carousel" id="carousel">
-          <div class="carousel-slide"><div class="carousel-mockup">📎</div></div>
-          <div class="carousel-slide"><div class="carousel-mockup">✂️</div></div>
-          <div class="carousel-slide"><div class="carousel-mockup">📝</div></div>
-          <div class="carousel-slide"><div class="carousel-mockup">🎬</div></div>
-          <div class="carousel-slide"><div class="carousel-mockup">📅</div></div>
-          <div class="carousel-slide"><div class="carousel-mockup">🎙️</div></div>
+          <div class="carousel-slide"><div class="carousel-mockup"><div class="carousel-inner"><div class="mock-icon">✂️</div><div class="mock-title">AI Clipping</div><div class="mock-desc">Auto-detect viral moments and cut them into perfectly timed short clips</div><div class="mock-ui"><span class="mock-btn primary">Generate Clips</span><span class="mock-btn outline">Preview</span></div><div class="mock-preview"><div class="mock-preview-block"></div><div style="flex:1;display:flex;flex-direction:column;gap:6px"><div class="mock-preview-bar"></div><div class="mock-preview-bar" style="width:70%"></div><div class="mock-preview-bar" style="width:50%"></div></div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-mockup"><div class="carousel-inner"><div class="mock-icon">📝</div><div class="mock-title">AI Captions</div><div class="mock-desc">Auto-generate trendy animated subtitles that boost engagement by 40%</div><div class="mock-ui"><span class="mock-btn primary">Add Captions</span><span class="mock-btn outline">Styles</span></div><div class="mock-preview"><div class="mock-preview-block"></div><div style="flex:1;display:flex;flex-direction:column;gap:6px"><div class="mock-preview-bar"></div><div class="mock-preview-bar" style="width:85%"></div><div class="mock-preview-bar" style="width:60%"></div></div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-mockup"><div class="carousel-inner"><div class="mock-icon">📐</div><div class="mock-title">AI Reframe</div><div class="mock-desc">Auto-resize any video to 9:16, 1:1, or any ratio for every platform</div><div class="mock-ui"><span class="mock-btn primary">Reframe</span><span class="mock-btn outline">Aspect Ratios</span></div><div class="mock-preview"><div class="mock-preview-block" style="width:40px;height:70px;border-radius:6px"></div><div class="mock-preview-block" style="width:55px;height:55px;border-radius:6px"></div><div class="mock-preview-block" style="border-radius:6px"></div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-mockup"><div class="carousel-inner"><div class="mock-icon">🎬</div><div class="mock-title">AI B-Roll</div><div class="mock-desc">Auto-insert relevant stock footage from millions of clips</div><div class="mock-ui"><span class="mock-btn primary">Find B-Roll</span><span class="mock-btn outline">Library</span></div><div class="mock-preview"><div class="mock-preview-block"></div><div class="mock-preview-block"></div><div class="mock-preview-block"></div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-mockup"><div class="carousel-inner"><div class="mock-icon">📅</div><div class="mock-title">Social Scheduler</div><div class="mock-desc">Schedule a month of posts in 10 minutes across all platforms</div><div class="mock-ui"><span class="mock-btn primary">Schedule</span><span class="mock-btn outline">Calendar</span></div><div class="mock-preview"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;width:100%"><span style="width:100%;height:14px;border-radius:3px;background:rgba(108,58,237,.15)"></span><span style="width:100%;height:14px;border-radius:3px;background:rgba(108,58,237,.25)"></span><span style="width:100%;height:14px;border-radius:3px;background:rgba(108,58,237,.1)"></span><span style="width:100%;height:14px;border-radius:3px;background:rgba(236,72,153,.2)"></span><span style="width:100%;height:14px;border-radius:3px;background:rgba(108,58,237,.15)"></span><span style="width:100%;height:14px;border-radius:3px;background:rgba(108,58,237,.3)"></span><span style="width:100%;height:14px;border-radius:3px;background:rgba(108,58,237,.1)"></span></div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-mockup"><div class="carousel-inner"><div class="mock-icon">🎙️</div><div class="mock-title">Brand Voice</div><div class="mock-desc">Train AI on your content style — every post sounds like you</div><div class="mock-ui"><span class="mock-btn primary">Train Voice</span><span class="mock-btn outline">Settings</span></div><div class="mock-preview"><div class="mock-preview-block"></div><div style="flex:1;display:flex;flex-direction:column;gap:6px"><div class="mock-preview-bar" style="background:linear-gradient(90deg,var(--primary),var(--accent))"></div><div class="mock-preview-bar" style="width:75%;background:linear-gradient(90deg,var(--primary),var(--accent))"></div><div class="mock-preview-bar" style="width:90%;background:linear-gradient(90deg,var(--primary),var(--accent))"></div></div></div></div></div></div>
         </div>
       </div>
       <div class="carousel-controls">
@@ -212,14 +245,16 @@ router.get('/', (req, res) => {
 
   <div class="stats-marquee">
     <div class="marquee-content">
-      <div class="marquee-item">10,000+ Videos Repurposed</div>
-      <div class="marquee-item">50,000+ Posts Generated</div>
-      <div class="marquee-item">7 Platforms Supported</div>
-      <div class="marquee-item">AI-Powered</div>
-      <div class="marquee-item">10,000+ Videos Repurposed</div>
-      <div class="marquee-item">50,000+ Posts Generated</div>
-      <div class="marquee-item">7 Platforms Supported</div>
-      <div class="marquee-item">AI-Powered</div>
+      <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Repurposed</div>
+      <div class="marquee-item"><span class="marquee-num">50,000+</span> Posts Generated</div>
+      <div class="marquee-item"><span class="marquee-num">7</span> Platforms Supported</div>
+      <div class="marquee-item"><span class="marquee-num">99%</span> Time Saved</div>
+      <div class="marquee-item"><span class="marquee-num">AI-Powered</span> Engine</div>
+      <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Repurposed</div>
+      <div class="marquee-item"><span class="marquee-num">50,000+</span> Posts Generated</div>
+      <div class="marquee-item"><span class="marquee-num">7</span> Platforms Supported</div>
+      <div class="marquee-item"><span class="marquee-num">99%</span> Time Saved</div>
+      <div class="marquee-item"><span class="marquee-num">AI-Powered</span> Engine</div>
     </div>
   </div>
 
@@ -236,48 +271,54 @@ router.get('/', (req, res) => {
             <h3>Smart Shorts</h3>
             <h2>AI that finds viral moments in any video</h2>
             <p>Auto-identify the best clips from long videos. Our AI analyzes engagement patterns and cuts them into perfectly optimized short-form content for TikTok, Instagram Reels, and YouTube Shorts.</p>
+            <span class="feature-tag">&#x2728; Most Popular</span>
           </div>
-          <div class="feature-mockup">✂️</div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><div class="fm-icon">✂️</div><div class="fm-label">Viral Clip Detection</div><div class="fm-preview"><div class="fm-dot"></div><div style="flex:1;display:flex;flex-direction:column;gap:5px"><div class="fm-bar"></div><div class="fm-bar" style="width:65%"></div></div></div></div></div>
         </div>
         <div class="feature-row reverse">
           <div class="feature-content">
             <h3>AI Reframe</h3>
             <h2>Resize any video for every platform in 1 click</h2>
             <p>Auto-resize 16:9 to 9:16, 1:1, and any other aspect ratio. Automatically reframe for Instagram, TikTok, LinkedIn, YouTube, and more. No manual cropping needed.</p>
+            <span class="feature-tag">&#x1F680; One Click</span>
           </div>
-          <div class="feature-mockup">📐</div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><div class="fm-icon">📐</div><div class="fm-label">Multi-Format Export</div><div class="fm-preview"><div class="fm-dot" style="width:24px;height:42px;border-radius:6px"></div><div class="fm-dot" style="width:36px;height:36px;border-radius:6px"></div><div class="fm-dot"></div></div></div></div>
         </div>
         <div class="feature-row">
           <div class="feature-content">
             <h3>Animated Captions</h3>
             <h2>Trendy animated subtitles that boost engagement</h2>
             <p>Auto-add stylized captions with built-in animations. Choose from trending caption styles that match your brand. Increase engagement by up to 40% with captions.</p>
+            <span class="feature-tag">&#x1F4C8; +40% Engagement</span>
           </div>
-          <div class="feature-mockup">📝</div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><div class="fm-icon">📝</div><div class="fm-label">Trendy Caption Styles</div><div class="fm-preview"><div class="fm-dot"></div><div style="flex:1;display:flex;flex-direction:column;gap:5px"><div class="fm-bar" style="background:linear-gradient(90deg,rgba(245,158,11,.5),rgba(239,68,68,.4))"></div><div class="fm-bar" style="width:80%;background:linear-gradient(90deg,rgba(245,158,11,.5),rgba(239,68,68,.4))"></div></div></div></div></div>
         </div>
         <div class="feature-row reverse">
           <div class="feature-content">
             <h3>AI B-Roll</h3>
             <h2>Get relevant stock footage in 1 click</h2>
             <p>Auto-insert contextual B-roll footage from our library of millions of clips. Our AI analyzes your script and finds the perfect visuals to enhance your content automatically.</p>
+            <span class="feature-tag">&#x1F3AC; Millions of Clips</span>
           </div>
-          <div class="feature-mockup">🎬</div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><div class="fm-icon">🎬</div><div class="fm-label">Smart Visual Match</div><div class="fm-preview"><div class="fm-dot"></div><div class="fm-dot"></div><div class="fm-dot"></div></div></div></div>
         </div>
         <div class="feature-row">
           <div class="feature-content">
             <h3>Social Scheduler</h3>
             <h2>Schedule a month's posts in 10 minutes</h2>
             <p>Plan and auto-publish everywhere. Schedule repurposed content across all platforms with one click. Auto-optimize posting times for maximum engagement.</p>
+            <span class="feature-tag">&#x1F4C5; Auto-Publish</span>
           </div>
-          <div class="feature-mockup">📅</div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><div class="fm-icon">📅</div><div class="fm-label">Content Calendar</div><div class="fm-preview"><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;width:100%"><span style="width:100%;height:12px;border-radius:3px;background:rgba(108,58,237,.2)"></span><span style="width:100%;height:12px;border-radius:3px;background:rgba(108,58,237,.35)"></span><span style="width:100%;height:12px;border-radius:3px;background:rgba(236,72,153,.2)"></span><span style="width:100%;height:12px;border-radius:3px;background:rgba(108,58,237,.15)"></span><span style="width:100%;height:12px;border-radius:3px;background:rgba(108,58,237,.3)"></span></div></div></div></div>
         </div>
         <div class="feature-row reverse">
           <div class="feature-content">
             <h3>Brand Voice</h3>
             <h2>Every piece of content sounds like you</h2>
             <p>Custom tone profiles that match your unique voice. Train our AI on your best content and we'll replicate your style across all repurposed posts.</p>
+            <span class="feature-tag">&#x1F399; Custom AI Voice</span>
           </div>
-          <div class="feature-mockup">🎙️</div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><div class="fm-icon">🎙️</div><div class="fm-label">Voice Profile Training</div><div class="fm-preview"><div class="fm-dot"></div><div style="flex:1;display:flex;flex-direction:column;gap:5px"><div class="fm-bar" style="background:linear-gradient(90deg,var(--primary),var(--accent))"></div><div class="fm-bar" style="width:75%;background:linear-gradient(90deg,var(--primary),var(--accent))"></div></div></div></div></div>
         </div>
       </div>
     </div>
