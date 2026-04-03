@@ -41,28 +41,6 @@ app.use((req, res, next) => {
   injectFeedbackWidget(req, res, next);
 });
 
-// Temporary: one-time plan upgrade endpoint (remove after use)
-app.get('/api/upgrade-plan-temp', async (req, res) => {
-  try {
-    const { pool } = require('./db/database');
-    // Search case-insensitive and also try LIKE
-    const result = await pool.query(
-      "SELECT id, email, name, plan FROM users WHERE LOWER(email) = LOWER($1) OR email ILIKE $2",
-      ['johnsecuya18@gmail.com', '%johnsecuya%']
-    );
-    if (result.rows.length === 0) {
-      // List all users to debug
-      const allUsers = await pool.query("SELECT id, email, plan FROM users ORDER BY created_at DESC LIMIT 20");
-      return res.json({ error: 'User not found', allUsers: allUsers.rows });
-    }
-    const user = result.rows[0];
-    await pool.query("UPDATE users SET plan = 'pro' WHERE id = $1", [user.id]);
-    res.json({ success: true, email: user.email, oldPlan: user.plan, newPlan: 'pro' });
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
-
 // Disable caching on HTML pages so browser refresh always fetches fresh content
 app.disable('etag');
 app.use((req, res, next) => {
