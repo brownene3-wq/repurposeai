@@ -157,7 +157,10 @@ router.get('/', requireAuth, async (req, res) => {
     .timeline-segment:nth-child(3){background:linear-gradient(135deg,#F59E0B,#EF4444)}
     .timeline-segment:nth-child(4){background:linear-gradient(135deg,#10B981,#06B6D4)}
     .timeline-segment:nth-child(5){background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
-    .timeline-segment:hover{opacity:0.8}
+    .timeline-segment:hover{opacity:0.85;transform:scaleY(1.05)}
+    .timeline-segment.selected{outline:2px solid #fff;outline-offset:2px;opacity:1;transform:scaleY(1.08)}
+    .timeline-segment .seg-label{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font-size:.6rem;color:rgba(255,255,255,0.7);font-weight:600;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s}
+    .timeline-segment:hover .seg-label,.timeline-segment.selected .seg-label{opacity:1}
     .trim-handle{position:absolute;top:0;bottom:0;width:8px;background:rgba(255,255,255,0.3);cursor:ew-resize;border-radius:2px}
     .trim-handle.left{left:0}
     .trim-handle.right{right:0}
@@ -251,25 +254,30 @@ router.get('/', requireAuth, async (req, res) => {
 
             <div class="timeline-strip">
               <div class="timeline-content" id="timelineBar">
-                <div class="timeline-segment">
+                <div class="timeline-segment" data-index="0">
                   <div class="trim-handle left"></div>
                   <div class="trim-handle right"></div>
+                  <span class="seg-label">Clip 1</span>
                 </div>
-                <div class="timeline-segment">
+                <div class="timeline-segment" data-index="1">
                   <div class="trim-handle left"></div>
                   <div class="trim-handle right"></div>
+                  <span class="seg-label">Clip 2</span>
                 </div>
-                <div class="timeline-segment">
+                <div class="timeline-segment" data-index="2">
                   <div class="trim-handle left"></div>
                   <div class="trim-handle right"></div>
+                  <span class="seg-label">Clip 3</span>
                 </div>
-                <div class="timeline-segment">
+                <div class="timeline-segment" data-index="3">
                   <div class="trim-handle left"></div>
                   <div class="trim-handle right"></div>
+                  <span class="seg-label">Clip 4</span>
                 </div>
-                <div class="timeline-segment">
+                <div class="timeline-segment" data-index="4">
                   <div class="trim-handle left"></div>
                   <div class="trim-handle right"></div>
+                  <span class="seg-label">Clip 5</span>
                 </div>
               </div>
             </div>
@@ -565,6 +573,45 @@ router.get('/', requireAuth, async (req, res) => {
         var panel = document.getElementById(panelId);
         if (panel) {
           panel.classList.add('active');
+        }
+      });
+    });
+
+    // Timeline segment selection
+    var selectedSegment = null;
+    document.querySelectorAll('.timeline-segment').forEach(seg => {
+      seg.addEventListener('click', function(e) {
+        // Skip if clicking a trim handle
+        if (e.target.classList.contains('trim-handle')) return;
+
+        // Toggle selection
+        if (selectedSegment === this) {
+          this.classList.remove('selected');
+          selectedSegment = null;
+          showToast('Segment deselected', 'success');
+        } else {
+          document.querySelectorAll('.timeline-segment').forEach(s => s.classList.remove('selected'));
+          this.classList.add('selected');
+          selectedSegment = this;
+
+          var idx = parseInt(this.dataset.index);
+          if (currentVideoFile && videoDuration > 0) {
+            // Jump video to the corresponding time position
+            var segCount = document.querySelectorAll('.timeline-segment').length;
+            var segDuration = videoDuration / segCount;
+            var seekTime = idx * segDuration;
+            videoPlayer.currentTime = seekTime;
+
+            // Update trim start/end to this segment's range
+            var startField = document.getElementById('startTime');
+            var endField = document.getElementById('endTime');
+            if (startField) startField.value = Math.round(seekTime);
+            if (endField) endField.value = Math.round(Math.min(seekTime + segDuration, videoDuration));
+
+            showToast('Selected Clip ' + (idx + 1) + ' (' + Math.round(seekTime) + 's - ' + Math.round(seekTime + segDuration) + 's)', 'success');
+          } else {
+            showToast('Selected Clip ' + (idx + 1) + ' — upload a video to edit this segment', 'success');
+          }
         }
       });
     });
