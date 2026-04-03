@@ -4,8 +4,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const https = require('https');
 const { userOps } = require('../db/database');
+const { sendPasswordResetEmail } = require('../utils/email');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'repurposeai-secret-key-change-in-production';
+const RESET_SECRET = process.env.JWT_SECRET ? process.env.JWT_SECRET + '-reset' : 'repurposeai-reset-secret';
 const BASE_URL = process.env.BASE_URL || 'https://repurposeai.ai';
 
 // OAuth Config
@@ -71,7 +73,7 @@ router.get('/google', (req, res) => {
   response_type: 'code',
   scope: 'openid email profile',
   access_type: 'offline',
-  prompt: 'consent'
+  prompt: 'select_account'
  });
  res.redirect('https://accounts.google.com/o/oauth2/v2/auth?' + params.toString());
 });
@@ -86,7 +88,11 @@ router.get('/google/callback', async (req, res) => {
    redirect_uri: BASE_URL + '/auth/google/callback', grant_type: 'authorization_code'
   });
 
-  if (!tokenData.access_token) return res.redirect('/auth/login?error=Google+auth+failed');
+  if (!tokenData.access_token) {
+   console.error('Google token exchange failed:', JSON.stringify(tokenData));
+   const googleErr = tokenData.error || 'unknown';
+   return res.redirect('/auth/login?error=Google+auth+failed:+' + encodeURIComponent(googleErr));
+  }
 
   const profile = await httpsGet('https://www.googleapis.com/oauth2/v2/userinfo', {
    Authorization: 'Bearer ' + tokenData.access_token
@@ -97,8 +103,8 @@ router.get('/google/callback', async (req, res) => {
   const user = await findOrCreateOAuthUser(profile.email, profile.name, profile.id);
   loginAndRedirect(res, user);
  } catch (err) {
-  console.error('Google OAuth error:', err);
-  res.redirect('/auth/login?error=Google+login+failed');
+  console.error('Google OAuth error:', err.message || err);
+  res.redirect('/auth/login?error=Google+login+failed:+' + encodeURIComponent(err.message || 'unknown'));
  }
 });
 
@@ -233,6 +239,7 @@ function authPage(type) {
  ${!isLogin ? '<div class="form-group"><label>Full Name</label><input type="text" class="form-input" name="name" placeholder="Enter your name" required></div>' : ''}
  <div class="form-group"><label>Email Address</label><input type="email" class="form-input" name="email" placeholder="Enter your email" required></div>
  <div class="form-group"><label>Password</label><input type="password" class="form-input" name="password" placeholder="${isLogin ? 'Enter your password' : 'Create a password (min 6 chars)'}" minlength="6" required></div>
+ ${isLogin ? '<div style="text-align:right;margin-top:-0.5rem;margin-bottom:1rem"><a href="/auth/forgot-password" style="color:var(--primary-light);font-size:.85rem;text-decoration:none;font-weight:500">Forgot password?</a></div>' : ''}
  <button type="submit" class="btn btn-primary" id="submitBtn">${isLogin ? 'Log In' : 'Create Account'} &#x2192;</button>
  </form>
  <div class="auth-footer">
@@ -440,6 +447,250 @@ router.get('/api/has-password', async (req, res) => {
   res.json({ hasGoogle, hasPassword: !hasGoogle || user.password_hash !== null });
  } catch (err) {
   res.status(500).json({ error: 'Failed to check password status' });
+ }
+});
+
+// ========== FORGOT PASSWORD ==========
+router.get('/forgot-password', (req, res) => {
+ res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Forgot Password - RepurposeAI</title>
+ <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+ <style>${authStyles()}</style>
+</head>
+<body>
+ <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
+ <div class="auth-container">
+ <div class="auth-left">
+ <div class="auth-form-container">
+ <a href="/" class="auth-logo">&#x26A1; RepurposeAI</a>
+ <h1>Reset Password</h1>
+ <p class="subtitle">Enter your email and we'll send you a link to reset your password</p>
+ <div class="error-msg" id="errorMsg"></div>
+ <div class="success-msg" id="successMsg" style="display:none;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);color:var(--success);padding:.8rem 1rem;border-radius:10px;font-size:.85rem;margin-bottom:1rem"></div>
+
+ <form id="forgotForm" onsubmit="handleForgot(event)">
+ <div class="form-group"><label>Email Address</label><input type="email" class="form-input" name="email" placeholder="Enter your email" required></div>
+ <button type="submit" class="btn btn-primary" id="submitBtn">Send Reset Link &#x2192;</button>
+ </form>
+
+ <div style="text-align:center;margin-top:1.5rem">
+ <p style="color:var(--text-muted);font-size:.9rem;margin-bottom:.5rem">Signed up with Google?</p>
+ <a href="/auth/google" class="btn-oauth" style="display:inline-flex;width:auto;padding:.7rem 1.5rem">
+ <svg viewBox="0 0 24 24" style="width:18px;height:18px"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+ Log in with Google instead
+ </a>
+ </div>
+
+ <div class="auth-footer">
+ <a href="/auth/login">&#x2190; Back to login</a>
+ </div>
+ </div>
+ </div>
+ <div class="auth-right">
+ <div class="auth-right-content">
+ <h2>Don't Worry</h2>
+ <p>We'll help you get back into your account. If you signed up with Google, you can use the Google login button — no password needed.</p>
+ </div>
+ </div>
+ </div>
+ <script>
+ function toggleTheme() {
+ var isLight = !document.body.classList.contains('light');
+ document.body.classList.toggle('light', isLight);
+ document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+ localStorage.setItem('theme', isLight ? 'light' : 'dark');
+ var btn = document.querySelector('.theme-toggle');
+ if (btn) btn.textContent = isLight ? '☀️' : '🌙';
+ }
+ (function() {
+ var s = localStorage.getItem('theme');
+ if (s === 'light') { document.body.classList.add('light'); document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
+ })();
+
+ async function handleForgot(e) {
+ e.preventDefault();
+ var btn = document.getElementById('submitBtn');
+ var errorMsg = document.getElementById('errorMsg');
+ var successMsg = document.getElementById('successMsg');
+ errorMsg.classList.remove('show'); errorMsg.style.display = 'none';
+ successMsg.style.display = 'none';
+ btn.disabled = true; btn.textContent = 'Sending...';
+
+ var email = e.target.email.value;
+ try {
+  var res = await fetch('/auth/api/forgot-password', {
+   method: 'POST', headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ email })
+  });
+  var result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Something went wrong');
+  successMsg.textContent = result.message;
+  successMsg.style.display = 'block';
+  e.target.style.display = 'none';
+ } catch (err) {
+  errorMsg.textContent = err.message;
+  errorMsg.classList.add('show'); errorMsg.style.display = 'block';
+  btn.disabled = false;
+  btn.innerHTML = 'Send Reset Link &#x2192;';
+ }
+ }
+ </script>
+</body>
+</html>`);
+});
+
+// Reset password page (user clicks link from email)
+router.get('/reset-password', (req, res) => {
+ const { token } = req.query;
+ if (!token) return res.redirect('/auth/forgot-password');
+
+ res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Reset Password - RepurposeAI</title>
+ <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+ <style>${authStyles()}</style>
+</head>
+<body>
+ <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
+ <div class="auth-container">
+ <div class="auth-left">
+ <div class="auth-form-container">
+ <a href="/" class="auth-logo">&#x26A1; RepurposeAI</a>
+ <h1>Create New Password</h1>
+ <p class="subtitle">Enter your new password below</p>
+ <div class="error-msg" id="errorMsg"></div>
+ <div class="success-msg" id="successMsg" style="display:none;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);color:var(--success);padding:.8rem 1rem;border-radius:10px;font-size:.85rem;margin-bottom:1rem"></div>
+
+ <form id="resetForm" onsubmit="handleReset(event)">
+ <input type="hidden" name="token" value="${token}">
+ <div class="form-group"><label>New Password</label><input type="password" class="form-input" name="password" placeholder="Enter new password (min 6 chars)" minlength="6" required></div>
+ <div class="form-group"><label>Confirm Password</label><input type="password" class="form-input" name="confirmPassword" placeholder="Confirm new password" minlength="6" required></div>
+ <button type="submit" class="btn btn-primary" id="submitBtn">Reset Password &#x2192;</button>
+ </form>
+ <div class="auth-footer">
+ <a href="/auth/login">&#x2190; Back to login</a>
+ </div>
+ </div>
+ </div>
+ <div class="auth-right">
+ <div class="auth-right-content">
+ <h2>Almost There</h2>
+ <p>Create a new password for your account. After resetting, you can log in with your email and new password, or continue using Google login.</p>
+ </div>
+ </div>
+ </div>
+ <script>
+ function toggleTheme() {
+ var isLight = !document.body.classList.contains('light');
+ document.body.classList.toggle('light', isLight);
+ document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+ localStorage.setItem('theme', isLight ? 'light' : 'dark');
+ var btn = document.querySelector('.theme-toggle');
+ if (btn) btn.textContent = isLight ? '☀️' : '🌙';
+ }
+ (function() {
+ var s = localStorage.getItem('theme');
+ if (s === 'light') { document.body.classList.add('light'); document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
+ })();
+
+ async function handleReset(e) {
+ e.preventDefault();
+ var btn = document.getElementById('submitBtn');
+ var errorMsg = document.getElementById('errorMsg');
+ var successMsg = document.getElementById('successMsg');
+ errorMsg.classList.remove('show'); errorMsg.style.display = 'none';
+ successMsg.style.display = 'none';
+ btn.disabled = true; btn.textContent = 'Resetting...';
+
+ var data = Object.fromEntries(new FormData(e.target));
+ if (data.password !== data.confirmPassword) {
+  errorMsg.textContent = 'Passwords do not match';
+  errorMsg.classList.add('show'); errorMsg.style.display = 'block';
+  btn.disabled = false; btn.innerHTML = 'Reset Password &#x2192;';
+  return;
+ }
+
+ try {
+  var res = await fetch('/auth/api/reset-password', {
+   method: 'POST', headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify(data)
+  });
+  var result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Something went wrong');
+  successMsg.innerHTML = result.message + ' <a href="/auth/login" style="color:var(--primary-light);font-weight:600">Log in now</a>';
+  successMsg.style.display = 'block';
+  e.target.style.display = 'none';
+ } catch (err) {
+  errorMsg.textContent = err.message;
+  errorMsg.classList.add('show'); errorMsg.style.display = 'block';
+  btn.disabled = false;
+  btn.innerHTML = 'Reset Password &#x2192;';
+ }
+ }
+ </script>
+</body>
+</html>`);
+});
+
+// API: Request password reset
+router.post('/api/forgot-password', async (req, res) => {
+ try {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+
+  const user = await userOps.getByEmail(email);
+  // Always return success to prevent email enumeration
+  if (!user) return res.json({ message: 'If an account with that email exists, we sent a password reset link. Check your inbox (and spam folder).' });
+
+  // Create a reset token (JWT, expires in 1 hour)
+  const resetToken = jwt.sign({ id: user.id, email: user.email, purpose: 'password-reset' }, RESET_SECRET, { expiresIn: '1h' });
+  const resetUrl = BASE_URL + '/auth/reset-password?token=' + resetToken;
+
+  await sendPasswordResetEmail({ email: user.email, name: user.name, resetUrl });
+
+  res.json({ message: 'If an account with that email exists, we sent a password reset link. Check your inbox (and spam folder).' });
+ } catch (err) {
+  console.error('Forgot password error:', err);
+  res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+ }
+});
+
+// API: Reset password with token
+router.post('/api/reset-password', async (req, res) => {
+ try {
+  const { token, password, confirmPassword } = req.body;
+  if (!token) return res.status(400).json({ error: 'Reset token is missing' });
+  if (!password) return res.status(400).json({ error: 'Password is required' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (password !== confirmPassword) return res.status(400).json({ error: 'Passwords do not match' });
+
+  // Verify the reset token
+  let decoded;
+  try {
+   decoded = jwt.verify(token, RESET_SECRET);
+  } catch (err) {
+   return res.status(400).json({ error: 'This reset link has expired or is invalid. Please request a new one.' });
+  }
+
+  if (decoded.purpose !== 'password-reset') return res.status(400).json({ error: 'Invalid reset token' });
+
+  const user = await userOps.getById(decoded.id);
+  if (!user) return res.status(400).json({ error: 'User not found' });
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  await userOps.updatePassword(user.id, hashedPassword);
+
+  res.json({ success: true, message: 'Password reset successfully!' });
+ } catch (err) {
+  console.error('Reset password error:', err);
+  res.status(500).json({ error: 'Failed to reset password. Please try again.' });
  }
 });
 

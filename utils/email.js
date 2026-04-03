@@ -158,11 +158,35 @@ function sendPostingReminder({ email, title, platform, scheduledDate, scheduledT
   });
 }
 
+function sendPasswordResetEmail({ email, name, resetUrl }) {
+  return sendEmail({
+    to: email,
+    subject: 'Reset Your Password — RepurposeAI',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);padding:28px;text-align:center">
+          <h2 style="color:#fff;margin:0;font-size:22px">Password Reset</h2>
+        </div>
+        <div style="padding:28px">
+          <p style="font-size:16px;color:#333">Hi ${name || 'there'},</p>
+          <p style="font-size:16px;color:#555;line-height:1.6">We received a request to reset your password. Click the button below to create a new password. This link expires in 1 hour.</p>
+          <div style="text-align:center;margin:28px 0">
+            <a href="${resetUrl}" style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;display:inline-block">Reset Password</a>
+          </div>
+          <p style="font-size:14px;color:#999;line-height:1.6">If you didn't request this, you can safely ignore this email. Your password won't be changed.</p>
+          <p style="font-size:13px;color:#bbb;margin-top:20px;word-break:break-all">Or copy this link: ${resetUrl}</p>
+        </div>
+      </div>
+    `
+  });
+}
+
 module.exports = {
   sendEmail,
   sendWelcomeEmail,
   sendContactNotification,
   sendContactConfirmation,
   sendUpgradeConfirmation,
-  sendPostingReminder
+  sendPostingReminder,
+  sendPasswordResetEmail
 };
