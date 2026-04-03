@@ -31,6 +31,8 @@ const initDatabase = async () => {
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0`,
       // Content items table migrations
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS original_content TEXT`,
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS content_type TEXT`,
@@ -341,6 +343,10 @@ const userOps = {
       [name, userId]
     );
     return result.rows[0];
+  },
+
+  async trackLogin(userId) {
+    await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, login_count = COALESCE(login_count, 0) + 1 WHERE id = $1', [userId]);
   }
 };
 
@@ -864,11 +870,7 @@ const teamOps = {
   async removeMember(id) {
     await pool.query(`DELETE FROM team_members WHERE id = $1`, [id]);
   }
-,
-
-  async trackLogin(userId) {
-    await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, login_count = COALESCE(login_count, 0) + 1 WHERE id = $1', [userId]);
-  }};
+};
 
 // Admin operations
 const adminOps = {
