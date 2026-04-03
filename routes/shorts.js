@@ -4939,13 +4939,38 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         </div>
       </div>
 
+      <!-- Premium Tools Grid -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px;">
+        <div onclick="toggleToolPanel('quickNarratePanel', this)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#00b894';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(0,184,148,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(0,184,148,0.2),rgba(0,206,201,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🎙️</div>
+          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Quick Narrate</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Add AI voiceover to any video</div>
+        </div>
+        <div onclick="toggleToolPanel('workflowPanel', this); toggleWorkflows(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#f39c12';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(243,156,18,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(243,156,18,0.2),rgba(241,196,15,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">📋</div>
+          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Workflow Templates</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Pre-built automation flows</div>
+        </div>
+        <div onclick="toggleToolPanel('batchPanel', this); toggleBatchInput(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#FF0050';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(255,0,80,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(255,0,80,0.2),rgba(255,71,87,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🔄</div>
+          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Batch Analyze</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Process multiple videos at once</div>
+        </div>
+        <div onclick="toggleToolPanel('brandKitPanel', this); toggleBrandKit(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(108,92,231,0.2),rgba(162,155,254,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🎨</div>
+          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Brand Kit</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Customize with your brand identity</div>
+        </div>
+        <div onclick="toggleToolPanel('settingsPanel', this); toggleSettings(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#10b981';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(16,185,129,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(16,185,129,0.2),rgba(52,211,153,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">⚙️</div>
+          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Settings</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">API keys & integrations</div>
+        </div>
+      </div>
+
       <!-- Quick Narrate Tool -->
       <div style="margin-bottom: 16px;">
-        <button class="btn" onclick="document.getElementById('quickNarratePanel').style.display = document.getElementById('quickNarratePanel').style.display === 'none' ? 'block' : 'none';"
-          style="background: rgba(0,184,148,0.12); color: #00b894; border: 1px solid rgba(0,184,148,0.3); font-size: 13px; padding: 8px 16px;">
-          🎙️ Quick Narrate a Video
-        </button>
-        <div id="quickNarratePanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+        <div id="quickNarratePanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <div>
               <h3 style="font-size:16px; font-weight:600;">🎙️ Quick Narrate</h3>
@@ -4995,11 +5020,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
       <!-- Workflow Templates -->
       <div style="margin-bottom: 16px;">
-        <button class="btn" onclick="toggleWorkflows()" id="workflowToggle"
-          style="background: rgba(243,156,18,0.12); color: #f39c12; border: 1px solid rgba(243,156,18,0.3); font-size: 13px; padding: 8px 16px;">
-          Workflow Templates
-        </button>
-        <div id="workflowPanel" style="display:none; margin-top:12px;">
+        <div id="workflowPanel" style="display:none; margin-top:0px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <p style="color:#888;font-size:13px;">Select a workflow to auto-configure clip settings</p>
             <button class="btn btn-small" onclick="toggleWorkflows()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
@@ -5069,11 +5090,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
       <!-- Batch Analysis -->
       <div style="margin-bottom: 16px;">
-        <button class="btn" onclick="toggleBatchInput()" id="batchToggle"
-          style="background: rgba(255,0,80,0.12); color: #FF0050; border: 1px solid rgba(255,0,80,0.3); font-size: 13px; padding: 8px 16px;">
-          Batch Analyze (Multiple Videos)
-        </button>
-        <div id="batchPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+        <div id="batchPanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
             <h3 style="font-size:16px; font-weight:600;">Batch Video Analysis</h3>
             <button class="btn btn-small" onclick="toggleBatchInput()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
@@ -5091,15 +5108,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
       <!-- Brand Kit Settings -->
       <div style="margin-bottom: 24px;">
-        <button class="btn" onclick="toggleBrandKit()" id="brandKitToggle"
-          style="background: rgba(108,92,231,0.15); color: #a29bfe; border: 1px solid rgba(108,92,231,0.3); font-size: 13px; padding: 8px 16px;">
-          Brand Kit Settings
-        </button>
-            <button class="btn" onclick="toggleSettings()" id="settingsToggle"
-              style="background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); font-size: 13px; padding: 8px 16px; margin-left: 8px;">
-              ⚙️ Settings
-            </button>
-        <div id="brandKitPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+        <div id="brandKitPanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h3 style="font-size:16px; font-weight:600;">Brand Kit</h3>
             <button class="btn btn-small" onclick="toggleBrandKit()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
@@ -5163,7 +5172,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
             <!-- Settings Panel -->
             <div style="margin-bottom: 24px;">
-            <div id="settingsPanel" style="display:none; margin-top:12px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+            <div id="settingsPanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
                 <h3 style="font-size:16px; font-weight:600;">⚙️ Settings</h3>
                 <button class="btn btn-small" onclick="toggleSettings()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
@@ -6191,8 +6200,36 @@ ${paginationHtml}
       'education': { clipStyle: 'fit', captions: true, platforms: ['blog', 'linkedin'], name: 'Education to Blog' }
     };
 
-    function toggleWorkflows() {
+    function toggleToolPanel(panelId, cardEl) {
+      var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','settingsPanel'];
+      var panel = document.getElementById(panelId);
+      var isVisible = panel.style.display !== 'none';
+      // Close all panels first
+      allPanels.forEach(function(id) {
+        var p = document.getElementById(id);
+        if (p) p.style.display = 'none';
+      });
+      // Remove active state from all cards
+      var cards = document.querySelectorAll('[onclick*="toggleToolPanel"]');
+      cards.forEach(function(c) {
+        c.classList.remove('tool-active');
+        c.style.borderColor = 'var(--border-subtle)';
+        c.style.transform = 'none';
+        c.style.boxShadow = 'none';
+      });
+      // Toggle the clicked panel
+      if (!isVisible) {
+        panel.style.display = 'block';
+        if (cardEl) {
+          cardEl.classList.add('tool-active');
+          cardEl.style.transform = 'translateY(-3px)';
+        }
+      }
+    }
+
+    function toggleWorkflows(forceShow) {
       const panel = document.getElementById('workflowPanel');
+      if (forceShow === true) return; // handled by toggleToolPanel
       panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
     }
 
@@ -6203,17 +6240,11 @@ ${paginationHtml}
       showToast('Workflow "' + activeWorkflow.name + '" active! Analyze a video to use it.');
       document.getElementById('workflowPanel').style.display = 'none';
 
-      // Show active workflow badge
-      const toggle = document.getElementById('workflowToggle');
-      toggle.innerHTML = 'Workflow: <strong>' + activeWorkflow.name + '</strong> <span style="font-size:10px;cursor:pointer;" onclick="event.stopPropagation();clearWorkflow();">&times;</span>';
-      toggle.style.background = 'rgba(243,156,18,0.3)';
+      showToast('Workflow "' + activeWorkflow.name + '" applied! Analyze a video to use it.', 'success');
     }
 
     function clearWorkflow() {
       activeWorkflow = null;
-      const toggle = document.getElementById('workflowToggle');
-      toggle.textContent = 'Workflow Templates';
-      toggle.style.background = 'rgba(243,156,18,0.12)';
       showToast('Workflow cleared');
     }
 
@@ -6605,7 +6636,8 @@ ${paginationHtml}
     renderCalendar();
 
     // === Batch Analysis & Export ===
-    function toggleBatchInput() {
+    function toggleBatchInput(forceShow) {
+      if (forceShow === true) return; // handled by toggleToolPanel
       const panel = document.getElementById('batchPanel');
       panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
     }
@@ -7342,7 +7374,8 @@ ${paginationHtml}
     }
 
     // === Brand Kit Functions ===
-    function toggleBrandKit() {
+    function toggleBrandKit(forceShow) {
+      if (forceShow === true) { loadBrandKit(); return; } // handled by toggleToolPanel
       const panel = document.getElementById('brandKitPanel');
       panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
       if (panel.style.display === 'block') loadBrandKit();
@@ -7404,7 +7437,8 @@ ${paginationHtml}
       setTimeout(() => { status.textContent = ''; }, 3000);
     }
 
-            function toggleSettings() {
+            function toggleSettings(forceShow) {
+              if (forceShow === true) { loadSettings(); return; } // handled by toggleToolPanel
               var panel = document.getElementById('settingsPanel');
               panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
               if (panel.style.display === 'block') loadSettings();
