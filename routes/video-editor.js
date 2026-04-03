@@ -115,24 +115,17 @@ router.get('/', requireAuth, async (req, res) => {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:12px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:300px}
     .video-preview-area.has-video{background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px}
-    .timeline-strip{margin-top:1rem;background:var(--dark);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:12px;height:80px;display:flex;align-items:center;position:relative;overflow-x:auto}
-    .timeline-content{display:flex;gap:8px;width:100%;min-width:100%;height:100%}
-    .timeline-segment{flex:0 0 80px;height:100%;border-radius:6px;background:linear-gradient(135deg,#6366F1,#3B82F6);position:relative;cursor:pointer;transition:opacity 0.2s}
-    .timeline-segment:nth-child(1){background:linear-gradient(135deg,#6C3AED,#EC4899)}
-    .timeline-segment:nth-child(2){background:linear-gradient(135deg,#0EA5E9,#6366F1)}
-    .timeline-segment:nth-child(3){background:linear-gradient(135deg,#F59E0B,#EF4444)}
-    .timeline-segment:nth-child(4){background:linear-gradient(135deg,#10B981,#06B6D4)}
-    .timeline-segment:nth-child(5){background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
-    .timeline-segment:hover{opacity:0.8}
-    .trim-handle{position:absolute;top:0;bottom:0;width:8px;background:rgba(255,255,255,0.3);cursor:ew-resize;border-radius:2px}
-    .trim-handle.left{left:0}
-    .trim-handle.right{right:0}
+    .timeline-strip{margin-top:1rem;background:var(--dark);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:12px;height:60px;display:flex;align-items:center;position:relative;overflow-x:auto}
+    .timeline-bar{height:100%;background:linear-gradient(90deg,#6C3AED,#EC4899);border-radius:6px;width:100%;position:relative;cursor:pointer;transition:opacity 0.2s}
+    .timeline-bar:hover{opacity:0.9}
     .tools-section{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap}
     .tool-button{padding:.6rem 1.2rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text);cursor:pointer;font-size:.85rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.4rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .tool-button:hover{background:var(--surface);border-color:var(--primary);color:var(--primary)}
     .tool-button.active{background:var(--primary);color:white;border-color:var(--primary)}
-    .editor-sidebar{width:320px;display:flex;flex-direction:column;gap:1rem}
-    .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem}
+    .editor-sidebar{width:320px;display:flex;flex-direction:column;gap:1rem;overflow-y:auto;max-height:calc(100vh - 120px)}
+    .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;flex-shrink:0}
+    .tool-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;display:none;flex-shrink:0}
+    .tool-panel.active{display:block}
     .panel-title{font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
     .slider-group{margin-bottom:1.5rem}
     .slider-label{font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem;display:flex;justify-content:space-between}
@@ -146,14 +139,23 @@ router.get('/', requireAuth, async (req, res) => {
     .time-inputs{display:flex;gap:.5rem}
     .time-input{flex:1;padding:.5rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);font-size:.8rem}
     .time-input:focus{outline:none;border-color:var(--primary)}
-    .trim-button{width:100%;padding:.6rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;margin-top:.5rem;transition:all 0.2s}
-    .trim-button:hover{box-shadow:0 8px 16px rgba(108,58,237,0.3)}
-    .export-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem}
+    .input-field{padding:.6rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);font-size:.8rem;width:100%;margin-bottom:1rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
+    .input-field:focus{outline:none;border-color:var(--primary)}
+    .text-input{padding:.6rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);font-size:.8rem;width:100%;margin-bottom:1rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
+    .text-input:focus{outline:none;border-color:var(--primary)}
+    .trim-button,.tool-action-button{width:100%;padding:.6rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;margin-top:.5rem;transition:all 0.2s}
+    .trim-button:hover,.tool-action-button:hover{box-shadow:0 8px 16px rgba(108,58,237,0.3)}
+    .trim-button:disabled,.tool-action-button:disabled{opacity:0.5;cursor:not-allowed}
+    .filter-buttons{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem}
+    .filter-btn{padding:.5rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);cursor:pointer;font-size:.75rem;font-weight:600;transition:all 0.2s}
+    .filter-btn:hover{border-color:var(--primary);color:var(--primary)}
+    .filter-btn.selected{background:var(--primary);color:white;border-color:var(--primary)}
     .dropdown-group{margin-bottom:1.5rem}
     .dropdown-label{font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem;display:block}
     .dropdown{width:100%;padding:.6rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);font-size:.85rem;outline:none;transition:border-color 0.2s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;cursor:pointer}
     .dropdown:hover{border-color:var(--primary)}
     .dropdown:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(108,58,237,0.15)}
+    .export-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;flex-shrink:0;margin-top:auto}
     .export-button{width:100%;padding:.8rem;background:var(--primary);color:white;border:1px solid var(--primary);border-radius:10px;font-weight:600;cursor:pointer;font-size:.9rem;transition:all 0.2s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .export-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3)}
     .export-button:disabled{opacity:0.5;cursor:not-allowed}
@@ -166,14 +168,16 @@ router.get('/', requireAuth, async (req, res) => {
     .hidden{display:none}
     body.light .video-container{border-color:rgba(108,58,237,0.2);background:rgba(108,58,237,0.02)}
     body.light .timeline-strip{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
-    body.light .properties-panel,body.light .export-panel{background:rgba(108,58,237,0.05);border-color:rgba(108,58,237,0.15)}
+    body.light .properties-panel,body.light .export-panel,body.light .tool-panel{background:rgba(108,58,237,0.05);border-color:rgba(108,58,237,0.15)}
     body.light .tool-button{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15);color:var(--text)}
     body.light .tool-button:hover{background:rgba(108,58,237,0.15);border-color:var(--primary)}
     body.light .dropdown{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .slider{background:rgba(108,58,237,0.15)}
     body.light .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.05),rgba(236,72,153,0.05));border-color:rgba(108,58,237,0.3)}
+    body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
+    body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     @media(max-width:1200px){.editor-sidebar{width:280px}}
-    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:1rem}.editor-main{min-height:600px}.editor-sidebar{width:100%}.video-preview-area{min-height:250px}.timeline-strip{height:70px}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:1rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-strip{height:70px}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
   </style>
 </head>
 <body>
@@ -203,38 +207,17 @@ router.get('/', requireAuth, async (req, res) => {
             </div>
 
             <div class="timeline-strip">
-              <div class="timeline-content">
-                <div class="timeline-segment">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                </div>
-                <div class="timeline-segment">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                </div>
-                <div class="timeline-segment">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                </div>
-                <div class="timeline-segment">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                </div>
-                <div class="timeline-segment">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                </div>
-              </div>
+              <div class="timeline-bar" id="timelineBar"></div>
             </div>
 
             <div class="tools-section">
               <button class="tool-button active" data-tool="trim">✂️ Trim</button>
               <button class="tool-button" data-tool="split">🔀 Split</button>
-              <button class="tool-button" data-tool="text">📝 Text Overlay</button>
-              <button class="tool-button" data-tool="transitions">✨ Transitions</button>
               <button class="tool-button" data-tool="filters">🎨 Filters</button>
               <button class="tool-button" data-tool="speed">⚡ Speed</button>
               <button class="tool-button" data-tool="audio">🔊 Audio</button>
+              <button class="tool-button" data-tool="text">📝 Text Overlay</button>
+              <button class="tool-button" data-tool="transitions">✨ Transitions</button>
             </div>
           </div>
         </div>
@@ -266,15 +249,86 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
               <input type="range" class="slider" id="saturation" min="0" max="200" value="100">
             </div>
+          </div>
 
-            <div class="trim-section">
-              <div class="panel-title">✂️ Trim Video</div>
-              <div class="time-inputs">
-                <input type="number" class="time-input" id="startTime" placeholder="Start (sec)" min="0" step="0.1">
-                <input type="number" class="time-input" id="endTime" placeholder="End (sec)" min="0" step="0.1">
-              </div>
-              <button class="trim-button" id="trimButton" disabled>Trim</button>
+          <div class="tool-panel active" id="trimPanel">
+            <div class="panel-title">✂️ Trim Video</div>
+            <div class="time-inputs">
+              <input type="number" class="time-input" id="startTime" placeholder="Start (sec)" min="0" step="0.1">
+              <input type="number" class="time-input" id="endTime" placeholder="End (sec)" min="0" step="0.1">
             </div>
+            <button class="trim-button" id="trimButton" disabled>Trim</button>
+          </div>
+
+          <div class="tool-panel" id="splitPanel">
+            <div class="panel-title">🔀 Split Video</div>
+            <input type="number" class="input-field" id="splitTime" placeholder="Split at (seconds)" min="0" step="0.1">
+            <button class="tool-action-button" id="splitButton" disabled>Split</button>
+          </div>
+
+          <div class="tool-panel" id="filtersPanel">
+            <div class="panel-title">🎨 Apply Filter</div>
+            <div class="filter-buttons">
+              <button class="filter-btn" data-filter="grayscale">Grayscale</button>
+              <button class="filter-btn" data-filter="sepia">Sepia</button>
+              <button class="filter-btn" data-filter="warm">Warm</button>
+              <button class="filter-btn" data-filter="cool">Cool</button>
+              <button class="filter-btn" data-filter="vintage">Vintage</button>
+              <button class="filter-btn" data-filter="highcontrast">High Contrast</button>
+            </div>
+            <button class="tool-action-button" id="filterButton" disabled>Apply Filter</button>
+          </div>
+
+          <div class="tool-panel" id="speedPanel">
+            <div class="panel-title">⚡ Video Speed</div>
+            <label class="dropdown-label">Select Speed</label>
+            <select class="dropdown" id="speedSelect" disabled>
+              <option value="0.25">0.25x (Slowest)</option>
+              <option value="0.5">0.5x (Slower)</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x (Normal)</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x (Faster)</option>
+              <option value="3">3x (Very Fast)</option>
+              <option value="4">4x (Fastest)</option>
+            </select>
+            <button class="tool-action-button" id="speedButton" disabled>Apply Speed</button>
+          </div>
+
+          <div class="tool-panel" id="audioPanel">
+            <div class="panel-title">🔊 Audio Volume</div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Volume</span>
+                <span class="slider-value" id="volumeValue">100%</span>
+              </div>
+              <input type="range" class="slider" id="volumeSlider" min="0" max="200" value="100">
+            </div>
+            <button class="tool-action-button" id="audioButton" disabled>Apply Audio</button>
+          </div>
+
+          <div class="tool-panel" id="textPanel">
+            <div class="panel-title">📝 Text Overlay</div>
+            <input type="text" class="text-input" id="overlayText" placeholder="Enter text">
+            <label class="dropdown-label">Position</label>
+            <select class="dropdown" id="textPosition">
+              <option value="top">Top</option>
+              <option value="center" selected>Center</option>
+              <option value="bottom">Bottom</option>
+            </select>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Font Size</span>
+                <span class="slider-value" id="fontSizeValue">24px</span>
+              </div>
+              <input type="range" class="slider" id="fontSize" min="12" max="100" value="24">
+            </div>
+            <button class="tool-action-button" id="textButton" disabled>Apply Text</button>
+          </div>
+
+          <div class="tool-panel" id="transitionsPanel">
+            <div class="panel-title">✨ Transitions</div>
+            <p style="color:var(--text-muted);font-size:.85rem">Coming Soon - Requires multiple clips</p>
           </div>
 
           <div class="export-panel">
@@ -312,6 +366,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     let currentVideoFile = null;
     let videoDuration = 0;
+    let selectedFilter = null;
 
     // Toast notifications
     function showToast(message, type = 'success') {
@@ -394,6 +449,12 @@ router.get('/', requireAuth, async (req, res) => {
         videoPreviewArea.classList.add('has-video');
         document.getElementById('trimButton').disabled = false;
         document.getElementById('exportButton').disabled = false;
+        document.getElementById('splitButton').disabled = false;
+        document.getElementById('filterButton').disabled = false;
+        document.getElementById('speedButton').disabled = false;
+        document.getElementById('audioButton').disabled = false;
+        document.getElementById('textButton').disabled = false;
+        document.getElementById('speedSelect').disabled = false;
 
         // Set end time to video duration
         document.getElementById('endTime').value = Math.round(videoDuration);
@@ -410,11 +471,46 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Slider updates
     document.querySelectorAll('.slider').forEach(slider => {
-      slider.addEventListener('input', function() {
-        const valueSpan = this.parentElement.querySelector('.slider-value');
-        if (valueSpan) {
-          valueSpan.textContent = this.value + '%';
+      if (slider.id === 'volumeSlider') {
+        slider.addEventListener('input', function() {
+          document.getElementById('volumeValue').textContent = this.value + '%';
+        });
+      } else if (slider.id === 'fontSize') {
+        slider.addEventListener('input', function() {
+          document.getElementById('fontSizeValue').textContent = this.value + 'px';
+        });
+      } else {
+        slider.addEventListener('input', function() {
+          const valueSpan = this.parentElement.querySelector('.slider-value');
+          if (valueSpan) {
+            valueSpan.textContent = this.value + '%';
+          }
+        });
+      }
+    });
+
+    // Tool panel switching
+    document.querySelectorAll('.tool-button').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.tool-button').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        var tool = this.dataset.tool;
+
+        document.querySelectorAll('.tool-panel').forEach(panel => panel.classList.remove('active'));
+        var panelId = tool + 'Panel';
+        var panel = document.getElementById(panelId);
+        if (panel) {
+          panel.classList.add('active');
         }
+      });
+    });
+
+    // Filter button selection
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('selected'));
+        this.classList.add('selected');
+        selectedFilter = this.dataset.filter;
       });
     });
 
@@ -462,6 +558,213 @@ router.get('/', requireAuth, async (req, res) => {
       } finally {
         button.disabled = false;
         button.innerHTML = '✂️ Trim';
+      }
+    });
+
+    // Split handler
+    document.getElementById('splitButton').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const splitTime = parseFloat(document.getElementById('splitTime').value);
+      if (isNaN(splitTime) || splitTime <= 0 || splitTime >= videoDuration) {
+        showToast('Split time must be between 0 and ' + Math.round(videoDuration) + ' seconds', 'error');
+        return;
+      }
+
+      const button = document.getElementById('splitButton');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Splitting...';
+
+      try {
+        const response = await fetch('/video-editor/split', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            splitTime: splitTime
+          })
+        });
+
+        if (!response.ok) throw new Error('Split failed');
+
+        const data = await response.json();
+        showToast('Video split successfully! ' + data.files.length + ' files created', 'success');
+      } catch (error) {
+        showToast('Split failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = '🔀 Split';
+      }
+    });
+
+    // Filter handler
+    document.getElementById('filterButton').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      if (!selectedFilter) {
+        showToast('Please select a filter', 'error');
+        return;
+      }
+
+      const button = document.getElementById('filterButton');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Applying...';
+
+      try {
+        const response = await fetch('/video-editor/filter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            filter: selectedFilter
+          })
+        });
+
+        if (!response.ok) throw new Error('Filter failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+
+        showToast('Filter applied successfully!', 'success');
+      } catch (error) {
+        showToast('Filter failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = '🎨 Apply Filter';
+      }
+    });
+
+    // Speed handler
+    document.getElementById('speedButton').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const speed = parseFloat(document.getElementById('speedSelect').value);
+
+      const button = document.getElementById('speedButton');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Processing...';
+
+      try {
+        const response = await fetch('/video-editor/speed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            speed: speed
+          })
+        });
+
+        if (!response.ok) throw new Error('Speed adjustment failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+
+        showToast('Speed adjusted successfully!', 'success');
+      } catch (error) {
+        showToast('Speed adjustment failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = '⚡ Apply Speed';
+      }
+    });
+
+    // Audio handler
+    document.getElementById('audioButton').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const volume = parseFloat(document.getElementById('volumeSlider').value);
+
+      const button = document.getElementById('audioButton');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Processing...';
+
+      try {
+        const response = await fetch('/video-editor/audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            volume: volume
+          })
+        });
+
+        if (!response.ok) throw new Error('Audio adjustment failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+
+        showToast('Audio volume adjusted successfully!', 'success');
+      } catch (error) {
+        showToast('Audio adjustment failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = '🔊 Apply Audio';
+      }
+    });
+
+    // Text overlay handler
+    document.getElementById('textButton').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const text = document.getElementById('overlayText').value.trim();
+      if (!text) {
+        showToast('Please enter text', 'error');
+        return;
+      }
+
+      const position = document.getElementById('textPosition').value;
+      const fontSize = parseInt(document.getElementById('fontSize').value);
+
+      const button = document.getElementById('textButton');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Processing...';
+
+      try {
+        const response = await fetch('/video-editor/text-overlay', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            text: text,
+            position: position,
+            fontSize: fontSize
+          })
+        });
+
+        if (!response.ok) throw new Error('Text overlay failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+
+        showToast('Text overlay applied successfully!', 'success');
+      } catch (error) {
+        showToast('Text overlay failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = '📝 Apply Text';
       }
     });
 
@@ -513,18 +816,6 @@ router.get('/', requireAuth, async (req, res) => {
         button.disabled = false;
         button.innerHTML = '📥 Export Video';
       }
-    });
-
-    // Tool selection
-    document.querySelectorAll('.tool-button').forEach(btn => {
-      btn.addEventListener('click', function() {
-        document.querySelectorAll('.tool-button').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-        var tool = this.dataset.tool;
-        if (tool !== 'trim') {
-          showToast(this.textContent.trim() + ' — coming soon!', 'info');
-        }
-      });
     });
   </script>
 </body>
@@ -686,6 +977,264 @@ router.get('/download/:filename', requireAuth, (req, res) => {
     }
 
     res.download(filePath);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Split video
+router.post('/split', requireAuth, async (req, res) => {
+  try {
+    const { filename, splitTime } = req.body;
+
+    if (!filename || splitTime === undefined) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const inputPath = path.join(uploadDir, filename);
+    if (!fs.existsSync(inputPath)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const ext = path.extname(filename);
+    const part1Filename = 'split_part1_' + Date.now() + '_' + req.user.id + ext;
+    const part2Filename = 'split_part2_' + Date.now() + '_' + req.user.id + ext;
+    const part1Path = path.join(outputDir, part1Filename);
+    const part2Path = path.join(outputDir, part2Filename);
+
+    // Split into two parts
+    await runFFmpeg([
+      '-i', inputPath,
+      '-to', splitTime.toString(),
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-c:a', 'aac',
+      part1Path
+    ]);
+
+    await runFFmpeg([
+      '-i', inputPath,
+      '-ss', splitTime.toString(),
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-c:a', 'aac',
+      part2Path
+    ]);
+
+    const metadata1 = await getVideoMetadata(part1Path);
+    const metadata2 = await getVideoMetadata(part2Path);
+
+    res.json({
+      files: [
+        {
+          filename: part1Filename,
+          downloadUrl: '/video-editor/download/' + part1Filename,
+          duration: metadata1.duration
+        },
+        {
+          filename: part2Filename,
+          downloadUrl: '/video-editor/download/' + part2Filename,
+          duration: metadata2.duration
+        }
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Apply filter
+router.post('/filter', requireAuth, async (req, res) => {
+  try {
+    const { filename, filter } = req.body;
+
+    if (!filename || !filter) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const inputPath = path.join(uploadDir, filename);
+    const trimmedPath = path.join(outputDir, filename);
+    const source = fs.existsSync(trimmedPath) ? trimmedPath : inputPath;
+
+    if (!fs.existsSync(source)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const filterMap = {
+      'grayscale': 'hue=s=0',
+      'sepia': 'colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131',
+      'warm': 'curves=r=\'0/0 0.5/0.6 1/1\':b=\'0/0 0.5/0.4 1/1\'',
+      'cool': 'curves=b=\'0/0 0.5/0.6 1/1\':r=\'0/0 0.5/0.4 1/1\'',
+      'vintage': 'curves=preset=vintage',
+      'highcontrast': 'eq=contrast=1.5:brightness=0.05'
+    };
+
+    const filterStr = filterMap[filter] || 'hue=s=0';
+    const outputFilename = 'filtered_' + Date.now() + '_' + req.user.id + path.extname(filename);
+    const outputPath = path.join(outputDir, outputFilename);
+
+    await runFFmpeg([
+      '-i', source,
+      '-vf', filterStr,
+      '-c:a', 'aac',
+      outputPath
+    ]);
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Adjust video speed
+router.post('/speed', requireAuth, async (req, res) => {
+  try {
+    const { filename, speed } = req.body;
+
+    if (!filename || speed === undefined) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const inputPath = path.join(uploadDir, filename);
+    const trimmedPath = path.join(outputDir, filename);
+    const source = fs.existsSync(trimmedPath) ? trimmedPath : inputPath;
+
+    if (!fs.existsSync(source)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const outputFilename = 'speed_' + Date.now() + '_' + req.user.id + path.extname(filename);
+    const outputPath = path.join(outputDir, outputFilename);
+
+    const speedValue = parseFloat(speed);
+    const videoPts = 'PTS/' + speedValue;
+
+    let audioFilters = '';
+    if (speedValue < 0.5) {
+      audioFilters = 'atempo=0.5,atempo=' + (speedValue / 0.5);
+    } else if (speedValue > 2) {
+      audioFilters = 'atempo=2,atempo=' + (speedValue / 2);
+    } else {
+      audioFilters = 'atempo=' + speedValue;
+    }
+
+    await runFFmpeg([
+      '-i', source,
+      '-vf', 'setpts=' + videoPts,
+      '-af', audioFilters,
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-c:a', 'aac',
+      outputPath
+    ]);
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Adjust audio volume
+router.post('/audio', requireAuth, async (req, res) => {
+  try {
+    const { filename, volume } = req.body;
+
+    if (!filename || volume === undefined) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const inputPath = path.join(uploadDir, filename);
+    const trimmedPath = path.join(outputDir, filename);
+    const source = fs.existsSync(trimmedPath) ? trimmedPath : inputPath;
+
+    if (!fs.existsSync(source)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const outputFilename = 'audio_' + Date.now() + '_' + req.user.id + path.extname(filename);
+    const outputPath = path.join(outputDir, outputFilename);
+
+    const volumeValue = (parseFloat(volume) / 100).toFixed(2);
+
+    await runFFmpeg([
+      '-i', source,
+      '-af', 'volume=' + volumeValue,
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-c:a', 'aac',
+      outputPath
+    ]);
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Add text overlay
+router.post('/text-overlay', requireAuth, async (req, res) => {
+  try {
+    const { filename, text, position, fontSize } = req.body;
+
+    if (!filename || !text || !position || !fontSize) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const inputPath = path.join(uploadDir, filename);
+    const trimmedPath = path.join(outputDir, filename);
+    const source = fs.existsSync(trimmedPath) ? trimmedPath : inputPath;
+
+    if (!fs.existsSync(source)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const outputFilename = 'text_' + Date.now() + '_' + req.user.id + path.extname(filename);
+    const outputPath = path.join(outputDir, outputFilename);
+
+    const positionMap = {
+      'top': '50',
+      'center': '(h-text_h)/2',
+      'bottom': 'h-text_h-50'
+    };
+
+    const yPos = positionMap[position] || '(h-text_h)/2';
+    const escapedText = text.replace(/'/g, '\'\\\'\'');
+    const drawFilter = 'drawtext=text=\'' + escapedText + '\':fontsize=' + fontSize + ':fontcolor=white:x=(w-text_w)/2:y=' + yPos + ':borderw=2:bordercolor=black';
+
+    await runFFmpeg([
+      '-i', source,
+      '-vf', drawFilter,
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-c:a', 'aac',
+      outputPath
+    ]);
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

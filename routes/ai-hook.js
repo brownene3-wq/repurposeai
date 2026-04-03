@@ -197,6 +197,9 @@ ${pageStyles}
                 <option value="TikTok">TikTok</option>
                 <option value="YouTube Shorts">YouTube Shorts</option>
                 <option value="Instagram Reels">Instagram Reels</option>
+                <option value="Instagram">Instagram</option>
+                <option value="Twitter/X">Twitter/X</option>
+                <option value="Facebook">Facebook</option>
                 <option value="LinkedIn">LinkedIn</option>
               </select>
             </div>
