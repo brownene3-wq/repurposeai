@@ -338,6 +338,143 @@ router.get('/', requireAuth, (req, res) => {
       animation: slideOut 0.3s ease forwards;
     }
 
+    /* Selected card state */
+    .preset-card.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary), 0 8px 32px rgba(108,58,237,0.25);
+      position: relative;
+    }
+    .preset-card.selected::after {
+      content: '✓ Active';
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: var(--primary);
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
+      z-index: 2;
+    }
+
+    /* Modal styles */
+    .style-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .style-modal-overlay.show {
+      display: flex;
+    }
+    .style-modal {
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      width: 90%;
+      max-width: 480px;
+      overflow: hidden;
+      animation: modalIn 0.3s ease;
+    }
+    @keyframes modalIn {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .style-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .style-modal-header h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      background: var(--gradient-1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0 0.25rem;
+      line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+    .style-modal-body {
+      padding: 1.5rem;
+    }
+    .style-modal-body > p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+    .modal-preview {
+      background: #000;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 80px;
+    }
+    .modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .modal-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.85rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      border: none;
+      font-family: inherit;
+    }
+    .modal-btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    .modal-btn-primary:hover {
+      box-shadow: 0 8px 24px rgba(108,58,237,0.4);
+      transform: translateY(-2px);
+    }
+    .modal-btn-secondary {
+      background: rgba(108,58,237,0.15);
+      color: var(--primary);
+      border: 1px solid rgba(108,58,237,0.3);
+    }
+    .modal-btn-secondary:hover {
+      background: rgba(108,58,237,0.25);
+    }
+    .modal-hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-align: center;
+      opacity: 0.7;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .presets-grid {
@@ -437,7 +574,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Karaoke</h3>
-              <button class="use-button" onclick="showToast('Karaoke')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Karaoke','karaoke')">Use Style</button>
             </div>
           </div>
 
@@ -448,7 +585,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Bold Pop</h3>
-              <button class="use-button" onclick="showToast('Bold Pop')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Bold Pop','bold-pop')">Use Style</button>
             </div>
           </div>
 
@@ -459,7 +596,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Minimal</h3>
-              <button class="use-button" onclick="showToast('Minimal')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Minimal','minimal')">Use Style</button>
             </div>
           </div>
 
@@ -470,7 +607,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Neon Glow</h3>
-              <button class="use-button" onclick="showToast('Neon Glow')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Neon Glow','neon-glow')">Use Style</button>
             </div>
           </div>
 
@@ -481,7 +618,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Gradient Wave</h3>
-              <button class="use-button" onclick="showToast('Gradient Wave')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Gradient Wave','gradient-wave')">Use Style</button>
             </div>
           </div>
 
@@ -492,7 +629,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Typewriter</h3>
-              <button class="use-button" onclick="showToast('Typewriter')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Typewriter','typewriter')">Use Style</button>
             </div>
           </div>
 
@@ -503,7 +640,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Cinematic</h3>
-              <button class="use-button" onclick="showToast('Cinematic')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Cinematic','cinematic')">Use Style</button>
             </div>
           </div>
 
@@ -514,7 +651,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="preset-info">
               <h3 class="preset-name">Street</h3>
-              <button class="use-button" onclick="showToast('Street')">Use Style</button>
+              <button class="use-button" onclick="useStyle('Street','street')">Use Style</button>
             </div>
           </div>
         </div>
@@ -524,12 +661,93 @@ router.get('/', requireAuth, (req, res) => {
 
   <div class="toast" id="toast"></div>
 
+  <!-- Style Selection Modal -->
+  <div class="style-modal-overlay" id="styleModal">
+    <div class="style-modal">
+      <div class="style-modal-header">
+        <h3 id="modalTitle">Apply Caption Style</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="style-modal-body">
+        <p id="modalDescription">Where would you like to use this caption style?</p>
+        <div class="modal-preview" id="modalPreview"></div>
+        <div class="modal-actions">
+          <a href="/smart-shorts" class="modal-btn modal-btn-primary">
+            <span>🎬</span> Use in Smart Shorts
+          </a>
+          <button class="modal-btn modal-btn-secondary" onclick="savePreference()">
+            <span>💾</span> Set as Default Style
+          </button>
+        </div>
+        <p class="modal-hint">Your selected style will be applied when generating clips in Smart Shorts</p>
+      </div>
+    </div>
+  </div>
+
   <script>
     ${themeScript}
 
-    function showToast(styleName) {
+    let selectedStyle = null;
+
+    function useStyle(styleName, styleClass) {
+      selectedStyle = { name: styleName, class: styleClass };
+
+      // Update modal
+      document.getElementById('modalTitle').textContent = styleName + ' Style';
+      document.getElementById('modalDescription').textContent = 'Apply "' + styleName + '" caption style to your videos';
+
+      // Show preview in modal
+      const previewEl = document.getElementById('modalPreview');
+      const card = document.querySelector('.' + styleClass + ' .preview-text');
+      if (card) {
+        previewEl.innerHTML = '<div class="' + styleClass + '"><div class="preview-text">' + card.innerHTML + '</div></div>';
+      }
+
+      document.getElementById('styleModal').classList.add('show');
+    }
+
+    function closeModal() {
+      document.getElementById('styleModal').classList.remove('show');
+    }
+
+    // Close modal on overlay click
+    document.getElementById('styleModal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    async function savePreference() {
+      if (!selectedStyle) return;
+
+      try {
+        const response = await fetch('/caption-presets/save-preference', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ style: selectedStyle.class, name: selectedStyle.name })
+        });
+
+        if (response.ok) {
+          closeModal();
+          showToast(selectedStyle.name + ' set as your default caption style!');
+
+          // Highlight the selected card
+          document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('selected'));
+          document.querySelector('.preset-card.' + selectedStyle.class).classList.add('selected');
+        } else {
+          showToast('Failed to save preference', true);
+        }
+      } catch (err) {
+        showToast('Failed to save preference', true);
+      }
+    }
+
+    function showToast(message, isError) {
       const toast = document.getElementById('toast');
-      toast.textContent = 'Style applied!';
+      toast.textContent = message;
+      if (isError) {
+        toast.style.background = '#EF4444';
+      } else {
+        toast.style.background = 'var(--primary)';
+      }
       toast.classList.remove('hide');
       toast.classList.add('show');
 
@@ -538,11 +756,62 @@ router.get('/', requireAuth, (req, res) => {
         toast.classList.add('hide');
       }, 2500);
     }
+
+    // Load saved preference on page load
+    (async function() {
+      try {
+        const response = await fetch('/caption-presets/get-preference');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.style) {
+            const card = document.querySelector('.preset-card.' + data.style);
+            if (card) card.classList.add('selected');
+          }
+        }
+      } catch(e) {}
+    })();
   </script>
 </body>
 </html>`;
 
   res.send(html);
+});
+
+// POST: Save caption style preference
+router.post('/save-preference', requireAuth, async (req, res) => {
+  try {
+    const { style, name } = req.body;
+    if (!style || !name) {
+      return res.status(400).json({ error: 'Style and name are required' });
+    }
+
+    // Store preference in user's settings (using a simple cookie for now, can be DB later)
+    res.cookie('caption_style', JSON.stringify({ style, name }), {
+      maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
+      httpOnly: false,
+      sameSite: 'lax'
+    });
+
+    res.json({ success: true, style, name });
+  } catch (error) {
+    console.error('Save caption preference error:', error);
+    res.status(500).json({ error: 'Failed to save preference' });
+  }
+});
+
+// GET: Get saved caption style preference
+router.get('/get-preference', requireAuth, (req, res) => {
+  try {
+    const pref = req.cookies?.caption_style;
+    if (pref) {
+      const parsed = JSON.parse(pref);
+      res.json(parsed);
+    } else {
+      res.json({ style: null, name: null });
+    }
+  } catch (error) {
+    res.json({ style: null, name: null });
+  }
 });
 
 module.exports = router;
