@@ -276,7 +276,10 @@ router.get('/', requireAuth, (req, res) => {
       }
       .aspect-ratio-card input[type="checkbox"] {
         position: absolute;
-        display: none;
+        opacity: 0;
+        width: 0;
+        height: 0;
+        pointer-events: none;
       }
       .aspect-ratio-card input[type="checkbox"]:checked ~ .aspect-ratio-preview {
         border-color: var(--primary);
@@ -624,7 +627,19 @@ ${pageStyles}
       }
     });
 
-    // Aspect ratio selection
+    // Aspect ratio selection - clicking the card toggles the hidden checkbox
+    document.querySelectorAll('.aspect-ratio-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        // Don't double-toggle if they somehow clicked the checkbox itself
+        if (e.target.type === 'checkbox') return;
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        if (checkbox) {
+          checkbox.checked = !checkbox.checked;
+          checkbox.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+
     document.querySelectorAll('input[name="aspect"]').forEach(checkbox => {
       checkbox.addEventListener('change', checkInputs);
     });
