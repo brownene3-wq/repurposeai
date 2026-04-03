@@ -269,6 +269,36 @@ const initDatabase = async () => {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`).catch(() => {});
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0`).catch(() => {});
 
+    // User settings table (preferences)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_settings (
+        user_id TEXT PRIMARY KEY,
+        -- Notification preferences
+        email_processing_complete BOOLEAN DEFAULT true,
+        email_weekly_summary BOOLEAN DEFAULT false,
+        email_product_updates BOOLEAN DEFAULT true,
+        email_tips_tutorials BOOLEAN DEFAULT false,
+        -- Export defaults
+        default_video_quality TEXT DEFAULT '1080p',
+        default_video_format TEXT DEFAULT 'mp4',
+        default_aspect_ratio TEXT DEFAULT '16:9',
+        -- Caption defaults
+        default_caption_style TEXT DEFAULT 'bold-pop',
+        default_caption_language TEXT DEFAULT 'en',
+        auto_generate_captions BOOLEAN DEFAULT true,
+        -- Appearance
+        theme TEXT DEFAULT 'dark',
+        compact_sidebar BOOLEAN DEFAULT false,
+        -- Language & Region
+        language TEXT DEFAULT 'en',
+        timezone TEXT DEFAULT 'UTC',
+        -- Privacy
+        share_usage_analytics BOOLEAN DEFAULT true,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
 console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
