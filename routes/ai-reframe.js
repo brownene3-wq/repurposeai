@@ -8,6 +8,10 @@ const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
+// Lazy-load ytdl-core
+let ytdl, ytdlError;
+try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; }
+
 // Find ffmpeg
 let ffmpegPath = null;
 const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
@@ -24,6 +28,120 @@ if (!ffmpegPath) {
     execSync('which ffmpeg', { stdio: 'pipe' });
     ffmpegPath = 'ffmpeg';
   } catch (e) {}
+}
+
+// Find yt-dlp
+let ytdlpPath = null;
+try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
+
+// Common yt-dlp args (same as shorts.js)
+const YTDLP_COMMON_ARGS = [
+  '--no-warnings',
+  '--no-check-certificates',
+  '--geo-bypass',
+  '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+  '--js-runtimes', 'node',
+  '--remote-components', 'ejs:github',
+  '--retries', '3',
+  '--extractor-retries', '3',
+];
+
+// Validate YouTube URL
+function isValidYouTubeUrl(url) {
+  const patterns = [
+    /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]+/,
+    /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]+/,
+    /^(https?:\/\/)?youtu\.be\/[\w-]+/,
+    /^(https?:\/\/)?(www\.)?youtube\.com\/embed\/[\w-]+/,
+  ];
+  return patterns.some(p => p.test(url.trim()));
+}
+
+// Extract video ID from YouTube URL
+function extractVideoId(url) {
+  const match = url.match(/(?:v=|\/shorts\/|youtu\.be\/|\/embed\/)([\w-]+)/);
+  return match ? match[1] : null;
+}
+
+// Download YouTube video using yt-dlp with ytdl-core fallback
+async function downloadYouTubeVideo(videoUrl) {
+  const videoId = extractVideoId(videoUrl) || uuidv4().slice(0, 8);
+  const outputPath = path.join(uploadDir, `yt-reframe-${videoId}.mp4`);
+
+  // Clean up any existing file
+  try { fs.unlinkSync(outputPath); } catch (e) {}
+
+  // Strategy 1: yt-dlp
+  if (ytdlpPath) {
+    try {
+      console.log(`[AI Reframe] Downloading ${videoUrl} via yt-dlp...`);
+      await new Promise((resolve, reject) => {
+        const proc = spawn(ytdlpPath, [
+          '--no-playlist',
+          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--merge-output-format', 'mp4',
+          '-o', outputPath,
+          '--no-part',
+          '--force-overwrites',
+          ...YTDLP_COMMON_ARGS,
+          videoUrl
+        ]);
+        let stderr = '';
+        proc.stderr.on('data', (d) => { stderr += d.toString(); });
+        proc.on('error', reject);
+        proc.on('close', (code) => {
+          if (code === 0) resolve();
+          else reject(new Error('yt-dlp exit ' + code + ': ' + stderr.slice(-300)));
+        });
+        // Timeout after 3 minutes
+        setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} reject(new Error('Download timed out')); }, 180000);
+      });
+
+      // yt-dlp may change extension
+      if (!fs.existsSync(outputPath)) {
+        const base = path.join(uploadDir, `yt-reframe-${videoId}`);
+        for (const ext of ['.mp4', '.mkv', '.webm']) {
+          if (fs.existsSync(base + ext)) {
+            fs.renameSync(base + ext, outputPath);
+            break;
+          }
+        }
+      }
+
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
+        console.log(`[AI Reframe] yt-dlp download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+        return outputPath;
+      }
+    } catch (err) {
+      console.log(`[AI Reframe] yt-dlp failed: ${err.message.slice(0, 200)}`);
+    }
+  }
+
+  // Strategy 2: @distube/ytdl-core fallback
+  if (ytdl) {
+    try {
+      console.log(`[AI Reframe] Trying ytdl-core fallback for ${videoUrl}...`);
+      await new Promise((resolve, reject) => {
+        const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
+        const writeStream = fs.createWriteStream(outputPath);
+        stream.pipe(writeStream);
+        stream.on('error', reject);
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+        setTimeout(() => { stream.destroy(); reject(new Error('ytdl-core download timed out')); }, 180000);
+      });
+
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
+        console.log(`[AI Reframe] ytdl-core download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+        return outputPath;
+      }
+    } catch (err) {
+      console.log(`[AI Reframe] ytdl-core fallback failed: ${err.message.slice(0, 200)}`);
+    }
+  }
+
+  throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or unavailable.');
 }
 
 // Setup directories
@@ -640,13 +758,22 @@ ${pageStyles}
       });
     });
 
+    // Track which input tab is active
+    var activeInputTab = 'url';
+    document.querySelectorAll('.input-tab').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        activeInputTab = e.target.dataset.tab;
+        checkInputs(); // Re-evaluate button state when tab changes
+      });
+    });
+
     document.querySelectorAll('input[name="aspect"]').forEach(checkbox => {
       checkbox.addEventListener('change', checkInputs);
     });
 
     function checkInputs() {
-      const hasUrl = youtubeUrl.value.trim().length > 0;
-      const hasFile = fileInput.files.length > 0;
+      const hasUrl = activeInputTab === 'url' && youtubeUrl.value.trim().length > 0;
+      const hasFile = activeInputTab === 'upload' && fileInput.files.length > 0;
       const hasAspectRatio = document.querySelectorAll('input[name="aspect"]:checked').length > 0;
 
       reframeBtn.disabled = !(hasUrl || hasFile) || !hasAspectRatio;
@@ -656,11 +783,12 @@ ${pageStyles}
       e.preventDefault();
       clearError();
 
-      const hasUrl = youtubeUrl.value.trim().length > 0;
-      const hasFile = fileInput.files.length > 0;
+      // Only use the active tab's input
+      var useUrl = activeInputTab === 'url' && youtubeUrl.value.trim().length > 0;
+      var useFile = activeInputTab === 'upload' && fileInput.files.length > 0;
 
-      if (!hasUrl && !hasFile) {
-        showError('Please provide a YouTube URL or upload a video');
+      if (!useUrl && !useFile) {
+        showError(activeInputTab === 'url' ? 'Please paste a YouTube URL' : 'Please upload a video file');
         return;
       }
 
@@ -670,12 +798,22 @@ ${pageStyles}
         return;
       }
 
-      const formData = new FormData(form);
+      // Build FormData with ONLY the active tab's input
+      const formData = new FormData();
       formData.set('aspects', JSON.stringify(selectedRatios));
+      formData.set('inputMode', activeInputTab);
+
+      if (useUrl) {
+        formData.set('youtubeUrl', youtubeUrl.value.trim());
+        // Do NOT include the file even if one was previously selected
+      } else if (useFile) {
+        formData.set('videoFile', fileInput.files[0]);
+        // Do NOT include the URL
+      }
 
       reframeBtn.disabled = true;
       reframeBtn.classList.add('loading');
-      reframeBtn.innerHTML = '<span class="spinner"></span> Processing...';
+      reframeBtn.innerHTML = '<span class="spinner"></span> ' + (useUrl ? 'Downloading & Processing...' : 'Processing...');
 
       try {
         const response = await fetch('/ai-reframe/process', {
@@ -733,8 +871,10 @@ ${pageStyles}
 
 // POST - Process video
 router.post('/process', requireAuth, upload.single('videoFile'), async (req, res) => {
+  let downloadedPath = null; // Track YouTube downloads for cleanup
   try {
     const youtubeUrl = req.body.youtubeUrl || '';
+    const inputMode = req.body.inputMode || 'upload';
     const aspects = JSON.parse(req.body.aspects || '[]');
     const videoFile = req.file;
 
@@ -746,19 +886,29 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
       return res.status(400).json({ success: false, message: 'Please select at least one aspect ratio' });
     }
 
-    let inputPath = videoFile ? videoFile.path : null;
+    let inputPath = null;
 
-    // If YouTube URL provided, download it first
-    if (youtubeUrl && !videoFile) {
-      return res.status(400).json({ success: false, message: 'YouTube URL processing not yet implemented. Please upload a video file.' });
+    // If YouTube URL mode, download the video first
+    if (inputMode === 'url' && youtubeUrl) {
+      if (!isValidYouTubeUrl(youtubeUrl)) {
+        return res.status(400).json({ success: false, message: 'Please enter a valid YouTube URL (e.g., https://youtube.com/watch?v=...)' });
+      }
+      try {
+        inputPath = await downloadYouTubeVideo(youtubeUrl);
+        downloadedPath = inputPath; // Mark for cleanup
+      } catch (dlError) {
+        return res.status(400).json({ success: false, message: dlError.message });
+      }
+    } else if (videoFile) {
+      inputPath = videoFile.path;
     }
 
     if (!inputPath) {
-      return res.status(400).json({ success: false, message: 'No video file provided' });
+      return res.status(400).json({ success: false, message: 'No video input provided' });
     }
 
     if (!fs.existsSync(inputPath)) {
-      return res.status(400).json({ success: false, message: 'Uploaded file not found' });
+      return res.status(400).json({ success: false, message: 'Video file not found' });
     }
 
     const jobId = uuidv4();
@@ -785,9 +935,9 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
       }
     }
 
-    // Clean up uploaded file
+    // Clean up uploaded/downloaded file
     try {
-      fs.unlinkSync(inputPath);
+      if (inputPath) fs.unlinkSync(inputPath);
     } catch (e) {}
 
     if (results.length === 0) {
@@ -797,6 +947,8 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
     res.json({ success: true, files: results });
   } catch (error) {
     console.error('Processing error:', error);
+    // Clean up downloaded file on error
+    if (downloadedPath) { try { fs.unlinkSync(downloadedPath); } catch (e) {} }
     res.status(500).json({ success: false, message: error.message || 'Processing failed' });
   }
 });
