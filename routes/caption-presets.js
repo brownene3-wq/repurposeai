@@ -103,15 +103,15 @@ router.get('/', requireAuth, (req, res) => {
 
     .presets-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 2rem;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 1rem;
       margin-bottom: 2rem;
     }
 
     .preset-card {
       background: var(--surface);
       border: 1px solid var(--border-subtle);
-      border-radius: 16px;
+      border-radius: 12px;
       overflow: hidden;
       transition: all 0.3s ease;
       display: flex;
@@ -120,23 +120,23 @@ router.get('/', requireAuth, (req, res) => {
 
     .preset-card:hover {
       border-color: var(--primary);
-      box-shadow: 0 8px 32px rgba(108, 58, 237, 0.2);
-      transform: translateY(-4px);
+      box-shadow: 0 6px 24px rgba(108, 58, 237, 0.2);
+      transform: translateY(-3px);
     }
 
     .preview-container {
       background: #000000;
-      height: 120px;
+      height: 80px;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 1.5rem;
+      padding: 1rem;
       position: relative;
       overflow: hidden;
     }
 
     .preview-text {
-      font-size: 1.2rem;
+      font-size: 0.95rem;
       text-align: center;
       white-space: nowrap;
       word-wrap: break-word;
@@ -144,7 +144,7 @@ router.get('/', requireAuth, (req, res) => {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
+      gap: 0.4rem;
     }
 
     /* Preset Styles */
@@ -406,30 +406,30 @@ router.get('/', requireAuth, (req, res) => {
     }
 
     .preset-info {
-      padding: 1.5rem;
+      padding: 0.75rem;
       flex: 1;
       display: flex;
       flex-direction: column;
     }
 
     .preset-name {
-      font-size: 1.1rem;
+      font-size: 0.85rem;
       font-weight: 600;
       color: var(--text);
-      margin-bottom: 1rem;
+      margin-bottom: 0.5rem;
     }
 
     .use-button {
       margin-top: auto;
-      padding: 0.75rem 1.5rem;
+      padding: 0.5rem 1rem;
       background: var(--primary);
       color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: 6px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.3s ease;
-      font-size: 0.9rem;
+      font-size: 0.8rem;
     }
 
     .use-button:hover {
@@ -503,16 +503,16 @@ router.get('/', requireAuth, (req, res) => {
       position: relative;
     }
     .preset-card.selected::after {
-      content: '✓ Active';
+      content: '✓';
       position: absolute;
-      top: 10px;
-      right: 10px;
+      top: 6px;
+      right: 6px;
       background: var(--primary);
       color: white;
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 12px;
+      padding: 2px 6px;
+      border-radius: 10px;
       z-index: 2;
     }
 
@@ -636,8 +636,8 @@ router.get('/', requireAuth, (req, res) => {
     /* Responsive */
     @media (max-width: 768px) {
       .presets-grid {
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 0.75rem;
       }
 
       .header {

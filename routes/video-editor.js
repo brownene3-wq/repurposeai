@@ -149,9 +149,18 @@ router.get('/', requireAuth, async (req, res) => {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:12px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:300px}
     .video-preview-area.has-video{background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px}
-    .timeline-strip{margin-top:1rem;background:var(--dark);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:12px;height:60px;display:flex;align-items:center;position:relative;overflow-x:auto}
-    .timeline-bar{height:100%;background:linear-gradient(90deg,#6C3AED,#EC4899);border-radius:6px;width:100%;position:relative;cursor:pointer;transition:opacity 0.2s}
-    .timeline-bar:hover{opacity:0.9}
+    .timeline-strip{margin-top:1rem;background:var(--dark);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:12px;height:80px;display:flex;align-items:center;position:relative;overflow-x:auto}
+    .timeline-content{display:flex;gap:8px;width:100%;min-width:100%;height:100%}
+    .timeline-segment{flex:0 0 80px;height:100%;border-radius:6px;background:linear-gradient(135deg,#6366F1,#3B82F6);position:relative;cursor:pointer;transition:opacity 0.2s}
+    .timeline-segment:nth-child(1){background:linear-gradient(135deg,#6C3AED,#EC4899)}
+    .timeline-segment:nth-child(2){background:linear-gradient(135deg,#0EA5E9,#6366F1)}
+    .timeline-segment:nth-child(3){background:linear-gradient(135deg,#F59E0B,#EF4444)}
+    .timeline-segment:nth-child(4){background:linear-gradient(135deg,#10B981,#06B6D4)}
+    .timeline-segment:nth-child(5){background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
+    .timeline-segment:hover{opacity:0.8}
+    .trim-handle{position:absolute;top:0;bottom:0;width:8px;background:rgba(255,255,255,0.3);cursor:ew-resize;border-radius:2px}
+    .trim-handle.left{left:0}
+    .trim-handle.right{right:0}
     .tools-section{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap}
     .tool-button{padding:.6rem 1.2rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text);cursor:pointer;font-size:.85rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.4rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .tool-button:hover{background:var(--surface);border-color:var(--primary);color:var(--primary)}
@@ -241,7 +250,28 @@ router.get('/', requireAuth, async (req, res) => {
             </div>
 
             <div class="timeline-strip">
-              <div class="timeline-bar" id="timelineBar"></div>
+              <div class="timeline-content" id="timelineBar">
+                <div class="timeline-segment">
+                  <div class="trim-handle left"></div>
+                  <div class="trim-handle right"></div>
+                </div>
+                <div class="timeline-segment">
+                  <div class="trim-handle left"></div>
+                  <div class="trim-handle right"></div>
+                </div>
+                <div class="timeline-segment">
+                  <div class="trim-handle left"></div>
+                  <div class="trim-handle right"></div>
+                </div>
+                <div class="timeline-segment">
+                  <div class="trim-handle left"></div>
+                  <div class="trim-handle right"></div>
+                </div>
+                <div class="timeline-segment">
+                  <div class="trim-handle left"></div>
+                  <div class="trim-handle right"></div>
+                </div>
+              </div>
             </div>
 
             <div class="tools-section">
