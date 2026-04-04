@@ -154,25 +154,30 @@ router.get('/', requireAuth, async (req, res) => {
     .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
     .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
     .timeline-tracks{position:relative;padding:6px 0;min-height:90px}
-    .timeline-track{display:flex;align-items:center;height:40px;margin:3px 0;padding:0 8px;position:relative}
+    .timeline-track{display:flex;align-items:center;margin:2px 0;padding:0 8px;position:relative}
+    .timeline-track#timelineVideoTrack .timeline-track-content{height:56px}
+    .timeline-track#timelineAudioTrack .timeline-track-content{height:40px}
+    .timeline-track#timelineMusicTrack .timeline-track-content{height:36px}
     .timeline-track-label{width:32px;flex-shrink:0;font-size:.6rem;color:var(--text-muted);text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px}
     .timeline-track-content{flex:1;height:100%;position:relative;border-radius:6px;overflow:hidden;cursor:pointer}
-    .timeline-video-bar{height:100%;background:linear-gradient(180deg,#0d9488,#0f766e);border-radius:6px;display:flex;align-items:center;padding:0 12px;position:relative;overflow:hidden}
-    .timeline-video-bar .track-info{font-size:.72rem;color:rgba(255,255,255,0.9);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2}
-    .timeline-video-bar .track-duration{font-size:.65rem;color:rgba(255,255,255,0.6);margin-left:8px;z-index:2}
-    .timeline-video-bar .thumb-strip{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;opacity:0.3}
-    .timeline-video-bar .thumb-strip img{height:100%;width:auto;object-fit:cover;flex-shrink:0}
+    .timeline-video-bar{height:100%;background:linear-gradient(180deg,#0d9488,#0f766e);border-radius:6px;position:relative;overflow:hidden;border:1px solid rgba(13,148,136,0.3)}
+    .thumb-strip{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;overflow:hidden;border-radius:6px}
+    .thumb-strip img{display:block;pointer-events:none}
+    .track-info-overlay{position:absolute;top:0;left:0;right:0;padding:4px 12px;display:flex;align-items:center;gap:8px;z-index:2;background:linear-gradient(180deg,rgba(0,0,0,0.6) 0%,rgba(0,0,0,0) 100%)}
+    .track-info-overlay .track-info{font-size:.7rem;color:rgba(255,255,255,0.95);font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.8)}
+    .track-info-overlay .track-duration{font-size:.65rem;color:rgba(255,255,255,0.7);text-shadow:0 1px 3px rgba(0,0,0,0.8)}
+    .timeline-audio-bar{height:100%;background:linear-gradient(180deg,#1e293b,#0f172a);border-radius:6px;position:relative;overflow:hidden;border:1px solid rgba(56,189,248,0.15)}
     .timeline-music-bar{height:100%;background:linear-gradient(180deg,#2563eb,#1d4ed8);border-radius:6px;display:flex;align-items:center;padding:0 12px;position:relative;overflow:hidden}
     .timeline-music-bar .track-info{font-size:.72rem;color:rgba(255,255,255,0.9);font-weight:500;white-space:nowrap;z-index:2}
     .timeline-music-bar .track-volume{font-size:.65rem;color:rgba(255,255,255,0.6);margin-left:8px;z-index:2}
     .timeline-music-bar .waveform-bg{position:absolute;top:0;left:0;right:0;bottom:0;opacity:0.25}
     .timeline-playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;z-index:10;pointer-events:none;transition:left 0.05s linear}
     .timeline-playhead::before{content:'';position:absolute;top:-4px;left:-5px;width:12px;height:8px;background:#fff;border-radius:2px;clip-path:polygon(0 0,100% 0,50% 100%)}
-    .timeline-trim-handle{position:absolute;top:0;bottom:0;width:16px;background:rgba(255,255,255,0.15);cursor:col-resize;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .2s;border-radius:3px}
-    .timeline-trim-handle:hover,.timeline-trim-handle.dragging{background:rgba(255,255,255,0.35)}
-    .timeline-trim-handle.left{left:0;border-radius:6px 0 0 6px}
-    .timeline-trim-handle.right{right:0;border-radius:0 6px 6px 0}
-    .timeline-trim-handle::after{content:'';width:3px;height:16px;border-left:1px solid rgba(255,255,255,0.5);border-right:1px solid rgba(255,255,255,0.5)}
+    .timeline-trim-handle{position:absolute;top:0;bottom:0;width:14px;cursor:col-resize;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .2s}
+    .timeline-trim-handle.left{left:0;background:linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.05));border-radius:6px 0 0 6px;border-left:3px solid rgba(255,255,255,0.6)}
+    .timeline-trim-handle.right{right:0;background:linear-gradient(270deg,rgba(255,255,255,0.25),rgba(255,255,255,0.05));border-radius:0 6px 6px 0;border-right:3px solid rgba(255,255,255,0.6)}
+    .timeline-trim-handle:hover{background:rgba(255,255,255,0.3)}
+    .timeline-trim-handle::after{content:'';width:2px;height:18px;background:rgba(255,255,255,0.5);border-radius:1px}
     .timeline-trim-overlay{position:absolute;top:0;bottom:0;background:rgba(0,0,0,0.5);pointer-events:none;z-index:3}
     .timeline-empty{text-align:center;color:var(--text-muted);font-size:.85rem;padding:1.5rem}
     body.light .timeline-container{background:#f0f0f5;border-color:rgba(108,58,237,0.12)}
@@ -1171,20 +1176,42 @@ router.get('/', requireAuth, async (req, res) => {
       var durSecs = String(Math.floor(videoDuration % 60)).padStart(2, '0');
       var durStr = (durMins > 0 ? durMins + ':' : '0:') + durSecs;
 
-      videoTrack.innerHTML = '<div class="timeline-track-label">🎬</div>' +
+      videoTrack.innerHTML = '<div class="timeline-track-label">' +
+        '<span style="font-size:1rem">🎬</span>' +
+        '</div>' +
         '<div class="timeline-track-content" id="videoTrackContent">' +
           '<div class="timeline-trim-overlay" id="trimOverlayLeft" style="left:0;width:0"></div>' +
           '<div class="timeline-video-bar" id="videoBar">' +
-            '<div class="timeline-trim-handle left" id="trimHandleLeft"><</div>' +
-            '<span class="track-info">' + fname + '</span>' +
-            '<span class="track-duration">' + durStr + '</span>' +
-            '<div class="timeline-trim-handle right" id="trimHandleRight">></div>' +
+            '<div class="thumb-strip" id="thumbStrip"></div>' +
+            '<div class="track-info-overlay">' +
+              '<span class="track-info">' + fname + '</span>' +
+              '<span class="track-duration">' + durStr + '</span>' +
+            '</div>' +
+            '<div class="timeline-trim-handle left" id="trimHandleLeft"></div>' +
+            '<div class="timeline-trim-handle right" id="trimHandleRight"></div>' +
           '</div>' +
           '<div class="timeline-trim-overlay" id="trimOverlayRight" style="right:0;width:0"></div>' +
         '</div>';
 
       var playhead = document.getElementById('timelinePlayhead');
       tracksEl.insertBefore(videoTrack, playhead.nextSibling);
+
+      // Build audio waveform track
+      var existingAudio = document.getElementById('timelineAudioTrack');
+      if (existingAudio) existingAudio.remove();
+
+      var audioTrack = document.createElement('div');
+      audioTrack.className = 'timeline-track';
+      audioTrack.id = 'timelineAudioTrack';
+      audioTrack.innerHTML = '<div class="timeline-track-label">' +
+        '<span style="font-size:1rem">🔊</span>' +
+        '</div>' +
+        '<div class="timeline-track-content">' +
+          '<div class="timeline-audio-bar" id="audioBar">' +
+            '<canvas id="waveformCanvas" style="width:100%;height:100%"></canvas>' +
+          '</div>' +
+        '</div>';
+      tracksEl.appendChild(audioTrack);
 
       // Click on track to seek
       document.getElementById('videoTrackContent').addEventListener('mousedown', function(e) {
@@ -1194,12 +1221,79 @@ router.get('/', requireAuth, async (req, res) => {
         videoPlayer.currentTime = pct * videoDuration;
       });
 
-      // Trim handle dragging
       setupTrimHandles();
-
-      // Update playhead on video timeupdate
       videoPlayer.removeEventListener('timeupdate', updatePlayhead);
       videoPlayer.addEventListener('timeupdate', updatePlayhead);
+
+      // Fetch and render timeline thumbnails
+      fetchTimelineThumbs(currentVideoFile.filename);
+      // Fetch and render audio waveform
+      fetchAudioWaveform(currentVideoFile.filename);
+    }
+
+    function fetchTimelineThumbs(filename) {
+      fetch('/video-editor/timeline-frames?filename=' + encodeURIComponent(filename))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (!data.frames || !data.frames.length) return;
+          var strip = document.getElementById('thumbStrip');
+          if (!strip) return;
+          strip.innerHTML = '';
+          data.frames.forEach(function(src) {
+            var img = document.createElement('img');
+            img.src = src;
+            img.style.height = '100%';
+            img.style.width = 'auto';
+            img.style.objectFit = 'cover';
+            img.style.flexShrink = '0';
+            img.style.minWidth = '0';
+            strip.appendChild(img);
+          });
+          // Make images fill the bar evenly
+          var barWidth = strip.parentElement.offsetWidth;
+          var imgWidth = Math.ceil(barWidth / data.frames.length);
+          strip.querySelectorAll('img').forEach(function(img) {
+            img.style.width = imgWidth + 'px';
+          });
+        })
+        .catch(function() {});
+    }
+
+    function fetchAudioWaveform(filename) {
+      fetch('/video-editor/audio-waveform?filename=' + encodeURIComponent(filename))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (!data.peaks || !data.peaks.length) return;
+          drawWaveform('waveformCanvas', data.peaks);
+        })
+        .catch(function() {});
+    }
+
+    function drawWaveform(canvasId, peaks) {
+      var canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      var container = canvas.parentElement;
+      canvas.width = container.offsetWidth;
+      canvas.height = container.offsetHeight;
+      var ctx = canvas.getContext('2d');
+      var w = canvas.width;
+      var h = canvas.height;
+      var barW = Math.max(1, (w / peaks.length) - 1);
+      var gap = 1;
+
+      // Gradient for waveform bars
+      var grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, 'rgba(56,189,248,0.8)');
+      grad.addColorStop(0.5, 'rgba(59,130,246,0.9)');
+      grad.addColorStop(1, 'rgba(56,189,248,0.8)');
+      ctx.fillStyle = grad;
+
+      for (var i = 0; i < peaks.length; i++) {
+        var peakH = Math.max(2, peaks[i] * h * 0.85);
+        var x = i * (barW + gap);
+        var y = (h - peakH) / 2;
+        ctx.fillRect(x, y, barW, peakH);
+      }
     }
 
     function updatePlayhead() {
@@ -2372,6 +2466,113 @@ router.post('/speed', requireAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// GET: Extract timeline thumbnail frames
+router.get('/timeline-frames', requireAuth, async (req, res) => {
+  try {
+    const { filename } = req.query;
+    if (!filename) return res.status(400).json({ error: 'Filename required' });
+
+    let videoPath = path.join(outputDir, filename);
+    if (!fs.existsSync(videoPath)) videoPath = path.join(uploadDir, filename);
+    if (!fs.existsSync(videoPath)) return res.status(404).json({ error: 'Video not found' });
+
+    const frameCount = 20;
+    const framesDir = path.join('/tmp', 'timeline-frames-' + Date.now());
+    fs.mkdirSync(framesDir, { recursive: true });
+
+    // Extract frames using FFmpeg
+    await new Promise((resolve, reject) => {
+      const args = [
+        '-i', videoPath,
+        '-vf', 'fps=1,scale=80:60',
+        '-frames:v', String(frameCount),
+        '-q:v', '8',
+        path.join(framesDir, 'frame_%03d.jpg')
+      ];
+      const proc = spawn(ffmpegPath || 'ffmpeg', args);
+      proc.on('close', (code) => code === 0 ? resolve() : reject(new Error('Frame extraction failed')));
+      proc.on('error', reject);
+    });
+
+    // Read frames as base64
+    const frames = [];
+    for (let i = 1; i <= frameCount; i++) {
+      const framePath = path.join(framesDir, 'frame_' + String(i).padStart(3, '0') + '.jpg');
+      if (fs.existsSync(framePath)) {
+        const data = fs.readFileSync(framePath);
+        frames.push('data:image/jpeg;base64,' + data.toString('base64'));
+        fs.unlinkSync(framePath);
+      }
+    }
+
+    // Cleanup
+    try { fs.rmdirSync(framesDir); } catch(e) {}
+
+    res.json({ frames });
+  } catch (error) {
+    console.error('Timeline frames error:', error);
+    res.status(500).json({ error: 'Failed to extract frames' });
+  }
+});
+
+// GET: Extract audio waveform data
+router.get('/audio-waveform', requireAuth, async (req, res) => {
+  try {
+    const { filename } = req.query;
+    if (!filename) return res.status(400).json({ error: 'Filename required' });
+
+    let videoPath = path.join(outputDir, filename);
+    if (!fs.existsSync(videoPath)) videoPath = path.join(uploadDir, filename);
+    if (!fs.existsSync(videoPath)) return res.status(404).json({ error: 'Video not found' });
+
+    const rawPath = path.join('/tmp', 'waveform-' + Date.now() + '.raw');
+
+    // Extract raw audio samples
+    await new Promise((resolve, reject) => {
+      const args = [
+        '-i', videoPath,
+        '-ac', '1',
+        '-ar', '1000',
+        '-f', 's16le',
+        '-acodec', 'pcm_s16le',
+        '-y',
+        rawPath
+      ];
+      const proc = spawn(ffmpegPath || 'ffmpeg', args);
+      proc.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error('Waveform extraction failed'));
+      });
+      proc.on('error', reject);
+    });
+
+    // Read raw audio and compute peaks
+    const buffer = fs.readFileSync(rawPath);
+    const samples = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
+    const peakCount = 200;
+    const samplesPerPeak = Math.max(1, Math.floor(samples.length / peakCount));
+    const peaks = [];
+
+    for (let i = 0; i < peakCount; i++) {
+      let max = 0;
+      const start = i * samplesPerPeak;
+      const end = Math.min(start + samplesPerPeak, samples.length);
+      for (let j = start; j < end; j++) {
+        const abs = Math.abs(samples[j]);
+        if (abs > max) max = abs;
+      }
+      peaks.push(max / 32768); // Normalize to 0-1
+    }
+
+    try { fs.unlinkSync(rawPath); } catch(e) {}
+
+    res.json({ peaks });
+  } catch (error) {
+    console.error('Waveform error:', error);
+    res.status(500).json({ error: 'Failed to extract waveform' });
   }
 });
 
