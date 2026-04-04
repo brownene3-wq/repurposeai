@@ -177,19 +177,23 @@ function getVideoDuration(filePath) {
 
 // Helper: Extract audio from video
 function extractAudio(videoPath, audioPath) {
+  // Use MP3 format to stay under Whisper's 25MB limit (WAV is too large for longer videos)
+  const mp3Path = audioPath.replace(/\.wav$/, '.mp3');
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath, [
       '-i', videoPath,
-      '-q:a', '9',
-      '-ab', '192k',
-      '-ar', '16000', // 16kHz for Whisper
-      audioPath
+      '-vn',              // no video
+      '-ac', '1',         // mono
+      '-ar', '16000',     // 16kHz for Whisper
+      '-b:a', '64k',      // 64kbps MP3 — plenty for speech, keeps file small
+      '-y',
+      mp3Path
     ]);
     let stderr = '';
     proc.stderr.on('data', (d) => { stderr += d.toString(); });
     proc.on('close', (code) => {
       if (code === 0) {
-        resolve();
+        resolve(mp3Path);
       } else {
         reject(new Error('Audio extraction failed: ' + stderr.slice(-200)));
       }
@@ -202,7 +206,10 @@ function extractAudio(videoPath, audioPath) {
 async function transcribeAudio(audioPath) {
   try {
     const audioBuffer = fs.readFileSync(audioPath);
-    const file = new File([audioBuffer], 'audio.wav', { type: 'audio/wav' });
+    const ext = path.extname(audioPath);
+    const mimeType = ext === '.mp3' ? 'audio/mpeg' : 'audio/wav';
+    const fileName = ext === '.mp3' ? 'audio.mp3' : 'audio.wav';
+    const file = new File([audioBuffer], fileName, { type: mimeType });
 
     const transcript = await openai.audio.transcriptions.create({
       model: 'whisper-1',
@@ -1373,15 +1380,15 @@ router.post('/generate', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Video not found' });
     }
 
-    // Extract audio
-    const audioPath = path.join(uploadDir, `audio-${uuidv4()}.wav`);
-    await extractAudio(videoPath, audioPath);
+    // Extract audio as MP3 (stays under Whisper's 25MB limit)
+    const audioBasePath = path.join(uploadDir, `audio-${uuidv4()}.wav`);
+    const actualAudioPath = await extractAudio(videoPath, audioBasePath);
 
     // Transcribe with Whisper
-    const transcript = await transcribeAudio(audioPath);
+    const transcript = await transcribeAudio(actualAudioPath);
 
     // Clean up
-    try { fs.unlinkSync(audioPath); } catch (e) {}
+    try { fs.unlinkSync(actualAudioPath); } catch (e) {}
 
     res.json({ transcript });
   } catch (err) {
