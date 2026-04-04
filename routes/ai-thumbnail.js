@@ -949,6 +949,8 @@ router.get('/', requireAuth, (req, res) => {
   `;
 
   const html = `${headHTML}
+${pageStyles}
+</head>
 <body>
   <div class="dashboard">
     ${sidebar}
