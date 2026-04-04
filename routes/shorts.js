@@ -1439,6 +1439,260 @@ Ensure all times are accurate to the transcript. Focus on moments that are 30-12
   }
 });
 
+// POST /auto-generate - Auto-generate multiple shorts from a video
+router.post('/auto-generate', requireAuth, async (req, res) => {
+  let sseStarted = false;
+
+  try {
+    const { videoUrl, numClips, duration, clipStyle, captionStyle, language, includeCaptions } = req.body;
+    if (!videoUrl) {
+      return res.status(400).json({ error: 'Video URL is required' });
+    }
+
+    const videoId = extractVideoId(videoUrl);
+    if (!videoId) {
+      return res.status(400).json({ error: 'Invalid YouTube URL' });
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'AI service is not configured' });
+    }
+
+    const requestedClips = Math.min(Math.max(parseInt(numClips) || 10, 1), 20);
+    const clipDuration = Math.min(Math.max(parseInt(duration) || 30, 10), 180);
+    const userId = req.user.id;
+
+    // Set up Server-Sent Events
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseStarted = true;
+
+    const sendUpdate = (data) => {
+      try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch (e) {}
+    };
+
+    try {
+      // Step 1: Fetch transcript
+      sendUpdate({ status: 'analyzing', message: 'Fetching video transcript...' });
+
+      let segments = null;
+      if (process.env.SUPADATA_API_KEY) {
+        try { segments = await fetchTranscriptSupadata(videoId); } catch (e) { segments = null; }
+      }
+      if (!segments || segments.length === 0) {
+        try { segments = await fetchTranscriptInnerTube(videoId); } catch (e) {}
+      }
+      if (!segments || segments.length === 0) {
+        try { segments = await fetchTranscriptDirect(videoId); } catch (e) {}
+      }
+      if (!segments || segments.length === 0) {
+        try { segments = await fetchTranscriptWithYtdlp(videoId); } catch (e) {}
+      }
+
+      if (!segments || segments.length === 0) {
+        sendUpdate({ status: 'error', message: 'Could not fetch transcript for this video. Try a different video.' });
+        res.end();
+        return;
+      }
+
+      const transcriptText = segments.map(s => {
+        const min = Math.floor(s.start / 60);
+        const sec = Math.floor(s.start % 60);
+        return `[${min}:${sec < 10 ? '0' + sec : sec}] ${s.text}`;
+      }).join('\n');
+
+      // Get video title
+      let videoTitle = 'Video';
+      try {
+        const { pool } = require('../db/database');
+        const existing = await pool.query(
+          `SELECT video_title FROM smart_shorts WHERE user_id = $1 AND video_url LIKE $2 LIMIT 1`,
+          [userId, `%${videoId}%`]
+        );
+        if (existing.rows.length > 0) videoTitle = existing.rows[0].video_title;
+      } catch (e) {}
+
+      // Step 2: AI split into N clips of requested duration
+      sendUpdate({ status: 'analyzing', message: 'AI is selecting the best ' + requestedClips + ' moments (' + clipDuration + 's each)...' });
+
+      const splitPrompt = `You are an expert content strategist. Analyze this transcript and identify exactly ${requestedClips} non-overlapping segments, each approximately ${clipDuration} seconds long, that would make the best short-form content for TikTok, Instagram Reels, and YouTube Shorts.
+
+Rules:
+- Each segment MUST be approximately ${clipDuration} seconds long (within 5 seconds)
+- Segments must NOT overlap with each other
+- Select the most engaging, viral-worthy moments
+- Spread selections across the entire video (don't cluster at the beginning)
+- Each segment should be self-contained and make sense on its own
+- Prioritize: emotional hooks, surprising facts, practical tips, humor, storytelling peaks
+
+Return ONLY a JSON array with this exact structure:
+[
+  {
+    "title": "Brief catchy title",
+    "timeRange": "MM:SS-MM:SS",
+    "description": "Why this makes a great short (1 sentence)",
+    "viralityScore": 85,
+    "keyThemes": ["theme1", "theme2"]
+  }
+]
+
+The array must have exactly ${requestedClips} items. Ensure all times are accurate to the transcript.`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: splitPrompt },
+          { role: 'user', content: `Transcript:\n\n${transcriptText}` }
+        ],
+        temperature: 0.7,
+        max_tokens: 4000
+      });
+
+      const momentText = response.choices[0].message.content;
+      let moments = [];
+      try {
+        const jsonMatch = momentText.match(/\[[\s\S]*\]/);
+        if (jsonMatch) moments = JSON.parse(jsonMatch[0]);
+      } catch (parseError) {
+        console.error('Auto-generate: failed to parse AI moments:', parseError);
+      }
+
+      if (moments.length === 0) {
+        sendUpdate({ status: 'error', message: 'AI could not identify enough moments. Try a longer video or fewer clips.' });
+        res.end();
+        return;
+      }
+
+      sendUpdate({ status: 'analyzing', message: 'Found ' + moments.length + ' moments. Saving analysis...' });
+
+      // Step 3: Save as a real analysis so we can reuse /clip endpoint
+      const { pool } = require('../db/database');
+      const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const analysisResult = await pool.query(
+        `INSERT INTO smart_shorts (user_id, video_url, video_title, transcript, moments, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'completed', NOW()) RETURNING id`,
+        [userId, canonicalUrl, videoTitle || 'Auto-Generated', transcriptText, JSON.stringify(moments)]
+      );
+      const analysisId = analysisResult.rows[0].id;
+
+      // Step 4: Generate each clip
+      sendUpdate({ status: 'generating', message: 'Starting clip generation...', current: 0, total: moments.length });
+
+      let generated = 0;
+      for (let i = 0; i < moments.length; i++) {
+        sendUpdate({ status: 'generating', message: 'Generating clip ' + (i + 1) + ' of ' + moments.length + ': ' + (moments[i].title || ''), current: i, total: moments.length });
+
+        try {
+          // Call the clip endpoint internally
+          const clipResp = await new Promise((resolve, reject) => {
+            const http = require('http');
+            const postData = JSON.stringify({
+              analysisId,
+              momentIndex: i,
+              includeCaptions: includeCaptions !== false,
+              clipStyle: clipStyle || 'blur',
+              captionLanguage: language || 'en',
+              captionStyle: captionStyle || 'trending'
+            });
+
+            // Use internal HTTP request to our own clip endpoint
+            const options = {
+              hostname: '127.0.0.1',
+              port: process.env.PORT || 3000,
+              path: '/shorts/clip',
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData),
+                'Cookie': req.headers.cookie || ''
+              }
+            };
+
+            const clipReq = http.request(options, (clipRes) => {
+              let body = '';
+              clipRes.on('data', (chunk) => body += chunk);
+              clipRes.on('end', () => {
+                try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('Invalid response')); }
+              });
+            });
+            clipReq.on('error', reject);
+            clipReq.write(postData);
+            clipReq.end();
+          });
+
+          if (!clipResp.success) {
+            console.error('Auto-generate clip ' + i + ' failed:', clipResp.error);
+            continue;
+          }
+
+          // Poll for clip readiness (max 5 min per clip)
+          const filename = clipResp.filename;
+          let ready = false;
+          for (let attempt = 0; attempt < 150; attempt++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+              const filePath = path.join(CLIPS_DIR, filename);
+              const errorPath = filePath + '.error';
+              const progressPath = filePath + '.progress';
+
+              // Check for error
+              if (fs.existsSync(errorPath)) { break; }
+
+              // Check if ready: file exists, > 10KB, no progress file
+              if (fs.existsSync(filePath)) {
+                const stat = fs.statSync(filePath);
+                const stillProcessing = fs.existsSync(progressPath);
+                if (stat.size > 10000 && !stillProcessing) { ready = true; break; }
+              }
+            } catch (e) {}
+
+            if (attempt % 5 === 0) {
+              sendUpdate({ status: 'generating', message: 'Processing clip ' + (i + 1) + '...', current: i, total: moments.length });
+            }
+          }
+
+          if (ready) {
+            generated++;
+            sendUpdate({
+              status: 'clip_ready',
+              index: i,
+              title: moments[i].title,
+              timeRange: moments[i].timeRange,
+              description: moments[i].description,
+              viralityScore: moments[i].viralityScore,
+              duration: clipDuration,
+              filename: filename
+            });
+          }
+        } catch (clipErr) {
+          console.error('Auto-generate clip ' + i + ' error:', clipErr.message);
+        }
+      }
+
+      // Done
+      sendUpdate({ status: 'complete', totalGenerated: generated, totalRequested: requestedClips, analysisId });
+      res.end();
+
+    } catch (streamError) {
+      console.error('Auto-generate stream error:', streamError);
+      sendUpdate({ status: 'error', message: streamError.message || 'Auto-generation failed' });
+      res.end();
+    }
+  } catch (error) {
+    console.error('Auto-generate error:', error);
+    if (!sseStarted) {
+      res.status(500).json({ error: error.message || 'Auto-generation failed' });
+    } else {
+      try {
+        res.write(`data: ${JSON.stringify({ status: 'error', message: error.message })}\n\n`);
+        res.end();
+      } catch (e) { res.end(); }
+    }
+  }
+});
+
 // POST /generate - Generate platform-specific content
 router.post('/generate', requireAuth, async (req, res) => {
   try {
@@ -5210,10 +5464,126 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Brand Kit</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Customize with your brand identity</div>
         </div>
+        <div onclick="toggleToolPanel('autoGenPanel', this)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#e056fd';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(224,86,253,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(224,86,253,0.2),rgba(162,155,254,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">⚡</div>
+          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Auto-Generate</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Create multiple shorts instantly</div>
+        </div>
         <div onclick="toggleToolPanel('settingsPanel', this); toggleSettings(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#10b981';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(16,185,129,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
           <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(16,185,129,0.2),rgba(52,211,153,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">⚙️</div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Settings</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">API keys & integrations</div>
+        </div>
+      </div>
+
+      <!-- Auto-Generate Shorts Panel -->
+      <div style="margin-bottom: 16px;">
+        <div id="autoGenPanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <div>
+              <h3 style="font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px;">⚡ Auto-Generate Shorts</h3>
+              <p style="color:#888; font-size:12px; margin-top:4px;">Paste a YouTube URL and we'll automatically create multiple ready-to-post shorts</p>
+            </div>
+            <button class="btn btn-small" onclick="document.getElementById('autoGenPanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:16px;border:none;cursor:pointer;">&times;</button>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <input type="url" id="ag-videoUrl" name="auto_gen_url" autocomplete="off" placeholder="https://youtube.com/watch?v=..."
+              style="flex:1;padding:12px 14px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--text);font-size:14px;">
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div>
+              <label style="display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;">Number of Shorts</label>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="range" id="ag-count" min="1" max="20" value="10" style="flex:1;accent-color:#e056fd;"
+                  oninput="document.getElementById('ag-count-val').textContent=this.value">
+                <span id="ag-count-val" style="font-size:18px;font-weight:700;color:#e056fd;min-width:28px;text-align:center;">10</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);margin-top:2px;">
+                <span>1</span><span>20</span>
+              </div>
+            </div>
+            <div>
+              <label style="display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;">Duration per Short</label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="ag-dur-btn ag-dur-active" data-dur="30" onclick="selectAgDuration(this)" style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(224,86,253,0.15);color:#e056fd;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;">30s</button>
+                <button class="ag-dur-btn" data-dur="45" onclick="selectAgDuration(this)" style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;">45s</button>
+                <button class="ag-dur-btn" data-dur="60" onclick="selectAgDuration(this)" style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;">60s</button>
+                <button class="ag-dur-btn" data-dur="90" onclick="selectAgDuration(this)" style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;">90s</button>
+                <button class="ag-dur-btn" data-dur="custom" onclick="selectAgDuration(this);document.getElementById('ag-custom-dur').style.display='inline-block'" style="padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;">Custom</button>
+                <input type="number" id="ag-custom-dur" min="10" max="180" value="60" placeholder="sec" style="display:none;width:60px;padding:6px 8px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;text-align:center;">
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div>
+              <label style="display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Clip Style</label>
+              <select id="ag-clipStyle" style="width:100%;padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
+                <option value="blur">Blur Background</option>
+                <option value="crop">Center Crop</option>
+                <option value="fit">Fit (Black BG)</option>
+                <option value="pip">Picture-in-Picture</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Captions</label>
+              <select id="ag-captionStyle" style="width:100%;padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
+                <option value="trending">Trending</option>
+                <option value="bold">Bold</option>
+                <option value="karaoke">Word Pop</option>
+                <option value="classic">Classic</option>
+                <option value="minimal">Minimal</option>
+                <option value="neon">Neon Glow</option>
+                <option value="none">No Captions</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Language</label>
+              <select id="ag-lang" style="width:100%;padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="pt">Portuguese</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="hi">Hindi</option>
+                <option value="ar">Arabic</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;align-items:center;">
+            <button class="btn btn-primary" id="ag-btn" onclick="autoGenerateShorts()" style="background:linear-gradient(135deg,#e056fd,#a29bfe);padding:12px 28px;font-size:14px;font-weight:700;border-radius:10px;border:none;color:#fff;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 20px rgba(224,86,253,0.3);">
+              ⚡ Generate Shorts
+            </button>
+            <span id="ag-status" style="font-size:13px;color:var(--text-muted);"></span>
+          </div>
+
+          <!-- Progress section -->
+          <div id="ag-progress" style="display:none;margin-top:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span style="font-size:13px;font-weight:600;color:var(--text);" id="ag-progress-label">Generating...</span>
+              <span style="font-size:13px;font-weight:700;color:#e056fd;" id="ag-progress-count">0/0</span>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">
+              <div id="ag-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#e056fd,#a29bfe);border-radius:3px;transition:width 0.5s;"></div>
+            </div>
+          </div>
+
+          <!-- Results grid -->
+          <div id="ag-results" style="display:none;margin-top:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <h4 style="font-size:15px;font-weight:700;color:var(--text);">Generated Shorts</h4>
+              <button class="btn btn-primary" id="ag-download-all" onclick="downloadAllAutoGenClips()" style="background:linear-gradient(135deg,#e056fd,#a29bfe);padding:8px 20px;font-size:12px;font-weight:600;border-radius:8px;border:none;color:#fff;cursor:pointer;">
+                📦 Download All (ZIP)
+              </button>
+            </div>
+            <div id="ag-results-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;"></div>
+          </div>
         </div>
       </div>
 
@@ -6438,7 +6808,7 @@ ${paginationHtml}
     };
 
     function toggleToolPanel(panelId, cardEl) {
-      var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','settingsPanel'];
+      var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','settingsPanel','autoGenPanel'];
       var panel = document.getElementById(panelId);
       var isVisible = panel.style.display !== 'none';
       // Close all panels first
@@ -7044,6 +7414,202 @@ ${paginationHtml}
         showToast('Export failed: ' + err.message, true);
       } finally {
         if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export All (ZIP)'; }
+      }
+    }
+
+    // === Auto-Generate Shorts ===
+    var agSelectedDuration = 30;
+    var agGeneratedClips = [];
+
+    function selectAgDuration(btn) {
+      document.querySelectorAll('.ag-dur-btn').forEach(function(b) {
+        b.style.background = 'var(--dark)';
+        b.style.color = 'var(--text-muted)';
+      });
+      btn.style.background = 'rgba(224,86,253,0.15)';
+      btn.style.color = '#e056fd';
+      var dur = btn.getAttribute('data-dur');
+      if (dur === 'custom') {
+        document.getElementById('ag-custom-dur').style.display = 'inline-block';
+      } else {
+        document.getElementById('ag-custom-dur').style.display = 'none';
+        agSelectedDuration = parseInt(dur);
+      }
+    }
+
+    async function autoGenerateShorts() {
+      var urlInput = document.getElementById('ag-videoUrl');
+      var videoUrl = urlInput.value.trim();
+      if (!videoUrl) { showToast('Please paste a YouTube URL'); return; }
+
+      var numClips = parseInt(document.getElementById('ag-count').value);
+      var durBtn = document.querySelector('.ag-dur-btn[style*="rgba(224,86,253"]');
+      var duration = agSelectedDuration;
+      if (durBtn && durBtn.getAttribute('data-dur') === 'custom') {
+        duration = parseInt(document.getElementById('ag-custom-dur').value) || 60;
+      }
+      var clipStyle = document.getElementById('ag-clipStyle').value;
+      var captionStyle = document.getElementById('ag-captionStyle').value;
+      var language = document.getElementById('ag-lang').value;
+      var includeCaptions = captionStyle !== 'none';
+
+      var btn = document.getElementById('ag-btn');
+      btn.disabled = true;
+      btn.textContent = 'Starting...';
+
+      var progress = document.getElementById('ag-progress');
+      var progressBar = document.getElementById('ag-progress-bar');
+      var progressLabel = document.getElementById('ag-progress-label');
+      var progressCount = document.getElementById('ag-progress-count');
+      progress.style.display = 'block';
+      progressBar.style.width = '0%';
+      progressLabel.textContent = 'Analyzing video...';
+      progressCount.textContent = '0/' + numClips;
+
+      var results = document.getElementById('ag-results');
+      var resultsGrid = document.getElementById('ag-results-grid');
+      results.style.display = 'none';
+      resultsGrid.innerHTML = '';
+      agGeneratedClips = [];
+
+      try {
+        // Step 1: Call auto-generate endpoint
+        var resp = await fetch('/shorts/auto-generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoUrl, numClips, duration, clipStyle, captionStyle, language, includeCaptions })
+        });
+
+        if (!resp.ok) {
+          var errData = await resp.json().catch(function() { return { error: 'Server error' }; });
+          throw new Error(errData.error || 'Failed to start auto-generation');
+        }
+
+        // SSE stream for progress
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+
+        while (true) {
+          var result = await reader.read();
+          if (result.done) break;
+          buffer += decoder.decode(result.value, { stream: true });
+
+          var lines = buffer.split('\\n');
+          buffer = lines.pop() || '';
+
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (line.startsWith('data: ')) {
+              try {
+                var data = JSON.parse(line.substring(6));
+
+                if (data.status === 'analyzing') {
+                  progressLabel.textContent = data.message || 'Analyzing...';
+                  btn.textContent = 'Analyzing...';
+                } else if (data.status === 'generating') {
+                  progressLabel.textContent = data.message || 'Generating clips...';
+                  btn.textContent = 'Generating...';
+                  if (data.current && data.total) {
+                    var pct = Math.round((data.current / data.total) * 100);
+                    progressBar.style.width = pct + '%';
+                    progressCount.textContent = data.current + '/' + data.total;
+                  }
+                } else if (data.status === 'clip_ready') {
+                  // A clip is done — add it to the results
+                  agGeneratedClips.push(data);
+                  addAutoGenClipCard(data);
+                  results.style.display = 'block';
+                } else if (data.status === 'complete') {
+                  progressBar.style.width = '100%';
+                  progressLabel.textContent = 'All done!';
+                  progressCount.textContent = (data.totalGenerated || agGeneratedClips.length) + '/' + numClips;
+                  btn.textContent = '⚡ Generate Shorts';
+                  btn.disabled = false;
+                  showToast((data.totalGenerated || agGeneratedClips.length) + ' shorts generated!');
+                } else if (data.status === 'error') {
+                  throw new Error(data.message || 'Generation failed');
+                }
+              } catch (parseErr) {
+                if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        showToast('Auto-generate failed: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Generate Shorts';
+      }
+    }
+
+    function addAutoGenClipCard(data) {
+      var grid = document.getElementById('ag-results-grid');
+      var card = document.createElement('div');
+      card.style.cssText = 'background:var(--dark);border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;transition:all 0.3s;';
+      card.onmouseenter = function() { this.style.borderColor = 'rgba(224,86,253,0.3)'; this.style.transform = 'translateY(-2px)'; };
+      card.onmouseleave = function() { this.style.borderColor = 'rgba(255,255,255,0.08)'; this.style.transform = 'none'; };
+
+      var timeDisplay = data.timeRange || ('Clip ' + (data.index + 1));
+      var durDisplay = data.duration ? (data.duration + 's') : '';
+
+      card.innerHTML = '<div style="padding:14px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<div style="font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + (data.title || 'Short ' + (data.index + 1)) + '</div>' +
+          (data.viralityScore ? '<div style="background:linear-gradient(135deg,#e056fd,#a29bfe);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;margin-left:8px;">' + data.viralityScore + '%</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
+          '<span style="font-size:11px;background:rgba(224,86,253,0.12);color:#e056fd;padding:2px 8px;border-radius:6px;font-weight:600;">' + timeDisplay + '</span>' +
+          (durDisplay ? '<span style="font-size:11px;color:var(--text-dim);">' + durDisplay + '</span>' : '') +
+        '</div>' +
+        (data.description ? '<p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:10px;">' + data.description.substring(0, 100) + '</p>' : '') +
+        '<a href="/shorts/clip/download/' + data.filename + '" download ' +
+          'style="display:block;text-align:center;padding:8px;background:linear-gradient(135deg,#e056fd,#a29bfe);color:#fff;text-decoration:none;border-radius:8px;font-size:12px;font-weight:600;transition:all 0.2s;"' +
+          'onmouseenter="this.style.opacity=0.9" onmouseleave="this.style.opacity=1">' +
+          'Download' +
+        '</a>' +
+      '</div>';
+
+      grid.appendChild(card);
+    }
+
+    async function downloadAllAutoGenClips() {
+      if (agGeneratedClips.length === 0) { showToast('No clips to download'); return; }
+
+      var dlBtn = document.getElementById('ag-download-all');
+      dlBtn.disabled = true;
+      dlBtn.textContent = 'Creating ZIP...';
+
+      try {
+        var zip = new JSZip();
+        for (var i = 0; i < agGeneratedClips.length; i++) {
+          var clip = agGeneratedClips[i];
+          dlBtn.textContent = 'Downloading ' + (i+1) + '/' + agGeneratedClips.length + '...';
+          var resp = await fetch('/shorts/clip/download/' + clip.filename);
+          if (resp.ok) {
+            var blob = await resp.blob();
+            var safeName = (clip.title || 'short_' + (i+1)).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+            zip.file(safeName + '.mp4', blob);
+          }
+        }
+
+        dlBtn.textContent = 'Zipping...';
+        var zipBlob = await zip.generateAsync({ type: 'blob' });
+        var url = URL.createObjectURL(zipBlob);
+        var a = document.createElement('a');
+        a.download = 'auto_generated_shorts.zip';
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast(agGeneratedClips.length + ' shorts downloaded as ZIP!');
+      } catch (err) {
+        showToast('ZIP download failed: ' + err.message, true);
+      } finally {
+        dlBtn.disabled = false;
+        dlBtn.textContent = '📦 Download All (ZIP)';
       }
     }
 
