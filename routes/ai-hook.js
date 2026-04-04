@@ -382,9 +382,29 @@ ${pageStyles}
             </div>
 
             <div class="form-group">
+              <label>Voice Provider</label>
+              <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
+                <button type="button" class="tab-btn active" id="providerFreeBtn" onclick="switchVoiceProvider('free')" style="flex:1;padding:.5rem;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;transition:all .2s">Free AI Voice</button>
+                <button type="button" class="tab-btn" id="providerElevenBtn" onclick="switchVoiceProvider('elevenlabs')" style="flex:1;padding:.5rem;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;transition:all .2s">ElevenLabs</button>
+              </div>
+            </div>
+            <div class="form-group" id="freeVoiceGroup">
               <label for="voice">Speaker Voice</label>
               <select id="voice" name="voice" required>
-                <option value="">Loading voices...</option>
+                <option value="">Select a free voice</option>
+                <option value="free_male_1">Alex (Male, Deep)</option>
+                <option value="free_male_2">Marcus (Male, Warm)</option>
+                <option value="free_male_3">James (Male, Energetic)</option>
+                <option value="free_female_1">Sarah (Female, Professional)</option>
+                <option value="free_female_2">Emma (Female, Friendly)</option>
+                <option value="free_female_3">Lily (Female, Calm)</option>
+              </select>
+              <p style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem">High-quality AI voices — no API key needed</p>
+            </div>
+            <div class="form-group" id="elevenVoiceGroup" style="display:none">
+              <label for="voiceEleven">Speaker Voice</label>
+              <select id="voiceEleven" name="voiceEleven">
+                <option value="">Loading ElevenLabs voices...</option>
               </select>
               <p id="voiceHint" style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;display:none"></p>
             </div>
@@ -441,16 +461,62 @@ ${pageStyles}
     let currentVideoFile = null;
     let hookData = null;
 
-    // Load voices from user's ElevenLabs account
-    (async function loadVoices() {
-      const voiceSelect = document.getElementById('voice');
-      const voiceHint = document.getElementById('voiceHint');
+    // Voice provider state
+    var activeVoiceProvider = 'free';
+
+    function switchVoiceProvider(provider) {
+      activeVoiceProvider = provider;
+      var freeGroup = document.getElementById('freeVoiceGroup');
+      var elevenGroup = document.getElementById('elevenVoiceGroup');
+      var freeBtn = document.getElementById('providerFreeBtn');
+      var elevenBtn = document.getElementById('providerElevenBtn');
+      var apiNotice = document.getElementById('apiKeyNotice');
+
+      if (provider === 'free') {
+        freeGroup.style.display = 'block';
+        elevenGroup.style.display = 'none';
+        freeBtn.style.background = 'var(--primary)';
+        freeBtn.style.color = '#fff';
+        freeBtn.style.borderColor = 'var(--primary)';
+        elevenBtn.style.background = 'var(--dark-2)';
+        elevenBtn.style.color = 'var(--text-muted)';
+        elevenBtn.style.borderColor = 'rgba(255,255,255,0.1)';
+        apiNotice.style.display = 'none';
+      } else {
+        freeGroup.style.display = 'none';
+        elevenGroup.style.display = 'block';
+        elevenBtn.style.background = 'var(--primary)';
+        elevenBtn.style.color = '#fff';
+        elevenBtn.style.borderColor = 'var(--primary)';
+        freeBtn.style.background = 'var(--dark-2)';
+        freeBtn.style.color = 'var(--text-muted)';
+        freeBtn.style.borderColor = 'rgba(255,255,255,0.1)';
+        // Show API key notice if no ElevenLabs voices loaded
+        var elevenSelect = document.getElementById('voiceEleven');
+        if (elevenSelect.options.length <= 1 && elevenSelect.options[0] && elevenSelect.options[0].value === '') {
+          apiNotice.style.display = 'block';
+        }
+      }
+    }
+
+    function getSelectedVoice() {
+      if (activeVoiceProvider === 'free') {
+        return document.getElementById('voice').value;
+      } else {
+        return document.getElementById('voiceEleven').value;
+      }
+    }
+
+    // Load ElevenLabs voices from user's account
+    (async function loadElevenLabsVoices() {
+      var voiceSelect = document.getElementById('voiceEleven');
+      var voiceHint = document.getElementById('voiceHint');
       try {
-        const res = await fetch('/ai-hook/voices');
-        const data = await res.json();
+        var res = await fetch('/ai-hook/voices');
+        var data = await res.json();
         voiceSelect.innerHTML = '';
         if (data.voices && data.voices.length > 0) {
-          voiceSelect.innerHTML = '<option value="">Select a voice</option>';
+          voiceSelect.innerHTML = '<option value="">Select an ElevenLabs voice</option>';
           data.voices.forEach(function(v) {
             var opt = document.createElement('option');
             opt.value = v.voice_id;
@@ -464,15 +530,14 @@ ${pageStyles}
           }
         } else if (data.noKey) {
           voiceSelect.innerHTML = '<option value="">No ElevenLabs key connected</option>';
-          voiceHint.innerHTML = 'Connect your ElevenLabs API key in <a href="/brand-voice" style="color:#6C3AED;font-weight:600">Brand Voice</a> or <a href="/settings" style="color:#6C3AED;font-weight:600">Settings</a> to enable voice selection. Hook text will still be generated.';
+          voiceHint.innerHTML = 'Connect your ElevenLabs API key in <a href="/brand-voice" style="color:#6C3AED;font-weight:600">Brand Voice</a> or <a href="/settings" style="color:#6C3AED;font-weight:600">Settings</a> to enable voice selection.';
           voiceHint.style.display = 'block';
-          document.getElementById('apiKeyNotice').style.display = 'block';
         } else {
           voiceSelect.innerHTML = '<option value="">No voices available</option>';
         }
       } catch (err) {
         voiceSelect.innerHTML = '<option value="">Could not load voices</option>';
-        voiceHint.textContent = 'Voice loading failed. Hook text generation still works.';
+        voiceHint.textContent = 'Voice loading failed. You can still use Free AI Voices.';
         voiceHint.style.display = 'block';
       }
     })();
@@ -525,11 +590,15 @@ ${pageStyles}
 
       const inputType = document.getElementById('inputType').value;
       const style = document.getElementById('style').value;
-      const voice = document.getElementById('voice').value;
+      const voice = getSelectedVoice();
       const platform = document.getElementById('platform').value;
 
-      if (!inputType || !style || !voice || !platform) {
-        showToast('Please fill in all fields');
+      if (!inputType || !style || !platform) {
+        showToast('Please fill in all required fields');
+        return;
+      }
+      if (!voice) {
+        showToast('Please select a voice');
         return;
       }
 
@@ -602,6 +671,8 @@ ${pageStyles}
             if (data.voiceError === 'NO_API_KEY') {
               document.getElementById('apiKeyNotice').style.display = 'block';
               showToast('Hook text generated! Connect your ElevenLabs API key for voice audio.');
+            } else if (data.voiceError === 'FREE_TTS_ERROR') {
+              showToast('Hook text generated! Free voice audio could not be created on this server.');
             }
           }
           document.getElementById('previewSection').classList.add('active');
@@ -672,6 +743,39 @@ async function getUserElevenLabsKey(userId) {
     }
   } catch (e) {}
   return null;
+}
+
+// Free voice mapping to OpenAI TTS voices + speed settings
+const FREE_VOICE_MAP = {
+  'free_male_1':   { voice: 'onyx',   speed: 0.95 },   // Alex - Deep male
+  'free_male_2':   { voice: 'echo',   speed: 1.0 },    // Marcus - Warm male
+  'free_male_3':   { voice: 'fable',  speed: 1.1 },    // James - Energetic male
+  'free_female_1': { voice: 'nova',   speed: 1.0 },    // Sarah - Professional female
+  'free_female_2': { voice: 'shimmer', speed: 1.05 },  // Emma - Friendly female
+  'free_female_3': { voice: 'alloy',  speed: 0.9 }     // Lily - Calm female
+};
+
+// Helper: Generate free TTS using OpenAI TTS API (server's own key, no cost to user)
+async function generateFreeTTS(hookText, voiceId) {
+  const profile = FREE_VOICE_MAP[voiceId] || FREE_VOICE_MAP['free_male_2'];
+  const audioPath = path.join(outputDir, `hook-free-${uuidv4()}.mp3`);
+
+  try {
+    const mp3 = await openai.audio.speech.create({
+      model: 'tts-1',
+      voice: profile.voice,
+      input: hookText,
+      speed: profile.speed,
+      response_format: 'mp3'
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    fs.writeFileSync(audioPath, buffer);
+    return '/ai-hook/audio/' + path.basename(audioPath);
+  } catch (err) {
+    console.error('OpenAI TTS error:', err.message);
+    throw new Error('FREE_TTS_ERROR');
+  }
 }
 
 // Helper: Generate hook speech with ElevenLabs using USER'S API key
@@ -827,12 +931,21 @@ Return ONLY the hook text, nothing else.`;
 
     const hookText = completion.choices[0].message.content.trim();
 
-    // Generate speech using the user's own ElevenLabs API key
+    // Generate speech — free TTS or ElevenLabs depending on voice selection
     let audioUrl = '';
     let voiceError = null;
     if (!voice) {
       voiceError = 'NO_VOICE';
+    } else if (voice.startsWith('free_')) {
+      // Use free server-side TTS
+      try {
+        audioUrl = await generateFreeTTS(hookText, voice);
+      } catch (e) {
+        console.warn('Free TTS error:', e.message);
+        voiceError = 'FREE_TTS_ERROR';
+      }
     } else {
+      // Use ElevenLabs with user's own API key
       try {
         const userApiKey = await getUserElevenLabsKey(req.user.id);
         if (!userApiKey) {
