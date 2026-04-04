@@ -139,7 +139,65 @@ async function downloadYouTubeVideo(videoUrl) {
     }
   }
 
-  throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or unavailable.');
+  throw new Error('YOUTUBE_DOWNLOAD_FAILED');
+}
+
+// Fallback: Fetch YouTube thumbnail directly (no video download needed)
+async function fetchYouTubeThumbnails(videoUrl) {
+  const videoId = extractVideoId(videoUrl);
+  if (!videoId) throw new Error('Could not extract video ID');
+
+  const https = require('https');
+  const thumbnailUrls = [
+    `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+    `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
+    `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+    `https://img.youtube.com/vi/${videoId}/0.jpg`,
+    `https://img.youtube.com/vi/${videoId}/1.jpg`,
+    `https://img.youtube.com/vi/${videoId}/2.jpg`,
+    `https://img.youtube.com/vi/${videoId}/3.jpg`,
+  ];
+
+  const frames = [];
+  for (let i = 0; i < thumbnailUrls.length; i++) {
+    try {
+      const filename = `yt-frame-${videoId}-${i}.jpg`;
+      const filePath = path.join(outputDir, filename);
+
+      await new Promise((resolve, reject) => {
+        const request = https.get(thumbnailUrls[i], (response) => {
+          if (response.statusCode === 200 && response.headers['content-type'] && response.headers['content-type'].includes('image')) {
+            const writeStream = fs.createWriteStream(filePath);
+            response.pipe(writeStream);
+            writeStream.on('finish', () => {
+              const stat = fs.statSync(filePath);
+              if (stat.size > 1000) {
+                resolve(true);
+              } else {
+                try { fs.unlinkSync(filePath); } catch(e) {}
+                resolve(false);
+              }
+            });
+            writeStream.on('error', () => resolve(false));
+          } else {
+            resolve(false);
+          }
+        });
+        request.on('error', () => resolve(false));
+        request.setTimeout(10000, () => { request.destroy(); resolve(false); });
+      }).then(ok => {
+        if (ok && fs.existsSync(filePath)) {
+          frames.push({ filename, url: '/ai-thumbnail/serve/' + filename });
+        }
+      });
+    } catch (e) { /* skip this thumbnail */ }
+  }
+
+  if (frames.length === 0) {
+    throw new Error('Could not fetch any YouTube thumbnails');
+  }
+
+  return frames;
 }
 
 // Setup directories
@@ -1272,13 +1330,13 @@ ${pageStyles}
       generateAllBtn.classList.add('loading');
 
       try {
-        const formData = new FormData();
-        formData.set('frameFilename', currentFrames[selectedFrameIndex].filename);
-        formData.set('styles', JSON.stringify(styleKeys));
-
         const response = await fetch('/ai-thumbnail/style', {
           method: 'POST',
-          body: formData
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            frameFilename: currentFrames[selectedFrameIndex].filename,
+            styles: JSON.stringify(styleKeys)
+          })
         });
 
         const data = await response.json();
@@ -1353,7 +1411,14 @@ router.post('/extract', requireAuth, upload.single('videoFile'), async (req, res
         inputPath = await downloadYouTubeVideo(youtubeUrl);
         downloadedPath = inputPath;
       } catch (dlError) {
-        return res.status(400).json({ success: false, message: dlError.message });
+        // Fallback: fetch YouTube thumbnail images directly instead of downloading video
+        console.log('[AI Thumbnail] Video download failed, trying YouTube thumbnail fallback...');
+        try {
+          const ytFrames = await fetchYouTubeThumbnails(youtubeUrl);
+          return res.json({ success: true, frames: ytFrames });
+        } catch (thumbErr) {
+          return res.status(400).json({ success: false, message: 'Failed to download YouTube video. The video may be private, age-restricted, or unavailable.' });
+        }
       }
     } else if (videoFile) {
       inputPath = videoFile.path;
