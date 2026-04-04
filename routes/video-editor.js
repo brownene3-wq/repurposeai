@@ -752,15 +752,7 @@ router.get('/', requireAuth, async (req, res) => {
   <script>
     ${getThemeScript()}
 
-    // Auto-collapse sidebar on Video Editor for maximum workspace
-    (function() {
-      var sb = document.querySelector('.sidebar');
-      var mc = document.querySelector('.main-content');
-      if (sb && !sb.classList.contains('collapsed')) {
-        sb.classList.add('collapsed');
-        if (mc) mc.style.marginLeft = '68px';
-      }
-    })();
+
 
     let currentVideoFile = null;
     let originalVideoFile = null; // Always keeps the original upload for speed resets
