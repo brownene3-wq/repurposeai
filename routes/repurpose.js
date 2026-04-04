@@ -712,6 +712,10 @@ async function fetchTranscriptInnertube(videoId) {
 
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const { spawn, execSync } = require('child_process');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { contentOps, outputOps, brandVoiceOps } = require('../db/database');
 
@@ -721,6 +725,43 @@ function getOpenAIClient() {
     client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 55000 });
   }
   return client;
+}
+
+// File upload setup for video/audio repurposing
+const uploadDir = path.join(__dirname, '..', 'uploads', 'repurpose');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
+
+// Find ffmpeg binary
+let ffmpegPath = null;
+const localFfmpeg = path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'ffmpeg');
+if (fs.existsSync(localFfmpeg)) { ffmpegPath = localFfmpeg; }
+if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
+if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
+
+// Extract audio as MP3 for Whisper (keeps file under 25MB limit)
+function extractAudioForRepurpose(inputPath) {
+  const mp3Path = inputPath + '.mp3';
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) return reject(new Error('ffmpeg not available'));
+    const proc = spawn(ffmpegPath, [
+      '-i', inputPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-y', mp3Path
+    ]);
+    proc.on('close', (code) => code === 0 ? resolve(mp3Path) : reject(new Error('Audio extraction failed')));
+    proc.on('error', reject);
+  });
+}
+
+// Transcribe audio file using OpenAI Whisper
+async function transcribeUploadedFile(audioPath) {
+  const openai = getOpenAIClient();
+  const fileStream = fs.createReadStream(audioPath);
+  const response = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: fileStream,
+    response_format: 'text'
+  });
+  return response;
 }
 
 // GET - Premium repurpose form page
@@ -1693,6 +1734,96 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // POST - Stream content generation (Server-Sent Events)
+// Process uploaded file: extract audio → transcribe → generate content (SSE stream)
+router.post('/process-upload', requireAuth, checkPlanLimit('repurposesPerMonth'), upload.single('file'), async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  let filePath = null;
+  let audioPath = null;
+
+  try {
+    if (!req.file) {
+      res.write('data: ' + JSON.stringify({ error: 'No file uploaded' }) + '\n\n');
+      return res.end();
+    }
+
+    filePath = req.file.path;
+    const fileName = req.file.originalname || 'Uploaded Video';
+    const platforms = ['Instagram', 'Twitter', 'LinkedIn'];
+    const tone = 'Professional';
+    const userId = req.user.id;
+
+    const totalStart = Date.now();
+
+    // Step 1: Extract audio
+    res.write('data: ' + JSON.stringify({ status: 'Extracting audio...' }) + '\n\n');
+    try {
+      audioPath = await extractAudioForRepurpose(filePath);
+    } catch (err) {
+      // If audio extraction fails, try transcribing the file directly (might be audio-only)
+      audioPath = filePath;
+    }
+
+    // Step 2: Transcribe with Whisper
+    res.write('data: ' + JSON.stringify({ status: 'Transcribing with AI...' }) + '\n\n');
+    let transcript;
+    try {
+      transcript = await transcribeUploadedFile(audioPath);
+    } catch (err) {
+      console.error('Whisper transcription failed:', err.message);
+      res.write('data: ' + JSON.stringify({ error: 'Transcription failed: ' + err.message }) + '\n\n');
+      return res.end();
+    }
+
+    if (!transcript || transcript.trim().length === 0) {
+      res.write('data: ' + JSON.stringify({ error: 'Could not extract any speech from the file.' }) + '\n\n');
+      return res.end();
+    }
+
+    // Cap transcript to ~8000 words
+    const words = transcript.split(/\s+/);
+    if (words.length > 8000) {
+      transcript = words.slice(0, 8000).join(' ');
+    }
+
+    console.log('[Upload] Transcribed', words.length, 'words in', Date.now() - totalStart, 'ms');
+
+    // Step 3: Save to DB
+    const content = await contentOps.create(userId, fileName, transcript, 'upload', fileName);
+
+    // Step 4: Generate content for each platform (stream results)
+    res.write('data: ' + JSON.stringify({ status: 'Generating content...' }) + '\n\n');
+    const promises = platforms.map(async (platform) => {
+      try {
+        const generatedContent = await Promise.race([
+          generatePlatformContent(transcript, platform, tone, null),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('AI generation timed out for ' + platform)), 60000))
+        ]);
+        const output = await outputOps.create(content.id, userId, 'generated', generatedContent, platform, tone);
+        res.write('data: ' + JSON.stringify({ platform: output.platform, generated_content: output.generated_content, id: output.id }) + '\n\n');
+      } catch (err) {
+        console.error('Error generating ' + platform + ':', err.message);
+        res.write('data: ' + JSON.stringify({ platform: platform, error: err.message }) + '\n\n');
+      }
+    });
+
+    await Promise.allSettled(promises);
+    console.log('[Upload] Total process-upload:', Date.now() - totalStart, 'ms');
+    res.write('data: ' + JSON.stringify({ done: true }) + '\n\n');
+    res.end();
+  } catch (error) {
+    console.error('Upload stream error:', error);
+    res.write('data: ' + JSON.stringify({ error: error.message || 'Processing failed' }) + '\n\n');
+    res.end();
+  } finally {
+    // Clean up temp files
+    try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {}
+    try { if (audioPath && audioPath !== filePath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath); } catch (e) {}
+  }
+});
+
 router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth'), async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
