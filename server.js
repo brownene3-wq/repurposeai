@@ -93,6 +93,9 @@ const aiReframeRouter = require('./routes/ai-reframe');
 const videoEditorRouter = require('./routes/video-editor');
 const aiThumbnailRouter = require('./routes/ai-thumbnail');
 const captionPresetsRouter = require('./routes/caption-presets');
+const aiCaptionsRouter = require('./routes/ai-captions');
+const aiBrollRouter = require('./routes/ai-broll');
+const brandTemplatesRouter = require('./routes/brand-templates');
 
 // Team permission enforcement middleware
 // Restricts team members to only the features they have permission for
@@ -143,6 +146,9 @@ app.use(async (req, res, next) => {
       '/ai-reframe': ['use_repurpose'],
       '/video-editor': ['use_repurpose'],
       '/caption-presets': ['use_repurpose'],
+      '/ai-captions': ['use_repurpose'],
+      '/ai-broll': ['use_repurpose'],
+      '/brand-templates': ['use_repurpose'],
       '/admin': ['manage_team'],
     };
 
@@ -192,6 +198,9 @@ app.use('/ai-reframe', aiReframeRouter);
 app.use('/video-editor', videoEditorRouter);
 app.use('/ai-thumbnail', aiThumbnailRouter);
 app.use('/caption-presets', captionPresetsRouter);
+app.use('/ai-broll', aiBrollRouter);
+app.use('/brand-templates', brandTemplatesRouter);
+app.use('/ai-captions', aiCaptionsRouter);
 
 // ========================
 // PWA MANIFEST & SERVICE WORKER

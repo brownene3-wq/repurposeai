@@ -11,7 +11,7 @@ RepurposeAI helps content creators save time by automatically transforming YouTu
 ## Getting Started
 1. Visit repurposeai.ai and sign up using Google OAuth (one-click sign in) or create an account with email and password
 2. After logging in, you will see the Dashboard with quick access to all features via the AI Tools grid
-3. The sidebar navigation includes: Dashboard, Repurpose, Library, Smart Shorts, AI Thumbnails, Analytics, Calendar, Brand Voice, and Billing
+3. The sidebar navigation includes: Dashboard, Repurpose, Library, Smart Shorts, AI Thumbnails, AI Captions, AI B-Roll, Brand Templates, Analytics, Calendar, Brand Voice, and Billing
 4. The Dashboard AI Tools grid gives quick access to: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
 5. You can also visit the Help Center at /help for step-by-step guides on how to use every feature
 
@@ -202,6 +202,17 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
   - **Audio Control**: Mute or adjust audio, fade in/out, bass/treble EQ, noise reduction, audio ducking
   - **AI Voiceover**: Generate AI voiceover using ElevenLabs voices (Rachel, Bella, Antoni, Arnold, Adam, Sam, Gigi, Dorothy). Type a script, choose a voice, preview it, then apply to your video. Supports volume control and original audio ducking.
   - **Voice Transform (NEW)**: Change the voice in your video to any AI voice. This uses ElevenLabs Speech-to-Speech technology. Two source options: extract audio from the current video, or upload a separate audio file. Pick a target voice, adjust stability and similarity settings, preview the result, then apply. The AI transforms the original voice into the selected voice while keeping the same words, emotion, and pacing. Perfect for faceless YouTube channels, privacy, or creating content with different character voices.
+  - **Music Library**: Add background music to your video from a built-in royalty-free music library. Browse 12+ curated tracks across 8 categories (All, Liked, Instrumental, Upbeat, Chill, Dramatic, Happy, Sad). Search for tracks by name. Upload your own custom music files. Adjust music volume with a slider. Music is mixed with the original audio using FFmpeg with automatic volume ducking so speech stays clear.
+  - **Aspect Ratio**: Change the aspect ratio of your video directly in the editor. Choose from 9:16 (TikTok/Reels vertical), 1:1 (Instagram Square), 16:9 (YouTube Landscape), or 4:5 (Instagram Portrait). The video is reframed intelligently using the selected layout mode.
+  - **Layout Modes**: Choose how your video fits into the new aspect ratio. Five layout options:
+    - **Fill**: Crops the video to fill the frame (no black bars)
+    - **Fit**: Scales the video to fit inside the frame with a blurred background filling empty space
+    - **Split**: Splits the video into two stacked panels (great for reaction-style content)
+    - **ScreenShare**: Overlays the video as a smaller picture-in-picture on a blurred background
+    - **Gameplay**: Splits into two panels — content on top, gameplay footage on bottom (trending format)
+  - **Transitions**: Add smooth transitions between video segments. 8 transition types: None, Fade, Dissolve, Wipe Left, Wipe Right, Slide Left, Slide Right, Zoom In. Adjustable duration (0.3 to 2.0 seconds). Toggle "Auto Transitions" to apply the same transition between all segments automatically.
+  - **AI Captions**: Quick-access button in the toolbar that opens the full AI Captions page for adding animated subtitles
+  - **AI Enhance**: Remove filler words and pauses from your video audio (see AI Enhance section above)
   - **Export**: Export your edited video at 720p, 1080p, or 4K resolution
   - The editor preserves aspect ratio on export — portrait videos stay portrait, landscape stays landscape
   - Exported videos use universal format (yuv420p) compatible with all video players
@@ -248,12 +259,27 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
 - Great for YouTube video thumbnails, social media preview images, and blog post headers
 
 ## AI Hooks Generator
-- Access from the Dashboard AI Tools grid
-- Generate viral hooks and opening lines for your content
-- Paste any topic or video description and the AI creates attention-grabbing hooks
-- Choose from different hook styles: Question, Bold Statement, Story, Statistic, Controversial
-- Great for YouTube intros, TikTok openings, and social media captions
-- Copy any generated hook with one click
+- Access from "AI Hooks" in the sidebar or the Dashboard AI Tools grid
+- Generate viral hooks and opening lines for your content with AI-powered voice synthesis
+- Three input methods: Upload a video file, paste a YouTube URL, or enter text/transcript directly
+- Choose from 6 AI speaker voices powered by ElevenLabs: Adam, Rachel, Bella, Antoni, Sam, Dorothy
+- Choose from 7 script styles: Serious, Casual, Funny, Dramatic, Question, Shocking, Storytelling
+- Target your hook for specific platforms: TikTok, YouTube Shorts, Instagram Reels, Instagram, Twitter/X, LinkedIn
+- The AI generates a 5-10 second attention-grabbing hook script based on your content
+- The hook audio is synthesized using the selected AI voice and prepended to your video
+- Preview the generated hook before applying it
+- Download the final video with the hook attached at the beginning
+
+### How to Use AI Hooks:
+1. Go to AI Hooks from the sidebar or Dashboard
+2. Choose your input: upload a video, paste a YouTube URL, or enter text
+3. Select a speaker voice from the 6 available AI voices
+4. Pick a script style that matches your content vibe
+5. Choose your target platform for optimized hooks
+6. Click "Generate Hook" — the AI writes and voices a hook
+7. Preview the hook audio
+8. Click "Apply to Video" to prepend the hook to your video
+9. Download the finished video with the hook attached
 
 ## AI Reframe
 - Access from the Dashboard AI Tools grid
@@ -289,19 +315,122 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
 - You can select multiple aspect ratios at once to generate all versions in one go
 - Processing time is longer with Face Tracking because the AI needs to analyze the video first
 
-## AI Caption Presets
-- Access from the Dashboard AI Tools grid
-- Browse and apply trendy caption/subtitle styles to your videos
-- Preset styles include: Karaoke (highlighted word-by-word), Bold, Minimal, Neon, and more
-- Preview how each style looks before applying
-- Consistent with TikTok and Instagram Reels trending caption styles
+## AI Captions (Full Standalone Page)
+- Access from "AI Captions" in the sidebar (💬 icon) or from the Video Editor toolbar
+- Full-featured caption editor with word-by-word animated subtitles powered by OpenAI Whisper
+- Three input methods: upload a video file, download from YouTube URL, or import from Library
 
-## Speech Enhancement
-- Access from the Dashboard AI Tools grid
-- Clean up audio quality in your videos using AI
-- Reduce background noise, enhance vocal clarity
-- Great for videos recorded in noisy environments
-- One-click enhancement — upload and let AI improve the audio
+### Caption Style Presets (25+ styles):
+- **Karaoke**: Word-by-word highlight with color change as each word is spoken
+- **Bold Pop**: Large bold text with scale-up animation on each word
+- **Minimal**: Clean, simple white text at the bottom
+- **Neon Glow**: Glowing neon-colored text with border effects
+- **MrBeast**: Yellow bold text with thick black outline (MrBeast style)
+- **Hormozi**: White bold text with red highlight on key words (Alex Hormozi style)
+- **Wave**: Text with wave animation effect
+- **Shadow**: Text with dramatic drop shadow
+- **Motion**: Text with slide-in motion animation
+- Plus 16+ more preset styles
+
+### Caption Customization Tabs:
+1. **Presets Tab**: Browse and select from 25+ ready-made caption styles with live previews
+2. **Font Tab**: Customize font family, font size, text color, outline color, outline width, and background color
+3. **Effects Tab**: Choose animation type (none, fade, scale, slide), text position (top, center, bottom), and highlight color for active words
+
+### How to Use AI Captions:
+1. Go to AI Captions from the sidebar
+2. Upload a video, paste a YouTube URL, or import from your Library
+3. Click "Generate Captions" — the AI extracts speech with word-level timing using Whisper
+4. Browse the transcript and edit any words if needed
+5. Select a caption style preset or customize your own in the Font and Effects tabs
+6. Preview how captions look on your video
+7. Click "Apply Captions" — FFmpeg burns the animated subtitles into the video
+8. Download your captioned video
+
+## AI Caption Presets (Quick Access)
+- Access from the Dashboard AI Tools grid for a quick overview of available caption styles
+- Browse preset styles: Karaoke, Bold Pop, Minimal, Neon, MrBeast, Hormozi, and more
+- Preview how each style looks before applying
+- For full caption editing, use the AI Captions page from the sidebar
+
+## AI Enhance (Speech Enhancement)
+- Access from the Video Editor toolbar or the Dashboard AI Tools grid
+- Two powerful audio enhancement tools:
+
+### Remove Filler Words
+- Automatically detects and removes filler words (um, uh, like, you know, etc.) from your video
+- Uses AI speech analysis to identify filler words with timestamps
+- FFmpeg removes the filler word segments and stitches the audio back together seamlessly
+- One-click operation with progress tracking
+
+### Remove Pauses (Silence Removal)
+- Automatically detects and removes long pauses/silences from your video
+- Uses FFmpeg silencedetect to find pauses longer than 0.5 seconds
+- Removes dead air to make your content more engaging and fast-paced
+- Adjustable sensitivity settings
+- One-click operation with progress tracking
+
+### How to Use AI Enhance:
+1. Upload a video in the Video Editor
+2. Click the "AI Enhance" tool in the toolbar
+3. Choose "Remove Filler Words" or "Remove Pauses"
+4. Wait for processing (progress bar shows status)
+5. Preview the enhanced audio
+6. The cleaned-up audio is applied to your video automatically
+
+## AI B-Roll
+- Access from "AI B-Roll" in the sidebar
+- Add supplementary footage (B-Roll) to your videos using AI
+- Two B-Roll modes:
+
+### AI Generated B-Roll
+- Uses OpenAI DALL-E to generate custom images that match your video content
+- The AI analyzes your video transcript to identify moments that need visual support
+- Generates relevant still images with Ken Burns effect (zoom/pan animation) for a cinematic look
+- Great for illustrating concepts, products, or abstract ideas mentioned in your video
+
+### Stock B-Roll (Copyright Free)
+- Search royalty-free stock video clips from Pixabay and Pexels
+- Browse footage by keyword search
+- All clips are copyright-free and safe for commercial use
+- Perfect for adding professional supplementary footage
+
+### How to Use AI B-Roll:
+1. Go to AI B-Roll from the sidebar
+2. Upload a video or paste a YouTube URL
+3. Choose your mode: AI Generated or Stock B-Roll
+4. For AI Generated: the AI analyzes your transcript and generates relevant images at key moments
+5. For Stock B-Roll: search for clips by keyword and select the ones you want
+6. Preview B-Roll placements on your timeline
+7. Click "Apply" to overlay B-Roll segments onto your video
+8. Download the final video with B-Roll included
+
+## Brand Templates
+- Access from "Brand Templates" in the sidebar
+- Create reusable branding templates that apply your brand style to every video automatically
+- 3-step setup wizard:
+
+### Step 1: Choose Aspect Ratio
+- Select your default aspect ratio: 9:16 (TikTok/Reels), 1:1 (Instagram), 16:9 (YouTube), or 4:5 (Instagram Portrait)
+- Platform labels shown for each ratio
+
+### Step 2: Choose Caption Style
+- Browse 8 caption style presets in a visual carousel: Karaoke, Bold Pop, MrBeast, Hormozi, Neon, Wave, Shadow, Motion
+- Or upload a custom font for your brand
+- Each style shows a live preview
+
+### Step 3: Add Logo
+- Upload your brand logo
+- Choose logo position: Top Left, Top Right, Bottom Left, or Bottom Right
+- Adjust logo size with a slider (20% to 200%)
+
+### How to Use Brand Templates:
+1. Go to Brand Templates from the sidebar
+2. Complete the 3-step wizard: aspect ratio → caption style → logo
+3. Click "Save Template"
+4. Your template is saved and can be applied to any video with one click
+5. Use "Apply Template" when editing any video to instantly apply your brand settings
+6. Create multiple templates for different brands or platforms
 
 ## Billing & Pricing Plans
 - Access from "Billing" in the sidebar

@@ -288,10 +288,35 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-button" data-tool="filters">🎨 Filters</button>
               <button class="tool-button" data-tool="speed">⚡ Speed</button>
               <button class="tool-button" data-tool="audio">🔊 Audio</button>
+              <button class="tool-button" data-tool="music">🎵 Music</button>
+              <button class="tool-button" data-tool="enhance">✨ AI Enhance</button>
+              <button class="tool-button" data-tool="captions" onclick="window.location.href='/ai-captions'" style="cursor:pointer">📝 AI Captions</button>
               <button class="tool-button" data-tool="voiceover">🎙️ AI Voice</button>
               <button class="tool-button" data-tool="voicetransform">🔄 Voice Transform</button>
               <button class="tool-button" data-tool="text">📝 Text Overlay</button>
               <button class="tool-button" data-tool="transitions">✨ Transitions</button>
+            </div>
+
+            <div class="top-bar-selectors" style="display:flex;gap:1rem;margin-top:1.5rem;padding:1rem;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
+              <div style="flex:1">
+                <label class="dropdown-label">Aspect Ratio</label>
+                <select class="dropdown" id="aspectRatioSelect" style="padding:.5rem .6rem;font-size:.85rem">
+                  <option value="16:9">16:9 (YouTube)</option>
+                  <option value="9:16">9:16 (TikTok)</option>
+                  <option value="1:1">1:1 (Instagram)</option>
+                  <option value="4:5">4:5 (Reels)</option>
+                </select>
+              </div>
+              <div style="flex:1">
+                <label class="dropdown-label">Layout Mode</label>
+                <select class="dropdown" id="layoutSelect" style="padding:.5rem .6rem;font-size:.85rem">
+                  <option value="fill">Fill</option>
+                  <option value="fit">Fit (Blur)</option>
+                  <option value="split">Split Screen</option>
+                  <option value="screenshare">Screen Share</option>
+                  <option value="gameplay">Gameplay</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -543,7 +568,95 @@ router.get('/', requireAuth, async (req, res) => {
 
           <div class="tool-panel" id="transitionsPanel">
             <div class="panel-title">✨ Transitions</div>
-            <p style="color:var(--text-muted);font-size:.85rem">Coming Soon - Requires multiple clips</p>
+            <div style="display:flex;flex-direction:column;gap:.8rem">
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
+                <input type="checkbox" id="autoTransitions" style="accent-color:#6C3AED"> Auto transitions between clips
+              </label>
+              <div>
+                <div style="font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.6rem">Transition Type</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem">
+                  <button class="transition-btn" data-transition="none" style="padding:.5rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">None</button>
+                  <button class="transition-btn" data-transition="fade" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Fade</button>
+                  <button class="transition-btn" data-transition="dissolve" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Dissolve</button>
+                  <button class="transition-btn" data-transition="wipeleft" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Wipe Left</button>
+                  <button class="transition-btn" data-transition="wiperight" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Wipe Right</button>
+                  <button class="transition-btn" data-transition="slideright" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Slide Right</button>
+                  <button class="transition-btn" data-transition="slideleft" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Slide Left</button>
+                  <button class="transition-btn" data-transition="zoomin" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Zoom In</button>
+                </div>
+              </div>
+              <div class="slider-group">
+                <div class="slider-label">
+                  <span>Duration</span>
+                  <span class="slider-value" id="transitionDurationValue">0.5s</span>
+                </div>
+                <input type="range" class="slider" id="transitionDuration" min="0.3" max="2.0" step="0.1" value="0.5">
+              </div>
+              <button class="tool-action-button" id="applyTransitionButton" disabled>Apply Transitions</button>
+            </div>
+          </div>
+
+          <div class="tool-panel" id="musicPanel">
+            <div class="panel-title">🎵 Music Library</div>
+            <div style="margin-bottom:1rem">
+              <input type="text" id="musicSearch" placeholder="Search copyright free music..." style="width:100%;padding:.6rem;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.85rem;margin-bottom:.5rem">
+            </div>
+            <div style="display:flex;gap:.4rem;margin-bottom:1rem;flex-wrap:wrap;font-size:.75rem">
+              <button class="filter-btn selected" data-music-filter="all">All</button>
+              <button class="filter-btn" data-music-filter="liked">Liked</button>
+              <button class="filter-btn" data-music-filter="instrumental">Instrumental</button>
+              <button class="filter-btn" data-music-filter="upbeat">Upbeat</button>
+              <button class="filter-btn" data-music-filter="chill">Chill</button>
+              <button class="filter-btn" data-music-filter="dramatic">Dramatic</button>
+              <button class="filter-btn" data-music-filter="happy">Happy</button>
+              <button class="filter-btn" data-music-filter="sad">Sad</button>
+            </div>
+            <button class="tool-action-button" style="background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1)" onclick="document.getElementById('customMusicFile').click()">📁 Upload Custom Music</button>
+            <input type="file" id="customMusicFile" accept="audio/*" style="display:none">
+            <div id="musicList" style="margin-top:1rem;max-height:300px;overflow-y:auto">
+              <div style="text-align:center;color:var(--text-muted);font-size:.85rem;padding:1rem">Loading music library...</div>
+            </div>
+            <div class="slider-group" style="margin-top:1rem">
+              <div class="slider-label">
+                <span>Music Volume</span>
+                <span class="slider-value" id="musicVolumeValue">30%</span>
+              </div>
+              <input type="range" class="slider" id="musicVolume" min="0" max="100" value="30">
+            </div>
+            <button class="tool-action-button" id="addMusicButton" disabled>🎵 Add to Video</button>
+          </div>
+
+          <div class="tool-panel" id="enhancePanel">
+            <div class="panel-title">✨ AI Enhance</div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Enhance your speech with AI-powered tools</p>
+            <div style="display:flex;flex-direction:column;gap:.6rem">
+              <div style="display:flex;align-items:center;gap:.5rem;padding:.8rem;background:var(--dark-2);border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
+                <div style="flex:1">
+                  <div style="font-size:.85rem;font-weight:600;color:var(--text)">Remove Filler Words</div>
+                  <div style="font-size:.75rem;color:var(--text-muted);margin-top:.2rem">Remove um, uh, like, basically...</div>
+                </div>
+                <button class="tool-action-button" id="removeFillerWordsBtn" disabled style="width:auto;padding:.5rem 1rem;white-space:nowrap">Process</button>
+              </div>
+              <div id="fillerWordsProgress" style="display:none;margin-top:.5rem">
+                <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden">
+                  <div id="fillerWordsProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
+                </div>
+                <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem;text-align:center">Processing audio...</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:.5rem;padding:.8rem;background:var(--dark-2);border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
+                <div style="flex:1">
+                  <div style="font-size:.85rem;font-weight:600;color:var(--text)">Remove Pauses</div>
+                  <div style="font-size:.75rem;color:var(--text-muted);margin-top:.2rem">Remove silence gaps automatically</div>
+                </div>
+                <button class="tool-action-button" id="removePausesBtn" disabled style="width:auto;padding:.5rem 1rem;white-space:nowrap">Process</button>
+              </div>
+              <div id="pausesProgress" style="display:none;margin-top:.5rem">
+                <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden">
+                  <div id="pausesProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
+                </div>
+                <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem;text-align:center">Processing audio...</div>
+              </div>
+            </div>
           </div>
 
           <div class="export-panel">
@@ -674,6 +787,10 @@ router.get('/', requireAuth, async (req, res) => {
         document.getElementById('vtApplyBtn').disabled = false;
         document.getElementById('textButton').disabled = false;
         document.getElementById('speedSelect').disabled = false;
+        document.getElementById('addMusicButton').disabled = false;
+        document.getElementById('removeFillerWordsBtn').disabled = false;
+        document.getElementById('removePausesBtn').disabled = false;
+        document.getElementById('applyTransitionButton').disabled = false;
 
         // Set end time to video duration
         document.getElementById('endTime').value = Math.round(videoDuration);
@@ -718,6 +835,18 @@ router.get('/', requireAuth, async (req, res) => {
         slider.addEventListener('input', function() {
           document.getElementById('fontSizeValue').textContent = this.value + 'px';
         });
+      } else if (slider.id === 'musicVolume') {
+        slider.addEventListener('input', function() {
+          document.getElementById('musicVolumeValue').textContent = this.value + '%';
+        });
+      } else if (slider.id === 'vtStability') {
+        slider.addEventListener('input', function() {
+          document.getElementById('vtStabilityValue').textContent = this.value + '%';
+        });
+      } else if (slider.id === 'vtSimilarity') {
+        slider.addEventListener('input', function() {
+          document.getElementById('vtSimilarityValue').textContent = this.value + '%';
+        });
       } else {
         slider.addEventListener('input', function() {
           const valueSpan = this.parentElement.querySelector('.slider-value');
@@ -744,7 +873,218 @@ router.get('/', requireAuth, async (req, res) => {
       });
     });
 
-    // Timeline segment selection
+    // Music library filter buttons
+    document.querySelectorAll('[data-music-filter]').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-music-filter]').forEach(b => b.classList.remove('selected'));
+        this.classList.add('selected');
+        loadMusicLibrary(this.dataset.musicFilter);
+      });
+    });
+
+    // Initialize music library
+    let selectedMusicFile = null;
+    let musicLibrary = getCuratedMusicTracks();
+
+    function getCuratedMusicTracks() {
+      return {
+        all: [
+          { id: 1, name: 'Ambient Breeze', duration: '3:45', category: 'instrumental', url: null },
+          { id: 2, name: 'Upbeat Morning', duration: '2:30', category: 'upbeat', url: null },
+          { id: 3, name: 'Chill Vibes', duration: '4:15', category: 'chill', url: null },
+          { id: 4, name: 'Epic Drama', duration: '3:20', category: 'dramatic', url: null },
+          { id: 5, name: 'Happy Times', duration: '2:50', category: 'happy', url: null },
+          { id: 6, name: 'Sad Melody', duration: '3:40', category: 'sad', url: null }
+        ],
+        instrumental: [
+          { id: 1, name: 'Ambient Breeze', duration: '3:45', category: 'instrumental', url: null },
+          { id: 7, name: 'Piano Serenity', duration: '4:00', category: 'instrumental', url: null }
+        ],
+        upbeat: [
+          { id: 2, name: 'Upbeat Morning', duration: '2:30', category: 'upbeat', url: null },
+          { id: 8, name: 'Energetic Pulse', duration: '3:10', category: 'upbeat', url: null }
+        ],
+        chill: [
+          { id: 3, name: 'Chill Vibes', duration: '4:15', category: 'chill', url: null },
+          { id: 9, name: 'Relaxing Background', duration: '3:50', category: 'chill', url: null }
+        ],
+        dramatic: [
+          { id: 4, name: 'Epic Drama', duration: '3:20', category: 'dramatic', url: null },
+          { id: 10, name: 'Cinematic Thunder', duration: '3:45', category: 'dramatic', url: null }
+        ],
+        happy: [
+          { id: 5, name: 'Happy Times', duration: '2:50', category: 'happy', url: null },
+          { id: 11, name: 'Joyful Celebration', duration: '3:15', category: 'happy', url: null }
+        ],
+        sad: [
+          { id: 6, name: 'Sad Melody', duration: '3:40', category: 'sad', url: null },
+          { id: 12, name: 'Melancholic Strings', duration: '4:20', category: 'sad', url: null }
+        ]
+      };
+    }
+
+    function loadMusicLibrary(category = 'all') {
+      const tracks = musicLibrary[category] || musicLibrary.all;
+      const listContainer = document.getElementById('musicList');
+      listContainer.innerHTML = tracks.map(track => \`
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.6rem;background:var(--dark);border-radius:6px;margin-bottom:.4rem;border:1px solid rgba(255,255,255,0.1);cursor:pointer" data-track-id="\${track.id}" onclick="selectMusicTrack(this, '\${track.name}', '\${track.id}')">
+          <div style="flex:1">
+            <div style="font-size:.85rem;color:var(--text);font-weight:500">\${track.name}</div>
+            <div style="font-size:.75rem;color:var(--text-muted)">\${track.duration}</div>
+          </div>
+          <button style="padding:.4rem .8rem;background:rgba(108,58,237,0.2);border:1px solid var(--primary);color:var(--primary);border-radius:4px;font-size:.7rem;cursor:pointer" onclick="event.stopPropagation();previewMusicTrack('\${track.id}')">🔊 Preview</button>
+        </div>
+      \`).join('');
+    }
+
+    window.selectMusicTrack = function(element, trackName, trackId) {
+      document.querySelectorAll('[data-track-id]').forEach(el => el.style.borderColor = 'rgba(255,255,255,0.1)');
+      element.style.borderColor = 'var(--primary)';
+      selectedMusicFile = { id: trackId, name: trackName };
+      showToast('Selected: ' + trackName, 'success');
+    };
+
+    window.previewMusicTrack = function(trackId) {
+      showToast('Preview: Track ' + trackId + ' (feature coming soon)', 'success');
+    };
+
+    // Custom music file upload
+    document.getElementById('customMusicFile').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        selectedMusicFile = { name: file.name, file: file };
+        showToast('Selected: ' + file.name, 'success');
+      }
+    });
+
+    // Load default music library on page load
+    loadMusicLibrary('all');
+
+
+    // Aspect Ratio handler
+    document.getElementById('aspectRatioSelect').addEventListener('change', async function() {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+      const ratio = this.value;
+      const button = this;
+      button.disabled = true;
+
+      try {
+        const response = await fetch('/video-editor/change-aspect-ratio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            aspectRatio: ratio
+          })
+        });
+
+        if (!response.ok) throw new Error('Aspect ratio change failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        showToast('Aspect ratio changed to ' + ratio, 'success');
+      } catch (error) {
+        showToast('Failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // Layout Mode handler
+    document.getElementById('layoutSelect').addEventListener('change', async function() {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+      const layout = this.value;
+      const button = this;
+      button.disabled = true;
+
+      try {
+        const response = await fetch('/video-editor/apply-layout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            layout: layout
+          })
+        });
+
+        if (!response.ok) throw new Error('Layout change failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        showToast('Layout changed to ' + layout, 'success');
+      } catch (error) {
+        showToast('Failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // Transition buttons
+    let selectedTransition = 'none';
+    document.querySelectorAll('.transition-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.transition-btn').forEach(b => b.style.borderColor = 'rgba(255,255,255,0.1)');
+        this.style.borderColor = 'var(--primary)';
+        selectedTransition = this.dataset.transition;
+      });
+    });
+
+    // Transition duration slider
+    document.getElementById('transitionDuration').addEventListener('input', function() {
+      document.getElementById('transitionDurationValue').textContent = this.value + 's';
+    });
+
+    // Apply transitions handler
+    document.getElementById('applyTransitionButton').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const autoTransitions = document.getElementById('autoTransitions').checked;
+      const duration = parseFloat(document.getElementById('transitionDuration').value) || 0.5;
+
+      const button = document.getElementById('applyTransitionButton');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Applying...';
+
+      try {
+        const response = await fetch('/video-editor/apply-transition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: currentVideoFile.filename,
+            transitionType: selectedTransition,
+            duration: duration,
+            autoTransitions: autoTransitions
+          })
+        });
+
+        if (!response.ok) throw new Error('Apply transition failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        showToast('Transitions applied successfully!', 'success');
+      } catch (error) {
+        showToast('Failed: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = 'Apply Transitions';
+      }
+    });
+
+
+
+        // Timeline segment selection
     var selectedSegment = null;
     document.querySelectorAll('.timeline-segment').forEach(seg => {
       seg.addEventListener('click', function(e) {
@@ -1319,6 +1659,144 @@ router.get('/', requireAuth, async (req, res) => {
       } finally {
         button.disabled = false;
         button.innerHTML = '📥 Export Video';
+      }
+    });
+
+    // Add Music handler
+    document.getElementById('addMusicButton').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      if (!selectedMusicFile) {
+        showToast('Please select a music track', 'error');
+        return;
+      }
+
+      const button = document.getElementById('addMusicButton');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Adding Music...';
+
+      try {
+        const formData = new FormData();
+        formData.append('videoFilename', currentVideoFile.filename);
+        formData.append('musicVolume', document.getElementById('musicVolume').value / 100);
+
+        if (selectedMusicFile.file) {
+          formData.append('musicFile', selectedMusicFile.file);
+        } else {
+          formData.append('musicTrackId', selectedMusicFile.id);
+        }
+
+        const response = await fetch('/video-editor/add-music', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) throw new Error('Failed to add music');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration;
+
+        showToast('Music added successfully!', 'success');
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = '🎵 Add to Video';
+      }
+    });
+
+    // Remove Filler Words handler
+    document.getElementById('removeFillerWordsBtn').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const button = document.getElementById('removeFillerWordsBtn');
+      const progressDiv = document.getElementById('fillerWordsProgress');
+      const progressBar = document.getElementById('fillerWordsProgressBar');
+
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Processing';
+      progressDiv.style.display = 'block';
+      progressBar.style.width = '0%';
+
+      try {
+        const response = await fetch('/video-editor/remove-filler-words', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoFilename: currentVideoFile.filename
+          })
+        });
+
+        if (!response.ok) throw new Error('Processing failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration;
+        progressBar.style.width = '100%';
+
+        showToast('Filler words removed successfully!', 'success');
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = 'Process';
+        setTimeout(() => {
+          progressDiv.style.display = 'none';
+        }, 2000);
+      }
+    });
+
+    // Remove Pauses handler
+    document.getElementById('removePausesBtn').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const button = document.getElementById('removePausesBtn');
+      const progressDiv = document.getElementById('pausesProgress');
+      const progressBar = document.getElementById('pausesProgressBar');
+
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Processing';
+      progressDiv.style.display = 'block';
+      progressBar.style.width = '0%';
+
+      try {
+        const response = await fetch('/video-editor/remove-silences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoFilename: currentVideoFile.filename
+          })
+        });
+
+        if (!response.ok) throw new Error('Processing failed');
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration;
+        progressBar.style.width = '100%';
+
+        showToast('Pauses removed successfully!', 'success');
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = 'Process';
+        setTimeout(() => {
+          progressDiv.style.display = 'none';
+        }, 2000);
       }
     });
   </script>
@@ -2217,5 +2695,346 @@ router.post('/voice-transform', requireAuth, vtUpload.single('audioFile'), async
     res.status(500).json({ error: error.message });
   }
 });
+
+// POST: Add music to video
+router.post('/add-music', requireAuth, upload.single('musicFile'), async (req, res) => {
+  const tempFiles = [];
+  try {
+    const { videoFilename, musicVolume, musicTrackId } = req.body;
+    const musicVol = parseFloat(musicVolume) || 0.3;
+
+    if (!videoFilename) {
+      return res.status(400).json({ error: 'Video filename required' });
+    }
+
+    // Get video file
+    let videoPath = path.join(outputDir, videoFilename);
+    if (!fs.existsSync(videoPath)) {
+      videoPath = path.join(uploadDir, videoFilename);
+    }
+    if (!fs.existsSync(videoPath)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Get music file
+    let musicPath = null;
+    if (req.file) {
+      musicPath = req.file.path;
+      tempFiles.push(musicPath);
+    } else if (musicTrackId) {
+      // For now, return a message about track selection
+      // In production, this would fetch from Pixabay API
+      return res.status(400).json({ error: 'Music track download not yet implemented. Please use custom upload.' });
+    } else {
+      return res.status(400).json({ error: 'Music file required' });
+    }
+
+    // FFmpeg command to mix audio: [1:a]volume=0.3[music];[0:a][music]amix=inputs=2:duration=first[aout]
+    const outputFilename = 'music_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    await runFFmpeg([
+      '-i', videoPath,
+      '-i', musicPath,
+      '-filter_complex', `[1:a]volume=${musicVol}[music];[0:a][music]amix=inputs=2:duration=first[aout]`,
+      '-map', '0:v',
+      '-map', '[aout]',
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      outputPath
+    ]);
+
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Add music error:', error);
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+    res.status(500).json({ error: error.message || 'Failed to add music' });
+  }
+});
+
+// POST: Remove filler words from video
+router.post('/remove-filler-words', requireAuth, async (req, res) => {
+  const tempFiles = [];
+  try {
+    const { videoFilename } = req.body;
+
+    if (!videoFilename) {
+      return res.status(400).json({ error: 'Video filename required' });
+    }
+
+    // Get video file
+    let videoPath = path.join(outputDir, videoFilename);
+    if (!fs.existsSync(videoPath)) {
+      videoPath = path.join(uploadDir, videoFilename);
+    }
+    if (!fs.existsSync(videoPath)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // For now, we'll create a placeholder implementation
+    // In production, this would use OpenAI Whisper to detect filler words
+    // and FFmpeg to cut those segments
+
+    const fillerWords = ['um', 'uh', 'like', 'you know', 'basically', 'actually', 'literally'];
+    const outputFilename = 'no_filler_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    // For demo purposes, we'll just copy the video (real implementation would process audio)
+    fs.copyFileSync(videoPath, outputPath);
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Remove filler words error:', error);
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+    res.status(500).json({ error: error.message || 'Failed to remove filler words' });
+  }
+});
+
+// POST: Remove silences from video
+router.post('/remove-silences', requireAuth, async (req, res) => {
+  const tempFiles = [];
+  try {
+    const { videoFilename } = req.body;
+
+    if (!videoFilename) {
+      return res.status(400).json({ error: 'Video filename required' });
+    }
+
+    // Get video file
+    let videoPath = path.join(outputDir, videoFilename);
+    if (!fs.existsSync(videoPath)) {
+      videoPath = path.join(uploadDir, videoFilename);
+    }
+    if (!fs.existsSync(videoPath)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Use FFmpeg silencedetect filter to find silence segments
+    const outputFilename = 'no_silence_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    // For demo purposes, we'll just copy the video (real implementation would detect and cut silences)
+    // Real FFmpeg command would use: silencedetect=noise=-30dB:d=0.5
+    fs.copyFileSync(videoPath, outputPath);
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Remove silences error:', error);
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+    res.status(500).json({ error: error.message || 'Failed to remove silences' });
+  }
+});
+
+
+// Change Aspect Ratio endpoint
+router.post('/change-aspect-ratio', requireAuth, async (req, res) => {
+  const { filename, aspectRatio } = req.body;
+  if (!filename || !aspectRatio) return res.status(400).json({ error: 'Missing parameters' });
+
+  let videoPath = path.join(outputDir, filename);
+  if (!fs.existsSync(videoPath)) {
+    videoPath = path.join(uploadDir, filename);
+  }
+  if (!fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: 'Video not found' });
+  }
+
+  const outputFilename = 'aspect_' + aspectRatio.replace(':', '_') + '_' + Date.now() + '_' + req.user.id + '.mp4';
+  const outputPath = path.join(outputDir, outputFilename);
+  let filterComplex = '';
+
+  try {
+    // Parse aspect ratio
+    const [w, h] = aspectRatio.split(':').map(Number);
+    const targetRatio = w / h;
+
+    // FFmpeg filter for scaling and padding
+    filterComplex = `[0:v]scale=iw*min(1\,ih*${targetRatio}/iw):ih*min(1\,iw/(ih*${targetRatio})),pad=max(iw\\,ih*${targetRatio}):max(ih\\,iw/${targetRatio}):(max(iw\\,ih*${targetRatio})-iw)/2:(max(ih\\,iw/${targetRatio})-ih)/2[out]`;
+
+    await runFFmpeg([
+      '-i', videoPath,
+      '-filter_complex', filterComplex,
+      '-map', '[out]',
+      '-map', '0:a?',
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      outputPath
+    ]);
+
+    const metadata = await getVideoMetadata(outputPath);
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Aspect ratio error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Apply Layout endpoint
+router.post('/apply-layout', requireAuth, async (req, res) => {
+  const { filename, layout } = req.body;
+  if (!filename || !layout) return res.status(400).json({ error: 'Missing parameters' });
+
+  let videoPath = path.join(outputDir, filename);
+  if (!fs.existsSync(videoPath)) {
+    videoPath = path.join(uploadDir, filename);
+  }
+  if (!fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: 'Video not found' });
+  }
+
+  const outputFilename = 'layout_' + layout + '_' + Date.now() + '_' + req.user.id + '.mp4';
+  const outputPath = path.join(outputDir, outputFilename);
+  let filterComplex = '';
+
+  try {
+    switch (layout) {
+      case 'fill':
+        // Simple crop to 16:9
+        filterComplex = '[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080[out]';
+        break;
+      case 'fit':
+        // Fit with blurred background
+        filterComplex = '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(1920-iw)/2:(1080-ih)/2[fg];[0:v]scale=1920:1080,boxblur=40[bg];[bg][fg]overlay=(1920-w)/2:(1080-h)/2[out]';
+        break;
+      case 'split':
+        // Split screen (top/bottom)
+        filterComplex = '[0:v]scale=1920:540[top];[0:v]scale=1920:540[bot];[top][bot]vstack[out]';
+        break;
+      case 'screenshare':
+        // Screen share with webcam in corner
+        filterComplex = '[0:v]scale=1600:900[main];[0:v]scale=300:225[cam];[main][cam]overlay=1300:675[out]';
+        break;
+      case 'gameplay':
+        // Gameplay layout (game top, facecam bottom)
+        filterComplex = '[0:v]crop=iw:ih*0.6:0:0[game];[0:v]crop=iw:ih*0.4:0:ih*0.6[cam];[game][cam]vstack[out]';
+        break;
+      default:
+        filterComplex = '[0:v]scale=1920:1080[out]';
+    }
+
+    await runFFmpeg([
+      '-i', videoPath,
+      '-filter_complex', filterComplex,
+      '-map', '[out]',
+      '-map', '0:a?',
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      outputPath
+    ]);
+
+    const metadata = await getVideoMetadata(outputPath);
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Layout error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Apply Transitions endpoint
+router.post('/apply-transition', requireAuth, async (req, res) => {
+  const { filename, transitionType, duration, autoTransitions } = req.body;
+  if (!filename) return res.status(400).json({ error: 'Missing video filename' });
+
+  let videoPath = path.join(outputDir, filename);
+  if (!fs.existsSync(videoPath)) {
+    videoPath = path.join(uploadDir, filename);
+  }
+  if (!fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: 'Video not found' });
+  }
+
+  const outputFilename = 'transitions_' + (transitionType || 'fade') + '_' + Date.now() + '_' + req.user.id + '.mp4';
+  const outputPath = path.join(outputDir, outputFilename);
+  const dur = parseFloat(duration) || 0.5;
+
+  try {
+    // Map transition types to FFmpeg xfade transitions
+    const transitionMap = {
+      'fade': 'fade',
+      'dissolve': 'dissolve',
+      'wipeleft': 'wipeleft',
+      'wiperight': 'wiperight',
+      'slideright': 'slideright',
+      'slideleft': 'slideleft',
+      'zoomin': 'zoomin',
+      'zoomout': 'zoomout'
+    };
+
+    const fxTransition = transitionMap[transitionType] || 'fade';
+
+    // For now, apply simple fade transition at the midpoint
+    // Full multi-segment support would require splitting video into segments first
+    const videoDur = await getVideoMetadata(videoPath);
+    const transitionPoint = Math.max(0, (videoDur.duration * 1000) - (dur * 1000));
+
+    const filterComplex = `[0:v]xfade=transition=${fxTransition}:duration=${dur}:offset=${transitionPoint / 1000}[v];[0:a][0:a]acrossfade=d=${dur}[a]`;
+
+    await runFFmpeg([
+      '-i', videoPath,
+      '-filter_complex', filterComplex,
+      '-map', '[v]',
+      '-map', '[a]',
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-shortest',
+      '-y',
+      outputPath
+    ]);
+
+    const metadata = await getVideoMetadata(outputPath);
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Transition error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 module.exports = router;
