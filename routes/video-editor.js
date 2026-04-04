@@ -1347,13 +1347,7 @@ router.get('/', requireAuth, async (req, res) => {
         '</div>';
       tracksEl.appendChild(audioTrack);
 
-      // Click on track to seek
-      document.getElementById('videoTrackContent').addEventListener('mousedown', function(e) {
-        if (e.target.classList.contains('timeline-trim-handle')) return;
-        var rect = this.getBoundingClientRect();
-        var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        videoPlayer.currentTime = pct * videoDuration;
-      });
+      // Track click-to-seek is handled by the global timelineTracks mousedown below
 
       setupTrimHandles();
       startPlayheadLoop();
@@ -1470,9 +1464,14 @@ router.get('/', requireAuth, async (req, res) => {
       ctx.stroke();
     }
 
-    // Smooth playhead using requestAnimationFrame (no stutter)
+    // === PLAYHEAD SYSTEM ===
+    // Uses RAF for smooth animation, but completely pauses RAF updates
+    // during drag AND while the video is seeking after drag release.
     var playheadRAF = null;
     var playheadDragging = false;
+    var playheadSeeking = false; // true while waiting for video to finish seeking after drag
+    var dragPct = 0;
+    var lockedLeft = null; // CSS left value to hold during seek
 
     function startPlayheadLoop() {
       function tick() {
@@ -1480,25 +1479,38 @@ router.get('/', requireAuth, async (req, res) => {
         var trackContent = document.getElementById('videoTrackContent');
         var playhead = document.getElementById('timelinePlayhead');
         if (!trackContent || !playhead) { playheadRAF = requestAnimationFrame(tick); return; }
-        // SKIP position update while user is dragging — let the drag handler control position
-        if (!playheadDragging) {
+
+        // SKIP position update while dragging OR while seek is in progress
+        if (!playheadDragging && !playheadSeeking) {
           var pct = videoPlayer.currentTime / videoDuration;
           var trackRect = trackContent.getBoundingClientRect();
           var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
           var left = (trackRect.left - containerRect.left) + pct * trackRect.width;
           playhead.style.left = left + 'px';
+        } else if (lockedLeft !== null) {
+          // Keep playhead visually locked at the position the user chose
+          playhead.style.left = lockedLeft + 'px';
         }
+
         playheadRAF = requestAnimationFrame(tick);
       }
       if (playheadRAF) cancelAnimationFrame(playheadRAF);
       playheadRAF = requestAnimationFrame(tick);
     }
 
+    // When the video finishes seeking, unlock the playhead so RAF can take over
+    videoPlayer.addEventListener('seeked', function() {
+      if (playheadSeeking) {
+        playheadSeeking = false;
+        lockedLeft = null;
+      }
+    });
+
     function updatePlayhead() {
       // Kept for compatibility but playhead now uses RAF loop
     }
 
-    // Helper: compute playhead left px from a mouse event
+    // Helper: compute playhead left px from a mouse clientX
     function computePlayheadLeft(clientX) {
       var trackContent = document.getElementById('videoTrackContent');
       if (!trackContent) return null;
@@ -1511,9 +1523,7 @@ router.get('/', requireAuth, async (req, res) => {
       };
     }
 
-    // Draggable playhead for scrubbing — uses hitbox for easier grabbing
-    var dragPct = 0; // Track position during drag
-
+    // --- Playhead drag: mousedown on playhead/hitbox ---
     document.addEventListener('mousedown', function(e) {
       var hitbox = document.getElementById('playheadHitbox');
       var playhead = document.getElementById('timelinePlayhead');
@@ -1522,35 +1532,42 @@ router.get('/', requireAuth, async (req, res) => {
         e.preventDefault();
         e.stopPropagation();
         playheadDragging = true;
+        playheadSeeking = false;
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
       }
     }, true);
 
+    // --- Playhead drag: mousemove ---
     document.addEventListener('mousemove', function(e) {
       if (!playheadDragging || !videoDuration) return;
       e.preventDefault();
       var result = computePlayheadLeft(e.clientX);
       if (!result) return;
       dragPct = result.pct;
-      // Move playhead visually IMMEDIATELY — don't wait for video seek
+      lockedLeft = result.left;
+      // Move playhead visually IMMEDIATELY via CSS — don't touch videoPlayer at all
       var playhead = document.getElementById('timelinePlayhead');
       if (playhead) playhead.style.left = result.left + 'px';
     });
 
+    // --- Playhead drag: mouseup ---
     document.addEventListener('mouseup', function() {
       if (playheadDragging) {
-        // Now actually seek the video to the final position
-        if (videoDuration) {
-          videoPlayer.currentTime = dragPct * videoDuration;
-        }
         playheadDragging = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        // Now seek the video — but keep playhead LOCKED until seek completes
+        if (videoDuration) {
+          playheadSeeking = true;
+          videoPlayer.currentTime = dragPct * videoDuration;
+          // Safety timeout: if seeked event never fires, unlock after 2s
+          setTimeout(function() { playheadSeeking = false; lockedLeft = null; }, 2000);
+        }
       }
     });
 
-    // Also: click anywhere on the timeline tracks area to move playhead
+    // --- Click anywhere on timeline tracks to seek ---
     document.getElementById('timelineTracks').addEventListener('mousedown', function(e) {
       if (playheadDragging) return;
       if (e.target.classList.contains('timeline-trim-handle')) return;
@@ -1562,12 +1579,15 @@ router.get('/', requireAuth, async (req, res) => {
       var rect = trackContent.getBoundingClientRect();
       if (e.clientX < rect.left || e.clientX > rect.right) return;
       dragPct = result.pct;
-      // Move playhead visually immediately
+      lockedLeft = result.left;
+      // Move playhead visually immediately and lock it
       var playhead = document.getElementById('timelinePlayhead');
       if (playhead) playhead.style.left = result.left + 'px';
-      // Seek the video
+      // Seek the video with lock
+      playheadSeeking = true;
       videoPlayer.currentTime = dragPct * videoDuration;
-      // Start dragging so user can keep moving after click
+      setTimeout(function() { playheadSeeking = false; lockedLeft = null; }, 2000);
+      // Start dragging so user can keep sliding
       playheadDragging = true;
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
