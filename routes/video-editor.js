@@ -363,8 +363,8 @@ router.get('/', requireAuth, async (req, res) => {
 
           <div class="tool-panel" id="splitPanel">
             <div class="panel-title">🔀 Split Video</div>
-            <input type="number" class="input-field" id="splitTime" placeholder="Split at (seconds)" min="0" step="0.1">
-            <button class="tool-action-button" id="splitButton" disabled>Split</button>
+            <p style="color:var(--text-secondary);font-size:13px;margin:8px 0">Move the playhead on the timeline to where you want to split, then click the button below.</p>
+            <button class="tool-action-button" id="splitButton" >Split at Playhead</button>
           </div>
 
           <div class="tool-panel" id="filtersPanel">
@@ -1770,9 +1770,9 @@ router.get('/', requireAuth, async (req, res) => {
         return;
       }
 
-      const splitTime = parseFloat(document.getElementById('splitTime').value);
-      if (isNaN(splitTime) || splitTime <= 0 || splitTime >= videoDuration) {
-        showToast('Split time must be between 0 and ' + Math.round(videoDuration) + ' seconds', 'error');
+      const splitTime = videoPlayer ? videoPlayer.currentTime : 0;
+      if (!splitTime || splitTime <= 0 || splitTime >= videoDuration) {
+        showToast('Move the playhead to where you want to split (between 0 and ' + Math.round(videoDuration) + ' seconds)', 'error');
         return;
       }
 
