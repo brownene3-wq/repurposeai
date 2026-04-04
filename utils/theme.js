@@ -10,18 +10,30 @@ function getBaseCSS() {
     body.theme-ready{transition:background .3s,color .3s}
     html.light{background:var(--dark)}
     .dashboard{display:flex;height:100vh;overflow:hidden}
-    .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:20px 0;position:fixed;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
+    .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:20px 0;position:fixed;height:100vh;overflow-y:auto;display:flex;flex-direction:column;transition:width .25s ease;z-index:100}
+    .sidebar.collapsed{width:68px}
     .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .sidebar .logo span{-webkit-text-fill-color:transparent}
-    .sidebar a{display:block;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent}
+    .sidebar.collapsed .logo-full{display:none}
+    .sidebar:not(.collapsed) .logo-mini{display:none}
+    .sidebar .logo-mini{font-size:1.2em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .sidebar a{display:flex;align-items:center;gap:10px;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent;white-space:nowrap;overflow:hidden}
+    .sidebar.collapsed a{justify-content:center;padding:12px 0;gap:0}
+    .sidebar a .nav-icon{flex-shrink:0;width:20px;text-align:center;font-size:1.05em}
+    .sidebar a .nav-label{transition:opacity .2s,width .2s}
+    .sidebar.collapsed a .nav-label{opacity:0;width:0;overflow:hidden}
     .sidebar a:not(.logo):hover{color:#fff;background:rgba(108,92,231,0.1)}
     .sidebar a.active{color:#6c5ce7;background:linear-gradient(90deg,rgba(108,58,237,0.12),rgba(236,72,153,0.06));border-left-color:#6C3AED}
+    .sidebar-toggle{background:none;border:1px solid rgba(255,255,255,0.1);color:#888;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9em;transition:all .2s;margin:0 auto 10px}
+    .sidebar-toggle:hover{background:rgba(108,58,237,0.15);color:#fff;border-color:rgba(108,58,237,0.3)}
+    .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
     .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:fixed;top:1.2rem;right:1.5rem;z-index:100}
     body.light .sidebar,html.light .sidebar{background:#f8f8f8;border-color:#e0e0e0}
     body.light .sidebar a,html.light .sidebar a{color:#666}
     body.light .sidebar a.active,html.light .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.08)}
     body.light .theme-toggle,html.light .theme-toggle{background:#fff;border-color:#ddd}
-    .main-content{flex:1;margin-left:250px;padding:2rem;overflow-y:auto;height:100vh}
+    .main-content{flex:1;margin-left:250px;padding:2rem;overflow-y:auto;height:100vh;transition:margin-left .25s ease}
+    .sidebar.collapsed ~ .main-content,.sidebar-collapsed .main-content{margin-left:68px}
     .page-header{margin-bottom:2rem}
     .page-header h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .page-header p{color:var(--text-muted);font-size:.95rem}
@@ -151,16 +163,18 @@ function getSidebar(activePage, user, teamPermissions) {
 
   const navLinks = links.map(link => {
     const activeClass = link.key === activePage ? ' class="active"' : '';
-    return `      <a href="${link.href}"${activeClass}>${link.icon} ${link.label}</a>`;
+    return `      <a href="${link.href}"${activeClass}><span class="nav-icon">${link.icon}</span><span class="nav-label">${link.label}</span></a>`;
   }).join('\n');
 
   return `
-    <aside class="sidebar" style="display:flex;flex-direction:column;">
-      <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+    <aside class="sidebar" id="mainSidebar" style="display:flex;flex-direction:column;">
+      <div style="padding:0 20px 15px;display:flex;align-items:center;justify-content:space-between;">
+        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <a href="/dashboard" class="logo-mini" style="padding:0;margin:0 auto;text-decoration:none;border-left:none;display:none;">R<span>AI</span></a>
       </div>
+      <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">&#x276E;</button>
 ${navLinks}
-      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;padding:12px 20px;">Sign Out</a>
+      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
     </aside>`;
 }
 
@@ -221,6 +235,25 @@ function getThemeScript() {
         pulling = false;
       }, {passive: true});
     })();
+
+    function toggleSidebarCollapse(){
+      var sb = document.getElementById('mainSidebar');
+      if (!sb) return;
+      var collapsed = sb.classList.toggle('collapsed');
+      localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+      // Update main-content margin
+      var mc = document.querySelector('.main-content');
+      if (mc) mc.style.marginLeft = collapsed ? '68px' : '250px';
+    }
+    // Restore sidebar state on page load
+    if (localStorage.getItem('sidebarCollapsed') === '1') {
+      var sb = document.getElementById('mainSidebar');
+      if (sb) {
+        sb.classList.add('collapsed');
+        var mc = document.querySelector('.main-content');
+        if (mc) mc.style.marginLeft = '68px';
+      }
+    }
 
     function toggleMobileMenu(){
       var sb = document.querySelector('.sidebar');
