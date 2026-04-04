@@ -133,12 +133,9 @@ router.get('/', requireAuth, async (req, res) => {
   const html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:flex;height:calc(100vh - 80px);gap:1.5rem;padding:1.5rem}
-    .editor-main{flex:1;display:flex;flex-direction:column}
-    .editor-header{margin-bottom:1rem}
-    .editor-header h1{font-size:2rem;font-weight:800;margin-bottom:.25rem}
-    .editor-header p{color:var(--text-muted);font-size:.95rem}
-    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1rem;flex:1;display:flex;flex-direction:column;min-height:0}
+    .editor-container{display:flex;height:calc(100vh - 48px);gap:.75rem;padding:.75rem}
+    .editor-main{flex:1;display:flex;flex-direction:column;min-width:0}
+    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
     .upload-zone.has-video{display:none}
@@ -146,10 +143,10 @@ router.get('/', requireAuth, async (req, res) => {
     .upload-zone p{color:var(--text-muted);font-size:.9rem;margin-bottom:1rem}
     .upload-button{padding:.6rem 1.2rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:all 0.2s}
     .upload-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3);transform:translateY(-2px)}
-    .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:12px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:300px}
+    .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:200px}
     .video-preview-area.has-video{background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px}
-.timeline-container{background:#1a1a2e;border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-top:1rem;overflow:hidden;flex-shrink:0;user-select:none}
+.timeline-container{background:#1a1a2e;border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-top:.5rem;overflow:hidden;flex-shrink:0;user-select:none}
     .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
     .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
     .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
@@ -183,16 +180,18 @@ router.get('/', requireAuth, async (req, res) => {
     .timeline-empty{text-align:center;color:var(--text-muted);font-size:.85rem;padding:1.5rem}
     body.light .timeline-container{background:#f0f0f5;border-color:rgba(108,58,237,0.12)}
     body.light .timeline-ruler{background:#e8e8f0}
-    .tools-section{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap}
-    .tool-button{padding:.6rem 1.2rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text);cursor:pointer;font-size:.85rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.4rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
+    .tools-section{display:flex;gap:.4rem;margin-top:.6rem;flex-wrap:wrap}
+    .tool-button{padding:.45rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);cursor:pointer;font-size:.78rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.3rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .tool-button:hover{background:var(--surface);border-color:var(--primary);color:var(--primary)}
     .tool-button.active{background:var(--primary);color:white;border-color:var(--primary)}
-    .editor-sidebar{width:320px;display:flex;flex-direction:column;gap:1rem;overflow-y:auto;max-height:calc(100vh - 120px)}
-    .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;flex-shrink:0}
-    .tool-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;display:none;flex-shrink:0}
+    .editor-sidebar{width:270px;min-width:270px;display:flex;flex-direction:column;gap:.6rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px}
+    .editor-sidebar::-webkit-scrollbar{width:4px}
+    .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+    .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;flex-shrink:0}
+    .tool-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;display:none;flex-shrink:0}
     .tool-panel.active{display:block}
-    .panel-title{font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
-    .slider-group{margin-bottom:1.5rem}
+    .panel-title{font-size:.85rem;font-weight:700;color:var(--text);margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem}
+    .slider-group{margin-bottom:1rem}
     .slider-label{font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem;display:flex;justify-content:space-between}
     .slider-value{color:var(--primary);font-weight:600}
     .slider{width:100%;height:6px;border-radius:3px;background:var(--dark);outline:none;-webkit-appearance:none;appearance:none}
@@ -220,7 +219,7 @@ router.get('/', requireAuth, async (req, res) => {
     .dropdown{width:100%;padding:.6rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);font-size:.85rem;outline:none;transition:border-color 0.2s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;cursor:pointer}
     .dropdown:hover{border-color:var(--primary)}
     .dropdown:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(108,58,237,0.15)}
-    .export-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;flex-shrink:0;margin-top:auto}
+    .export-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;flex-shrink:0;margin-top:auto}
     .export-button{width:100%;padding:.8rem;background:var(--primary);color:white;border:1px solid var(--primary);border-radius:10px;font-weight:600;cursor:pointer;font-size:.9rem;transition:all 0.2s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .export-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3)}
     .export-button:disabled{opacity:0.5;cursor:not-allowed}
@@ -240,8 +239,11 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.05),rgba(236,72,153,0.05));border-color:rgba(108,58,237,0.3)}
     body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
-    @media(max-width:1200px){.editor-sidebar{width:280px}}
-    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:1rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    @media(max-width:1400px){.editor-sidebar{width:250px;min-width:250px}}
+    @media(max-width:1200px){.editor-sidebar{width:230px;min-width:230px}}
+    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:.5rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    /* Override main-content padding for editor — maximize usable space */
+    .main-content{padding:.5rem !important}
   </style>
 </head>
 <body>
@@ -253,11 +255,6 @@ router.get('/', requireAuth, async (req, res) => {
 
       <div class="editor-container">
         <div class="editor-main">
-          <div class="editor-header">
-            <h1>Video Editor</h1>
-            <p>Trim, cut, and enhance your videos with powerful editing tools</p>
-          </div>
-
           <div class="video-container">
             <div class="upload-zone" id="uploadZone">
               <h3>📹 Upload Your Video</h3>
@@ -741,6 +738,16 @@ router.get('/', requireAuth, async (req, res) => {
 
   <script>
     ${getThemeScript()}
+
+    // Auto-collapse sidebar on Video Editor for maximum workspace
+    (function() {
+      var sb = document.querySelector('.sidebar');
+      var mc = document.querySelector('.main-content');
+      if (sb && !sb.classList.contains('collapsed')) {
+        sb.classList.add('collapsed');
+        if (mc) mc.style.marginLeft = '68px';
+      }
+    })();
 
     let currentVideoFile = null;
     let originalVideoFile = null; // Always keeps the original upload for speed resets
@@ -1300,21 +1307,19 @@ router.get('/', requireAuth, async (req, res) => {
       videoTrack.className = 'timeline-track';
       videoTrack.id = 'timelineVideoTrack';
 
-      var fname = currentVideoFile ? currentVideoFile.filename : 'Video';
       var durMins = Math.floor(videoDuration / 60);
       var durSecs = String(Math.floor(videoDuration % 60)).padStart(2, '0');
       var durStr = (durMins > 0 ? durMins + ':' : '0:') + durSecs;
 
       videoTrack.innerHTML = '<div class="timeline-track-label">' +
-        '<span style="font-size:1rem">🎬</span>' +
+        '<span style="font-size:0.65rem;opacity:0.7;text-transform:uppercase;letter-spacing:0.5px">Video</span>' +
         '</div>' +
         '<div class="timeline-track-content" id="videoTrackContent">' +
           '<div class="timeline-trim-overlay" id="trimOverlayLeft" style="left:0;width:0"></div>' +
           '<div class="timeline-video-bar" id="videoBar">' +
             '<div class="thumb-strip" id="thumbStrip"></div>' +
             '<div class="track-info-overlay">' +
-              '<span class="track-info">' + fname + '</span>' +
-              '<span class="track-duration">' + durStr + '</span>' +
+              '<span class="track-duration" style="font-size:.6rem;opacity:0.6">' + durStr + '</span>' +
             '</div>' +
             '<div class="timeline-trim-handle left" id="trimHandleLeft"></div>' +
             '<div class="timeline-trim-handle right" id="trimHandleRight"></div>' +
