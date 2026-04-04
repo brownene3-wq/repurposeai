@@ -1136,10 +1136,10 @@ router.get('/', requireAuth, (req, res) => {
         if (!res.ok) throw new Error(data.error || 'Upload failed');
 
         uploadedVideoPath = data.videoPath;
-        updateProgress(30, 'Loading video...');
+        updateProgress(80, 'Loading video...');
 
         const videoPlayer = document.getElementById('videoPlayer');
-        videoPlayer.src = 'data:video/mp4;base64,' + data.videoBase64;
+        videoPlayer.src = data.serveUrl;
         document.getElementById('videoPreview').classList.remove('hidden');
         document.getElementById('uploadZone').classList.add('hidden');
         document.getElementById('generateBtn').disabled = false;
@@ -1174,7 +1174,7 @@ router.get('/', requireAuth, (req, res) => {
         updateProgress(80, 'Loading video...');
 
         const videoPlayer = document.getElementById('videoPlayer');
-        videoPlayer.src = 'data:video/mp4;base64,' + data.videoBase64;
+        videoPlayer.src = data.serveUrl;
         document.getElementById('videoPreview').classList.remove('hidden');
         document.getElementById('uploadZone').classList.add('hidden');
         document.getElementById('generateBtn').disabled = false;
@@ -1292,18 +1292,37 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // POST: Upload video file
-router.post('/upload', upload.single('video'), async (req, res) => {
+// Serve uploaded/processed video files
+router.get('/serve/:filename', requireAuth, (req, res) => {
+  const filename = req.params.filename;
+  // Check both upload and output directories
+  let filePath = path.join(uploadDir, filename);
+  if (!fs.existsSync(filePath)) filePath = path.join(outputDir, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  const stat = fs.statSync(filePath);
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Length', stat.size);
+  res.setHeader('Accept-Ranges', 'bytes');
+  fs.createReadStream(filePath).pipe(res);
+});
+
+router.post('/upload', requireAuth, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No video file uploaded' });
     }
 
-    const videoPath = req.file.path;
-    const videoBase64 = fs.readFileSync(videoPath, 'base64');
+    // Rename to a predictable filename so we can serve it
+    const ext = path.extname(req.file.originalname) || '.mp4';
+    const newFilename = 'caption-upload-' + Date.now() + ext;
+    const newPath = path.join(uploadDir, newFilename);
+    fs.renameSync(req.file.path, newPath);
 
     res.json({
-      videoPath,
-      videoBase64
+      videoPath: newPath,
+      serveUrl: '/ai-captions/serve/' + newFilename
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1311,7 +1330,7 @@ router.post('/upload', upload.single('video'), async (req, res) => {
 });
 
 // POST: Download YouTube video
-router.post('/download-yt', async (req, res) => {
+router.post('/download-yt', requireAuth, async (req, res) => {
   try {
     const { url } = req.body;
     if (!url || !isValidYouTubeUrl(url)) {
@@ -1319,11 +1338,11 @@ router.post('/download-yt', async (req, res) => {
     }
 
     const videoPath = await downloadYouTubeVideo(url);
-    const videoBase64 = fs.readFileSync(videoPath, 'base64');
+    const filename = path.basename(videoPath);
 
     res.json({
       videoPath,
-      videoBase64
+      serveUrl: '/ai-captions/serve/' + filename
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1331,7 +1350,7 @@ router.post('/download-yt', async (req, res) => {
 });
 
 // POST: Generate transcript from video
-router.post('/generate', async (req, res) => {
+router.post('/generate', requireAuth, async (req, res) => {
   try {
     const { videoPath } = req.body;
     if (!videoPath || !fs.existsSync(videoPath)) {
@@ -1355,7 +1374,7 @@ router.post('/generate', async (req, res) => {
 });
 
 // POST: Apply captions to video and burn subtitles
-router.post('/apply', async (req, res) => {
+router.post('/apply', requireAuth, async (req, res) => {
   try {
     const { videoPath, transcript, preset, customSettings } = req.body;
 
@@ -1379,11 +1398,11 @@ router.post('/apply', async (req, res) => {
     // Clean up ASS file
     try { fs.unlinkSync(assPath); } catch (e) {}
 
-    // Generate downloadable link
-    const downloadUrl = `/video/download/${path.basename(outputPath)}`;
+    // Generate serve URL using our serve endpoint
+    const filename = path.basename(outputPath);
 
     res.json({
-      outputPath: downloadUrl,
+      outputPath: '/ai-captions/serve/' + filename,
       videoPath: outputPath
     });
   } catch (err) {
