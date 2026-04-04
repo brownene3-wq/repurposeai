@@ -3,8 +3,8 @@ FROM node:20-slim
 # Install ffmpeg, python3, and yt-dlp (for video clipping)
 # Force latest yt-dlp to keep up with YouTube API changes
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg python3 python3-pip curl fonts-liberation git && \
-    pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provider && \
+    apt-get install -y --no-install-recommends ffmpeg python3 python3-pip curl fonts-liberation git libgl1-mesa-glx libglib2.0-0 && \
+    pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provider opencv-python-headless && \
     rm -rf /var/lib/apt/lists/*
 
 # Configure yt-dlp defaults for YouTube anti-bot measures
