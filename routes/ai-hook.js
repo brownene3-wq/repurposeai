@@ -11,14 +11,7 @@ const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = 
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Lazy-load ElevenLabs
-let elevenlabsError;
-let ElevenLabs;
-try {
-  ElevenLabs = require('elevenlabs-api');
-} catch (e) {
-  elevenlabsError = e.message;
-}
+const https = require('https');
 
 // FFmpeg setup
 let ffmpegPath = null;
@@ -415,6 +408,9 @@ ${pageStyles}
             </div>
           </div>
 
+          <div id="apiKeyNotice" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;display:none">
+            <p style="color:#F59E0B;font-size:.85rem;margin:0"><strong>ElevenLabs API Key Required</strong> — To generate voice hooks, connect your own ElevenLabs API key in <a href="/shorts#settings" style="color:#6C3AED;font-weight:600">Smart Shorts &rarr; Settings</a>. The hook text will still be generated without a key.</p>
+          </div>
           <button type="submit" class="btn-generate" id="generateBtn">Generate AI Hook</button>
           <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
         </form>
@@ -564,12 +560,21 @@ ${pageStyles}
 
         const data = await response.json();
 
-        if (response.ok && data.hookText && data.audioUrl) {
+        if (response.ok && data.hookText) {
           hookData = data;
           document.getElementById('hookPreviewText').textContent = data.hookText;
-          document.getElementById('hookAudio').src = data.audioUrl;
+          if (data.audioUrl && !data.voiceError) {
+            document.getElementById('hookAudio').src = data.audioUrl;
+            document.getElementById('hookAudio').style.display = 'block';
+          } else {
+            document.getElementById('hookAudio').style.display = 'none';
+            if (data.voiceError === 'NO_API_KEY') {
+              document.getElementById('apiKeyNotice').style.display = 'block';
+              showToast('Hook text generated! Connect your ElevenLabs API key for voice audio.');
+            }
+          }
           document.getElementById('previewSection').classList.add('active');
-          showToast('Hook generated successfully!');
+          if (!data.voiceError) showToast('Hook generated successfully!');
         } else {
           showToast(data.error || 'Failed to generate hook');
         }
@@ -625,21 +630,79 @@ async function extractVideoTranscript(filePath) {
   });
 }
 
-// Helper: Generate hook speech with ElevenLabs
-async function generateHookSpeech(hookText, voiceName) {
+// Helper: Get user's ElevenLabs API key from brand_kits
+async function getUserElevenLabsKey(userId) {
+  try {
+    const { getDb } = require('../db/database');
+    const db = getDb();
+    const result = await db.query('SELECT elevenlabs_api_key FROM brand_kits WHERE user_id = $1', [userId]);
+    if (result.rows.length > 0 && result.rows[0].elevenlabs_api_key) {
+      return result.rows[0].elevenlabs_api_key;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Helper: Generate hook speech with ElevenLabs using USER'S API key
+async function generateHookSpeech(hookText, voiceName, apiKey) {
   return new Promise((resolve, reject) => {
     const voiceId = VOICES[voiceName];
-    if (!voiceId || !process.env.ELEVENLABS_API_KEY) {
-      return reject(new Error('ElevenLabs not configured'));
-    }
+    if (!voiceId) return reject(new Error('Invalid voice'));
+    if (!apiKey) return reject(new Error('NO_API_KEY'));
 
-    // For now, return a placeholder audio URL
-    // In production, this would call the ElevenLabs API
     const audioPath = path.join(outputDir, `hook-audio-${uuidv4()}.mp3`);
-    fs.writeFileSync(audioPath, Buffer.from(''));
-    resolve(`/api/audio/${path.basename(audioPath)}`);
+    const body = JSON.stringify({
+      text: hookText,
+      model_id: 'eleven_monolingual_v1',
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+    });
+
+    const options = {
+      hostname: 'api.elevenlabs.io',
+      port: 443,
+      path: `/v1/text-to-speech/${voiceId}`,
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      if (res.statusCode !== 200) {
+        let errBody = '';
+        res.on('data', c => errBody += c);
+        res.on('end', () => reject(new Error('ElevenLabs API error (' + res.statusCode + ')')));
+        return;
+      }
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        fs.writeFileSync(audioPath, buffer);
+        resolve(`/ai-hook/audio/${path.basename(audioPath)}`);
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('ElevenLabs timeout')); });
+    req.write(body);
+    req.end();
   });
 }
+
+// Serve generated audio files
+router.get('/audio/:filename', (req, res) => {
+  const filePath = path.join(outputDir, req.params.filename);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ error: 'Audio not found' });
+  }
+});
 
 // POST - Generate hook
 router.post('/generate', requireAuth, upload.single('video'), async (req, res) => {
@@ -681,18 +744,25 @@ Return ONLY the hook text, nothing else.`;
 
     const hookText = completion.choices[0].message.content.trim();
 
-    // Generate speech
+    // Generate speech using the user's own ElevenLabs API key
     let audioUrl = '';
+    let voiceError = null;
     try {
-      audioUrl = await generateHookSpeech(hookText, voice);
+      const userApiKey = await getUserElevenLabsKey(req.user.id);
+      if (!userApiKey) {
+        voiceError = 'NO_API_KEY';
+      } else {
+        audioUrl = await generateHookSpeech(hookText, voice, userApiKey);
+      }
     } catch (e) {
       console.warn('ElevenLabs error:', e.message);
-      audioUrl = 'data:audio/mpeg;base64,SUQzBAA='; // Placeholder
+      voiceError = e.message === 'NO_API_KEY' ? 'NO_API_KEY' : e.message;
     }
 
     res.json({
       hookText,
       audioUrl,
+      voiceError,
       style,
       voice,
       platform,
