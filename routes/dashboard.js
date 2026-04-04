@@ -177,6 +177,20 @@ router.get('/', requireAuth, async (req, res) => {
         </div>
       </div>
 
+      <!-- Loading State -->
+      <div class="loading-spinner" id="loading">
+        <div class="spinner"></div>
+        <p style="color:var(--text-muted)">AI is analyzing your video and generating content...</p>
+      </div>
+
+      <!-- Results (immediately after input so user sees them right away) -->
+      <div class="results-section" id="results" style="display:none;">
+        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
+        <div class="platform-tabs" id="platformTabs"></div>
+        <div id="platformContents"></div>
+        <p style="margin-top:1rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Want all 7 platforms? <a href="/repurpose" style="color:var(--primary);">Go to Repurpose</a></p>
+      </div>
+
       <!-- AI Tools Grid -->
       <div class="tools-section">
         <h3>&#x1F9E0; AI Tools</h3>
@@ -241,20 +255,6 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">Analytics</span>
           </a>
         </div>
-      </div>
-
-      <!-- Loading State -->
-      <div class="loading-spinner" id="loading">
-        <div class="spinner"></div>
-        <p style="color:var(--text-muted)">AI is analyzing your video and generating content...</p>
-      </div>
-
-      <!-- Results -->
-      <div class="results-section" id="results" style="display:none;">
-        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
-        <div class="platform-tabs" id="platformTabs"></div>
-        <div id="platformContents"></div>
-        <p style="margin-top:1rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Want all 7 platforms? <a href="/repurpose" style="color:var(--primary);">Go to Repurpose</a></p>
       </div>
 
       <!-- Recent Projects -->
@@ -325,6 +325,9 @@ router.get('/', requireAuth, async (req, res) => {
                   document.getElementById('loading').classList.remove('show');
                   document.getElementById('results').style.display = 'block';
                   document.getElementById('emptyState').style.display = 'none';
+                  if (platformCount === 0) {
+                    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
                   addPlatformResult(data, platformCount === 0);
                   platformCount++;
                 }
