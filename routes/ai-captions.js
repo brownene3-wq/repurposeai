@@ -1039,7 +1039,9 @@ router.get('/', requireAuth, (req, res) => {
 
   <div class="toast" id="toast"></div>
 
-  ${themeScript}
+  <script>
+    ${themeScript}
+  </script>
 
   <script>
     let uploadedVideoPath = null;
