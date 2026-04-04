@@ -4617,12 +4617,66 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
     .modal-header {
       margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
 
     .modal-title {
-      font-size: 24px;
-      font-weight: 700;
-      margin-bottom: 8px;
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 4px;
+      letter-spacing: -0.3px;
+    }
+
+    .modal-header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .modal-header-btn {
+      padding: 8px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: var(--dark);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .modal-header-btn:hover {
+      background: var(--surface);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .modal-header-btn.export {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .modal-header-btn.export:hover {
+      background: var(--primary-light);
+      box-shadow: 0 2px 12px rgba(108, 58, 237, 0.3);
+    }
+    .moment-count-badge {
+      font-size: 13px;
+      color: var(--text-muted);
+      flex: 1;
+    }
+    body.light .modal-header {
+      border-bottom-color: rgba(108,58,237,0.08);
+    }
+    body.light .modal-header-btn {
+      background: rgba(108,58,237,0.06);
+      border-color: rgba(108,58,237,0.12);
+    }
+    body.light .modal-header-btn:hover {
+      background: rgba(108,58,237,0.12);
     }
 
     .modal-close {
@@ -4674,60 +4728,238 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
     .moment-card {
       background: var(--dark);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 16px;
       cursor: pointer;
       transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .moment-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--gradient-1);
+      opacity: 0;
+      transition: opacity 0.3s;
     }
 
     .moment-card:hover {
-      border-color: var(--primary);
-      background: rgba(108, 58, 237, 0.05);
+      border-color: rgba(108, 58, 237, 0.3);
+      background: rgba(108, 58, 237, 0.04);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(108, 58, 237, 0.08);
     }
+    .moment-card:hover::before { opacity: 1; }
 
     .moment-card.selected {
-      border-color: var(--primary-light);
-      background: rgba(108, 58, 237, 0.15);
+      border-color: var(--primary);
+      background: rgba(108, 58, 237, 0.1);
+      box-shadow: 0 0 0 1px rgba(108, 58, 237, 0.2), 0 4px 20px rgba(108, 58, 237, 0.1);
     }
+    .moment-card.selected::before { opacity: 1; }
 
     .moment-card-header {
       display: flex;
       justify-content: space-between;
-      align-items: start;
-      margin-bottom: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 12px;
     }
 
     .moment-card-title {
-      font-weight: 600;
-      font-size: 14px;
+      font-weight: 700;
+      font-size: 15px;
       color: var(--text);
+      line-height: 1.3;
     }
 
     .moment-score {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
+      min-width: 44px;
+      height: 44px;
+      border-radius: 12px;
       background: var(--gradient-1);
-      font-weight: 700;
-      font-size: 12px;
+      font-weight: 800;
+      font-size: 13px;
       color: #fff;
+      letter-spacing: -0.5px;
+      box-shadow: 0 2px 8px rgba(108, 58, 237, 0.3);
     }
 
     .moment-card-time {
       font-size: 12px;
       color: var(--text-dim);
-      margin-bottom: 8px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .moment-card-time .time-badge {
+      background: rgba(108, 58, 237, 0.12);
+      color: var(--primary-light);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 11px;
     }
 
     .moment-card-desc {
       font-size: 13px;
       color: var(--text-muted);
-      line-height: 1.5;
+      line-height: 1.6;
+      margin-bottom: 4px;
+    }
+
+    .virality-bar-wrap {
+      margin-top: 10px;
+      margin-bottom: 14px;
+    }
+    .virality-bar-track {
+      height: 5px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .virality-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.6s ease;
+    }
+    .virality-bar-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 5px;
+    }
+    .virality-label {
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .virality-themes {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .clip-toolbar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .clip-tool-btn {
+      padding: 6px 12px;
+      background: var(--dark);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      white-space: nowrap;
+    }
+    .clip-tool-btn:hover {
+      background: var(--surface);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .clip-tool-btn.primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .clip-tool-btn.primary:hover {
+      background: var(--primary-light);
+      box-shadow: 0 2px 12px rgba(108, 58, 237, 0.3);
+    }
+    .clip-tool-btn.accent {
+      background: linear-gradient(135deg, #FF0050 0%, #FF4500 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+    .clip-tool-btn.accent:hover {
+      box-shadow: 0 2px 12px rgba(255, 0, 80, 0.3);
+      transform: translateY(-1px);
+    }
+    .clip-tool-select {
+      font-size: 11px;
+      padding: 5px 8px;
+      background: var(--dark);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .clip-tool-select:hover {
+      border-color: var(--primary);
+    }
+    .clip-captions-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 5px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: var(--dark);
+      transition: all 0.2s;
+    }
+    .clip-captions-toggle:hover {
+      border-color: var(--primary);
+      color: var(--text);
+    }
+    .clip-toolbar-divider {
+      width: 1px;
+      height: 24px;
+      background: rgba(255,255,255,0.08);
+      margin: 0 2px;
+    }
+
+    body.light .clip-tool-btn {
+      background: rgba(108,58,237,0.06);
+      border-color: rgba(108,58,237,0.12);
+      color: var(--text);
+    }
+    body.light .clip-tool-btn:hover {
+      background: rgba(108,58,237,0.12);
+      border-color: var(--primary);
+    }
+    body.light .clip-tool-select {
+      background: rgba(108,58,237,0.06);
+      border-color: rgba(108,58,237,0.12);
+    }
+    body.light .clip-captions-toggle {
+      background: rgba(108,58,237,0.06);
+      border-color: rgba(108,58,237,0.12);
+    }
+    body.light .moment-card {
+      border-color: rgba(108,58,237,0.1);
+    }
+    body.light .moment-card:hover {
+      border-color: rgba(108,58,237,0.25);
+      box-shadow: 0 4px 20px rgba(108, 58, 237, 0.06);
+    }
+    body.light .clip-toolbar {
+      border-top-color: rgba(108,58,237,0.08);
+    }
+    body.light .virality-bar-track {
+      background: rgba(108,58,237,0.08);
     }
 
     /* Calendar theme-aware styles */
@@ -5607,15 +5839,15 @@ ${paginationHtml}
         const html = \`
           <div class="modal-header">
             <h2 class="modal-title">\${analysis.video_title || 'Analysis'}</h2>
-            <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-              <p style="color: #888; flex:1;">\${analysis.moments?.length || 0} viral moments found</p>
-              <button class="btn btn-small" style="background:rgba(108,92,231,0.2);color:#a29bfe;font-size:12px;"
+            <div class="modal-header-actions">
+              <span class="moment-count-badge">\${analysis.moments?.length || 0} viral moments found</span>
+              <button class="modal-header-btn"
                 onclick="document.getElementById('transcriptPanel').style.display = document.getElementById('transcriptPanel').style.display === 'none' ? 'block' : 'none'">
-                View Transcript
+                📄 View Transcript
               </button>
-              <button class="btn btn-small" style="background:rgba(16,185,129,0.2);color:#10b981;font-size:12px;"
+              <button class="modal-header-btn export"
                 onclick="exportAllClips('\${id}')">
-                Export All (ZIP)
+                📦 Export All
               </button>
             </div>
           </div>
@@ -5661,51 +5893,55 @@ ${paginationHtml}
             </a>
           \` : '';
 
+          var viralColor = moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b';
+          var viralColorEnd = moment.viralityScore >= 80 ? '#00b894' : moment.viralityScore >= 60 ? '#e67e22' : '#ff4757';
+          var viralLabel = moment.viralityScore >= 80 ? 'High Viral Potential' : moment.viralityScore >= 60 ? 'Good Potential' : 'Moderate Potential';
+
           card.innerHTML = \`
             <div class="moment-card-header">
-              <div style="flex: 1;">
+              <div style="flex: 1; min-width: 0;">
                 <div class="moment-card-title">\${moment.title}</div>
-                <div class="moment-card-time">\${moment.timeRange} (\${endSec - startSec}s clip)</div>
+                <div class="moment-card-time">
+                  <span class="time-badge">\${moment.timeRange}</span>
+                  <span>\${endSec - startSec}s clip</span>
+                </div>
               </div>
               <div class="moment-score" style="cursor:pointer;" onclick="event.stopPropagation();showViralityBreakdown('\${id}', \${idx})" title="Click for virality breakdown">\${moment.viralityScore}%</div>
             </div>
             \${videoEmbed}
             <div class="moment-card-desc">\${moment.description}</div>
-            <div style="margin-top:8px;">
-              <div style="height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;">
-                <div style="height:100%;width:\${moment.viralityScore}%;background:linear-gradient(90deg,\${moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b'},\${moment.viralityScore >= 80 ? '#00b894' : moment.viralityScore >= 60 ? '#e67e22' : '#ff4757'});border-radius:2px;transition:width 0.5s;"></div>
+            <div class="virality-bar-wrap">
+              <div class="virality-bar-track">
+                <div class="virality-bar-fill" style="width:\${moment.viralityScore}%;background:linear-gradient(90deg,\${viralColor},\${viralColorEnd});"></div>
               </div>
-              <div style="display:flex;justify-content:space-between;margin-top:4px;">
-                <span style="font-size:10px;color:\${moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b'};">\${moment.viralityScore >= 80 ? 'High Viral Potential' : moment.viralityScore >= 60 ? 'Good Potential' : 'Moderate Potential'}</span>
-                <span style="font-size:10px;color:var(--text-muted);">\${(moment.keyThemes || []).slice(0,3).join(', ')}</span>
+              <div class="virality-bar-labels">
+                <span class="virality-label" style="color:\${viralColor};">\${viralLabel}</span>
+                <span class="virality-themes">\${(moment.keyThemes || []).slice(0,3).join(', ')}</span>
               </div>
             </div>
-            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-              <button class="btn btn-small btn-primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
-                Generate Content
+            <div class="clip-toolbar">
+              <button class="clip-tool-btn primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
+                ✨ Generate Content
               </button>
-              <button class="btn btn-small" id="clip-btn-\${idx}"
-                style="background: linear-gradient(135deg, #FF0050 0%, #FF4500 100%); color: #fff;"
+              <button class="clip-tool-btn accent" id="clip-btn-\${idx}"
                 onclick="downloadClip('\${id}', \${idx}, this)">
-                Download Clip
+                ⬇ Download Clip
               </button>
-              <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size:12px; color:var(--text-muted);"
-                title="Burn animated captions into the clip">
+              <div class="clip-toolbar-divider"></div>
+              <label class="clip-captions-toggle" title="Burn animated captions into the clip">
                 <input type="checkbox" id="captions-\${idx}" checked
-                  style="accent-color:#FF0050; width:14px; height:14px;">
+                  style="accent-color:var(--primary); width:14px; height:14px;">
                 <span>Captions</span>
-                <select id="caption-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
-                  border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Caption style">
-                  <option value="classic">Classic</option>
-                  <option value="trending">Trending</option>
-                  <option value="karaoke">Word Pop</option>
-                  <option value="minimal">Minimal</option>
-                  <option value="bold">Bold</option>
-                  <option value="neon">Neon Glow</option>
-                </select>
               </label>
-              <select id="caption-lang-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
-                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Caption language">
+              <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style">
+                <option value="classic">Classic</option>
+                <option value="trending">Trending</option>
+                <option value="karaoke">Word Pop</option>
+                <option value="minimal">Minimal</option>
+                <option value="bold">Bold</option>
+                <option value="neon">Neon Glow</option>
+              </select>
+              <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
                 <option value="pt">Portuguese</option>
@@ -5727,40 +5963,24 @@ ${paginationHtml}
                 <option value="fil">Filipino</option>
                 <option value="sv">Swedish</option>
               </select>
-              <select id="clip-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
-                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Clip style">
+              <div class="clip-toolbar-divider"></div>
+              <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
                 <option value="blur">Blur BG</option>
                 <option value="crop">Center Crop</option>
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
-              <select id="thumb-style-\${idx}" style="font-size:11px; padding:4px 6px; background:var(--surface-light); color:var(--text);
-                border:1px solid var(--border-subtle); border-radius:4px; cursor:pointer;" title="Thumbnail style">
-                <option value="gradient">Gradient</option>
-                <option value="dark">Dark Overlay</option>
-                <option value="border">Color Border</option>
-                <option value="split">Split Design</option>
-                <option value="ai">AI Generated</option>
-                <option value="ab">A/B Test (3 AI)</option>
-              </select>
-              <button class="btn btn-small" id="thumb-btn-\${idx}"
-                style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); color: #fff; font-size: 11px;"
-                onclick="generateThumbnail('\${id}', \${idx}, this)">
-                Thumbnail
-              </button>
-              <button class="btn btn-small" id="broll-btn-\${idx}"
-                style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: #fff; font-size: 11px;"
+              <button class="clip-tool-btn" id="broll-btn-\${idx}"
                 onclick="findBRoll('\${id}', \${idx}, this)">
-                🎬 Auto B-Roll
+                🎬 B-Roll
               </button>
-              <button class="btn btn-small" id="narrate-btn-\${idx}"
-                style="background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); color: #fff; font-size: 11px;"
+              <button class="clip-tool-btn" id="narrate-btn-\${idx}"
                 onclick="openNarrationModal('\${id}', \${idx})">
                 🎙️ Narrate
               </button>
               \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
-                class="btn btn-small" style="background: rgba(255,255,255,0.1); color: var(--text-muted); text-decoration: none;">
-                Open on YouTube
+                class="clip-tool-btn" style="text-decoration: none;">
+                ▶ YouTube
               </a>\` : ''}
             </div>
           \`;

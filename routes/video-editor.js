@@ -149,16 +149,16 @@ router.get('/', requireAuth, async (req, res) => {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:12px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:300px}
     .video-preview-area.has-video{background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px}
-    .timeline-strip{margin-top:1rem;background:var(--dark);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:12px;height:80px;display:flex;align-items:center;position:relative;overflow-x:auto}
-    .timeline-content{display:flex;gap:8px;width:100%;min-width:100%;height:100%}
-    .timeline-segment{flex:0 0 80px;height:100%;border-radius:6px;background:linear-gradient(135deg,#6366F1,#3B82F6);position:relative;cursor:pointer;transition:opacity 0.2s}
+    .timeline-strip{margin-top:1rem;background:var(--dark);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:8px;min-height:52px;height:52px;display:flex;align-items:center;position:relative;overflow-x:auto;flex-shrink:0}
+    .timeline-content{display:flex;gap:6px;width:100%;min-width:100%;height:36px}
+    .timeline-segment{flex:0 0 60px;height:36px;border-radius:6px;background:linear-gradient(135deg,#6366F1,#3B82F6);position:relative;cursor:pointer;transition:all 0.2s}
     .timeline-segment:nth-child(1){background:linear-gradient(135deg,#6C3AED,#EC4899)}
     .timeline-segment:nth-child(2){background:linear-gradient(135deg,#0EA5E9,#6366F1)}
     .timeline-segment:nth-child(3){background:linear-gradient(135deg,#F59E0B,#EF4444)}
     .timeline-segment:nth-child(4){background:linear-gradient(135deg,#10B981,#06B6D4)}
     .timeline-segment:nth-child(5){background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
-    .timeline-segment:hover{opacity:0.85;transform:scaleY(1.05)}
-    .timeline-segment.selected{outline:2px solid #fff;outline-offset:2px;opacity:1;transform:scaleY(1.08)}
+    .timeline-segment:hover{opacity:0.85;transform:scaleY(1.08)}
+    .timeline-segment.selected{outline:2px solid #fff;outline-offset:1px;opacity:1;transform:scaleY(1.1)}
     .timeline-segment .seg-label{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font-size:.6rem;color:rgba(255,255,255,0.7);font-weight:600;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s}
     .timeline-segment:hover .seg-label,.timeline-segment.selected .seg-label{opacity:1}
     .trim-handle{position:absolute;top:0;bottom:0;width:8px;background:rgba(255,255,255,0.3);cursor:ew-resize;border-radius:2px}
@@ -223,7 +223,7 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     @media(max-width:1200px){.editor-sidebar{width:280px}}
-    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:1rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-strip{height:70px}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:1rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-strip{height:48px;min-height:48px}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
   </style>
 </head>
 <body>
