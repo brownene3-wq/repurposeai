@@ -155,9 +155,9 @@ router.get('/', requireAuth, async (req, res) => {
     .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
     .timeline-tracks{position:relative;padding:6px 0;min-height:90px}
     .timeline-track{display:flex;align-items:center;margin:2px 0;padding:0 8px;position:relative}
-    .timeline-track#timelineVideoTrack .timeline-track-content{height:56px}
-    .timeline-track#timelineAudioTrack .timeline-track-content{height:40px}
-    .timeline-track#timelineMusicTrack .timeline-track-content{height:36px}
+    .timeline-track#timelineVideoTrack .timeline-track-content{height:64px}
+    .timeline-track#timelineAudioTrack .timeline-track-content{height:44px}
+    .timeline-track#timelineMusicTrack .timeline-track-content{height:38px}
     .timeline-track-label{width:32px;flex-shrink:0;font-size:.6rem;color:var(--text-muted);text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px}
     .timeline-track-content{flex:1;height:100%;position:relative;border-radius:6px;overflow:hidden;cursor:pointer}
     .timeline-video-bar{height:100%;background:linear-gradient(180deg,#0d9488,#0f766e);border-radius:6px;position:relative;overflow:hidden;border:1px solid rgba(13,148,136,0.3)}
@@ -171,8 +171,9 @@ router.get('/', requireAuth, async (req, res) => {
     .timeline-music-bar .track-info{font-size:.72rem;color:rgba(255,255,255,0.9);font-weight:500;white-space:nowrap;z-index:2}
     .timeline-music-bar .track-volume{font-size:.65rem;color:rgba(255,255,255,0.6);margin-left:8px;z-index:2}
     .timeline-music-bar .waveform-bg{position:absolute;top:0;left:0;right:0;bottom:0;opacity:0.25}
-    .timeline-playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;z-index:10;pointer-events:none;transition:left 0.05s linear}
-    .timeline-playhead::before{content:'';position:absolute;top:-4px;left:-5px;width:12px;height:8px;background:#fff;border-radius:2px;clip-path:polygon(0 0,100% 0,50% 100%)}
+    .timeline-playhead{position:absolute;top:0;bottom:0;width:2px;background:#ff4444;z-index:10;cursor:col-resize;pointer-events:auto}
+    .timeline-playhead::before{content:'';position:absolute;top:-6px;left:-7px;width:16px;height:16px;background:#ff4444;border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px rgba(255,68,68,0.6)}
+    .timeline-playhead::after{content:'';position:absolute;top:10px;bottom:0;left:0;width:2px;background:#ff4444;box-shadow:0 0 4px rgba(255,68,68,0.4)}
     .timeline-trim-handle{position:absolute;top:0;bottom:0;width:14px;cursor:col-resize;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .2s}
     .timeline-trim-handle.left{left:0;background:linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.05));border-radius:6px 0 0 6px;border-left:3px solid rgba(255,255,255,0.6)}
     .timeline-trim-handle.right{right:0;background:linear-gradient(270deg,rgba(255,255,255,0.25),rgba(255,255,255,0.05));border-radius:0 6px 6px 0;border-right:3px solid rgba(255,255,255,0.6)}
@@ -1222,8 +1223,7 @@ router.get('/', requireAuth, async (req, res) => {
       });
 
       setupTrimHandles();
-      videoPlayer.removeEventListener('timeupdate', updatePlayhead);
-      videoPlayer.addEventListener('timeupdate', updatePlayhead);
+      startPlayheadLoop();
 
       // Fetch and render timeline thumbnails
       fetchTimelineThumbs(currentVideoFile.filename);
@@ -1296,18 +1296,61 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
-    function updatePlayhead() {
-      if (!videoDuration || videoDuration <= 0) return;
-      var trackContent = document.getElementById('videoTrackContent');
-      if (!trackContent) return;
-      var pct = videoPlayer.currentTime / videoDuration;
-      var playhead = document.getElementById('timelinePlayhead');
-      var trackRect = trackContent.getBoundingClientRect();
-      var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
-      var left = (trackRect.left - containerRect.left) + pct * trackRect.width;
-      playhead.style.left = left + 'px';
-      playhead.style.transition = 'left 0.1s linear';
+    // Smooth playhead using requestAnimationFrame (no stutter)
+    var playheadRAF = null;
+    function startPlayheadLoop() {
+      function tick() {
+        if (!videoDuration || videoDuration <= 0) { playheadRAF = requestAnimationFrame(tick); return; }
+        var trackContent = document.getElementById('videoTrackContent');
+        var playhead = document.getElementById('timelinePlayhead');
+        if (!trackContent || !playhead) { playheadRAF = requestAnimationFrame(tick); return; }
+        var pct = videoPlayer.currentTime / videoDuration;
+        var trackRect = trackContent.getBoundingClientRect();
+        var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
+        var left = (trackRect.left - containerRect.left) + pct * trackRect.width;
+        playhead.style.left = left + 'px';
+        playheadRAF = requestAnimationFrame(tick);
+      }
+      if (playheadRAF) cancelAnimationFrame(playheadRAF);
+      playheadRAF = requestAnimationFrame(tick);
     }
+
+    function updatePlayhead() {
+      // Kept for compatibility but playhead now uses RAF loop
+    }
+
+    // Draggable playhead for scrubbing
+    (function() {
+      var playhead = document.getElementById('timelinePlayhead');
+      if (!playhead) return;
+      var dragging = false;
+
+      playhead.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragging = true;
+        document.body.style.cursor = 'col-resize';
+      });
+
+      document.addEventListener('mousemove', function(e) {
+        if (!dragging || !videoDuration) return;
+        var trackContent = document.getElementById('videoTrackContent');
+        if (!trackContent) return;
+        var rect = trackContent.getBoundingClientRect();
+        var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        videoPlayer.currentTime = pct * videoDuration;
+      });
+
+      document.addEventListener('mouseup', function() {
+        if (dragging) {
+          dragging = false;
+          document.body.style.cursor = '';
+        }
+      });
+    })();
+
+    // Start playhead animation loop
+    startPlayheadLoop();
 
     function setupTrimHandles() {
       var leftHandle = document.getElementById('trimHandleLeft');
@@ -2479,21 +2522,43 @@ router.get('/timeline-frames', requireAuth, async (req, res) => {
     if (!fs.existsSync(videoPath)) videoPath = path.join(uploadDir, filename);
     if (!fs.existsSync(videoPath)) return res.status(404).json({ error: 'Video not found' });
 
-    const frameCount = 20;
+    const frameCount = 30;
     const framesDir = path.join('/tmp', 'timeline-frames-' + Date.now());
     fs.mkdirSync(framesDir, { recursive: true });
 
-    // Extract frames using FFmpeg
+    // Get video duration first
+    const durationStr = await new Promise((resolve, reject) => {
+      const probe = spawn(ffmpegPath || 'ffmpeg', ['-i', videoPath, '-f', 'null', '-']);
+      let stderr = '';
+      probe.stderr.on('data', d => stderr += d.toString());
+      probe.on('close', () => {
+        const match = stderr.match(/Duration: (\d+):(\d+):(\d+\.?\d*)/);
+        if (match) {
+          const dur = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3]);
+          resolve(dur);
+        } else { resolve(0); }
+      });
+      probe.on('error', () => resolve(0));
+    });
+
+    const dur = durationStr || 30;
+    // Use select filter to get evenly spaced frames across the ENTIRE video
+    const selectExpr = 'select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,' + (dur / frameCount).toFixed(3) + ')';
+
+    // Extract frames using FFmpeg with even spacing
     await new Promise((resolve, reject) => {
       const args = [
         '-i', videoPath,
-        '-vf', 'fps=1,scale=80:60',
+        '-vf', selectExpr + ',scale=120:68',
+        '-vsync', 'vfr',
         '-frames:v', String(frameCount),
-        '-q:v', '8',
+        '-q:v', '5',
         path.join(framesDir, 'frame_%03d.jpg')
       ];
       const proc = spawn(ffmpegPath || 'ffmpeg', args);
-      proc.on('close', (code) => code === 0 ? resolve() : reject(new Error('Frame extraction failed')));
+      let stderr = '';
+      proc.stderr.on('data', d => stderr += d.toString());
+      proc.on('close', (code) => code === 0 ? resolve() : reject(new Error('Frame extraction failed: ' + stderr.slice(-200))));
       proc.on('error', reject);
     });
 
