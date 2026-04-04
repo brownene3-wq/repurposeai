@@ -600,6 +600,7 @@ ${pageStyles}
         if (content.type === 'upload') {
           const formData = new FormData();
           formData.append('video', content.file);
+          formData.append('inputType', 'upload');
           formData.append('mode', mode);
           formData.append('prompt', document.getElementById('aiPrompt').value || document.getElementById('searchTerms').value);
           response = await fetch('/ai-broll/generate', {
@@ -791,10 +792,12 @@ router.post('/generate', requireAuth, upload.single('video'), async (req, res) =
     }
 
     let contentDescription = '';
-    if (inputType === 'upload' && req.file) {
+    if (req.file) {
       contentDescription = `Video file: ${req.file.originalname}`;
     } else if (inputType === 'youtube' && url) {
       contentDescription = `YouTube video: ${url}`;
+    } else if (prompt) {
+      contentDescription = prompt;
     } else {
       return res.status(400).json({ error: 'No content provided' });
     }
