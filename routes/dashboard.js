@@ -204,12 +204,29 @@ router.get('/', requireAuth, async (req, res) => {
           <a href="/video-editor" class="tool-card">
             <span class="tool-icon">&#x1F3AC;</span>
             <span class="tool-label">Video Editor</span>
+          </a>
+          <a href="/ai-captions" class="tool-card">
+            <span class="tool-icon">&#x1F4AC;</span>
+            <span class="tool-label">AI Captions</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/enhance-speech" class="tool-card">
             <span class="tool-icon">&#x1F399;&#xFE0F;</span>
             <span class="tool-label">Enhance Audio</span>
+          </a>
+          <a href="/ai-broll" class="tool-card">
+            <span class="tool-icon">&#x1F3A5;</span>
+            <span class="tool-label">AI B-Roll</span>
             <span class="tool-badge">New</span>
+          </a>
+          <a href="/brand-templates" class="tool-card">
+            <span class="tool-icon">&#x1F3A8;</span>
+            <span class="tool-label">Brand Templates</span>
+            <span class="tool-badge">New</span>
+          </a>
+          <a href="/ai-thumbnail" class="tool-card">
+            <span class="tool-icon">&#x1F5BC;&#xFE0F;</span>
+            <span class="tool-label">AI Thumbnails</span>
           </a>
           <a href="/brand-voice" class="tool-card">
             <span class="tool-icon">&#x1F3A4;</span>
