@@ -384,14 +384,9 @@ ${pageStyles}
             <div class="form-group">
               <label for="voice">Speaker Voice</label>
               <select id="voice" name="voice" required>
-                <option value="">Select a voice</option>
-                <option value="Adam">Adam (deep, authoritative)</option>
-                <option value="Rachel">Rachel (warm, friendly)</option>
-                <option value="Bella">Bella (energetic, young)</option>
-                <option value="Antoni">Antoni (professional, clear)</option>
-                <option value="Sam">Sam (casual, conversational)</option>
-                <option value="Dorothy">Dorothy (elegant, sophisticated)</option>
+                <option value="">Loading voices...</option>
               </select>
+              <p id="voiceHint" style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;display:none"></p>
             </div>
 
             <div class="form-group">
@@ -445,6 +440,42 @@ ${pageStyles}
   <script>
     let currentVideoFile = null;
     let hookData = null;
+
+    // Load voices from user's ElevenLabs account
+    (async function loadVoices() {
+      const voiceSelect = document.getElementById('voice');
+      const voiceHint = document.getElementById('voiceHint');
+      try {
+        const res = await fetch('/ai-hook/voices');
+        const data = await res.json();
+        voiceSelect.innerHTML = '';
+        if (data.voices && data.voices.length > 0) {
+          voiceSelect.innerHTML = '<option value="">Select a voice</option>';
+          data.voices.forEach(function(v) {
+            var opt = document.createElement('option');
+            opt.value = v.voice_id;
+            opt.textContent = v.name + (v.labels ? ' (' + Object.values(v.labels).join(', ') + ')' : '');
+            voiceSelect.appendChild(opt);
+          });
+          if (data.source === 'elevenlabs') {
+            voiceHint.textContent = 'Voices loaded from your ElevenLabs account';
+            voiceHint.style.display = 'block';
+            voiceHint.style.color = '#10B981';
+          }
+        } else if (data.noKey) {
+          voiceSelect.innerHTML = '<option value="">No ElevenLabs key connected</option>';
+          voiceHint.innerHTML = 'Connect your ElevenLabs API key in <a href="/brand-voice" style="color:#6C3AED;font-weight:600">Brand Voice</a> or <a href="/settings" style="color:#6C3AED;font-weight:600">Settings</a> to enable voice selection. Hook text will still be generated.';
+          voiceHint.style.display = 'block';
+          document.getElementById('apiKeyNotice').style.display = 'block';
+        } else {
+          voiceSelect.innerHTML = '<option value="">No voices available</option>';
+        }
+      } catch (err) {
+        voiceSelect.innerHTML = '<option value="">Could not load voices</option>';
+        voiceHint.textContent = 'Voice loading failed. Hook text generation still works.';
+        voiceHint.style.display = 'block';
+      }
+    })();
 
     function showToast(message, duration = 3000) {
       const toast = document.getElementById('toast');
@@ -644,10 +675,11 @@ async function getUserElevenLabsKey(userId) {
 }
 
 // Helper: Generate hook speech with ElevenLabs using USER'S API key
-async function generateHookSpeech(hookText, voiceName, apiKey) {
+async function generateHookSpeech(hookText, voiceNameOrId, apiKey) {
   return new Promise((resolve, reject) => {
-    const voiceId = VOICES[voiceName];
-    if (!voiceId) return reject(new Error('Invalid voice'));
+    // Accept either a voice name (legacy) or a direct voice_id from ElevenLabs
+    const voiceId = VOICES[voiceNameOrId] || voiceNameOrId;
+    if (!voiceId) return reject(new Error('NO_VOICE'));
     if (!apiKey) return reject(new Error('NO_API_KEY'));
 
     const audioPath = path.join(outputDir, `hook-audio-${uuidv4()}.mp3`);
@@ -704,13 +736,64 @@ router.get('/audio/:filename', (req, res) => {
   }
 });
 
+// GET - Fetch user's ElevenLabs voices
+router.get('/voices', requireAuth, async (req, res) => {
+  try {
+    const userApiKey = await getUserElevenLabsKey(req.user.id);
+
+    if (!userApiKey) {
+      return res.json({ voices: [], noKey: true, message: 'No ElevenLabs API key configured' });
+    }
+
+    // Fetch voices from ElevenLabs API
+    const https = require('https');
+    const data = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('ElevenLabs API timeout')), 8000);
+      const options = {
+        hostname: 'api.elevenlabs.io',
+        path: '/v1/voices',
+        method: 'GET',
+        headers: { 'xi-api-key': userApiKey }
+      };
+      const req = https.request(options, (response) => {
+        clearTimeout(timeout);
+        let body = '';
+        response.on('data', chunk => body += chunk);
+        response.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch(e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+
+    if (data.voices && Array.isArray(data.voices)) {
+      // Return voice id, name, and labels for display
+      const voices = data.voices.map(v => ({
+        voice_id: v.voice_id,
+        name: v.name,
+        labels: v.labels || {},
+        preview_url: v.preview_url || null,
+        category: v.category || 'custom'
+      }));
+      return res.json({ voices, source: 'elevenlabs' });
+    }
+
+    // If API returned an error
+    res.json({ voices: [], noKey: false, message: data.detail || 'Could not fetch voices' });
+  } catch (error) {
+    console.error('Voices fetch error:', error);
+    res.json({ voices: [], noKey: false, message: 'Failed to load voices: ' + error.message });
+  }
+});
+
 // POST - Generate hook
 router.post('/generate', requireAuth, upload.single('video'), async (req, res) => {
   try {
     const { inputType, url, transcript, style, voice, platform } = req.body;
 
-    if (!style || !voice || !platform) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!style || !platform) {
+      return res.status(400).json({ error: 'Missing required fields (style and platform are required)' });
     }
 
     let contentForAnalysis = '';
@@ -747,16 +830,20 @@ Return ONLY the hook text, nothing else.`;
     // Generate speech using the user's own ElevenLabs API key
     let audioUrl = '';
     let voiceError = null;
-    try {
-      const userApiKey = await getUserElevenLabsKey(req.user.id);
-      if (!userApiKey) {
-        voiceError = 'NO_API_KEY';
-      } else {
-        audioUrl = await generateHookSpeech(hookText, voice, userApiKey);
+    if (!voice) {
+      voiceError = 'NO_VOICE';
+    } else {
+      try {
+        const userApiKey = await getUserElevenLabsKey(req.user.id);
+        if (!userApiKey) {
+          voiceError = 'NO_API_KEY';
+        } else {
+          audioUrl = await generateHookSpeech(hookText, voice, userApiKey);
+        }
+      } catch (e) {
+        console.warn('ElevenLabs error:', e.message);
+        voiceError = e.message === 'NO_API_KEY' ? 'NO_API_KEY' : (e.message === 'NO_VOICE' ? 'NO_VOICE' : e.message);
       }
-    } catch (e) {
-      console.warn('ElevenLabs error:', e.message);
-      voiceError = e.message === 'NO_API_KEY' ? 'NO_API_KEY' : e.message;
     }
 
     res.json({
