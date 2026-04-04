@@ -11,7 +11,7 @@ RepurposeAI helps content creators save time by automatically transforming YouTu
 ## Getting Started
 1. Visit repurposeai.ai and sign up using Google OAuth (one-click sign in) or create an account with email and password
 2. After logging in, you will see the Dashboard with quick access to all features via the AI Tools grid
-3. The sidebar navigation includes: Dashboard, Repurpose, Library, Smart Shorts, Analytics, Calendar, Brand Voice, and Billing
+3. The sidebar navigation includes: Dashboard, Repurpose, Library, Smart Shorts, AI Thumbnails, Analytics, Calendar, Brand Voice, and Billing
 4. The Dashboard AI Tools grid gives quick access to: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
 5. You can also visit the Help Center at /help for step-by-step guides on how to use every feature
 
@@ -47,33 +47,63 @@ This is the core feature for turning YouTube videos into social media posts.
 - Helps you plan and track your content posting schedule
 
 ## Smart Shorts (Advanced Video Tool)
-Smart Shorts is a powerful tool for creating short-form video content from YouTube videos. Access it from "Smart Shorts" in the sidebar.
+Smart Shorts is a powerful tool for creating short-form video content from YouTube videos. Access it from "Smart Shorts" in the sidebar. It has TWO main modes: Viral Moments Analysis (find the best clips) and Auto-Generate (create multiple shorts instantly).
 
-### Step 1: Analyze a Video
+### Mode 1: Viral Moments Analysis (Find Best Clips)
+
+#### Step 1: Analyze a Video
 1. Go to Smart Shorts and paste a YouTube video URL
 2. Click "Analyze Video" to let the AI find the best short clips
 3. The AI identifies viral-worthy moments, key highlights, and engaging segments
 4. You will see a list of suggested clips with timestamps, titles, and virality scores
 
-### Step 2: View Analysis Results
+#### Step 2: View Analysis Results
 - Each suggested clip shows: title, start/end timestamps, duration, description, and a virality score
-- Virality score rates how likely the clip is to perform well as a short
+- Virality scores are displayed as colored badges (green for high, orange for medium)
+- A visual virality bar shows the score graphically
 - You can click on any clip to customize it further
 
-### Step 3: Generate a Clip
+#### Step 3: Generate a Clip
 - Select a clip from the analysis results
+- Use the toolbar on each clip card: Preview, Generate Clip, Captions, Translate, and Narrate buttons
 - Choose caption style and customize appearance
 - Click "Generate Clip" to create the short video
 - The clip is created with burned-in captions in a TikTok/Reels style
 - Download the finished clip when ready
+- Use "Export All" button in the header to download all generated clips at once
+
+### Mode 2: Auto-Generate Shorts (Create Multiple Shorts Instantly)
+This is similar to what Opus Clip offers — paste one long video and automatically get multiple short clips.
+
+#### How to Use Auto-Generate:
+1. In Smart Shorts, click the "Auto-Generate" tool card in the premium tools grid at the top (the ⚡ icon)
+2. The Auto-Generate panel will open
+3. Paste a YouTube URL in the input field
+4. Use the "Number of Shorts" slider to choose how many shorts you want (1 to 20)
+5. Select your preferred duration for each short: 30 seconds, 45 seconds, 60 seconds, 90 seconds, or enter a Custom duration
+6. Optionally configure: Clip Style (Standard or Vertical), Captions (On or Off), and Language
+7. Click "Generate Shorts" and wait for processing
+8. The AI will: analyze the video transcript, identify the best non-overlapping segments, and generate each clip automatically
+9. You'll see real-time progress as each clip is created (e.g., "Generating clip 3 of 10...")
+10. When finished, all clips appear in a results grid below
+11. Each generated clip shows a preview thumbnail, title, and duration
+12. You can download individual clips or click "Download All as ZIP" to get all clips in one ZIP file
+
+#### Auto-Generate Tips:
+- Longer source videos work best — they give the AI more material to find unique moments
+- The AI ensures clips don't overlap with each other
+- Each clip gets its own title based on the content
+- Processing time depends on the number and duration of clips requested
+- This feature is perfect for batch creating TikTok/Reels/Shorts content from a single long video
 
 ### Smart Shorts Tool Panel
-The Smart Shorts page has a premium tool card grid at the top with 5 quick-access tools:
+The Smart Shorts page has a premium tool card grid at the top with 6 quick-access tools:
 - **Quick Narrate**: Add AI voiceover narration to any video quickly
 - **Workflow Templates**: Save and reuse your favorite editing workflows
 - **Batch Analyze**: Analyze multiple YouTube videos at once — paste several URLs
 - **Brand Kit**: Set up brand colors, fonts, and style for consistent branding
 - **Settings**: Configure your Smart Shorts preferences
+- **Auto-Generate**: Create multiple shorts from one long video instantly (⚡ icon)
 
 ### Smart Shorts Sub-Features:
 
@@ -95,23 +125,6 @@ The Smart Shorts page has a premium tool card grid at the top with 5 quick-acces
 - You can narrate the original transcript or provide custom text
 - Quick Narrate option for fast voiceover generation
 - The narrated audio replaces or overlays the original audio
-
-#### Thumbnails
-- Generate custom thumbnails for your short clips
-- Choose thumbnail style: gradient overlay, solid background, or minimal
-- Customize text, colors, and font size
-- Thumbnails are generated at 1920x1080 resolution
-- Frame is extracted from the video at the clip timestamp
-
-#### AI Thumbnails (DALL-E)
-- Generate AI-created thumbnail images using DALL-E
-- The AI creates unique, eye-catching thumbnail artwork based on the video content
-- Professional-quality thumbnails automatically
-
-#### Thumbnail A/B Testing
-- Generate multiple thumbnail variations for the same clip
-- Compare different styles and choose the best performer
-- Helps optimize click-through rates
 
 #### B-Roll Suggestions
 - AI suggests relevant B-Roll footage to enhance your clips
@@ -135,7 +148,7 @@ The Smart Shorts page has a premium tool card grid at the top with 5 quick-acces
 
 #### Export Options
 - Download generated clips as MP4 video files
-- Download thumbnails as JPG images
+- Download all clips at once using "Export All" button or ZIP download
 - Export analysis results
 
 #### Smart Shorts History
@@ -176,6 +189,7 @@ The Smart Shorts page has a premium tool card grid at the top with 5 quick-acces
 - Quick access links to all features via an AI Tools grid
 - Shows recent content and quick stats
 - The AI Tools grid provides one-click access to: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
+- AI Thumbnails is accessible from the sidebar as its own dedicated section
 
 ## Video Editor
 - Access from the Dashboard AI Tools grid or the sidebar
@@ -190,6 +204,35 @@ The Smart Shorts page has a premium tool card grid at the top with 5 quick-acces
   - The editor preserves aspect ratio on export — portrait videos stay portrait, landscape stays landscape
   - Exported videos use universal format (yuv420p) compatible with all video players
   - Video seeking/scrubbing is fully supported with range request downloads
+  - **Timeline**: Visual timeline strip at the bottom shows colored segment blocks representing different parts of your video. You can see and navigate through segments visually.
+
+## AI Thumbnails (Standalone Page)
+- Access from "AI Thumbnails" in the sidebar (🖼️ icon)
+- This is a dedicated page for creating professional thumbnails from any video
+- Two input methods: paste a YouTube URL or upload a video file directly
+
+### How to Use AI Thumbnails:
+1. Go to "AI Thumbnails" from the sidebar
+2. Paste a YouTube URL or upload a video file
+3. Click "Extract Frames" — the AI extracts key frames from throughout the video
+4. You'll see a grid of frames extracted from the video under "Select a Frame to Style"
+5. Click on any frame that you like
+6. Choose a thumbnail style preset to apply:
+   - **Gradient Overlay**: Adds a stylish gradient overlay to the frame
+   - **Dark Cinematic**: Creates a dark, cinematic look with vignette effect
+   - **Bold Border**: Adds bold colored borders around the frame
+   - **Split Design**: Creates a split-screen style design
+   - **Text Focus**: Optimized layout for adding text overlays
+   - **Clean Minimal**: Simple, clean thumbnail with minimal effects
+7. Click "Generate Styled Thumbnails" to create your thumbnails
+8. Download your favorite styled thumbnail
+
+### AI Thumbnails Tips:
+- YouTube URLs are downloaded automatically — no need to download the video yourself
+- The frame extraction picks evenly spaced frames throughout the video duration
+- You can try different style presets on the same frame to compare looks
+- Thumbnails are generated at high resolution for professional quality
+- Great for YouTube video thumbnails, social media preview images, and blog post headers
 
 ## AI Hooks Generator
 - Access from the Dashboard AI Tools grid
@@ -262,6 +305,10 @@ The Smart Shorts page has a premium tool card grid at the top with 5 quick-acces
 - Video Editor: If exported video has distorted colors, re-export with default brightness/contrast/saturation (100 each)
 - Video Editor: If trim shows no preview, try refreshing the page and re-uploading the video
 - AI Reframe: Processing time depends on video length — longer videos take more time
+- AI Thumbnails: If frame extraction fails, try a different YouTube URL or upload the video file directly. The video must be accessible and have a valid duration.
+- AI Thumbnails: Make sure the video is at least a few seconds long for frame extraction to work
+- Smart Shorts Auto-Generate: If clip generation stalls, try reducing the number of shorts or using a shorter source video
+- Smart Shorts Auto-Generate: The source video must have spoken content with captions/subtitles for the AI to analyze
 - For step-by-step help with any feature, visit the Help Center at /help
 
 ## Contact & Support

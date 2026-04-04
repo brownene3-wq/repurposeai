@@ -405,24 +405,36 @@ const helpArticles = [
     title: 'Using Smart Shorts to Create Viral Clips',
     summary: 'Analyze videos to find the best moments, generate clips with captions and narration.',
     content: `
-      <h2>Analyzing a Video</h2>
-      <p>Go to <strong>Smart Shorts</strong> from the sidebar. Paste a YouTube video URL and click <strong>Analyze Video</strong>. The AI identifies viral-worthy moments with timestamps, titles, and virality scores.</p>
+      <h2>Mode 1: Viral Moments Analysis</h2>
+      <p>Go to <strong>Smart Shorts</strong> from the sidebar. Paste a YouTube video URL and click <strong>Analyze Video</strong>. The AI identifies viral-worthy moments with timestamps, titles, and virality scores displayed as colored badges with visual bars.</p>
 
-      <h2>Generating Clips</h2>
-      <p>Select any suggested clip, choose a caption style, and click <strong>Generate Clip</strong>. The clip is created with burned-in captions in a TikTok/Reels style. Download the finished MP4 when ready.</p>
+      <h2>Generating Individual Clips</h2>
+      <p>Each clip card has a toolbar with buttons: Preview, Generate Clip, Captions, Translate, and Narrate. Select a clip, choose your caption style, and click <strong>Generate Clip</strong>. The clip is created with burned-in captions in a TikTok/Reels style. Download the finished MP4 when ready, or use <strong>Export All</strong> to download everything at once.</p>
+
+      <h2>Mode 2: Auto-Generate Shorts ⚡</h2>
+      <p>Click the <strong>Auto-Generate</strong> tool card (⚡ icon) in the premium tools grid. This lets you create multiple shorts from one long video automatically — similar to Opus Clip.</p>
+      <ul>
+        <li>Paste a YouTube URL</li>
+        <li>Choose how many shorts you want (1 to 20) using the slider</li>
+        <li>Select duration for each short: 30s, 45s, 60s, 90s, or Custom</li>
+        <li>Configure clip style, captions, and language</li>
+        <li>Click <strong>Generate Shorts</strong> and watch real-time progress</li>
+        <li>Download individual clips or <strong>Download All as ZIP</strong></li>
+      </ul>
 
       <h2>Tool Panel Features</h2>
-      <p>At the top of Smart Shorts, you'll find 5 quick-access tool cards:</p>
+      <p>At the top of Smart Shorts, you'll find 6 quick-access tool cards:</p>
       <ul>
         <li><strong>Quick Narrate</strong> — Add AI voiceover to any video using ElevenLabs voices</li>
         <li><strong>Workflow Templates</strong> — Save and reuse your favorite editing workflows</li>
         <li><strong>Batch Analyze</strong> — Analyze multiple YouTube videos at once</li>
         <li><strong>Brand Kit</strong> — Set brand colors, fonts, and styles for consistent branding</li>
         <li><strong>Settings</strong> — Configure your Smart Shorts preferences</li>
+        <li><strong>Auto-Generate</strong> — Create multiple shorts from one video instantly</li>
       </ul>
 
       <h2>Additional Features</h2>
-      <p>Caption translation to 20+ languages, AI thumbnails with DALL-E, thumbnail A/B testing, B-roll suggestions, and virality analysis are all available within Smart Shorts.</p>
+      <p>Caption translation to 20+ languages, B-roll suggestions, and virality analysis are all available within Smart Shorts. For standalone thumbnail creation, visit the dedicated <a href="/ai-thumbnail">AI Thumbnails</a> page.</p>
     `
   },
   {
@@ -501,6 +513,34 @@ const helpArticles = [
 
       <h2>Tips</h2>
       <p>Karaoke-style captions (where words highlight as they're spoken) tend to get the highest engagement on TikTok and Instagram Reels.</p>
+    `
+  },
+  {
+    id: 'ai-thumbnails',
+    icon: '🖼️',
+    category: 'Tools',
+    title: 'AI Thumbnails — Create Professional Thumbnails',
+    summary: 'Extract frames from any video and apply professional style presets for eye-catching thumbnails.',
+    content: `
+      <h2>Getting Started</h2>
+      <p>Go to <strong>AI Thumbnails</strong> from the sidebar (🖼️ icon). You can input a YouTube URL or upload a video file directly.</p>
+
+      <h2>Extracting Frames</h2>
+      <p>Click <strong>Extract Frames</strong> and the AI will pull key frames from throughout your video. You'll see a grid of frames under "Select a Frame to Style".</p>
+
+      <h2>Styling Your Thumbnail</h2>
+      <p>Click on any frame you like, then choose from 6 professional style presets:</p>
+      <ul>
+        <li><strong>Gradient Overlay</strong> — Stylish gradient effect</li>
+        <li><strong>Dark Cinematic</strong> — Dark, moody look with vignette</li>
+        <li><strong>Bold Border</strong> — Colorful borders that pop</li>
+        <li><strong>Split Design</strong> — Split-screen style layout</li>
+        <li><strong>Text Focus</strong> — Optimized for adding text</li>
+        <li><strong>Clean Minimal</strong> — Simple and professional</li>
+      </ul>
+
+      <h2>Downloading</h2>
+      <p>After styling, download your thumbnail at high resolution. Perfect for YouTube thumbnails, social media previews, and blog headers.</p>
     `
   },
   {
@@ -588,6 +628,12 @@ const helpArticles = [
 
       <h2>Smart Shorts Processing</h2>
       <p>Longer processing times are normal for longer clips. If thumbnails fail, the system automatically falls back to the YouTube thumbnail.</p>
+
+      <h2>AI Thumbnails Issues</h2>
+      <p>If you see "No frames extracted from video," try a different YouTube URL or upload the video file directly. The video must be accessible and at least a few seconds long. If using a YouTube URL, make sure it's a valid, public video.</p>
+
+      <h2>Auto-Generate Shorts Issues</h2>
+      <p>If clip generation stalls, try reducing the number of shorts or using a shorter source video. The video must have spoken content with captions/subtitles for the AI analysis to work. Processing time increases with more clips and longer durations.</p>
 
       <h2>General Tips</h2>
       <ul>
