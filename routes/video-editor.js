@@ -171,9 +171,9 @@ router.get('/', requireAuth, async (req, res) => {
     .timeline-music-bar .track-info{font-size:.72rem;color:rgba(255,255,255,0.9);font-weight:500;white-space:nowrap;z-index:2}
     .timeline-music-bar .track-volume{font-size:.65rem;color:rgba(255,255,255,0.6);margin-left:8px;z-index:2}
     .timeline-music-bar .waveform-bg{position:absolute;top:0;left:0;right:0;bottom:0;opacity:0.25}
-    .timeline-playhead{position:absolute;top:0;bottom:0;width:2px;background:#ff4444;z-index:10;cursor:col-resize;pointer-events:auto}
-    .timeline-playhead::before{content:'';position:absolute;top:-6px;left:-7px;width:16px;height:16px;background:#ff4444;border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px rgba(255,68,68,0.6)}
-    .timeline-playhead::after{content:'';position:absolute;top:10px;bottom:0;left:0;width:2px;background:#ff4444;box-shadow:0 0 4px rgba(255,68,68,0.4)}
+    .timeline-playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;z-index:10;cursor:col-resize;pointer-events:auto}
+    .timeline-playhead::before{content:'';position:absolute;top:-2px;left:-9px;width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:14px solid #fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5))}
+    .timeline-playhead-hitbox{position:absolute;top:-6px;bottom:0;left:-12px;width:26px;cursor:col-resize;z-index:11}
     .timeline-trim-handle{position:absolute;top:0;bottom:0;width:14px;cursor:col-resize;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .2s}
     .timeline-trim-handle.left{left:0;background:linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.05));border-radius:6px 0 0 6px;border-left:3px solid rgba(255,255,255,0.6)}
     .timeline-trim-handle.right{right:0;background:linear-gradient(270deg,rgba(255,255,255,0.25),rgba(255,255,255,0.05));border-radius:0 6px 6px 0;border-right:3px solid rgba(255,255,255,0.6)}
@@ -273,7 +273,7 @@ router.get('/', requireAuth, async (req, res) => {
             <div class="timeline-container" id="timelineContainer">
               <div class="timeline-ruler" id="timelineRuler"></div>
               <div class="timeline-tracks" id="timelineTracks">
-                <div class="timeline-playhead" id="timelinePlayhead" style="left:40px"></div>
+                <div class="timeline-playhead" id="timelinePlayhead" style="left:40px"><div class="timeline-playhead-hitbox" id="playheadHitbox"></div></div>
                 <div class="timeline-empty" id="timelineEmpty">Upload a video to see the timeline</div>
               </div>
             </div>
@@ -1319,35 +1319,53 @@ router.get('/', requireAuth, async (req, res) => {
       // Kept for compatibility but playhead now uses RAF loop
     }
 
-    // Draggable playhead for scrubbing
-    (function() {
-      var playhead = document.getElementById('timelinePlayhead');
-      if (!playhead) return;
-      var dragging = false;
+    // Draggable playhead for scrubbing — uses hitbox for easier grabbing
+    var playheadDragging = false;
 
-      playhead.addEventListener('mousedown', function(e) {
+    document.addEventListener('mousedown', function(e) {
+      var hitbox = document.getElementById('playheadHitbox');
+      var playhead = document.getElementById('timelinePlayhead');
+      if (!hitbox && !playhead) return;
+      // Check if click is on hitbox or playhead itself
+      if (e.target === hitbox || e.target === playhead || (hitbox && hitbox.contains(e.target))) {
         e.preventDefault();
         e.stopPropagation();
-        dragging = true;
+        playheadDragging = true;
         document.body.style.cursor = 'col-resize';
-      });
+      }
+    }, true);
 
-      document.addEventListener('mousemove', function(e) {
-        if (!dragging || !videoDuration) return;
-        var trackContent = document.getElementById('videoTrackContent');
-        if (!trackContent) return;
-        var rect = trackContent.getBoundingClientRect();
-        var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        videoPlayer.currentTime = pct * videoDuration;
-      });
+    document.addEventListener('mousemove', function(e) {
+      if (!playheadDragging || !videoDuration) return;
+      var trackContent = document.getElementById('videoTrackContent');
+      if (!trackContent) return;
+      var rect = trackContent.getBoundingClientRect();
+      var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      videoPlayer.currentTime = pct * videoDuration;
+    });
 
-      document.addEventListener('mouseup', function() {
-        if (dragging) {
-          dragging = false;
-          document.body.style.cursor = '';
-        }
-      });
-    })();
+    document.addEventListener('mouseup', function() {
+      if (playheadDragging) {
+        playheadDragging = false;
+        document.body.style.cursor = '';
+      }
+    });
+
+    // Also: click anywhere on the timeline tracks area to move playhead
+    document.getElementById('timelineTracks').addEventListener('mousedown', function(e) {
+      if (playheadDragging) return;
+      if (e.target.classList.contains('timeline-trim-handle')) return;
+      if (!videoDuration) return;
+      var trackContent = document.getElementById('videoTrackContent');
+      if (!trackContent) return;
+      var rect = trackContent.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right) return;
+      var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      videoPlayer.currentTime = pct * videoDuration;
+      // Start dragging so user can keep moving after click
+      playheadDragging = true;
+      document.body.style.cursor = 'col-resize';
+    });
 
     // Start playhead animation loop
     startPlayheadLoop();
