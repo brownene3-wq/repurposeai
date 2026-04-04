@@ -289,6 +289,7 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-button" data-tool="speed">⚡ Speed</button>
               <button class="tool-button" data-tool="audio">🔊 Audio</button>
               <button class="tool-button" data-tool="voiceover">🎙️ AI Voice</button>
+              <button class="tool-button" data-tool="voicetransform">🔄 Voice Transform</button>
               <button class="tool-button" data-tool="text">📝 Text Overlay</button>
               <button class="tool-button" data-tool="transitions">✨ Transitions</button>
             </div>
@@ -457,6 +458,70 @@ router.get('/', requireAuth, async (req, res) => {
             </div>
           </div>
 
+          <div class="tool-panel" id="voicetransformPanel">
+            <div class="panel-title">🔄 Voice Transform</div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Change the voice in your video to any AI voice using ElevenLabs Speech-to-Speech</p>
+            <div class="form-group-ve" style="margin-bottom:.8rem">
+              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Target Voice</label>
+              <select id="vtVoiceSelect" style="width:100%;padding:.5rem .7rem;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.82rem;outline:none">
+                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Female, Calm)</option>
+                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Female, Warm)</option>
+                <option value="ErXwobaYiN019PkySvjV">Antoni (Male, Calm)</option>
+                <option value="VR6AewLTigWG4xSOukaG">Arnold (Male, Deep)</option>
+                <option value="pNInz6obpgDQGcFmaJgB">Adam (Male, Clear)</option>
+                <option value="yoZ06aMxZJJ28mfd3POQ">Sam (Male, Raspy)</option>
+                <option value="jBpfuIE2acCO8z3wKNLl">Gigi (Female, Animated)</option>
+                <option value="ThT5KcBeYPX3keUQqHPh">Dorothy (Female, British)</option>
+              </select>
+            </div>
+            <div class="form-group-ve" style="margin-bottom:.8rem">
+              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Source</label>
+              <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
+                <label style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:6px;cursor:pointer;font-size:.8rem;color:var(--text);font-weight:600" id="vtSourceVideoLabel">
+                  <input type="radio" name="vtSource" value="video" checked style="accent-color:#6C3AED"> From Video
+                </label>
+                <label style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;font-size:.8rem;color:var(--text);font-weight:600" id="vtSourceUploadLabel">
+                  <input type="radio" name="vtSource" value="upload" style="accent-color:#6C3AED"> Upload Audio
+                </label>
+              </div>
+              <div id="vtUploadArea" style="display:none;margin-top:.5rem">
+                <div style="border:2px dashed rgba(108,58,237,0.3);border-radius:8px;padding:1rem;text-align:center;cursor:pointer" onclick="document.getElementById('vtAudioFile').click()">
+                  <div style="font-size:.85rem;color:var(--text)">Click to upload audio file</div>
+                  <div style="font-size:.75rem;color:var(--text-muted)">MP3, WAV, M4A supported</div>
+                  <input type="file" id="vtAudioFile" accept="audio/*" style="display:none">
+                </div>
+                <div id="vtAudioFileName" style="display:none;margin-top:.5rem;padding:.5rem;background:var(--dark-2);border-radius:6px;font-size:.8rem;color:var(--text)"></div>
+              </div>
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Stability</span>
+                <span class="slider-value" id="vtStabilityValue">50%</span>
+              </div>
+              <input type="range" class="slider" id="vtStability" min="0" max="100" value="50">
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Similarity</span>
+                <span class="slider-value" id="vtSimilarityValue">75%</span>
+              </div>
+              <input type="range" class="slider" id="vtSimilarity" min="0" max="100" value="75">
+            </div>
+            <div style="display:flex;gap:.5rem;margin-top:.5rem">
+              <button class="tool-action-button" id="vtPreviewBtn" disabled style="flex:1;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1)">🔈 Preview</button>
+              <button class="tool-action-button" id="vtApplyBtn" disabled style="flex:1">🔄 Transform Voice</button>
+            </div>
+            <div id="vtProgress" style="display:none;margin-top:.8rem">
+              <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:6px;overflow:hidden">
+                <div id="vtProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
+              </div>
+              <div id="vtProgressText" style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem;text-align:center">Processing...</div>
+            </div>
+            <div id="vtApiNote" style="margin-top:.8rem;padding:.6rem;background:rgba(108,58,237,0.08);border-radius:8px;font-size:.75rem;color:var(--text-muted)">
+              Requires ElevenLabs API key. Set it in <a href="/brand-voice" style="color:#6C3AED;text-decoration:none;font-weight:600">Brand Voice</a> settings or Smart Shorts → Settings.
+            </div>
+          </div>
+
           <div class="tool-panel" id="textPanel">
             <div class="panel-title">📝 Text Overlay</div>
             <input type="text" class="text-input" id="overlayText" placeholder="Enter text">
@@ -605,6 +670,8 @@ router.get('/', requireAuth, async (req, res) => {
         document.getElementById('audioButton').disabled = false;
         document.getElementById('previewVoiceButton').disabled = false;
         document.getElementById('voiceoverButton').disabled = false;
+        document.getElementById('vtPreviewBtn').disabled = false;
+        document.getElementById('vtApplyBtn').disabled = false;
         document.getElementById('textButton').disabled = false;
         document.getElementById('speedSelect').disabled = false;
 
@@ -1016,6 +1083,144 @@ router.get('/', requireAuth, async (req, res) => {
       } finally {
         btn.disabled = false;
         btn.innerHTML = '🎙️ Apply to Video';
+      }
+    });
+
+    // Voice Transform: source toggle
+    document.querySelectorAll('input[name="vtSource"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        document.getElementById('vtSourceVideoLabel').style.borderColor = this.value === 'video' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('vtSourceUploadLabel').style.borderColor = this.value === 'upload' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('vtUploadArea').style.display = this.value === 'upload' ? 'block' : 'none';
+      });
+    });
+    document.getElementById('vtAudioFile').addEventListener('change', function(e) {
+      if (e.target.files.length > 0) {
+        document.getElementById('vtAudioFileName').textContent = '🎵 ' + e.target.files[0].name;
+        document.getElementById('vtAudioFileName').style.display = 'block';
+      }
+    });
+    document.getElementById('vtStability').addEventListener('input', function() {
+      document.getElementById('vtStabilityValue').textContent = this.value + '%';
+    });
+    document.getElementById('vtSimilarity').addEventListener('input', function() {
+      document.getElementById('vtSimilarityValue').textContent = this.value + '%';
+    });
+
+    // Voice Transform: apply handler
+    document.getElementById('vtApplyBtn').addEventListener('click', async () => {
+      if (!currentVideoFile) { showToast('Please upload a video first', 'error'); return; }
+
+      var vtSource = document.querySelector('input[name="vtSource"]:checked').value;
+      var voiceId = document.getElementById('vtVoiceSelect').value;
+      var stability = parseInt(document.getElementById('vtStability').value) / 100;
+      var similarity = parseInt(document.getElementById('vtSimilarity').value) / 100;
+
+      var btn = document.getElementById('vtApplyBtn');
+      var progress = document.getElementById('vtProgress');
+      var progressBar = document.getElementById('vtProgressBar');
+      var progressText = document.getElementById('vtProgressText');
+
+      // Build form data
+      var formData = new FormData();
+      formData.append('filename', currentVideoFile.filename);
+      formData.append('voiceId', voiceId);
+      formData.append('stability', stability);
+      formData.append('similarity', similarity);
+      formData.append('source', vtSource);
+
+      if (vtSource === 'upload') {
+        var audioFile = document.getElementById('vtAudioFile').files[0];
+        if (!audioFile) { showToast('Please upload an audio file', 'error'); return; }
+        formData.append('audioFile', audioFile);
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Transforming...';
+      progress.style.display = 'block';
+      progressBar.style.width = '10%';
+      progressText.textContent = 'Extracting audio...';
+
+      try {
+        // Simulate progress stages
+        setTimeout(() => { progressBar.style.width = '30%'; progressText.textContent = 'Sending to ElevenLabs...'; }, 2000);
+        setTimeout(() => { progressBar.style.width = '60%'; progressText.textContent = 'Transforming voice...'; }, 5000);
+        setTimeout(() => { progressBar.style.width = '80%'; progressText.textContent = 'Mixing audio back...'; }, 8000);
+
+        var response = await fetch('/video-editor/voice-transform', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          var err = await response.json();
+          throw new Error(err.error || 'Voice transform failed');
+        }
+
+        var data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Voice transformed successfully!';
+        showToast('Voice transformed successfully!', 'success');
+      } catch (error) {
+        showToast('Voice transform failed: ' + error.message, 'error');
+        progressText.textContent = 'Failed: ' + error.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Transform Voice';
+        setTimeout(() => { progress.style.display = 'none'; }, 3000);
+      }
+    });
+
+    // Voice Transform: preview handler
+    document.getElementById('vtPreviewBtn').addEventListener('click', async () => {
+      if (!currentVideoFile) { showToast('Please upload a video first', 'error'); return; }
+      var btn = document.getElementById('vtPreviewBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Generating preview...';
+
+      try {
+        var vtSource = document.querySelector('input[name="vtSource"]:checked').value;
+        var voiceId = document.getElementById('vtVoiceSelect').value;
+        var stability = parseInt(document.getElementById('vtStability').value) / 100;
+        var similarity = parseInt(document.getElementById('vtSimilarity').value) / 100;
+
+        var formData = new FormData();
+        formData.append('filename', currentVideoFile.filename);
+        formData.append('voiceId', voiceId);
+        formData.append('stability', stability);
+        formData.append('similarity', similarity);
+        formData.append('source', vtSource);
+        formData.append('previewOnly', 'true');
+
+        if (vtSource === 'upload') {
+          var audioFile = document.getElementById('vtAudioFile').files[0];
+          if (!audioFile) { showToast('Please upload an audio file', 'error'); return; }
+          formData.append('audioFile', audioFile);
+        }
+
+        var response = await fetch('/video-editor/voice-transform', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          var err = await response.json();
+          throw new Error(err.error || 'Preview failed');
+        }
+
+        var data = await response.json();
+        // Play the preview audio
+        var audio = new Audio(data.previewUrl);
+        audio.play();
+        showToast('Playing voice preview...', 'success');
+      } catch (error) {
+        showToast('Preview failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔈 Preview';
       }
     });
 
@@ -1793,6 +1998,222 @@ router.post('/voiceover-apply', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Voiceover apply error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Voice Transform (Speech-to-Speech via ElevenLabs)
+const vtUpload = multer({
+  dest: uploadDir,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/x-wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/ogg', 'audio/webm'];
+    if (allowed.includes(file.mimetype) || file.originalname.match(/\.(mp3|wav|m4a|ogg|webm)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid audio file type'));
+    }
+  }
+});
+
+router.post('/voice-transform', requireAuth, vtUpload.single('audioFile'), async (req, res) => {
+  let tempFiles = [];
+  try {
+    const { filename, voiceId, stability, similarity, source, previewOnly } = req.body;
+    if (!filename) return res.status(400).json({ error: 'Missing video filename' });
+
+    const apiKey = await getElevenLabsKey(req.user.id);
+    if (!apiKey) {
+      return res.status(400).json({ error: 'No ElevenLabs API key found. Add one in Smart Shorts → Settings or Brand Voice settings.' });
+    }
+
+    // Find source video
+    let videoPath = path.join(outputDir, filename);
+    if (!fs.existsSync(videoPath)) {
+      videoPath = path.join(uploadDir, filename);
+    }
+    if (!fs.existsSync(videoPath)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    let audioInputPath;
+
+    if (source === 'upload' && req.file) {
+      // User uploaded a separate audio file
+      audioInputPath = req.file.path;
+      tempFiles.push(audioInputPath);
+    } else {
+      // Extract audio from video using FFmpeg
+      audioInputPath = path.join(outputDir, 'vt_extract_' + Date.now() + '.wav');
+      tempFiles.push(audioInputPath);
+
+      await runFFmpeg([
+        '-i', videoPath,
+        '-vn',
+        '-acodec', 'pcm_s16le',
+        '-ar', '44100',
+        '-ac', '1',
+        '-y',
+        audioInputPath
+      ]);
+
+      if (!fs.existsSync(audioInputPath) || fs.statSync(audioInputPath).size < 1000) {
+        return res.status(400).json({ error: 'Failed to extract audio from video. Make sure the video has an audio track.' });
+      }
+    }
+
+    // For preview, only send first 15 seconds
+    let audioToSend = audioInputPath;
+    if (previewOnly === 'true') {
+      const previewAudioPath = path.join(outputDir, 'vt_preview_in_' + Date.now() + '.wav');
+      tempFiles.push(previewAudioPath);
+      await runFFmpeg([
+        '-i', audioInputPath,
+        '-t', '15',
+        '-acodec', 'pcm_s16le',
+        '-ar', '44100',
+        '-ac', '1',
+        '-y',
+        previewAudioPath
+      ]);
+      audioToSend = previewAudioPath;
+    }
+
+    // Read audio file
+    const audioBuffer = fs.readFileSync(audioToSend);
+
+    // Call ElevenLabs Speech-to-Speech API
+    console.log('[Voice Transform] Sending to ElevenLabs STS, voice:', voiceId, 'audio size:', audioBuffer.length);
+    const selectedVoiceId = voiceId || '21m00Tcm4TlvDq8ikWAM';
+    const stabilityVal = parseFloat(stability) || 0.5;
+    const similarityVal = parseFloat(similarity) || 0.75;
+
+    const transformedAudio = await new Promise((resolve, reject) => {
+      const https = require('https');
+      const boundary = '----FormBoundary' + Date.now();
+
+      // Build multipart form data manually
+      let bodyParts = [];
+
+      // Add audio file part
+      bodyParts.push(Buffer.from(
+        '--' + boundary + '\r\n' +
+        'Content-Disposition: form-data; name="audio"; filename="audio.wav"\r\n' +
+        'Content-Type: audio/wav\r\n\r\n'
+      ));
+      bodyParts.push(audioBuffer);
+      bodyParts.push(Buffer.from('\r\n'));
+
+      // Add model_id part
+      bodyParts.push(Buffer.from(
+        '--' + boundary + '\r\n' +
+        'Content-Disposition: form-data; name="model_id"\r\n\r\n' +
+        'eleven_english_sts_v2\r\n'
+      ));
+
+      // Add voice_settings part
+      bodyParts.push(Buffer.from(
+        '--' + boundary + '\r\n' +
+        'Content-Disposition: form-data; name="voice_settings"\r\n\r\n' +
+        JSON.stringify({ stability: stabilityVal, similarity_boost: similarityVal }) + '\r\n'
+      ));
+
+      bodyParts.push(Buffer.from('--' + boundary + '--\r\n'));
+
+      const body = Buffer.concat(bodyParts);
+
+      const options = {
+        hostname: 'api.elevenlabs.io',
+        port: 443,
+        path: '/v1/speech-to-speech/' + selectedVoiceId,
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'multipart/form-data; boundary=' + boundary,
+          'Content-Length': body.length,
+          'Accept': 'audio/mpeg'
+        }
+      };
+
+      const request = https.request(options, (response) => {
+        if (response.statusCode !== 200) {
+          let errData = '';
+          response.on('data', d => { errData += d.toString(); });
+          response.on('end', () => {
+            try {
+              const parsed = JSON.parse(errData);
+              reject(new Error(parsed.detail?.message || parsed.detail || 'ElevenLabs STS API error: ' + response.statusCode));
+            } catch(e) {
+              reject(new Error('ElevenLabs STS API error: ' + response.statusCode + ' - ' + errData.slice(0, 200)));
+            }
+          });
+          return;
+        }
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+
+      request.on('error', reject);
+      request.write(body);
+      request.end();
+
+      // Timeout
+      setTimeout(() => {
+        request.destroy();
+        reject(new Error('ElevenLabs STS request timed out (120s)'));
+      }, 120000);
+    });
+
+    console.log('[Voice Transform] ElevenLabs returned', transformedAudio.length, 'bytes of audio');
+
+    // Save transformed audio
+    const transformedAudioPath = path.join(outputDir, 'vt_transformed_' + Date.now() + '.mp3');
+    tempFiles.push(transformedAudioPath);
+    fs.writeFileSync(transformedAudioPath, transformedAudio);
+
+    // For preview, just return the audio file URL
+    if (previewOnly === 'true') {
+      const previewFilename = 'vt_preview_' + Date.now() + '_' + req.user.id + '.mp3';
+      const previewPath = path.join(outputDir, previewFilename);
+      fs.copyFileSync(transformedAudioPath, previewPath);
+      // Clean up temp files
+      tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+      return res.json({ previewUrl: '/video-editor/download/' + previewFilename });
+    }
+
+    // Mix transformed audio back into video (replace original audio)
+    const outputFilename = 'voicetransform_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    await runFFmpeg([
+      '-i', videoPath,
+      '-i', transformedAudioPath,
+      '-map', '0:v',
+      '-map', '1:a',
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-shortest',
+      '-y',
+      outputPath
+    ]);
+
+    // Clean up temp files
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Voice transform error:', error);
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
     res.status(500).json({ error: error.message });
   }
 });

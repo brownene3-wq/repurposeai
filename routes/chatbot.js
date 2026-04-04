@@ -199,12 +199,25 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
   - **Brightness, Contrast, Saturation**: Adjust video color settings with sliders (0-200 range, 100 = no change)
   - **Speed Control**: Speed up or slow down your video
   - **Text Overlay**: Add text on top of your video
-  - **Audio Control**: Mute or adjust audio
+  - **Audio Control**: Mute or adjust audio, fade in/out, bass/treble EQ, noise reduction, audio ducking
+  - **AI Voiceover**: Generate AI voiceover using ElevenLabs voices (Rachel, Bella, Antoni, Arnold, Adam, Sam, Gigi, Dorothy). Type a script, choose a voice, preview it, then apply to your video. Supports volume control and original audio ducking.
+  - **Voice Transform (NEW)**: Change the voice in your video to any AI voice. This uses ElevenLabs Speech-to-Speech technology. Two source options: extract audio from the current video, or upload a separate audio file. Pick a target voice, adjust stability and similarity settings, preview the result, then apply. The AI transforms the original voice into the selected voice while keeping the same words, emotion, and pacing. Perfect for faceless YouTube channels, privacy, or creating content with different character voices.
   - **Export**: Export your edited video at 720p, 1080p, or 4K resolution
   - The editor preserves aspect ratio on export — portrait videos stay portrait, landscape stays landscape
   - Exported videos use universal format (yuv420p) compatible with all video players
   - Video seeking/scrubbing is fully supported with range request downloads
   - **Timeline**: Visual timeline strip at the bottom shows colored segment blocks representing different parts of your video. You can see and navigate through segments visually.
+
+### How to Use Voice Transform:
+1. Upload a video in the Video Editor
+2. Click the "Voice Transform" tool button (🔄 icon) in the toolbar
+3. Choose source: "From Video" to transform the video's existing voice, or "Upload Audio" to transform a separate audio file
+4. Select a target voice from the dropdown (8 ElevenLabs voices available)
+5. Adjust Stability (how consistent the voice sounds) and Similarity (how close to the original voice style)
+6. Click "Preview" to hear a sample of the transformed voice
+7. Click "Transform Voice" to apply the change to the full video
+8. The transformed audio replaces the original audio in the video
+9. Requires an ElevenLabs API key — set it in Smart Shorts → Settings or Brand Voice settings
 
 ## AI Thumbnails (Standalone Page)
 - Access from "AI Thumbnails" in the sidebar (🖼️ icon)
@@ -246,9 +259,35 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
 - Access from the Dashboard AI Tools grid
 - Automatically resize any video to different aspect ratios
 - Supported output formats: 9:16 (TikTok/Reels), 1:1 (Instagram Square), 4:5 (Instagram Portrait), 16:9 (YouTube/Landscape)
-- AI-powered smart cropping keeps the subject in frame
-- Perfect for repurposing landscape videos into vertical content
-- One-click reframe — no manual cropping needed
+- Two input methods: YouTube URL or upload a video file
+- TWO crop modes to choose from:
+
+### Center Crop (Default)
+- Takes the center strip of the video
+- Fast processing
+- Works great when the subject is already centered in the frame
+
+### AI Face Tracking (NEW)
+- The AI uses computer vision to detect faces throughout the video
+- Dynamically shifts the crop window frame-by-frame to keep people centered
+- Perfect for interviews, podcasts, and talking-head videos where the speaker isn't always in the center
+- Smoothed tracking prevents jitter — the crop moves naturally
+- Automatically falls back to center crop if no faces are detected
+- Works with multiple faces — averages their positions to keep everyone in frame
+
+### How to Use AI Reframe:
+1. Go to AI Reframe from the Dashboard
+2. Paste a YouTube URL or upload a video file
+3. Choose your crop mode: Center Crop (🎯) or AI Face Tracking (🧠)
+4. Select which aspect ratios you want (you can select multiple)
+5. Click "Reframe Video"
+6. Download each reframed version
+
+### AI Reframe Tips:
+- Use AI Face Tracking for any video where people are talking and might not be perfectly centered
+- Center Crop is faster and works well for videos where the action is already in the middle
+- You can select multiple aspect ratios at once to generate all versions in one go
+- Processing time is longer with Face Tracking because the AI needs to analyze the video first
 
 ## AI Caption Presets
 - Access from the Dashboard AI Tools grid

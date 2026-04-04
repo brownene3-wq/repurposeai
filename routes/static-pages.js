@@ -457,7 +457,9 @@ const helpArticles = [
       <ul>
         <li><strong>Speed</strong> — Speed up or slow down your video (0.25x to 4x)</li>
         <li><strong>Text Overlay</strong> — Add custom text on top of your video</li>
-        <li><strong>Audio</strong> — Mute or adjust audio levels</li>
+        <li><strong>Audio</strong> — Volume, fade in/out, bass/treble EQ, noise reduction, audio ducking</li>
+        <li><strong>AI Voice</strong> — Generate AI voiceover from a script using ElevenLabs voices</li>
+        <li><strong>Voice Transform</strong> — Change the voice in your video to any AI voice using ElevenLabs Speech-to-Speech. Extract audio from the video or upload a separate audio file, pick a target voice, and the AI transforms it while keeping the same words and pacing. Great for faceless YouTube channels.</li>
       </ul>
 
       <h2>Exporting</h2>
@@ -489,13 +491,17 @@ const helpArticles = [
     summary: 'Convert landscape videos to vertical, square, or any aspect ratio with smart AI cropping.',
     content: `
       <h2>How to Reframe</h2>
-      <p>Open <strong>AI Reframe</strong> from the Dashboard. Upload your video, then select your target format: 9:16 (TikTok/Reels), 1:1 (Instagram Square), 4:5 (Instagram Portrait), or 16:9 (YouTube).</p>
+      <p>Open <strong>AI Reframe</strong> from the Dashboard. Paste a YouTube URL or upload a video file. Select your target formats: 9:16 (TikTok/Reels), 1:1 (Instagram Square), 4:5 (Instagram Portrait), or 16:9 (YouTube). You can select multiple at once.</p>
 
-      <h2>Smart Cropping</h2>
-      <p>The AI automatically keeps the subject in frame when converting between aspect ratios — no manual cropping needed. It's perfect for repurposing landscape YouTube videos into vertical TikTok or Reels content.</p>
+      <h2>Crop Modes</h2>
+      <p>Choose between two crop modes:</p>
+      <ul>
+        <li><strong>🎯 Center Crop</strong> — Fast, takes the center strip of the frame. Best when subjects are already centered.</li>
+        <li><strong>🧠 AI Face Tracking</strong> — Uses computer vision to detect faces and dynamically follow them as the video plays. Perfect for interviews, podcasts, and talking-head videos. The crop window smoothly follows the speaker so nobody gets cut off.</li>
+      </ul>
 
       <h2>Output</h2>
-      <p>Download the reframed video as an MP4. Processing time depends on video length.</p>
+      <p>Download each reframed video as an MP4. AI Face Tracking takes longer because it analyzes the video first, but produces much better results for videos with people.</p>
     `
   },
   {
