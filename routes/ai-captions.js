@@ -207,6 +207,7 @@ async function transcribeAudio(audioPath) {
     const transcript = await openai.audio.transcriptions.create({
       model: 'whisper-1',
       file: file,
+      response_format: 'verbose_json',
       timestamp_granularities: ['word']
     });
 
