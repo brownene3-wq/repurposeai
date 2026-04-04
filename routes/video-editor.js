@@ -149,21 +149,34 @@ router.get('/', requireAuth, async (req, res) => {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:12px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:300px}
     .video-preview-area.has-video{background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px}
-    .timeline-strip{margin-top:1rem;background:var(--dark);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:8px;min-height:52px;height:52px;display:flex;align-items:center;position:relative;overflow-x:auto;flex-shrink:0}
-    .timeline-content{display:flex;gap:6px;width:100%;min-width:100%;height:36px}
-    .timeline-segment{flex:0 0 60px;height:36px;border-radius:6px;background:linear-gradient(135deg,#6366F1,#3B82F6);position:relative;cursor:pointer;transition:all 0.2s}
-    .timeline-segment:nth-child(1){background:linear-gradient(135deg,#6C3AED,#EC4899)}
-    .timeline-segment:nth-child(2){background:linear-gradient(135deg,#0EA5E9,#6366F1)}
-    .timeline-segment:nth-child(3){background:linear-gradient(135deg,#F59E0B,#EF4444)}
-    .timeline-segment:nth-child(4){background:linear-gradient(135deg,#10B981,#06B6D4)}
-    .timeline-segment:nth-child(5){background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
-    .timeline-segment:hover{opacity:0.85;transform:scaleY(1.08)}
-    .timeline-segment.selected{outline:2px solid #fff;outline-offset:1px;opacity:1;transform:scaleY(1.1)}
-    .timeline-segment .seg-label{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font-size:.6rem;color:rgba(255,255,255,0.7);font-weight:600;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s}
-    .timeline-segment:hover .seg-label,.timeline-segment.selected .seg-label{opacity:1}
-    .trim-handle{position:absolute;top:0;bottom:0;width:8px;background:rgba(255,255,255,0.3);cursor:ew-resize;border-radius:2px}
-    .trim-handle.left{left:0}
-    .trim-handle.right{right:0}
+.timeline-container{background:#1a1a2e;border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-top:1rem;overflow:hidden;flex-shrink:0;user-select:none}
+    .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
+    .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
+    .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
+    .timeline-tracks{position:relative;padding:6px 0;min-height:90px}
+    .timeline-track{display:flex;align-items:center;height:40px;margin:3px 0;padding:0 8px;position:relative}
+    .timeline-track-label{width:32px;flex-shrink:0;font-size:.6rem;color:var(--text-muted);text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px}
+    .timeline-track-content{flex:1;height:100%;position:relative;border-radius:6px;overflow:hidden;cursor:pointer}
+    .timeline-video-bar{height:100%;background:linear-gradient(180deg,#0d9488,#0f766e);border-radius:6px;display:flex;align-items:center;padding:0 12px;position:relative;overflow:hidden}
+    .timeline-video-bar .track-info{font-size:.72rem;color:rgba(255,255,255,0.9);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2}
+    .timeline-video-bar .track-duration{font-size:.65rem;color:rgba(255,255,255,0.6);margin-left:8px;z-index:2}
+    .timeline-video-bar .thumb-strip{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;opacity:0.3}
+    .timeline-video-bar .thumb-strip img{height:100%;width:auto;object-fit:cover;flex-shrink:0}
+    .timeline-music-bar{height:100%;background:linear-gradient(180deg,#2563eb,#1d4ed8);border-radius:6px;display:flex;align-items:center;padding:0 12px;position:relative;overflow:hidden}
+    .timeline-music-bar .track-info{font-size:.72rem;color:rgba(255,255,255,0.9);font-weight:500;white-space:nowrap;z-index:2}
+    .timeline-music-bar .track-volume{font-size:.65rem;color:rgba(255,255,255,0.6);margin-left:8px;z-index:2}
+    .timeline-music-bar .waveform-bg{position:absolute;top:0;left:0;right:0;bottom:0;opacity:0.25}
+    .timeline-playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;z-index:10;pointer-events:none;transition:left 0.05s linear}
+    .timeline-playhead::before{content:'';position:absolute;top:-4px;left:-5px;width:12px;height:8px;background:#fff;border-radius:2px;clip-path:polygon(0 0,100% 0,50% 100%)}
+    .timeline-trim-handle{position:absolute;top:0;bottom:0;width:16px;background:rgba(255,255,255,0.15);cursor:col-resize;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .2s;border-radius:3px}
+    .timeline-trim-handle:hover,.timeline-trim-handle.dragging{background:rgba(255,255,255,0.35)}
+    .timeline-trim-handle.left{left:0;border-radius:6px 0 0 6px}
+    .timeline-trim-handle.right{right:0;border-radius:0 6px 6px 0}
+    .timeline-trim-handle::after{content:'';width:3px;height:16px;border-left:1px solid rgba(255,255,255,0.5);border-right:1px solid rgba(255,255,255,0.5)}
+    .timeline-trim-overlay{position:absolute;top:0;bottom:0;background:rgba(0,0,0,0.5);pointer-events:none;z-index:3}
+    .timeline-empty{text-align:center;color:var(--text-muted);font-size:.85rem;padding:1.5rem}
+    body.light .timeline-container{background:#f0f0f5;border-color:rgba(108,58,237,0.12)}
+    body.light .timeline-ruler{background:#e8e8f0}
     .tools-section{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap}
     .tool-button{padding:.6rem 1.2rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text);cursor:pointer;font-size:.85rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.4rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .tool-button:hover{background:var(--surface);border-color:var(--primary);color:var(--primary)}
@@ -213,7 +226,6 @@ router.get('/', requireAuth, async (req, res) => {
     @keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}
     .hidden{display:none}
     body.light .video-container{border-color:rgba(108,58,237,0.2);background:rgba(108,58,237,0.02)}
-    body.light .timeline-strip{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .properties-panel,body.light .export-panel,body.light .tool-panel{background:rgba(108,58,237,0.05);border-color:rgba(108,58,237,0.15)}
     body.light .tool-button{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15);color:var(--text)}
     body.light .tool-button:hover{background:rgba(108,58,237,0.15);border-color:var(--primary)}
@@ -223,7 +235,7 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     @media(max-width:1200px){.editor-sidebar{width:280px}}
-    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:1rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-strip{height:48px;min-height:48px}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:1rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
   </style>
 </head>
 <body>
@@ -252,33 +264,11 @@ router.get('/', requireAuth, async (req, res) => {
               <video class="video-player" id="videoPlayer" controls></video>
             </div>
 
-            <div class="timeline-strip">
-              <div class="timeline-content" id="timelineBar">
-                <div class="timeline-segment" data-index="0">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                  <span class="seg-label">Clip 1</span>
-                </div>
-                <div class="timeline-segment" data-index="1">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                  <span class="seg-label">Clip 2</span>
-                </div>
-                <div class="timeline-segment" data-index="2">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                  <span class="seg-label">Clip 3</span>
-                </div>
-                <div class="timeline-segment" data-index="3">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                  <span class="seg-label">Clip 4</span>
-                </div>
-                <div class="timeline-segment" data-index="4">
-                  <div class="trim-handle left"></div>
-                  <div class="trim-handle right"></div>
-                  <span class="seg-label">Clip 5</span>
-                </div>
+            <div class="timeline-container" id="timelineContainer">
+              <div class="timeline-ruler" id="timelineRuler"></div>
+              <div class="timeline-tracks" id="timelineTracks">
+                <div class="timeline-playhead" id="timelinePlayhead" style="left:40px"></div>
+                <div class="timeline-empty" id="timelineEmpty">Upload a video to see the timeline</div>
               </div>
             </div>
 
@@ -693,6 +683,7 @@ router.get('/', requireAuth, async (req, res) => {
     ${getThemeScript()}
 
     let currentVideoFile = null;
+    let originalVideoFile = null; // Always keeps the original upload for speed resets
     let videoDuration = 0;
     let selectedFilter = null;
 
@@ -770,7 +761,9 @@ router.get('/', requireAuth, async (req, res) => {
 
         const data = await response.json();
         currentVideoFile = data;
+        originalVideoFile = { ...data }; // Save original for speed resets
         videoDuration = data.duration || 0;
+        initTimeline();
 
         videoPlayer.src = data.serveUrl;
         uploadZone.classList.add('has-video');
@@ -1132,44 +1125,179 @@ router.get('/', requireAuth, async (req, res) => {
 
 
 
-        // Timeline segment selection
-    var selectedSegment = null;
-    document.querySelectorAll('.timeline-segment').forEach(seg => {
-      seg.addEventListener('click', function(e) {
-        // Skip if clicking a trim handle
-        if (e.target.classList.contains('trim-handle')) return;
+        // === PROFESSIONAL TIMELINE ===
+    var timelineState = {
+      trimStart: 0,
+      trimEnd: 0,
+      isDragging: false,
+      dragType: null, // 'playhead', 'trimLeft', 'trimRight'
+      musicTrack: null
+    };
 
-        // Toggle selection
-        if (selectedSegment === this) {
-          this.classList.remove('selected');
-          selectedSegment = null;
-          showToast('Segment deselected', 'success');
-        } else {
-          document.querySelectorAll('.timeline-segment').forEach(s => s.classList.remove('selected'));
-          this.classList.add('selected');
-          selectedSegment = this;
+    function initTimeline() {
+      if (!videoDuration || videoDuration <= 0) return;
+      timelineState.trimEnd = videoDuration;
 
-          var idx = parseInt(this.dataset.index);
-          if (currentVideoFile && videoDuration > 0) {
-            // Jump video to the corresponding time position
-            var segCount = document.querySelectorAll('.timeline-segment').length;
-            var segDuration = videoDuration / segCount;
-            var seekTime = idx * segDuration;
-            videoPlayer.currentTime = seekTime;
+      var tracksEl = document.getElementById('timelineTracks');
+      var rulerEl = document.getElementById('timelineRuler');
+      var emptyEl = document.getElementById('timelineEmpty');
+      if (emptyEl) emptyEl.style.display = 'none';
 
-            // Update trim start/end to this segment's range
-            var startField = document.getElementById('startTime');
-            var endField = document.getElementById('endTime');
-            if (startField) startField.value = Math.round(seekTime);
-            if (endField) endField.value = Math.round(Math.min(seekTime + segDuration, videoDuration));
+      // Build ruler marks
+      rulerEl.innerHTML = '';
+      var interval = videoDuration <= 30 ? 5 : videoDuration <= 120 ? 10 : 30;
+      for (var t = 0; t <= videoDuration; t += interval) {
+        var pct = (t / videoDuration) * 100;
+        var mark = document.createElement('div');
+        mark.className = 'timeline-ruler-mark';
+        mark.style.left = 'calc(40px + ' + pct + '% * (100% - 48px) / 100%)';
+        mark.style.left = (40 + pct * (tracksEl.offsetWidth - 48) / 100) + 'px';
+        var mins = Math.floor(t / 60);
+        var secs = String(Math.floor(t % 60)).padStart(2, '0');
+        mark.textContent = mins + ':' + secs;
+        rulerEl.appendChild(mark);
+      }
 
-            showToast('Selected Clip ' + (idx + 1) + ' (' + Math.round(seekTime) + 's - ' + Math.round(seekTime + segDuration) + 's)', 'success');
+      // Build video track
+      var existingVideo = document.getElementById('timelineVideoTrack');
+      if (existingVideo) existingVideo.remove();
+
+      var videoTrack = document.createElement('div');
+      videoTrack.className = 'timeline-track';
+      videoTrack.id = 'timelineVideoTrack';
+
+      var fname = currentVideoFile ? currentVideoFile.filename : 'Video';
+      var durMins = Math.floor(videoDuration / 60);
+      var durSecs = String(Math.floor(videoDuration % 60)).padStart(2, '0');
+      var durStr = (durMins > 0 ? durMins + ':' : '0:') + durSecs;
+
+      videoTrack.innerHTML = '<div class="timeline-track-label">🎬</div>' +
+        '<div class="timeline-track-content" id="videoTrackContent">' +
+          '<div class="timeline-trim-overlay" id="trimOverlayLeft" style="left:0;width:0"></div>' +
+          '<div class="timeline-video-bar" id="videoBar">' +
+            '<div class="timeline-trim-handle left" id="trimHandleLeft"><</div>' +
+            '<span class="track-info">' + fname + '</span>' +
+            '<span class="track-duration">' + durStr + '</span>' +
+            '<div class="timeline-trim-handle right" id="trimHandleRight">></div>' +
+          '</div>' +
+          '<div class="timeline-trim-overlay" id="trimOverlayRight" style="right:0;width:0"></div>' +
+        '</div>';
+
+      var playhead = document.getElementById('timelinePlayhead');
+      tracksEl.insertBefore(videoTrack, playhead.nextSibling);
+
+      // Click on track to seek
+      document.getElementById('videoTrackContent').addEventListener('mousedown', function(e) {
+        if (e.target.classList.contains('timeline-trim-handle')) return;
+        var rect = this.getBoundingClientRect();
+        var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        videoPlayer.currentTime = pct * videoDuration;
+      });
+
+      // Trim handle dragging
+      setupTrimHandles();
+
+      // Update playhead on video timeupdate
+      videoPlayer.removeEventListener('timeupdate', updatePlayhead);
+      videoPlayer.addEventListener('timeupdate', updatePlayhead);
+    }
+
+    function updatePlayhead() {
+      if (!videoDuration || videoDuration <= 0) return;
+      var trackContent = document.getElementById('videoTrackContent');
+      if (!trackContent) return;
+      var pct = videoPlayer.currentTime / videoDuration;
+      var playhead = document.getElementById('timelinePlayhead');
+      var trackRect = trackContent.getBoundingClientRect();
+      var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
+      var left = (trackRect.left - containerRect.left) + pct * trackRect.width;
+      playhead.style.left = left + 'px';
+      playhead.style.transition = 'left 0.1s linear';
+    }
+
+    function setupTrimHandles() {
+      var leftHandle = document.getElementById('trimHandleLeft');
+      var rightHandle = document.getElementById('trimHandleRight');
+      var trackContent = document.getElementById('videoTrackContent');
+
+      function startDrag(type, e) {
+        e.preventDefault();
+        e.stopPropagation();
+        timelineState.isDragging = true;
+        timelineState.dragType = type;
+        document.body.style.cursor = 'col-resize';
+
+        function onMove(ev) {
+          var rect = trackContent.getBoundingClientRect();
+          var pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+          var time = pct * videoDuration;
+
+          if (type === 'trimLeft') {
+            timelineState.trimStart = Math.min(time, timelineState.trimEnd - 0.5);
+            document.getElementById('startTime').value = Math.round(timelineState.trimStart);
+            var leftPct = (timelineState.trimStart / videoDuration) * 100;
+            document.getElementById('trimOverlayLeft').style.width = leftPct + '%';
           } else {
-            showToast('Selected Clip ' + (idx + 1) + ' — upload a video to edit this segment', 'success');
+            timelineState.trimEnd = Math.max(time, timelineState.trimStart + 0.5);
+            document.getElementById('endTime').value = Math.round(timelineState.trimEnd);
+            var rightPct = ((videoDuration - timelineState.trimEnd) / videoDuration) * 100;
+            document.getElementById('trimOverlayRight').style.width = rightPct + '%';
           }
         }
-      });
-    });
+
+        function onUp() {
+          timelineState.isDragging = false;
+          document.body.style.cursor = '';
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        }
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      }
+
+      if (leftHandle) leftHandle.addEventListener('mousedown', function(e) { startDrag('trimLeft', e); });
+      if (rightHandle) rightHandle.addEventListener('mousedown', function(e) { startDrag('trimRight', e); });
+    }
+
+    function addMusicToTimeline(musicName, volume) {
+      var existingMusic = document.getElementById('timelineMusicTrack');
+      if (existingMusic) existingMusic.remove();
+
+      var tracksEl = document.getElementById('timelineTracks');
+      var musicTrack = document.createElement('div');
+      musicTrack.className = 'timeline-track';
+      musicTrack.id = 'timelineMusicTrack';
+
+      musicTrack.innerHTML = '<div class="timeline-track-label">🎵</div>' +
+        '<div class="timeline-track-content">' +
+          '<div class="timeline-music-bar">' +
+            '<span class="track-info">' + musicName + '</span>' +
+            '<span class="track-volume">' + (volume || '30') + '%</span>' +
+            '<canvas class="waveform-bg" id="musicWaveformCanvas"></canvas>' +
+          '</div>' +
+        '</div>';
+
+      tracksEl.appendChild(musicTrack);
+      drawFakeWaveform('musicWaveformCanvas');
+      timelineState.musicTrack = musicName;
+    }
+
+    function drawFakeWaveform(canvasId) {
+      var canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      canvas.width = canvas.parentElement.offsetWidth;
+      canvas.height = canvas.parentElement.offsetHeight;
+      ctx.fillStyle = 'rgba(147,197,253,0.5)';
+      var barWidth = 3;
+      var gap = 2;
+      for (var x = 0; x < canvas.width; x += barWidth + gap) {
+        var h = Math.random() * canvas.height * 0.8 + canvas.height * 0.1;
+        var y = (canvas.height - h) / 2;
+        ctx.fillRect(x, y, barWidth, h);
+      }
+    }
 
     // Filter button selection
     document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -1308,7 +1436,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
     });
 
-    // Speed handler
+    // Speed handler — always applies speed relative to the ORIGINAL upload
     document.getElementById('speedButton').addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
@@ -1317,16 +1445,31 @@ router.get('/', requireAuth, async (req, res) => {
 
       const speed = parseFloat(document.getElementById('speedSelect').value);
 
+      // If 1x selected, just revert to original video (no FFmpeg needed)
+      if (speed === 1) {
+        if (originalVideoFile) {
+          currentVideoFile = { ...originalVideoFile };
+          videoPlayer.src = originalVideoFile.serveUrl;
+          videoDuration = originalVideoFile.duration || videoDuration;
+          initTimeline();
+          showToast('Speed reset to normal', 'success');
+        }
+        return;
+      }
+
       const button = document.getElementById('speedButton');
       button.disabled = true;
       button.innerHTML = '<span class="spinner"></span> Processing...';
 
       try {
+        // Always use the original file so speed changes are absolute, not cumulative
+        var sourceFilename = originalVideoFile ? originalVideoFile.filename : currentVideoFile.filename;
+
         const response = await fetch('/video-editor/speed', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            filename: currentVideoFile.filename,
+            filename: sourceFilename,
             speed: speed
           })
         });
@@ -1337,8 +1480,9 @@ router.get('/', requireAuth, async (req, res) => {
         currentVideoFile = data;
         videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
+        initTimeline();
 
-        showToast('Speed adjusted successfully!', 'success');
+        showToast('Speed adjusted to ' + speed + 'x!', 'success');
       } catch (error) {
         showToast('Speed adjustment failed: ' + error.message, 'error');
       } finally {
@@ -1752,6 +1896,7 @@ router.get('/', requireAuth, async (req, res) => {
         videoPlayer.src = data.serveUrl;
         videoDuration = data.duration;
 
+        addMusicToTimeline(selectedMusicFile.name || 'Music', document.getElementById('musicVolume').value);
         showToast('Music added successfully!', 'success');
       } catch (error) {
         showToast('Error: ' + error.message, 'error');
