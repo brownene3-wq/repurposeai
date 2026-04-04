@@ -446,16 +446,11 @@ router.get('/', requireAuth, (req, res) => {
 
     .container {
       display: flex;
-      height: calc(100vh - 80px);
-      gap: 1.5rem;
-      padding: 1.5rem;
-    }
-
-    .main-content {
-      flex: 1;
-      display: flex;
       flex-direction: column;
-      overflow: hidden;
+      height: calc(100vh - 80px);
+      padding: 1.5rem;
+      width: 100%;
+      box-sizing: border-box;
     }
 
     .header {
@@ -887,7 +882,6 @@ router.get('/', requireAuth, (req, res) => {
       ${themeToggle}
 
       <div class="container">
-        <div class="main-content">
           <div class="header">
             <h1>AI Captions</h1>
             <p>Generate beautiful animated captions for your videos</p>
@@ -1032,7 +1026,6 @@ router.get('/', requireAuth, (req, res) => {
               Download Video
             </button>
           </div>
-        </div>
       </div>
     </main>
   </div>
