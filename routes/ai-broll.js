@@ -267,6 +267,157 @@ router.get('/', requireAuth, (req, res) => {
   const html = `${headHTML}
 <style>${css}</style>
 ${pageStyles}
+<style>
+  .video-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .video-modal.active {
+    display: flex;
+  }
+  .video-modal-content {
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 700px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .video-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+  .video-modal-header h3 {
+    color: var(--text);
+    margin: 0;
+  }
+  .video-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .video-modal-close:hover {
+    color: var(--text);
+  }
+  .video-player {
+    width: 100%;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    background: #000;
+  }
+  .video-details {
+    margin-bottom: 1.5rem;
+  }
+  .video-details p {
+    color: var(--text-muted);
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+  }
+  .video-details strong {
+    color: var(--text);
+  }
+  .video-modal-actions {
+    display: flex;
+    gap: 1rem;
+  }
+  .btn-use-clip {
+    flex: 1;
+    background: var(--gradient-1);
+    color: #fff;
+    padding: 0.9rem 2rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .btn-use-clip:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 30px rgba(108, 58, 237, 0.5);
+  }
+  .btn-cancel {
+    flex: 1;
+    background: var(--dark-2);
+    color: var(--text);
+    padding: 0.9rem 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .btn-cancel:hover {
+    border-color: var(--text-muted);
+  }
+  .broll-thumbnail {
+    position: relative;
+    width: 100%;
+    height: 100px;
+    background: linear-gradient(135deg, rgba(108, 58, 237, 0.1), rgba(236, 72, 153, 0.1));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    background-size: cover;
+    background-position: center;
+  }
+  .broll-item.selected {
+    border-color: var(--primary);
+    box-shadow: 0 8px 24px rgba(108, 58, 237, 0.3);
+  }
+  .play-button {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    opacity: 0;
+    transition: all 0.3s;
+  }
+  .broll-item:hover .play-button {
+    opacity: 1;
+  }
+  .duration-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    padding: 0.25rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .api-warning {
+    background: rgba(236, 72, 153, 0.1);
+    border-left: 4px solid rgba(236, 72, 153, 0.5);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+</style>
 </head>
 <body>
   <div class="dashboard">
@@ -340,8 +491,26 @@ ${pageStyles}
 
   <div class="toast" id="toast"></div>
 
+  <!-- Video Preview Modal -->
+  <div class="video-modal" id="videoModal">
+    <div class="video-modal-content">
+      <div class="video-modal-header">
+        <h3 id="modalTitle">Video Preview</h3>
+        <button class="video-modal-close" onclick="closeVideoModal()">&times;</button>
+      </div>
+      <video class="video-player" id="modalVideo" controls></video>
+      <div class="video-details" id="videoDetails"></div>
+      <div class="video-modal-actions">
+        <button class="btn-use-clip" onclick="useSelectedClip()">Use This Clip</button>
+        <button class="btn-cancel" onclick="closeVideoModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentBrollVideo = null;
+    let currentSelectedItem = null;
+    window.brollItemsData = []; // Store full item data for modal access
 
     function showToast(message, duration = 3000) {
       const toast = document.getElementById('toast');
@@ -453,17 +622,28 @@ ${pageStyles}
         const data = await response.json();
 
         if (response.ok && data.brollItems && data.brollItems.length > 0) {
+          // Store items data globally for modal access
+          window.brollItemsData = data.brollItems;
+
           const container = document.getElementById('brollResultsContainer');
-          container.innerHTML = '<h2 style="margin-bottom: 1.5rem; color: var(--text);">Generated B-Roll</h2><div class="broll-grid">' +
-            data.brollItems.map((item, idx) => \`
-              <div class="broll-item" onclick="selectBroll('\${item.id}')">
-                <div class="broll-thumbnail">\${item.icon || '🎬'}</div>
+          let html = '<h2 style="margin-bottom: 1.5rem; color: var(--text);">Generated B-Roll</h2>';
+          if (data.pixabayWarning) {
+            html += '<div class="api-warning">' + data.pixabayWarning + '</div>';
+          }
+          html += '<div class="broll-grid">' +
+            data.brollItems.map((item) => \`
+              <div class="broll-item" id="broll-\${item.id}" onclick="selectBroll('\${item.id}')">
+                <div class="broll-thumbnail" style="background-image: url('\${item.thumbnailUrl}');">
+                  <div class="play-button">▶</div>
+                  <div class="duration-badge">\${item.duration}s</div>
+                </div>
                 <div class="broll-info">
                   <div class="broll-name">\${item.name}</div>
-                  <div>\${item.duration || '5s'}</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">By \${item.artist}</div>
                 </div>
               </div>
             \`).join('') + '</div>';
+          container.innerHTML = html;
           showToast('B-roll generated successfully!');
         } else {
           showToast(data.error || 'Failed to generate B-roll');
@@ -479,7 +659,63 @@ ${pageStyles}
     });
 
     function selectBroll(id) {
-      showToast('B-roll selected: ' + id);
+      // Highlight selected card
+      const items = document.querySelectorAll('.broll-item');
+      items.forEach(item => item.classList.remove('selected'));
+
+      const selectedElement = document.getElementById('broll-' + id);
+      if (selectedElement) {
+        selectedElement.classList.add('selected');
+      }
+
+      // Open video modal for preview
+      openVideoModal(id);
+    }
+
+    function openVideoModal(id) {
+      const modal = document.getElementById('videoModal');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalVideo = document.getElementById('modalVideo');
+      const videoDetails = document.getElementById('videoDetails');
+
+      // Find the item's full data - this will be set from the backend response
+      const itemData = window.brollItemsData && window.brollItemsData.find(item => item.id === id);
+
+      if (!itemData) {
+        showToast('Item data not found');
+        return;
+      }
+
+      currentSelectedItem = itemData;
+
+      modalTitle.textContent = itemData.name;
+      modalVideo.src = itemData.videoPreviewUrl;
+
+      videoDetails.innerHTML = \`
+        <p><strong>Keywords:</strong> \${itemData.keywords.join(', ')}</p>
+        <p><strong>Duration:</strong> \${itemData.duration} seconds</p>
+        <p><strong>Artist:</strong> \${itemData.artist}</p>
+        <p><strong>Source:</strong> Pixabay</p>
+      \`;
+
+      modal.classList.add('active');
+    }
+
+    function closeVideoModal() {
+      const modal = document.getElementById('videoModal');
+      const modalVideo = document.getElementById('modalVideo');
+      modalVideo.pause();
+      modal.classList.remove('active');
+    }
+
+    function useSelectedClip() {
+      if (!currentSelectedItem) {
+        showToast('No clip selected');
+        return;
+      }
+      showToast('Clip selected: ' + currentSelectedItem.name + '. Ready to add to project!');
+      closeVideoModal();
+      // In production, this would trigger the next step of adding to the project
     }
 
     ${themeScript}
@@ -489,6 +725,61 @@ ${pageStyles}
 
   res.send(html);
 });
+
+// Helper function to fetch videos from Pixabay
+async function fetchPixabayVideos(searchTerms) {
+  const apiKey = process.env.PIXABAY_API_KEY;
+  if (!apiKey) {
+    return null; // Will use fallback
+  }
+
+  try {
+    const response = await fetch(
+      `https://pixabay.com/api/videos/?key=${apiKey}&q=${encodeURIComponent(searchTerms)}&per_page=10&safesearch=true`
+    );
+    const data = await response.json();
+    return data.hits || [];
+  } catch (error) {
+    console.error('Pixabay API error:', error);
+    return null;
+  }
+}
+
+// Helper function to generate fallback B-Roll items
+function generateFallbackItems(keywords, count = 5) {
+  return Array.from({ length: Math.min(count, 5) }).map((_, idx) => ({
+    id: `broll-${uuidv4().slice(0, 8)}`,
+    name: `B-Roll Suggestion ${idx + 1}`,
+    keywords: keywords.slice(Math.max(0, idx), Math.min(keywords.length, idx + 2)),
+    duration: 5 + (idx * 2),
+    thumbnailUrl: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='100'%3E%3Crect fill='%236C3AED' width='150' height='100'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='24'%3E%F0%9F%8E%�%3C/text%3E%3C/svg%3E`,
+    videoPreviewUrl: '',
+    videoDownloadUrl: '',
+    artist: 'Pixabay',
+    source: 'generated'
+  }));
+}
+
+// Helper function to convert Pixabay data to our format
+function formatPixabayVideos(pixabayHits) {
+  return pixabayHits.slice(0, 5).map((hit) => {
+    const thumbnailUrl = `https://i.vimeocdn.com/video/${hit.picture_id}_295x166.jpg`;
+    const previewUrl = hit.videos.tiny?.url || hit.videos.small?.url || '';
+    const downloadUrl = hit.videos.medium?.url || hit.videos.small?.url || '';
+
+    return {
+      id: `broll-${hit.id}`,
+      name: hit.tags ? hit.tags.split(',')[0].trim() : 'B-Roll Video',
+      keywords: hit.tags ? hit.tags.split(',').map(t => t.trim()).slice(0, 3) : [],
+      duration: Math.ceil(hit.duration),
+      thumbnailUrl,
+      videoPreviewUrl: previewUrl,
+      videoDownloadUrl: downloadUrl,
+      artist: hit.user || 'Pixabay User',
+      source: 'pixabay'
+    };
+  });
+}
 
 // POST - Generate B-roll
 router.post('/generate', requireAuth, upload.single('video'), async (req, res) => {
@@ -508,37 +799,78 @@ router.post('/generate', requireAuth, upload.single('video'), async (req, res) =
       return res.status(400).json({ error: 'No content provided' });
     }
 
-    const analysisPrompt = `Analyze this video content and identify key moments that need B-roll enhancement: "${contentDescription}"
+    let brollItems = [];
+    let pixabayWarning = null;
+    const pixabayApiKey = process.env.PIXABAY_API_KEY;
+
+    if (mode === 'ai-generated') {
+      // AI Generated mode: use GPT to analyze and suggest keywords, then search Pixabay
+      const analysisPrompt = `Analyze this video content and identify key moments that need B-roll enhancement: "${contentDescription}"
 Generate a JSON array of B-roll suggestions with this structure:
 [{"moment": "description", "keywords": ["keyword1", "keyword2"], "duration": 5}]
 Focus on visual elements that would enhance the content.
 Return ONLY the JSON array.`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [{ role: 'user', content: analysisPrompt }],
-      max_tokens: 500,
-      temperature: 0.7
-    });
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: analysisPrompt }],
+        max_tokens: 500,
+        temperature: 0.7
+      });
 
-    let moments = [];
-    try {
-      moments = JSON.parse(completion.choices[0].message.content);
-    } catch (e) {
-      moments = [{ moment: 'Video enhancement', keywords: [prompt || 'video'], duration: 5 }];
+      let moments = [];
+      try {
+        moments = JSON.parse(completion.choices[0].message.content);
+      } catch (e) {
+        moments = [{ moment: 'Video enhancement', keywords: [prompt || 'video'], duration: 5 }];
+      }
+
+      // For each moment, search Pixabay for videos
+      if (pixabayApiKey) {
+        for (const moment of moments.slice(0, 5)) {
+          const searchTerm = moment.keywords ? moment.keywords.join(' ') : moment.moment;
+          const videos = await fetchPixabayVideos(searchTerm);
+
+          if (videos && videos.length > 0) {
+            const formattedVideos = formatPixabayVideos(videos);
+            brollItems.push(formattedVideos[0]); // Take the top result for each moment
+          } else {
+            // Fallback if no videos found
+            const fallback = generateFallbackItems([searchTerm], 1);
+            brollItems.push(fallback[0]);
+          }
+        }
+      } else {
+        // No Pixabay API key - use fallback with all keywords from GPT
+        const allKeywords = moments.flatMap(m => m.keywords || []);
+        brollItems = generateFallbackItems(allKeywords);
+        pixabayWarning = 'Pixabay API key not configured. Showing placeholder suggestions. Set PIXABAY_API_KEY environment variable to fetch real videos.';
+      }
+    } else if (mode === 'stock') {
+      // Stock mode: use user's search terms directly
+      const searchTerms = prompt || 'stock footage';
+
+      if (pixabayApiKey) {
+        const videos = await fetchPixabayVideos(searchTerms);
+
+        if (videos && videos.length > 0) {
+          brollItems = formatPixabayVideos(videos);
+        } else {
+          brollItems = generateFallbackItems([searchTerms], 5);
+          pixabayWarning = 'No videos found for your search. Showing suggestions instead.';
+        }
+      } else {
+        brollItems = generateFallbackItems([searchTerms], 5);
+        pixabayWarning = 'Pixabay API key not configured. Showing placeholder suggestions. Set PIXABAY_API_KEY environment variable to fetch real videos.';
+      }
     }
 
-    const brollItems = moments.slice(0, 5).map((m, idx) => ({
-      id: `broll-${uuidv4().slice(0, 8)}`,
-      name: m.moment || `B-Roll ${idx + 1}`,
-      keywords: m.keywords || [],
-      duration: m.duration || 5,
-      icon: ['🌿', '🏢', '🌍', '🎨', '⚡'][idx % 5],
-      mode,
-      sourceUrl: mode === 'stock' ? `https://pixabay.com/videos/search/${(m.keywords || []).join('+')}/` : null
-    }));
+    const response = { brollItems };
+    if (pixabayWarning) {
+      response.pixabayWarning = pixabayWarning;
+    }
 
-    res.json({ brollItems });
+    res.json(response);
   } catch (error) {
     console.error('AI B-Roll error:', error);
     res.status(500).json({ error: 'Failed to generate B-roll' });
