@@ -91,6 +91,7 @@ const aiHookRouter = require('./routes/ai-hook');
 const enhanceSpeechRouter = require('./routes/enhance-speech');
 const aiReframeRouter = require('./routes/ai-reframe');
 const videoEditorRouter = require('./routes/video-editor');
+const aiThumbnailRouter = require('./routes/ai-thumbnail');
 const captionPresetsRouter = require('./routes/caption-presets');
 
 // Team permission enforcement middleware
@@ -189,6 +190,7 @@ app.use('/ai-hook', aiHookRouter);
 app.use('/enhance-speech', enhanceSpeechRouter);
 app.use('/ai-reframe', aiReframeRouter);
 app.use('/video-editor', videoEditorRouter);
+app.use('/ai-thumbnail', aiThumbnailRouter);
 app.use('/caption-presets', captionPresetsRouter);
 
 // ========================
