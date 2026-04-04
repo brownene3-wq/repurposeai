@@ -847,7 +847,7 @@ router.get('/', requireAuth, (req, res) => {
     }
 
     .hidden {
-      display: none;
+      display: none !important;
     }
 
     .spinner {
@@ -1196,8 +1196,10 @@ router.get('/', requireAuth, (req, res) => {
 
       const btn = document.getElementById('generateBtn');
       const spinner = document.getElementById('spinner');
+      const originalText = btn.innerHTML;
       btn.disabled = true;
       spinner.classList.remove('hidden');
+      btn.querySelector('span:not(.spinner)') || (btn.childNodes.forEach(function(n) { if (n.nodeType === 3 && n.textContent.trim()) n.textContent = ' Generating...'; }));
 
       updateProgress(20, 'Extracting transcript...');
       try {
@@ -1211,14 +1213,17 @@ router.get('/', requireAuth, (req, res) => {
 
         transcript = data.transcript;
         updateProgress(100, 'Transcript ready!');
-        showToast('Captions generated!', 'success');
+        showToast('Captions generated! Now click Apply & Export.', 'success');
         document.getElementById('exportBtn').disabled = false;
+        document.getElementById('downloadBtn').disabled = false;
       } catch (err) {
-        showToast(err.message, 'error');
+        showToast('Caption generation failed: ' + err.message, 'error');
+        updateProgress(0, '');
       } finally {
         btn.disabled = false;
         spinner.classList.add('hidden');
-        setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1000);
+        btn.innerHTML = originalText;
+        setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1500);
       }
     }
 
@@ -1270,16 +1275,26 @@ router.get('/', requireAuth, (req, res) => {
     // Download video
     async function downloadVideo() {
       if (!generatedVideoPath) {
-        showToast('Please export video first', 'error');
+        showToast('Please apply & export captions first', 'error');
         return;
       }
 
-      const link = document.createElement('a');
-      link.href = generatedVideoPath;
-      link.download = 'captions-video.mp4';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        showToast('Starting download...', 'success');
+        const response = await fetch(generatedVideoPath);
+        if (!response.ok) throw new Error('Download failed');
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'captions-video.mp4';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showToast('Download failed: ' + err.message, 'error');
+      }
     }
 
     // Initialize
