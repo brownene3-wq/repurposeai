@@ -4245,20 +4245,78 @@ router.post('/apply-captions', requireAuth, async (req, res) => {
       '-y', audioPath
     ]);
 
+    // Verify audio file was extracted and has content
+    if (!fs.existsSync(audioPath) || fs.statSync(audioPath).size < 1000) {
+      return res.status(400).json({ error: 'Could not extract audio from video. Make sure the video has an audio track.' });
+    }
+
     // Step 2: Transcribe with OpenAI Whisper
     const OpenAI = require('openai');
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(audioPath),
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularity: 'word'
-    });
+    let transcription;
+    try {
+      transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath),
+        model: 'whisper-1',
+        response_format: 'verbose_json',
+        timestamp_granularity: ['word']  // Must be array per OpenAI SDK v4
+      });
+    } catch (whisperError) {
+      console.error('Whisper API error:', whisperError);
+      return res.status(500).json({ error: 'Speech recognition failed: ' + (whisperError.message || 'Unknown error') });
+    }
 
-    if (!transcription.words || transcription.words.length === 0) {
+    // Extract words — handle different response formats across SDK versions
+    let wordTimestamps = transcription.words || [];
+
+    // If words not at top level, try extracting from segments
+    if (wordTimestamps.length === 0 && transcription.segments && transcription.segments.length > 0) {
+      // Some versions nest words inside segments
+      transcription.segments.forEach(seg => {
+        if (seg.words && Array.isArray(seg.words)) {
+          wordTimestamps = wordTimestamps.concat(seg.words);
+        }
+      });
+    }
+
+    // Last resort: if we have text but no word timestamps, create approximate timestamps from segments
+    if (wordTimestamps.length === 0 && transcription.segments && transcription.segments.length > 0) {
+      transcription.segments.forEach(seg => {
+        const segWords = (seg.text || '').trim().split(/\s+/);
+        const segDur = (seg.end || 0) - (seg.start || 0);
+        const wordDur = segDur / Math.max(1, segWords.length);
+        segWords.forEach((word, idx) => {
+          if (word) {
+            wordTimestamps.push({
+              word: word,
+              start: seg.start + idx * wordDur,
+              end: seg.start + (idx + 1) * wordDur
+            });
+          }
+        });
+      });
+    }
+
+    // Final fallback: if we have text but no segments/words at all, split evenly
+    if (wordTimestamps.length === 0 && transcription.text && transcription.text.trim().length > 0) {
+      const allWords = transcription.text.trim().split(/\s+/);
+      const totalDur = transcription.duration || 30;
+      const wordDur = totalDur / allWords.length;
+      allWords.forEach((word, idx) => {
+        wordTimestamps.push({
+          word: word,
+          start: idx * wordDur,
+          end: (idx + 1) * wordDur
+        });
+      });
+    }
+
+    if (wordTimestamps.length === 0) {
       return res.status(400).json({ error: 'No speech detected in video. Make sure the video has audible speech.' });
     }
+
+    console.log('Captions: extracted ' + wordTimestamps.length + ' words from transcription');
 
     // Step 3: Generate ASS subtitle file
     const assPath = path.join('/tmp', 'captions-' + Date.now() + '.ass');
@@ -4295,7 +4353,7 @@ router.post('/apply-captions', requireAuth, async (req, res) => {
     assContent += '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
 
     // Group words into subtitle lines (3-5 words per line)
-    const words = transcription.words;
+    const words = wordTimestamps;
     const wordsPerLine = 4;
     for (let i = 0; i < words.length; i += wordsPerLine) {
       const chunk = words.slice(i, i + wordsPerLine);
