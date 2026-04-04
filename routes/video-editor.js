@@ -884,68 +884,89 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Initialize music library
     let selectedMusicFile = null;
-    let musicLibrary = getCuratedMusicTracks();
+    let currentPreviewAudio = null;
+    let currentCategory = 'all';
 
-    function getCuratedMusicTracks() {
-      return {
-        all: [
-          { id: 1, name: 'Ambient Breeze', duration: '3:45', category: 'instrumental', url: null },
-          { id: 2, name: 'Upbeat Morning', duration: '2:30', category: 'upbeat', url: null },
-          { id: 3, name: 'Chill Vibes', duration: '4:15', category: 'chill', url: null },
-          { id: 4, name: 'Epic Drama', duration: '3:20', category: 'dramatic', url: null },
-          { id: 5, name: 'Happy Times', duration: '2:50', category: 'happy', url: null },
-          { id: 6, name: 'Sad Melody', duration: '3:40', category: 'sad', url: null }
-        ],
-        instrumental: [
-          { id: 1, name: 'Ambient Breeze', duration: '3:45', category: 'instrumental', url: null },
-          { id: 7, name: 'Piano Serenity', duration: '4:00', category: 'instrumental', url: null }
-        ],
-        upbeat: [
-          { id: 2, name: 'Upbeat Morning', duration: '2:30', category: 'upbeat', url: null },
-          { id: 8, name: 'Energetic Pulse', duration: '3:10', category: 'upbeat', url: null }
-        ],
-        chill: [
-          { id: 3, name: 'Chill Vibes', duration: '4:15', category: 'chill', url: null },
-          { id: 9, name: 'Relaxing Background', duration: '3:50', category: 'chill', url: null }
-        ],
-        dramatic: [
-          { id: 4, name: 'Epic Drama', duration: '3:20', category: 'dramatic', url: null },
-          { id: 10, name: 'Cinematic Thunder', duration: '3:45', category: 'dramatic', url: null }
-        ],
-        happy: [
-          { id: 5, name: 'Happy Times', duration: '2:50', category: 'happy', url: null },
-          { id: 11, name: 'Joyful Celebration', duration: '3:15', category: 'happy', url: null }
-        ],
-        sad: [
-          { id: 6, name: 'Sad Melody', duration: '3:40', category: 'sad', url: null },
-          { id: 12, name: 'Melancholic Strings', duration: '4:20', category: 'sad', url: null }
-        ]
-      };
-    }
-
-    function loadMusicLibrary(category = 'all') {
-      const tracks = musicLibrary[category] || musicLibrary.all;
+    async function loadMusicLibrary(category = 'all', searchQuery = '') {
+      currentCategory = category;
       const listContainer = document.getElementById('musicList');
-      listContainer.innerHTML = tracks.map(track => \`
-        <div style="display:flex;align-items:center;gap:.5rem;padding:.6rem;background:var(--dark);border-radius:6px;margin-bottom:.4rem;border:1px solid rgba(255,255,255,0.1);cursor:pointer" data-track-id="\${track.id}" onclick="selectMusicTrack(this, '\${track.name}', '\${track.id}')">
-          <div style="flex:1">
-            <div style="font-size:.85rem;color:var(--text);font-weight:500">\${track.name}</div>
-            <div style="font-size:.75rem;color:var(--text-muted)">\${track.duration}</div>
-          </div>
-          <button style="padding:.4rem .8rem;background:rgba(108,58,237,0.2);border:1px solid var(--primary);color:var(--primary);border-radius:4px;font-size:.7rem;cursor:pointer" onclick="event.stopPropagation();previewMusicTrack('\${track.id}')">🔊 Preview</button>
-        </div>
-      \`).join('');
+      listContainer.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:.85rem;padding:1rem"><span class="spinner" style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.2);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin-right:.5rem;vertical-align:middle"></span>Loading music...</div>';
+
+      try {
+        let url = '/video-editor/search-music?category=' + encodeURIComponent(category);
+        if (searchQuery) url += '&q=' + encodeURIComponent(searchQuery);
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!data.tracks || data.tracks.length === 0) {
+          listContainer.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:.85rem;padding:1rem">No tracks found. Try a different search or category.</div>';
+          return;
+        }
+
+        listContainer.innerHTML = data.tracks.map(track => {
+          const hasPreview = track.previewUrl || track.downloadUrl;
+          const previewBtn = hasPreview
+            ? '<button style="padding:.4rem .8rem;background:rgba(108,58,237,0.2);border:1px solid var(--primary);color:var(--primary);border-radius:4px;font-size:.7rem;cursor:pointer;white-space:nowrap" onclick="event.stopPropagation();previewMusicTrack(this, \\'' + (track.previewUrl || track.downloadUrl || '').replace(/'/g, "\\\\'") + '\\')">\\u{1F50A} Preview</button>'
+            : '<span style="font-size:.7rem;color:var(--text-muted)">Upload only</span>';
+          const artistInfo = track.artist ? '<span style="margin-left:.5rem;font-size:.7rem;color:var(--text-muted)">by ' + track.artist + '</span>' : '';
+          return '<div style="display:flex;align-items:center;gap:.5rem;padding:.6rem;background:var(--dark);border-radius:6px;margin-bottom:.4rem;border:1px solid rgba(255,255,255,0.1);cursor:pointer" data-track-id="' + track.id + '" onclick="selectMusicTrack(this, \\'' + track.name.replace(/'/g, "\\\\'") + '\\', \\'' + track.id + '\\', \\'' + (track.downloadUrl || track.previewUrl || '').replace(/'/g, "\\\\'") + '\\')">' +
+            '<div style="flex:1">' +
+              '<div style="font-size:.85rem;color:var(--text);font-weight:500">' + track.name + artistInfo + '</div>' +
+              '<div style="font-size:.75rem;color:var(--text-muted)">' + track.duration + '</div>' +
+            '</div>' +
+            previewBtn +
+          '</div>';
+        }).join('');
+
+        if (data.source === 'fallback') {
+          listContainer.innerHTML += '<div style="text-align:center;color:var(--text-muted);font-size:.75rem;padding:.5rem;margin-top:.5rem;border-top:1px solid rgba(255,255,255,0.05)">Upload your own music or set PIXABAY_API_KEY for full library</div>';
+        }
+      } catch (error) {
+        listContainer.innerHTML = '<div style="text-align:center;color:#ef4444;font-size:.85rem;padding:1rem">Failed to load music. Try uploading your own.</div>';
+      }
     }
 
-    window.selectMusicTrack = function(element, trackName, trackId) {
-      document.querySelectorAll('[data-track-id]').forEach(el => el.style.borderColor = 'rgba(255,255,255,0.1)');
+    window.selectMusicTrack = function(element, trackName, trackId, downloadUrl) {
+      document.querySelectorAll('[data-track-id]').forEach(function(el) { el.style.borderColor = 'rgba(255,255,255,0.1)'; });
       element.style.borderColor = 'var(--primary)';
-      selectedMusicFile = { id: trackId, name: trackName };
+      selectedMusicFile = { id: trackId, name: trackName, downloadUrl: downloadUrl || null };
+      document.getElementById('addMusicButton').disabled = false;
       showToast('Selected: ' + trackName, 'success');
     };
 
-    window.previewMusicTrack = function(trackId) {
-      showToast('Preview: Track ' + trackId + ' (feature coming soon)', 'success');
+    window.previewMusicTrack = function(btnElement, previewUrl) {
+      if (!previewUrl) {
+        showToast('No preview available for this track', 'error');
+        return;
+      }
+
+      // Stop any currently playing preview
+      if (currentPreviewAudio) {
+        currentPreviewAudio.pause();
+        currentPreviewAudio = null;
+        // Reset all preview buttons
+        document.querySelectorAll('[data-track-id] button').forEach(function(b) {
+          if (b.textContent.includes('Stop')) b.innerHTML = '\\u{1F50A} Preview';
+        });
+      }
+
+      if (btnElement.textContent.includes('Stop')) {
+        btnElement.innerHTML = '\\u{1F50A} Preview';
+        return;
+      }
+
+      currentPreviewAudio = new Audio(previewUrl);
+      currentPreviewAudio.volume = 0.5;
+      currentPreviewAudio.play().catch(function() {
+        showToast('Could not play preview', 'error');
+      });
+      btnElement.innerHTML = '\\u{23F9} Stop';
+
+      currentPreviewAudio.addEventListener('ended', function() {
+        btnElement.innerHTML = '\\u{1F50A} Preview';
+        currentPreviewAudio = null;
+      });
     };
 
     // Custom music file upload
@@ -953,8 +974,19 @@ router.get('/', requireAuth, async (req, res) => {
       const file = e.target.files[0];
       if (file) {
         selectedMusicFile = { name: file.name, file: file };
+        document.getElementById('addMusicButton').disabled = false;
         showToast('Selected: ' + file.name, 'success');
       }
+    });
+
+    // Music search with debounce
+    let musicSearchTimeout = null;
+    document.getElementById('musicSearch').addEventListener('input', function() {
+      const query = this.value.trim();
+      clearTimeout(musicSearchTimeout);
+      musicSearchTimeout = setTimeout(function() {
+        loadMusicLibrary(currentCategory, query);
+      }, 500);
     });
 
     // Load default music library on page load
@@ -1687,6 +1719,9 @@ router.get('/', requireAuth, async (req, res) => {
           formData.append('musicFile', selectedMusicFile.file);
         } else {
           formData.append('musicTrackId', selectedMusicFile.id);
+          if (selectedMusicFile.downloadUrl) {
+            formData.append('musicTrackUrl', selectedMusicFile.downloadUrl);
+          }
         }
 
         const response = await fetch('/video-editor/add-music', {
@@ -2696,6 +2731,81 @@ router.post('/voice-transform', requireAuth, vtUpload.single('audioFile'), async
   }
 });
 
+// GET: Search Pixabay music library
+router.get('/search-music', requireAuth, async (req, res) => {
+  try {
+    const { q, category } = req.query;
+    const apiKey = process.env.PIXABAY_API_KEY;
+
+    if (!apiKey) {
+      // Return curated fallback tracks when no API key
+      const fallbackTracks = {
+        all: [
+          { id: 'f1', name: 'Ambient Breeze', duration: '3:45', category: 'instrumental', previewUrl: null, downloadUrl: null },
+          { id: 'f2', name: 'Upbeat Morning', duration: '2:30', category: 'upbeat', previewUrl: null, downloadUrl: null },
+          { id: 'f3', name: 'Chill Vibes', duration: '4:15', category: 'chill', previewUrl: null, downloadUrl: null },
+          { id: 'f4', name: 'Epic Drama', duration: '3:20', category: 'dramatic', previewUrl: null, downloadUrl: null },
+          { id: 'f5', name: 'Happy Times', duration: '2:50', category: 'happy', previewUrl: null, downloadUrl: null },
+          { id: 'f6', name: 'Sad Melody', duration: '3:40', category: 'sad', previewUrl: null, downloadUrl: null }
+        ]
+      };
+      const cat = category || 'all';
+      const tracks = cat === 'all' ? fallbackTracks.all : fallbackTracks.all.filter(t => t.category === cat);
+      return res.json({ tracks, source: 'fallback', message: 'Set PIXABAY_API_KEY for real music library' });
+    }
+
+    // Build Pixabay Music API URL
+    const searchQuery = q || (category && category !== 'all' ? category : 'background music');
+    const categoryMap = {
+      'instrumental': 'backgrounds',
+      'upbeat': 'beats',
+      'chill': 'backgrounds',
+      'dramatic': 'film',
+      'happy': 'beats',
+      'sad': 'solo'
+    };
+    const pixCategory = categoryMap[category] || '';
+
+    let url = `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(searchQuery)}&media_type=music&per_page=20&safesearch=true`;
+    if (pixCategory) url += `&category=${pixCategory}`;
+
+    const https = require('https');
+    const data = await new Promise((resolve, reject) => {
+      https.get(url, (response) => {
+        let body = '';
+        response.on('data', chunk => body += chunk);
+        response.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch(e) { reject(e); }
+        });
+      }).on('error', reject);
+    });
+
+    if (!data.hits || data.hits.length === 0) {
+      return res.json({ tracks: [], source: 'pixabay' });
+    }
+
+    const tracks = data.hits.map(hit => {
+      const mins = Math.floor(hit.duration / 60);
+      const secs = String(hit.duration % 60).padStart(2, '0');
+      return {
+        id: 'px_' + hit.id,
+        name: hit.tags ? hit.tags.split(',')[0].trim() : 'Untitled',
+        duration: mins + ':' + secs,
+        category: category || 'all',
+        previewUrl: hit.previewURL || null,
+        downloadUrl: hit.audio || hit.previewURL || null,
+        artist: hit.user || 'Unknown',
+        pixabayUrl: hit.pageURL
+      };
+    });
+
+    res.json({ tracks, source: 'pixabay' });
+  } catch (error) {
+    console.error('Search music error:', error);
+    res.status(500).json({ error: 'Failed to search music' });
+  }
+});
+
 // POST: Add music to video
 router.post('/add-music', requireAuth, upload.single('musicFile'), async (req, res) => {
   const tempFiles = [];
@@ -2722,9 +2832,31 @@ router.post('/add-music', requireAuth, upload.single('musicFile'), async (req, r
       musicPath = req.file.path;
       tempFiles.push(musicPath);
     } else if (musicTrackId) {
-      // For now, return a message about track selection
-      // In production, this would fetch from Pixabay API
-      return res.status(400).json({ error: 'Music track download not yet implemented. Please use custom upload.' });
+      // Download music from Pixabay URL passed as musicTrackUrl
+      const musicTrackUrl = req.body.musicTrackUrl;
+      if (!musicTrackUrl) {
+        return res.status(400).json({ error: 'Music track URL required' });
+      }
+      const https = require('https');
+      const http = require('http');
+      const tempMusicPath = path.join(uploadDir, 'pixabay_' + Date.now() + '.mp3');
+      tempFiles.push(tempMusicPath);
+      await new Promise((resolve, reject) => {
+        const proto = musicTrackUrl.startsWith('https') ? https : http;
+        const file = fs.createWriteStream(tempMusicPath);
+        proto.get(musicTrackUrl, (response) => {
+          if (response.statusCode === 301 || response.statusCode === 302) {
+            proto.get(response.headers.location, (r2) => {
+              r2.pipe(file);
+              file.on('finish', () => { file.close(); resolve(); });
+            }).on('error', reject);
+          } else {
+            response.pipe(file);
+            file.on('finish', () => { file.close(); resolve(); });
+          }
+        }).on('error', reject);
+      });
+      musicPath = tempMusicPath;
     } else {
       return res.status(400).json({ error: 'Music file required' });
     }
