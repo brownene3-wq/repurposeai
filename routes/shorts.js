@@ -4678,6 +4678,23 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
     body.light .modal-header-btn:hover {
       background: rgba(108,58,237,0.12);
     }
+    body.light .modal-header-btn.export {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    body.light .modal-header-btn.export:hover {
+      background: var(--primary-light);
+      color: #fff;
+    }
+    body.light .clip-tool-btn.primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    body.light .clip-tool-btn.accent {
+      background: linear-gradient(135deg, #FF0050 0%, #FF4500 100%);
+      color: #fff;
+    }
 
     .modal-close {
       position: fixed;
