@@ -847,6 +847,15 @@ router.get('/', requireAuth, async (req, res) => {
         slider.addEventListener('input', function() {
           document.getElementById('vtSimilarityValue').textContent = this.value + '%';
         });
+      } else if (slider.id === 'brightness' || slider.id === 'contrast' || slider.id === 'saturation') {
+        slider.addEventListener('input', function() {
+          const valueSpan = this.parentElement.querySelector('.slider-value');
+          if (valueSpan) {
+            valueSpan.textContent = this.value + '%';
+          }
+          // Apply real-time CSS filter preview on the video
+          applyVideoFilterPreview();
+        });
       } else {
         slider.addEventListener('input', function() {
           const valueSpan = this.parentElement.querySelector('.slider-value');
@@ -856,6 +865,13 @@ router.get('/', requireAuth, async (req, res) => {
         });
       }
     });
+
+    function applyVideoFilterPreview() {
+      var b = parseInt(document.getElementById('brightness').value) || 100;
+      var c = parseInt(document.getElementById('contrast').value) || 100;
+      var s = parseInt(document.getElementById('saturation').value) || 100;
+      videoPlayer.style.filter = 'brightness(' + (b / 100) + ') contrast(' + (c / 100) + ') saturate(' + (s / 100) + ')';
+    }
 
     // Tool panel switching
     document.querySelectorAll('.tool-button').forEach(btn => {
