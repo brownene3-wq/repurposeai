@@ -396,89 +396,107 @@ function applyCleanMinimal(inputFrame, outputPath) {
   });
 }
 
-// Extract key frames from video
+// Extract key frames from video using evenly-spaced snapshots
 function extractKeyFrames(videoPath, maxFrames = 12) {
   return new Promise((resolve, reject) => {
-    const frames = [];
     const jobId = uuidv4();
-    const framePattern = path.join(outputDir, `frame-${jobId}-%03d.png`);
 
     // Get video duration first
-    const ffprobePath = ffmpegPath === 'ffmpeg' ? 'ffprobe' : ffmpegPath.replace('ffmpeg', 'ffprobe');
+    const ffprobePath = ffmpegPath === 'ffmpeg' ? 'ffprobe' : ffmpegPath.replace(/ffmpeg([^/]*)$/, 'ffprobe$1');
     const getInfoProc = spawn(ffprobePath, [
       '-v', 'error',
       '-select_streams', 'v:0',
-      '-show_entries', 'stream=duration',
-      '-of', 'default=noprint_wrappers=1:nokey=1:noprint_wrappers=1',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
       videoPath
     ]);
 
     let durationOutput = '';
-    getInfoProc.stdout.on('data', (data) => {
-      durationOutput += data.toString();
-    });
+    let probeError = '';
+    getInfoProc.stdout.on('data', (data) => { durationOutput += data.toString(); });
+    getInfoProc.stderr.on('data', (data) => { probeError += data.toString(); });
 
-    getInfoProc.on('close', (code) => {
-      if (code !== 0) {
-        return reject(new Error('Failed to get video duration'));
+    getInfoProc.on('close', async (code) => {
+      let duration = parseFloat(durationOutput.trim());
+
+      // If ffprobe failed or returned bad duration, try a different approach
+      if (!duration || duration <= 0 || isNaN(duration)) {
+        // Fallback: try format duration
+        try {
+          const probe2 = spawn(ffprobePath, ['-v', 'error', '-show_format', '-of', 'json', videoPath]);
+          let jsonOut = '';
+          probe2.stdout.on('data', (d) => { jsonOut += d.toString(); });
+          await new Promise((res2) => probe2.on('close', res2));
+          const info = JSON.parse(jsonOut);
+          duration = parseFloat(info.format?.duration || 0);
+        } catch (e) {}
       }
 
-      const duration = parseFloat(durationOutput.trim());
       if (!duration || duration <= 0) {
-        return reject(new Error('Invalid video duration'));
+        // Last resort: assume 60 seconds and try anyway
+        duration = 60;
       }
 
-      // Extract frames: scene detection + evenly spaced
-      const sceneThreshold = 0.3;
-      const frameInterval = Math.max(5, Math.floor(duration / maxFrames));
+      // Extract evenly-spaced frames using -ss seeking (most reliable method)
+      const frameCount = Math.min(maxFrames, Math.max(3, Math.floor(duration / 5)));
+      const interval = duration / (frameCount + 1);
+      const frames = [];
+      let completed = 0;
 
-      const args = [
-        '-i', videoPath,
-        '-vf', `select='gt(scene\\,${sceneThreshold})+isnan(prev_selected_t)\\+gte(t-prev_selected_t\\,${frameInterval})',scale=320:180`,
-        '-vsync', 'vfr',
-        '-frame_pts', '1',
-        framePattern
-      ];
+      const extractSingleFrame = (index, timestamp) => {
+        return new Promise((res2, rej2) => {
+          const frameName = `frame-${jobId}-${String(index + 1).padStart(3, '0')}.jpg`;
+          const framePath = path.join(outputDir, frameName);
 
-      const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
-      let errorOutput = '';
+          const args = [
+            '-ss', String(Math.floor(timestamp)),
+            '-i', videoPath,
+            '-vframes', '1',
+            '-q:v', '2',
+            '-y',
+            framePath
+          ];
 
-      ffmpeg.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
+          const proc = spawn(ffmpegPath || 'ffmpeg', args);
+          let err = '';
+          proc.stderr.on('data', (d) => { err += d.toString(); });
 
-      ffmpeg.on('close', (code) => {
-        if (code === 0) {
-          // Collect all extracted frames
-          let frameIndex = 1;
-          while (true) {
-            const frameName = `frame-${jobId}-${String(frameIndex).padStart(3, '0')}.png`;
-            const framePath = path.join(outputDir, frameName);
-            if (fs.existsSync(framePath)) {
-              frames.push({
-                filename: frameName,
-                path: framePath
-              });
-              frameIndex++;
-            } else {
-              break;
+          proc.on('close', (c) => {
+            if (c === 0 && fs.existsSync(framePath)) {
+              const stat = fs.statSync(framePath);
+              if (stat.size > 500) {
+                frames.push({ filename: frameName, path: framePath, timestamp: Math.floor(timestamp) });
+              }
             }
-          }
+            res2();
+          });
+          proc.on('error', () => res2());
+        });
+      };
 
-          if (frames.length === 0) {
-            return reject(new Error('No frames extracted from video'));
-          }
-
-          resolve(frames);
-        } else {
-          reject(new Error(`FFmpeg extraction failed: ${errorOutput.slice(-200)}`));
+      // Extract frames sequentially (avoids overwhelming FFmpeg)
+      for (let i = 0; i < frameCount; i++) {
+        const timestamp = interval * (i + 1);
+        if (timestamp < duration) {
+          await extractSingleFrame(i, timestamp);
         }
-      });
+      }
 
-      ffmpeg.on('error', reject);
+      if (frames.length === 0) {
+        // Try one more time at the 1-second mark
+        await extractSingleFrame(0, 1);
+      }
+
+      if (frames.length === 0) {
+        return reject(new Error('No frames could be extracted. The video file may be corrupted or in an unsupported format.'));
+      }
+
+      resolve(frames);
     });
 
-    getInfoProc.on('error', reject);
+    getInfoProc.on('error', (err) => {
+      reject(new Error('ffprobe not available: ' + err.message));
+    });
   });
 }
 
