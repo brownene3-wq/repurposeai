@@ -286,7 +286,7 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-button" data-tool="audio">🔊 Audio</button>
               <button class="tool-button" data-tool="music">🎵 Music</button>
               <button class="tool-button" data-tool="enhance">✨ AI Enhance</button>
-              <button class="tool-button" data-tool="captions" onclick="window.location.href='/ai-captions'" style="cursor:pointer">📝 AI Captions</button>
+              <button class="tool-button" data-tool="captions">💬 AI Captions</button>
               <button class="tool-button" data-tool="voiceover">🎙️ AI Voice</button>
               <button class="tool-button" data-tool="voicetransform">🔄 Voice Transform</button>
               <button class="tool-button" data-tool="text">📝 Text Overlay</button>
@@ -653,6 +653,60 @@ router.get('/', requireAuth, async (req, res) => {
                 <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem;text-align:center">Processing audio...</div>
               </div>
             </div>
+          </div>
+
+          <div class="tool-panel" id="captionsPanel">
+            <div class="panel-title">💬 AI Captions</div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.8rem">Generate animated captions from your video's audio</p>
+
+            <div style="margin-bottom:.8rem">
+              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem">Caption Style</label>
+              <div id="captionStyleGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:.4rem;max-height:220px;overflow-y:auto">
+                <div class="caption-style-option selected" data-caption-style="karaoke" onclick="selectCaptionStyle(this,'karaoke')" style="padding:.6rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
+                  <div style="font-weight:700;font-size:.9rem;color:#6C3AED">HELLO</div>
+                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Karaoke</div>
+                </div>
+                <div class="caption-style-option" data-caption-style="bold-pop" onclick="selectCaptionStyle(this,'bold-pop')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
+                  <div style="font-weight:800;font-size:1rem;color:#EC4899">BOLD</div>
+                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Bold Pop</div>
+                </div>
+                <div class="caption-style-option" data-caption-style="minimal" onclick="selectCaptionStyle(this,'minimal')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
+                  <div style="font-weight:400;font-size:.85rem;color:#fff">hello</div>
+                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Minimal</div>
+                </div>
+                <div class="caption-style-option" data-caption-style="neon-glow" onclick="selectCaptionStyle(this,'neon-glow')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
+                  <div style="font-weight:700;font-size:.9rem;color:#00FF41;text-shadow:0 0 8px #00FF41">NEON</div>
+                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Neon Glow</div>
+                </div>
+                <div class="caption-style-option" data-caption-style="mrbeast" onclick="selectCaptionStyle(this,'mrbeast')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
+                  <div style="font-weight:900;font-size:1rem;color:#FFD700;text-shadow:2px 2px 0 #000">WOW</div>
+                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">MrBeast</div>
+                </div>
+                <div class="caption-style-option" data-caption-style="hormozi" onclick="selectCaptionStyle(this,'hormozi')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
+                  <div style="font-weight:700;font-size:.9rem;color:#fff"><span style="background:#ef4444;padding:0 4px;border-radius:2px">KEY</span> word</div>
+                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Hormozi</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom:.8rem">
+              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem">Position</label>
+              <div style="display:flex;gap:.4rem">
+                <button class="filter-btn" id="capPosTop" onclick="setCaptionPosition('top',this)" style="flex:1;font-size:.75rem">Top</button>
+                <button class="filter-btn selected" id="capPosBottom" onclick="setCaptionPosition('bottom',this)" style="flex:1;font-size:.75rem">Bottom</button>
+                <button class="filter-btn" id="capPosCenter" onclick="setCaptionPosition('center',this)" style="flex:1;font-size:.75rem">Center</button>
+              </div>
+            </div>
+
+            <div id="captionProgress" style="display:none;margin-bottom:.8rem">
+              <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden">
+                <div id="captionProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
+              </div>
+              <div id="captionProgressText" style="font-size:.7rem;color:var(--text-muted);margin-top:.3rem;text-align:center">Extracting speech...</div>
+            </div>
+
+            <button class="tool-action-button" id="applyCaptionsBtn" disabled>💬 Generate & Apply Captions</button>
+            <p style="font-size:.7rem;color:var(--text-muted);margin-top:.5rem;text-align:center">Uses OpenAI Whisper to extract speech and burn animated captions</p>
           </div>
 
           <div class="export-panel">
@@ -1129,6 +1183,80 @@ router.get('/', requireAuth, async (req, res) => {
       }
     });
 
+    // === AI Captions inline panel ===
+    var selectedCaptionStyle = 'karaoke';
+    var captionPosition = 'bottom';
+
+    window.selectCaptionStyle = function(el, style) {
+      document.querySelectorAll('.caption-style-option').forEach(function(opt) {
+        opt.style.borderColor = 'rgba(255,255,255,0.1)';
+      });
+      el.style.borderColor = 'var(--primary)';
+      selectedCaptionStyle = style;
+    };
+
+    window.setCaptionPosition = function(pos, el) {
+      document.querySelectorAll('#captionsPanel .filter-btn').forEach(function(b) { b.classList.remove('selected'); });
+      el.classList.add('selected');
+      captionPosition = pos;
+    };
+
+    document.getElementById('applyCaptionsBtn').addEventListener('click', async function() {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      var btn = this;
+      var progressDiv = document.getElementById('captionProgress');
+      var progressBar = document.getElementById('captionProgressBar');
+      var progressText = document.getElementById('captionProgressText');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Processing...';
+      progressDiv.style.display = 'block';
+      progressBar.style.width = '10%';
+      progressText.textContent = 'Extracting speech with Whisper AI...';
+
+      try {
+        // Step 1: Extract transcript
+        setTimeout(function() { progressBar.style.width = '30%'; }, 1000);
+        setTimeout(function() { progressBar.style.width = '50%'; progressText.textContent = 'Generating captions...'; }, 3000);
+        setTimeout(function() { progressBar.style.width = '70%'; progressText.textContent = 'Burning captions into video...'; }, 6000);
+
+        var response = await fetch('/video-editor/apply-captions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoFilename: currentVideoFile.filename,
+            style: selectedCaptionStyle,
+            position: captionPosition
+          })
+        });
+
+        if (!response.ok) {
+          var errData = await response.json().catch(function() { return {}; });
+          throw new Error(errData.error || 'Caption generation failed');
+        }
+
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Done!';
+
+        var data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+        initTimeline();
+
+        showToast('Captions applied successfully!', 'success');
+      } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '💬 Generate & Apply Captions';
+        setTimeout(function() { progressDiv.style.display = 'none'; progressBar.style.width = '0%'; }, 2000);
+      }
+    });
 
 
         // === PROFESSIONAL TIMELINE ===
@@ -1205,7 +1333,7 @@ router.get('/', requireAuth, async (req, res) => {
       audioTrack.className = 'timeline-track';
       audioTrack.id = 'timelineAudioTrack';
       audioTrack.innerHTML = '<div class="timeline-track-label">' +
-        '<span style="font-size:1rem">🔊</span>' +
+        '<span style="font-size:0.65rem;opacity:0.7;text-transform:uppercase;letter-spacing:0.5px">Audio</span>' +
         '</div>' +
         '<div class="timeline-track-content">' +
           '<div class="timeline-audio-bar" id="audioBar">' +
@@ -1273,42 +1401,88 @@ router.get('/', requireAuth, async (req, res) => {
       var canvas = document.getElementById(canvasId);
       if (!canvas) return;
       var container = canvas.parentElement;
-      canvas.width = container.offsetWidth;
-      canvas.height = container.offsetHeight;
+      canvas.width = container.offsetWidth * (window.devicePixelRatio || 1);
+      canvas.height = container.offsetHeight * (window.devicePixelRatio || 1);
+      canvas.style.width = container.offsetWidth + 'px';
+      canvas.style.height = container.offsetHeight + 'px';
       var ctx = canvas.getContext('2d');
-      var w = canvas.width;
-      var h = canvas.height;
-      var barW = Math.max(1, (w / peaks.length) - 1);
-      var gap = 1;
+      var dpr = window.devicePixelRatio || 1;
+      ctx.scale(dpr, dpr);
+      var w = container.offsetWidth;
+      var h = container.offsetHeight;
+      var barW = Math.max(1.5, (w / peaks.length) - 0.5);
+      var gap = 0.5;
 
-      // Gradient for waveform bars
-      var grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, 'rgba(56,189,248,0.8)');
-      grad.addColorStop(0.5, 'rgba(59,130,246,0.9)');
-      grad.addColorStop(1, 'rgba(56,189,248,0.8)');
-      ctx.fillStyle = grad;
+      ctx.clearRect(0, 0, w, h);
 
       for (var i = 0; i < peaks.length; i++) {
-        var peakH = Math.max(2, peaks[i] * h * 0.85);
+        var val = peaks[i];
+        var peakH = Math.max(1, val * h * 0.9);
         var x = i * (barW + gap);
         var y = (h - peakH) / 2;
-        ctx.fillRect(x, y, barW, peakH);
+
+        // Color based on audio level: silence=dim, speech=blue, loud/music=bright cyan
+        if (val < 0.05) {
+          ctx.fillStyle = 'rgba(100,116,139,0.3)'; // Silence — dim gray
+        } else if (val < 0.35) {
+          // Low-moderate: speech range — blue gradient
+          var t = (val - 0.05) / 0.3;
+          var r = Math.round(59 + t * 10);
+          var g = Math.round(130 + t * 40);
+          var b = Math.round(200 + t * 46);
+          ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.85)';
+        } else {
+          // Loud: music/emphasis — bright cyan-blue
+          var t2 = Math.min(1, (val - 0.35) / 0.65);
+          var r2 = Math.round(56 - t2 * 20);
+          var g2 = Math.round(189 + t2 * 30);
+          var b2 = Math.round(248);
+          ctx.fillStyle = 'rgba(' + r2 + ',' + g2 + ',' + b2 + ',0.95)';
+        }
+
+        // Rounded bars for premium look
+        var radius = Math.min(barW / 2, 1.5);
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + barW - radius, y);
+        ctx.quadraticCurveTo(x + barW, y, x + barW, y + radius);
+        ctx.lineTo(x + barW, y + peakH - radius);
+        ctx.quadraticCurveTo(x + barW, y + peakH, x + barW - radius, y + peakH);
+        ctx.lineTo(x + radius, y + peakH);
+        ctx.quadraticCurveTo(x, y + peakH, x, y + peakH - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+        ctx.fill();
       }
+
+      // Draw center line for visual reference (very subtle)
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
     }
 
     // Smooth playhead using requestAnimationFrame (no stutter)
     var playheadRAF = null;
+    var playheadDragging = false;
+
     function startPlayheadLoop() {
       function tick() {
         if (!videoDuration || videoDuration <= 0) { playheadRAF = requestAnimationFrame(tick); return; }
         var trackContent = document.getElementById('videoTrackContent');
         var playhead = document.getElementById('timelinePlayhead');
         if (!trackContent || !playhead) { playheadRAF = requestAnimationFrame(tick); return; }
-        var pct = videoPlayer.currentTime / videoDuration;
-        var trackRect = trackContent.getBoundingClientRect();
-        var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
-        var left = (trackRect.left - containerRect.left) + pct * trackRect.width;
-        playhead.style.left = left + 'px';
+        // SKIP position update while user is dragging — let the drag handler control position
+        if (!playheadDragging) {
+          var pct = videoPlayer.currentTime / videoDuration;
+          var trackRect = trackContent.getBoundingClientRect();
+          var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
+          var left = (trackRect.left - containerRect.left) + pct * trackRect.width;
+          playhead.style.left = left + 'px';
+        }
         playheadRAF = requestAnimationFrame(tick);
       }
       if (playheadRAF) cancelAnimationFrame(playheadRAF);
@@ -1319,35 +1493,55 @@ router.get('/', requireAuth, async (req, res) => {
       // Kept for compatibility but playhead now uses RAF loop
     }
 
+    // Helper: compute playhead left px from a mouse event
+    function computePlayheadLeft(clientX) {
+      var trackContent = document.getElementById('videoTrackContent');
+      if (!trackContent) return null;
+      var trackRect = trackContent.getBoundingClientRect();
+      var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
+      var pct = Math.max(0, Math.min(1, (clientX - trackRect.left) / trackRect.width));
+      return {
+        left: (trackRect.left - containerRect.left) + pct * trackRect.width,
+        pct: pct
+      };
+    }
+
     // Draggable playhead for scrubbing — uses hitbox for easier grabbing
-    var playheadDragging = false;
+    var dragPct = 0; // Track position during drag
 
     document.addEventListener('mousedown', function(e) {
       var hitbox = document.getElementById('playheadHitbox');
       var playhead = document.getElementById('timelinePlayhead');
       if (!hitbox && !playhead) return;
-      // Check if click is on hitbox or playhead itself
       if (e.target === hitbox || e.target === playhead || (hitbox && hitbox.contains(e.target))) {
         e.preventDefault();
         e.stopPropagation();
         playheadDragging = true;
         document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
       }
     }, true);
 
     document.addEventListener('mousemove', function(e) {
       if (!playheadDragging || !videoDuration) return;
-      var trackContent = document.getElementById('videoTrackContent');
-      if (!trackContent) return;
-      var rect = trackContent.getBoundingClientRect();
-      var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      videoPlayer.currentTime = pct * videoDuration;
+      e.preventDefault();
+      var result = computePlayheadLeft(e.clientX);
+      if (!result) return;
+      dragPct = result.pct;
+      // Move playhead visually IMMEDIATELY — don't wait for video seek
+      var playhead = document.getElementById('timelinePlayhead');
+      if (playhead) playhead.style.left = result.left + 'px';
     });
 
     document.addEventListener('mouseup', function() {
       if (playheadDragging) {
+        // Now actually seek the video to the final position
+        if (videoDuration) {
+          videoPlayer.currentTime = dragPct * videoDuration;
+        }
         playheadDragging = false;
         document.body.style.cursor = '';
+        document.body.style.userSelect = '';
       }
     });
 
@@ -1356,15 +1550,22 @@ router.get('/', requireAuth, async (req, res) => {
       if (playheadDragging) return;
       if (e.target.classList.contains('timeline-trim-handle')) return;
       if (!videoDuration) return;
+      var result = computePlayheadLeft(e.clientX);
+      if (!result) return;
       var trackContent = document.getElementById('videoTrackContent');
       if (!trackContent) return;
       var rect = trackContent.getBoundingClientRect();
       if (e.clientX < rect.left || e.clientX > rect.right) return;
-      var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      videoPlayer.currentTime = pct * videoDuration;
+      dragPct = result.pct;
+      // Move playhead visually immediately
+      var playhead = document.getElementById('timelinePlayhead');
+      if (playhead) playhead.style.left = result.left + 'px';
+      // Seek the video
+      videoPlayer.currentTime = dragPct * videoDuration;
       // Start dragging so user can keep moving after click
       playheadDragging = true;
       document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
     });
 
     // Start playhead animation loop
@@ -2601,7 +2802,7 @@ router.get('/timeline-frames', requireAuth, async (req, res) => {
   }
 });
 
-// GET: Extract audio waveform data
+// GET: Extract audio waveform data with RMS energy (shows real speech/music/silence)
 router.get('/audio-waveform', requireAuth, async (req, res) => {
   try {
     const { filename } = req.query;
@@ -2613,12 +2814,12 @@ router.get('/audio-waveform', requireAuth, async (req, res) => {
 
     const rawPath = path.join('/tmp', 'waveform-' + Date.now() + '.raw');
 
-    // Extract raw audio samples
+    // Extract raw audio at 8kHz mono — enough for accurate energy detection
     await new Promise((resolve, reject) => {
       const args = [
         '-i', videoPath,
         '-ac', '1',
-        '-ar', '1000',
+        '-ar', '8000',
         '-f', 's16le',
         '-acodec', 'pcm_s16le',
         '-y',
@@ -2632,27 +2833,41 @@ router.get('/audio-waveform', requireAuth, async (req, res) => {
       proc.on('error', reject);
     });
 
-    // Read raw audio and compute peaks
+    // Read raw audio and compute RMS energy per segment
     const buffer = fs.readFileSync(rawPath);
     const samples = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
-    const peakCount = 200;
+    const peakCount = 300; // Higher resolution for better detail
     const samplesPerPeak = Math.max(1, Math.floor(samples.length / peakCount));
     const peaks = [];
 
     for (let i = 0; i < peakCount; i++) {
-      let max = 0;
       const start = i * samplesPerPeak;
       const end = Math.min(start + samplesPerPeak, samples.length);
+      let sumSq = 0;
+      let peak = 0;
       for (let j = start; j < end; j++) {
-        const abs = Math.abs(samples[j]);
-        if (abs > max) max = abs;
+        const val = samples[j] / 32768;
+        sumSq += val * val;
+        const abs = Math.abs(val);
+        if (abs > peak) peak = abs;
       }
-      peaks.push(max / 32768); // Normalize to 0-1
+      // RMS gives true energy level — silence is near 0, speech is moderate, music is high
+      const rms = Math.sqrt(sumSq / (end - start));
+      // Blend RMS with peak for visual appeal (70% RMS, 30% peak)
+      peaks.push(Math.min(1, rms * 0.7 + peak * 0.3));
     }
+
+    // Normalize to use full visual range while keeping silence truly flat
+    const maxPeak = Math.max(...peaks, 0.001);
+    const silenceThreshold = maxPeak * 0.03; // Below 3% of max = silence
+    const normalized = peaks.map(p => {
+      if (p < silenceThreshold) return 0.02; // Tiny flat line for silence
+      return Math.min(1, (p / maxPeak) * 1.1); // Scale up for visual clarity
+    });
 
     try { fs.unlinkSync(rawPath); } catch(e) {}
 
-    res.json({ peaks });
+    res.json({ peaks: normalized });
   } catch (error) {
     console.error('Waveform error:', error);
     res.status(500).json({ error: 'Failed to extract waveform' });
@@ -3610,6 +3825,142 @@ router.post('/apply-transition', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Transition error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Apply AI captions to video (inline from video editor)
+router.post('/apply-captions', requireAuth, async (req, res) => {
+  const tempFiles = [];
+  try {
+    const { videoFilename, style, position } = req.body;
+
+    if (!videoFilename) {
+      return res.status(400).json({ error: 'Video filename required' });
+    }
+
+    // Find video file
+    let videoPath = path.join(outputDir, videoFilename);
+    if (!fs.existsSync(videoPath)) videoPath = path.join(uploadDir, videoFilename);
+    if (!fs.existsSync(videoPath)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Step 1: Extract audio from video
+    const audioPath = path.join('/tmp', 'caption-audio-' + Date.now() + '.wav');
+    tempFiles.push(audioPath);
+
+    await runFFmpeg([
+      '-i', videoPath,
+      '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
+      '-y', audioPath
+    ]);
+
+    // Step 2: Transcribe with OpenAI Whisper
+    const OpenAI = require('openai');
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(audioPath),
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      timestamp_granularity: 'word'
+    });
+
+    if (!transcription.words || transcription.words.length === 0) {
+      return res.status(400).json({ error: 'No speech detected in video. Make sure the video has audible speech.' });
+    }
+
+    // Step 3: Generate ASS subtitle file
+    const assPath = path.join('/tmp', 'captions-' + Date.now() + '.ass');
+    tempFiles.push(assPath);
+
+    // Style definitions per preset
+    const styleMap = {
+      'karaoke': { fontName: 'Arial', fontSize: 16, primaryColor: '&H00FFFFFF&', outlineColor: '&H00000000&', bold: 1, outline: 2, shadow: 1, alignment: 2 },
+      'bold-pop': { fontName: 'Arial', fontSize: 20, primaryColor: '&H00EC4899&', outlineColor: '&H00000000&', bold: 1, outline: 3, shadow: 0, alignment: 2 },
+      'minimal': { fontName: 'Arial', fontSize: 14, primaryColor: '&H00FFFFFF&', outlineColor: '&H00000000&', bold: 0, outline: 1, shadow: 1, alignment: 2 },
+      'neon-glow': { fontName: 'Arial', fontSize: 18, primaryColor: '&H0041FF00&', outlineColor: '&H0041FF00&', bold: 1, outline: 3, shadow: 0, alignment: 2 },
+      'mrbeast': { fontName: 'Impact', fontSize: 22, primaryColor: '&H0000D4FF&', outlineColor: '&H00000000&', bold: 1, outline: 4, shadow: 2, alignment: 2 },
+      'hormozi': { fontName: 'Arial', fontSize: 18, primaryColor: '&H00FFFFFF&', outlineColor: '&H00000000&', bold: 1, outline: 2, shadow: 1, alignment: 2 }
+    };
+
+    const s = styleMap[style] || styleMap['karaoke'];
+
+    // Map position to ASS alignment
+    const posMap = { 'top': 8, 'center': 5, 'bottom': 2 };
+    const alignment = posMap[position] || 2;
+
+    // Build ASS file
+    function toASSTime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const sec = Math.floor(seconds % 60);
+      const cs = Math.round((seconds % 1) * 100);
+      return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0') + '.' + String(cs).padStart(2, '0');
+    }
+
+    let assContent = '[Script Info]\nTitle: AI Captions\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n\n';
+    assContent += '[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n';
+    assContent += 'Style: Default,' + s.fontName + ',' + s.fontSize + ',' + s.primaryColor + ',&H00FFFFFF&,' + s.outlineColor + ',&H00000000&,' + s.bold + ',0,0,0,100,100,0,0,1,' + s.outline + ',' + s.shadow + ',' + alignment + ',10,10,30,1\n\n';
+    assContent += '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
+
+    // Group words into subtitle lines (3-5 words per line)
+    const words = transcription.words;
+    const wordsPerLine = 4;
+    for (let i = 0; i < words.length; i += wordsPerLine) {
+      const chunk = words.slice(i, i + wordsPerLine);
+      const startTime = chunk[0].start;
+      const endTime = chunk[chunk.length - 1].end;
+
+      let text = '';
+      if (style === 'karaoke') {
+        // Karaoke mode: word-by-word highlight with \k tags
+        chunk.forEach(w => {
+          const dur = Math.round((w.end - w.start) * 100);
+          text += '{\\k' + dur + '}' + w.word + ' ';
+        });
+      } else {
+        text = chunk.map(w => w.word).join(' ');
+      }
+
+      assContent += 'Dialogue: 0,' + toASSTime(startTime) + ',' + toASSTime(endTime) + ',Default,,0,0,0,,' + text.trim() + '\n';
+    }
+
+    fs.writeFileSync(assPath, assContent);
+
+    // Step 4: Burn captions into video with FFmpeg
+    const outputFilename = 'captions_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    // Escape the ASS path for FFmpeg filter
+    const assFilter = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\''");
+
+    await runFFmpeg([
+      '-i', videoPath,
+      '-vf', 'ass=' + assFilter,
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      outputPath
+    ]);
+
+    // Cleanup temp files
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Apply captions error:', error);
+    tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+    res.status(500).json({ error: error.message || 'Failed to apply captions' });
   }
 });
 
