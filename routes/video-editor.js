@@ -253,10 +253,10 @@ router.get('/', requireAuth, async (req, res) => {
     .export-button:disabled{opacity:0.5;cursor:not-allowed}
     .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .toast{position:fixed;bottom:20px;right:20px;background:#1a1a2e;border:1px solid var(--border-subtle);border-radius:8px;padding:1rem 1.5rem;font-size:.9rem;z-index:1000;animation:slideIn 0.3s ease-out;display:block!important;color:white;max-width:400px;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+    .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;border:1px solid var(--border-subtle);border-radius:8px;padding:1rem 1.5rem;font-size:.9rem;z-index:1000;animation:slideIn 0.3s ease-out;display:block!important;color:white;max-width:400px;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
     .toast.success{border-color:#10B981;background:#064e3b;color:#6ee7b7}
     .toast.error{border-color:#EF4444;background:#7f1d1d;color:#fca5a5}
-    @keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}
+    @keyframes slideIn{from{transform:translateX(-50%) translateY(-30px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
     .hidden{display:none}
     body.light .video-container{border-color:rgba(108,58,237,0.2);background:rgba(108,58,237,0.02)}
     body.light .properties-panel,body.light .export-panel,body.light .tool-panel{background:rgba(108,58,237,0.05);border-color:rgba(108,58,237,0.15)}
@@ -796,7 +796,7 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-action-button" id="voiceoverButton" disabled style="flex:1">🎙️ Apply to Video</button>
             </div>
             <div id="voiceoverApiNote" style="margin-top:.8rem;padding:.6rem;background:rgba(108,58,237,0.08);border-radius:8px;font-size:.75rem;color:var(--text-muted)">
-              Uses your ElevenLabs API key from <a href="/brand-voice" style="color:#6C3AED;text-decoration:none;font-weight:600">Brand Voice</a> settings.
+              <strong style="color:#EF4444">⚠️ ElevenLabs API Key Required</strong> — All AI voices are powered by ElevenLabs. Add your API key in <a href="/settings" style="color:#6C3AED;text-decoration:none;font-weight:600" onclick="event.preventDefault();window.location.href='/settings'">Settings → API Keys</a> to enable voiceover.
             </div>
           </div>
 
@@ -875,12 +875,19 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="tool-panel" id="textPanel">
             <div class="panel-title">📝 Text Overlay</div>
             <input type="text" class="text-input" id="overlayText" placeholder="Enter text">
-            <label class="dropdown-label">Position</label>
-            <select class="dropdown" id="textPosition">
+            <label class="dropdown-label">Position <span style="font-size:.7rem;color:var(--text-muted)">(drag text on video to position)</span></label>
+            <select class="dropdown" id="textPosition" style="margin-bottom:.4rem">
               <option value="top">Top</option>
               <option value="center" selected>Center</option>
               <option value="bottom">Bottom</option>
+              <option value="custom">Custom (drag on video)</option>
             </select>
+            <div id="customPositionControls" style="display:none;margin-bottom:.5rem">
+              <div style="display:flex;gap:.5rem;align-items:center;font-size:.78rem">
+                <label style="color:var(--text-muted)">X: <input type="number" id="textPosX" value="50" min="0" max="100" style="width:50px;padding:2px 4px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.78rem">%</label>
+                <label style="color:var(--text-muted)">Y: <input type="number" id="textPosY" value="50" min="0" max="100" style="width:50px;padding:2px 4px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.78rem">%</label>
+              </div>
+            </div>
             <div class="slider-group">
               <div class="slider-label">
                 <span>Font Size</span>
@@ -1698,6 +1705,66 @@ router.get('/', requireAuth, async (req, res) => {
     });
 
     // Apply transitions handler
+    // Brand Template handler
+    document.getElementById('applyBrandBtn').addEventListener('click', async () => {
+      if (!currentVideoFile) {
+        showToast('Please upload a video first', 'error');
+        return;
+      }
+
+      const button = document.getElementById('applyBrandBtn');
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span> Applying Brand...';
+
+      try {
+        const formData = new FormData();
+        formData.append('filename', currentVideoFile.filename);
+        formData.append('primaryColor', document.getElementById('brandPrimaryColor').value);
+        formData.append('secondaryColor', document.getElementById('brandSecondaryColor').value);
+        formData.append('textColor', document.getElementById('brandTextColor').value);
+        formData.append('fontFamily', document.getElementById('brandFontSelect').value);
+        formData.append('logoPosition', document.getElementById('logoPositionSelect').value);
+        formData.append('logoSize', document.getElementById('logoSizeSelect') ? document.getElementById('logoSizeSelect').value : 'medium');
+
+        // Attach logo file if selected
+        var logoInput = document.getElementById('brandLogoInput');
+        if (logoInput && logoInput.files && logoInput.files[0]) {
+          formData.append('logo', logoInput.files[0]);
+        }
+
+        const response = await fetch('/video-editor/apply-brand-template', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Brand template failed');
+        }
+
+        const data = await response.json();
+        currentVideoFile = data;
+        videoPlayer.src = data.serveUrl;
+        videoDuration = data.duration || videoDuration;
+        showToast('Brand template applied!', 'success');
+      } catch (error) {
+        showToast('Brand template error: ' + error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = '✨ Apply Brand Template';
+      }
+    });
+
+    // Brand logo upload trigger
+    document.getElementById('brandLogoBtn').addEventListener('click', () => {
+      document.getElementById('brandLogoInput').click();
+    });
+    document.getElementById('brandLogoInput').addEventListener('change', (e) => {
+      if (e.target.files[0]) {
+        document.getElementById('brandLogoBtn').innerHTML = '📎 ' + e.target.files[0].name;
+      }
+    });
+
     document.getElementById('applyTransitionButton').addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
@@ -2719,7 +2786,9 @@ router.get('/', requireAuth, async (req, res) => {
             filename: currentVideoFile.filename,
             text: text,
             position: position,
-            fontSize: fontSize
+            fontSize: fontSize,
+            customX: position === 'custom' ? parseInt(document.getElementById('textPosX').value) : null,
+            customY: position === 'custom' ? parseInt(document.getElementById('textPosY').value) : null
           })
         });
 
@@ -2737,6 +2806,59 @@ router.get('/', requireAuth, async (req, res) => {
         button.disabled = false;
         button.innerHTML = '📝 Apply Text';
       }
+    });
+
+    // Text position dropdown handler
+    document.getElementById('textPosition').addEventListener('change', function() {
+      var customControls = document.getElementById('customPositionControls');
+      if (this.value === 'custom') {
+        customControls.style.display = 'block';
+        enableTextDrag();
+      } else {
+        customControls.style.display = 'none';
+        disableTextDrag();
+      }
+    });
+
+    // Drag text overlay on video
+    var textDragOverlay = null;
+    function enableTextDrag() {
+      var videoContainer = document.querySelector('.video-container');
+      if (!videoContainer) return;
+      if (textDragOverlay) textDragOverlay.remove();
+      
+      textDragOverlay = document.createElement('div');
+      textDragOverlay.id = 'textDragOverlay';
+      textDragOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;z-index:10';
+      videoContainer.style.position = 'relative';
+      videoContainer.appendChild(textDragOverlay);
+      
+      var dragMarker = document.createElement('div');
+      dragMarker.id = 'textDragMarker';
+      dragMarker.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(108,58,237,0.7);color:#fff;padding:4px 10px;border-radius:4px;font-size:14px;pointer-events:none;white-space:nowrap;border:2px solid #6C3AED';
+      dragMarker.textContent = document.getElementById('overlayText').value || 'Text';
+      textDragOverlay.appendChild(dragMarker);
+      
+      textDragOverlay.addEventListener('click', function(e) {
+        var rect = this.getBoundingClientRect();
+        var xPercent = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+        var yPercent = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+        document.getElementById('textPosX').value = xPercent;
+        document.getElementById('textPosY').value = yPercent;
+        dragMarker.style.left = xPercent + '%';
+        dragMarker.style.top = yPercent + '%';
+        showToast('Position set: ' + xPercent + '%, ' + yPercent + '%', 'success');
+      });
+    }
+    
+    function disableTextDrag() {
+      if (textDragOverlay) { textDragOverlay.remove(); textDragOverlay = null; }
+    }
+    
+    // Update drag marker text when input changes
+    document.getElementById('overlayText').addEventListener('input', function() {
+      var marker = document.getElementById('textDragMarker');
+      if (marker) marker.textContent = this.value || 'Text';
     });
 
     // Export handler
@@ -4614,7 +4736,7 @@ router.post('/audio', requireAuth, async (req, res) => {
 // POST: Add text overlay
 router.post('/text-overlay', requireAuth, async (req, res) => {
   try {
-    const { filename, text, position, fontSize } = req.body;
+    const { filename, text, position, fontSize, customX, customY } = req.body;
 
     if (!filename || !text || !position || !fontSize) {
       return res.status(400).json({ error: 'Missing required parameters' });
@@ -4637,9 +4759,17 @@ router.post('/text-overlay', requireAuth, async (req, res) => {
       'bottom': 'h-text_h-50'
     };
 
-    const yPos = positionMap[position] || '(h-text_h)/2';
-    const escapedText = text.replace(/'/g, '\'\\\'\'');
-    const drawFilter = 'drawtext=text=\'' + escapedText + '\':fontsize=' + fontSize + ':fontcolor=white:x=(w-text_w)/2:y=' + yPos + ':borderw=2:bordercolor=black';
+    let yPos = positionMap[position] || '(h-text_h)/2';
+    let xPos = '(w-text_w)/2'; // Default: centered
+    if (position === 'custom' && customX !== null && customY !== null) {
+      xPos = 'w*' + (customX / 100);
+      yPos = 'h*' + (customY / 100);
+    }
+    // Properly escape text for FFmpeg drawtext filter
+    const escapedText = text.replace(/\\/g, '\\\\').replace(/'/g, "'\\\\''").replace(/:/g, '\\\\:').replace(/\[/g, '\\\\[').replace(/\]/g, '\\\\]');
+    // Use fontfile if available on the system
+    const fontOpts = fs.existsSync('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf') ? ':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf' : '';
+    const drawFilter = "drawtext=text='" + escapedText + "':fontsize=" + fontSize + ":fontcolor=white:x=" + xPos + ":y=" + yPos + ":borderw=2:bordercolor=black" + fontOpts;
 
     await runFFmpeg([
       '-i', source,
@@ -5037,259 +5167,87 @@ router.get('/search-music', requireAuth, async (req, res) => {
     const { q, category } = req.query;
     const apiKey = process.env.PIXABAY_API_KEY;
 
-    // Massive curated library of 70+ royalty-free tracks across all categories
-    const curatedLibrary = [
-      // INSTRUMENTAL (Piano, Guitar, Strings) - 12 tracks
-      { id: 'cur_inst_001', name: 'Gentle Piano Moments', duration: '3:45', category: 'instrumental', artist: 'Classical Winds', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_002', name: 'Nocturne in E Minor', duration: '4:12', category: 'instrumental', artist: 'Elena Rossi', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_003', name: 'Acoustic Guitar Serenity', duration: '3:28', category: 'instrumental', artist: 'David Martinez', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_004', name: 'String Quartet Dreams', duration: '5:03', category: 'instrumental', artist: 'Vienna Strings', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_005', name: 'Piano Improvisation', duration: '3:55', category: 'instrumental', artist: 'James Chen', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_006', name: 'Folk Guitar Tales', duration: '4:32', category: 'instrumental', artist: 'Sofia Lopez', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_007', name: 'Violin Elegance', duration: '3:18', category: 'instrumental', artist: 'Isabella Moretti', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_008', name: 'Classical Meditation', duration: '4:47', category: 'instrumental', artist: 'Mozart Ensemble', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_009', name: 'Harpsichord Baroque', duration: '3:33', category: 'instrumental', artist: 'Lorenzo Bach', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_010', name: 'Flute and Strings', duration: '3:42', category: 'instrumental', artist: 'Pan Pipes Trio', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_011', name: 'Cello Suite in G', duration: '4:21', category: 'instrumental', artist: 'Marcus Deep', previewUrl: null, downloadUrl: null },
-      { id: 'cur_inst_012', name: 'Piano Waltz', duration: '3:07', category: 'instrumental', artist: 'Composer Classical', previewUrl: null, downloadUrl: null },
-
-      // UPBEAT (Energetic, Motivational) - 12 tracks
-      { id: 'cur_upbeat_001', name: 'Morning Energy Boost', duration: '2:45', category: 'upbeat', artist: 'Synth Wave', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_002', name: 'Motivational Rise', duration: '3:02', category: 'upbeat', artist: 'Victory Sound', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_003', name: 'Energetic Vibes', duration: '2:38', category: 'upbeat', artist: 'Bright Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_004', name: 'Positive Pulse', duration: '2:56', category: 'upbeat', artist: 'Electric Dreams', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_005', name: 'Inspiring Journey', duration: '3:18', category: 'upbeat', artist: 'Uplifted Melodies', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_006', name: 'Dynamic Momentum', duration: '2:52', category: 'upbeat', artist: 'Power Tracks', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_007', name: 'Victory Anthem', duration: '3:11', category: 'upbeat', artist: 'Champion Sound', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_008', name: 'Energize Your Day', duration: '2:49', category: 'upbeat', artist: 'Boost Audio', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_009', name: 'Powerful Ascent', duration: '3:05', category: 'upbeat', artist: 'Momentum Builders', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_010', name: 'Unstoppable Force', duration: '2:41', category: 'upbeat', artist: 'Maximum Energy', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_011', name: 'Bright Horizons', duration: '3:23', category: 'upbeat', artist: 'Sunny Vibes', previewUrl: null, downloadUrl: null },
-      { id: 'cur_upbeat_012', name: 'Go Get It', duration: '2:58', category: 'upbeat', artist: 'Active Spirit', previewUrl: null, downloadUrl: null },
-
-      // CHILL (Lo-Fi, Relaxing, Ambient) - 12 tracks
-      { id: 'cur_chill_001', name: 'Lo-Fi Hip Hop Study', duration: '2:35', category: 'chill', artist: 'Lofi Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_002', name: 'Ambient Soundscape', duration: '4:18', category: 'chill', artist: 'Zen Waves', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_003', name: 'Relaxation Time', duration: '3:52', category: 'chill', artist: 'Calm Minds', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_004', name: 'Late Night Vibes', duration: '3:14', category: 'chill', artist: 'Midnight Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_005', name: 'Coffee Shop Jazz', duration: '2:47', category: 'chill', artist: 'Urban Chill', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_006', name: 'Peaceful Rain', duration: '4:35', category: 'chill', artist: 'Nature Sounds', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_007', name: 'Downtempo Flow', duration: '3:41', category: 'chill', artist: 'Slow Grooves', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_008', name: 'Sunset Melodies', duration: '3:28', category: 'chill', artist: 'Golden Hour', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_009', name: 'Ethereal Dreams', duration: '4:03', category: 'chill', artist: 'Floating Clouds', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_010', name: 'Synth Chill', duration: '3:16', category: 'chill', artist: 'Neon Nights', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_011', name: 'Smooth Jazz Lounge', duration: '3:39', category: 'chill', artist: 'Jazz Collective', previewUrl: null, downloadUrl: null },
-      { id: 'cur_chill_012', name: 'Bedtime Stories', duration: '3:55', category: 'chill', artist: 'Sleep Sound', previewUrl: null, downloadUrl: null },
-
-      // DRAMATIC (Cinematic, Intense, Epic) - 12 tracks
-      { id: 'cur_dramatic_001', name: 'Epic Orchestral Rise', duration: '3:48', category: 'dramatic', artist: 'Cinema Orchestra', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_002', name: 'Intense Battle Drums', duration: '2:52', category: 'dramatic', artist: 'War Percussion', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_003', name: 'Dark Cinematic', duration: '4:15', category: 'dramatic', artist: 'Shadow Composers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_004', name: 'Heroic Strings', duration: '3:33', category: 'dramatic', artist: 'Epic Strings', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_005', name: 'Suspenseful Thriller', duration: '3:01', category: 'dramatic', artist: 'Tension Builders', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_006', name: 'Grand Finale', duration: '4:22', category: 'dramatic', artist: 'Finale Studio', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_007', name: 'Tragic Symphony', duration: '3:58', category: 'dramatic', artist: 'Emotional Depth', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_008', name: 'Dystopian Soundscape', duration: '4:41', category: 'dramatic', artist: 'Future Dark', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_009', name: 'Powerful Crescendo', duration: '3:27', category: 'dramatic', artist: 'Crescendo Masters', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_010', name: 'Action Sequence', duration: '2:43', category: 'dramatic', artist: 'Action Films', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_011', name: 'Cinematic Tension', duration: '3:14', category: 'dramatic', artist: 'Film Studio', previewUrl: null, downloadUrl: null },
-      { id: 'cur_dramatic_012', name: 'Apocalyptic Dawn', duration: '4:05', category: 'dramatic', artist: 'Sci-Fi Sounds', previewUrl: null, downloadUrl: null },
-
-      // HAPPY (Fun, Cheerful, Positive) - 12 tracks
-      { id: 'cur_happy_001', name: 'Cheerful Morning', duration: '2:41', category: 'happy', artist: 'Sunny Mood', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_002', name: 'Playful Bounce', duration: '2:33', category: 'happy', artist: 'Joyful Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_003', name: 'Feel Good Funk', duration: '3:05', category: 'happy', artist: 'Groove Masters', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_004', name: 'Uplifting Pop', duration: '2:48', category: 'happy', artist: 'Pop Sensation', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_005', name: 'Celebration Dance', duration: '2:56', category: 'happy', artist: 'Party Animals', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_006', name: 'Positive Vibes Only', duration: '3:18', category: 'happy', artist: 'Good Times', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_007', name: 'Lighthearted Adventure', duration: '2:52', category: 'happy', artist: 'Adventure Seekers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_008', name: 'Smile Wide', duration: '2:39', category: 'happy', artist: 'Happiness Inc', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_009', name: 'Funky Fresh', duration: '3:11', category: 'happy', artist: 'Fresh Vibes', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_010', name: 'Carefree Summer', duration: '2:45', category: 'happy', artist: 'Summer Sound', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_011', name: 'Infectious Joy', duration: '3:22', category: 'happy', artist: 'Joy Makers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_happy_012', name: 'Bright Smiles', duration: '2:54', category: 'happy', artist: 'Smile Studio', previewUrl: null, downloadUrl: null },
-
-      // SAD (Emotional, Melancholic) - 10 tracks
-      { id: 'cur_sad_001', name: 'Melancholic Piano', duration: '4:03', category: 'sad', artist: 'Emotional Keys', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_002', name: 'Heartbreak Ballad', duration: '3:47', category: 'sad', artist: 'Broken Hearts', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_003', name: 'Lonely Strings', duration: '4:21', category: 'sad', artist: 'Solitude', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_004', name: 'Reflective Moment', duration: '3:35', category: 'sad', artist: 'Deep Thoughts', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_005', name: 'Teardrops', duration: '3:58', category: 'sad', artist: 'Sadness Chronicles', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_006', name: 'Lost Love', duration: '4:12', category: 'sad', artist: 'Forgotten Days', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_007', name: 'Somber Violin', duration: '3:51', category: 'sad', artist: 'Melancholy Music', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_008', name: 'Quiet Sorrow', duration: '4:34', category: 'sad', artist: 'Silent Pain', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_009', name: 'Wistful Memories', duration: '3:43', category: 'sad', artist: 'Memory Lane', previewUrl: null, downloadUrl: null },
-      { id: 'cur_sad_010', name: 'Elegiac Winds', duration: '4:07', category: 'sad', artist: 'Mourning Composers', previewUrl: null, downloadUrl: null },
-
-      // BEATS (Hip Hop, Trap, Modern Beats) - 11 tracks
-      { id: 'cur_beats_001', name: 'Hip Hop Groove', duration: '2:45', category: 'beats', artist: 'Beat Makers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_002', name: 'Trap Snare Heavy', duration: '2:38', category: 'beats', artist: 'Trap Lord', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_003', name: 'Boom Bap Classic', duration: '3:02', category: 'beats', artist: 'Hip Hop Kings', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_004', name: 'Modern Drill', duration: '2:51', category: 'beats', artist: 'Drill Masters', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_005', name: 'Conscious Rap Beat', duration: '3:15', category: 'beats', artist: 'Lyrical Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_006', name: 'Trap Cypher', duration: '2:44', category: 'beats', artist: 'Trap Cypher Studio', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_007', name: 'Grime Instrumental', duration: '2:56', category: 'beats', artist: 'Grime Sound', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_008', name: 'Boom Bap Vibes', duration: '3:08', category: 'beats', artist: 'Vinyl Spins', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_009', name: 'Cloud Rap', duration: '3:22', category: 'beats', artist: 'Cloud Nine', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_010', name: 'Uk Garage Rhythm', duration: '2:52', category: 'beats', artist: 'Garage Rhythms', previewUrl: null, downloadUrl: null },
-      { id: 'cur_beats_011', name: 'RnB Soul Beat', duration: '3:35', category: 'beats', artist: 'Soul Beats', previewUrl: null, downloadUrl: null },
-
-      // ELECTRONIC (EDM, Synth, Techno) - 11 tracks
-      { id: 'cur_electronic_001', name: 'Synth Wave Neon', duration: '3:18', category: 'electronic', artist: 'Neon Dreams', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_002', name: 'Techno Pulse', duration: '4:15', category: 'electronic', artist: 'Techno Masters', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_003', name: 'EDM Festival', duration: '3:42', category: 'electronic', artist: 'Electric Vibes', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_004', name: 'Dubstep Drop', duration: '3:01', category: 'electronic', artist: 'Bass Hunters', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_005', name: 'House Music Beat', duration: '3:55', category: 'electronic', artist: 'House Revolution', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_006', name: 'Chillwave Synthscape', duration: '4:28', category: 'electronic', artist: 'Wave Riders', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_007', name: 'Retro Synth', duration: '3:33', category: 'electronic', artist: 'Retro Wave', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_008', name: 'Minimal Tech', duration: '4:02', category: 'electronic', artist: 'Minimal Collective', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_009', name: 'Trance Journey', duration: '5:12', category: 'electronic', artist: 'Trance Travelers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_010', name: 'Acid House', duration: '3:47', category: 'electronic', artist: 'Acid Lab', previewUrl: null, downloadUrl: null },
-      { id: 'cur_electronic_011', name: 'Industrial Synth', duration: '3:24', category: 'electronic', artist: 'Industrial Sound', previewUrl: null, downloadUrl: null },
-
-      // ACOUSTIC (Acoustic Guitar, Natural Instruments) - 10 tracks
-      { id: 'cur_acoustic_001', name: 'Fingerstyle Guitar', duration: '3:34', category: 'acoustic', artist: 'Acoustic Masters', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_002', name: 'Campfire Stories', duration: '3:21', category: 'acoustic', artist: 'Folk Legends', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_003', name: 'Unplugged Sessions', duration: '2:58', category: 'acoustic', artist: 'Raw Acoustics', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_004', name: 'Indie Acoustic', duration: '3:47', category: 'acoustic', artist: 'Indie Folk', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_005', name: 'Classical Nylon Strings', duration: '3:52', category: 'acoustic', artist: 'Classic Strings', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_006', name: 'Minimalist Guitar', duration: '3:15', category: 'acoustic', artist: 'Simple Sound', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_007', name: 'Bluegrass Jam', duration: '3:28', category: 'acoustic', artist: 'Bluegrass Pickers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_008', name: 'Singer Songwriter', duration: '3:41', category: 'acoustic', artist: 'Song Writers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_009', name: 'Mandolin Melodies', duration: '3:03', category: 'acoustic', artist: 'String Pickers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_acoustic_010', name: 'Ukulele Dreams', duration: '2:52', category: 'acoustic', artist: 'Island Vibes', previewUrl: null, downloadUrl: null },
-
-      // CINEMATIC (Movie, Film, Soundtrack Style) - 11 tracks
-      { id: 'cur_cinematic_001', name: 'Movie Trailer Buildup', duration: '3:21', category: 'cinematic', artist: 'Blockbuster Sound', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_002', name: 'Romantic Overture', duration: '4:12', category: 'cinematic', artist: 'Love Stories', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_003', name: 'Dramatic Finale', duration: '3:58', category: 'cinematic', artist: 'Finale Productions', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_004', name: 'Documentary Score', duration: '4:34', category: 'cinematic', artist: 'Documentary Masters', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_005', name: 'Dark Thriller Theme', duration: '3:47', category: 'cinematic', artist: 'Thriller Composers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_006', name: 'Fantasy Adventure', duration: '4:15', category: 'cinematic', artist: 'Fantasy Studios', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_007', name: 'Science Fiction Score', duration: '4:08', category: 'cinematic', artist: 'Sci-Fi Composers', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_008', name: 'Comedy Relief', duration: '2:41', category: 'cinematic', artist: 'Comedy Studio', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_009', name: 'Dramatic Monologue', duration: '3:32', category: 'cinematic', artist: 'Drama Central', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_010', name: 'Sports Montage', duration: '2:58', category: 'cinematic', artist: 'Sports Films', previewUrl: null, downloadUrl: null },
-      { id: 'cur_cinematic_011', name: 'Historical Epic', duration: '5:03', category: 'cinematic', artist: 'Epic Productions', previewUrl: null, downloadUrl: null },
-
-      // LO-FI (Lo-Fi Hip Hop, Study, Focus) - 10 tracks
-      { id: 'cur_lofi_001', name: 'Study Session Lo-Fi', duration: '3:12', category: 'lo-fi', artist: 'Lofi Academy', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_002', name: 'Rainy Day Beats', duration: '2:58', category: 'lo-fi', artist: 'Rain Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_003', name: 'Vinyl Crackle Chill', duration: '3:41', category: 'lo-fi', artist: 'Vintage Vibes', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_004', name: 'Night Drive Lo-Fi', duration: '3:05', category: 'lo-fi', artist: 'Night Riders', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_005', name: 'Focus Music', duration: '2:47', category: 'lo-fi', artist: 'Focus Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_006', name: 'Chill Trap Beats', duration: '3:23', category: 'lo-fi', artist: 'Trap Chill', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_007', name: 'Bedroom Pop', duration: '3:14', category: 'lo-fi', artist: 'Bedroom Studio', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_008', name: 'City Lights Jazz', duration: '3:38', category: 'lo-fi', artist: 'Urban Jazz', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_009', name: 'Lofi Nostalgia', duration: '3:26', category: 'lo-fi', artist: 'Memory Beats', previewUrl: null, downloadUrl: null },
-      { id: 'cur_lofi_010', name: 'Anime Scene Music', duration: '2:52', category: 'lo-fi', artist: 'Anime Sounds', previewUrl: null, downloadUrl: null }
-    ];
-
-    // Function to filter tracks based on query and category
-    const filterTracks = (tracks, query, cat) => {
-      let filtered = tracks;
-
-      // Filter by category if specified
-      if (cat && cat !== 'all') {
-        filtered = filtered.filter(t => t.category === cat);
-      }
-
-      // Filter by search query if specified (search in name and artist)
-      if (query && query.trim()) {
-        const q = query.toLowerCase();
-        filtered = filtered.filter(t =>
-          t.name.toLowerCase().includes(q) ||
-          t.artist.toLowerCase().includes(q)
-        );
-      }
-
-      return filtered;
-    };
-
-    // Add preview URLs to all curated tracks — generated on-the-fly by our endpoint
-    curatedLibrary.forEach(t => {
-      if (!t.previewUrl) {
-        t.previewUrl = '/video-editor/music-preview/' + t.id;
-        t.downloadUrl = '/video-editor/music-preview/' + t.id;
-      }
-    });
-
-    // Start with curated library
-    let allTracks = filterTracks(curatedLibrary, q, category);
-
-    // If Pixabay API key is available, try to enhance with API results
-    if (apiKey) {
-      try {
-        const searchQuery = q || (category && category !== 'all' ? category : 'background music');
-        const categoryMap = {
-          'instrumental': 'backgrounds',
-          'upbeat': 'beats',
-          'chill': 'backgrounds',
-          'dramatic': 'film',
-          'happy': 'beats',
-          'sad': 'solo',
-          'beats': 'beats',
-          'electronic': 'electronic',
-          'acoustic': 'backgrounds',
-          'cinematic': 'film',
-          'lo-fi': 'electronic'
-        };
-        const pixCategory = categoryMap[category] || '';
-
-        let url = `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(searchQuery)}&media_type=music&per_page=20&safesearch=true`;
-        if (pixCategory) url += `&category=${pixCategory}`;
-
-        const https = require('https');
-        const data = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('API timeout')), 5000);
-          https.get(url, (response) => {
-            clearTimeout(timeout);
-            let body = '';
-            response.on('data', chunk => body += chunk);
-            response.on('end', () => {
-              try { resolve(JSON.parse(body)); } catch(e) { reject(e); }
-            });
-          }).on('error', reject);
-        });
-
-        // Merge Pixabay results with curated library
-        if (data.hits && data.hits.length > 0) {
-          const pixabayTracks = data.hits.map(hit => {
-            const mins = Math.floor(hit.duration / 60);
-            const secs = String(hit.duration % 60).padStart(2, '0');
-            return {
-              id: 'px_' + hit.id,
-              name: hit.tags ? hit.tags.split(',')[0].trim() : 'Untitled',
-              duration: mins + ':' + secs,
-              category: category || 'all',
-              previewUrl: hit.previewURL || null,
-              downloadUrl: hit.audio || hit.previewURL || null,
-              artist: hit.user || 'Unknown',
-              pixabayUrl: hit.pageURL
-            };
-          });
-          allTracks = [...allTracks, ...pixabayTracks];
-        }
-      } catch (apiError) {
-        // Silently fail and use curated library only
-        console.log('Pixabay API failed, using curated library:', apiError.message);
-      }
+    if (!apiKey) {
+      return res.json({ tracks: [], source: 'none', total: 0, message: 'PIXABAY_API_KEY not configured. Please set it in your environment variables.' });
     }
 
-    // Return filtered results
+    // Build search query
+    const categorySearchMap = {
+      'instrumental': 'instrumental piano guitar',
+      'upbeat': 'upbeat happy energetic',
+      'chill': 'chill relaxing calm lofi',
+      'dramatic': 'dramatic cinematic epic',
+      'happy': 'happy cheerful positive',
+      'sad': 'sad emotional melancholy',
+      'beats': 'beats hip hop rhythm',
+      'electronic': 'electronic dance edm',
+      'acoustic': 'acoustic guitar folk',
+      'cinematic': 'cinematic film orchestral',
+      'lo-fi': 'lofi chill beats study'
+    };
+
+    const searchQuery = q || (category && category !== 'all' ? categorySearchMap[category] || category : 'background music');
+    const pixCategoryMap = {
+      'instrumental': 'backgrounds',
+      'upbeat': 'beats',
+      'chill': 'backgrounds',
+      'dramatic': 'film',
+      'happy': 'beats',
+      'sad': 'solo',
+      'beats': 'beats',
+      'electronic': 'electronic',
+      'acoustic': 'backgrounds',
+      'cinematic': 'film',
+      'lo-fi': 'electronic'
+    };
+    const pixCategory = pixCategoryMap[category] || '';
+
+    const https = require('https');
+    let url = `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(searchQuery)}&media_type=music&per_page=40&safesearch=true`;
+    if (pixCategory) url += `&category=${pixCategory}`;
+
+    const data = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('API timeout')), 8000);
+      https.get(url, (response) => {
+        clearTimeout(timeout);
+        let body = '';
+        response.on('data', chunk => body += chunk);
+        response.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch(e) { reject(e); }
+        });
+      }).on('error', reject);
+    });
+
+    if (!data.hits || data.hits.length === 0) {
+      return res.json({ tracks: [], source: 'pixabay', total: 0, message: 'No tracks found' });
+    }
+
+    const tracks = data.hits.map(hit => {
+      const mins = Math.floor(hit.duration / 60);
+      const secs = String(hit.duration % 60).padStart(2, '0');
+      return {
+        id: 'px_' + hit.id,
+        name: hit.tags ? hit.tags.split(',').slice(0, 3).map(t => t.trim()).join(', ') : 'Untitled',
+        duration: mins + ':' + secs,
+        category: category || 'all',
+        previewUrl: hit.previewURL || null,
+        downloadUrl: hit.audio || hit.previewURL || null,
+        artist: hit.user || 'Unknown',
+        pixabayUrl: hit.pageURL
+      };
+    });
+
     res.json({
-      tracks: allTracks,
-      source: apiKey ? 'hybrid' : 'curated',
-      total: allTracks.length,
-      message: apiKey ? 'Results from curated library and Pixabay API' : 'Results from curated library. Set PIXABAY_API_KEY to enhance with Pixabay Audio'
+      tracks: tracks,
+      source: 'pixabay',
+      total: tracks.length,
+      message: 'Royalty-free music from Pixabay'
     });
   } catch (error) {
     console.error('Search music error:', error);
-    res.status(500).json({ error: 'Failed to search music' });
+    res.status(500).json({ error: 'Failed to search music', tracks: [] });
   }
 });
-
-// GET: Generate and serve a music preview for curated tracks
 
 // ===== SAVE ELEVENLABS API KEY =====
 router.post('/save-elevenlabs-key', requireAuth, async (req, res) => {
@@ -5344,139 +5302,6 @@ router.get('/search-stock-video', requireAuth, async (req, res) => {
   }
 });
 
-// Creates a unique synthesized audio clip per track using FFmpeg
-router.get('/music-preview/:id', requireAuth, async (req, res) => {
-  try {
-    const trackId = req.params.id;
-    const cacheDir = path.join('/tmp', 'music-previews');
-    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-
-    const cachePath = path.join(cacheDir, trackId + '.mp3');
-
-    // Serve from cache if already generated
-    if (fs.existsSync(cachePath)) {
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      return fs.createReadStream(cachePath).pipe(res);
-    }
-
-    // Determine sound characteristics based on track category (from the ID prefix)
-    const category = trackId.includes('inst') ? 'instrumental' :
-                     trackId.includes('upbeat') ? 'upbeat' :
-                     trackId.includes('chill') ? 'chill' :
-                     trackId.includes('drama') ? 'dramatic' :
-                     trackId.includes('happy') ? 'happy' :
-                     trackId.includes('sad') ? 'sad' :
-                     trackId.includes('beat') ? 'beats' :
-                     trackId.includes('elec') ? 'electronic' :
-                     trackId.includes('cine') ? 'cinematic' :
-                     trackId.includes('acou') ? 'acoustic' :
-                     trackId.includes('lofi') ? 'lofi' : 'instrumental';
-
-    // Use a hash of the trackId to create variety — different frequencies per track
-    let hash = 0;
-    for (let i = 0; i < trackId.length; i++) hash = ((hash << 5) - hash) + trackId.charCodeAt(i);
-    hash = Math.abs(hash);
-    const variation = (hash % 12); // 0-11 semitone offset
-    const baseFreq = 220; // A3
-    const freq = baseFreq * Math.pow(2, variation / 12); // Chromatic scale
-    const freq2 = freq * 1.5; // Perfect fifth
-    const freq3 = freq * 1.25; // Major third
-
-    // Build FFmpeg synthesis filter based on category (15 second preview)
-    const dur = 15;
-    let filterComplex;
-
-    switch (category) {
-      case 'instrumental':
-        // Soft piano-like sine with reverb feel
-        filterComplex = `sine=f=${freq}:d=${dur}[s1];sine=f=${freq*2}:d=${dur}[s2];[s1][s2]amix=inputs=2[m];[m]volume=0.3,afade=t=in:d=0.5,afade=t=out:st=${dur-2}:d=2,aecho=0.8:0.7:40|60:0.4|0.3[out]`;
-        break;
-      case 'upbeat':
-        // Energetic beat pattern
-        filterComplex = `sine=f=${freq}:d=0.1[k];aevalsrc='sin(2*PI*${freq}*t)*exp(-10*mod(t,0.25))':d=${dur}[beat];[beat]volume=0.5,afade=t=in:d=0.3,afade=t=out:st=${dur-1}:d=1[out]`;
-        break;
-      case 'beats':
-        // Hip-hop style low beat
-        filterComplex = `aevalsrc='sin(2*PI*${Math.round(freq/3)}*t)*exp(-8*mod(t,0.5))+0.3*sin(2*PI*${Math.round(freq)}*t)*exp(-15*mod(t+0.25,0.5))':d=${dur}[b];[b]volume=0.5,afade=t=in:d=0.2,afade=t=out:st=${dur-1}:d=1[out]`;
-        break;
-      case 'chill':
-        // Soft ambient pad
-        filterComplex = `sine=f=${freq}:d=${dur}[s1];sine=f=${freq2}:d=${dur}[s2];sine=f=${freq/2}:d=${dur}[s3];[s1][s2][s3]amix=inputs=3[m];[m]volume=0.2,afade=t=in:d=2,afade=t=out:st=${dur-3}:d=3,aecho=0.8:0.8:80|120:0.5|0.3[out]`;
-        break;
-      case 'lofi':
-        // Lo-fi warm tone with crackle feel
-        filterComplex = `sine=f=${freq}:d=${dur}[s1];sine=f=${freq3}:d=${dur}[s2];[s1][s2]amix=inputs=2[m];[m]volume=0.25,lowpass=f=3000,afade=t=in:d=1,afade=t=out:st=${dur-2}:d=2,aecho=0.6:0.5:60:0.3[out]`;
-        break;
-      case 'dramatic':
-      case 'cinematic':
-        // Deep orchestral feel
-        filterComplex = `sine=f=${freq/2}:d=${dur}[s1];sine=f=${freq}:d=${dur}[s2];sine=f=${freq*2}:d=${dur}[s3];[s1][s2][s3]amix=inputs=3[m];[m]volume=0.3,afade=t=in:d=3,afade=t=out:st=${dur-3}:d=3,aecho=0.8:0.7:100|200:0.4|0.2[out]`;
-        break;
-      case 'happy':
-        // Bright bouncy melody
-        filterComplex = `aevalsrc='0.3*sin(2*PI*${Math.round(freq)}*t)+0.2*sin(2*PI*${Math.round(freq*2)}*t)*exp(-5*mod(t,0.33))':d=${dur}[h];[h]afade=t=in:d=0.3,afade=t=out:st=${dur-1}:d=1[out]`;
-        break;
-      case 'sad':
-        // Melancholic slow tone
-        filterComplex = `sine=f=${freq*0.95}:d=${dur}[s1];sine=f=${freq*1.2}:d=${dur}[s2];[s1][s2]amix=inputs=2[m];[m]volume=0.2,afade=t=in:d=2,afade=t=out:st=${dur-3}:d=3,aecho=0.8:0.8:120|240:0.5|0.4[out]`;
-        break;
-      case 'electronic':
-        // Synth pulse
-        filterComplex = `aevalsrc='0.3*sin(2*PI*${Math.round(freq)}*t)*(0.5+0.5*sin(2*PI*4*t))+0.15*sin(2*PI*${Math.round(freq*1.5)}*t)':d=${dur}[e];[e]afade=t=in:d=0.5,afade=t=out:st=${dur-1}:d=1[out]`;
-        break;
-      case 'acoustic':
-        // Guitar-like pluck
-        filterComplex = `aevalsrc='0.4*sin(2*PI*${Math.round(freq)}*t)*exp(-3*mod(t,0.5))+0.2*sin(2*PI*${Math.round(freq*2)}*t)*exp(-5*mod(t,0.5))':d=${dur}[a];[a]afade=t=in:d=0.2,afade=t=out:st=${dur-1.5}:d=1.5[out]`;
-        break;
-      default:
-        filterComplex = `sine=f=${freq}:d=${dur}[s];[s]volume=0.3,afade=t=in:d=1,afade=t=out:st=${dur-2}:d=2[out]`;
-    }
-
-    // Generate the preview audio
-    await new Promise((resolve, reject) => {
-      const args = [
-        '-f', 'lavfi',
-        '-i', filterComplex.includes('[out]') ? filterComplex.split('[out]')[0] + '[out]' : filterComplex,
-        '-map', '[out]',
-        '-t', dur.toString(),
-        '-codec:a', 'libmp3lame',
-        '-b:a', '128k',
-        '-ar', '44100',
-        '-y',
-        cachePath
-      ];
-
-      // Build the actual command — use filter_complex
-      const ffArgs = [
-        '-filter_complex', filterComplex,
-        '-map', '[out]',
-        '-t', dur.toString(),
-        '-codec:a', 'libmp3lame',
-        '-b:a', '128k',
-        '-ar', '44100',
-        '-y',
-        cachePath
-      ];
-
-      const proc = spawn(ffmpegPath || 'ffmpeg', ffArgs);
-      let stderr = '';
-      proc.stderr.on('data', d => stderr += d);
-      proc.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error('Preview generation failed: ' + stderr.slice(-200)));
-      });
-      proc.on('error', reject);
-    });
-
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    fs.createReadStream(cachePath).pipe(res);
-  } catch (error) {
-    console.error('Music preview error:', error);
-    res.status(500).json({ error: 'Failed to generate preview' });
-  }
-});
 
 // POST: Add music to video
 router.post('/add-music', requireAuth, upload.single('musicFile'), async (req, res) => {
@@ -5806,24 +5631,50 @@ router.post('/apply-transition', requireAuth, async (req, res) => {
 
     const fxTransition = transitionMap[transitionType] || 'fade';
 
-    // For now, apply simple fade transition at the midpoint
-    // Full multi-segment support would require splitting video into segments first
+    // Apply transition effects to a single video (fade in/out, color effects)
     const videoDur = await getVideoMetadata(videoPath);
-    const transitionPoint = Math.max(0, (videoDur.duration * 1000) - (dur * 1000));
+    const totalDur = videoDur.duration || 10;
+    const fadeDur = Math.min(dur, totalDur / 2);
 
-    const filterComplex = `[0:v]xfade=transition=${fxTransition}:duration=${dur}:offset=${transitionPoint / 1000}[v];[0:a][0:a]acrossfade=d=${dur}[a]`;
+    // Build video filter based on transition type
+    let vFilter = '';
+    switch (fxTransition) {
+      case 'fade':
+        vFilter = `fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}`;
+        break;
+      case 'dissolve':
+        vFilter = `fade=t=in:st=0:d=${fadeDur}:alpha=1,fade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}:alpha=1`;
+        break;
+      case 'wipeleft':
+      case 'slideleft':
+        vFilter = `fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}`;
+        break;
+      case 'wiperight':
+      case 'slideright':
+        vFilter = `fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}`;
+        break;
+      case 'zoomin':
+        vFilter = `zoompan=z='min(zoom+0.002,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${Math.round(totalDur * 25)}:s=1920x1080:fps=25,fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}`;
+        break;
+      case 'zoomout':
+        vFilter = `zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.002))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${Math.round(totalDur * 25)}:s=1920x1080:fps=25,fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}`;
+        break;
+      default:
+        vFilter = `fade=t=in:st=0:d=${fadeDur},fade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}`;
+    }
+
+    // Audio fade
+    const aFilter = `afade=t=in:st=0:d=${fadeDur},afade=t=out:st=${totalDur - fadeDur}:d=${fadeDur}`;
 
     await runFFmpeg([
       '-i', videoPath,
-      '-filter_complex', filterComplex,
-      '-map', '[v]',
-      '-map', '[a]',
+      '-vf', vFilter,
+      '-af', aFilter,
       '-c:v', 'libx264',
       '-preset', 'fast',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
       '-b:a', '192k',
-      '-shortest',
       '-y',
       outputPath
     ]);
@@ -5837,6 +5688,86 @@ router.post('/apply-transition', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Transition error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Apply brand template to video
+router.post('/apply-brand-template', requireAuth, upload.single('logo'), async (req, res) => {
+  try {
+    const { filename, primaryColor, secondaryColor, textColor, fontFamily, logoPosition, logoSize } = req.body;
+    
+    if (!filename) return res.status(400).json({ error: 'Missing video filename' });
+
+    let videoPath = path.join(outputDir, filename);
+    if (!fs.existsSync(videoPath)) videoPath = path.join(uploadDir, filename);
+    if (!fs.existsSync(videoPath)) return res.status(404).json({ error: 'Video not found' });
+
+    const outputFilename = 'brand_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    // Convert hex color to FFmpeg format
+    const hexToFFmpeg = (hex) => hex.replace('#', '0x');
+    const primary = hexToFFmpeg(primaryColor || '#6C3AED');
+    const secondary = hexToFFmpeg(secondaryColor || '#EC4899');
+    const textClr = hexToFFmpeg(textColor || '#FFFFFF');
+
+    // Build FFmpeg filter chain
+    let filters = [];
+
+    // Add a thin colored border/frame using the primary color
+    filters.push('pad=iw+8:ih+8:4:4:color=' + primary);
+
+    // Add a small branded lower-third bar with secondary color
+    filters.push("drawbox=x=0:y=ih-60:w=iw:h=60:color=" + secondary + "@0.7:t=fill");
+
+    // Add brand text on the lower-third
+    const fontOpts = fs.existsSync('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf') ? ':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' : '';
+    filters.push("drawtext=text='RepurposeAI':fontsize=18:fontcolor=" + textClr + ":x=15:y=ih-45" + fontOpts);
+
+    // If logo was uploaded, overlay it
+    let ffArgs;
+    if (req.file) {
+      const logoPath = req.file.path;
+      const sizeMap = { 'small': '80', 'medium': '120', 'large': '180' };
+      const logoW = sizeMap[logoSize] || '120';
+      const posMap = {
+        'top-right': 'W-w-20:20',
+        'top-left': '20:20',
+        'bottom-right': 'W-w-20:H-h-70',
+        'bottom-left': '20:H-h-70'
+      };
+      const overlayPos = posMap[logoPosition] || 'W-w-20:20';
+
+      ffArgs = [
+        '-i', videoPath,
+        '-i', logoPath,
+        '-filter_complex',
+        '[0:v]' + filters.join(',') + '[bg];[1:v]scale=' + logoW + ':-1[logo];[bg][logo]overlay=' + overlayPos,
+        '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-y', outputPath
+      ];
+    } else {
+      ffArgs = [
+        '-i', videoPath,
+        '-vf', filters.join(','),
+        '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-y', outputPath
+      ];
+    }
+
+    await runFFmpeg(ffArgs);
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Brand template error:', error);
+    res.status(500).json({ error: error.message || 'Failed to apply brand template' });
   }
 });
 
