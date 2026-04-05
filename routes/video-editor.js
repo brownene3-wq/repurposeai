@@ -144,17 +144,17 @@ router.get('/', requireAuth, async (req, res) => {
     ${getBaseCSS()}
     .editor-container{display:flex;height:calc(100vh - 48px);gap:.75rem;padding:.75rem}
     .editor-main{flex:1;display:flex;flex-direction:column;min-width:0}
-    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0}
-    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s}
+    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:500px}
+    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:450px;display:flex;flex-direction:column;justify-content:center}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
     .upload-zone.has-video{display:none}
     .upload-zone h3{font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:.5rem}
     .upload-zone p{color:var(--text-muted);font-size:.9rem;margin-bottom:1rem}
     .upload-button{padding:.6rem 1.2rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:all 0.2s}
     .upload-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3);transform:translateY(-2px)}
-    .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:200px}
+    .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:450px}
     .video-preview-area.has-video{background:transparent;padding:0}
-    .video-player{width:100%;height:100%;border-radius:12px}
+    .video-player{width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000}
 .timeline-container{background:#1a1a2e;border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-top:.5rem;overflow:hidden;flex-shrink:0;user-select:none}
     .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
     .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
@@ -352,7 +352,7 @@ router.get('/', requireAuth, async (req, res) => {
                 <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#F59E0B,#EF4444)" title="Orange Red" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
                 <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#10B981,#06B6D4)" title="Green Teal" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
                 <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#8B5CF6,#A78BFA)" title="Purple Lavender" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
-                <div class="gradient-preset-card" data-gradient="#000000" title="Black" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0;background:#000"></div>
+                <div class="gradient-preset-card" data-gradient="#000000" title="Black" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid rgba(255,255,255,0.3);flex-shrink:0;background:#000"></div>
                 <div class="gradient-preset-card" data-gradient="#FFFFFF" title="White" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0;background:#fff"></div>
               </div>
             </div>
@@ -2688,7 +2688,7 @@ router.get('/', requireAuth, async (req, res) => {
       youtubeImportBtn.addEventListener('click', async function() {
         const url = youtubeUrlInput.value.trim();
         if (!url) { showToast('Please paste a YouTube URL', 'error'); return; }
-        if (!url.match(/youtube\.com|youtu\.be/i)) { showToast('Please enter a valid YouTube URL', 'error'); return; }
+        if (!url.match(/youtube\.com|youtu\.be|zoom\.us|twitch\.tv|rumble\.com/i)) { showToast('Please enter a valid video URL', 'error'); return; }
         youtubeImportBtn.disabled = true;
         youtubeImportBtn.textContent = '⏳ Importing...';
         try {
@@ -2703,8 +2703,12 @@ router.get('/', requireAuth, async (req, res) => {
           currentVideoFile = data.filename;
           videoDuration = data.duration || 0;
           videoPlayer.src = data.serveUrl;
+          if (videoDuration > 0) initTimeline();
           videoPlayer.addEventListener('loadedmetadata', function() {
-            if (videoPlayer.duration && videoPlayer.duration !== Infinity) videoDuration = videoPlayer.duration;
+            if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
+              videoDuration = videoPlayer.duration;
+              initTimeline();
+            }
           });
           uploadZone.classList.add('has-video');
           document.getElementById('exportButton').disabled = false;
@@ -2739,6 +2743,13 @@ router.get('/', requireAuth, async (req, res) => {
                 currentVideoFile = data.filename;
                 videoDuration = data.duration || 0;
                 videoPlayer.src = data.serveUrl;
+                if (videoDuration > 0) initTimeline();
+                videoPlayer.addEventListener('loadedmetadata', function() {
+                  if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
+                    videoDuration = videoPlayer.duration;
+                    initTimeline();
+                  }
+                });
                 uploadZone.classList.add('has-video');
                 document.getElementById('exportButton').disabled = false;
               } catch (err) {
