@@ -327,57 +327,41 @@ ${pageStyles}
     ${sidebar}
     ${themeToggle}
     <main class="main-content">
-      <div style="text-align:center;max-width:700px;margin:0 auto 2rem">
-        <h1 style="font-size:2rem;font-weight:700;margin-bottom:.5rem">AI Hook</h1>
-        <p style="color:var(--text-secondary);font-size:1.05rem;margin-bottom:2rem">Create a sound hook with the AI voice-over</p>
-
-        <!-- Hero Image -->
-        <div style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:2rem;background:linear-gradient(135deg,#1a1a2e,#16213e);padding:2rem">
-          <div style="display:flex;align-items:center;justify-content:center;gap:1rem">
-            <div style="width:50px;height:50px;background:rgba(255,255,255,.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem">✨</div>
-            <div style="background:linear-gradient(135deg,#667eea,#764ba2);border-radius:16px;overflow:hidden;width:280px;height:180px;display:flex;align-items:center;justify-content:center;position:relative">
-              <div style="font-size:4rem;opacity:.3">🎬</div>
-              <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(255,255,255,.15);backdrop-filter:blur(10px);border-radius:20px;margin:12px;padding:10px 16px;display:flex;align-items:center;justify-content:center;gap:4px">
-                <span style="display:inline-block;width:3px;height:14px;background:white;border-radius:2px;animation:wave .5s ease infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:22px;background:white;border-radius:2px;animation:wave .5s ease .1s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:16px;background:white;border-radius:2px;animation:wave .5s ease .2s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:28px;background:white;border-radius:2px;animation:wave .5s ease .3s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:18px;background:white;border-radius:2px;animation:wave .5s ease .4s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:24px;background:white;border-radius:2px;animation:wave .5s ease .15s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:12px;background:white;border-radius:2px;animation:wave .5s ease .25s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:20px;background:white;border-radius:2px;animation:wave .5s ease .35s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:26px;background:white;border-radius:2px;animation:wave .5s ease .05s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:14px;background:white;border-radius:2px;animation:wave .5s ease .45s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:22px;background:white;border-radius:2px;animation:wave .5s ease .2s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:30px;background:white;border-radius:2px;animation:wave .5s ease .1s infinite alternate"></span>
-              </div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <div style="background:linear-gradient(135deg,#f093fb,#f5576c);width:120px;height:75px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:2rem;opacity:.9">🎙️</div>
-              <div style="background:linear-gradient(135deg,#4facfe,#00f2fe);width:120px;height:75px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:2rem;opacity:.9">🪝</div>
-            </div>
-          </div>
-          <style>@keyframes wave{0%{height:8px}100%{height:28px}}</style>
-        </div>
-
-        <!-- Link Input Section -->
-        <div style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;margin-bottom:1rem">
-          <div style="position:relative;margin-bottom:1rem">
-            <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:1.1rem;color:var(--text-muted)">🔗</span>
-            <input type="text" id="linkInput" placeholder="Drop a YouTube link" style="width:100%;padding:14px 16px 14px 44px;border-radius:12px;border:1px solid var(--border-subtle);background:var(--dark-2);color:var(--text);font-size:1rem;outline:none;box-sizing:border-box">
-          </div>
-          <div style="display:flex;gap:12px;justify-content:center;align-items:center">
-            <button type="button" onclick="document.getElementById('videoFileInput').click()" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">⬆ Upload</button>
-            <button type="button" id="googleDriveBtn" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">📁 Google Drive</button>
-            <button type="button" id="dropboxBtn2" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">📦 Dropbox</button>
-          </div>
-          <input type="file" id="videoFileInput" accept="video/*" style="display:none">
-        </div>
-        <p style="color:var(--text-muted);font-size:.85rem">You can upload videos up to 120 minutes long.</p>
+      <div class="page-header">
+        <h1>AI Hook Generator</h1>
+        <p>Create scroll-stopping hooks that boost retention</p>
       </div>
 
-      <!-- Hook Configuration -->
-      <div class="input-section" style="max-width:700px;margin:0 auto">
+      <!-- Hero Visual Section -->
+      <div style="background:linear-gradient(135deg,rgba(124,58,237,0.15),rgba(236,72,153,0.1));border-radius:20px;padding:2.5rem;margin-bottom:2rem;position:relative;overflow:hidden;border:1px solid rgba(124,58,237,0.2)">
+        <div style="display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap">
+          <div style="background:linear-gradient(135deg,#7C3AED,#EC4899);border-radius:16px;padding:2rem 2.5rem;position:relative;min-width:200px;text-align:center">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem">🎬</div>
+            <div style="display:flex;align-items:center;gap:4px;justify-content:center">
+              <div style="width:3px;height:20px;background:rgba(255,255,255,0.6);border-radius:2px;animation:wave1 1s ease-in-out infinite"></div>
+              <div style="width:3px;height:30px;background:rgba(255,255,255,0.8);border-radius:2px;animation:wave2 1s ease-in-out infinite 0.1s"></div>
+              <div style="width:3px;height:25px;background:rgba(255,255,255,0.7);border-radius:2px;animation:wave1 1s ease-in-out infinite 0.2s"></div>
+              <div style="width:3px;height:35px;background:rgba(255,255,255,0.9);border-radius:2px;animation:wave2 1s ease-in-out infinite 0.3s"></div>
+              <div style="width:3px;height:20px;background:rgba(255,255,255,0.6);border-radius:2px;animation:wave1 1s ease-in-out infinite 0.4s"></div>
+              <div style="width:3px;height:28px;background:rgba(255,255,255,0.8);border-radius:2px;animation:wave2 1s ease-in-out infinite 0.5s"></div>
+              <div style="width:3px;height:22px;background:rgba(255,255,255,0.7);border-radius:2px;animation:wave1 1s ease-in-out infinite 0.6s"></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="background:linear-gradient(135deg,#EC4899,#F472B6);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🎙️</div>
+            <div style="background:linear-gradient(135deg,#06B6D4,#22D3EE);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🪝</div>
+            <div style="background:linear-gradient(135deg,#8B5CF6,#A78BFA);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">✨</div>
+            <div style="background:linear-gradient(135deg,#F59E0B,#FBBF24);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🔊</div>
+          </div>
+        </div>
+        <style>
+          @keyframes wave1{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.5)}}
+          @keyframes wave2{0%,100%{transform:scaleY(1.5)}50%{transform:scaleY(0.7)}}
+        </style>
+      </div>
+
+
+      <div class="input-section">
         <form id="hookForm">
           <div class="form-group">
             <label for="inputType">Input Type</label>
@@ -392,45 +376,87 @@ ${pageStyles}
           <div id="uploadContainer" style="display: none;" class="upload-zone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
             <h3>📹 Drop your video here</h3>
             <p>Or click to browse</p>
-            <button type="button" class="upload-button" onclick="document.getElementById('fileInput').click()">Select Video</button>
-            <input type="file" id="fileInput" style="display: none" accept="video/*">
-            <div id="fileName" style="margin-top: 10px; color: var(--text-secondary);"></div>
+            <button type="button" class="upload-button" onclick="document.getElementById('videoFile').click()">Select Video</button>
+            <input type="file" id="videoFile" style="display:none" accept="video/*" onchange="handleFileSelect(event)">
+            <p id="fileName" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;"></p>
           </div>
 
-          <div id="youtubeContainer" style="display: none;" class="form-group">
-            <label for="youtubeUrl">YouTube URL</label>
-            <input type="text" id="youtubeUrl" name="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." style="width:100%;padding:0.75rem;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);font-size:0.95rem">
+          <div id="youtubeContainer" style="display: none;">
+            <div class="form-group">
+              <label for="youtubeUrl">YouTube URL</label>
+              <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." style="width: 100%; padding: 0.75rem; background: var(--dark-2); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: var(--text); font-family: inherit; font-size: 0.9rem;">
+            </div>
           </div>
 
-          <div id="textContainer" style="display: none;" class="form-group">
-            <label for="transcriptText">Video Transcript or Summary</label>
-            <textarea id="transcriptText" name="transcriptText" rows="4" placeholder="Paste your transcript or describe your video content..." style="width:100%;padding:0.75rem;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);font-size:0.95rem;resize:vertical"></textarea>
+          <div id="textContainer" style="display: none;">
+            <div class="form-group">
+              <label for="transcript">Video Transcript or Description</label>
+              <textarea id="transcript" name="transcript" rows="4" placeholder="Paste your video transcript or describe the video content..."></textarea>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="hookStyle">Hook Style</label>
-            <select id="hookStyle" name="hookStyle">
-              <option value="curiosity">Curiosity Gap</option>
-              <option value="shock">Shocking Statement</option>
-              <option value="question">Compelling Question</option>
-              <option value="story">Story Hook</option>
-              <option value="controversial">Controversial Take</option>
-            </select>
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="style">Hook Style</label>
+              <select id="style" name="style" required>
+                <option value="">Select a style</option>
+                <option value="Serious">Serious</option>
+                <option value="Casual">Casual</option>
+                <option value="Funny">Funny</option>
+                <option value="Dramatic">Dramatic</option>
+                <option value="Question">Question</option>
+                <option value="Shocking">Shocking</option>
+                <option value="Storytelling">Storytelling</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Voice Provider</label>
+              <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
+                <button type="button" class="tab-btn active" id="providerFreeBtn" onclick="switchVoiceProvider('free')" style="flex:1;padding:.5rem;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;transition:all .2s">Free AI Voice</button>
+                <button type="button" class="tab-btn" id="providerElevenBtn" onclick="switchVoiceProvider('elevenlabs')" style="flex:1;padding:.5rem;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;transition:all .2s">ElevenLabs</button>
+              </div>
+            </div>
+            <div class="form-group" id="freeVoiceGroup">
+              <label for="voice">Speaker Voice</label>
+              <select id="voice" name="voice" required>
+                <option value="">Select a free voice</option>
+                <option value="free_male_1">Alex (Male, Deep)</option>
+                <option value="free_male_2">Marcus (Male, Warm)</option>
+                <option value="free_male_3">James (Male, Energetic)</option>
+                <option value="free_female_1">Sarah (Female, Professional)</option>
+                <option value="free_female_2">Emma (Female, Friendly)</option>
+                <option value="free_female_3">Lily (Female, Calm)</option>
+              </select>
+              <p style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem">High-quality AI voices — no API key needed</p>
+            </div>
+            <div class="form-group" id="elevenVoiceGroup" style="display:none">
+              <label for="voiceEleven">Speaker Voice</label>
+              <select id="voiceEleven" name="voiceEleven">
+                <option value="">Loading ElevenLabs voices...</option>
+              </select>
+              <p id="voiceHint" style="font-size:.78rem;color:var(--text-muted);margin-top:.4rem;display:none"></p>
+            </div>
+
+            <div class="form-group">
+              <label for="platform">Platform</label>
+              <select id="platform" name="platform" required>
+                <option value="">Select a platform</option>
+                <option value="TikTok">TikTok</option>
+                <option value="YouTube Shorts">YouTube Shorts</option>
+                <option value="Instagram Reels">Instagram Reels</option>
+                <option value="Instagram">Instagram</option>
+                <option value="Twitter/X">Twitter/X</option>
+                <option value="LinkedIn">LinkedIn</option>
+              </select>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="voiceId">AI Voice</label>
-            <select id="voiceId" name="voiceId">
-              <option value="alloy">Alloy (Neutral)</option>
-              <option value="echo">Echo (Male)</option>
-              <option value="fable">Fable (British)</option>
-              <option value="onyx">Onyx (Deep Male)</option>
-              <option value="nova">Nova (Female)</option>
-              <option value="shimmer">Shimmer (Soft Female)</option>
-            </select>
+          <div id="apiKeyNotice" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;display:none">
+            <p style="color:#F59E0B;font-size:.85rem;margin:0"><strong>ElevenLabs API Key Required</strong> — To generate voice hooks, connect your own ElevenLabs API key in <a href="/shorts#settings" style="color:#6C3AED;font-weight:600">Smart Shorts &rarr; Settings</a>. The hook text will still be generated without a key.</p>
           </div>
-
-          <button type="submit" class="action-button" id="generateBtn" style="width:100%">✨ Generate AI Hook</button>
+          <button type="submit" class="btn-generate" id="generateBtn">Generate AI Hook</button>
+          <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
         </form>
       </div>
 
@@ -714,18 +740,7 @@ ${pageStyles}
     }
 
     ${themeScript}
-  
-    // Rotating link placeholder
-    const linkPhrases = ['Drop a YouTube link', 'Drop a Rumble link', 'Drop a Zoom link', 'Drop a Twitch link'];
-    let linkPhraseIdx = 0;
-    const linkInput = document.getElementById('linkInput');
-    if (linkInput) {
-      setInterval(() => {
-        linkPhraseIdx = (linkPhraseIdx + 1) % linkPhrases.length;
-        linkInput.placeholder = linkPhrases[linkPhraseIdx];
-      }, 3000);
-    }
-</script>
+  </script>
 </body>
 </html>`;
 
