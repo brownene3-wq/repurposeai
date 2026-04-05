@@ -455,7 +455,7 @@ router.get('/', requireAuth, (req, res) => {
     .container {
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 80px);
+      min-height: calc(100vh - 80px);
       padding: 1.5rem;
       width: 100%;
       box-sizing: border-box;
@@ -485,7 +485,8 @@ router.get('/', requireAuth, (req, res) => {
       grid-template-columns: 1fr 1fr;
       gap: 1.5rem;
       flex: 1;
-      overflow: hidden;
+      overflow: visible;
+      min-height: 400px;
     }
 
     .section {
