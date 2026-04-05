@@ -6,7 +6,7 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
-const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggleh, getThemeScript } = require('../utils/theme');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
