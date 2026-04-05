@@ -144,15 +144,15 @@ router.get('/', requireAuth, async (req, res) => {
     ${getBaseCSS()}
     .editor-container{display:flex;height:calc(100vh - 48px);gap:.75rem;padding:.75rem;overflow:hidden}
     .editor-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow-y:auto;overflow-x:hidden}
-    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 220px);overflow:hidden}
-    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:250px;display:flex;flex-direction:column;justify-content:center}
+    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
+    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
     .upload-zone.has-video{display:none}
     .upload-zone h3{font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:.5rem}
     .upload-zone p{color:var(--text-muted);font-size:.9rem;margin-bottom:1rem}
     .upload-button{padding:.6rem 1.2rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:all 0.2s}
     .upload-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3);transform:translateY(-2px)}
-    .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:450px}
+    .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
     .video-preview-area.has-video{display:flex;background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000}
 .timeline-container{background:#1a1a2e;border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-top:.5rem;overflow:hidden;flex-shrink:0;user-select:none}
@@ -190,6 +190,23 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .timeline-container{background:#f0f0f5;border-color:rgba(108,58,237,0.12)}
     body.light .timeline-ruler{background:#e8e8f0}
     .tools-section{display:flex;gap:.4rem;margin-top:.6rem;flex-wrap:wrap}
+    .category-tabs{display:flex;gap:2px;background:var(--dark);border-radius:10px;padding:3px;border:1px solid var(--border-subtle)}
+    .category-tab{flex:1;padding:8px 4px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;border-radius:8px;font-size:.72rem;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .25s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+    .category-tab:hover{background:rgba(108,58,237,0.1);color:var(--text)}
+    .category-tab.active{background:linear-gradient(135deg,#6C3AED,#7C3AED);color:#fff;box-shadow:0 2px 8px rgba(108,58,237,0.4)}
+    .cat-icon{font-size:16px;line-height:1}
+    .cat-label{font-size:.65rem;letter-spacing:.3px;text-transform:uppercase}
+    .category-tools{margin-top:6px}
+    .category-grid{display:flex;gap:4px;flex-wrap:wrap}
+    .category-grid .tool-button{flex:1 1 calc(50% - 4px);min-width:0;justify-content:center;padding:8px 6px;font-size:.73rem;border-radius:8px;background:var(--surface);border:1px solid var(--border-subtle);transition:all .2s}
+    .category-grid .tool-button:hover{border-color:var(--primary);background:rgba(108,58,237,0.08);transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+    .category-grid .tool-button.active{background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(236,72,153,0.1));border-color:var(--primary);color:var(--primary)}
+    .properties-panel.collapsed .slider-group{display:none}
+    .properties-panel.collapsed{padding:6px 10px}
+    .properties-panel .panel-title{margin-bottom:0}
+    .properties-panel:not(.collapsed) .panel-title{margin-bottom:8px}
+    .export-floating{position:sticky;bottom:0;z-index:5;margin-top:auto;box-shadow:0 -4px 12px rgba(0,0,0,0.2)}
+    
     .tool-button{padding:.45rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);cursor:pointer;font-size:.78rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.3rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .tool-button:hover{background:var(--surface);border-color:var(--primary);color:var(--primary)}
     .tool-button.active{background:var(--primary);color:white;border-color:var(--primary)}
@@ -212,7 +229,7 @@ router.get('/', requireAuth, async (req, res) => {
     #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
     .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
     .transcript-timestamp:hover{text-decoration:underline}
-    .editor-sidebar{width:270px;min-width:270px;display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px;scrollbar-width:thin}
+    .editor-sidebar{width:310px;min-width:310px;display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px;scrollbar-width:thin}
     .editor-sidebar::-webkit-scrollbar{width:4px}
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
     .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
@@ -1252,26 +1269,111 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Toast notifications
     
-    // === DOM FIX: Move tools-section and extra panels into sidebar ===
+    // === PREMIUM SIDEBAR REDESIGN: Tabbed Category System ===
     (function() {
       var sidebar = document.querySelector('.editor-sidebar');
-      var propsPanel = sidebar ? sidebar.querySelector('.properties-panel') : null;
+      if (!sidebar) return;
+      var propsPanel = sidebar.querySelector('.properties-panel');
       var toolsSection = document.querySelector('.tools-section');
-      if (sidebar && propsPanel && toolsSection) {
-        // Move tools-section right after properties-panel
-        propsPanel.after(toolsSection);
-        // Move extra tool panels that are stuck in video-container
-        var panelIds = ['cropPanel','annotationsPanel','elementsPanel','zoomPanel','pipPanel','keyframesPanel','colorGradePanel'];
-        var exportPanel = sidebar.querySelector('.export-panel');
-        panelIds.forEach(function(id) {
-          var panel = document.getElementById(id);
-          if (panel && panel.closest('.editor-sidebar') === null) {
-            if (exportPanel) { exportPanel.before(panel); }
-            else { sidebar.appendChild(panel); }
+      var exportPanel = sidebar.querySelector('.export-panel');
+      if (!toolsSection) return;
+
+      // Move tools-section and extra panels into sidebar first
+      if (propsPanel) propsPanel.after(toolsSection);
+      var panelIds = ['cropPanel','annotationsPanel','elementsPanel','zoomPanel','pipPanel','keyframesPanel','colorGradePanel'];
+      panelIds.forEach(function(id) {
+        var panel = document.getElementById(id);
+        if (panel && panel.closest('.editor-sidebar') === null) {
+          if (exportPanel) exportPanel.before(panel);
+          else sidebar.appendChild(panel);
+        }
+      });
+
+      // === CREATE TABBED CATEGORY SYSTEM ===
+      // Hide original tools-section
+      toolsSection.style.display = 'none';
+
+      // Make properties panel collapsible
+      if (propsPanel) {
+        var propsTitle = propsPanel.querySelector('.panel-title');
+        if (propsTitle) {
+          propsPanel.classList.add('collapsed');
+          propsTitle.style.cursor = 'pointer';
+          propsTitle.style.display = 'flex';
+          propsTitle.style.justifyContent = 'space-between';
+          propsTitle.style.alignItems = 'center';
+          propsTitle.innerHTML += '<span class="collapse-arrow" style="font-size:10px;transition:transform .2s">&#9660;</span>';
+          propsTitle.addEventListener('click', function() {
+            propsPanel.classList.toggle('collapsed');
+            var arrow = propsTitle.querySelector('.collapse-arrow');
+            if (propsPanel.classList.contains('collapsed')) {
+              arrow.style.transform = 'rotate(-90deg)';
+            } else {
+              arrow.style.transform = 'rotate(0deg)';
+            }
+          });
+          // Start collapsed
+          var arrow = propsTitle.querySelector('.collapse-arrow');
+          if (arrow) arrow.style.transform = 'rotate(-90deg)';
+        }
+      }
+
+      // Category definitions
+      var categories = [
+        { id: 'edit', label: 'Edit', icon: '✂️', tools: ['undoBtn','redoBtn','trimButton','splitButton','speedButton','cropBtn'] },
+        { id: 'audio', label: 'Audio', icon: '🔊', tools: ['audioButton','addMusicButton','voiceoverButton','vtBtn'] },
+        { id: 'ai', label: 'AI', icon: '✨', tools: ['enhanceButton','captionsButton','aihookButton','brandtemplateButton','transcriptButton'] },
+        { id: 'effects', label: 'Effects', icon: '🎨', tools: ['filterButton','textButton','transitionButton','brollButton','annotationsBtn','elementsBtn','zoomBtn','pipBtn','keyframesBtn','colorgradeBtn'] }
+      ];
+
+      // Create tab container
+      var tabContainer = document.createElement('div');
+      tabContainer.className = 'category-tabs';
+      var toolGrid = document.createElement('div');
+      toolGrid.className = 'category-tools';
+      toolGrid.id = 'categoryTools';
+
+      categories.forEach(function(cat, index) {
+        var tab = document.createElement('button');
+        tab.className = 'category-tab' + (index === 0 ? ' active' : '');
+        tab.dataset.category = cat.id;
+        tab.innerHTML = '<span class="cat-icon">' + cat.icon + '</span><span class="cat-label">' + cat.label + '</span>';
+        tab.addEventListener('click', function() {
+          document.querySelectorAll('.category-tab').forEach(function(t) { t.classList.remove('active'); });
+          this.classList.add('active');
+          document.querySelectorAll('.category-grid').forEach(function(g) { g.style.display = 'none'; });
+          var grid = document.getElementById('catGrid-' + cat.id);
+          if (grid) grid.style.display = 'flex';
+        });
+        tabContainer.appendChild(tab);
+
+        // Create tool grid for this category
+        var grid = document.createElement('div');
+        grid.className = 'category-grid';
+        grid.id = 'catGrid-' + cat.id;
+        grid.style.display = index === 0 ? 'flex' : 'none';
+
+        cat.tools.forEach(function(toolId) {
+          var btn = document.getElementById(toolId);
+          if (btn) {
+            grid.appendChild(btn);
           }
         });
+        toolGrid.appendChild(grid);
+      });
+
+      // Insert tab system after properties panel
+      if (propsPanel) {
+        propsPanel.after(tabContainer);
+        tabContainer.after(toolGrid);
+      }
+
+      // Make Export a floating button
+      if (exportPanel) {
+        exportPanel.classList.add('export-floating');
       }
     })();
+
 
 function showToast(message, type = 'success') {
       const toast = document.createElement('div');
