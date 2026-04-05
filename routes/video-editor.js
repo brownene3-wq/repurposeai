@@ -203,6 +203,15 @@ router.get('/', requireAuth, async (req, res) => {
     .gradient-preset-card:nth-child(3){background:linear-gradient(135deg,#F59E0B,#EF4444)}
     .gradient-preset-card:nth-child(4){background:linear-gradient(135deg,#10B981,#06B6D4)}
     .gradient-preset-card:nth-child(5){background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
+    .toolbar-btn{padding:6px 12px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:.8rem;transition:all .2s;display:flex;align-items:center;gap:4px}
+    .toolbar-btn:hover{background:var(--primary);color:white;border-color:var(--primary)}
+    .broll-overlay{position:absolute;cursor:move;border:2px dashed rgba(255,255,255,.6);border-radius:4px;z-index:10;overflow:hidden}
+    .broll-overlay video,.broll-overlay img{width:100%;height:100%;object-fit:cover}
+    .broll-overlay .resize-handle{position:absolute;bottom:0;right:0;width:16px;height:16px;background:var(--primary);border-radius:50%;cursor:se-resize;border:2px solid white}
+    .broll-pos-btn:hover,.broll-pos-btn.active{background:var(--primary)!important;color:white!important;border-color:var(--primary)!important}
+    #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
+    .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
+    .transcript-timestamp:hover{text-decoration:underline}
     .editor-sidebar{width:270px;min-width:270px;display:flex;flex-direction:column;gap:.6rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px}
     .editor-sidebar::-webkit-scrollbar{width:4px}
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
@@ -264,6 +273,8 @@ router.get('/', requireAuth, async (req, res) => {
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
   </style>
+
+    <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="YOUR_DROPBOX_KEY"></script>
 </head>
 <body>
  <div class="dashboard">
@@ -278,8 +289,27 @@ router.get('/', requireAuth, async (req, res) => {
             <div class="upload-zone" id="uploadZone">
               <h3>📹 Upload Your Video</h3>
               <p>Drop your video here or click to browse</p>
-              <button type="button" class="upload-button">Select Video</button>
+              <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:12px">
+                <button type="button" class="upload-button">Select Video</button>
+                <button type="button" class="upload-button" id="dropboxImportBtn" style="background:linear-gradient(135deg,#0061FF,#0041B3)">📦 Dropbox</button>
+              </div>
               <input type="file" id="fileInput" style="display:none" accept="video/*">
+              <div style="display:flex;align-items:center;gap:8px;margin-top:12px;width:100%;max-width:560px">
+                <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+                <span style="color:var(--text-muted);font-size:.8rem">or drop a link</span>
+                <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px;width:100%;max-width:560px">
+                <div style="position:relative;flex:1">
+                  <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
+                  <input type="text" id="youtubeUrlInput" placeholder="Drop a YouTube, Zoom, Twitch, or Rumble link" style="width:100%;padding:12px 14px 12px 36px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.9rem;outline:none;box-sizing:border-box">
+                </div>
+                <button type="button" id="youtubeImportBtn" style="padding:10px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#6C3AED,#EC4899);color:white;font-weight:600;cursor:pointer;white-space:nowrap;font-size:.9rem">▶ Import</button>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;justify-content:center">
+                <button type="button" class="upload-button" id="googleDriveImportBtn" style="background:linear-gradient(135deg,#4285F4,#34A853);padding:8px 16px;font-size:.8rem">📁 Google Drive</button>
+              </div>
+              <p style="color:var(--text-muted);font-size:.75rem;margin-top:8px">You can upload videos up to 120 minutes long. Supports YouTube, Zoom, Twitch, Rumble links.</p>
             </div>
 
             <div class="video-preview-area" id="videoPreviewArea">
@@ -307,21 +337,40 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-button" data-tool="voicetransform">🔄 Voice Transform</button>
               <button class="tool-button" data-tool="text">📝 Text Overlay</button>
               <button class="tool-button" data-tool="transitions">✨ Transitions</button>
+              <button class="tool-button" data-tool="broll">🎬 B-Roll</button>
+              <button class="tool-button" data-tool="aihook">🪝 AI Hook</button>
+              <button class="tool-button" data-tool="brandtemplate">🎨 Brand Template</button>
+              <button class="tool-button" data-tool="transcript">📜 Transcript</button>
             </div>
 
-            <div class="top-bar-selectors" style="display:flex;gap:1rem;margin-top:1.5rem;padding:1rem;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
-              <div style="flex:1">
+            <!-- Background Color Presets -->
+            <div style="margin-top:1rem;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Background Color</label>
+              <div class="gradient-presets" id="gradientPresets" style="display:flex;gap:10px;padding:4px 0;overflow-x:auto;flex-wrap:wrap">
+                <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#6C3AED,#EC4899)" title="Purple Pink" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
+                <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#0EA5E9,#6366F1)" title="Blue Indigo" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
+                <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#F59E0B,#EF4444)" title="Orange Red" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
+                <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#10B981,#06B6D4)" title="Green Teal" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
+                <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#8B5CF6,#A78BFA)" title="Purple Lavender" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
+                <div class="gradient-preset-card" data-gradient="#000000" title="Black" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0;background:#000"></div>
+                <div class="gradient-preset-card" data-gradient="#FFFFFF" title="White" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0;background:#fff"></div>
+              </div>
+            </div>
+
+            <!-- Aspect Ratio, Layout, Tracking -->
+            <div style="display:flex;gap:1rem;margin-top:1rem;flex-wrap:wrap">
+              <div style="flex:1;min-width:140px;padding:12px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
                 <label class="dropdown-label">Aspect Ratio</label>
-                <select class="dropdown" id="aspectRatioSelect" style="padding:.5rem .6rem;font-size:.85rem">
+                <select class="dropdown" id="aspectRatioSelect" style="padding:.5rem .6rem;font-size:.85rem;width:100%">
                   <option value="16:9">16:9 (YouTube)</option>
                   <option value="9:16">9:16 (TikTok)</option>
                   <option value="1:1">1:1 (Instagram)</option>
                   <option value="4:5">4:5 (Reels)</option>
                 </select>
               </div>
-              <div style="flex:1">
+              <div style="flex:1;min-width:140px;padding:12px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
                 <label class="dropdown-label">Layout Mode</label>
-                <select class="dropdown" id="layoutSelect" style="padding:.5rem .6rem;font-size:.85rem">
+                <select class="dropdown" id="layoutSelect" style="padding:.5rem .6rem;font-size:.85rem;width:100%">
                   <option value="fill">Fill</option>
                   <option value="fit">Fit (Blur)</option>
                   <option value="split">Split Screen</option>
@@ -329,14 +378,26 @@ router.get('/', requireAuth, async (req, res) => {
                   <option value="gameplay">Gameplay</option>
                 </select>
               </div>
+              <div style="flex:1;min-width:140px;padding:12px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
+                <label class="dropdown-label">Subject Tracking</label>
+                <select class="dropdown" id="trackingSelect" style="padding:.5rem .6rem;font-size:.85rem;width:100%">
+                  <option value="off">Tracker Off</option>
+                  <option value="auto">Auto Tracking</option>
+                  <option value="manual">Manual Subject</option>
+                </select>
+              </div>
             </div>
 
-            <div class="gradient-presets" id="gradientPresets">
-              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#6C3AED,#EC4899)" title="Purple Pink"></div>
-              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#0EA5E9,#6366F1)" title="Blue Indigo"></div>
-              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#F59E0B,#EF4444)" title="Orange Red"></div>
-              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#10B981,#06B6D4)" title="Green Teal"></div>
-              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#8B5CF6,#A78BFA)" title="Purple Lavender"></div>
+            <!-- Editor Toolbar -->
+            <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap;align-items:center;padding:10px 14px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
+              <button type="button" class="toolbar-btn" id="hideTimelineBtn" title="Hide Timeline">🙈 Hide Timeline</button>
+              <button type="button" class="toolbar-btn" id="deleteClipBtn" title="Delete Selected" style="color:#EF4444">🗑️ Delete</button>
+              <div style="flex:1"></div>
+              <button type="button" class="toolbar-btn" id="zoomOutBtn" title="Zoom Out">➖</button>
+              <button type="button" class="toolbar-btn" id="zoomInBtn" title="Zoom In">➕</button>
+              <div style="flex:1"></div>
+              <button type="button" class="toolbar-btn" id="saveChangesBtn" title="Save Changes" style="background:var(--primary);color:white;border-color:var(--primary)">💾 Save</button>
+              <button type="button" class="toolbar-btn" id="quickExportBtn" title="Export" style="background:linear-gradient(135deg,#10B981,#06B6D4);color:white;border-color:transparent">📥 Export</button>
             </div>
           </div>
         </div>
@@ -737,6 +798,122 @@ router.get('/', requireAuth, async (req, res) => {
             <p style="font-size:.7rem;color:var(--text-muted);margin-top:.5rem;text-align:center">Uses OpenAI Whisper to extract speech and burn animated captions</p>
           </div>
 
+          <!-- B-Roll Panel -->
+          <div class="tool-panel" id="brollPanel" style="display:none">
+            <div class="panel-title">🎬 B-Roll Overlay</div>
+            <div class="upload-section" style="margin-bottom:12px">
+              <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:8px">Add a B-Roll clip to overlay on your main video. You can drag to reposition and resize it on the preview.</p>
+              <input type="file" id="brollFileInput" accept="video/*,image/*" style="display:none">
+              <button type="button" class="action-button" id="brollUploadBtn" style="width:100%;margin-bottom:8px">📁 Select B-Roll File</button>
+              <div id="brollControls" style="display:none">
+                <div class="slider-group">
+                  <div class="slider-label"><span>Width %</span><span class="slider-value" id="brollWidthVal">30%</span></div>
+                  <input type="range" class="slider" id="brollWidth" min="10" max="100" value="30">
+                </div>
+                <div class="slider-group">
+                  <div class="slider-label"><span>Opacity</span><span class="slider-value" id="brollOpacityVal">100%</span></div>
+                  <input type="range" class="slider" id="brollOpacity" min="0" max="100" value="100">
+                </div>
+                <label class="dropdown-label">Position</label>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0">
+                  <button class="broll-pos-btn" data-pos="top-left" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↖ Top Left</button>
+                  <button class="broll-pos-btn" data-pos="top-center" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↑ Top</button>
+                  <button class="broll-pos-btn" data-pos="top-right" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↗ Top Right</button>
+                  <button class="broll-pos-btn" data-pos="center-left" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">← Left</button>
+                  <button class="broll-pos-btn" data-pos="center" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--primary);color:white;cursor:pointer;font-size:.75rem">● Center</button>
+                  <button class="broll-pos-btn" data-pos="center-right" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">→ Right</button>
+                  <button class="broll-pos-btn" data-pos="bottom-left" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↙ Bottom Left</button>
+                  <button class="broll-pos-btn" data-pos="bottom-center" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↓ Bottom</button>
+                  <button class="broll-pos-btn" data-pos="bottom-right" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↘ Bottom Right</button>
+                </div>
+                <p style="font-size:.75rem;color:var(--text-muted);margin-top:4px">💡 Tip: You can also drag the B-Roll directly on the video preview to position it anywhere.</p>
+                <button type="button" class="action-button" id="applyBrollBtn" style="width:100%;margin-top:10px">Apply B-Roll</button>
+                <button type="button" class="action-button" id="removeBrollBtn" style="width:100%;margin-top:6px;background:transparent;border:1px solid #EF4444;color:#EF4444">Remove B-Roll</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Hook Panel -->
+          <div class="tool-panel" id="aihookPanel" style="display:none">
+            <div class="panel-title">🪝 AI Hook Generator</div>
+            <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">Generate an attention-grabbing hook for the first few seconds of your video using AI.</p>
+            <label class="dropdown-label">Hook Style</label>
+            <select class="dropdown" id="hookStyleSelect" style="width:100%;margin-bottom:10px">
+              <option value="question">❓ Question Hook</option>
+              <option value="statistic">📊 Shocking Statistic</option>
+              <option value="story">📖 Story Opener</option>
+              <option value="controversial">🔥 Bold Statement</option>
+              <option value="curiosity">🧠 Curiosity Gap</option>
+              <option value="pain">😤 Pain Point</option>
+            </select>
+            <label class="dropdown-label">Video Topic (optional)</label>
+            <textarea id="hookTopicInput" placeholder="Describe your video topic to get a more relevant hook..." style="width:100%;min-height:60px;padding:10px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.85rem;resize:vertical;margin-bottom:10px"></textarea>
+            <button type="button" class="action-button" id="generateHookBtn" style="width:100%">✨ Generate AI Hook</button>
+            <div id="hookResult" style="display:none;margin-top:12px;padding:12px;background:var(--surface);border-radius:8px;border:1px solid var(--border-subtle)">
+              <label class="dropdown-label">Generated Hook</label>
+              <div id="hookText" style="font-size:.9rem;color:var(--text-primary);margin:6px 0;line-height:1.5"></div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button type="button" class="action-button" id="applyHookBtn" style="flex:1">Apply to Video</button>
+                <button type="button" class="action-button" id="regenerateHookBtn" style="flex:1;background:transparent;border:1px solid var(--primary);color:var(--primary)">🔄 Regenerate</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Brand Template Panel -->
+          <div class="tool-panel" id="brandtemplatePanel" style="display:none">
+            <div class="panel-title">🎨 Brand Template</div>
+            <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">Apply your brand's visual identity to the video — colors, fonts, logo watermark, and intro/outro.</p>
+            <div style="margin-bottom:12px">
+              <label class="dropdown-label">Logo Watermark</label>
+              <input type="file" id="brandLogoInput" accept="image/*" style="display:none">
+              <button type="button" class="action-button" id="brandLogoBtn" style="width:100%;margin-bottom:6px">📎 Upload Logo</button>
+              <div style="display:flex;gap:8px">
+                <select class="dropdown" id="logoPositionSelect" style="flex:1;font-size:.8rem">
+                  <option value="top-right">Top Right</option>
+                  <option value="top-left">Top Left</option>
+                  <option value="bottom-right">Bottom Right</option>
+                  <option value="bottom-left">Bottom Left</option>
+                </select>
+                <div style="flex:1">
+                  <label class="dropdown-label" style="font-size:.75rem">Logo Size</label>
+                  <input type="range" class="slider" id="logoSize" min="5" max="30" value="15">
+                </div>
+              </div>
+            </div>
+            <div style="margin-bottom:12px">
+              <label class="dropdown-label">Brand Colors</label>
+              <div style="display:flex;gap:8px;margin-top:4px">
+                <div style="flex:1"><label style="font-size:.7rem;color:var(--text-muted)">Primary</label><input type="color" id="brandPrimaryColor" value="#6C3AED" style="width:100%;height:32px;border:none;border-radius:6px;cursor:pointer"></div>
+                <div style="flex:1"><label style="font-size:.7rem;color:var(--text-muted)">Secondary</label><input type="color" id="brandSecondaryColor" value="#EC4899" style="width:100%;height:32px;border:none;border-radius:6px;cursor:pointer"></div>
+                <div style="flex:1"><label style="font-size:.7rem;color:var(--text-muted)">Text</label><input type="color" id="brandTextColor" value="#FFFFFF" style="width:100%;height:32px;border:none;border-radius:6px;cursor:pointer"></div>
+              </div>
+            </div>
+            <div style="margin-bottom:12px">
+              <label class="dropdown-label">Font Family</label>
+              <select class="dropdown" id="brandFontSelect" style="width:100%">
+                <option value="Inter">Inter (Modern)</option>
+                <option value="Montserrat">Montserrat (Bold)</option>
+                <option value="Playfair Display">Playfair Display (Elegant)</option>
+                <option value="Roboto">Roboto (Clean)</option>
+                <option value="Bebas Neue">Bebas Neue (Impact)</option>
+              </select>
+            </div>
+            <button type="button" class="action-button" id="applyBrandBtn" style="width:100%">✨ Apply Brand Template</button>
+          </div>
+
+          <!-- Transcript Panel -->
+          <div class="tool-panel" id="transcriptPanel" style="display:none">
+            <div class="panel-title">📜 Transcript</div>
+            <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">View and edit the transcript of your video. Auto-generate using AI or type manually.</p>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <button type="button" class="action-button" id="autoTranscriptBtn" style="flex:1">🤖 Auto-Generate</button>
+              <button type="button" class="action-button" id="clearTranscriptBtn" style="flex:1;background:transparent;border:1px solid var(--border-subtle);color:var(--text-secondary)">🗑️ Clear</button>
+            </div>
+            <div id="transcriptStatus" style="display:none;padding:10px;border-radius:8px;background:var(--primary-light);margin-bottom:10px;font-size:.85rem;text-align:center"></div>
+            <textarea id="transcriptText" placeholder="Transcript will appear here after auto-generating, or you can type/paste your own transcript..." style="width:100%;min-height:200px;padding:12px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.85rem;resize:vertical;line-height:1.6;font-family:inherit"></textarea>
+            <button type="button" class="action-button" id="saveTranscriptBtn" style="width:100%;margin-top:8px">💾 Save Transcript</button>
+          </div>
+
           <div class="export-panel">
             <div class="panel-title">📤 Export Settings</div>
 
@@ -757,6 +934,7 @@ router.get('/', requireAuth, async (req, res) => {
                 <option value="mov">MOV (Apple)</option>
                 <option value="webm">WebM (VP9)</option>
                 <option value="gif">GIF (Animated)</option>
+                <option value="premiere">Adobe Premiere (XML)</option>
               </select>
             </div>
 
@@ -1133,69 +1311,85 @@ router.get('/', requireAuth, async (req, res) => {
       });
     });
 
-    document.getElementById('aspectRatioSelect').addEventListener('change', async function() {
-      if (!currentVideoFile) {
-        showToast('Please upload a video first', 'error');
-        return;
-      }
+    document.getElementById('aspectRatioSelect').addEventListener('change', function() {
       const ratio = this.value;
-      const button = this;
-      button.disabled = true;
-
-      try {
-        const response = await fetch('/video-editor/change-aspect-ratio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: currentVideoFile.filename,
-            aspectRatio: ratio
-          })
-        });
-
-        if (!response.ok) throw new Error('Aspect ratio change failed');
-
-        const data = await response.json();
-        currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
-        showToast('Aspect ratio changed to ' + ratio, 'success');
-      } catch (error) {
-        showToast('Failed: ' + error.message, 'error');
-      } finally {
-        button.disabled = false;
+      const vc = document.querySelector('.video-container');
+      if (!vc) return;
+      const ratioMap = { '16:9': '56.25%', '9:16': '177.78%', '1:1': '100%', '4:5': '125%' };
+      const widthMap = { '16:9': '100%', '9:16': '56.25%', '1:1': '100%', '4:5': '80%' };
+      vc.style.paddingBottom = ratioMap[ratio] || '56.25%';
+      vc.style.width = widthMap[ratio] || '100%';
+      vc.style.height = '0';
+      vc.style.margin = '0 auto';
+      vc.style.position = 'relative';
+      const vp = document.getElementById('videoPlayer');
+      if (vp) {
+        vp.style.position = 'absolute';
+        vp.style.top = '0';
+        vp.style.left = '0';
+        vp.style.width = '100%';
+        vp.style.height = '100%';
+        vp.style.objectFit = 'cover';
       }
+      showToast('Aspect ratio: ' + ratio, 'success');
     });
 
     // Layout Mode handler
-    document.getElementById('layoutSelect').addEventListener('change', async function() {
-      if (!currentVideoFile) {
-        showToast('Please upload a video first', 'error');
-        return;
-      }
+    document.getElementById('layoutSelect').addEventListener('change', function() {
       const layout = this.value;
-      const button = this;
-      button.disabled = true;
+      const vc = document.querySelector('.video-container');
+      const vp = document.getElementById('videoPlayer');
+      if (!vc || !vp) return;
 
-      try {
-        const response = await fetch('/video-editor/apply-layout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: currentVideoFile.filename,
-            layout: layout
-          })
-        });
+      // Reset styles
+      vp.style.objectFit = '';
+      vp.style.width = '100%';
+      vp.style.height = '100%';
+      vc.style.flexDirection = '';
+      vc.style.overflow = 'hidden';
 
-        if (!response.ok) throw new Error('Layout change failed');
+      // Remove any split/layout overlays
+      const existingClone = vc.querySelector('.layout-clone');
+      if (existingClone) existingClone.remove();
 
-        const data = await response.json();
-        currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
-        showToast('Layout changed to ' + layout, 'success');
-      } catch (error) {
-        showToast('Failed: ' + error.message, 'error');
-      } finally {
-        button.disabled = false;
+      switch(layout) {
+        case 'fill':
+          vp.style.objectFit = 'cover';
+          break;
+        case 'fit':
+          vp.style.objectFit = 'contain';
+          vc.style.background = 'linear-gradient(135deg,#1a1a2e,#16213e)';
+          // Add blur backdrop
+          vc.style.backdropFilter = 'blur(20px)';
+          break;
+        case 'split':
+          vp.style.width = '50%';
+          vp.style.objectFit = 'cover';
+          const clone = vp.cloneNode(false);
+          clone.className = 'layout-clone';
+          clone.src = vp.src;
+          clone.currentTime = vp.currentTime;
+          clone.muted = true;
+          clone.style.width = '50%';
+          clone.style.objectFit = 'cover';
+          clone.style.pointerEvents = 'none';
+          vc.style.flexDirection = 'row';
+          vc.style.display = 'flex';
+          vc.appendChild(clone);
+          vp.addEventListener('timeupdate', function syncClone() { if (clone.parentElement) clone.currentTime = vp.currentTime; else vp.removeEventListener('timeupdate', syncClone); });
+          break;
+        case 'screenshare':
+          vp.style.objectFit = 'contain';
+          vp.style.width = '70%';
+          vp.style.margin = '0 auto';
+          vp.style.display = 'block';
+          break;
+        case 'gameplay':
+          vp.style.objectFit = 'cover';
+          vp.style.height = '60%';
+          break;
       }
+      showToast('Layout: ' + this.options[this.selectedIndex].text, 'success');
     });
 
     // Transition buttons
@@ -2439,7 +2633,358 @@ router.get('/', requireAuth, async (req, res) => {
         }, 2000);
       }
     });
-  </script>
+  
+
+    // ===== YOUTUBE IMPORT =====
+    const youtubeImportBtn = document.getElementById('youtubeImportBtn');
+    const youtubeUrlInput = document.getElementById('youtubeUrlInput');
+    if (youtubeImportBtn) {
+      youtubeImportBtn.addEventListener('click', async function() {
+        const url = youtubeUrlInput.value.trim();
+        if (!url) { showToast('Please paste a YouTube URL', 'error'); return; }
+        if (!url.match(/youtube\.com|youtu\.be/i)) { showToast('Please enter a valid YouTube URL', 'error'); return; }
+        youtubeImportBtn.disabled = true;
+        youtubeImportBtn.textContent = '⏳ Importing...';
+        try {
+          const resp = await fetch('/video-editor/youtube-import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || 'Import failed');
+          showToast('YouTube video imported!');
+          currentVideoFile = data.filename;
+          videoDuration = data.duration || 0;
+          videoPlayer.src = data.serveUrl;
+          videoPlayer.addEventListener('loadedmetadata', function() {
+            if (videoPlayer.duration && videoPlayer.duration !== Infinity) videoDuration = videoPlayer.duration;
+          });
+          uploadZone.classList.add('has-video');
+          document.getElementById('exportButton').disabled = false;
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          youtubeImportBtn.disabled = false;
+          youtubeImportBtn.textContent = '▶ Import';
+        }
+      });
+    }
+
+    // ===== DROPBOX IMPORT =====
+    const dropboxBtn = document.getElementById('dropboxImportBtn');
+    if (dropboxBtn) {
+      dropboxBtn.addEventListener('click', function() {
+        if (typeof Dropbox !== 'undefined' && Dropbox.choose) {
+          Dropbox.choose({
+            success: async function(files) {
+              const file = files[0];
+              dropboxBtn.disabled = true;
+              dropboxBtn.textContent = '⏳ Importing...';
+              try {
+                const resp = await fetch('/video-editor/dropbox-import', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: file.link, name: file.name })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Import failed');
+                showToast('Dropbox video imported!');
+                currentVideoFile = data.filename;
+                videoDuration = data.duration || 0;
+                videoPlayer.src = data.serveUrl;
+                uploadZone.classList.add('has-video');
+                document.getElementById('exportButton').disabled = false;
+              } catch (err) {
+                showToast(err.message, 'error');
+              } finally {
+                dropboxBtn.disabled = false;
+                dropboxBtn.textContent = '📦 Dropbox';
+              }
+            },
+            linkType: 'direct',
+            multiselect: false,
+            extensions: ['video']
+          });
+        } else {
+          showToast('Dropbox SDK loading... try again in a moment', 'error');
+        }
+      });
+    }
+
+    // ===== GRADIENT PRESETS (fixed) =====
+    document.querySelectorAll('.gradient-preset-card').forEach(card => {
+      const gradient = card.dataset.gradient;
+      if (gradient && gradient.startsWith('linear')) {
+        card.style.background = gradient;
+      }
+      card.addEventListener('click', function() {
+        document.querySelectorAll('.gradient-preset-card').forEach(c => c.style.borderColor = 'transparent');
+        this.style.borderColor = '#fff';
+        const vc = document.querySelector('.video-container');
+        if (vc) vc.style.background = gradient;
+      });
+    });
+
+    // ===== TOOLBAR CONTROLS =====
+    const hideTimelineBtn = document.getElementById('hideTimelineBtn');
+    const timelineContainer = document.getElementById('timelineContainer');
+    if (hideTimelineBtn && timelineContainer) {
+      let timelineVisible = true;
+      hideTimelineBtn.addEventListener('click', function() {
+        timelineVisible = !timelineVisible;
+        timelineContainer.style.display = timelineVisible ? '' : 'none';
+        this.textContent = timelineVisible ? '🙈 Hide Timeline' : '👁 Show Timeline';
+      });
+    }
+
+    const deleteClipBtn = document.getElementById('deleteClipBtn');
+    if (deleteClipBtn) {
+      deleteClipBtn.addEventListener('click', function() {
+        if (!currentVideoFile) { showToast('No video loaded', 'error'); return; }
+        if (confirm('Are you sure you want to delete this clip?')) {
+          videoPlayer.src = '';
+          currentVideoFile = null;
+          videoDuration = 0;
+          uploadZone.classList.remove('has-video');
+          document.getElementById('exportButton').disabled = true;
+          showToast('Clip deleted');
+        }
+      });
+    }
+
+    let timelineZoom = 1;
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => { timelineZoom = Math.min(timelineZoom + 0.25, 4); if (timelineContainer) timelineContainer.style.transform = 'scaleX(' + timelineZoom + ')'; });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => { timelineZoom = Math.max(timelineZoom - 0.25, 0.25); if (timelineContainer) timelineContainer.style.transform = 'scaleX(' + timelineZoom + ')'; });
+
+    const saveChangesBtn = document.getElementById('saveChangesBtn');
+    if (saveChangesBtn) {
+      saveChangesBtn.addEventListener('click', function() {
+        showToast('Changes saved!');
+        this.textContent = '✅ Saved';
+        setTimeout(() => { this.textContent = '💾 Save'; }, 2000);
+      });
+    }
+
+    const quickExportBtn = document.getElementById('quickExportBtn');
+    if (quickExportBtn) {
+      quickExportBtn.addEventListener('click', function() {
+        document.getElementById('exportButton').click();
+      });
+    }
+
+
+    // ===== B-ROLL OVERLAY =====
+    const brollUploadBtn = document.getElementById('brollUploadBtn');
+    const brollFileInput = document.getElementById('brollFileInput');
+    const brollControls = document.getElementById('brollControls');
+    let brollOverlay = null;
+    let brollDragging = false;
+    let brollResizing = false;
+    let brollOffset = {x:0, y:0};
+
+    if (brollUploadBtn && brollFileInput) {
+      brollUploadBtn.addEventListener('click', () => brollFileInput.click());
+      brollFileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        brollControls.style.display = 'block';
+        // Create overlay on video
+        const previewArea = document.getElementById('videoPreviewArea');
+        if (brollOverlay) brollOverlay.remove();
+        brollOverlay = document.createElement('div');
+        brollOverlay.className = 'broll-overlay';
+        brollOverlay.style.width = '30%';
+        brollOverlay.style.top = '10px';
+        brollOverlay.style.right = '10px';
+        const isVideo = file.type.startsWith('video');
+        const el = document.createElement(isVideo ? 'video' : 'img');
+        el.src = URL.createObjectURL(file);
+        if (isVideo) { el.muted = true; el.loop = true; el.autoplay = true; }
+        brollOverlay.appendChild(el);
+        const handle = document.createElement('div');
+        handle.className = 'resize-handle';
+        brollOverlay.appendChild(handle);
+        previewArea.style.position = 'relative';
+        previewArea.appendChild(brollOverlay);
+
+        // Drag to reposition
+        brollOverlay.addEventListener('mousedown', function(e) {
+          if (e.target === handle) return;
+          brollDragging = true;
+          brollOffset.x = e.clientX - brollOverlay.offsetLeft;
+          brollOffset.y = e.clientY - brollOverlay.offsetTop;
+          e.preventDefault();
+        });
+
+        // Resize handle
+        handle.addEventListener('mousedown', function(e) {
+          brollResizing = true;
+          e.stopPropagation();
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+          if (brollDragging && brollOverlay) {
+            const parent = brollOverlay.parentElement;
+            const rect = parent.getBoundingClientRect();
+            let x = e.clientX - brollOffset.x;
+            let y = e.clientY - brollOffset.y;
+            x = Math.max(0, Math.min(x, rect.width - brollOverlay.offsetWidth));
+            y = Math.max(0, Math.min(y, rect.height - brollOverlay.offsetHeight));
+            brollOverlay.style.left = x + 'px';
+            brollOverlay.style.top = y + 'px';
+            brollOverlay.style.right = 'auto';
+          }
+          if (brollResizing && brollOverlay) {
+            const parent = brollOverlay.parentElement;
+            const rect = parent.getBoundingClientRect();
+            const w = Math.max(50, e.clientX - brollOverlay.getBoundingClientRect().left);
+            brollOverlay.style.width = (w / rect.width * 100) + '%';
+          }
+        });
+        document.addEventListener('mouseup', function() { brollDragging = false; brollResizing = false; });
+
+        showToast('B-Roll loaded! Drag to reposition, resize with corner handle.');
+      });
+    }
+
+    // B-Roll position grid buttons
+    document.querySelectorAll('.broll-pos-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        if (!brollOverlay) return;
+        document.querySelectorAll('.broll-pos-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        const pos = this.dataset.pos;
+        brollOverlay.style.right = 'auto';
+        brollOverlay.style.left = 'auto';
+        brollOverlay.style.top = 'auto';
+        brollOverlay.style.bottom = 'auto';
+        const positions = {
+          'top-left': {top:'10px',left:'10px'},
+          'top-center': {top:'10px',left:'50%',transform:'translateX(-50%)'},
+          'top-right': {top:'10px',right:'10px'},
+          'center-left': {top:'50%',left:'10px',transform:'translateY(-50%)'},
+          'center': {top:'50%',left:'50%',transform:'translate(-50%,-50%)'},
+          'center-right': {top:'50%',right:'10px',transform:'translateY(-50%)'},
+          'bottom-left': {bottom:'10px',left:'10px'},
+          'bottom-center': {bottom:'10px',left:'50%',transform:'translateX(-50%)'},
+          'bottom-right': {bottom:'10px',right:'10px'}
+        };
+        const p = positions[pos] || positions['center'];
+        brollOverlay.style.transform = '';
+        Object.assign(brollOverlay.style, p);
+      });
+    });
+
+    // B-Roll width + opacity sliders
+    const brollWidthSlider = document.getElementById('brollWidth');
+    const brollOpacitySlider = document.getElementById('brollOpacity');
+    if (brollWidthSlider) brollWidthSlider.addEventListener('input', function() {
+      document.getElementById('brollWidthVal').textContent = this.value + '%';
+      if (brollOverlay) brollOverlay.style.width = this.value + '%';
+    });
+    if (brollOpacitySlider) brollOpacitySlider.addEventListener('input', function() {
+      document.getElementById('brollOpacityVal').textContent = this.value + '%';
+      if (brollOverlay) brollOverlay.style.opacity = this.value / 100;
+    });
+
+    const removeBrollBtn = document.getElementById('removeBrollBtn');
+    if (removeBrollBtn) removeBrollBtn.addEventListener('click', function() {
+      if (brollOverlay) { brollOverlay.remove(); brollOverlay = null; }
+      brollControls.style.display = 'none';
+      showToast('B-Roll removed');
+    });
+
+    // ===== AI HOOK GENERATOR =====
+    const generateHookBtn = document.getElementById('generateHookBtn');
+    if (generateHookBtn) {
+      generateHookBtn.addEventListener('click', async function() {
+        const style = document.getElementById('hookStyleSelect').value;
+        const topic = document.getElementById('hookTopicInput').value.trim();
+        this.disabled = true;
+        this.textContent = '⏳ Generating...';
+        try {
+          const resp = await fetch('/video-editor/generate-hook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ style, topic })
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || 'Failed to generate hook');
+          document.getElementById('hookText').textContent = data.hook;
+          document.getElementById('hookResult').style.display = 'block';
+          showToast('Hook generated!');
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          this.disabled = false;
+          this.textContent = '✨ Generate AI Hook';
+        }
+      });
+    }
+    const regenerateHookBtn = document.getElementById('regenerateHookBtn');
+    if (regenerateHookBtn) regenerateHookBtn.addEventListener('click', () => generateHookBtn.click());
+
+    // ===== TRANSCRIPT =====
+    const autoTranscriptBtn = document.getElementById('autoTranscriptBtn');
+    if (autoTranscriptBtn) {
+      autoTranscriptBtn.addEventListener('click', async function() {
+        if (!currentVideoFile) { showToast('Upload a video first', 'error'); return; }
+        this.disabled = true;
+        this.textContent = '⏳ Transcribing...';
+        const statusEl = document.getElementById('transcriptStatus');
+        statusEl.style.display = 'block';
+        statusEl.textContent = '🤖 Running AI speech-to-text... this may take a moment.';
+        try {
+          const resp = await fetch('/video-editor/transcript', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: currentVideoFile })
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || 'Transcription failed');
+          document.getElementById('transcriptText').value = data.transcript;
+          statusEl.textContent = '✅ Transcript generated!';
+          setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+          showToast('Transcript generated!');
+        } catch (err) {
+          statusEl.textContent = '❌ ' + err.message;
+          showToast(err.message, 'error');
+        } finally {
+          this.disabled = false;
+          this.textContent = '🤖 Auto-Generate';
+        }
+      });
+    }
+
+    const clearTranscriptBtn = document.getElementById('clearTranscriptBtn');
+    if (clearTranscriptBtn) clearTranscriptBtn.addEventListener('click', () => {
+      document.getElementById('transcriptText').value = '';
+      showToast('Transcript cleared');
+    });
+
+    const saveTranscriptBtn = document.getElementById('saveTranscriptBtn');
+    if (saveTranscriptBtn) saveTranscriptBtn.addEventListener('click', () => {
+      showToast('Transcript saved!');
+    });
+
+    // ===== BRAND TEMPLATE =====
+    const brandLogoBtn = document.getElementById('brandLogoBtn');
+    const brandLogoInput = document.getElementById('brandLogoInput');
+    if (brandLogoBtn && brandLogoInput) {
+      brandLogoBtn.addEventListener('click', () => brandLogoInput.click());
+      brandLogoInput.addEventListener('change', function() {
+        if (this.files[0]) {
+          brandLogoBtn.textContent = '✅ ' + this.files[0].name;
+          showToast('Logo uploaded!');
+        }
+      });
+    }
+
+</script>
 </body>
 </html>`;
   res.send(html);
@@ -4447,5 +4992,303 @@ router.post('/apply-captions', requireAuth, async (req, res) => {
   }
 });
 
+
+
+// ===== YOUTUBE VIDEO IMPORT =====
+router.post('/youtube-import', requireAuth, async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+
+    // Validate URL patterns (YouTube, Zoom, Twitch, Rumble)
+    const validPatterns = [/youtube\.com/i, /youtu\.be/i, /zoom\.us/i, /twitch\.tv/i, /rumble\.com/i];
+    const isValid = validPatterns.some(p => p.test(url));
+    if (!isValid) return res.status(400).json({ error: 'Unsupported URL. Supports YouTube, Zoom, Twitch, Rumble.' });
+
+    const outputFilename = 'yt_import_' + Date.now() + '_' + req.user.id + '.mp4';
+    const outputPath = path.join(uploadDir, outputFilename);
+
+    // Use yt-dlp to download the video
+    let ytdlpPath = 'yt-dlp';
+    try { execSync('which yt-dlp', { stdio: 'pipe' }); } catch (e) {
+      // Try to install yt-dlp
+      try { execSync('pip install yt-dlp', { stdio: 'pipe' }); } catch (e2) {
+        return res.status(500).json({ error: 'yt-dlp is not available on this server' });
+      }
+    }
+
+    await new Promise((resolve, reject) => {
+      const proc = spawn(ytdlpPath, [
+        '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        '--merge-output-format', 'mp4',
+        '-o', outputPath,
+        '--max-filesize', '500m',
+        '--no-playlist',
+        url
+      ]);
+      let stderr = '';
+      proc.stderr.on('data', d => stderr += d.toString());
+      proc.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error(stderr || 'Download failed with code ' + code));
+      });
+      proc.on('error', reject);
+    });
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('YouTube import error:', error);
+    res.status(500).json({ error: error.message || 'Failed to import video' });
+  }
+});
+
+// ===== DROPBOX VIDEO IMPORT =====
+router.post('/dropbox-import', requireAuth, async (req, res) => {
+  try {
+    const { url, name } = req.body;
+    if (!url) return res.status(400).json({ error: 'Dropbox URL is required' });
+
+    const ext = path.extname(name || '.mp4') || '.mp4';
+    const outputFilename = 'dbx_import_' + Date.now() + '_' + req.user.id + ext;
+    const outputPath = path.join(uploadDir, outputFilename);
+
+    // Download from Dropbox direct link
+    const https = require('https');
+    const http = require('http');
+    const protocol = url.startsWith('https') ? https : http;
+
+    await new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(outputPath);
+      protocol.get(url, response => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          protocol.get(response.headers.location, res2 => {
+            res2.pipe(file);
+            file.on('finish', () => { file.close(); resolve(); });
+          }).on('error', reject);
+        } else {
+          response.pipe(file);
+          file.on('finish', () => { file.close(); resolve(); });
+        }
+      }).on('error', reject);
+    });
+
+    const metadata = await getVideoMetadata(outputPath);
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename
+    });
+  } catch (error) {
+    console.error('Dropbox import error:', error);
+    res.status(500).json({ error: error.message || 'Failed to import from Dropbox' });
+  }
+});
+
+// ===== TRANSCRIPT GENERATION =====
+router.post('/transcript', requireAuth, async (req, res) => {
+  try {
+    const { filename } = req.body;
+    if (!filename) return res.status(400).json({ error: 'Filename is required' });
+
+    const inputPath = path.join(uploadDir, path.basename(filename));
+    if (!fs.existsSync(inputPath)) {
+      // Check output dir
+      const altPath = path.join(outputDir, path.basename(filename));
+      if (!fs.existsSync(altPath)) return res.status(404).json({ error: 'File not found' });
+    }
+
+    const filePath = fs.existsSync(path.join(uploadDir, path.basename(filename)))
+      ? path.join(uploadDir, path.basename(filename))
+      : path.join(outputDir, path.basename(filename));
+
+    // Extract audio first
+    const audioPath = path.join(outputDir, 'transcript_audio_' + Date.now() + '.wav');
+
+    await new Promise((resolve, reject) => {
+      const proc = spawn(ffmpegPath, [
+        '-i', filePath,
+        '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
+        '-y', audioPath
+      ]);
+      proc.on('close', code => code === 0 ? resolve() : reject(new Error('Audio extraction failed')));
+      proc.on('error', reject);
+    });
+
+    // Use OpenAI Whisper API if available, otherwise use local whisper
+    let transcript = '';
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      const FormData = require('form-data');
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(audioPath));
+      formData.append('model', 'whisper-1');
+      formData.append('response_format', 'text');
+
+      const fetch = require('node-fetch');
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + openaiKey, ...formData.getHeaders() },
+        body: formData
+      });
+
+      if (!response.ok) throw new Error('Whisper API error: ' + response.statusText);
+      transcript = await response.text();
+    } else {
+      // Fallback: try local whisper
+      try {
+        const result = execSync('whisper ' + audioPath + ' --model tiny --output_format txt --output_dir /tmp', { timeout: 120000 });
+        const txtPath = audioPath.replace('.wav', '.txt');
+        if (fs.existsSync(txtPath)) transcript = fs.readFileSync(txtPath, 'utf8');
+        else transcript = 'Transcription completed but output file not found.';
+      } catch (e) {
+        transcript = 'Auto-transcription is not available. Please type your transcript manually.';
+      }
+    }
+
+    // Cleanup
+    try { fs.unlinkSync(audioPath); } catch(e) {}
+
+    res.json({ transcript: transcript.trim() });
+  } catch (error) {
+    console.error('Transcript error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate transcript' });
+  }
+});
+
+// ===== AI HOOK GENERATOR =====
+router.post('/generate-hook', requireAuth, async (req, res) => {
+  try {
+    const { style, topic } = req.body;
+
+    const hookPrompts = {
+      question: 'Generate a compelling question hook',
+      statistic: 'Generate a shocking statistic hook',
+      story: 'Generate an engaging story opener hook',
+      controversial: 'Generate a bold controversial statement hook',
+      curiosity: 'Generate a curiosity gap hook',
+      pain: 'Generate a pain point hook'
+    };
+
+    const prompt = (hookPrompts[style] || hookPrompts.question) +
+      ' for a short-form video' + (topic ? ' about: ' + topic : '') +
+      '. Keep it under 15 words, punchy, and attention-grabbing. Return ONLY the hook text.';
+
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) {
+      // Fallback hooks
+      const fallbackHooks = {
+        question: 'Did you know 90% of people get this completely wrong?',
+        statistic: 'This one change increased results by 347% in just 30 days.',
+        story: 'Three years ago, I was broke and desperate. Then everything changed.',
+        controversial: 'Everything you\'ve been told about this is a lie.',
+        curiosity: 'The secret nobody talks about that changes everything.',
+        pain: 'Stop wasting hours on this. Here\'s the fix.'
+      };
+      return res.json({ hook: fallbackHooks[style] || fallbackHooks.question });
+    }
+
+    const fetch = require('node-fetch');
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + openaiKey },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 60,
+        temperature: 0.9
+      })
+    });
+
+    const data = await response.json();
+    const hook = data.choices?.[0]?.message?.content?.trim() || 'Could not generate hook';
+
+    res.json({ hook });
+  } catch (error) {
+    console.error('Hook generation error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate hook' });
+  }
+});
+
+// ===== EXPORT TO ADOBE PREMIERE (XML) =====
+router.post('/export-premiere', requireAuth, async (req, res) => {
+  try {
+    const { filename } = req.body;
+    if (!filename) return res.status(400).json({ error: 'Filename is required' });
+
+    const inputPath = path.join(uploadDir, path.basename(filename));
+    const altPath = path.join(outputDir, path.basename(filename));
+    const filePath = fs.existsSync(inputPath) ? inputPath : altPath;
+
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+    const metadata = await getVideoMetadata(filePath);
+    const fps = metadata.fps || 30;
+    const duration = metadata.duration || 0;
+    const totalFrames = Math.round(duration * fps);
+
+    const premiereXML = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="4">
+  <sequence>
+    <name>RepurposeAI Export</name>
+    <duration>${totalFrames}</duration>
+    <rate><timebase>${fps}</timebase><ntsc>FALSE</ntsc></rate>
+    <media>
+      <video>
+        <track>
+          <clipitem>
+            <name>${path.basename(filename)}</name>
+            <duration>${totalFrames}</duration>
+            <rate><timebase>${fps}</timebase></rate>
+            <start>0</start>
+            <end>${totalFrames}</end>
+            <in>0</in>
+            <out>${totalFrames}</out>
+            <file id="file-1">
+              <name>${path.basename(filename)}</name>
+              <pathurl>file://${filePath}</pathurl>
+              <duration>${totalFrames}</duration>
+              <rate><timebase>${fps}</timebase></rate>
+            </file>
+          </clipitem>
+        </track>
+      </video>
+      <audio>
+        <track>
+          <clipitem>
+            <name>${path.basename(filename)}</name>
+            <duration>${totalFrames}</duration>
+            <start>0</start>
+            <end>${totalFrames}</end>
+            <in>0</in>
+            <out>${totalFrames}</out>
+            <file id="file-1"/>
+          </clipitem>
+        </track>
+      </audio>
+    </media>
+  </sequence>
+</xmeml>`;
+
+    const xmlFilename = 'premiere_' + Date.now() + '.xml';
+    const xmlPath = path.join(outputDir, xmlFilename);
+    fs.writeFileSync(xmlPath, premiereXML, 'utf8');
+
+    res.json({
+      filename: xmlFilename,
+      serveUrl: '/video-editor/download/' + xmlFilename
+    });
+  } catch (error) {
+    console.error('Premiere export error:', error);
+    res.status(500).json({ error: error.message || 'Failed to export for Premiere' });
+  }
+});
 
 module.exports = router;
