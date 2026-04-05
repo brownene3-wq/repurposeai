@@ -424,46 +424,30 @@ ${pageStyles}
     ${sidebar}
     ${themeToggle}
     <main class="main-content">
-      <div style="text-align:center;max-width:700px;margin:0 auto 2rem">
-        <h1 style="font-size:2rem;font-weight:700;margin-bottom:.5rem">AI B-Roll</h1>
-        <p style="color:var(--text-secondary);font-size:1.05rem;margin-bottom:2rem">Add AI generated B-Roll to your video in 1 click</p>
-
-        <!-- Hero Image -->
-        <div style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:2rem;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);padding:2rem">
-          <div style="display:flex;align-items:center;justify-content:center;gap:16px">
-            <div style="background:linear-gradient(135deg,#2d1b69,#11998e);border-radius:14px;width:140px;height:160px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
-              <div style="font-size:3rem;z-index:1">🎤</div>
-              <div style="position:absolute;inset:0;background:linear-gradient(180deg,transparent 50%,rgba(0,0,0,.5));"></div>
-            </div>
-            <div style="font-size:2.5rem;color:rgba(255,255,255,.6)">→</div>
-            <div style="display:flex;gap:8px">
-              <div style="background:linear-gradient(135deg,#e65c00,#F9D423);border-radius:14px;width:100px;height:120px;display:flex;align-items:center;justify-content:center;font-size:2rem">🌄</div>
-              <div style="display:flex;flex-direction:column;gap:8px">
-                <div style="background:linear-gradient(135deg,#4776E6,#8E54E9);border-radius:14px;width:100px;height:56px;display:flex;align-items:center;justify-content:center;font-size:1.5rem">🌌</div>
-                <div style="background:linear-gradient(135deg,#ee0979,#ff6a00);border-radius:14px;width:100px;height:56px;display:flex;align-items:center;justify-content:center;font-size:1.5rem">🎨</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Link Input Section -->
-        <div style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;margin-bottom:1rem">
-          <div style="position:relative;margin-bottom:1rem">
-            <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:1.1rem;color:var(--text-muted)">🔗</span>
-            <input type="text" id="brollLinkInput" placeholder="Drop a YouTube link" style="width:100%;padding:14px 16px 14px 44px;border-radius:12px;border:1px solid var(--border-subtle);background:var(--dark-2);color:var(--text);font-size:1rem;outline:none;box-sizing:border-box">
-          </div>
-          <div style="display:flex;gap:12px;justify-content:center;align-items:center">
-            <button type="button" onclick="document.getElementById('brollFileInput').click()" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">⬆ Upload</button>
-            <button type="button" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">📁 Google Drive</button>
-            <button type="button" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">📦 Dropbox</button>
-          </div>
-          <input type="file" id="brollFileInput" accept="video/*" style="display:none">
-        </div>
-        <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:2rem">You can upload videos up to 120 minutes long. Limited captions may impact B-roll generation due to insufficient data.</p>
+      <div class="page-header">
+        <h1>AI B-Roll Generator</h1>
+        <p>Automatically add relevant B-roll to enhance your videos</p>
       </div>
 
-      <!-- B-Roll Configuration -->
-      <div class="input-section broll-container" style="max-width:700px;margin:0 auto">
+      <!-- Hero Visual Section -->
+      <div style="background:linear-gradient(135deg,rgba(6,182,212,0.15),rgba(139,92,246,0.1));border-radius:20px;padding:2.5rem;margin-bottom:2rem;position:relative;overflow:hidden;border:1px solid rgba(6,182,212,0.2)">
+        <div style="display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap">
+          <div style="background:linear-gradient(135deg,#06B6D4,#8B5CF6);border-radius:16px;padding:2rem 2.5rem;position:relative;min-width:200px;text-align:center">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem">🎬</div>
+            <div style="font-size:1rem;color:rgba(255,255,255,0.8)">Your Video</div>
+          </div>
+          <div style="font-size:2rem;color:var(--text-muted)">→</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="background:linear-gradient(135deg,#F59E0B,#F97316);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🏞️</div>
+            <div style="background:linear-gradient(135deg,#8B5CF6,#A78BFA);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🌌</div>
+            <div style="background:linear-gradient(135deg,#10B981,#34D399);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🎨</div>
+            <div style="background:linear-gradient(135deg,#EC4899,#F472B6);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🎭</div>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="input-section broll-container">
         <form id="brollForm">
           <div class="form-group">
             <label for="inputType">Input Type</label>
@@ -477,27 +461,39 @@ ${pageStyles}
           <div id="uploadContainer" style="display: none;" class="upload-zone" ondrop="handleBrollDrop(event)" ondragover="handleBrollDragOver(event)" ondragleave="handleBrollDragLeave(event)">
             <h3>📹 Drop your video here</h3>
             <p>Or click to browse</p>
-            <button type="button" class="upload-button" onclick="document.getElementById('fileInput').click()">Select Video</button>
-            <input type="file" id="fileInput" style="display: none" accept="video/*">
-            <div id="fileName" style="margin-top: 10px; color: var(--text-secondary);"></div>
+            <button type="button" class="upload-button" onclick="document.getElementById('brollVideoFile').click()">Select Video</button>
+            <input type="file" id="brollVideoFile" style="display:none" accept="video/*" onchange="handleBrollFileSelect(event)">
+            <p id="brollFileName" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;"></p>
           </div>
 
-          <div id="youtubeContainer" style="display: none;" class="form-group">
-            <label for="youtubeUrl">YouTube URL</label>
-            <input type="text" id="youtubeUrl" name="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." style="width:100%;padding:0.75rem;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);font-size:0.95rem">
+          <div id="youtubeContainer" style="display: none;">
+            <div class="form-group">
+              <label for="youtubeUrl">YouTube URL</label>
+              <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="https://www.youtube.com/watch?v=...">
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="brollStyle">B-Roll Style</label>
-            <select id="brollStyle" name="brollStyle">
-              <option value="cinematic">Cinematic</option>
-              <option value="documentary">Documentary</option>
-              <option value="dynamic">Dynamic</option>
-              <option value="minimal">Minimal</option>
-            </select>
+          <div class="tabs">
+            <button type="button" class="tab-btn active" data-tab="ai-generated" onclick="switchTab('ai-generated', event)">AI Generated B-Roll</button>
+            <button type="button" class="tab-btn" data-tab="stock" onclick="switchTab('stock', event)">Stock B-Roll (Copyright Free)</button>
           </div>
 
-          <button type="submit" class="action-button" id="generateBrollBtn" style="width:100%">🎬 Generate AI B-Roll</button>
+          <div class="tab-content active" id="ai-generated">
+            <div class="form-group">
+              <label for="aiPrompt">Describe the B-Roll you want (optional)</label>
+              <input type="text" id="aiPrompt" placeholder="e.g., 'nature scenes, flowing water, mountains'">
+            </div>
+          </div>
+
+          <div class="tab-content" id="stock">
+            <div class="form-group">
+              <label for="searchTerms">Search Terms for Stock B-Roll</label>
+              <input type="text" id="searchTerms" placeholder="e.g., 'office, technology, business'">
+            </div>
+          </div>
+
+          <button type="submit" class="btn-generate" id="generateBrollBtn">Add B-Roll in 1 Click</button>
+          <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
         </form>
       </div>
 
@@ -742,18 +738,7 @@ ${pageStyles}
     }
 
     ${themeScript}
-  
-    // Rotating link placeholder for B-Roll
-    const brollPhrases = ['Drop a YouTube link', 'Drop a Rumble link', 'Drop a Zoom link', 'Drop a Twitch link'];
-    let brollPhraseIdx = 0;
-    const brollLinkInput = document.getElementById('brollLinkInput');
-    if (brollLinkInput) {
-      setInterval(() => {
-        brollPhraseIdx = (brollPhraseIdx + 1) % brollPhrases.length;
-        brollLinkInput.placeholder = brollPhrases[brollPhraseIdx];
-      }, 3000);
-    }
-</script>
+  </script>
 </body>
 </html>`;
 
