@@ -636,6 +636,7 @@ ${pageStyles}
         if (content.type === 'upload') {
           const formData = new FormData();
           formData.append('video', content.file);
+          formData.append('inputType', 'upload');
           formData.append('style', style);
           formData.append('voice', voice);
           formData.append('platform', platform);
