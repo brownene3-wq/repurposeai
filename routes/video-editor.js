@@ -382,6 +382,8 @@ router.get('/', requireAuth, async (req, res) => {
             </div>
 
             <div class="tools-section">
+              <button type="button" id="undoBtn" class="tool-button" style="background:linear-gradient(135deg,#F59E0B,#D97706);color:#fff;border:none;font-weight:700" title="Undo last action">↩️ Undo</button>
+              <button type="button" id="redoBtn" class="tool-button" style="background:linear-gradient(135deg,#6366F1,#4F46E5);color:#fff;border:none;font-weight:700" title="Redo last action">↪️ Redo</button>
               <button class="tool-button active" data-tool="trim">✂️ Trim</button>
               <button class="tool-button" data-tool="split">🔀 Split</button>
               <button class="tool-button" data-tool="filters">🎨 Filters</button>
@@ -858,7 +860,15 @@ router.get('/', requireAuth, async (req, res) => {
               <div id="vtProgressText" style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem;text-align:center">Processing...</div>
             </div>
             <div id="vtApiNote" style="margin-top:.8rem;padding:.6rem;background:rgba(108,58,237,0.08);border-radius:8px;font-size:.75rem;color:var(--text-muted)">
-              Requires ElevenLabs API key. Set it in <a href="/brand-voice" style="color:#6C3AED;text-decoration:none;font-weight:600">Brand Voice</a> settings or Smart Shorts → Settings.
+              Requires ElevenLabs API key. Set it in <a href="/settings" style="color:#6C3AED;text-decoration:none;font-weight:600">Settings → API Keys</a>.
+            </div>
+            <div id="vtInlineApiKey" style="margin-top:.6rem;padding:.6rem;background:var(--surface-light);border-radius:8px;border:1px solid var(--border-subtle)">
+              <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-muted);margin-bottom:4px">🔑 ElevenLabs API Key</label>
+              <div style="display:flex;gap:6px">
+                <input type="password" id="vtElevenLabsKey" placeholder="Paste your API key here..." style="flex:1;padding:6px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);font-size:.8rem">
+                <button type="button" id="vtSaveApiKey" style="padding:6px 12px;background:linear-gradient(135deg,#6C3AED,#8B5CF6);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:600;white-space:nowrap">Save</button>
+              </div>
+              <p style="font-size:.7rem;color:var(--text-muted);margin-top:4px">Get your key at <a href="https://elevenlabs.io" target="_blank" style="color:#6C3AED">elevenlabs.io</a></p>
             </div>
           </div>
 
@@ -1043,7 +1053,7 @@ router.get('/', requireAuth, async (req, res) => {
               <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
                 <button type="button" class="action-button broll-tab active" data-broll-tab="upload" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--primary);color:#fff;border:1px solid var(--primary)">📁 Upload</button>
                 <button type="button" class="action-button broll-tab" data-broll-tab="ai" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1)">✨ AI Generate</button>
-                <button type="button" class="action-button broll-tab" data-broll-tab="stock" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1)">🎥 Free Stock</button>
+                <button type="button" class="action-button broll-tab" data-broll-tab="stock" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:linear-gradient(135deg,#10B981,#34D399);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">🎥 Free Stock</button>
               </div>
               <!-- AI Generate B-Roll Section -->
               <div id="brollAiSection" style="display:none;margin-bottom:10px">
@@ -1067,17 +1077,17 @@ router.get('/', requireAuth, async (req, res) => {
               <!-- Free Stock B-Roll Section -->
               <div id="brollStockSection" style="display:none;margin-bottom:10px">
                 <p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">Search free B-Roll clips from Pexels, Pixabay, and other platforms.</p>
-                <div style="display:flex;gap:8px;margin-bottom:8px">
-                  <input type="text" id="brollStockSearch" placeholder="Search free B-Roll videos..." style="flex:1;padding:8px 12px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.85rem">
-                  <button type="button" id="brollStockSearchBtn" style="padding:8px 16px;background:linear-gradient(135deg,#10B981,#34D399);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.82rem">🔍 Search</button>
+                <div style="display:flex;gap:6px;margin-bottom:8px;overflow:visible">
+                  <input type="text" id="brollStockSearch" placeholder="Search free B-Roll videos..." style="flex:1;min-width:0;padding:8px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.82rem">
+                  <button type="button" id="brollStockSearchBtn" style="padding:8px 12px;background:linear-gradient(135deg,#10B981,#34D399);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.78rem;white-space:nowrap;flex-shrink:0">🔍 Search</button>
                 </div>
                 <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='nature';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🌿 Nature</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='city';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🏙️ City</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='technology';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">💻 Tech</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='food';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🍽️ Food</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='people';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">👥 People</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='ocean';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🌊 Ocean</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='nature';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🌿 Nature</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='city';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🏙️ City</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='technology';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">💻 Tech</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='food';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🍽️ Food</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='people';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">👥 People</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='ocean';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🌊 Ocean</button>
                 </div>
                 <div id="brollStockResults" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-height:300px;overflow-y:auto">
                   <p style="grid-column:1/-1;text-align:center;font-size:.8rem;color:var(--text-muted);padding:20px 0">Search for free B-Roll clips above</p>
@@ -3303,6 +3313,147 @@ router.get('/', requireAuth, async (req, res) => {
       });
 
 
+    // ===== UNDO / REDO SYSTEM =====
+    var editorHistory = [];
+    var editorHistoryIndex = -1;
+    var maxHistory = 30;
+
+    function saveEditorState(actionName) {
+      var video = document.querySelector('#videoPreview video, #videoPreview source');
+      var state = {
+        action: actionName,
+        timestamp: Date.now(),
+        videoSrc: video ? video.src : '',
+        filters: document.getElementById('videoPreview') ? document.getElementById('videoPreview').style.filter : '',
+        transform: document.getElementById('videoPreview') ? document.getElementById('videoPreview').style.transform : '',
+        containerBg: document.querySelector('.video-container') ? document.querySelector('.video-container').style.background : ''
+      };
+      // Remove any forward history
+      editorHistory = editorHistory.slice(0, editorHistoryIndex + 1);
+      editorHistory.push(state);
+      if (editorHistory.length > maxHistory) editorHistory.shift();
+      editorHistoryIndex = editorHistory.length - 1;
+      updateUndoRedoButtons();
+    }
+
+    function restoreEditorState(state) {
+      if (!state) return;
+      var preview = document.getElementById('videoPreview');
+      if (preview && state.filters) preview.style.filter = state.filters;
+      if (preview && state.transform !== undefined) preview.style.transform = state.transform;
+      var vc = document.querySelector('.video-container');
+      if (vc && state.containerBg !== undefined) vc.style.background = state.containerBg;
+      showToast('Action undone: ' + (state.action || 'change'), 'info');
+    }
+
+    function updateUndoRedoButtons() {
+      var undoBtn = document.getElementById('undoBtn');
+      var redoBtn = document.getElementById('redoBtn');
+      if (undoBtn) undoBtn.style.opacity = editorHistoryIndex > 0 ? '1' : '0.5';
+      if (redoBtn) redoBtn.style.opacity = editorHistoryIndex < editorHistory.length - 1 ? '1' : '0.5';
+    }
+
+    var undoBtn = document.getElementById('undoBtn');
+    var redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) {
+      undoBtn.addEventListener('click', function() {
+        if (editorHistoryIndex > 0) {
+          editorHistoryIndex--;
+          restoreEditorState(editorHistory[editorHistoryIndex]);
+          updateUndoRedoButtons();
+        } else {
+          showToast('Nothing to undo', 'info');
+        }
+      });
+    }
+    if (redoBtn) {
+      redoBtn.addEventListener('click', function() {
+        if (editorHistoryIndex < editorHistory.length - 1) {
+          editorHistoryIndex++;
+          restoreEditorState(editorHistory[editorHistoryIndex]);
+          updateUndoRedoButtons();
+        } else {
+          showToast('Nothing to redo', 'info');
+        }
+      });
+    }
+    // Save initial state
+    saveEditorState('initial');
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); if (undoBtn) undoBtn.click(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); if (redoBtn) redoBtn.click(); }
+    });
+
+    // ===== STOCK B-ROLL SEARCH HANDLER =====
+    var brollStockSearchBtn = document.getElementById('brollStockSearchBtn');
+    var brollStockSearch = document.getElementById('brollStockSearch');
+    if (brollStockSearchBtn) {
+      brollStockSearchBtn.addEventListener('click', async function() {
+        var query = brollStockSearch.value.trim();
+        if (!query) { showToast('Enter a search term', 'error'); return; }
+        brollStockSearchBtn.disabled = true;
+        brollStockSearchBtn.textContent = '⏳ Searching...';
+        try {
+          var resp = await fetch('/video-editor/search-stock-video?q=' + encodeURIComponent(query));
+          var data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || 'Search failed');
+          var resultsDiv = document.getElementById('brollStockResults');
+          if (!resultsDiv) {
+            resultsDiv = document.createElement('div');
+            resultsDiv.id = 'brollStockResults';
+            resultsDiv.style.cssText = 'max-height:250px;overflow-y:auto;display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px';
+            brollStockSearchBtn.parentElement.parentElement.appendChild(resultsDiv);
+          }
+          resultsDiv.innerHTML = '';
+          if (!data.videos || data.videos.length === 0) {
+            resultsDiv.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:.82rem;padding:20px">No videos found. Try a different search term.</p>';
+          } else {
+            data.videos.forEach(function(v) {
+              var card = document.createElement('div');
+              card.style.cssText = 'position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--border-subtle);cursor:pointer;aspect-ratio:16/9;background:var(--dark-2)';
+              card.innerHTML = '<video src="' + v.preview + '" muted loop style="width:100%;height:100%;object-fit:cover"></video><div style="position:absolute;bottom:0;left:0;right:0;padding:4px 6px;background:rgba(0,0,0,0.7);font-size:.7rem;color:#fff">' + (v.duration || 0) + 's - ' + (v.user || 'Pixabay') + '</div>';
+              card.addEventListener('mouseenter', function() { card.querySelector('video').play(); });
+              card.addEventListener('mouseleave', function() { card.querySelector('video').pause(); });
+              card.addEventListener('click', function() {
+                showToast('Downloading B-Roll clip...', 'info');
+                window.selectedBrollUrl = v.download;
+                showToast('B-Roll clip selected! It will be overlaid on your video.', 'success');
+              });
+              resultsDiv.appendChild(card);
+            });
+          }
+        } catch(e) { showToast(e.message || 'Search failed', 'error'); }
+        brollStockSearchBtn.disabled = false;
+        brollStockSearchBtn.textContent = '\ud83d\udd0d Search';
+      });
+    }
+
+    // ===== INLINE ELEVENLABS API KEY SAVE =====
+    var vtSaveApiKey = document.getElementById('vtSaveApiKey');
+    if (vtSaveApiKey) {
+      vtSaveApiKey.addEventListener('click', async function() {
+        var keyInput = document.getElementById('vtElevenLabsKey');
+        var key = keyInput ? keyInput.value.trim() : '';
+        if (!key) { showToast('Please enter your ElevenLabs API key', 'error'); return; }
+        vtSaveApiKey.disabled = true;
+        vtSaveApiKey.textContent = 'Saving...';
+        try {
+          var resp = await fetch('/video-editor/save-elevenlabs-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: key })
+          });
+          if (!resp.ok) throw new Error('Failed to save');
+          showToast('ElevenLabs API key saved!', 'success');
+          keyInput.value = '';
+          keyInput.placeholder = 'Key saved \u2713';
+        } catch(e) { showToast('Failed to save API key', 'error'); }
+        vtSaveApiKey.disabled = false;
+        vtSaveApiKey.textContent = 'Save';
+      });
+    }
+
     // ===== FULLSCREEN / FOCUS MODE =====
     var fullscreenToggle = document.getElementById('fullscreenToggle');
     var isFullscreen = false;
@@ -5139,6 +5290,60 @@ router.get('/search-music', requireAuth, async (req, res) => {
 });
 
 // GET: Generate and serve a music preview for curated tracks
+
+// ===== SAVE ELEVENLABS API KEY =====
+router.post('/save-elevenlabs-key', requireAuth, async (req, res) => {
+  try {
+    const { key } = req.body;
+    if (!key) return res.status(400).json({ error: 'API key required' });
+    const { getDb } = require('../db/database');
+    const db = getDb();
+    db.run('UPDATE brand_kits SET elevenlabs_api_key = ? WHERE user_id = ?', [key, req.session.userId], function(err) {
+      if (err) {
+        db.run('INSERT OR IGNORE INTO brand_kits (user_id, elevenlabs_api_key) VALUES (?, ?)', [req.session.userId, key]);
+      }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Save ElevenLabs key error:', err);
+    res.status(500).json({ error: 'Failed to save API key' });
+  }
+});
+
+// ===== STOCK VIDEO SEARCH (Pixabay Videos API) =====
+router.get('/search-stock-video', requireAuth, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.json({ videos: [] });
+    const apiKey = process.env.PIXABAY_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'Pixabay API key not configured' });
+    const https = require('https');
+    const url = `https://pixabay.com/api/videos/?key=${apiKey}&q=${encodeURIComponent(q)}&per_page=12&safesearch=true`;
+    const data = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('API timeout')), 8000);
+      https.get(url, (response) => {
+        clearTimeout(timeout);
+        let body = '';
+        response.on('data', chunk => body += chunk);
+        response.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { reject(e); } });
+      }).on('error', reject);
+    });
+    const videos = (data.hits || []).map(v => ({
+      id: v.id,
+      thumbnail: v.videos && v.videos.small ? v.videos.small.thumbnail : '',
+      preview: v.videos && v.videos.small ? v.videos.small.url : '',
+      download: v.videos && v.videos.medium ? v.videos.medium.url : (v.videos && v.videos.small ? v.videos.small.url : ''),
+      duration: v.duration,
+      tags: v.tags,
+      user: v.user
+    }));
+    res.json({ videos });
+  } catch (err) {
+    console.error('Stock video search error:', err);
+    res.status(500).json({ error: 'Failed to search stock videos' });
+  }
+});
+
 // Creates a unique synthesized audio clip per track using FFmpeg
 router.get('/music-preview/:id', requireAuth, async (req, res) => {
   try {
