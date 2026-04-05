@@ -253,7 +253,7 @@ router.get('/', requireAuth, async (req, res) => {
     .export-button:disabled{opacity:0.5;cursor:not-allowed}
     .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;border:1px solid var(--border-subtle);border-radius:8px;padding:1rem 1.5rem;font-size:.9rem;z-index:1000;animation:slideIn 0.3s ease-out;display:block!important;color:white;max-width:400px;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+    .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;border:1px solid var(--border-subtle);border-radius:8px;padding:1rem 1.5rem;font-size:.9rem;z-index:1000;animation:slideIn 0.3s ease-out;display:block!important;color:white;max-width:400px;height:fit-content;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
     .toast.success{border-color:#10B981;background:#064e3b;color:#6ee7b7}
     .toast.error{border-color:#EF4444;background:#7f1d1d;color:#fca5a5}
     @keyframes slideIn{from{transform:translateX(-50%) translateY(-30px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
@@ -1251,7 +1251,29 @@ router.get('/', requireAuth, async (req, res) => {
     let selectedFilter = null;
 
     // Toast notifications
-    function showToast(message, type = 'success') {
+    
+    // === DOM FIX: Move tools-section and extra panels into sidebar ===
+    (function() {
+      var sidebar = document.querySelector('.editor-sidebar');
+      var propsPanel = sidebar ? sidebar.querySelector('.properties-panel') : null;
+      var toolsSection = document.querySelector('.tools-section');
+      if (sidebar && propsPanel && toolsSection) {
+        // Move tools-section right after properties-panel
+        propsPanel.after(toolsSection);
+        // Move extra tool panels that are stuck in video-container
+        var panelIds = ['cropPanel','annotationsPanel','elementsPanel','zoomPanel','pipPanel','keyframesPanel','colorGradePanel'];
+        var exportPanel = sidebar.querySelector('.export-panel');
+        panelIds.forEach(function(id) {
+          var panel = document.getElementById(id);
+          if (panel && panel.closest('.editor-sidebar') === null) {
+            if (exportPanel) { exportPanel.before(panel); }
+            else { sidebar.appendChild(panel); }
+          }
+        });
+      }
+    })();
+
+function showToast(message, type = 'success') {
       const toast = document.createElement('div');
       toast.className = 'toast ' + type;
       toast.style.display = 'block';
