@@ -193,6 +193,16 @@ router.get('/', requireAuth, async (req, res) => {
     .tool-button{padding:.45rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);cursor:pointer;font-size:.78rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.3rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .tool-button:hover{background:var(--surface);border-color:var(--primary);color:var(--primary)}
     .tool-button.active{background:var(--primary);color:white;border-color:var(--primary)}
+    .gradient-presets{display:flex;gap:8px;padding:8px 0;overflow-x:auto;scrollbar-width:none}
+    .gradient-presets::-webkit-scrollbar{display:none}
+    .gradient-preset-card{flex:0 0 80px;height:50px;border-radius:10px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;position:relative}
+    .gradient-preset-card:hover{opacity:0.85;transform:scale(1.05)}
+    .gradient-preset-card.selected{border-color:#fff;transform:scale(1.05)}
+    .gradient-preset-card:nth-child(1){background:linear-gradient(135deg,#6C3AED,#EC4899)}
+    .gradient-preset-card:nth-child(2){background:linear-gradient(135deg,#0EA5E9,#6366F1)}
+    .gradient-preset-card:nth-child(3){background:linear-gradient(135deg,#F59E0B,#EF4444)}
+    .gradient-preset-card:nth-child(4){background:linear-gradient(135deg,#10B981,#06B6D4)}
+    .gradient-preset-card:nth-child(5){background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
     .editor-sidebar{width:270px;min-width:270px;display:flex;flex-direction:column;gap:.6rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px}
     .editor-sidebar::-webkit-scrollbar{width:4px}
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
@@ -319,6 +329,14 @@ router.get('/', requireAuth, async (req, res) => {
                   <option value="gameplay">Gameplay</option>
                 </select>
               </div>
+            </div>
+
+            <div class="gradient-presets" id="gradientPresets">
+              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#6C3AED,#EC4899)" title="Purple Pink"></div>
+              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#0EA5E9,#6366F1)" title="Blue Indigo"></div>
+              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#F59E0B,#EF4444)" title="Orange Red"></div>
+              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#10B981,#06B6D4)" title="Green Teal"></div>
+              <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#8B5CF6,#A78BFA)" title="Purple Lavender"></div>
             </div>
           </div>
         </div>
@@ -838,6 +856,11 @@ router.get('/', requireAuth, async (req, res) => {
         initTimeline();
 
         videoPlayer.src = data.serveUrl;
+        videoPlayer.addEventListener('loadedmetadata', function() {
+          if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
+            videoDuration = videoPlayer.duration;
+          }
+        });
         uploadZone.classList.add('has-video');
         videoPreviewArea.classList.add('has-video');
         document.getElementById('trimButton').disabled = false;
@@ -1097,6 +1120,19 @@ router.get('/', requireAuth, async (req, res) => {
 
 
     // Aspect Ratio handler
+    // Gradient preset cards click handler
+    document.querySelectorAll('.gradient-preset-card').forEach(function(card) {
+      card.addEventListener('click', function() {
+        document.querySelectorAll('.gradient-preset-card').forEach(function(c) { c.classList.remove('selected'); });
+        card.classList.add('selected');
+        var grad = card.dataset.gradient;
+        var videoContainer = document.querySelector('.video-container');
+        if (videoContainer) videoContainer.style.background = grad;
+        var videoEl = document.getElementById('videoPlayer');
+        if (videoEl) videoEl.style.background = 'transparent';
+      });
+    });
+
     document.getElementById('aspectRatioSelect').addEventListener('change', async function() {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
@@ -2643,9 +2679,8 @@ router.post('/split', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    const ext = path.extname(filename);
-    const part1Filename = 'split_part1_' + Date.now() + '_' + req.user.id + ext;
-    const part2Filename = 'split_part2_' + Date.now() + '_' + req.user.id + ext;
+    const part1Filename = 'split_part1_' + Date.now() + '_' + req.user.id + '.mp4';
+    const part2Filename = 'split_part2_' + Date.now() + '_' + req.user.id + '.mp4';
     const part1Path = path.join(outputDir, part1Filename);
     const part2Path = path.join(outputDir, part2Filename);
 
