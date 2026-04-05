@@ -313,7 +313,7 @@ router.get('/', requireAuth, async (req, res) => {
     .element-item:hover{background:var(--primary);transform:scale(1.05);border-color:var(--primary)}
     
     /* Enhanced tool sections */
-    .tools-section{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0}
+    .tools-section{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;background:var(--surface);border-radius:10px;border:1px solid var(--border-subtle)}
     .tool-button{padding:6px 12px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text);cursor:pointer;font-size:12px;white-space:nowrap;transition:all 0.15s}
     .tool-button:hover{background:rgba(108,58,237,0.15);border-color:var(--primary)}
     .tool-button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
