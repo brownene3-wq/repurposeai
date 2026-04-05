@@ -398,7 +398,24 @@ function generateASSSubtitles(segments, clipStartSec, clipDuration, captionStyle
     karaoke: { fontName:'Liberation Sans', fontSize:78, primaryColor:'&H00FFFFFF', outlineColor:'&H000050FF', backColor:'&H80000000', bold:-1, outline:4, shadow:0, alignment:2, marginV:180, wordsPerLine:1, uppercase:true },
     minimal: { fontName:'Liberation Sans', fontSize:60, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&H00000000', bold:0, outline:2, shadow:0, alignment:2, marginV:160, wordsPerLine:8, uppercase:false },
     bold: { fontName:'Liberation Sans', fontSize:90, primaryColor:'&H0000FF00', outlineColor:'&H00000000', backColor:'&H80000000', bold:-1, outline:6, shadow:3, alignment:2, marginV:200, wordsPerLine:2, uppercase:true },
-    neon: { fontName:'Liberation Sans', fontSize:80, primaryColor:'&H00FF50FF', outlineColor:'&H00FF0080', backColor:'&H00000000', bold:-1, outline:4, shadow:4, alignment:2, marginV:190, wordsPerLine:4, uppercase:true }
+    neon: { fontName:'Liberation Sans', fontSize:80, primaryColor:'&H00FF50FF', outlineColor:'&H00FF0080', backColor:'&H00000000', bold:-1, outline:4, shadow:4, alignment:2, marginV:190, wordsPerLine:4, uppercase:true },
+    'bold-pop': { fontName:'Liberation Sans', fontSize:95, primaryColor:'&H0000BFFF', outlineColor:'&H00000000', backColor:'&H80000000', bold:-1, outline:6, shadow:3, alignment:2, marginV:200, wordsPerLine:2, uppercase:true },
+    'gradient-wave': { fontName:'Liberation Sans', fontSize:78, primaryColor:'&H00FF69B4', outlineColor:'&H009932CC', backColor:'&H00000000', bold:-1, outline:5, shadow:2, alignment:2, marginV:185, wordsPerLine:4, uppercase:true },
+    typewriter: { fontName:'Liberation Mono', fontSize:65, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&H90000000', bold:0, outline:2, shadow:0, alignment:2, marginV:170, wordsPerLine:6, uppercase:false },
+    cinematic: { fontName:'Liberation Sans', fontSize:70, primaryColor:'&H0074D4D4', outlineColor:'&H00000000', backColor:'&H00000000', bold:0, outline:3, shadow:2, alignment:2, marginV:180, wordsPerLine:6, uppercase:false },
+    street: { fontName:'Liberation Sans', fontSize:88, primaryColor:'&H0000FFFF', outlineColor:'&H00000000', backColor:'&H80000000', bold:-1, outline:5, shadow:0, alignment:2, marginV:200, wordsPerLine:3, uppercase:true },
+    hormozi: { fontName:'Liberation Sans', fontSize:85, primaryColor:'&H0000FFFF', outlineColor:'&H00000000', backColor:'&H00000000', bold:-1, outline:6, shadow:3, alignment:2, marginV:200, wordsPerLine:2, uppercase:true },
+    mrbeast: { fontName:'Liberation Sans', fontSize:92, primaryColor:'&H00FFFFFF', outlineColor:'&H000000FF', backColor:'&H00000000', bold:-1, outline:7, shadow:0, alignment:2, marginV:200, wordsPerLine:2, uppercase:true },
+    'classic-sub': { fontName:'Liberation Sans', fontSize:64, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&HA0000000', bold:0, outline:2, shadow:0, alignment:2, marginV:160, wordsPerLine:8, uppercase:false },
+    'outline-style': { fontName:'Liberation Sans', fontSize:80, primaryColor:'&H00000000', outlineColor:'&H00FFFFFF', backColor:'&H00000000', bold:-1, outline:5, shadow:0, alignment:2, marginV:185, wordsPerLine:4, uppercase:true },
+    'soft-glow': { fontName:'Liberation Sans', fontSize:72, primaryColor:'&H00FFFFFF', outlineColor:'&H00FFB0E0', backColor:'&H00000000', bold:0, outline:3, shadow:5, alignment:2, marginV:180, wordsPerLine:5, uppercase:false },
+    'retro-vhs': { fontName:'Liberation Mono', fontSize:68, primaryColor:'&H0000FFFF', outlineColor:'&H000000FF', backColor:'&H80000000', bold:-1, outline:3, shadow:2, alignment:2, marginV:175, wordsPerLine:5, uppercase:true },
+    comic: { fontName:'Liberation Sans', fontSize:82, primaryColor:'&H0000FFFF', outlineColor:'&H00000000', backColor:'&H00000000', bold:-1, outline:6, shadow:0, alignment:2, marginV:190, wordsPerLine:3, uppercase:true },
+    fire: { fontName:'Liberation Sans', fontSize:85, primaryColor:'&H000055FF', outlineColor:'&H000000FF', backColor:'&H00000000', bold:-1, outline:5, shadow:4, alignment:2, marginV:195, wordsPerLine:3, uppercase:true },
+    'clean-modern': { fontName:'Liberation Sans', fontSize:66, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&H00000000', bold:0, outline:2, shadow:1, alignment:2, marginV:165, wordsPerLine:7, uppercase:false },
+    podcast: { fontName:'Liberation Sans', fontSize:70, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&HA0000000', bold:0, outline:3, shadow:0, alignment:2, marginV:175, wordsPerLine:6, uppercase:false },
+    'tiktok-trend': { fontName:'Liberation Sans', fontSize:88, primaryColor:'&H0000FFFF', outlineColor:'&H00000000', backColor:'&H80000000', bold:-1, outline:5, shadow:2, alignment:2, marginV:200, wordsPerLine:3, uppercase:true },
+    'shadow-drop': { fontName:'Liberation Sans', fontSize:76, primaryColor:'&H00FFFFFF', outlineColor:'&H00000000', backColor:'&H00000000', bold:-1, outline:3, shadow:6, alignment:2, marginV:185, wordsPerLine:4, uppercase:true }
   };
   const cfg = styleConfigs[captionStyle] || styleConfigs.classic;
 
@@ -5536,6 +5553,23 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
                 <option value="classic">Classic</option>
                 <option value="minimal">Minimal</option>
                 <option value="neon">Neon Glow</option>
+                <option value="bold-pop">Bold Pop</option>
+                <option value="gradient-wave">Gradient Wave</option>
+                <option value="typewriter">Typewriter</option>
+                <option value="cinematic">Cinematic</option>
+                <option value="street">Street</option>
+                <option value="hormozi">Hormozi</option>
+                <option value="mrbeast">MrBeast</option>
+                <option value="classic-sub">Classic Subtitle</option>
+                <option value="outline-style">Outline</option>
+                <option value="soft-glow">Soft Glow</option>
+                <option value="retro-vhs">Retro VHS</option>
+                <option value="comic">Comic</option>
+                <option value="fire">Fire</option>
+                <option value="clean-modern">Clean Modern</option>
+                <option value="podcast">Podcast</option>
+                <option value="tiktok-trend">TikTok Trending</option>
+                <option value="shadow-drop">Shadow Drop</option>
                 <option value="none">No Captions</option>
               </select>
             </div>
@@ -6327,6 +6361,23 @@ ${paginationHtml}
                 <option value="minimal">Minimal</option>
                 <option value="bold">Bold</option>
                 <option value="neon">Neon Glow</option>
+                <option value="bold-pop">Bold Pop</option>
+                <option value="gradient-wave">Gradient Wave</option>
+                <option value="typewriter">Typewriter</option>
+                <option value="cinematic">Cinematic</option>
+                <option value="street">Street</option>
+                <option value="hormozi">Hormozi</option>
+                <option value="mrbeast">MrBeast</option>
+                <option value="classic-sub">Classic Subtitle</option>
+                <option value="outline-style">Outline</option>
+                <option value="soft-glow">Soft Glow</option>
+                <option value="retro-vhs">Retro VHS</option>
+                <option value="comic">Comic</option>
+                <option value="fire">Fire</option>
+                <option value="clean-modern">Clean Modern</option>
+                <option value="podcast">Podcast</option>
+                <option value="tiktok-trend">TikTok Trending</option>
+                <option value="shadow-drop">Shadow Drop</option>
               </select>
               <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
                 <option value="en">English</option>
