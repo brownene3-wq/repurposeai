@@ -4098,10 +4098,18 @@ router.get('/', requireAuth, async (req, res) => {
       var tint = colorTintSlider ? colorTintSlider.value : 0;
       var vibrance = colorVibranceSlider ? colorVibranceSlider.value : 0;
       var vignette = colorVignetteSlider ? colorVignetteSlider.value : 0;
-      var hueRot = temp * 0.3;
+      var hueRot = (temp * 0.3) + (tint * 0.5);
       var sat = 1 + (vibrance / 100);
       var sepiaAmt = Math.max(0, temp / 200);
-      videoPlayer.style.filter = 'hue-rotate(' + hueRot + 'deg) saturate(' + sat + ') sepia(' + sepiaAmt + ')';
+      var tintBright = 1 + (Math.abs(tint) * 0.001);
+      videoPlayer.style.filter = 'hue-rotate(' + hueRot + 'deg) saturate(' + sat + ') sepia(' + sepiaAmt + ') brightness(' + tintBright + ')';
+      // Apply vignette as inset box-shadow on video container
+      var vigAmt = Math.abs(vignette);
+      if (vigAmt > 0) {
+        videoPlayer.style.boxShadow = 'inset 0 0 ' + (vigAmt * 1.5) + 'px ' + (vigAmt * 0.5) + 'px rgba(0,0,0,' + (vigAmt / 100) + ')';
+      } else {
+        videoPlayer.style.boxShadow = 'none';
+      }
       if (document.getElementById('tempValue')) document.getElementById('tempValue').textContent = temp;
       if (document.getElementById('tintValue')) document.getElementById('tintValue').textContent = tint;
       if (document.getElementById('vibranceValue')) document.getElementById('vibranceValue').textContent = vibrance;
@@ -4111,6 +4119,129 @@ router.get('/', requireAuth, async (req, res) => {
     if (colorTintSlider) colorTintSlider.addEventListener('input', applyColorGrading);
     if (colorVibranceSlider) colorVibranceSlider.addEventListener('input', applyColorGrading);
     if (colorVignetteSlider) colorVignetteSlider.addEventListener('input', applyColorGrading);
+
+    // _____ PICTURE-IN-PICTURE HANDLER _____
+    var pipPosition = 'top-right';
+    var pipFileInput = document.createElement('input');
+    pipFileInput.type = 'file';
+    pipFileInput.accept = 'video/*,image/*';
+    pipFileInput.style.display = 'none';
+    document.body.appendChild(pipFileInput);
+
+    document.querySelectorAll('[data-pip]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        pipPosition = this.dataset.pip;
+        document.querySelectorAll('[data-pip]').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        // Update existing PiP overlay if present
+        var existing = document.querySelector('.pip-overlay');
+        if (existing) {
+          var pos = pipPosition.split('-');
+          existing.style.top = pos[0] === 'top' ? '8px' : 'auto';
+          existing.style.bottom = pos[0] === 'bottom' ? '8px' : 'auto';
+          existing.style.right = pos[1] === 'right' ? '8px' : 'auto';
+          existing.style.left = pos[1] === 'left' ? '8px' : 'auto';
+        }
+        showToast('PiP position: ' + pipPosition.replace('-', ' '));
+      });
+    });
+
+    var addPipBtn = document.getElementById('addPipBtn');
+    if (addPipBtn) {
+      addPipBtn.addEventListener('click', function() {
+        if (!currentVideoFile) { showToast('Upload a main video first', 'error'); return; }
+        pipFileInput.click();
+      });
+    }
+
+    pipFileInput.addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var previewArea = document.getElementById('videoPreviewArea');
+      if (!previewArea) return;
+      previewArea.style.position = 'relative';
+
+      // Remove existing PiP overlay
+      var old = document.querySelector('.pip-overlay');
+      if (old) old.remove();
+
+      var overlay = document.createElement(file.type.startsWith('image') ? 'img' : 'video');
+      overlay.className = 'pip-overlay';
+      if (overlay.tagName === 'VIDEO') { overlay.autoplay = true; overlay.loop = true; overlay.muted = true; }
+      overlay.src = URL.createObjectURL(file);
+      var size = (document.getElementById('pipSize') ? document.getElementById('pipSize').value : 30) + '%';
+      var radius = (document.getElementById('pipRadius') ? document.getElementById('pipRadius').value : 8) + 'px';
+      var pos = pipPosition.split('-');
+      overlay.style.cssText = 'position:absolute;width:' + size + ';z-index:15;border-radius:' + radius + ';box-shadow:0 4px 12px rgba(0,0,0,0.4);cursor:move;'
+        + (pos[0] === 'top' ? 'top:8px;' : 'bottom:8px;')
+        + (pos[1] === 'right' ? 'right:8px;' : 'left:8px;');
+      previewArea.appendChild(overlay);
+
+      // Drag support
+      var dragging = false, ox = 0, oy = 0;
+      overlay.addEventListener('mousedown', function(ev) { dragging = true; ox = ev.clientX - overlay.offsetLeft; oy = ev.clientY - overlay.offsetTop; ev.preventDefault(); });
+      document.addEventListener('mousemove', function(ev) { if (!dragging) return; overlay.style.left = (ev.clientX - ox) + 'px'; overlay.style.top = (ev.clientY - oy) + 'px'; overlay.style.right = 'auto'; overlay.style.bottom = 'auto'; });
+      document.addEventListener('mouseup', function() { dragging = false; });
+
+      // Update size and radius from sliders
+      if (document.getElementById('pipSize')) {
+        document.getElementById('pipSize').addEventListener('input', function() { overlay.style.width = this.value + '%'; });
+      }
+      if (document.getElementById('pipRadius')) {
+        document.getElementById('pipRadius').addEventListener('input', function() { overlay.style.borderRadius = this.value + 'px'; });
+      }
+
+      showToast('PiP source added! Drag to reposition.');
+
+    // _____ KEYFRAMES HANDLER _____
+    var activeKfProp = null;
+    var keyframes = [];
+
+    document.querySelectorAll('[data-kf]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        activeKfProp = this.dataset.kf;
+        document.querySelectorAll('[data-kf]').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        showToast('Keyframe property: ' + activeKfProp + '. Click Add Keyframe to set.');
+      });
+    });
+
+    var addKeyframeBtn = document.getElementById('addKeyframeBtn');
+    if (addKeyframeBtn) {
+      addKeyframeBtn.addEventListener('click', function() {
+        if (!currentVideoFile) { showToast('Upload a video first', 'error'); return; }
+        if (!activeKfProp) { showToast('Select a property first (Opacity, Scale, etc.)', 'error'); return; }
+        if (!videoPlayer) return;
+        var time = videoPlayer.currentTime || 0;
+        var value;
+        switch (activeKfProp) {
+          case 'opacity': value = parseFloat(prompt('Opacity (0 to 1):', '1')) || 1; videoPlayer.style.opacity = value; break;
+          case 'scale': value = parseFloat(prompt('Scale (0.1 to 3):', '1')) || 1; videoPlayer.style.transform = 'scale(' + value + ')'; break;
+          case 'position':
+            var x = parseInt(prompt('X offset (px):', '0')) || 0;
+            var y = parseInt(prompt('Y offset (px):', '0')) || 0;
+            value = {x: x, y: y};
+            videoPlayer.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+            break;
+          case 'rotation': value = parseInt(prompt('Rotation (degrees):', '0')) || 0; videoPlayer.style.transform = 'rotate(' + value + 'deg)'; break;
+        }
+        keyframes.push({ property: activeKfProp, time: time.toFixed(2), value: value });
+        showToast('Keyframe added at ' + time.toFixed(2) + 's: ' + activeKfProp + ' = ' + JSON.stringify(value));
+      });
+    }
+
+    var clearKeyframesBtn = document.getElementById('clearKeyframesBtn');
+    if (clearKeyframesBtn) {
+      clearKeyframesBtn.addEventListener('click', function() {
+        keyframes = [];
+        if (videoPlayer) {
+          videoPlayer.style.opacity = '';
+          videoPlayer.style.transform = '';
+        }
+        showToast('Keyframes cleared');
+      });
+    }
+    });
 
     // ===== PIP SIZE SLIDER =====
     var pipSizeSlider = document.getElementById('pipSize');
