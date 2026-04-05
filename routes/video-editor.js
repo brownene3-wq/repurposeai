@@ -5089,6 +5089,8 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
         return res.status(500).json({ error: 'yt-dlp is not available on this server' });
       }
     }
+    // Always update yt-dlp to latest version (YouTube changes frequently)
+    try { execSync('pip install --upgrade yt-dlp', { stdio: 'pipe', timeout: 30000 }); } catch (e) { console.log('yt-dlp update skipped:', e.message); }
 
     await new Promise((resolve, reject) => {
       const proc = spawn(ytdlpPath, [
@@ -5097,6 +5099,9 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
         '-o', outputPath,
         '--max-filesize', '500m',
         '--no-playlist',
+        '--no-check-certificates',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '--extractor-retries', '3',
         url
       ]);
       let stderr = '';
