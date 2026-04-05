@@ -142,10 +142,10 @@ router.get('/', requireAuth, async (req, res) => {
   const html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:flex;height:calc(100vh - 48px);gap:.75rem;padding:.75rem}
-    .editor-main{flex:1;display:flex;flex-direction:column;min-width:0}
-    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:500px}
-    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:450px;display:flex;flex-direction:column;justify-content:center}
+    .editor-container{display:flex;height:calc(100vh - 48px);gap:.75rem;padding:.75rem;overflow:hidden}
+    .editor-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow-y:auto;overflow-x:hidden}
+    .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 220px);overflow:hidden}
+    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:250px;display:flex;flex-direction:column;justify-content:center}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
     .upload-zone.has-video{display:none}
     .upload-zone h3{font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:.5rem}
@@ -212,14 +212,14 @@ router.get('/', requireAuth, async (req, res) => {
     #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
     .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
     .transcript-timestamp:hover{text-decoration:underline}
-    .editor-sidebar{width:270px;min-width:270px;display:flex;flex-direction:column;gap:.6rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px}
+    .editor-sidebar{width:270px;min-width:270px;display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px;scrollbar-width:thin}
     .editor-sidebar::-webkit-scrollbar{width:4px}
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
-    .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;flex-shrink:0}
+    .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
     .tool-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;display:none;flex-shrink:0}
-    .tool-panel.active{display:block}
+    .tool-panel.active{display:block;max-height:calc(100vh - 350px);overflow-y:auto}
     .panel-title{font-size:.85rem;font-weight:700;color:var(--text);margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem}
-    .slider-group{margin-bottom:1rem}
+    .slider-group{margin-bottom:.4rem}
     .slider-label{font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem;display:flex;justify-content:space-between}
     .slider-value{color:var(--primary);font-weight:600}
     .slider{width:100%;height:6px;border-radius:3px;background:var(--dark);outline:none;-webkit-appearance:none;appearance:none}
@@ -242,12 +242,12 @@ router.get('/', requireAuth, async (req, res) => {
     .filter-btn{padding:.5rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);cursor:pointer;font-size:.75rem;font-weight:600;transition:all 0.2s}
     .filter-btn:hover{border-color:var(--primary);color:var(--primary)}
     .filter-btn.selected{background:var(--primary);color:white;border-color:var(--primary)}
-    .dropdown-group{margin-bottom:1.5rem}
+    .dropdown-group{margin-bottom:.6rem}
     .dropdown-label{font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem;display:block}
     .dropdown{width:100%;padding:.6rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);font-size:.85rem;outline:none;transition:border-color 0.2s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;cursor:pointer}
     .dropdown:hover{border-color:var(--primary)}
     .dropdown:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(108,58,237,0.15)}
-    .export-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;flex-shrink:0;margin-top:auto}
+    .export-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
     .export-button{width:100%;padding:.8rem;background:var(--primary);color:white;border:1px solid var(--primary);border-radius:10px;font-weight:600;cursor:pointer;font-size:.9rem;transition:all 0.2s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .export-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3)}
     .export-button:disabled{opacity:0.5;cursor:not-allowed}
@@ -2893,9 +2893,8 @@ router.get('/', requireAuth, async (req, res) => {
           })
         });
 
-        if (!response.ok) throw new Error('Export failed');
-
         const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Export failed');
 
         // Trigger download
         const downloadLink = document.createElement('a');
@@ -3375,7 +3374,7 @@ router.get('/', requireAuth, async (req, res) => {
           const resp = await fetch('/video-editor/transcript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename: currentVideoFile })
+            body: JSON.stringify({ filename: currentVideoFile.filename })
           });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || 'Transcription failed');
@@ -3633,6 +3632,7 @@ router.get('/', requireAuth, async (req, res) => {
         if (annotWrapper) {
           if (tool === 'annotations') {
             annotWrapper.classList.add('active');
+            resizeAnnotCanvas();
           } else {
             annotWrapper.classList.remove('active');
           }
@@ -3981,6 +3981,51 @@ router.get('/', requireAuth, async (req, res) => {
       annotCustomColor.addEventListener('input', function() { annotColor = this.value; });
     }
 
+    // _____ ELEMENTS / STICKERS HANDLER _____
+    document.querySelectorAll('.element-item').forEach(function(item) {
+      item.addEventListener('click', function() {
+        if (!currentVideoFile) { showToast('Upload a video first', 'error'); return; }
+        var emoji = this.textContent.trim();
+        var previewArea = document.getElementById('videoPreviewArea');
+        if (!previewArea) return;
+
+        // Create draggable element overlay
+        var el = document.createElement('div');
+        el.className = 'element-overlay';
+        el.textContent = emoji;
+        el.style.cssText = 'position:absolute;font-size:48px;cursor:move;z-index:20;user-select:none;left:50%;top:50%;transform:translate(-50%,-50%);filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transition:transform 0.1s';
+        previewArea.style.position = 'relative';
+        previewArea.appendChild(el);
+
+        // Drag logic
+        var dragging = false, ox = 0, oy = 0;
+        el.addEventListener('mousedown', function(e) {
+          dragging = true;
+          ox = e.clientX - el.offsetLeft;
+          oy = e.clientY - el.offsetTop;
+          el.style.transform = 'scale(1.1)';
+          e.preventDefault();
+        });
+        document.addEventListener('mousemove', function(e) {
+          if (!dragging) return;
+          el.style.left = (e.clientX - ox) + 'px';
+          el.style.top = (e.clientY - oy) + 'px';
+          el.style.transform = 'scale(1.1)';
+        });
+        document.addEventListener('mouseup', function() {
+          if (dragging) { dragging = false; el.style.transform = 'scale(1)'; }
+        });
+
+        // Double-click to remove
+        el.addEventListener('dblclick', function() { el.remove(); });
+        
+        // Visual feedback
+        this.style.transform = 'scale(1.2)';
+        setTimeout(function() { item.style.transform = ''; }, 200);
+        showToast('Element added! Drag to position, double-click to remove.');
+      });
+    });
+
     var annotStrokeSlider = document.getElementById('annotationStrokeWidth');
     if (annotStrokeSlider) {
       annotStrokeSlider.addEventListener('input', function() { annotStrokeWidth = parseInt(this.value); });
@@ -4228,7 +4273,7 @@ router.post('/export', requireAuth, async (req, res) => {
     // Use scale with aspect ratio preservation + padding to avoid stretching
     // Build crop filter if crop data is provided
     let cropFilter = '';
-    if (crop && crop.w < 1) {
+    if (crop && (crop.w < 1 || crop.h < 1)) {
       cropFilter = 'crop=iw*' + crop.w.toFixed(4) + ':ih*' + crop.h.toFixed(4) + ':iw*' + crop.x.toFixed(4) + ':ih*' + crop.y.toFixed(4) + ',';
     }
     const filterComplex = cropFilter + 'eq=brightness=' + b + ':contrast=' + c + ':saturation=' + s + ',scale=' + width + ':' + height + ':force_original_aspect_ratio=decrease,pad=' + width + ':' + height + ':(ow-iw)/2:(oh-ih)/2:color=black';
