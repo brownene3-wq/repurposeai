@@ -799,7 +799,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <!-- B-Roll Panel -->
-          <div class="tool-panel" id="brollPanel" style="display:none">
+          <div class="tool-panel" id="brollPanel">
             <div class="panel-title">🎬 B-Roll Overlay</div>
             <div class="upload-section" style="margin-bottom:12px">
               <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:8px">Add a B-Roll clip to overlay on your main video. You can drag to reposition and resize it on the preview.</p>
@@ -834,7 +834,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <!-- AI Hook Panel -->
-          <div class="tool-panel" id="aihookPanel" style="display:none">
+          <div class="tool-panel" id="aihookPanel">
             <div class="panel-title">🪝 AI Hook Generator</div>
             <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">Generate an attention-grabbing hook for the first few seconds of your video using AI.</p>
             <label class="dropdown-label">Hook Style</label>
@@ -860,7 +860,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <!-- Brand Template Panel -->
-          <div class="tool-panel" id="brandtemplatePanel" style="display:none">
+          <div class="tool-panel" id="brandtemplatePanel">
             <div class="panel-title">🎨 Brand Template</div>
             <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">Apply your brand's visual identity to the video — colors, fonts, logo watermark, and intro/outro.</p>
             <div style="margin-bottom:12px">
@@ -902,7 +902,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <!-- Transcript Panel -->
-          <div class="tool-panel" id="transcriptPanel" style="display:none">
+          <div class="tool-panel" id="transcriptPanel">
             <div class="panel-title">📜 Transcript</div>
             <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">View and edit the transcript of your video. Auto-generate using AI or type manually.</p>
             <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -978,6 +978,8 @@ router.get('/', requireAuth, async (req, res) => {
 
     uploadZone.addEventListener('click', (e) => {
       if (e.target === fileInput) return;
+      // Don't open file picker when clicking on URL input, buttons, or other interactive elements
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('input[type="text"]') || e.target.id === 'youtubeUrlInput' || e.target.id === 'youtubeImportBtn' || e.target.id === 'dropboxImportBtn' || e.target.id === 'googleDriveImportBtn') return;
       fileInput.click();
     });
 
