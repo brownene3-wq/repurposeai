@@ -290,8 +290,8 @@ router.get('/', requireAuth, async (req, res) => {
     /* Crop overlay */
     .crop-overlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:11;display:none}
     .crop-overlay.active{display:block}
-    .crop-handle{position:absolute;width:12px;height:12px;background:#fff;border:2px solid var(--primary);border-radius:2px;z-index:12}
-    .crop-region{border:2px dashed var(--primary);position:absolute;background:transparent}
+    .crop-handle{position:absolute;width:14px;height:14px;background:#fff;border:2px solid var(--primary);border-radius:2px;z-index:12}
+    .crop-region{border:2px solid #fff;position:absolute;background:transparent;cursor:move;box-shadow:0 0 0 1px rgba(0,0,0,0.3)}
     .crop-dim{position:absolute;background:rgba(0,0,0,0.5)}
     
     /* New tool panels */
@@ -398,7 +398,7 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-button" data-tool="aihook">🪝 AI Hook</button>
               <button class="tool-button" data-tool="brandtemplate">🎨 Brand Template</button>
               <button class="tool-button" data-tool="transcript">📜 Transcript</button>
-              <button class="tool-button" data-tool="crop">✂️ Crop</button>
+              <button class="tool-button" data-tool="crop"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg>Crop</button>
               <button class="tool-button" data-tool="annotations">✏️ Annotations</button>
               <button class="tool-button" data-tool="elements">⭐ Elements</button>
               <button class="tool-button" data-tool="zoom">🔍 Zoom & Pan</button>
@@ -2038,6 +2038,13 @@ router.get('/', requireAuth, async (req, res) => {
     // When the video finishes seeking, unlock the playhead so RAF can take over
     videoPlayer.addEventListener('seeked', function() {
       if (playheadSeeking) {
+        // Verify the seek actually landed near where we wanted
+        var seekedPct = videoPlayer.currentTime / videoDuration;
+        var diff = Math.abs(seekedPct - dragPct);
+        if (diff > 0.05 && dragPct > 0.01) {
+          // Seek failed or landed far from target — force currentTime again
+          videoPlayer.currentTime = dragPct * videoDuration;
+        }
         playheadSeeking = false;
         lockedLeft = null;
       }
@@ -2098,8 +2105,8 @@ router.get('/', requireAuth, async (req, res) => {
         if (videoDuration) {
           playheadSeeking = true;
           videoPlayer.currentTime = dragPct * videoDuration;
-          // Safety timeout: if seeked event never fires, unlock after 2s
-          setTimeout(function() { playheadSeeking = false; lockedLeft = null; }, 2000);
+          // Safety timeout: if seeked event never fires, unlock after 5s
+          setTimeout(function() { if (playheadSeeking) { playheadSeeking = false; lockedLeft = null; } }, 5000);
         }
       }
     });
@@ -2123,7 +2130,7 @@ router.get('/', requireAuth, async (req, res) => {
       // Seek the video with lock
       playheadSeeking = true;
       videoPlayer.currentTime = dragPct * videoDuration;
-      setTimeout(function() { playheadSeeking = false; lockedLeft = null; }, 2000);
+      setTimeout(function() { if (playheadSeeking) { playheadSeeking = false; lockedLeft = null; } }, 5000);
       // Start dragging so user can keep sliding
       playheadDragging = true;
       document.body.style.cursor = 'col-resize';
@@ -2749,7 +2756,8 @@ router.get('/', requireAuth, async (req, res) => {
             contrast,
             saturation,
             resolution,
-            format
+            format,
+            crop: window._appliedCrop || null
           })
         });
 
@@ -3371,6 +3379,177 @@ router.get('/', requireAuth, async (req, res) => {
       });
     });
 
+    // _____ INTERACTIVE CROP ENGINE _____
+    (function() {
+      var cropOverlay = document.getElementById('cropOverlay');
+      if (!cropOverlay) return;
+
+      // Crop state
+      var cropState = { x: 0.1, y: 0.1, w: 0.8, h: 0.8, ratio: null, active: false };
+      window._cropState = cropState;
+
+      // Build crop UI inside overlay
+      cropOverlay.innerHTML = '<div class="crop-dim crop-dim-top"></div>' +
+        '<div class="crop-dim crop-dim-bottom"></div>' +
+        '<div class="crop-dim crop-dim-left"></div>' +
+        '<div class="crop-dim crop-dim-right"></div>' +
+        '<div class="crop-region" id="cropRegion">' +
+          '<div class="crop-handle" data-pos="tl" style="top:-6px;left:-6px;cursor:nw-resize"></div>' +
+          '<div class="crop-handle" data-pos="tr" style="top:-6px;right:-6px;cursor:ne-resize"></div>' +
+          '<div class="crop-handle" data-pos="bl" style="bottom:-6px;left:-6px;cursor:sw-resize"></div>' +
+          '<div class="crop-handle" data-pos="br" style="bottom:-6px;right:-6px;cursor:se-resize"></div>' +
+          '<div class="crop-handle" data-pos="tm" style="top:-6px;left:50%;margin-left:-6px;cursor:n-resize"></div>' +
+          '<div class="crop-handle" data-pos="bm" style="bottom:-6px;left:50%;margin-left:-6px;cursor:s-resize"></div>' +
+          '<div class="crop-handle" data-pos="ml" style="top:50%;margin-top:-6px;left:-6px;cursor:w-resize"></div>' +
+          '<div class="crop-handle" data-pos="mr" style="top:50%;margin-top:-6px;right:-6px;cursor:e-resize"></div>' +
+          '<div class="crop-grid"></div>' +
+        '</div>';
+
+      var region = document.getElementById('cropRegion');
+      var dims = cropOverlay.querySelectorAll('.crop-dim');
+      var dimTop = dims[0], dimBot = dims[1], dimLeft = dims[2], dimRight = dims[3];
+
+      // Add grid lines (rule of thirds)
+      var grid = region.querySelector('.crop-grid');
+      grid.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none';
+      grid.innerHTML = '<div style="position:absolute;top:33.33%;left:0;right:0;border-top:1px solid rgba(255,255,255,0.3)"></div>' +
+        '<div style="position:absolute;top:66.66%;left:0;right:0;border-top:1px solid rgba(255,255,255,0.3)"></div>' +
+        '<div style="position:absolute;left:33.33%;top:0;bottom:0;border-left:1px solid rgba(255,255,255,0.3)"></div>' +
+        '<div style="position:absolute;left:66.66%;top:0;bottom:0;border-left:1px solid rgba(255,255,255,0.3)"></div>';
+
+      // Update visual positions
+      function updateCropUI() {
+        var ow = cropOverlay.offsetWidth, oh = cropOverlay.offsetHeight;
+        var px = cropState.x * ow, py = cropState.y * oh;
+        var pw = cropState.w * ow, ph = cropState.h * oh;
+        region.style.left = px + 'px';
+        region.style.top = py + 'px';
+        region.style.width = pw + 'px';
+        region.style.height = ph + 'px';
+        // Dim areas
+        dimTop.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:' + py + 'px;background:rgba(0,0,0,0.55)';
+        dimBot.style.cssText = 'position:absolute;bottom:0;left:0;width:100%;height:' + (oh - py - ph) + 'px;background:rgba(0,0,0,0.55)';
+        dimLeft.style.cssText = 'position:absolute;top:' + py + 'px;left:0;width:' + px + 'px;height:' + ph + 'px;background:rgba(0,0,0,0.55)';
+        dimRight.style.cssText = 'position:absolute;top:' + py + 'px;right:0;width:' + (ow - px - pw) + 'px;height:' + ph + 'px;background:rgba(0,0,0,0.55)';
+      }
+
+      // Make region draggable
+      var dragging = null, dragStart = {};
+
+      region.addEventListener('mousedown', function(e) {
+        if (e.target.classList.contains('crop-handle')) return;
+        e.preventDefault();
+        dragging = 'move';
+        dragStart = { mx: e.clientX, my: e.clientY, x: cropState.x, y: cropState.y };
+      });
+
+      // Handle resize
+      region.querySelectorAll('.crop-handle').forEach(function(h) {
+        h.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dragging = h.dataset.pos;
+          dragStart = { mx: e.clientX, my: e.clientY, x: cropState.x, y: cropState.y, w: cropState.w, h: cropState.h };
+        });
+      });
+
+      document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        var ow = cropOverlay.offsetWidth, oh = cropOverlay.offsetHeight;
+        var dx = (e.clientX - dragStart.mx) / ow;
+        var dy = (e.clientY - dragStart.my) / oh;
+
+        if (dragging === 'move') {
+          cropState.x = Math.max(0, Math.min(1 - cropState.w, dragStart.x + dx));
+          cropState.y = Math.max(0, Math.min(1 - cropState.h, dragStart.y + dy));
+        } else {
+          var nx = dragStart.x, ny = dragStart.y, nw = dragStart.w, nh = dragStart.h;
+          if (dragging.indexOf('l') !== -1) { nx += dx; nw -= dx; }
+          if (dragging.indexOf('r') !== -1 || dragging === 'mr') { nw += dx; }
+          if (dragging.indexOf('t') !== -1) { ny += dy; nh -= dy; }
+          if (dragging.indexOf('b') !== -1 || dragging === 'bm') { nh += dy; }
+
+          // Enforce aspect ratio if set
+          if (cropState.ratio && dragging !== 'ml' && dragging !== 'mr' && dragging !== 'tm' && dragging !== 'bm') {
+            nh = nw * (oh / ow) / cropState.ratio;
+            if (dragging.indexOf('t') !== -1) ny = dragStart.y + dragStart.h - nh;
+          }
+
+          // Minimum size
+          if (nw >= 0.05 && nh >= 0.05 && nx >= 0 && ny >= 0 && nx + nw <= 1 && ny + nh <= 1) {
+            cropState.x = nx; cropState.y = ny; cropState.w = nw; cropState.h = nh;
+          }
+        }
+        updateCropUI();
+      });
+
+      document.addEventListener('mouseup', function() { dragging = null; });
+
+      // Crop presets
+      document.querySelectorAll('.crop-preset').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('.crop-preset').forEach(function(b) { b.classList.remove('active'); });
+          this.classList.add('active');
+          var ratio = this.dataset.ratio;
+          if (ratio === 'free') {
+            cropState.ratio = null;
+            return;
+          }
+          var parts = ratio.split(':');
+          var r = parseInt(parts[0]) / parseInt(parts[1]);
+          cropState.ratio = r;
+          // Adjust crop region to match ratio
+          var ow = cropOverlay.offsetWidth, oh = cropOverlay.offsetHeight;
+          var aspect = ow / oh;
+          var newW, newH;
+          if (r * aspect >= 1) {
+            newW = 0.8; newH = (newW * aspect) / r;
+            if (newH > 0.9) { newH = 0.9; newW = (newH * r) / aspect; }
+          } else {
+            newH = 0.8; newW = (newH * r) / aspect;
+            if (newW > 0.9) { newW = 0.9; newH = (newW * aspect) / r; }
+          }
+          cropState.w = newW; cropState.h = newH;
+          cropState.x = (1 - newW) / 2; cropState.y = (1 - newH) / 2;
+          updateCropUI();
+        });
+      });
+
+      // Apply crop
+      var applyCropBtn = document.getElementById('applyCropBtn');
+      if (applyCropBtn) {
+        applyCropBtn.addEventListener('click', function() {
+          window._appliedCrop = { x: cropState.x, y: cropState.y, w: cropState.w, h: cropState.h };
+          var pct = Math.round(cropState.w * cropState.h * 100);
+          this.textContent = '\u2705 Crop Applied (' + pct + '% area)';
+          setTimeout(function() { applyCropBtn.textContent = '\u2705 Apply Crop'; }, 2000);
+        });
+      }
+
+      // Reset crop
+      var resetCropBtn = document.getElementById('resetCropBtn');
+      if (resetCropBtn) {
+        resetCropBtn.addEventListener('click', function() {
+          cropState.x = 0; cropState.y = 0; cropState.w = 1; cropState.h = 1;
+          cropState.ratio = null;
+          window._appliedCrop = null;
+          document.querySelectorAll('.crop-preset').forEach(function(b) { b.classList.remove('active'); });
+          updateCropUI();
+        });
+      }
+
+      // Init when crop tool is activated
+      var observer = new MutationObserver(function() {
+        if (cropOverlay.classList.contains('active') && !cropState.active) {
+          cropState.active = true;
+          updateCropUI();
+        } else if (!cropOverlay.classList.contains('active')) {
+          cropState.active = false;
+        }
+      });
+      observer.observe(cropOverlay, { attributes: true, attributeFilter: ['class'] });
+    })();
+
     // ===== ANNOTATION DRAWING ENGINE =====
     var annotCanvas = document.getElementById('annotationCanvas');
     var annotCtx = annotCanvas ? annotCanvas.getContext('2d') : null;
@@ -3740,7 +3919,7 @@ router.post('/trim', requireAuth, async (req, res) => {
 // POST: Export video with filters
 router.post('/export', requireAuth, async (req, res) => {
   try {
-    const { filename, brightness, contrast, saturation, resolution, format } = req.body;
+    const { filename, brightness, contrast, saturation, resolution, format, crop } = req.body;
 
     if (!filename) {
       return res.status(400).json({ error: 'Missing filename' });
@@ -3774,7 +3953,12 @@ router.post('/export', requireAuth, async (req, res) => {
     const s = (saturation / 100).toFixed(2);
 
     // Use scale with aspect ratio preservation + padding to avoid stretching
-    const filterComplex = 'eq=brightness=' + b + ':contrast=' + c + ':saturation=' + s + ',scale=' + width + ':' + height + ':force_original_aspect_ratio=decrease,pad=' + width + ':' + height + ':(ow-iw)/2:(oh-ih)/2:color=black';
+    // Build crop filter if crop data is provided
+    let cropFilter = '';
+    if (crop && crop.w < 1) {
+      cropFilter = 'crop=iw*' + crop.w.toFixed(4) + ':ih*' + crop.h.toFixed(4) + ':iw*' + crop.x.toFixed(4) + ':ih*' + crop.y.toFixed(4) + ',';
+    }
+    const filterComplex = cropFilter + 'eq=brightness=' + b + ':contrast=' + c + ':saturation=' + s + ',scale=' + width + ':' + height + ':force_original_aspect_ratio=decrease,pad=' + width + ':' + height + ':(ow-iw)/2:(oh-ih)/2:color=black';
 
     const ext = format === 'gif' ? '.gif' : ('.' + format);
     const outputFilename = 'exported_' + Date.now() + '_' + req.user.id + ext;
@@ -3849,7 +4033,8 @@ router.get('/download/:filename', requireAuth, (req, res) => {
     } else {
       res.writeHead(200, {
         'Content-Length': stat.size,
-        'Content-Type': contentType
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes'
       });
       fs.createReadStream(filePath).pipe(res);
     }
@@ -5678,8 +5863,14 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
         '-o', outputPath,
         '--max-filesize', '500m',
         '--no-playlist',
+        '--no-warnings',
         '--no-check-certificates',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '--geo-bypass',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+        '--js-runtimes', 'node',
+        '--remote-components', 'ejs:github',
+        '--retries', '3',
         '--extractor-retries', '3',
         url
       ]);
