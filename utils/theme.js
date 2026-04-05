@@ -122,24 +122,28 @@ function getSidebar(activePage, user, teamPermissions) {
   // Map sidebar links to required permissions
   // null permission = always visible
   const allLinks = [
-    { href: '/dashboard', icon: '&#x1F3AC;', label: 'Dashboard', key: 'dashboard', perm: null },
-    { href: '/repurpose', icon: '&#x1F504;', label: 'Repurpose', key: 'repurpose', perm: 'use_repurpose' },
-    { href: '/repurpose/history', icon: '&#x1F4DA;', label: 'Library', key: 'library', perm: 'use_repurpose' },
-    { href: '/shorts', icon: '&#x2702;&#xFE0F;', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
-    { href: '/dashboard/analytics', icon: '&#x1F4CA;', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
-    { href: '/dashboard/calendar', icon: '&#x1F4C5;', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
-    { href: '/brand-voice', icon: '&#x1F399;', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
-    { href: '/ai-hook', icon: '&#x1F3A3;', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
-    { href: '/ai-captions', icon: '&#x1F4AC;', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
-    { href: '/caption-presets', icon: '&#x1F4DD;', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
-    { href: '/ai-reframe', icon: '&#x1F5BC;', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
-    { href: '/video-editor', icon: '&#x1F3AC;', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
-    { href: '/ai-thumbnail', icon: '&#x1F5BC;&#xFE0F;', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
-    { href: '/enhance-speech', icon: '&#x1F50A;', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
-    { href: '/ai-broll', icon: '&#x1F3B5;', label: 'B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
-    { href: '/brand-templates', icon: '&#x1F5A8;&#xFE0F;', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
-    { href: '/billing', icon: '&#x1F4B3;', label: 'Billing', key: 'billing', perm: 'view_billing' },
-    { href: '/settings', icon: '&#x2699;&#xFE0F;', label: 'Settings', key: 'settings', perm: 'manage_settings' },
+    // --- Core Content Tools ---
+    { href: '/dashboard', icon: '\u{1F3AC}', label: 'Dashboard', key: 'dashboard', perm: null },
+    { href: '/repurpose', icon: '\u{1F504}', label: 'Repurpose', key: 'repurpose', perm: 'use_repurpose' },
+    { href: '/repurpose/history', icon: '\u{1F4DA}', label: 'Library', key: 'library', perm: 'use_repurpose' },
+    { href: '/shorts', icon: '\u{2702}\u{FE0F}', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
+    { href: '/video-editor', icon: '\u{1F3AC}', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
+    // --- AI & Creative Tools ---
+    { href: '/ai-captions', icon: '\u{1F4AC}', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
+    { href: '/caption-presets', icon: '\u{1F4DD}', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
+    { href: '/ai-hook', icon: '\u{1F3A3}', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
+    { href: '/ai-reframe', icon: '\u{1F5BC}', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
+    { href: '/ai-thumbnail', icon: '\u{1F5BC}\u{FE0F}', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
+    { href: '/ai-broll', icon: '\u{1F3B5}', label: 'B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
+    { href: '/enhance-speech', icon: '\u{1F50A}', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
+    // --- Brand & Planning ---
+    { href: '/brand-voice', icon: '\u{1F399}', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    { href: '/brand-templates', icon: '\u{1F5A8}\u{FE0F}', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
+    { href: '/dashboard/calendar', icon: '\u{1F4C5}', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
+    { href: '/dashboard/analytics', icon: '\u{1F4CA}', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
+    // --- Account ---
+    { href: '/billing', icon: '\u{1F4B3}', label: 'Billing', key: 'billing', perm: 'view_billing' },
+    { href: '/settings', icon: '\u{2699}\u{FE0F}', label: 'Settings', key: 'settings', perm: 'manage_settings' },
   ];
 
   // Filter links based on team permissions
