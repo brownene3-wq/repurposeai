@@ -272,12 +272,65 @@ router.get('/', requireAuth, async (req, res) => {
     @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:.5rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
-  </style>
+  
+    /* Full-screen editing mode — collapse app sidebar */
+    .dashboard.editor-fullscreen .sidebar{width:0;min-width:0;overflow:hidden;padding:0;opacity:0;pointer-events:none;transition:all 0.3s ease}
+    .dashboard.editor-fullscreen .main-content{margin-left:0 !important;transition:all 0.3s ease}
+    .sidebar{transition:all 0.3s ease}
+    .main-content{transition:all 0.3s ease}
+    .editor-fullscreen-toggle{position:fixed;top:12px;left:12px;z-index:1000;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;box-shadow:0 2px 12px rgba(108,58,237,0.3);transition:all 0.2s}
+    .editor-fullscreen-toggle:hover{transform:scale(1.05);box-shadow:0 4px 16px rgba(108,58,237,0.4)}
+    .dashboard.editor-fullscreen .editor-fullscreen-toggle{left:12px}
+    
+    /* Annotation canvas overlay */
+    .annotation-canvas-wrapper{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;pointer-events:none}
+    .annotation-canvas-wrapper.active{pointer-events:auto;cursor:crosshair}
+    .annotation-canvas{width:100%;height:100%}
+    
+    /* Crop overlay */
+    .crop-overlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:11;display:none}
+    .crop-overlay.active{display:block}
+    .crop-handle{position:absolute;width:12px;height:12px;background:#fff;border:2px solid var(--primary);border-radius:2px;z-index:12}
+    .crop-region{border:2px dashed var(--primary);position:absolute;background:transparent}
+    .crop-dim{position:absolute;background:rgba(0,0,0,0.5)}
+    
+    /* New tool panels */
+    .annotation-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+    .annotation-tool-btn{padding:8px 12px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text);cursor:pointer;font-size:13px;display:flex;align-items:center;gap:4px;transition:all 0.2s}
+    .annotation-tool-btn:hover,.annotation-tool-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+    .annotation-color-picker{display:flex;gap:6px;align-items:center;margin-top:8px}
+    .annotation-color-swatch{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all 0.2s}
+    .annotation-color-swatch.active{border-color:#fff;transform:scale(1.15)}
+    .annotation-size-slider{width:100%;margin-top:8px}
+    
+    /* Crop panel */
+    .crop-preset{padding:8px 14px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text);cursor:pointer;font-size:12px;transition:all 0.2s}
+    .crop-preset:hover,.crop-preset.active{background:var(--primary);color:#fff}
+    
+    /* Elements panel */
+    .element-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}
+    .element-item{padding:12px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;text-align:center;font-size:20px;transition:all 0.2s}
+    .element-item:hover{background:var(--primary);transform:scale(1.05);border-color:var(--primary)}
+    
+    /* Enhanced tool sections */
+    .tools-section{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0}
+    .tool-button{padding:6px 12px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text);cursor:pointer;font-size:12px;white-space:nowrap;transition:all 0.15s}
+    .tool-button:hover{background:rgba(108,58,237,0.15);border-color:var(--primary)}
+    .tool-button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+    
+    /* Keyframes bar */
+    .keyframe-bar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border-subtle);margin-top:6px}
+    .keyframe-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);cursor:pointer}
+    .keyframe-dot.active{background:#EC4899;box-shadow:0 0 6px rgba(236,72,153,0.5)}
+    </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="YOUR_DROPBOX_KEY"></script>
 </head>
 <body>
  <div class="dashboard">
+    <button class="editor-fullscreen-toggle" id="fullscreenToggle" title="Toggle full-screen editing">
+      <span id="fullscreenIcon">⛶</span> <span id="fullscreenLabel">Focus Mode</span>
+    </button>
     ${getSidebar('video-editor', req.user, req.teamPermissions)}
 
     <main class="main-content">
@@ -314,6 +367,10 @@ router.get('/', requireAuth, async (req, res) => {
 
             <div class="video-preview-area" id="videoPreviewArea">
               <video class="video-player" id="videoPlayer" controls></video>
+              <div class="annotation-canvas-wrapper" id="annotationWrapper">
+                <canvas class="annotation-canvas" id="annotationCanvas"></canvas>
+              </div>
+              <div class="crop-overlay" id="cropOverlay"></div>
             </div>
 
             <div class="timeline-container" id="timelineContainer">
@@ -341,10 +398,187 @@ router.get('/', requireAuth, async (req, res) => {
               <button class="tool-button" data-tool="aihook">🪝 AI Hook</button>
               <button class="tool-button" data-tool="brandtemplate">🎨 Brand Template</button>
               <button class="tool-button" data-tool="transcript">📜 Transcript</button>
+              <button class="tool-button" data-tool="crop">✂️ Crop</button>
+              <button class="tool-button" data-tool="annotations">✏️ Annotations</button>
+              <button class="tool-button" data-tool="elements">⭐ Elements</button>
+              <button class="tool-button" data-tool="zoom">🔍 Zoom & Pan</button>
+              <button class="tool-button" data-tool="pip">📺 Picture-in-Picture</button>
+              <button class="tool-button" data-tool="keyframes">💎 Keyframes</button>
+              <button class="tool-button" data-tool="colorgrade">🎨 Color Grading</button>
             </div>
 
             <!-- Background Color Presets -->
-            <div style="margin-top:1rem;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
+            
+            <!-- Crop Panel -->
+            <div id="cropPanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Crop Presets</label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="crop-preset" data-ratio="free">Free</button>
+                <button class="crop-preset" data-ratio="16:9">16:9</button>
+                <button class="crop-preset" data-ratio="9:16">9:16</button>
+                <button class="crop-preset" data-ratio="4:3">4:3</button>
+                <button class="crop-preset" data-ratio="1:1">1:1</button>
+                <button class="crop-preset" data-ratio="4:5">4:5</button>
+                <button class="crop-preset" data-ratio="21:9">21:9</button>
+              </div>
+              <div style="margin-top:10px;display:flex;gap:8px">
+                <button class="tool-button active" id="applyCropBtn" style="flex:1">✅ Apply Crop</button>
+                <button class="tool-button" id="resetCropBtn" style="flex:1">↩️ Reset</button>
+              </div>
+            </div>
+
+            <!-- Annotations Panel -->
+            <div id="annotationsPanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Drawing Tools</label>
+              <div class="annotation-tools">
+                <button class="annotation-tool-btn" data-shape="arrow">➡️ Arrow</button>
+                <button class="annotation-tool-btn" data-shape="circle">⭕ Circle</button>
+                <button class="annotation-tool-btn" data-shape="rect">▪️ Rectangle</button>
+                <button class="annotation-tool-btn" data-shape="line">📏 Line</button>
+                <button class="annotation-tool-btn" data-shape="freehand">✏️ Freehand</button>
+                <button class="annotation-tool-btn" data-shape="text">🔤 Text</button>
+                <button class="annotation-tool-btn" data-shape="highlight">🟡 Highlight</button>
+                <button class="annotation-tool-btn" data-shape="blur">🔲 Blur</button>
+              </div>
+              <label class="dropdown-label" style="margin-top:10px;margin-bottom:6px;display:block">Color</label>
+              <div class="annotation-color-picker">
+                <div class="annotation-color-swatch active" data-color="#FF0000" style="background:#FF0000"></div>
+                <div class="annotation-color-swatch" data-color="#00FF00" style="background:#00FF00"></div>
+                <div class="annotation-color-swatch" data-color="#0088FF" style="background:#0088FF"></div>
+                <div class="annotation-color-swatch" data-color="#FFFF00" style="background:#FFFF00"></div>
+                <div class="annotation-color-swatch" data-color="#FF00FF" style="background:#FF00FF"></div>
+                <div class="annotation-color-swatch" data-color="#FFFFFF" style="background:#FFFFFF;border:1px solid rgba(255,255,255,0.3)"></div>
+                <div class="annotation-color-swatch" data-color="#000000" style="background:#000000;border:1px solid rgba(255,255,255,0.3)"></div>
+                <input type="color" id="annotationCustomColor" value="#FF0000" style="width:28px;height:28px;border:none;border-radius:50%;cursor:pointer;padding:0">
+              </div>
+              <label class="dropdown-label" style="margin-top:10px;margin-bottom:4px;display:block">Stroke Width</label>
+              <input type="range" id="annotationStrokeWidth" min="1" max="20" value="3" class="annotation-size-slider">
+              <div style="margin-top:10px;display:flex;gap:8px">
+                <button class="tool-button" id="undoAnnotation" style="flex:1">↩️ Undo</button>
+                <button class="tool-button" id="clearAnnotations" style="flex:1">🗑️ Clear All</button>
+              </div>
+            </div>
+
+            <!-- Elements Panel -->
+            <div id="elementsPanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Shapes & Stickers</label>
+              <div class="element-grid">
+                <div class="element-item" data-element="arrow-right">➡️</div>
+                <div class="element-item" data-element="arrow-up">⬆️</div>
+                <div class="element-item" data-element="circle">🔴</div>
+                <div class="element-item" data-element="star">⭐</div>
+                <div class="element-item" data-element="heart">❤️</div>
+                <div class="element-item" data-element="fire">🔥</div>
+                <div class="element-item" data-element="check">✅</div>
+                <div class="element-item" data-element="cross">❌</div>
+                <div class="element-item" data-element="question">❓</div>
+                <div class="element-item" data-element="exclaim">❗</div>
+                <div class="element-item" data-element="lightning">⚡</div>
+                <div class="element-item" data-element="sparkle">✨</div>
+                <div class="element-item" data-element="pointer">👆</div>
+                <div class="element-item" data-element="eyes">👀</div>
+                <div class="element-item" data-element="hundred">💯</div>
+                <div class="element-item" data-element="trophy">🏆</div>
+              </div>
+              <label class="dropdown-label" style="margin-top:12px;margin-bottom:6px;display:block">Element Size</label>
+              <input type="range" id="elementSize" min="20" max="200" value="60" style="width:100%">
+            </div>
+
+            <!-- Zoom & Pan Panel -->
+            <div id="zoomPanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Zoom & Pan</label>
+              <div class="slider-group">
+                <div class="slider-label"><span>Zoom Level</span><span id="zoomValue">100%</span></div>
+                <input type="range" id="zoomLevel" min="100" max="400" value="100" style="width:100%">
+              </div>
+              <div class="slider-group" style="margin-top:8px">
+                <div class="slider-label"><span>Pan X</span><span id="panXValue">0</span></div>
+                <input type="range" id="panX" min="-100" max="100" value="0" style="width:100%">
+              </div>
+              <div class="slider-group" style="margin-top:8px">
+                <div class="slider-label"><span>Pan Y</span><span id="panYValue">0</span></div>
+                <input type="range" id="panY" min="-100" max="100" value="0" style="width:100%">
+              </div>
+              <button class="tool-button active" id="resetZoom" style="margin-top:10px;width:100%">↩️ Reset Zoom</button>
+            </div>
+
+            <!-- Picture-in-Picture Panel -->
+            <div id="pipPanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Picture-in-Picture</label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+                <button class="crop-preset" data-pip="top-right">↗️ Top Right</button>
+                <button class="crop-preset" data-pip="top-left">↖️ Top Left</button>
+                <button class="crop-preset" data-pip="bottom-right">↘️ Bottom Right</button>
+                <button class="crop-preset" data-pip="bottom-left">↙️ Bottom Left</button>
+              </div>
+              <div class="slider-group">
+                <div class="slider-label"><span>PiP Size</span><span id="pipSizeValue">30%</span></div>
+                <input type="range" id="pipSize" min="10" max="50" value="30" style="width:100%">
+              </div>
+              <div class="slider-group" style="margin-top:8px">
+                <div class="slider-label"><span>Border Radius</span><span id="pipRadiusValue">8px</span></div>
+                <input type="range" id="pipRadius" min="0" max="50" value="8" style="width:100%">
+              </div>
+              <div style="margin-top:10px">
+                <button class="tool-button active" id="addPipBtn" style="width:100%">➕ Add PiP Source</button>
+              </div>
+            </div>
+
+            <!-- Keyframes Panel -->
+            <div id="keyframesPanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Keyframe Animation</label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+                <button class="crop-preset" data-kf="opacity">Opacity</button>
+                <button class="crop-preset" data-kf="scale">Scale</button>
+                <button class="crop-preset" data-kf="position">Position</button>
+                <button class="crop-preset" data-kf="rotation">Rotation</button>
+              </div>
+              <div class="keyframe-bar">
+                <span style="font-size:11px;color:var(--text-muted)">Timeline:</span>
+                <div style="flex:1;height:4px;background:var(--border-subtle);border-radius:2px;position:relative">
+                  <div class="keyframe-dot active" style="position:absolute;left:0;top:-2px"></div>
+                  <div class="keyframe-dot" style="position:absolute;left:50%;top:-2px"></div>
+                  <div class="keyframe-dot" style="position:absolute;right:0;top:-2px"></div>
+                </div>
+              </div>
+              <div style="margin-top:10px;display:flex;gap:8px">
+                <button class="tool-button active" id="addKeyframeBtn" style="flex:1">➕ Add Keyframe</button>
+                <button class="tool-button" id="clearKeyframesBtn" style="flex:1">🗑️ Clear</button>
+              </div>
+            </div>
+
+            <!-- Color Grading Panel -->
+            <div id="colorGradePanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
+              <label class="dropdown-label" style="margin-bottom:8px;display:block">Color Grading</label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+                <button class="crop-preset color-grade-preset" data-grade="cinematic">🎬 Cinematic</button>
+                <button class="crop-preset color-grade-preset" data-grade="vintage">📷 Vintage</button>
+                <button class="crop-preset color-grade-preset" data-grade="warm">🌅 Warm</button>
+                <button class="crop-preset color-grade-preset" data-grade="cool">❄️ Cool</button>
+                <button class="crop-preset color-grade-preset" data-grade="bw">⬛ B&W</button>
+                <button class="crop-preset color-grade-preset" data-grade="dramatic">🎭 Dramatic</button>
+                <button class="crop-preset color-grade-preset" data-grade="pastel">🌸 Pastel</button>
+                <button class="crop-preset color-grade-preset" data-grade="none">↩️ None</button>
+              </div>
+              <div class="slider-group">
+                <div class="slider-label"><span>Temperature</span><span id="tempValue">0</span></div>
+                <input type="range" id="colorTemp" min="-100" max="100" value="0" style="width:100%">
+              </div>
+              <div class="slider-group" style="margin-top:6px">
+                <div class="slider-label"><span>Tint</span><span id="tintValue">0</span></div>
+                <input type="range" id="colorTint" min="-100" max="100" value="0" style="width:100%">
+              </div>
+              <div class="slider-group" style="margin-top:6px">
+                <div class="slider-label"><span>Vibrance</span><span id="vibranceValue">0</span></div>
+                <input type="range" id="colorVibrance" min="-100" max="100" value="0" style="width:100%">
+              </div>
+              <div class="slider-group" style="margin-top:6px">
+                <div class="slider-label"><span>Vignette</span><span id="vignetteValue">0</span></div>
+                <input type="range" id="colorVignette" min="0" max="100" value="0" style="width:100%">
+              </div>
+            </div>
+
+<div style="margin-top:1rem;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle)">
               <label class="dropdown-label" style="margin-bottom:8px;display:block">Background Color</label>
               <div class="gradient-presets" id="gradientPresets" style="display:flex;gap:10px;padding:4px 0;overflow-x:auto;flex-wrap:wrap">
                 <div class="gradient-preset-card" data-gradient="linear-gradient(135deg,#6C3AED,#EC4899)" title="Purple Pink" style="width:60px;height:40px;border-radius:8px;cursor:pointer;border:2px solid transparent;flex-shrink:0"></div>
@@ -3057,6 +3291,349 @@ router.get('/', requireAuth, async (req, res) => {
           document.getElementById('brollStockSection').style.display = tabName==='stock' ? 'block' : 'none';
         });
       });
+
+
+    // ===== FULLSCREEN / FOCUS MODE =====
+    var fullscreenToggle = document.getElementById('fullscreenToggle');
+    var isFullscreen = false;
+    if (fullscreenToggle) {
+      fullscreenToggle.addEventListener('click', function() {
+        isFullscreen = !isFullscreen;
+        var dashboard = document.querySelector('.dashboard');
+        if (isFullscreen) {
+          dashboard.classList.add('editor-fullscreen');
+          document.getElementById('fullscreenIcon').textContent = '⬅';
+          document.getElementById('fullscreenLabel').textContent = 'Show Menu';
+        } else {
+          dashboard.classList.remove('editor-fullscreen');
+          document.getElementById('fullscreenIcon').textContent = '⛶';
+          document.getElementById('fullscreenLabel').textContent = 'Focus Mode';
+        }
+      });
+    }
+
+    // Auto-enter focus mode when video is loaded
+    var origUploadHandler = uploadZone ? uploadZone.onclick : null;
+    function autoFocusMode() {
+      if (!isFullscreen && document.querySelector('.dashboard')) {
+        fullscreenToggle && fullscreenToggle.click();
+      }
+    }
+
+    // ===== NEW TOOL PANELS =====
+    var toolPanelMap = {
+      crop: 'cropPanel',
+      annotations: 'annotationsPanel',
+      elements: 'elementsPanel',
+      zoom: 'zoomPanel',
+      pip: 'pipPanel',
+      keyframes: 'keyframesPanel',
+      colorgrade: 'colorGradePanel'
+    };
+
+    // Extend existing tool button click handler
+    document.querySelectorAll('.tool-button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var tool = this.dataset.tool;
+        // Hide all new tool panels
+        Object.values(toolPanelMap).forEach(function(panelId) {
+          var panel = document.getElementById(panelId);
+          if (panel) panel.style.display = 'none';
+        });
+        // Show relevant panel
+        if (toolPanelMap[tool]) {
+          var panel = document.getElementById(toolPanelMap[tool]);
+          if (panel) panel.style.display = 'block';
+        }
+        // Toggle annotation mode
+        var annotWrapper = document.getElementById('annotationWrapper');
+        if (annotWrapper) {
+          if (tool === 'annotations') {
+            annotWrapper.classList.add('active');
+          } else {
+            annotWrapper.classList.remove('active');
+          }
+        }
+        // Toggle crop overlay
+        var cropOverlay = document.getElementById('cropOverlay');
+        if (cropOverlay) {
+          if (tool === 'crop') {
+            cropOverlay.classList.add('active');
+          } else {
+            cropOverlay.classList.remove('active');
+          }
+        }
+        // Mark active
+        document.querySelectorAll('.tool-button').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+      });
+    });
+
+    // ===== ANNOTATION DRAWING ENGINE =====
+    var annotCanvas = document.getElementById('annotationCanvas');
+    var annotCtx = annotCanvas ? annotCanvas.getContext('2d') : null;
+    var annotShapes = [];
+    var currentAnnotShape = 'arrow';
+    var annotColor = '#FF0000';
+    var annotStrokeWidth = 3;
+    var annotDrawing = false;
+    var annotStartX = 0, annotStartY = 0;
+
+    function resizeAnnotCanvas() {
+      if (!annotCanvas) return;
+      var wrapper = document.getElementById('annotationWrapper');
+      if (!wrapper) return;
+      var rect = wrapper.parentElement.getBoundingClientRect();
+      annotCanvas.width = rect.width;
+      annotCanvas.height = rect.height;
+      redrawAnnotations();
+    }
+
+    function redrawAnnotations() {
+      if (!annotCtx) return;
+      annotCtx.clearRect(0, 0, annotCanvas.width, annotCanvas.height);
+      annotShapes.forEach(function(shape) {
+        annotCtx.strokeStyle = shape.color;
+        annotCtx.fillStyle = shape.color;
+        annotCtx.lineWidth = shape.strokeWidth;
+        annotCtx.lineCap = 'round';
+        annotCtx.lineJoin = 'round';
+
+        if (shape.type === 'arrow') {
+          drawArrow(annotCtx, shape.x1, shape.y1, shape.x2, shape.y2);
+        } else if (shape.type === 'circle') {
+          var rx = Math.abs(shape.x2 - shape.x1) / 2;
+          var ry = Math.abs(shape.y2 - shape.y1) / 2;
+          var cx = (shape.x1 + shape.x2) / 2;
+          var cy = (shape.y1 + shape.y2) / 2;
+          annotCtx.beginPath();
+          annotCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+          annotCtx.stroke();
+        } else if (shape.type === 'rect') {
+          annotCtx.strokeRect(shape.x1, shape.y1, shape.x2 - shape.x1, shape.y2 - shape.y1);
+        } else if (shape.type === 'line') {
+          annotCtx.beginPath();
+          annotCtx.moveTo(shape.x1, shape.y1);
+          annotCtx.lineTo(shape.x2, shape.y2);
+          annotCtx.stroke();
+        } else if (shape.type === 'freehand' && shape.points) {
+          annotCtx.beginPath();
+          shape.points.forEach(function(pt, i) {
+            if (i === 0) annotCtx.moveTo(pt.x, pt.y);
+            else annotCtx.lineTo(pt.x, pt.y);
+          });
+          annotCtx.stroke();
+        } else if (shape.type === 'highlight') {
+          annotCtx.globalAlpha = 0.3;
+          annotCtx.fillRect(shape.x1, shape.y1, shape.x2 - shape.x1, shape.y2 - shape.y1);
+          annotCtx.globalAlpha = 1.0;
+        } else if (shape.type === 'text' && shape.text) {
+          annotCtx.font = (shape.strokeWidth * 6) + 'px Arial';
+          annotCtx.fillText(shape.text, shape.x1, shape.y1);
+        }
+      });
+    }
+
+    function drawArrow(ctx, x1, y1, x2, y2) {
+      var headLen = 15;
+      var angle = Math.atan2(y2 - y1, x2 - x1);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.stroke();
+    }
+
+    var freehandPoints = [];
+    if (annotCanvas) {
+      annotCanvas.addEventListener('mousedown', function(e) {
+        if (!document.getElementById('annotationWrapper').classList.contains('active')) return;
+        annotDrawing = true;
+        var rect = annotCanvas.getBoundingClientRect();
+        annotStartX = e.clientX - rect.left;
+        annotStartY = e.clientY - rect.top;
+        if (currentAnnotShape === 'freehand') {
+          freehandPoints = [{x: annotStartX, y: annotStartY}];
+        }
+      });
+
+      annotCanvas.addEventListener('mousemove', function(e) {
+        if (!annotDrawing) return;
+        if (currentAnnotShape === 'freehand') {
+          var rect = annotCanvas.getBoundingClientRect();
+          freehandPoints.push({x: e.clientX - rect.left, y: e.clientY - rect.top});
+          redrawAnnotations();
+          annotCtx.strokeStyle = annotColor;
+          annotCtx.lineWidth = annotStrokeWidth;
+          annotCtx.lineCap = 'round';
+          annotCtx.beginPath();
+          freehandPoints.forEach(function(pt, i) {
+            if (i === 0) annotCtx.moveTo(pt.x, pt.y);
+            else annotCtx.lineTo(pt.x, pt.y);
+          });
+          annotCtx.stroke();
+        }
+      });
+
+      annotCanvas.addEventListener('mouseup', function(e) {
+        if (!annotDrawing) return;
+        annotDrawing = false;
+        var rect = annotCanvas.getBoundingClientRect();
+        var endX = e.clientX - rect.left;
+        var endY = e.clientY - rect.top;
+
+        if (currentAnnotShape === 'text') {
+          var text = prompt('Enter text:');
+          if (text) {
+            annotShapes.push({type: 'text', x1: annotStartX, y1: annotStartY, text: text, color: annotColor, strokeWidth: annotStrokeWidth});
+          }
+        } else if (currentAnnotShape === 'freehand') {
+          annotShapes.push({type: 'freehand', points: freehandPoints.slice(), color: annotColor, strokeWidth: annotStrokeWidth});
+        } else {
+          annotShapes.push({type: currentAnnotShape, x1: annotStartX, y1: annotStartY, x2: endX, y2: endY, color: annotColor, strokeWidth: annotStrokeWidth});
+        }
+        redrawAnnotations();
+      });
+
+      window.addEventListener('resize', resizeAnnotCanvas);
+      setTimeout(resizeAnnotCanvas, 500);
+    }
+
+    // Annotation tool buttons
+    document.querySelectorAll('.annotation-tool-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        currentAnnotShape = this.dataset.shape;
+        document.querySelectorAll('.annotation-tool-btn').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+      });
+    });
+
+    // Annotation color swatches
+    document.querySelectorAll('.annotation-color-swatch').forEach(function(swatch) {
+      swatch.addEventListener('click', function() {
+        annotColor = this.dataset.color;
+        document.querySelectorAll('.annotation-color-swatch').forEach(function(s) { s.classList.remove('active'); });
+        this.classList.add('active');
+      });
+    });
+
+    var annotCustomColor = document.getElementById('annotationCustomColor');
+    if (annotCustomColor) {
+      annotCustomColor.addEventListener('input', function() { annotColor = this.value; });
+    }
+
+    var annotStrokeSlider = document.getElementById('annotationStrokeWidth');
+    if (annotStrokeSlider) {
+      annotStrokeSlider.addEventListener('input', function() { annotStrokeWidth = parseInt(this.value); });
+    }
+
+    // Undo / Clear annotations
+    var undoAnnotBtn = document.getElementById('undoAnnotation');
+    if (undoAnnotBtn) {
+      undoAnnotBtn.addEventListener('click', function() { annotShapes.pop(); redrawAnnotations(); });
+    }
+    var clearAnnotBtn = document.getElementById('clearAnnotations');
+    if (clearAnnotBtn) {
+      clearAnnotBtn.addEventListener('click', function() { annotShapes = []; redrawAnnotations(); });
+    }
+
+    // ===== ZOOM & PAN =====
+    var zoomSlider = document.getElementById('zoomLevel');
+    var panXSlider = document.getElementById('panX');
+    var panYSlider = document.getElementById('panY');
+    function applyZoomPan() {
+      if (!videoPlayer) return;
+      var z = (zoomSlider ? zoomSlider.value : 100) / 100;
+      var px = panXSlider ? panXSlider.value : 0;
+      var py = panYSlider ? panYSlider.value : 0;
+      videoPlayer.style.transform = 'scale(' + z + ') translate(' + px + '%, ' + py + '%)';
+      if (document.getElementById('zoomValue')) document.getElementById('zoomValue').textContent = Math.round(z * 100) + '%';
+      if (document.getElementById('panXValue')) document.getElementById('panXValue').textContent = px;
+      if (document.getElementById('panYValue')) document.getElementById('panYValue').textContent = py;
+    }
+    if (zoomSlider) zoomSlider.addEventListener('input', applyZoomPan);
+    if (panXSlider) panXSlider.addEventListener('input', applyZoomPan);
+    if (panYSlider) panYSlider.addEventListener('input', applyZoomPan);
+    var resetZoomBtn = document.getElementById('resetZoom');
+    if (resetZoomBtn) {
+      resetZoomBtn.addEventListener('click', function() {
+        if (zoomSlider) zoomSlider.value = 100;
+        if (panXSlider) panXSlider.value = 0;
+        if (panYSlider) panYSlider.value = 0;
+        applyZoomPan();
+      });
+    }
+
+    // ===== COLOR GRADING =====
+    var colorGrades = {
+      cinematic: 'saturate(1.3) contrast(1.15) brightness(0.95) sepia(0.15)',
+      vintage: 'sepia(0.4) contrast(1.1) brightness(0.95) saturate(0.8)',
+      warm: 'sepia(0.2) saturate(1.2) brightness(1.05)',
+      cool: 'saturate(0.9) brightness(1.05) hue-rotate(15deg)',
+      bw: 'grayscale(1) contrast(1.2)',
+      dramatic: 'contrast(1.4) brightness(0.85) saturate(1.3)',
+      pastel: 'saturate(0.7) brightness(1.15) contrast(0.9)',
+      none: 'none'
+    };
+    document.querySelectorAll('.color-grade-preset').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var grade = this.dataset.grade;
+        if (videoPlayer) videoPlayer.style.filter = colorGrades[grade] || 'none';
+        document.querySelectorAll('.color-grade-preset').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+      });
+    });
+
+    var colorTempSlider = document.getElementById('colorTemp');
+    var colorTintSlider = document.getElementById('colorTint');
+    var colorVibranceSlider = document.getElementById('colorVibrance');
+    var colorVignetteSlider = document.getElementById('colorVignette');
+    function applyColorGrading() {
+      if (!videoPlayer) return;
+      var temp = colorTempSlider ? colorTempSlider.value : 0;
+      var tint = colorTintSlider ? colorTintSlider.value : 0;
+      var vibrance = colorVibranceSlider ? colorVibranceSlider.value : 0;
+      var vignette = colorVignetteSlider ? colorVignetteSlider.value : 0;
+      var hueRot = temp * 0.3;
+      var sat = 1 + (vibrance / 100);
+      var sepiaAmt = Math.max(0, temp / 200);
+      videoPlayer.style.filter = 'hue-rotate(' + hueRot + 'deg) saturate(' + sat + ') sepia(' + sepiaAmt + ')';
+      if (document.getElementById('tempValue')) document.getElementById('tempValue').textContent = temp;
+      if (document.getElementById('tintValue')) document.getElementById('tintValue').textContent = tint;
+      if (document.getElementById('vibranceValue')) document.getElementById('vibranceValue').textContent = vibrance;
+      if (document.getElementById('vignetteValue')) document.getElementById('vignetteValue').textContent = vignette;
+    }
+    if (colorTempSlider) colorTempSlider.addEventListener('input', applyColorGrading);
+    if (colorTintSlider) colorTintSlider.addEventListener('input', applyColorGrading);
+    if (colorVibranceSlider) colorVibranceSlider.addEventListener('input', applyColorGrading);
+    if (colorVignetteSlider) colorVignetteSlider.addEventListener('input', applyColorGrading);
+
+    // ===== PIP SIZE SLIDER =====
+    var pipSizeSlider = document.getElementById('pipSize');
+    if (pipSizeSlider) {
+      pipSizeSlider.addEventListener('input', function() {
+        if (document.getElementById('pipSizeValue')) document.getElementById('pipSizeValue').textContent = this.value + '%';
+      });
+    }
+    var pipRadiusSlider = document.getElementById('pipRadius');
+    if (pipRadiusSlider) {
+      pipRadiusSlider.addEventListener('input', function() {
+        if (document.getElementById('pipRadiusValue')) document.getElementById('pipRadiusValue').textContent = this.value + 'px';
+      });
+    }
+
+    // ===== AUTO FOCUS MODE ON VIDEO LOAD =====
+    if (videoPlayer) {
+      videoPlayer.addEventListener('loadeddata', function() {
+        autoFocusMode();
+        resizeAnnotCanvas();
+      });
+    }
 </script>
 </body>
 </html>`;
