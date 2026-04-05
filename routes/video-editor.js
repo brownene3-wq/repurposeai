@@ -198,7 +198,7 @@ router.get('/', requireAuth, async (req, res) => {
     .cat-label{font-size:.65rem;letter-spacing:.3px;text-transform:uppercase}
     .category-tools{margin-top:6px}
     .category-grid{display:flex;gap:4px;flex-wrap:wrap}
-    .category-grid .tool-button{flex:1 1 calc(50% - 4px);min-width:0;justify-content:center;padding:8px 6px;font-size:.73rem;border-radius:8px;background:var(--surface);border:1px solid var(--border-subtle);transition:all .2s}
+    .category-grid .tool-button{flex:1 1 calc(50% - 4px);min-width:0;justify-content:center;padding:10px 8px;font-size:.75rem;border-radius:10px;background:var(--surface);border:1px solid var(--border-subtle);transition:all .25s;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .category-grid .tool-button:hover{border-color:var(--primary);background:rgba(108,58,237,0.08);transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,0.15)}
     .category-grid .tool-button.active{background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(236,72,153,0.1));border-color:var(--primary);color:var(--primary)}
     .properties-panel.collapsed .slider-group{display:none}
@@ -206,6 +206,7 @@ router.get('/', requireAuth, async (req, res) => {
     .properties-panel .panel-title{margin-bottom:0}
     .properties-panel:not(.collapsed) .panel-title{margin-bottom:8px}
     .export-floating{position:sticky;bottom:0;z-index:5;margin-top:auto;box-shadow:0 -4px 12px rgba(0,0,0,0.2)}
+    @keyframes panelSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
     
     .tool-button{padding:.45rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);cursor:pointer;font-size:.78rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.3rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
     .tool-button:hover{background:var(--surface);border-color:var(--primary);color:var(--primary)}
@@ -234,7 +235,7 @@ router.get('/', requireAuth, async (req, res) => {
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
     .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
     .tool-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;display:none;flex-shrink:0}
-    .tool-panel.active{display:block;max-height:calc(100vh - 350px);overflow-y:auto}
+    .tool-panel.active{display:block;max-height:calc(100vh - 400px);overflow-y:auto;animation:panelSlide .2s ease}
     .panel-title{font-size:.85rem;font-weight:700;color:var(--text);margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem}
     .slider-group{margin-bottom:.4rem}
     .slider-label{font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem;display:flex;justify-content:space-between}
@@ -1269,7 +1270,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Toast notifications
     
-    // === PREMIUM SIDEBAR REDESIGN: Tabbed Category System ===
+// === PREMIUM SIDEBAR REDESIGN: Tabbed Category System ===
     (function() {
       var sidebar = document.querySelector('.editor-sidebar');
       if (!sidebar) return;
@@ -1278,8 +1279,10 @@ router.get('/', requireAuth, async (req, res) => {
       var exportPanel = sidebar.querySelector('.export-panel');
       if (!toolsSection) return;
 
-      // Move tools-section and extra panels into sidebar first
-      if (propsPanel) propsPanel.after(toolsSection);
+      // Clear any initially active tool panels
+      document.querySelectorAll('.tool-panel.active').forEach(function(p) { p.classList.remove('active'); });
+
+      // Move extra panels from video-container into sidebar
       var panelIds = ['cropPanel','annotationsPanel','elementsPanel','zoomPanel','pipPanel','keyframesPanel','colorGradePanel'];
       panelIds.forEach(function(id) {
         var panel = document.getElementById(id);
@@ -1289,44 +1292,30 @@ router.get('/', requireAuth, async (req, res) => {
         }
       });
 
-      // === CREATE TABBED CATEGORY SYSTEM ===
-      // Hide original tools-section
-      toolsSection.style.display = 'none';
-
-      // Make properties panel collapsible
+      // Make properties panel collapsible (starts collapsed)
       if (propsPanel) {
-        var propsTitle = propsPanel.querySelector('.panel-title');
-        if (propsTitle) {
-          propsPanel.classList.add('collapsed');
-          propsTitle.style.cursor = 'pointer';
-          propsTitle.style.display = 'flex';
-          propsTitle.style.justifyContent = 'space-between';
-          propsTitle.style.alignItems = 'center';
-          propsTitle.innerHTML += '<span class="collapse-arrow" style="font-size:10px;transition:transform .2s">&#9660;</span>';
-          propsTitle.addEventListener('click', function() {
+        propsPanel.classList.add('collapsed');
+        var title = propsPanel.querySelector('.panel-title');
+        if (title) {
+          title.style.cursor = 'pointer';
+          var arrow = document.createElement('span');
+          arrow.textContent = ' \u25B8';
+          arrow.style.cssText = 'float:right;transition:transform .2s';
+          title.appendChild(arrow);
+          title.addEventListener('click', function() {
             propsPanel.classList.toggle('collapsed');
-            var arrow = propsTitle.querySelector('.collapse-arrow');
-            if (propsPanel.classList.contains('collapsed')) {
-              arrow.style.transform = 'rotate(-90deg)';
-            } else {
-              arrow.style.transform = 'rotate(0deg)';
-            }
+            arrow.textContent = propsPanel.classList.contains('collapsed') ? ' \u25B8' : ' \u25BE';
           });
-          // Start collapsed
-          var arrow = propsTitle.querySelector('.collapse-arrow');
-          if (arrow) arrow.style.transform = 'rotate(-90deg)';
         }
       }
 
-      // Category definitions
       var categories = [
-        { id: 'edit', label: 'Edit', icon: '✂️', tools: ['undoBtn','redoBtn','trimButton','splitButton','speedButton','cropBtn'] },
-        { id: 'audio', label: 'Audio', icon: '🔊', tools: ['audioButton','addMusicButton','voiceoverButton','vtBtn'] },
-        { id: 'ai', label: 'AI', icon: '✨', tools: ['enhanceButton','captionsButton','aihookButton','brandtemplateButton','transcriptButton'] },
-        { id: 'effects', label: 'Effects', icon: '🎨', tools: ['filterButton','textButton','transitionButton','brollButton','annotationsBtn','elementsBtn','zoomBtn','pipBtn','keyframesBtn','colorgradeBtn'] }
+        { id: 'edit', label: 'Edit', icon: '\u2702\uFE0F', tools: ['trim','split','speed','crop'] },
+        { id: 'audio', label: 'Audio', icon: '\uD83D\uDD0A', tools: ['audio','music','voiceover','voicetransform'] },
+        { id: 'ai', label: 'AI', icon: '\u2728', tools: ['enhance','captions','aihook','brandtemplate','transcript','broll'] },
+        { id: 'effects', label: 'Effects', icon: '\uD83C\uDFA8', tools: ['filters','text','transitions','annotations','elements','zoom','pip','keyframes','colorgrade'] }
       ];
 
-      // Create tab container
       var tabContainer = document.createElement('div');
       tabContainer.className = 'category-tabs';
       var toolGrid = document.createElement('div');
@@ -1338,40 +1327,38 @@ router.get('/', requireAuth, async (req, res) => {
         tab.className = 'category-tab' + (index === 0 ? ' active' : '');
         tab.dataset.category = cat.id;
         tab.innerHTML = '<span class="cat-icon">' + cat.icon + '</span><span class="cat-label">' + cat.label + '</span>';
-        tab.addEventListener('click', function() {
-          document.querySelectorAll('.category-tab').forEach(function(t) { t.classList.remove('active'); });
-          this.classList.add('active');
-          document.querySelectorAll('.category-grid').forEach(function(g) { g.style.display = 'none'; });
-          var grid = document.getElementById('catGrid-' + cat.id);
-          if (grid) grid.style.display = 'flex';
-        });
-        tabContainer.appendChild(tab);
-
-        // Create tool grid for this category
         var grid = document.createElement('div');
         grid.className = 'category-grid';
-        grid.id = 'catGrid-' + cat.id;
+        grid.dataset.category = cat.id;
         grid.style.display = index === 0 ? 'flex' : 'none';
-
-        cat.tools.forEach(function(toolId) {
-          var btn = document.getElementById(toolId);
-          if (btn) {
-            grid.appendChild(btn);
-          }
+        if (cat.id === 'edit') {
+          var undoBtn = document.getElementById('undoBtn');
+          var redoBtn = document.getElementById('redoBtn');
+          if (undoBtn) grid.appendChild(undoBtn);
+          if (redoBtn) grid.appendChild(redoBtn);
+        }
+        cat.tools.forEach(function(toolName) {
+          var btn = toolsSection.querySelector('[data-tool="' + toolName + '"]');
+          if (btn) grid.appendChild(btn);
         });
+        tab.addEventListener('click', function() {
+          tabContainer.querySelectorAll('.category-tab').forEach(function(t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          toolGrid.querySelectorAll('.category-grid').forEach(function(g) { g.style.display = 'none'; });
+          grid.style.display = 'flex';
+          document.querySelectorAll('.tool-panel').forEach(function(p) { p.classList.remove('active'); });
+          document.querySelectorAll('.tool-button').forEach(function(b) { b.classList.remove('active'); });
+        });
+        tabContainer.appendChild(tab);
         toolGrid.appendChild(grid);
       });
 
-      // Insert tab system after properties panel
+      toolsSection.style.display = 'none';
       if (propsPanel) {
         propsPanel.after(tabContainer);
         tabContainer.after(toolGrid);
       }
-
-      // Make Export a floating button
-      if (exportPanel) {
-        exportPanel.classList.add('export-floating');
-      }
+      if (exportPanel) exportPanel.classList.add('export-floating');
     })();
 
 
