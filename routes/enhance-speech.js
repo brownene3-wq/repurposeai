@@ -316,47 +316,45 @@ ${pageStyles}
     ${sidebar}
     ${themeToggle}
     <main class="main-content">
-      <div style="text-align:center;max-width:700px;margin:0 auto 2rem">
-        <h1 style="font-size:2rem;font-weight:700;margin-bottom:.5rem">Enhance Speech</h1>
-        <p style="color:var(--text-secondary);font-size:1.05rem;margin-bottom:2rem">Enhance voice clarity and remove filler words with one click</p>
+      <div class="page-header">
+        <h1>Enhance Speech</h1>
+        <p>Remove background noise and enhance voice clarity with AI</p>
+      </div>
 
-        <!-- Hero Image -->
-        <div style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:2rem;background:linear-gradient(135deg,#1a1a2e,#16213e);padding:2rem">
-          <div style="display:flex;align-items:center;justify-content:center;gap:16px;position:relative">
-            <div style="position:absolute;left:20px;top:10px;width:50px;height:50px;background:rgba(255,255,255,.1);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.3rem">✨</div>
-            <div style="background:linear-gradient(135deg,#667eea,#764ba2);border-radius:16px;width:320px;height:180px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
-              <div style="font-size:4rem;opacity:.4">🎙️</div>
-              <div style="position:absolute;inset:0;background:linear-gradient(180deg,transparent 60%,rgba(0,0,0,.4))"></div>
-              <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(255,255,255,.12);backdrop-filter:blur(10px);border-radius:20px;margin:12px;padding:10px 20px;display:flex;align-items:center;justify-content:center;gap:3px">
-                <span style="display:inline-block;width:3px;height:14px;background:white;border-radius:2px;animation:wave2 .6s ease infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:24px;background:white;border-radius:2px;animation:wave2 .6s ease .1s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:16px;background:white;border-radius:2px;animation:wave2 .6s ease .2s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:28px;background:white;border-radius:2px;animation:wave2 .6s ease .3s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:18px;background:white;border-radius:2px;animation:wave2 .6s ease .4s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:22px;background:white;border-radius:2px;animation:wave2 .6s ease .15s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:12px;background:white;border-radius:2px;animation:wave2 .6s ease .25s infinite alternate"></span>
-                <span style="display:inline-block;width:3px;height:20px;background:white;border-radius:2px;animation:wave2 .6s ease .35s infinite alternate"></span>
-              </div>
+      <!-- Hero Visual Section -->
+      <div style="background:linear-gradient(135deg,rgba(139,92,246,0.15),rgba(236,72,153,0.1));border-radius:20px;padding:2.5rem;margin-bottom:2rem;position:relative;overflow:hidden;border:1px solid rgba(139,92,246,0.2)">
+        <div style="display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap">
+          <div style="background:linear-gradient(135deg,#8B5CF6,#EC4899);border-radius:16px;padding:2rem 3rem;position:relative;min-width:240px;text-align:center">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem">🎙️</div>
+            <div style="display:flex;align-items:center;gap:4px;justify-content:center;margin-top:8px">
+              <div style="width:3px;height:18px;background:rgba(255,255,255,0.6);border-radius:2px;animation:swave1 1s ease-in-out infinite"></div>
+              <div style="width:3px;height:28px;background:rgba(255,255,255,0.8);border-radius:2px;animation:swave2 1s ease-in-out infinite 0.1s"></div>
+              <div style="width:3px;height:22px;background:rgba(255,255,255,0.7);border-radius:2px;animation:swave1 1s ease-in-out infinite 0.2s"></div>
+              <div style="width:3px;height:32px;background:rgba(255,255,255,0.9);border-radius:2px;animation:swave2 1s ease-in-out infinite 0.3s"></div>
+              <div style="width:3px;height:18px;background:rgba(255,255,255,0.6);border-radius:2px;animation:swave1 1s ease-in-out infinite 0.4s"></div>
             </div>
           </div>
-          <style>@keyframes wave2{0%{height:8px}100%{height:28px}}</style>
-        </div>
-
-        <!-- Link Input Section -->
-        <div style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:16px;padding:1.5rem;margin-bottom:1rem">
-          <div style="position:relative;margin-bottom:1rem">
-            <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:1.1rem;color:var(--text-muted)">🔗</span>
-            <input type="text" id="enhanceLinkInput" placeholder="Drop a YouTube link" style="width:100%;padding:14px 16px 14px 44px;border-radius:12px;border:1px solid var(--border-subtle);background:var(--dark-2);color:var(--text);font-size:1rem;outline:none;box-sizing:border-box">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="background:linear-gradient(135deg,#10B981,#34D399);border-radius:12px;padding:0.8rem 1.5rem;text-align:center;font-size:0.9rem;color:#fff">✨ Crystal Clear Audio</div>
+            <div style="background:linear-gradient(135deg,#F59E0B,#FBBF24);border-radius:12px;padding:0.8rem 1.5rem;text-align:center;font-size:0.9rem;color:#fff">🔇 Noise Removal</div>
+            <div style="background:linear-gradient(135deg,#6366F1,#818CF8);border-radius:12px;padding:0.8rem 1.5rem;text-align:center;font-size:0.9rem;color:#fff">🗣️ Voice Enhancement</div>
           </div>
-          <div style="display:flex;gap:12px;justify-content:center;align-items:center">
-            <button type="button" onclick="document.getElementById('fileInput').click()" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">⬆ Upload</button>
-            <button type="button" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">📁 Google Drive</button>
-            <button type="button" style="display:flex;align-items:center;gap:6px;padding:10px 20px;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.95rem">📦 Dropbox</button>
-          </div>
-          <input type="file" id="fileInput" class="file-input" accept="audio/*,video/*" style="display:none">
         </div>
-        <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:2rem">You can upload videos up to 120 minutes long.</p>
+        <style>
+          @keyframes swave1{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.5)}}
+          @keyframes swave2{0%,100%{transform:scaleY(1.5)}50%{transform:scaleY(0.7)}}
+        </style>
       </div>
+
+
+      <div class="content-wrapper">
+        <div class="upload-section" id="uploadSection" onclick="document.getElementById('fileInput').click()">
+          <div class="upload-icon">📁</div>
+          <div class="upload-text">Drop your audio or video file here</div>
+          <div class="upload-subtext">Or click to select • MP3, WAV, MP4, MOV supported</div>
+          <input type="file" id="fileInput" class="file-input" accept="audio/*,video/*">
+          <div id="fileName" class="file-name" style="display: none;"></div>
+        </div>
 
         <div class="settings-section">
           <div class="setting-group">
@@ -527,18 +525,7 @@ ${pageStyles}
     });
 
     ${themeScript}
-  
-    // Rotating link placeholder
-    const enhPhrases = ['Drop a YouTube link', 'Drop a Rumble link', 'Drop a Zoom link', 'Drop a Twitch link'];
-    let enhPhraseIdx = 0;
-    const enhLinkInput = document.getElementById('enhanceLinkInput');
-    if (enhLinkInput) {
-      setInterval(() => {
-        enhPhraseIdx = (enhPhraseIdx + 1) % enhPhrases.length;
-        enhLinkInput.placeholder = enhPhrases[enhPhraseIdx];
-      }, 3000);
-    }
-</script>
+  </script>
 </body>
 </html>`;
 
