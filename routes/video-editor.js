@@ -196,8 +196,8 @@ router.get('/', requireAuth, async (req, res) => {
     .category-tab.active{background:linear-gradient(135deg,#6C3AED,#7C3AED);color:#fff;box-shadow:0 2px 8px rgba(108,58,237,0.4)}
     .cat-icon{font-size:16px;line-height:1}
     .cat-label{font-size:.65rem;letter-spacing:.3px;text-transform:uppercase}
-    .category-tools{margin-top:6px}
-    .category-grid{display:flex;gap:4px;flex-wrap:wrap}
+    .category-tools{margin-top:6px;margin-bottom:8px}
+    .category-grid{display:flex;gap:4px;flex-wrap:wrap;max-height:calc(100vh - 380px);overflow-y:auto}
     .category-grid .tool-button{flex:1 1 calc(50% - 4px);min-width:0;justify-content:center;padding:10px 8px;font-size:.75rem;border-radius:10px;background:var(--surface);border:1px solid var(--border-subtle);transition:all .25s;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .category-grid .tool-button:hover{border-color:var(--primary);background:rgba(108,58,237,0.08);transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,0.15)}
     .category-grid .tool-button.active{background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(236,72,153,0.1));border-color:var(--primary);color:var(--primary)}
@@ -205,7 +205,7 @@ router.get('/', requireAuth, async (req, res) => {
     .properties-panel.collapsed{padding:6px 10px}
     .properties-panel .panel-title{margin-bottom:0}
     .properties-panel:not(.collapsed) .panel-title{margin-bottom:8px}
-    .export-floating{position:sticky;bottom:0;z-index:5;margin-top:auto;box-shadow:0 -4px 12px rgba(0,0,0,0.2)}
+    .export-floating{margin-top:8px;padding-top:8px;border-top:1px solid var(--border-subtle)}
     @keyframes panelSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
     
     .tool-button{padding:.45rem .8rem;background:var(--dark);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text);cursor:pointer;font-size:.78rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:.3rem;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif}
