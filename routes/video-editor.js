@@ -805,6 +805,50 @@ router.get('/', requireAuth, async (req, res) => {
               <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:8px">Add a B-Roll clip to overlay on your main video. You can drag to reposition and resize it on the preview.</p>
               <input type="file" id="brollFileInput" accept="video/*,image/*" style="display:none">
               <button type="button" class="action-button" id="brollUploadBtn" style="width:100%;margin-bottom:8px">📁 Select B-Roll File</button>
+              <!-- B-Roll Source Tabs -->
+              <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+                <button type="button" class="action-button broll-tab active" data-broll-tab="upload" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--primary);color:#fff;border:1px solid var(--primary)">📁 Upload</button>
+                <button type="button" class="action-button broll-tab" data-broll-tab="ai" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1)">✨ AI Generate</button>
+                <button type="button" class="action-button broll-tab" data-broll-tab="stock" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1)">🎥 Free Stock</button>
+              </div>
+              <!-- AI Generate B-Roll Section -->
+              <div id="brollAiSection" style="display:none;margin-bottom:10px">
+                <p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">Describe the B-Roll you want and AI will generate it for you.</p>
+                <textarea id="brollAiPrompt" placeholder="e.g. Aerial view of a city skyline at sunset, cinematic footage of ocean waves..." style="width:100%;padding:10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.85rem;resize:vertical;min-height:60px;font-family:inherit"></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px">
+                  <select id="brollAiStyle" style="flex:1;padding:8px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.82rem">
+                    <option value="cinematic">Cinematic</option>
+                    <option value="documentary">Documentary</option>
+                    <option value="nature">Nature</option>
+                    <option value="urban">Urban</option>
+                    <option value="abstract">Abstract</option>
+                    <option value="tech">Technology</option>
+                  </select>
+                  <button type="button" id="brollAiGenerateBtn" style="padding:8px 16px;background:linear-gradient(135deg,#8B5CF6,#EC4899);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.82rem;white-space:nowrap">✨ Generate</button>
+                </div>
+                <div id="brollAiResult" style="display:none;margin-top:8px;padding:10px;background:var(--dark-2);border-radius:8px;text-align:center">
+                  <p style="font-size:.8rem;color:var(--text-muted)">Generating B-Roll...</p>
+                </div>
+              </div>
+              <!-- Free Stock B-Roll Section -->
+              <div id="brollStockSection" style="display:none;margin-bottom:10px">
+                <p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">Search free B-Roll clips from Pexels, Pixabay, and other platforms.</p>
+                <div style="display:flex;gap:8px;margin-bottom:8px">
+                  <input type="text" id="brollStockSearch" placeholder="Search free B-Roll videos..." style="flex:1;padding:8px 12px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.85rem">
+                  <button type="button" id="brollStockSearchBtn" style="padding:8px 16px;background:linear-gradient(135deg,#10B981,#34D399);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.82rem">🔍 Search</button>
+                </div>
+                <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='nature';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🌿 Nature</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='city';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🏙️ City</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='technology';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">💻 Tech</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='food';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🍽️ Food</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='people';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">👥 People</button>
+                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='ocean';document.getElementById('brollStockSearchBtn').click()" style="padding:4px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:20px;color:var(--text-muted);font-size:.75rem;cursor:pointer">🌊 Ocean</button>
+                </div>
+                <div id="brollStockResults" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-height:300px;overflow-y:auto">
+                  <p style="grid-column:1/-1;text-align:center;font-size:.8rem;color:var(--text-muted);padding:20px 0">Search for free B-Roll clips above</p>
+                </div>
+              </div>
               <div id="brollControls" style="display:none">
                 <div class="slider-group">
                   <div class="slider-label"><span>Width %</span><span class="slider-value" id="brollWidthVal">30%</span></div>
@@ -2986,6 +3030,22 @@ router.get('/', requireAuth, async (req, res) => {
       });
     }
 
+
+      // B-Roll tab switching
+      document.querySelectorAll('.broll-tab').forEach(function(tab){
+        tab.addEventListener('click', function(){
+          document.querySelectorAll('.broll-tab').forEach(function(t){
+            t.style.background='var(--dark-2)';t.style.color='var(--text-muted)';t.style.borderColor='rgba(255,255,255,0.1)';
+            t.classList.remove('active');
+          });
+          this.style.background='var(--primary)';this.style.color='#fff';this.style.borderColor='var(--primary)';
+          this.classList.add('active');
+          var tabName = this.getAttribute('data-broll-tab');
+          document.getElementById('brollUploadBtn').style.display = tabName==='upload' ? 'block' : 'none';
+          document.getElementById('brollAiSection').style.display = tabName==='ai' ? 'block' : 'none';
+          document.getElementById('brollStockSection').style.display = tabName==='stock' ? 'block' : 'none';
+        });
+      });
 </script>
 </body>
 </html>`;
