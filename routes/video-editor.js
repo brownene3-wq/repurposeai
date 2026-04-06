@@ -142,7 +142,7 @@ router.get('/', requireAuth, async (req, res) => {
   const html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:grid;grid-template-columns:230px 1fr 270px;height:calc(100vh - 48px);gap:0;padding:0;overflow:hidden}
+    .editor-container{display:grid;grid-template-columns:230px 1fr 270px;grid-template-rows:38px 1fr 185px;height:100vh;gap:0;padding:0;overflow:hidden}
     .editor-main{display:flex;flex-direction:column;min-width:0;overflow-y:auto;overflow-x:hidden;background:#0a0612}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center}
@@ -189,7 +189,7 @@ router.get('/', requireAuth, async (req, res) => {
     .timeline-empty{text-align:center;color:var(--text-muted);font-size:.85rem;padding:1.5rem}
     body.light .timeline-container{background:#f0f0f5;border-color:rgba(108,58,237,0.12)}
     body.light .timeline-ruler{background:#e8e8f0}
-    .tools-section{display:flex;gap:.4rem;margin-top:.6rem;flex-wrap:wrap}
+    .tools-section{display:none}
     .category-tabs{display:flex;gap:2px;background:var(--dark);border-radius:10px;padding:3px;border:1px solid var(--border-subtle)}
     .category-tab{flex:1;padding:8px 4px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;border-radius:8px;font-size:.72rem;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .25s;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
     .category-tab:hover{background:rgba(108,58,237,0.1);color:var(--text)}
@@ -287,7 +287,7 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     @media(max-width:1400px){.editor-container{grid-template-columns:200px 1fr 240px}}
     @media(max-width:1200px){.editor-container{grid-template-columns:180px 1fr 220px}}
-    @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:none}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:flex;flex-direction:column}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
   
@@ -393,6 +393,66 @@ router.get('/', requireAuth, async (req, res) => {
     .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
     .fs-audio-canvas{width:100%;height:100%;display:block}
 
+    
+    /* ═══ CINEMA SUITE PRO: FULL VIEWPORT MODE ═══ */
+    .dashboard .sidebar{display:none!important}
+    .editor-fullscreen-toggle{display:none!important}
+    .dashboard .main-content{padding:0!important;margin:0!important;width:100vw!important;max-width:100vw!important}
+    .dashboard{overflow:hidden!important}
+    .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay,.main-content .theme-toggle{display:none!important}
+    .feedback-btn{display:none!important}
+
+    /* ═══ TOP BAR ═══ */
+    .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 12px;gap:5px;height:38px;z-index:100}
+    .e-logo{font-size:13px;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:8px}
+    .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
+    .e-tb{padding:4px 9px;font-size:10px;font-weight:600;color:#5a4d78;background:transparent;border:1px solid rgba(108,58,237,.08);border-radius:5px;cursor:pointer;transition:all .2s}
+    .e-tb:hover{color:#a78bfa;border-color:#7c3aed}
+    .e-tb.on{background:rgba(108,58,237,.1);color:#a78bfa}
+    .e-sp{flex:1}
+    .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-weight:700;padding:5px 16px}
+
+    /* ═══ RIGHT PANEL: ORGANIZED SECTIONS ═══ */
+    .editor-sidebar .cat-tabs-new{display:flex;gap:1px;padding:3px;background:#0c0814;border-bottom:1px solid rgba(108,58,237,.06)}
+    .editor-sidebar .cat-btn{flex:1;padding:7px 2px;border:none;background:transparent;color:#4a3d65;cursor:pointer;border-radius:6px;font-size:9px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .25s;text-transform:uppercase}
+    .editor-sidebar .cat-btn:hover{background:rgba(108,58,237,.06);color:#a78bfa}
+    .editor-sidebar .cat-btn.on{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;box-shadow:0 2px 8px rgba(108,58,237,.3)}
+    .editor-sidebar .cat-btn .ci{font-size:13px}
+    .editor-sidebar .t-body{flex:1;overflow-y:auto;padding:6px}
+    .editor-sidebar .tool-sec{margin-bottom:6px}
+    .editor-sidebar .tool-sec-title{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:4px 2px 3px;display:flex;align-items:center;gap:4px}
+    .editor-sidebar .tool-sec-title::after{content:'';flex:1;height:1px;background:rgba(108,58,237,.05)}
+    .editor-sidebar .tg2{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px}
+    .editor-sidebar .tb3{flex:1 1 calc(50% - 3px);min-width:0;padding:8px 4px;text-align:center;font-size:10px;font-weight:600;color:#b8a6d9;background:#16112a;border:1px solid rgba(108,58,237,.06);border-radius:6px;cursor:pointer;transition:all .2s;white-space:nowrap}
+    .editor-sidebar .tb3:hover{border-color:#7c3aed;background:rgba(108,58,237,.07)}
+    .editor-sidebar .tb3.on{background:linear-gradient(135deg,rgba(108,58,237,.15),rgba(236,72,153,.06));border-color:#7c3aed;color:#e9d5ff}
+    .editor-sidebar .tb3.ai-t{border-color:rgba(236,72,153,.08);background:linear-gradient(135deg,rgba(108,58,237,.04),rgba(236,72,153,.02))}
+    .editor-sidebar .tb3.ai-t:hover{border-color:#ec4899}
+    .editor-sidebar .cat-content-new{display:none}
+    .editor-sidebar .cat-content-new.active{display:block}
+    .editor-sidebar .s-panel{background:#16112a;border-radius:7px;border:1px solid rgba(108,58,237,.06);padding:9px;margin-top:4px}
+    .editor-sidebar .s-panel h4{font-size:10px;font-weight:700;color:#c4b5fd;margin-bottom:7px;display:flex;align-items:center;gap:5px}
+    .editor-sidebar .s-row{display:flex;align-items:center;gap:5px;margin-bottom:5px}
+    .editor-sidebar .s-lbl{font-size:9px;color:#5a4d78;min-width:50px}
+    .editor-sidebar .s-track{flex:1;height:3px;background:#1e1730;border-radius:2px;cursor:pointer}
+    .editor-sidebar .s-fill{height:100%;border-radius:2px}
+    .editor-sidebar .s-val{font-size:9px;color:#a78bfa;font-weight:600;min-width:30px;text-align:right}
+    .editor-sidebar .s-apply{width:100%;padding:7px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;border-radius:6px;color:#fff;font-size:10px;font-weight:700;cursor:pointer;margin-top:3px}
+    .editor-sidebar .exp-section{padding:6px;border-top:1px solid rgba(108,58,237,.06);margin-top:auto}
+    .editor-sidebar .exp-row{display:flex;gap:3px;margin-bottom:3px}
+    .editor-sidebar .exp-sel{flex:1;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:4px;padding:4px 6px;color:#b8a6d9;font-size:9px}
+    .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
+
+    /* ═══ TIMELINE BAR ═══ */
+    .timeline-container{grid-column:1/4}
+    .tl-toolbar{display:flex;align-items:center;gap:4px;padding:4px 8px;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.05)}
+    .tl-btn{padding:3px 7px;font-size:9px;font-weight:700;color:#3d3358;border:1px solid rgba(108,58,237,.06);border-radius:4px;cursor:pointer;background:transparent;transition:all .2s}
+    .tl-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.2)}
+    .tl-btn.on{background:#7c3aed;color:#fff;border-color:transparent}
+    .tl-spacer{flex:1}
+    .tl-info-text{font-size:8px;color:#2d2344}
+    .tl-add-btn{padding:3px 8px;font-size:9px;font-weight:700;color:#a78bfa;background:rgba(108,58,237,.08);border:1px solid rgba(108,58,237,.12);border-radius:4px;cursor:pointer}
+    .tl-add-btn:hover{background:rgba(108,58,237,.15)}
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -408,6 +468,18 @@ router.get('/', requireAuth, async (req, res) => {
       ${getThemeToggle()}
 
       <div class="editor-container">
+
+          <div class="editor-topbar">
+            <span class="e-logo">RepurposeAI</span><div class="e-sep"></div>
+            <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
+            <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
+            <button class="e-tb on">\ud83e\uddf2 Snap</button>
+            <button class="e-tb">\ud83d\udcf7 Snapshot</button>
+            <button class="e-tb">\ud83d\udd17 Link Tracks</button>
+            <div class="e-sp"></div>
+            <button class="e-tb">\ud83d\udcbe Auto-saved</button>
+            <button class="e-tb ex" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export</button>
+          </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
               <div class="media-library" id="mediaLibrary">
                 <div class="ml-head"><h3>&#128194; Media</h3></div>
@@ -502,6 +574,15 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
 
               <div class="timeline-container" id="timelineContainer">
+
+              <div class="tl-toolbar">
+                <button class="tl-btn on">\u2702\ufe0f Razor</button>
+                <button class="tl-btn">\ud83d\udc46 Select</button>
+                <button class="tl-btn">\ud83e\uddf2 Snap</button>
+                <div class="tl-spacer"></div>
+                <button class="tl-add-btn">\u2795 Add Track</button>
+                <span class="tl-info-text">5 tracks \u2022 3 clips \u2022 4:16 total</span>
+              </div>
               <div class="timeline-ruler" id="timelineRuler"></div>
               <div class="timeline-tracks" id="timelineTracks">
                 <div class="timeline-playhead" id="timelinePlayhead" style="left:40px"><div class="timeline-playhead-hitbox" id="playheadHitbox"></div></div>
@@ -767,601 +848,140 @@ router.get('/', requireAuth, async (req, res) => {
         </div>
 
         <div class="editor-sidebar">
-          <div class="properties-panel">
-            <div class="panel-title">⚙️ Properties</div>
-
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Brightness</span>
-                <span class="slider-value">100%</span>
-              </div>
-              <input type="range" class="slider" id="brightness" min="0" max="200" value="100">
-            </div>
-
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Contrast</span>
-                <span class="slider-value">100%</span>
-              </div>
-              <input type="range" class="slider" id="contrast" min="0" max="200" value="100">
-            </div>
-
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Saturation</span>
-                <span class="slider-value">100%</span>
-              </div>
-              <input type="range" class="slider" id="saturation" min="0" max="200" value="100">
-            </div>
+          <div class="cat-tabs-new">
+            <button class="cat-btn on" onclick="swCat2(this,'edit')"><span class="ci">\u2702\ufe0f</span>EDIT</button>
+            <button class="cat-btn" onclick="swCat2(this,'audio')"><span class="ci">\ud83d\udd0a</span>AUDIO</button>
+            <button class="cat-btn" onclick="swCat2(this,'ai')"><span class="ci">\u2728</span>AI</button>
+            <button class="cat-btn" onclick="swCat2(this,'fx')"><span class="ci">\ud83c\udfa8</span>FX</button>
           </div>
-
-          <div class="tool-panel active" id="trimPanel">
-            <div class="panel-title">✂️ Trim Video</div>
-            <div class="time-inputs">
-              <input type="number" class="time-input" id="startTime" placeholder="Start (sec)" min="0" step="0.1">
-              <input type="number" class="time-input" id="endTime" placeholder="End (sec)" min="0" step="0.1">
-            </div>
-            <button class="trim-button" id="trimButton" disabled>Trim</button>
-          </div>
-
-          <div class="tool-panel" id="splitPanel">
-            <div class="panel-title">🔀 Split Video</div>
-            <p style="color:var(--text-secondary);font-size:13px;margin:8px 0">Move the playhead on the timeline to where you want to split, then click the button below.</p>
-            <button class="tool-action-button" id="splitButton" >Split at Playhead</button>
-          </div>
-
-          <div class="tool-panel" id="filtersPanel">
-            <div class="panel-title">🎨 Apply Filter</div>
-            <div class="filter-buttons">
-              <button class="filter-btn" data-filter="grayscale">Grayscale</button>
-              <button class="filter-btn" data-filter="sepia">Sepia</button>
-              <button class="filter-btn" data-filter="warm">Warm</button>
-              <button class="filter-btn" data-filter="cool">Cool</button>
-              <button class="filter-btn" data-filter="vintage">Vintage</button>
-              <button class="filter-btn" data-filter="highcontrast">High Contrast</button>
-            </div>
-            <button class="tool-action-button" id="filterButton" disabled>Apply Filter</button>
-          </div>
-
-          <div class="tool-panel" id="speedPanel">
-            <div class="panel-title">⚡ Video Speed</div>
-            <label class="dropdown-label">Select Speed</label>
-            <select class="dropdown" id="speedSelect" disabled>
-              <option value="0.25">0.25x (Slowest)</option>
-              <option value="0.5">0.5x (Slower)</option>
-              <option value="0.75">0.75x</option>
-              <option value="1" selected>1x (Normal)</option>
-              <option value="1.5">1.5x</option>
-              <option value="2">2x (Faster)</option>
-              <option value="3">3x (Very Fast)</option>
-              <option value="4">4x (Fastest)</option>
-            </select>
-            <button class="tool-action-button" id="speedButton" disabled>Apply Speed</button>
-          </div>
-
-          <div class="tool-panel" id="audioPanel">
-            <div class="panel-title">🔊 Audio Controls</div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Volume</span>
-                <span class="slider-value" id="volumeValue">100%</span>
-              </div>
-              <input type="range" class="slider" id="volumeSlider" min="0" max="200" value="100">
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Fade In</span>
-                <span class="slider-value" id="fadeInValue">0s</span>
-              </div>
-              <input type="range" class="slider" id="fadeInSlider" min="0" max="10" value="0" step="0.5">
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Fade Out</span>
-                <span class="slider-value" id="fadeOutValue">0s</span>
-              </div>
-              <input type="range" class="slider" id="fadeOutSlider" min="0" max="10" value="0" step="0.5">
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Bass Boost</span>
-                <span class="slider-value" id="bassValue">0dB</span>
-              </div>
-              <input type="range" class="slider" id="bassSlider" min="-10" max="10" value="0" step="1">
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Treble</span>
-                <span class="slider-value" id="trebleValue">0dB</span>
-              </div>
-              <input type="range" class="slider" id="trebleSlider" min="-10" max="10" value="0" step="1">
-            </div>
-            <div style="display:flex;flex-direction:column;gap:.6rem;margin-bottom:1rem">
-              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
-                <input type="checkbox" id="noiseReduction" style="accent-color:#6C3AED"> Noise Reduction
-              </label>
-              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
-                <input type="checkbox" id="audioDucking" style="accent-color:#6C3AED"> Audio Ducking <span style="font-size:.7rem;color:var(--text-muted)">(lower music during speech)</span>
-              </label>
-            </div>
-            <button class="tool-action-button" id="audioButton" disabled>🔊 Apply Audio</button>
-          </div>
-
-          <div class="tool-panel" id="voiceoverPanel">
-            <div class="panel-title">🎙️ AI Voiceover</div>
-            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Generate AI voiceover and overlay it on your video</p>
-            <div class="form-group-ve" style="margin-bottom:.8rem">
-              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Voice</label>
-              <select id="voiceSelect" style="width:100%;padding:.5rem .7rem;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.82rem;outline:none">
-                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Female, Calm)</option>
-                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Female, Warm)</option>
-                <option value="ErXwobaYiN019PkySvjV">Antoni (Male, Calm)</option>
-                <option value="VR6AewLTigWG4xSOukaG">Arnold (Male, Deep)</option>
-                <option value="pNInz6obpgDQGcFmaJgB">Adam (Male, Clear)</option>
-                <option value="yoZ06aMxZJJ28mfd3POQ">Sam (Male, Raspy)</option>
-                <option value="jBpfuIE2acCO8z3wKNLl">Gigi (Female, Animated)</option>
-                <option value="ThT5KcBeYPX3keUQqHPh">Dorothy (Female, British)</option>
-              </select>
-            </div>
-            <div class="form-group-ve" style="margin-bottom:.8rem">
-              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Script</label>
-              <textarea id="voiceoverScript" placeholder="Type your voiceover script here..." style="width:100%;height:100px;padding:.6rem;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.82rem;resize:vertical;outline:none;font-family:inherit"></textarea>
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Voice Volume</span>
-                <span class="slider-value" id="voiceVolumeValue">100%</span>
-              </div>
-              <input type="range" class="slider" id="voiceVolumeSlider" min="0" max="200" value="100">
-            </div>
-            <div style="display:flex;flex-direction:column;gap:.6rem;margin-bottom:1rem">
-              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
-                <input type="checkbox" id="duckOriginal" checked style="accent-color:#6C3AED"> Duck original audio during voiceover
-              </label>
-            </div>
-            <div style="display:flex;gap:.5rem">
-              <button class="tool-action-button" id="previewVoiceButton" disabled style="flex:1;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1)">🔈 Preview</button>
-              <button class="tool-action-button" id="voiceoverButton" disabled style="flex:1">🎙️ Apply to Video</button>
-            </div>
-            <div id="voiceoverApiNote" style="margin-top:.8rem;padding:.6rem;background:rgba(108,58,237,0.08);border-radius:8px;font-size:.75rem;color:var(--text-muted)">
-              <strong style="color:#EF4444">⚠️ ElevenLabs API Key Required</strong> — All AI voices are powered by ElevenLabs. Add your API key in <a href="/settings" style="color:#6C3AED;text-decoration:none;font-weight:600" onclick="event.preventDefault();window.location.href='/settings'">Settings → API Keys</a> to enable voiceover.
-            </div>
-          </div>
-
-          <div class="tool-panel" id="voicetransformPanel">
-            <div class="panel-title">🔄 Voice Transform</div>
-            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Change the voice in your video to any AI voice using ElevenLabs Speech-to-Speech</p>
-            <div class="form-group-ve" style="margin-bottom:.8rem">
-              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Target Voice</label>
-              <select id="vtVoiceSelect" style="width:100%;padding:.5rem .7rem;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.82rem;outline:none">
-                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Female, Calm)</option>
-                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Female, Warm)</option>
-                <option value="ErXwobaYiN019PkySvjV">Antoni (Male, Calm)</option>
-                <option value="VR6AewLTigWG4xSOukaG">Arnold (Male, Deep)</option>
-                <option value="pNInz6obpgDQGcFmaJgB">Adam (Male, Clear)</option>
-                <option value="yoZ06aMxZJJ28mfd3POQ">Sam (Male, Raspy)</option>
-                <option value="jBpfuIE2acCO8z3wKNLl">Gigi (Female, Animated)</option>
-                <option value="ThT5KcBeYPX3keUQqHPh">Dorothy (Female, British)</option>
-              </select>
-            </div>
-            <div class="form-group-ve" style="margin-bottom:.8rem">
-              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.3rem">Source</label>
-              <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
-                <label style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:6px;cursor:pointer;font-size:.8rem;color:var(--text);font-weight:600" id="vtSourceVideoLabel">
-                  <input type="radio" name="vtSource" value="video" checked style="accent-color:#6C3AED"> From Video
-                </label>
-                <label style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;font-size:.8rem;color:var(--text);font-weight:600" id="vtSourceUploadLabel">
-                  <input type="radio" name="vtSource" value="upload" style="accent-color:#6C3AED"> Upload Audio
-                </label>
-              </div>
-              <div id="vtUploadArea" style="display:none;margin-top:.5rem">
-                <div style="border:2px dashed rgba(108,58,237,0.3);border-radius:8px;padding:1rem;text-align:center;cursor:pointer" onclick="document.getElementById('vtAudioFile').click()">
-                  <div style="font-size:.85rem;color:var(--text)">Click to upload audio file</div>
-                  <div style="font-size:.75rem;color:var(--text-muted)">MP3, WAV, M4A supported</div>
-                  <input type="file" id="vtAudioFile" accept="audio/*" style="display:none">
-                </div>
-                <div id="vtAudioFileName" style="display:none;margin-top:.5rem;padding:.5rem;background:var(--dark-2);border-radius:6px;font-size:.8rem;color:var(--text)"></div>
-              </div>
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Stability</span>
-                <span class="slider-value" id="vtStabilityValue">50%</span>
-              </div>
-              <input type="range" class="slider" id="vtStability" min="0" max="100" value="50">
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Similarity</span>
-                <span class="slider-value" id="vtSimilarityValue">75%</span>
-              </div>
-              <input type="range" class="slider" id="vtSimilarity" min="0" max="100" value="75">
-            </div>
-            <div style="display:flex;gap:.5rem;margin-top:.5rem">
-              <button class="tool-action-button" id="vtPreviewBtn" disabled style="flex:1;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1)">🔈 Preview</button>
-              <button class="tool-action-button" id="vtApplyBtn" disabled style="flex:1">🔄 Transform Voice</button>
-            </div>
-            <div id="vtProgress" style="display:none;margin-top:.8rem">
-              <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:6px;overflow:hidden">
-                <div id="vtProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
-              </div>
-              <div id="vtProgressText" style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem;text-align:center">Processing...</div>
-            </div>
-            <div id="vtApiNote" style="margin-top:.8rem;padding:.6rem;background:rgba(108,58,237,0.08);border-radius:8px;font-size:.75rem;color:var(--text-muted)">
-              Requires ElevenLabs API key. Set it in <a href="/settings" style="color:#6C3AED;text-decoration:none;font-weight:600">Settings → API Keys</a>.
-            </div>
-            <div id="vtInlineApiKey" style="margin-top:.6rem;padding:.6rem;background:var(--surface-light);border-radius:8px;border:1px solid var(--border-subtle)">
-              <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-muted);margin-bottom:4px">🔑 ElevenLabs API Key</label>
-              <div style="display:flex;gap:6px">
-                <input type="password" id="vtElevenLabsKey" placeholder="Paste your API key here..." style="flex:1;padding:6px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);font-size:.8rem">
-                <button type="button" id="vtSaveApiKey" style="padding:6px 12px;background:linear-gradient(135deg,#6C3AED,#8B5CF6);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:600;white-space:nowrap">Save</button>
-              </div>
-              <p style="font-size:.7rem;color:var(--text-muted);margin-top:4px">Get your key at <a href="https://elevenlabs.io" target="_blank" style="color:#6C3AED">elevenlabs.io</a></p>
-            </div>
-          </div>
-
-          <div class="tool-panel" id="textPanel">
-            <div class="panel-title">📝 Text Overlay</div>
-            <input type="text" class="text-input" id="overlayText" placeholder="Enter text">
-            <label class="dropdown-label">Position <span style="font-size:.7rem;color:var(--text-muted)">(drag text on video to position)</span></label>
-            <select class="dropdown" id="textPosition" style="margin-bottom:.4rem">
-              <option value="top">Top</option>
-              <option value="center" selected>Center</option>
-              <option value="bottom">Bottom</option>
-              <option value="custom">Custom (drag on video)</option>
-            </select>
-            <div id="customPositionControls" style="display:none;margin-bottom:.5rem">
-              <div style="display:flex;gap:.5rem;align-items:center;font-size:.78rem">
-                <label style="color:var(--text-muted)">X: <input type="number" id="textPosX" value="50" min="0" max="100" style="width:50px;padding:2px 4px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.78rem">%</label>
-                <label style="color:var(--text-muted)">Y: <input type="number" id="textPosY" value="50" min="0" max="100" style="width:50px;padding:2px 4px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);background:var(--dark-2);color:var(--text);font-size:.78rem">%</label>
-              </div>
-            </div>
-            <div class="slider-group">
-              <div class="slider-label">
-                <span>Font Size</span>
-                <span class="slider-value" id="fontSizeValue">24px</span>
-              </div>
-              <input type="range" class="slider" id="fontSize" min="12" max="100" value="24">
-            </div>
-            <button class="tool-action-button" id="textButton" disabled>Apply Text</button>
-          </div>
-
-          <div class="tool-panel" id="transitionsPanel">
-            <div class="panel-title">✨ Transitions</div>
-            <div style="display:flex;flex-direction:column;gap:.8rem">
-              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text)">
-                <input type="checkbox" id="autoTransitions" style="accent-color:#6C3AED"> Auto transitions between clips
-              </label>
-              <div>
-                <div style="font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.6rem">Transition Type</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem">
-                  <button class="transition-btn" data-transition="none" style="padding:.5rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">None</button>
-                  <button class="transition-btn" data-transition="fade" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Fade</button>
-                  <button class="transition-btn" data-transition="dissolve" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Dissolve</button>
-                  <button class="transition-btn" data-transition="wipeleft" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Wipe Left</button>
-                  <button class="transition-btn" data-transition="wiperight" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Wipe Right</button>
-                  <button class="transition-btn" data-transition="slideright" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Slide Right</button>
-                  <button class="transition-btn" data-transition="slideleft" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Slide Left</button>
-                  <button class="transition-btn" data-transition="zoomin" style="padding:.5rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.75rem;cursor:pointer;transition:all 0.2s">Zoom In</button>
+          <div class="t-body">
+            <!-- EDIT TAB -->
+            <div class="cat-content-new active" id="cat-edit2">
+              <div class="tool-sec"><div class="tool-sec-title">Clip Tools</div>
+                <div class="tg2">
+                  <div class="tb3 on">\u2702\ufe0f Trim</div>
+                  <div class="tb3">\ud83d\udcd0 Split</div>
+                  <div class="tb3">\u26a1 Speed</div>
+                  <div class="tb3">\ud83d\udd32 Crop</div>
                 </div>
               </div>
-              <div class="slider-group">
-                <div class="slider-label">
-                  <span>Duration</span>
-                  <span class="slider-value" id="transitionDurationValue">0.5s</span>
+              <div class="tool-sec"><div class="tool-sec-title">Transform</div>
+                <div class="tg2">
+                  <div class="tb3">\u2194\ufe0f Resize</div>
+                  <div class="tb3">\ud83d\udd04 Rotate</div>
+                  <div class="tb3">\u2195\ufe0f Flip</div>
+                  <div class="tb3">\ud83d\udccc Position</div>
                 </div>
-                <input type="range" class="slider" id="transitionDuration" min="0.3" max="2.0" step="0.1" value="0.5">
               </div>
-              <button class="tool-action-button" id="applyTransitionButton" disabled>Apply Transitions</button>
-            </div>
-          </div>
-
-          <div class="tool-panel" id="musicPanel">
-            <div class="panel-title">🎵 Music Library</div>
-            <div style="margin-bottom:1rem">
-              <input type="text" id="musicSearch" placeholder="Search copyright free music..." style="width:100%;padding:.6rem;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text);font-size:.85rem;margin-bottom:.5rem">
-            </div>
-            <div style="display:flex;gap:.3rem;margin-bottom:.8rem;flex-wrap:wrap;font-size:.7rem">
-              <button class="filter-btn selected" data-music-filter="all">All</button>
-              <button class="filter-btn" data-music-filter="instrumental">Instrumental</button>
-              <button class="filter-btn" data-music-filter="upbeat">Upbeat</button>
-              <button class="filter-btn" data-music-filter="chill">Chill</button>
-              <button class="filter-btn" data-music-filter="beats">Beats</button>
-              <button class="filter-btn" data-music-filter="electronic">Electronic</button>
-              <button class="filter-btn" data-music-filter="dramatic">Dramatic</button>
-              <button class="filter-btn" data-music-filter="cinematic">Cinematic</button>
-              <button class="filter-btn" data-music-filter="happy">Happy</button>
-              <button class="filter-btn" data-music-filter="sad">Sad</button>
-              <button class="filter-btn" data-music-filter="acoustic">Acoustic</button>
-              <button class="filter-btn" data-music-filter="lo-fi">Lo-Fi</button>
-            </div>
-            <button class="tool-action-button" style="background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1)" onclick="document.getElementById('customMusicFile').click()">📁 Upload Custom Music</button>
-            <input type="file" id="customMusicFile" accept="audio/*" style="display:none">
-            <div id="musicList" style="margin-top:1rem;max-height:300px;overflow-y:auto">
-              <div style="text-align:center;color:var(--text-muted);font-size:.85rem;padding:1rem">Loading music library...</div>
-            </div>
-            <div class="slider-group" style="margin-top:1rem">
-              <div class="slider-label">
-                <span>Music Volume</span>
-                <span class="slider-value" id="musicVolumeValue">30%</span>
-              </div>
-              <input type="range" class="slider" id="musicVolume" min="0" max="100" value="30">
-            </div>
-            <button class="tool-action-button" id="addMusicButton" disabled>🎵 Add to Video</button>
-          </div>
-
-          <div class="tool-panel" id="enhancePanel">
-            <div class="panel-title">✨ AI Enhance</div>
-            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:1rem">Enhance your speech with AI-powered tools</p>
-            <div style="display:flex;flex-direction:column;gap:.6rem">
-              <div style="display:flex;align-items:center;gap:.5rem;padding:.8rem;background:var(--dark-2);border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
-                <div style="flex:1">
-                  <div style="font-size:.85rem;font-weight:600;color:var(--text)">Remove Filler Words</div>
-                  <div style="font-size:.75rem;color:var(--text-muted);margin-top:.2rem">Remove um, uh, like, basically...</div>
+              <div class="tool-sec"><div class="tool-sec-title">Timing</div>
+                <div class="tg2">
+                  <div class="tb3">\u23ea Reverse</div>
+                  <div class="tb3">\ud83d\udd01 Loop</div>
+                  <div class="tb3">\u23f8\ufe0f Freeze</div>
+                  <div class="tb3">\ud83c\udf9e\ufe0f Keyframe</div>
                 </div>
-                <button class="tool-action-button" id="removeFillerWordsBtn" disabled style="width:auto;padding:.5rem 1rem;white-space:nowrap">Process</button>
               </div>
-              <div id="fillerWordsProgress" style="display:none;margin-top:.5rem">
-                <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden">
-                  <div id="fillerWordsProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
-                </div>
-                <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem;text-align:center">Processing audio...</div>
+              <div class="s-panel">
+                <h4>\u2702\ufe0f Trim Video</h4>
+                <div class="s-row"><span class="s-lbl">Start</span><div class="s-track"><div class="s-fill" style="width:0;background:#7c3aed"></div></div><span class="s-val">0:00</span></div>
+                <div class="s-row"><span class="s-lbl">End</span><div class="s-track"><div class="s-fill" style="width:100%;background:#7c3aed"></div></div><span class="s-val">2:21</span></div>
+                <button class="s-apply">Apply Trim</button>
               </div>
-              <div style="display:flex;align-items:center;gap:.5rem;padding:.8rem;background:var(--dark-2);border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
-                <div style="flex:1">
-                  <div style="font-size:.85rem;font-weight:600;color:var(--text)">Remove Pauses</div>
-                  <div style="font-size:.75rem;color:var(--text-muted);margin-top:.2rem">Remove silence gaps automatically</div>
-                </div>
-                <button class="tool-action-button" id="removePausesBtn" disabled style="width:auto;padding:.5rem 1rem;white-space:nowrap">Process</button>
+              <div class="s-panel" style="margin-top:4px">
+                <h4>\u2699\ufe0f Properties</h4>
+                <div class="s-row"><span class="s-lbl">Opacity</span><div class="s-track"><div class="s-fill" style="width:100%;background:#7c3aed"></div></div><span class="s-val">100%</span></div>
+                <div class="s-row"><span class="s-lbl">Volume</span><div class="s-track"><div class="s-fill" style="width:80%;background:#22c55e"></div></div><span class="s-val">80%</span></div>
+                <div class="s-row"><span class="s-lbl">Speed</span><div class="s-track"><div class="s-fill" style="width:50%;background:#ec4899"></div></div><span class="s-val">1.0x</span></div>
               </div>
-              <div id="pausesProgress" style="display:none;margin-top:.5rem">
-                <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden">
-                  <div id="pausesProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
+            </div>
+            <!-- AUDIO TAB -->
+            <div class="cat-content-new" id="cat-audio2">
+              <div class="tool-sec"><div class="tool-sec-title">Audio Control</div>
+                <div class="tg2">
+                  <div class="tb3 on">\ud83d\udd0a Volume</div>
+                  <div class="tb3">\ud83c\udfb5 Music</div>
+                  <div class="tb3">\ud83c\udf99\ufe0f Voiceover</div>
+                  <div class="tb3">\ud83d\udd07 Mute</div>
                 </div>
-                <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem;text-align:center">Processing audio...</div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">Audio Effects</div>
+                <div class="tg2">
+                  <div class="tb3">\ud83d\udd09 Fade In/Out</div>
+                  <div class="tb3">\ud83c\udfa4 Voice Change</div>
+                  <div class="tb3">\ud83d\udce2 Equalizer</div>
+                  <div class="tb3">\ud83d\udd14 Sound FX</div>
+                </div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">Advanced Audio</div>
+                <div class="tg2">
+                  <div class="tb3">\ud83c\udf9a\ufe0f Compressor</div>
+                  <div class="tb3">\ud83d\udd15 Noise Remove</div>
+                  <div class="tb3">\ud83c\udfb6 Beat Sync</div>
+                  <div class="tb3">\ud83d\udcca Visualizer</div>
+                </div>
+              </div>
+            </div>
+            <!-- AI TAB -->
+            <div class="cat-content-new" id="cat-ai2">
+              <div class="tool-sec"><div class="tool-sec-title">AI Generation</div>
+                <div class="tg2">
+                  <div class="tb3 ai-t on">\u2728 Enhance</div>
+                  <div class="tb3 ai-t">\ud83d\udcdd Captions</div>
+                  <div class="tb3 ai-t">\ud83e\ude9d AI Hook</div>
+                  <div class="tb3 ai-t">\ud83c\udfa8 Brand Kit</div>
+                </div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">AI Analysis</div>
+                <div class="tg2">
+                  <div class="tb3 ai-t">\ud83d\udcdc Transcript</div>
+                  <div class="tb3 ai-t">\ud83c\udfac B-Roll</div>
+                  <div class="tb3 ai-t">\ud83e\udde0 Smart Cut</div>
+                  <div class="tb3 ai-t">\ud83d\udc41\ufe0f Scene Detect</div>
+                </div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">AI Creative</div>
+                <div class="tg2">
+                  <div class="tb3 ai-t">\ud83c\udfad Style Transfer</div>
+                  <div class="tb3 ai-t">\ud83d\uddbc\ufe0f BG Remove</div>
+                  <div class="tb3 ai-t">\ud83d\udde3\ufe0f AI Voice</div>
+                  <div class="tb3 ai-t">\ud83c\udf0d Translate</div>
+                </div>
+              </div>
+            </div>
+            <!-- FX TAB -->
+            <div class="cat-content-new" id="cat-fx2">
+              <div class="tool-sec"><div class="tool-sec-title">Visual Effects</div>
+                <div class="tg2">
+                  <div class="tb3 on">\ud83c\udfa8 Filters</div>
+                  <div class="tb3">\u2728 Transitions</div>
+                  <div class="tb3">\ud83d\udcdd Text</div>
+                  <div class="tb3">\ud83d\udcce Stickers</div>
+                </div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">Color & Grade</div>
+                <div class="tg2">
+                  <div class="tb3">\ud83c\udfa8 Color Grade</div>
+                  <div class="tb3">\u2600\ufe0f Exposure</div>
+                  <div class="tb3">\ud83c\udf08 Saturation</div>
+                  <div class="tb3">\ud83c\udfa5 LUT</div>
+                </div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">Motion & Overlays</div>
+                <div class="tg2">
+                  <div class="tb3">\ud83d\udd0d Zoom</div>
+                  <div class="tb3">\ud83d\udcfa PiP</div>
+                  <div class="tb3">\ud83d\udcab Animations</div>
+                  <div class="tb3">\ud83d\udd8a\ufe0f Annotations</div>
+                </div>
               </div>
             </div>
           </div>
-
-          <div class="tool-panel" id="captionsPanel">
-            <div class="panel-title">💬 AI Captions</div>
-            <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.8rem">Generate animated captions from your video's audio</p>
-
-            <div style="margin-bottom:.8rem">
-              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem">Caption Style</label>
-              <div id="captionStyleGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:.4rem;max-height:220px;overflow-y:auto">
-                <div class="caption-style-option selected" data-caption-style="karaoke" onclick="selectCaptionStyle(this,'karaoke')" style="padding:.6rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
-                  <div style="font-weight:700;font-size:.9rem;color:#6C3AED">HELLO</div>
-                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Karaoke</div>
-                </div>
-                <div class="caption-style-option" data-caption-style="bold-pop" onclick="selectCaptionStyle(this,'bold-pop')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
-                  <div style="font-weight:800;font-size:1rem;color:#EC4899">BOLD</div>
-                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Bold Pop</div>
-                </div>
-                <div class="caption-style-option" data-caption-style="minimal" onclick="selectCaptionStyle(this,'minimal')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
-                  <div style="font-weight:400;font-size:.85rem;color:#fff">hello</div>
-                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Minimal</div>
-                </div>
-                <div class="caption-style-option" data-caption-style="neon-glow" onclick="selectCaptionStyle(this,'neon-glow')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
-                  <div style="font-weight:700;font-size:.9rem;color:#00FF41;text-shadow:0 0 8px #00FF41">NEON</div>
-                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Neon Glow</div>
-                </div>
-                <div class="caption-style-option" data-caption-style="mrbeast" onclick="selectCaptionStyle(this,'mrbeast')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
-                  <div style="font-weight:900;font-size:1rem;color:#FFD700;text-shadow:2px 2px 0 #000">WOW</div>
-                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">MrBeast</div>
-                </div>
-                <div class="caption-style-option" data-caption-style="hormozi" onclick="selectCaptionStyle(this,'hormozi')" style="padding:.6rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;text-align:center;transition:all .2s">
-                  <div style="font-weight:700;font-size:.9rem;color:#fff"><span style="background:#ef4444;padding:0 4px;border-radius:2px">KEY</span> word</div>
-                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">Hormozi</div>
-                </div>
-              </div>
+          <div class="exp-section">
+            <div class="exp-row">
+              <select class="exp-sel"><option>1080p</option><option>720p</option><option>4K</option></select>
+              <select class="exp-sel"><option>MP4</option><option>MOV</option><option>WebM</option></select>
             </div>
-
-            <div style="margin-bottom:.8rem">
-              <label style="display:block;font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem">Position</label>
-              <div style="display:flex;gap:.4rem">
-                <button class="filter-btn" id="capPosTop" onclick="setCaptionPosition('top',this)" style="flex:1;font-size:.75rem">Top</button>
-                <button class="filter-btn selected" id="capPosBottom" onclick="setCaptionPosition('bottom',this)" style="flex:1;font-size:.75rem">Bottom</button>
-                <button class="filter-btn" id="capPosCenter" onclick="setCaptionPosition('center',this)" style="flex:1;font-size:.75rem">Center</button>
-              </div>
-            </div>
-
-            <div id="captionProgress" style="display:none;margin-bottom:.8rem">
-              <div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden">
-                <div id="captionProgressBar" style="width:0%;height:100%;background:var(--gradient-1);transition:width 0.3s"></div>
-              </div>
-              <div id="captionProgressText" style="font-size:.7rem;color:var(--text-muted);margin-top:.3rem;text-align:center">Extracting speech...</div>
-            </div>
-
-            <button class="tool-action-button" id="applyCaptionsBtn" disabled>💬 Generate & Apply Captions</button>
-            <p style="font-size:.7rem;color:var(--text-muted);margin-top:.5rem;text-align:center">Uses OpenAI Whisper to extract speech and burn animated captions</p>
-          </div>
-
-          <!-- B-Roll Panel -->
-          <div class="tool-panel" id="brollPanel">
-            <div class="panel-title">🎬 B-Roll Overlay</div>
-            <div class="upload-section" style="margin-bottom:12px">
-              <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:8px">Add a B-Roll clip to overlay on your main video. You can drag to reposition and resize it on the preview.</p>
-              <input type="file" id="brollFileInput" accept="video/*,image/*" style="display:none">
-              <button type="button" class="action-button" id="brollUploadBtn" style="width:100%;margin-bottom:8px">📁 Select B-Roll File</button>
-              <!-- B-Roll Source Tabs -->
-              <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
-                <button type="button" class="action-button broll-tab active" data-broll-tab="upload" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--primary);color:#fff;border:1px solid var(--primary)">📁 Upload</button>
-                <button type="button" class="action-button broll-tab" data-broll-tab="ai" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1)">✨ AI Generate</button>
-                <button type="button" class="action-button broll-tab" data-broll-tab="stock" style="flex:1;min-width:80px;padding:6px 8px;font-size:.78rem;background:linear-gradient(135deg,#10B981,#34D399);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">🎥 Free Stock</button>
-              </div>
-              <!-- AI Generate B-Roll Section -->
-              <div id="brollAiSection" style="display:none;margin-bottom:10px">
-                <p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">Describe the B-Roll you want and AI will generate it for you.</p>
-                <textarea id="brollAiPrompt" placeholder="e.g. Aerial view of a city skyline at sunset, cinematic footage of ocean waves..." style="width:100%;padding:10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.85rem;resize:vertical;min-height:60px;font-family:inherit"></textarea>
-                <div style="display:flex;gap:8px;margin-top:8px">
-                  <select id="brollAiStyle" style="flex:1;padding:8px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.82rem">
-                    <option value="cinematic">Cinematic</option>
-                    <option value="documentary">Documentary</option>
-                    <option value="nature">Nature</option>
-                    <option value="urban">Urban</option>
-                    <option value="abstract">Abstract</option>
-                    <option value="tech">Technology</option>
-                  </select>
-                  <button type="button" id="brollAiGenerateBtn" style="padding:8px 16px;background:linear-gradient(135deg,#8B5CF6,#EC4899);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.82rem;white-space:nowrap">✨ Generate</button>
-                </div>
-                <div id="brollAiResult" style="display:none;margin-top:8px;padding:10px;background:var(--dark-2);border-radius:8px;text-align:center">
-                  <p style="font-size:.8rem;color:var(--text-muted)">Generating B-Roll...</p>
-                </div>
-              </div>
-              <!-- Free Stock B-Roll Section -->
-              <div id="brollStockSection" style="display:none;margin-bottom:10px">
-                <p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">Search free B-Roll clips from Pexels, Pixabay, and other platforms.</p>
-                <div style="display:flex;gap:6px;margin-bottom:8px;overflow:visible">
-                  <input type="text" id="brollStockSearch" placeholder="Search free B-Roll videos..." style="flex:1;min-width:0;padding:8px 10px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:8px;color:var(--text-primary);font-size:.82rem">
-                  <button type="button" id="brollStockSearchBtn" style="padding:8px 12px;background:linear-gradient(135deg,#10B981,#34D399);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.78rem;white-space:nowrap;flex-shrink:0">🔍 Search</button>
-                </div>
-                <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='nature';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🌿 Nature</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='city';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🏙️ City</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='technology';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">💻 Tech</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='food';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🍽️ Food</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='people';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">👥 People</button>
-                  <button type="button" class="stock-tag" onclick="document.getElementById('brollStockSearch').value='ocean';document.getElementById('brollStockSearchBtn').click()" style="padding:5px 12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(139,92,246,0.15));border:1px solid rgba(108,58,237,0.3);border-radius:20px;color:var(--primary,#6C3AED);font-size:.75rem;cursor:pointer;font-weight:500;transition:all 0.2s">🌊 Ocean</button>
-                </div>
-                <div id="brollStockResults" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-height:300px;overflow-y:auto">
-                  <p style="grid-column:1/-1;text-align:center;font-size:.8rem;color:var(--text-muted);padding:20px 0">Search for free B-Roll clips above</p>
-                </div>
-              </div>
-              <div id="brollControls" style="display:none">
-                <div class="slider-group">
-                  <div class="slider-label"><span>Width %</span><span class="slider-value" id="brollWidthVal">30%</span></div>
-                  <input type="range" class="slider" id="brollWidth" min="10" max="100" value="30">
-                </div>
-                <div class="slider-group">
-                  <div class="slider-label"><span>Opacity</span><span class="slider-value" id="brollOpacityVal">100%</span></div>
-                  <input type="range" class="slider" id="brollOpacity" min="0" max="100" value="100">
-                </div>
-                <label class="dropdown-label">Position</label>
-                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0">
-                  <button class="broll-pos-btn" data-pos="top-left" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↖ Top Left</button>
-                  <button class="broll-pos-btn" data-pos="top-center" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↑ Top</button>
-                  <button class="broll-pos-btn" data-pos="top-right" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↗ Top Right</button>
-                  <button class="broll-pos-btn" data-pos="center-left" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">← Left</button>
-                  <button class="broll-pos-btn" data-pos="center" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--primary);color:white;cursor:pointer;font-size:.75rem">● Center</button>
-                  <button class="broll-pos-btn" data-pos="center-right" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">→ Right</button>
-                  <button class="broll-pos-btn" data-pos="bottom-left" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↙ Bottom Left</button>
-                  <button class="broll-pos-btn" data-pos="bottom-center" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↓ Bottom</button>
-                  <button class="broll-pos-btn" data-pos="bottom-right" style="padding:8px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--surface);cursor:pointer;font-size:.75rem">↘ Bottom Right</button>
-                </div>
-                <p style="font-size:.75rem;color:var(--text-muted);margin-top:4px">💡 Tip: You can also drag the B-Roll directly on the video preview to position it anywhere.</p>
-                <button type="button" class="action-button" id="applyBrollBtn" style="width:100%;margin-top:10px">Apply B-Roll</button>
-                <button type="button" class="action-button" id="removeBrollBtn" style="width:100%;margin-top:6px;background:transparent;border:1px solid #EF4444;color:#EF4444">Remove B-Roll</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- AI Hook Panel -->
-          <div class="tool-panel" id="aihookPanel">
-            <div class="panel-title">🪝 AI Hook Generator</div>
-            <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">Generate an attention-grabbing hook for the first few seconds of your video using AI.</p>
-            <label class="dropdown-label">Hook Style</label>
-            <select class="dropdown" id="hookStyleSelect" style="width:100%;margin-bottom:10px">
-              <option value="question">❓ Question Hook</option>
-              <option value="statistic">📊 Shocking Statistic</option>
-              <option value="story">📖 Story Opener</option>
-              <option value="controversial">🔥 Bold Statement</option>
-              <option value="curiosity">🧠 Curiosity Gap</option>
-              <option value="pain">😤 Pain Point</option>
-            </select>
-            <label class="dropdown-label">Video Topic (optional)</label>
-            <textarea id="hookTopicInput" placeholder="Describe your video topic to get a more relevant hook..." style="width:100%;min-height:60px;padding:10px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.85rem;resize:vertical;margin-bottom:10px"></textarea>
-            <button type="button" class="action-button" id="generateHookBtn" style="width:100%">✨ Generate AI Hook</button>
-            <div id="hookResult" style="display:none;margin-top:12px;padding:12px;background:var(--surface);border-radius:8px;border:1px solid var(--border-subtle)">
-              <label class="dropdown-label">Generated Hook</label>
-              <div id="hookText" style="font-size:.9rem;color:var(--text-primary);margin:6px 0;line-height:1.5"></div>
-              <div style="display:flex;gap:8px;margin-top:8px">
-                <button type="button" class="action-button" id="applyHookBtn" style="flex:1">Apply to Video</button>
-                <button type="button" class="action-button" id="regenerateHookBtn" style="flex:1;background:transparent;border:1px solid var(--primary);color:var(--primary)">🔄 Regenerate</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Brand Template Panel -->
-          <div class="tool-panel" id="brandtemplatePanel">
-            <div class="panel-title">🎨 Brand Template</div>
-            <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">Apply your brand's visual identity to the video — colors, fonts, logo watermark, and intro/outro.</p>
-            <div style="margin-bottom:12px">
-              <label class="dropdown-label">Logo Watermark</label>
-              <input type="file" id="brandLogoInput" accept="image/*" style="display:none">
-              <button type="button" class="action-button" id="brandLogoBtn" style="width:100%;margin-bottom:6px">📎 Upload Logo</button>
-              <div style="display:flex;gap:8px">
-                <select class="dropdown" id="logoPositionSelect" style="flex:1;font-size:.8rem">
-                  <option value="top-right">Top Right</option>
-                  <option value="top-left">Top Left</option>
-                  <option value="bottom-right">Bottom Right</option>
-                  <option value="bottom-left">Bottom Left</option>
-                </select>
-                <div style="flex:1">
-                  <label class="dropdown-label" style="font-size:.75rem">Logo Size</label>
-                  <input type="range" class="slider" id="logoSize" min="5" max="30" value="15">
-                </div>
-              </div>
-            </div>
-            <div style="margin-bottom:12px">
-              <label class="dropdown-label">Brand Colors</label>
-              <div style="display:flex;gap:8px;margin-top:4px">
-                <div style="flex:1"><label style="font-size:.7rem;color:var(--text-muted)">Primary</label><input type="color" id="brandPrimaryColor" value="#6C3AED" style="width:100%;height:32px;border:none;border-radius:6px;cursor:pointer"></div>
-                <div style="flex:1"><label style="font-size:.7rem;color:var(--text-muted)">Secondary</label><input type="color" id="brandSecondaryColor" value="#EC4899" style="width:100%;height:32px;border:none;border-radius:6px;cursor:pointer"></div>
-                <div style="flex:1"><label style="font-size:.7rem;color:var(--text-muted)">Text</label><input type="color" id="brandTextColor" value="#FFFFFF" style="width:100%;height:32px;border:none;border-radius:6px;cursor:pointer"></div>
-              </div>
-            </div>
-            <div style="margin-bottom:12px">
-              <label class="dropdown-label">Font Family</label>
-              <select class="dropdown" id="brandFontSelect" style="width:100%">
-                <option value="Inter">Inter (Modern)</option>
-                <option value="Montserrat">Montserrat (Bold)</option>
-                <option value="Playfair Display">Playfair Display (Elegant)</option>
-                <option value="Roboto">Roboto (Clean)</option>
-                <option value="Bebas Neue">Bebas Neue (Impact)</option>
-              </select>
-            </div>
-            <button type="button" class="action-button" id="applyBrandBtn" style="width:100%">✨ Apply Brand Template</button>
-          </div>
-
-          <!-- Transcript Panel -->
-          <div class="tool-panel" id="transcriptPanel">
-            <div class="panel-title">📜 Transcript</div>
-            <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:10px">View and edit the transcript of your video. Auto-generate using AI or type manually.</p>
-            <div style="display:flex;gap:8px;margin-bottom:10px">
-              <button type="button" class="action-button" id="autoTranscriptBtn" style="flex:1">🤖 Auto-Generate</button>
-              <button type="button" class="action-button" id="clearTranscriptBtn" style="flex:1;background:transparent;border:1px solid var(--border-subtle);color:var(--text-secondary)">🗑️ Clear</button>
-            </div>
-            <div id="transcriptStatus" style="display:none;padding:10px;border-radius:8px;background:var(--primary-light);margin-bottom:10px;font-size:.85rem;text-align:center"></div>
-            <textarea id="transcriptText" placeholder="Transcript will appear here after auto-generating, or you can type/paste your own transcript..." style="width:100%;min-height:200px;padding:12px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.85rem;resize:vertical;line-height:1.6;font-family:inherit"></textarea>
-            <button type="button" class="action-button" id="saveTranscriptBtn" style="width:100%;margin-top:8px">💾 Save Transcript</button>
-          </div>
-
-          <div class="export-panel">
-            <div class="panel-title">📤 Export Settings</div>
-
-            <div class="dropdown-group">
-              <label class="dropdown-label">Resolution</label>
-              <select class="dropdown" id="resolution">
-                <option value="1080p">1080p (1920x1080)</option>
-                <option value="720p" selected>720p (1280x720)</option>
-                <option value="4k">4K (3840x2160)</option>
-                <option value="480p">480p (854x480)</option>
-              </select>
-            </div>
-
-            <div class="dropdown-group">
-              <label class="dropdown-label">Format</label>
-              <select class="dropdown" id="format">
-                <option value="mp4" selected>MP4 (H.264)</option>
-                <option value="mov">MOV (Apple)</option>
-                <option value="webm">WebM (VP9)</option>
-                <option value="gif">GIF (Animated)</option>
-                <option value="premiere">Adobe Premiere (XML)</option>
-              </select>
-            </div>
-
-            <button class="export-button" id="exportButton" disabled>📥 Export Video</button>
+            <button class="exp-go" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export Video</button>
           </div>
         </div>
       </div>
@@ -1369,6 +989,15 @@ router.get('/', requireAuth, async (req, res) => {
   </div>
 
   <script>
+    // ═══ CINEMA SUITE PRO: Category tab switching ═══
+    function swCat2(el, cat) {
+      document.querySelectorAll('.cat-btn').forEach(function(t) { t.classList.remove('on'); });
+      el.classList.add('on');
+      document.querySelectorAll('.cat-content-new').forEach(function(c) { c.classList.remove('active'); });
+      var target = document.getElementById('cat-' + cat + '2');
+      if (target) target.classList.add('active');
+    }
+
     // ═══ MEDIA LIBRARY: Populate file grid ═══
     function populateMediaGrid() {
       const grid = document.getElementById('mediaFileGrid');
