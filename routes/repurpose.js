@@ -2455,7 +2455,7 @@ router.get('/history', requireAuth, (req, res) => {
 
           <div class="empty-state" id="emptyState" style="display: none;">
             <h2>No content yet</h2>
-            <p>Start by repurposing a video to see it here</p>
+            <p>Start by creating a video to see it here</p>
           </div>
 
           <div class="pagination">
