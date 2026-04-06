@@ -56,7 +56,7 @@ router.get('/', requireAuth, (req, res) => {
   <div class="layout">
     <div class="sidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Splicora</a>
       </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
@@ -76,13 +76,13 @@ router.get('/', requireAuth, (req, res) => {
       <div class="section">
         <div class="empty-icon">&#x1F4C5;</div>
         <div class="empty-title">No scheduled posts yet</div>
-        <div class="empty-desc">Once you repurpose a video, you can schedule posts to go out automatically.</div>
-        <a href="/repurpose" class="cta-btn">&#x1F504; Repurpose a Video</a>
+        <div class="empty-desc">Once you create a video, you can schedule posts to go out automatically.</div>
+        <a href="/repurpose" class="cta-btn">&#x1F504; create a video</a>
       </div>
       <div class="how-it-works">
         <h2>How Scheduling Works</h2>
         <div class="steps">
-          <div class="step"><div class="step-num">1</div><h3>Repurpose</h3><p>Upload or paste a video link and generate content for multiple platforms.</p></div>
+          <div class="step"><div class="step-num">1</div><h3>Create</h3><p>Upload or paste a video link and generate content for multiple platforms.</p></div>
           <div class="step"><div class="step-num">2</div><h3>Schedule</h3><p>Pick a date and time for each platform post to go live.</p></div>
           <div class="step"><div class="step-num">3</div><h3>Publish</h3><p>We auto-publish your content at the scheduled time.</p></div>
         </div>
