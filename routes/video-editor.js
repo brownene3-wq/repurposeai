@@ -411,6 +411,20 @@ router.get('/', requireAuth, async (req, res) => {
     .video-container .tools-section{display:none!important}
     .video-container{flex:1;display:flex;flex-direction:column;overflow:hidden}
     .upload-zone{flex:1;background:#0a0612!important}
+/* ═══ FULLSCREEN VIDEO PREVIEW ═══ */
+.fullscreen-btn{position:absolute;top:10px;right:10px;width:36px;height:36px;border-radius:8px;background:rgba(124,58,237,.7);border:1px solid rgba(124,58,237,.4);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:100;transition:background .2s,transform .2s;backdrop-filter:blur(8px)}
+.fullscreen-btn:hover{background:rgba(124,58,237,.95);transform:scale(1.08)}
+.fullscreen-btn svg{width:18px;height:18px}
+.editor-container.fullscreen-mode .media-library,.editor-container.fullscreen-mode .editor-sidebar{display:none!important}
+.editor-container.fullscreen-mode{grid-template-columns:1fr!important}
+.editor-container.fullscreen-mode .editor-main{grid-column:1!important}
+.editor-container.fullscreen-mode .editor-topbar{grid-column:1!important}
+.editor-container.fullscreen-mode #timelineContainer{grid-column:1!important}
+.exit-fullscreen-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(12,8,20,.85);border:1px solid rgba(124,58,237,.3);border-radius:10px;padding:6px 16px;display:flex;align-items:center;gap:10px;z-index:200;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .3s}
+.editor-container.fullscreen-mode .editor-main:hover .exit-fullscreen-bar{opacity:1;pointer-events:auto}
+.exit-fullscreen-bar span{color:rgba(255,255,255,.6);font-size:12px}
+.exit-fullscreen-btn{background:rgba(124,58,237,.7);border:none;color:#fff;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;transition:background .2s}
+.exit-fullscreen-btn:hover{background:rgba(124,58,237,1)}
 
     /* ═══ TOP BAR ═══ */
     .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 12px;gap:5px;height:38px;z-index:100}
@@ -1004,6 +1018,30 @@ router.get('/', requireAuth, async (req, res) => {
       var ec = document.querySelector(".editor-container");
       var tl = document.getElementById("timelineContainer");
       if(ec && tl && tl.parentElement !== ec) ec.appendChild(tl);
+    })();
+
+    // ═══ CINEMA SUITE PRO: Fullscreen video preview toggle ═══
+    (function(){
+      var em = document.querySelector(".editor-main");
+      var ec = document.querySelector(".editor-container");
+      if(!em || !ec) return;
+      em.style.position = "relative";
+      var expandSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+      var shrinkSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+      var btn = document.createElement("button");
+      btn.className = "fullscreen-btn";
+      btn.title = "Fullscreen preview";
+      btn.innerHTML = expandSvg;
+      em.appendChild(btn);
+      var bar = document.createElement("div");
+      bar.className = "exit-fullscreen-bar";
+      bar.innerHTML = '<span>Press Esc or</span><button class="exit-fullscreen-btn">Exit Fullscreen</button>';
+      em.appendChild(bar);
+      function enterFS(){ ec.classList.add("fullscreen-mode"); btn.innerHTML = shrinkSvg; btn.title = "Exit fullscreen"; }
+      function exitFS(){ ec.classList.remove("fullscreen-mode"); btn.innerHTML = expandSvg; btn.title = "Fullscreen preview"; }
+      btn.addEventListener("click", function(){ ec.classList.contains("fullscreen-mode") ? exitFS() : enterFS(); });
+      bar.querySelector(".exit-fullscreen-btn").addEventListener("click", exitFS);
+      document.addEventListener("keydown", function(e){ if(e.key === "Escape" && ec.classList.contains("fullscreen-mode")) exitFS(); });
     })();
 
     // ═══ CINEMA SUITE PRO: Category tab switching ═══
