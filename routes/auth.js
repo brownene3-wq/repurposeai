@@ -8,7 +8,7 @@ const { sendPasswordResetEmail } = require('../utils/email');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'repurposeai-secret-key-change-in-production';
 const RESET_SECRET = process.env.JWT_SECRET ? process.env.JWT_SECRET + '-reset' : 'repurposeai-reset-secret';
-const BASE_URL = process.env.BASE_URL || 'https://repurposeai.ai';
+const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 // OAuth Config
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -219,7 +219,7 @@ function authPage(type) {
  <div class="auth-form-container">
  <a href="/" class="auth-logo">&#x26A1; Splicora</a>
  <h1>${isLogin ? 'Welcome Back' : 'Create Account'}</h1>
- <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start repurposing content in seconds'}</p>
+ <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start creating content in seconds'}</p>
  <div class="error-msg ${new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('error') ? 'show' : ''}" id="errorMsg"></div>
 
  <div class="oauth-buttons">
