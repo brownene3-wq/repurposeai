@@ -1040,7 +1040,7 @@ router.get('/', requireAuth, async (req, res) => {
       function enterFS(){ ec.classList.add("fullscreen-mode"); btn.innerHTML = shrinkSvg; btn.title = "Exit fullscreen"; }
       function exitFS(){ ec.classList.remove("fullscreen-mode"); btn.innerHTML = expandSvg; btn.title = "Fullscreen preview"; }
       btn.addEventListener("click", function(){ ec.classList.contains("fullscreen-mode") ? exitFS() : enterFS(); });
-      bar.querySelector(".exit-fullscreen-btn").addEventListener("click", exitFS);
+      bar.querySelector(".exit-fullscreen-btn")?.addEventListener("click", exitFS);
       document.addEventListener("keydown", function(e){ if(e.key === "Escape" && ec.classList.contains("fullscreen-mode")) exitFS(); });
     })();
 
@@ -1279,7 +1279,7 @@ function showToast(message, type = 'success') {
     const videoPlayer = document.getElementById('videoPlayer');
     const videoPreviewArea = document.getElementById('videoPreviewArea');
 
-    document.querySelector('.upload-button').addEventListener('click', (e) => {
+    document.querySelector('.upload-button')?.addEventListener('click', (e) => {
       e.stopPropagation();
       fileInput.click();
     });
@@ -1343,37 +1343,37 @@ function showToast(message, type = 'success') {
         videoDuration = data.duration || 0;
         initTimeline();
 
-        videoPlayer.src = data.serveUrl;
-        videoPlayer.addEventListener('loadedmetadata', function() {
+        videoPlayer?.src = data.serveUrl;
+        videoPlayer?.addEventListener('loadedmetadata', function() {
             // Show filmstrip when video loads
             if (typeof showFilmstrip === "function") showFilmstrip(this.duration);
 
-          if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
-            videoDuration = videoPlayer.duration;
+          if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
+            videoDuration = videoPlayer?.duration;
           }
         });
         uploadZone.classList.add('has-video');
         videoPreviewArea.classList.add('has-video');
-        document.getElementById('trimButton').disabled = false;
-        document.getElementById('exportButton').disabled = false;
-        document.getElementById('splitButton').disabled = false;
-        document.getElementById('filterButton').disabled = false;
-        document.getElementById('speedButton').disabled = false;
-        document.getElementById('audioButton').disabled = false;
-        document.getElementById('previewVoiceButton').disabled = false;
-        document.getElementById('voiceoverButton').disabled = false;
-        document.getElementById('vtPreviewBtn').disabled = false;
-        document.getElementById('vtApplyBtn').disabled = false;
-        document.getElementById('textButton').disabled = false;
-        document.getElementById('speedSelect').disabled = false;
-        document.getElementById('addMusicButton').disabled = false;
-        document.getElementById('removeFillerWordsBtn').disabled = false;
-        document.getElementById('removePausesBtn').disabled = false;
-        document.getElementById('applyTransitionButton').disabled = false;
-        document.getElementById('applyCaptionsBtn').disabled = false;
+        document.getElementById('trimButton')?.disabled = false;
+        document.getElementById('exportButton')?.disabled = false;
+        document.getElementById('splitButton')?.disabled = false;
+        document.getElementById('filterButton')?.disabled = false;
+        document.getElementById('speedButton')?.disabled = false;
+        document.getElementById('audioButton')?.disabled = false;
+        document.getElementById('previewVoiceButton')?.disabled = false;
+        document.getElementById('voiceoverButton')?.disabled = false;
+        document.getElementById('vtPreviewBtn')?.disabled = false;
+        document.getElementById('vtApplyBtn')?.disabled = false;
+        document.getElementById('textButton')?.disabled = false;
+        document.getElementById('speedSelect')?.disabled = false;
+        document.getElementById('addMusicButton')?.disabled = false;
+        document.getElementById('removeFillerWordsBtn')?.disabled = false;
+        document.getElementById('removePausesBtn')?.disabled = false;
+        document.getElementById('applyTransitionButton')?.disabled = false;
+        document.getElementById('applyCaptionsBtn')?.disabled = false;
 
         // Set end time to video duration
-        document.getElementById('endTime').value = Math.round(videoDuration);
+        document.getElementById('endTime')?.value = Math.round(videoDuration);
 
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
@@ -1389,43 +1389,43 @@ function showToast(message, type = 'success') {
     document.querySelectorAll('.slider').forEach(slider => {
       if (slider.id === 'volumeSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('volumeValue').textContent = this.value + '%';
+          document.getElementById('volumeValue')?.textContent = this.value + '%';
         });
       } else if (slider.id === 'fadeInSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('fadeInValue').textContent = this.value + 's';
+          document.getElementById('fadeInValue')?.textContent = this.value + 's';
         });
       } else if (slider.id === 'fadeOutSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('fadeOutValue').textContent = this.value + 's';
+          document.getElementById('fadeOutValue')?.textContent = this.value + 's';
         });
       } else if (slider.id === 'bassSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('bassValue').textContent = this.value + 'dB';
+          document.getElementById('bassValue')?.textContent = this.value + 'dB';
         });
       } else if (slider.id === 'trebleSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('trebleValue').textContent = this.value + 'dB';
+          document.getElementById('trebleValue')?.textContent = this.value + 'dB';
         });
       } else if (slider.id === 'voiceVolumeSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('voiceVolumeValue').textContent = this.value + '%';
+          document.getElementById('voiceVolumeValue')?.textContent = this.value + '%';
         });
       } else if (slider.id === 'fontSize') {
         slider.addEventListener('input', function() {
-          document.getElementById('fontSizeValue').textContent = this.value + 'px';
+          document.getElementById('fontSizeValue')?.textContent = this.value + 'px';
         });
       } else if (slider.id === 'musicVolume') {
         slider.addEventListener('input', function() {
-          document.getElementById('musicVolumeValue').textContent = this.value + '%';
+          document.getElementById('musicVolumeValue')?.textContent = this.value + '%';
         });
       } else if (slider.id === 'vtStability') {
         slider.addEventListener('input', function() {
-          document.getElementById('vtStabilityValue').textContent = this.value + '%';
+          document.getElementById('vtStabilityValue')?.textContent = this.value + '%';
         });
       } else if (slider.id === 'vtSimilarity') {
         slider.addEventListener('input', function() {
-          document.getElementById('vtSimilarityValue').textContent = this.value + '%';
+          document.getElementById('vtSimilarityValue')?.textContent = this.value + '%';
         });
       } else if (slider.id === 'brightness' || slider.id === 'contrast' || slider.id === 'saturation') {
         slider.addEventListener('input', function() {
@@ -1447,10 +1447,10 @@ function showToast(message, type = 'success') {
     });
 
     function applyVideoFilterPreview() {
-      var b = parseInt(document.getElementById('brightness').value) || 100;
-      var c = parseInt(document.getElementById('contrast').value) || 100;
-      var s = parseInt(document.getElementById('saturation').value) || 100;
-      videoPlayer.style.filter = 'brightness(' + (b / 100) + ') contrast(' + (c / 100) + ') saturate(' + (s / 100) + ')';
+      var b = parseInt(document.getElementById('brightness')?.value) || 100;
+      var c = parseInt(document.getElementById('contrast')?.value) || 100;
+      var s = parseInt(document.getElementById('saturation')?.value) || 100;
+      videoPlayer?.style.filter = 'brightness(' + (b / 100) + ') contrast(' + (c / 100) + ') saturate(' + (s / 100) + ')';
     }
 
     // Tool panel switching
@@ -1527,7 +1527,7 @@ function showToast(message, type = 'success') {
       document.querySelectorAll('[data-track-id]').forEach(function(el) { el.style.borderColor = 'rgba(255,255,255,0.1)'; });
       element.style.borderColor = 'var(--primary)';
       selectedMusicFile = { id: trackId, name: trackName, downloadUrl: downloadUrl || null };
-      document.getElementById('addMusicButton').disabled = false;
+      document.getElementById('addMusicButton')?.disabled = false;
       showToast('Selected: ' + trackName, 'success');
     };
 
@@ -1587,18 +1587,18 @@ function showToast(message, type = 'success') {
     };
 
     // Custom music file upload
-    document.getElementById('customMusicFile').addEventListener('change', function(e) {
+    document.getElementById('customMusicFile')?.addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (file) {
         selectedMusicFile = { name: file.name, file: file };
-        document.getElementById('addMusicButton').disabled = false;
+        document.getElementById('addMusicButton')?.disabled = false;
         showToast('Selected: ' + file.name, 'success');
       }
     });
 
     // Music search with debounce
     let musicSearchTimeout = null;
-    document.getElementById('musicSearch').addEventListener('input', function() {
+    document.getElementById('musicSearch')?.addEventListener('input', function() {
       const query = this.value.trim();
       clearTimeout(musicSearchTimeout);
       musicSearchTimeout = setTimeout(function() {
@@ -1624,7 +1624,7 @@ function showToast(message, type = 'success') {
       });
     });
 
-    document.getElementById('aspectRatioSelect').addEventListener('change', function() {
+    document.getElementById('aspectRatioSelect')?.addEventListener('change', function() {
       const ratio = this.value;
       const vc = document.querySelector('.video-container');
       if (!vc) return;
@@ -1648,7 +1648,7 @@ function showToast(message, type = 'success') {
     });
 
     // Layout Mode handler
-    document.getElementById('layoutSelect').addEventListener('change', function() {
+    document.getElementById('layoutSelect')?.addEventListener('change', function() {
       const layout = this.value;
       const vc = document.querySelector('.video-container');
       const vp = document.getElementById('videoPlayer');
@@ -1716,13 +1716,13 @@ function showToast(message, type = 'success') {
     });
 
     // Transition duration slider
-    document.getElementById('transitionDuration').addEventListener('input', function() {
-      document.getElementById('transitionDurationValue').textContent = this.value + 's';
+    document.getElementById('transitionDuration')?.addEventListener('input', function() {
+      document.getElementById('transitionDurationValue')?.textContent = this.value + 's';
     });
 
     // Apply transitions handler
     // Brand Template handler
-    document.getElementById('applyBrandBtn').addEventListener('click', async () => {
+    document.getElementById('applyBrandBtn')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
@@ -1735,12 +1735,12 @@ function showToast(message, type = 'success') {
       try {
         const formData = new FormData();
         formData.append('filename', currentVideoFile.filename);
-        formData.append('primaryColor', document.getElementById('brandPrimaryColor').value);
-        formData.append('secondaryColor', document.getElementById('brandSecondaryColor').value);
-        formData.append('textColor', document.getElementById('brandTextColor').value);
-        formData.append('fontFamily', document.getElementById('brandFontSelect').value);
-        formData.append('logoPosition', document.getElementById('logoPositionSelect').value);
-        formData.append('logoSize', document.getElementById('logoSizeSelect') ? document.getElementById('logoSizeSelect').value : 'medium');
+        formData.append('primaryColor', document.getElementById('brandPrimaryColor')?.value);
+        formData.append('secondaryColor', document.getElementById('brandSecondaryColor')?.value);
+        formData.append('textColor', document.getElementById('brandTextColor')?.value);
+        formData.append('fontFamily', document.getElementById('brandFontSelect')?.value);
+        formData.append('logoPosition', document.getElementById('logoPositionSelect')?.value);
+        formData.append('logoSize', document.getElementById('logoSizeSelect') ? document.getElementById('logoSizeSelect')?.value : 'medium');
 
         // Attach logo file if selected
         var logoInput = document.getElementById('brandLogoInput');
@@ -1760,7 +1760,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         showToast('Brand template applied!', 'success');
       } catch (error) {
@@ -1772,23 +1772,23 @@ function showToast(message, type = 'success') {
     });
 
     // Brand logo upload trigger
-    document.getElementById('brandLogoBtn').addEventListener('click', () => {
-      document.getElementById('brandLogoInput').click();
+    document.getElementById('brandLogoBtn')?.addEventListener('click', () => {
+      document.getElementById('brandLogoInput')?.click();
     });
-    document.getElementById('brandLogoInput').addEventListener('change', (e) => {
+    document.getElementById('brandLogoInput')?.addEventListener('change', (e) => {
       if (e.target.files[0]) {
-        document.getElementById('brandLogoBtn').innerHTML = '📎 ' + e.target.files[0].name;
+        document.getElementById('brandLogoBtn')?.innerHTML = '📎 ' + e.target.files[0].name;
       }
     });
 
-    document.getElementById('applyTransitionButton').addEventListener('click', async () => {
+    document.getElementById('applyTransitionButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
       }
 
-      const autoTransitions = document.getElementById('autoTransitions').checked;
-      const duration = parseFloat(document.getElementById('transitionDuration').value) || 0.5;
+      const autoTransitions = document.getElementById('autoTransitions')?.checked;
+      const duration = parseFloat(document.getElementById('transitionDuration')?.value) || 0.5;
 
       const button = document.getElementById('applyTransitionButton');
       button.disabled = true;
@@ -1810,7 +1810,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         showToast('Transitions applied successfully!', 'success');
       } catch (error) {
         showToast('Failed: ' + error.message, 'error');
@@ -1838,7 +1838,7 @@ function showToast(message, type = 'success') {
       captionPosition = pos;
     };
 
-    document.getElementById('applyCaptionsBtn').addEventListener('click', async function() {
+    document.getElementById('applyCaptionsBtn')?.addEventListener('click', async function() {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
@@ -1881,7 +1881,7 @@ function showToast(message, type = 'success') {
 
         var data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         initTimeline();
 
@@ -2112,9 +2112,9 @@ function showToast(message, type = 'success') {
 
         // SKIP position update while dragging OR while seek is in progress
         if (!playheadDragging && !playheadSeeking) {
-          var pct = videoPlayer.currentTime / videoDuration;
+          var pct = videoPlayer?.currentTime / videoDuration;
           var trackRect = trackContent.getBoundingClientRect();
-          var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
+          var containerRect = document.getElementById('timelineTracks')?.getBoundingClientRect();
           var left = (trackRect.left - containerRect.left) + pct * trackRect.width;
           playhead.style.left = left + 'px';
         } else if (lockedLeft !== null) {
@@ -2129,14 +2129,14 @@ function showToast(message, type = 'success') {
     }
 
     // When the video finishes seeking, unlock the playhead so RAF can take over
-    videoPlayer.addEventListener('seeked', function() {
+    videoPlayer?.addEventListener('seeked', function() {
       if (playheadSeeking) {
         // Verify the seek actually landed near where we wanted
-        var seekedPct = videoPlayer.currentTime / videoDuration;
+        var seekedPct = videoPlayer?.currentTime / videoDuration;
         var diff = Math.abs(seekedPct - dragPct);
         if (diff > 0.05 && dragPct > 0.01) {
           // Seek failed or landed far from target — force currentTime again
-          videoPlayer.currentTime = dragPct * videoDuration;
+          videoPlayer?.currentTime = dragPct * videoDuration;
         }
         playheadSeeking = false;
         lockedLeft = null;
@@ -2152,7 +2152,7 @@ function showToast(message, type = 'success') {
       var trackContent = document.getElementById('videoTrackContent');
       if (!trackContent) return null;
       var trackRect = trackContent.getBoundingClientRect();
-      var containerRect = document.getElementById('timelineTracks').getBoundingClientRect();
+      var containerRect = document.getElementById('timelineTracks')?.getBoundingClientRect();
       var pct = Math.max(0, Math.min(1, (clientX - trackRect.left) / trackRect.width));
       return {
         left: (trackRect.left - containerRect.left) + pct * trackRect.width,
@@ -2197,7 +2197,7 @@ function showToast(message, type = 'success') {
         // Now seek the video — but keep playhead LOCKED until seek completes
         if (videoDuration) {
           playheadSeeking = true;
-          videoPlayer.currentTime = dragPct * videoDuration;
+          videoPlayer?.currentTime = dragPct * videoDuration;
           // Safety timeout: if seeked event never fires, unlock after 5s
           setTimeout(function() { if (playheadSeeking) { playheadSeeking = false; lockedLeft = null; } }, 5000);
         }
@@ -2205,7 +2205,7 @@ function showToast(message, type = 'success') {
     });
 
     // --- Click anywhere on timeline tracks to seek ---
-    document.getElementById('timelineTracks').addEventListener('mousedown', function(e) {
+    document.getElementById('timelineTracks')?.addEventListener('mousedown', function(e) {
       if (playheadDragging) return;
       if (e.target.classList.contains('timeline-trim-handle')) return;
       if (!videoDuration) return;
@@ -2222,7 +2222,7 @@ function showToast(message, type = 'success') {
       if (playhead) playhead.style.left = result.left + 'px';
       // Seek the video with lock
       playheadSeeking = true;
-      videoPlayer.currentTime = dragPct * videoDuration;
+      videoPlayer?.currentTime = dragPct * videoDuration;
       setTimeout(function() { if (playheadSeeking) { playheadSeeking = false; lockedLeft = null; } }, 5000);
       // Start dragging so user can keep sliding
       playheadDragging = true;
@@ -2252,14 +2252,14 @@ function showToast(message, type = 'success') {
 
           if (type === 'trimLeft') {
             timelineState.trimStart = Math.min(time, timelineState.trimEnd - 0.5);
-            document.getElementById('startTime').value = Math.round(timelineState.trimStart);
+            document.getElementById('startTime')?.value = Math.round(timelineState.trimStart);
             var leftPct = (timelineState.trimStart / videoDuration) * 100;
-            document.getElementById('trimOverlayLeft').style.width = leftPct + '%';
+            document.getElementById('trimOverlayLeft')?.style.width = leftPct + '%';
           } else {
             timelineState.trimEnd = Math.max(time, timelineState.trimStart + 0.5);
-            document.getElementById('endTime').value = Math.round(timelineState.trimEnd);
+            document.getElementById('endTime')?.value = Math.round(timelineState.trimEnd);
             var rightPct = ((videoDuration - timelineState.trimEnd) / videoDuration) * 100;
-            document.getElementById('trimOverlayRight').style.width = rightPct + '%';
+            document.getElementById('trimOverlayRight')?.style.width = rightPct + '%';
           }
         }
 
@@ -2327,14 +2327,14 @@ function showToast(message, type = 'success') {
     });
 
     // Trim handler
-    document.getElementById('trimButton').addEventListener('click', async () => {
+    document.getElementById('trimButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
       }
 
-      const startTime = parseFloat(document.getElementById('startTime').value) || 0;
-      const endTime = parseFloat(document.getElementById('endTime').value) || videoDuration;
+      const startTime = parseFloat(document.getElementById('startTime')?.value) || 0;
+      const endTime = parseFloat(document.getElementById('endTime')?.value) || videoDuration;
 
       if (startTime >= endTime) {
         showToast('Start time must be less than end time', 'error');
@@ -2360,9 +2360,9 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration;
-        document.getElementById('endTime').value = Math.round(videoDuration);
+        document.getElementById('endTime')?.value = Math.round(videoDuration);
 
         showToast('Video trimmed successfully!', 'success');
       } catch (error) {
@@ -2374,13 +2374,13 @@ function showToast(message, type = 'success') {
     });
 
     // Split handler
-    document.getElementById('splitButton').addEventListener('click', async () => {
+    document.getElementById('splitButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
       }
 
-      const splitTime = videoPlayer ? videoPlayer.currentTime : 0;
+      const splitTime = videoPlayer ? videoPlayer?.currentTime : 0;
       if (!splitTime || splitTime <= 0 || splitTime >= videoDuration) {
         showToast('Move the playhead to where you want to split (between 0 and ' + Math.round(videoDuration) + ' seconds)', 'error');
         return;
@@ -2413,7 +2413,7 @@ function showToast(message, type = 'success') {
     });
 
     // Filter handler
-    document.getElementById('filterButton').addEventListener('click', async () => {
+    document.getElementById('filterButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
@@ -2442,7 +2442,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
 
         showToast('Filter applied successfully!', 'success');
@@ -2455,19 +2455,19 @@ function showToast(message, type = 'success') {
     });
 
     // Speed handler — always applies speed relative to the ORIGINAL upload
-    document.getElementById('speedButton').addEventListener('click', async () => {
+    document.getElementById('speedButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
       }
 
-      const speed = parseFloat(document.getElementById('speedSelect').value);
+      const speed = parseFloat(document.getElementById('speedSelect')?.value);
 
       // If 1x selected, just revert to original video (no FFmpeg needed)
       if (speed === 1) {
         if (originalVideoFile) {
           currentVideoFile = { ...originalVideoFile };
-          videoPlayer.src = originalVideoFile.serveUrl;
+          videoPlayer?.src = originalVideoFile.serveUrl;
           videoDuration = originalVideoFile.duration || videoDuration;
           initTimeline();
           showToast('Speed reset to normal', 'success');
@@ -2496,7 +2496,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         initTimeline();
 
@@ -2510,19 +2510,19 @@ function showToast(message, type = 'success') {
     });
 
     // Audio handler
-    document.getElementById('audioButton').addEventListener('click', async () => {
+    document.getElementById('audioButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
       }
 
-      const volume = parseFloat(document.getElementById('volumeSlider').value);
-      const fadeIn = parseFloat(document.getElementById('fadeInSlider').value);
-      const fadeOut = parseFloat(document.getElementById('fadeOutSlider').value);
-      const bass = parseInt(document.getElementById('bassSlider').value);
-      const treble = parseInt(document.getElementById('trebleSlider').value);
-      const noiseReduction = document.getElementById('noiseReduction').checked;
-      const audioDucking = document.getElementById('audioDucking').checked;
+      const volume = parseFloat(document.getElementById('volumeSlider')?.value);
+      const fadeIn = parseFloat(document.getElementById('fadeInSlider')?.value);
+      const fadeOut = parseFloat(document.getElementById('fadeOutSlider')?.value);
+      const bass = parseInt(document.getElementById('bassSlider')?.value);
+      const treble = parseInt(document.getElementById('trebleSlider')?.value);
+      const noiseReduction = document.getElementById('noiseReduction')?.checked;
+      const audioDucking = document.getElementById('audioDucking')?.checked;
 
       const button = document.getElementById('audioButton');
       button.disabled = true;
@@ -2548,7 +2548,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
 
         showToast('Audio enhanced successfully!', 'success');
@@ -2561,11 +2561,11 @@ function showToast(message, type = 'success') {
     });
 
     // Voiceover preview handler
-    document.getElementById('previewVoiceButton').addEventListener('click', async () => {
-      var script = document.getElementById('voiceoverScript').value.trim();
+    document.getElementById('previewVoiceButton')?.addEventListener('click', async () => {
+      var script = document.getElementById('voiceoverScript')?.value.trim();
       if (!script) { showToast('Please enter a voiceover script', 'error'); return; }
 
-      var voice = document.getElementById('voiceSelect').value;
+      var voice = document.getElementById('voiceSelect')?.value;
       var btn = document.getElementById('previewVoiceButton');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span> Generating...';
@@ -2594,14 +2594,14 @@ function showToast(message, type = 'success') {
     });
 
     // Voiceover apply handler
-    document.getElementById('voiceoverButton').addEventListener('click', async () => {
+    document.getElementById('voiceoverButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) { showToast('Please upload a video first', 'error'); return; }
-      var script = document.getElementById('voiceoverScript').value.trim();
+      var script = document.getElementById('voiceoverScript')?.value.trim();
       if (!script) { showToast('Please enter a voiceover script', 'error'); return; }
 
-      var voice = document.getElementById('voiceSelect').value;
-      var voiceVolume = parseFloat(document.getElementById('voiceVolumeSlider').value);
-      var duckOriginal = document.getElementById('duckOriginal').checked;
+      var voice = document.getElementById('voiceSelect')?.value;
+      var voiceVolume = parseFloat(document.getElementById('voiceVolumeSlider')?.value);
+      var duckOriginal = document.getElementById('duckOriginal')?.checked;
 
       var btn = document.getElementById('voiceoverButton');
       btn.disabled = true;
@@ -2625,7 +2625,7 @@ function showToast(message, type = 'success') {
         }
         var data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         showToast('Voiceover applied successfully!', 'success');
       } catch (error) {
@@ -2639,32 +2639,32 @@ function showToast(message, type = 'success') {
     // Voice Transform: source toggle
     document.querySelectorAll('input[name="vtSource"]').forEach(radio => {
       radio.addEventListener('change', function() {
-        document.getElementById('vtSourceVideoLabel').style.borderColor = this.value === 'video' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
-        document.getElementById('vtSourceUploadLabel').style.borderColor = this.value === 'upload' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
-        document.getElementById('vtUploadArea').style.display = this.value === 'upload' ? 'block' : 'none';
+        document.getElementById('vtSourceVideoLabel')?.style.borderColor = this.value === 'video' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('vtSourceUploadLabel')?.style.borderColor = this.value === 'upload' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('vtUploadArea')?.style.display = this.value === 'upload' ? 'block' : 'none';
       });
     });
-    document.getElementById('vtAudioFile').addEventListener('change', function(e) {
+    document.getElementById('vtAudioFile')?.addEventListener('change', function(e) {
       if (e.target.files.length > 0) {
-        document.getElementById('vtAudioFileName').textContent = '🎵 ' + e.target.files[0].name;
-        document.getElementById('vtAudioFileName').style.display = 'block';
+        document.getElementById('vtAudioFileName')?.textContent = '🎵 ' + e.target.files[0].name;
+        document.getElementById('vtAudioFileName')?.style.display = 'block';
       }
     });
-    document.getElementById('vtStability').addEventListener('input', function() {
-      document.getElementById('vtStabilityValue').textContent = this.value + '%';
+    document.getElementById('vtStability')?.addEventListener('input', function() {
+      document.getElementById('vtStabilityValue')?.textContent = this.value + '%';
     });
-    document.getElementById('vtSimilarity').addEventListener('input', function() {
-      document.getElementById('vtSimilarityValue').textContent = this.value + '%';
+    document.getElementById('vtSimilarity')?.addEventListener('input', function() {
+      document.getElementById('vtSimilarityValue')?.textContent = this.value + '%';
     });
 
     // Voice Transform: apply handler
-    document.getElementById('vtApplyBtn').addEventListener('click', async () => {
+    document.getElementById('vtApplyBtn')?.addEventListener('click', async () => {
       if (!currentVideoFile) { showToast('Please upload a video first', 'error'); return; }
 
       var vtSource = document.querySelector('input[name="vtSource"]:checked').value;
-      var voiceId = document.getElementById('vtVoiceSelect').value;
-      var stability = parseInt(document.getElementById('vtStability').value) / 100;
-      var similarity = parseInt(document.getElementById('vtSimilarity').value) / 100;
+      var voiceId = document.getElementById('vtVoiceSelect')?.value;
+      var stability = parseInt(document.getElementById('vtStability')?.value) / 100;
+      var similarity = parseInt(document.getElementById('vtSimilarity')?.value) / 100;
 
       var btn = document.getElementById('vtApplyBtn');
       var progress = document.getElementById('vtProgress');
@@ -2680,7 +2680,7 @@ function showToast(message, type = 'success') {
       formData.append('source', vtSource);
 
       if (vtSource === 'upload') {
-        var audioFile = document.getElementById('vtAudioFile').files[0];
+        var audioFile = document.getElementById('vtAudioFile')?.files[0];
         if (!audioFile) { showToast('Please upload an audio file', 'error'); return; }
         formData.append('audioFile', audioFile);
       }
@@ -2709,7 +2709,7 @@ function showToast(message, type = 'success') {
 
         var data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         progressBar.style.width = '100%';
         progressText.textContent = 'Voice transformed successfully!';
@@ -2725,7 +2725,7 @@ function showToast(message, type = 'success') {
     });
 
     // Voice Transform: preview handler
-    document.getElementById('vtPreviewBtn').addEventListener('click', async () => {
+    document.getElementById('vtPreviewBtn')?.addEventListener('click', async () => {
       if (!currentVideoFile) { showToast('Please upload a video first', 'error'); return; }
       var btn = document.getElementById('vtPreviewBtn');
       btn.disabled = true;
@@ -2733,9 +2733,9 @@ function showToast(message, type = 'success') {
 
       try {
         var vtSource = document.querySelector('input[name="vtSource"]:checked').value;
-        var voiceId = document.getElementById('vtVoiceSelect').value;
-        var stability = parseInt(document.getElementById('vtStability').value) / 100;
-        var similarity = parseInt(document.getElementById('vtSimilarity').value) / 100;
+        var voiceId = document.getElementById('vtVoiceSelect')?.value;
+        var stability = parseInt(document.getElementById('vtStability')?.value) / 100;
+        var similarity = parseInt(document.getElementById('vtSimilarity')?.value) / 100;
 
         var formData = new FormData();
         formData.append('filename', currentVideoFile.filename);
@@ -2746,7 +2746,7 @@ function showToast(message, type = 'success') {
         formData.append('previewOnly', 'true');
 
         if (vtSource === 'upload') {
-          var audioFile = document.getElementById('vtAudioFile').files[0];
+          var audioFile = document.getElementById('vtAudioFile')?.files[0];
           if (!audioFile) { showToast('Please upload an audio file', 'error'); return; }
           formData.append('audioFile', audioFile);
         }
@@ -2775,20 +2775,20 @@ function showToast(message, type = 'success') {
     });
 
     // Text overlay handler
-    document.getElementById('textButton').addEventListener('click', async () => {
+    document.getElementById('textButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
       }
 
-      const text = document.getElementById('overlayText').value.trim();
+      const text = document.getElementById('overlayText')?.value.trim();
       if (!text) {
         showToast('Please enter text', 'error');
         return;
       }
 
-      const position = document.getElementById('textPosition').value;
-      const fontSize = parseInt(document.getElementById('fontSize').value);
+      const position = document.getElementById('textPosition')?.value;
+      const fontSize = parseInt(document.getElementById('fontSize')?.value);
 
       const button = document.getElementById('textButton');
       button.disabled = true;
@@ -2803,8 +2803,8 @@ function showToast(message, type = 'success') {
             text: text,
             position: position,
             fontSize: fontSize,
-            customX: position === 'custom' ? parseInt(document.getElementById('textPosX').value) : null,
-            customY: position === 'custom' ? parseInt(document.getElementById('textPosY').value) : null
+            customX: position === 'custom' ? parseInt(document.getElementById('textPosX')?.value) : null,
+            customY: position === 'custom' ? parseInt(document.getElementById('textPosY')?.value) : null
           })
         });
 
@@ -2812,7 +2812,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
 
         showToast('Text overlay applied successfully!', 'success');
@@ -2825,7 +2825,7 @@ function showToast(message, type = 'success') {
     });
 
     // Text position dropdown handler
-    document.getElementById('textPosition').addEventListener('change', function() {
+    document.getElementById('textPosition')?.addEventListener('change', function() {
       var customControls = document.getElementById('customPositionControls');
       if (this.value === 'custom') {
         customControls.style.display = 'block';
@@ -2852,15 +2852,15 @@ function showToast(message, type = 'success') {
       var dragMarker = document.createElement('div');
       dragMarker.id = 'textDragMarker';
       dragMarker.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(108,58,237,0.7);color:#fff;padding:4px 10px;border-radius:4px;font-size:14px;pointer-events:none;white-space:nowrap;border:2px solid #6C3AED';
-      dragMarker.textContent = document.getElementById('overlayText').value || 'Text';
+      dragMarker.textContent = document.getElementById('overlayText')?.value || 'Text';
       textDragOverlay.appendChild(dragMarker);
       
       textDragOverlay.addEventListener('click', function(e) {
         var rect = this.getBoundingClientRect();
         var xPercent = Math.round(((e.clientX - rect.left) / rect.width) * 100);
         var yPercent = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-        document.getElementById('textPosX').value = xPercent;
-        document.getElementById('textPosY').value = yPercent;
+        document.getElementById('textPosX')?.value = xPercent;
+        document.getElementById('textPosY')?.value = yPercent;
         dragMarker.style.left = xPercent + '%';
         dragMarker.style.top = yPercent + '%';
         showToast('Position set: ' + xPercent + '%, ' + yPercent + '%', 'success');
@@ -2872,13 +2872,13 @@ function showToast(message, type = 'success') {
     }
     
     // Update drag marker text when input changes
-    document.getElementById('overlayText').addEventListener('input', function() {
+    document.getElementById('overlayText')?.addEventListener('input', function() {
       var marker = document.getElementById('textDragMarker');
       if (marker) marker.textContent = this.value || 'Text';
     });
 
     // Export handler
-    document.getElementById('exportButton').addEventListener('click', async () => {
+    document.getElementById('exportButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
@@ -2889,11 +2889,11 @@ function showToast(message, type = 'success') {
       button.innerHTML = '<span class="spinner"></span> Exporting...';
 
       try {
-        const brightness = parseFloat(document.getElementById('brightness').value);
-        const contrast = parseFloat(document.getElementById('contrast').value);
-        const saturation = parseFloat(document.getElementById('saturation').value);
-        const resolution = document.getElementById('resolution').value;
-        const format = document.getElementById('format').value;
+        const brightness = parseFloat(document.getElementById('brightness')?.value);
+        const contrast = parseFloat(document.getElementById('contrast')?.value);
+        const saturation = parseFloat(document.getElementById('saturation')?.value);
+        const resolution = document.getElementById('resolution')?.value;
+        const format = document.getElementById('format')?.value;
 
         const response = await fetch('/video-editor/export', {
           method: 'POST',
@@ -2928,7 +2928,7 @@ function showToast(message, type = 'success') {
     });
 
     // Add Music handler
-    document.getElementById('addMusicButton').addEventListener('click', async () => {
+    document.getElementById('addMusicButton')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
@@ -2946,7 +2946,7 @@ function showToast(message, type = 'success') {
       try {
         const formData = new FormData();
         formData.append('videoFilename', currentVideoFile.filename);
-        formData.append('musicVolume', document.getElementById('musicVolume').value / 100);
+        formData.append('musicVolume', document.getElementById('musicVolume')?.value / 100);
 
         if (selectedMusicFile.file) {
           formData.append('musicFile', selectedMusicFile.file);
@@ -2966,10 +2966,10 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration;
 
-        addMusicToTimeline(selectedMusicFile.name || 'Music', document.getElementById('musicVolume').value);
+        addMusicToTimeline(selectedMusicFile.name || 'Music', document.getElementById('musicVolume')?.value);
         showToast('Music added successfully!', 'success');
       } catch (error) {
         showToast('Error: ' + error.message, 'error');
@@ -2980,7 +2980,7 @@ function showToast(message, type = 'success') {
     });
 
     // Remove Filler Words handler
-    document.getElementById('removeFillerWordsBtn').addEventListener('click', async () => {
+    document.getElementById('removeFillerWordsBtn')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
@@ -3008,7 +3008,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration;
         progressBar.style.width = '100%';
 
@@ -3025,7 +3025,7 @@ function showToast(message, type = 'success') {
     });
 
     // Remove Pauses handler
-    document.getElementById('removePausesBtn').addEventListener('click', async () => {
+    document.getElementById('removePausesBtn')?.addEventListener('click', async () => {
       if (!currentVideoFile) {
         showToast('Please upload a video first', 'error');
         return;
@@ -3053,7 +3053,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer.src = data.serveUrl;
+        videoPlayer?.src = data.serveUrl;
         videoDuration = data.duration;
         progressBar.style.width = '100%';
 
@@ -3091,17 +3091,17 @@ function showToast(message, type = 'success') {
           showToast('YouTube video imported!');
           currentVideoFile = data;
           videoDuration = data.duration || 0;
-          videoPlayer.src = data.serveUrl;
+          videoPlayer?.src = data.serveUrl;
           if (videoDuration > 0) initTimeline();
-          videoPlayer.addEventListener('loadedmetadata', function() {
-            if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
-              videoDuration = videoPlayer.duration;
+          videoPlayer?.addEventListener('loadedmetadata', function() {
+            if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
+              videoDuration = videoPlayer?.duration;
               initTimeline();
             }
           });
           uploadZone.classList.add('has-video');
           videoPreviewArea.classList.add('has-video');
-          document.getElementById('exportButton').disabled = false;
+          document.getElementById('exportButton')?.disabled = false;
         } catch (err) {
           showToast(err.message, 'error');
         } finally {
@@ -3132,17 +3132,17 @@ function showToast(message, type = 'success') {
                 showToast('Dropbox video imported!');
                 currentVideoFile = data;
                 videoDuration = data.duration || 0;
-                videoPlayer.src = data.serveUrl;
+                videoPlayer?.src = data.serveUrl;
                 if (videoDuration > 0) initTimeline();
-                videoPlayer.addEventListener('loadedmetadata', function() {
-                  if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
-                    videoDuration = videoPlayer.duration;
+                videoPlayer?.addEventListener('loadedmetadata', function() {
+                  if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
+                    videoDuration = videoPlayer?.duration;
                     initTimeline();
                   }
                 });
                 uploadZone.classList.add('has-video');
                 videoPreviewArea.classList.add('has-video');
-                document.getElementById('exportButton').disabled = false;
+                document.getElementById('exportButton')?.disabled = false;
               } catch (err) {
                 showToast(err.message, 'error');
               } finally {
@@ -3191,11 +3191,11 @@ function showToast(message, type = 'success') {
       deleteClipBtn.addEventListener('click', function() {
         if (!currentVideoFile) { showToast('No video loaded', 'error'); return; }
         if (confirm('Are you sure you want to delete this clip?')) {
-          videoPlayer.src = '';
+          videoPlayer?.src = '';
           currentVideoFile = null;
           videoDuration = 0;
           uploadZone.classList.remove('has-video');
-          document.getElementById('exportButton').disabled = true;
+          document.getElementById('exportButton')?.disabled = true;
           showToast('Clip deleted');
         }
       });
@@ -3219,7 +3219,7 @@ function showToast(message, type = 'success') {
     const quickExportBtn = document.getElementById('quickExportBtn');
     if (quickExportBtn) {
       quickExportBtn.addEventListener('click', function() {
-        document.getElementById('exportButton').click();
+        document.getElementById('exportButton')?.click();
       });
     }
 
@@ -3331,11 +3331,11 @@ function showToast(message, type = 'success') {
     const brollWidthSlider = document.getElementById('brollWidth');
     const brollOpacitySlider = document.getElementById('brollOpacity');
     if (brollWidthSlider) brollWidthSlider.addEventListener('input', function() {
-      document.getElementById('brollWidthVal').textContent = this.value + '%';
+      document.getElementById('brollWidthVal')?.textContent = this.value + '%';
       if (brollOverlay) brollOverlay.style.width = this.value + '%';
     });
     if (brollOpacitySlider) brollOpacitySlider.addEventListener('input', function() {
-      document.getElementById('brollOpacityVal').textContent = this.value + '%';
+      document.getElementById('brollOpacityVal')?.textContent = this.value + '%';
       if (brollOverlay) brollOverlay.style.opacity = this.value / 100;
     });
 
@@ -3350,8 +3350,8 @@ function showToast(message, type = 'success') {
     const generateHookBtn = document.getElementById('generateHookBtn');
     if (generateHookBtn) {
       generateHookBtn.addEventListener('click', async function() {
-        const style = document.getElementById('hookStyleSelect').value;
-        const topic = document.getElementById('hookTopicInput').value.trim();
+        const style = document.getElementById('hookStyleSelect')?.value;
+        const topic = document.getElementById('hookTopicInput')?.value.trim();
         this.disabled = true;
         this.textContent = '⏳ Generating...';
         try {
@@ -3362,8 +3362,8 @@ function showToast(message, type = 'success') {
           });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || 'Failed to generate hook');
-          document.getElementById('hookText').textContent = data.hook;
-          document.getElementById('hookResult').style.display = 'block';
+          document.getElementById('hookText')?.textContent = data.hook;
+          document.getElementById('hookResult')?.style.display = 'block';
           showToast('Hook generated!');
         } catch (err) {
           showToast(err.message, 'error');
@@ -3394,7 +3394,7 @@ function showToast(message, type = 'success') {
           });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || 'Transcription failed');
-          document.getElementById('transcriptText').value = data.transcript;
+          document.getElementById('transcriptText')?.value = data.transcript;
           statusEl.textContent = '✅ Transcript generated!';
           setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
           showToast('Transcript generated!');
@@ -3410,7 +3410,7 @@ function showToast(message, type = 'success') {
 
     const clearTranscriptBtn = document.getElementById('clearTranscriptBtn');
     if (clearTranscriptBtn) clearTranscriptBtn.addEventListener('click', () => {
-      document.getElementById('transcriptText').value = '';
+      document.getElementById('transcriptText')?.value = '';
       showToast('Transcript cleared');
     });
 
@@ -3443,9 +3443,9 @@ function showToast(message, type = 'success') {
           this.style.background='var(--primary)';this.style.color='#fff';this.style.borderColor='var(--primary)';
           this.classList.add('active');
           var tabName = this.getAttribute('data-broll-tab');
-          document.getElementById('brollUploadBtn').style.display = tabName==='upload' ? 'block' : 'none';
-          document.getElementById('brollAiSection').style.display = tabName==='ai' ? 'block' : 'none';
-          document.getElementById('brollStockSection').style.display = tabName==='stock' ? 'block' : 'none';
+          document.getElementById('brollUploadBtn')?.style.display = tabName==='upload' ? 'block' : 'none';
+          document.getElementById('brollAiSection')?.style.display = tabName==='ai' ? 'block' : 'none';
+          document.getElementById('brollStockSection')?.style.display = tabName==='stock' ? 'block' : 'none';
         });
       });
 
@@ -3461,9 +3461,9 @@ function showToast(message, type = 'success') {
         action: actionName,
         timestamp: Date.now(),
         videoSrc: video ? video.src : '',
-        filters: document.getElementById('videoPreview') ? document.getElementById('videoPreview').style.filter : '',
-        transform: document.getElementById('videoPreview') ? document.getElementById('videoPreview').style.transform : '',
-        containerBg: document.querySelector('.video-container') ? document.querySelector('.video-container').style.background : ''
+        filters: document.getElementById('videoPreview') ? document.getElementById('videoPreview')?.style.filter : '',
+        transform: document.getElementById('videoPreview') ? document.getElementById('videoPreview')?.style.transform : '',
+        containerBg: document.querySelector('.video-container') ? document.querySelector('.video-container')?.style.background : ''
       };
       // Remove any forward history
       editorHistory = editorHistory.slice(0, editorHistoryIndex + 1);
@@ -3550,8 +3550,8 @@ function showToast(message, type = 'success') {
               var card = document.createElement('div');
               card.style.cssText = 'position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--border-subtle);cursor:pointer;aspect-ratio:16/9;background:var(--dark-2)';
               card.innerHTML = '<video src="' + v.preview + '" muted loop style="width:100%;height:100%;object-fit:cover"></video><div style="position:absolute;bottom:0;left:0;right:0;padding:4px 6px;background:rgba(0,0,0,0.7);font-size:.7rem;color:#fff">' + (v.duration || 0) + 's - ' + (v.user || 'Pixabay') + '</div>';
-              card.addEventListener('mouseenter', function() { card.querySelector('video').play(); });
-              card.addEventListener('mouseleave', function() { card.querySelector('video').pause(); });
+              card.addEventListener('mouseenter', function() { card.querySelector('video')?.play(); });
+              card.addEventListener('mouseleave', function() { card.querySelector('video')?.pause(); });
               card.addEventListener('click', function() {
                 showToast('Downloading B-Roll clip...', 'info');
                 window.selectedBrollUrl = v.download;
@@ -3600,12 +3600,12 @@ function showToast(message, type = 'success') {
         var dashboard = document.querySelector('.dashboard');
         if (isFullscreen) {
           dashboard.classList.add('editor-fullscreen');
-          document.getElementById('fullscreenIcon').textContent = '⬅';
-          document.getElementById('fullscreenLabel').textContent = 'Show Menu';
+          document.getElementById('fullscreenIcon')?.textContent = '⬅';
+          document.getElementById('fullscreenLabel')?.textContent = 'Show Menu';
         } else {
           dashboard.classList.remove('editor-fullscreen');
-          document.getElementById('fullscreenIcon').textContent = '⛶';
-          document.getElementById('fullscreenLabel').textContent = 'Focus Mode';
+          document.getElementById('fullscreenIcon')?.textContent = '⛶';
+          document.getElementById('fullscreenLabel')?.textContent = 'Focus Mode';
         }
       });
     }
@@ -3922,7 +3922,7 @@ function showToast(message, type = 'success') {
     var freehandPoints = [];
     if (annotCanvas) {
       annotCanvas.addEventListener('mousedown', function(e) {
-        if (!document.getElementById('annotationWrapper').classList.contains('active')) return;
+        if (!document.getElementById('annotationWrapper')?.classList.contains('active')) return;
         annotDrawing = true;
         var rect = annotCanvas.getBoundingClientRect();
         annotStartX = e.clientX - rect.left;
@@ -4066,10 +4066,10 @@ function showToast(message, type = 'success') {
       var z = (zoomSlider ? zoomSlider.value : 100) / 100;
       var px = panXSlider ? panXSlider.value : 0;
       var py = panYSlider ? panYSlider.value : 0;
-      videoPlayer.style.transform = 'scale(' + z + ') translate(' + px + '%, ' + py + '%)';
-      if (document.getElementById('zoomValue')) document.getElementById('zoomValue').textContent = Math.round(z * 100) + '%';
-      if (document.getElementById('panXValue')) document.getElementById('panXValue').textContent = px;
-      if (document.getElementById('panYValue')) document.getElementById('panYValue').textContent = py;
+      videoPlayer?.style.transform = 'scale(' + z + ') translate(' + px + '%, ' + py + '%)';
+      if (document.getElementById('zoomValue')) document.getElementById('zoomValue')?.textContent = Math.round(z * 100) + '%';
+      if (document.getElementById('panXValue')) document.getElementById('panXValue')?.textContent = px;
+      if (document.getElementById('panYValue')) document.getElementById('panYValue')?.textContent = py;
     }
     if (zoomSlider) zoomSlider.addEventListener('input', applyZoomPan);
     if (panXSlider) panXSlider.addEventListener('input', applyZoomPan);
@@ -4098,7 +4098,7 @@ function showToast(message, type = 'success') {
     document.querySelectorAll('.color-grade-preset').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var grade = this.dataset.grade;
-        if (videoPlayer) videoPlayer.style.filter = colorGrades[grade] || 'none';
+        if (videoPlayer) videoPlayer?.style.filter = colorGrades[grade] || 'none';
         document.querySelectorAll('.color-grade-preset').forEach(function(b) { b.classList.remove('active'); });
         this.classList.add('active');
       });
@@ -4118,18 +4118,18 @@ function showToast(message, type = 'success') {
       var sat = 1 + (vibrance / 100);
       var sepiaAmt = Math.max(0, temp / 200);
       var tintBright = 1 + (Math.abs(tint) * 0.001);
-      videoPlayer.style.filter = 'hue-rotate(' + hueRot + 'deg) saturate(' + sat + ') sepia(' + sepiaAmt + ') brightness(' + tintBright + ')';
+      videoPlayer?.style.filter = 'hue-rotate(' + hueRot + 'deg) saturate(' + sat + ') sepia(' + sepiaAmt + ') brightness(' + tintBright + ')';
       // Apply vignette as inset box-shadow on video container
       var vigAmt = Math.abs(vignette);
       if (vigAmt > 0) {
-        videoPlayer.style.boxShadow = 'inset 0 0 ' + (vigAmt * 1.5) + 'px ' + (vigAmt * 0.5) + 'px rgba(0,0,0,' + (vigAmt / 100) + ')';
+        videoPlayer?.style.boxShadow = 'inset 0 0 ' + (vigAmt * 1.5) + 'px ' + (vigAmt * 0.5) + 'px rgba(0,0,0,' + (vigAmt / 100) + ')';
       } else {
-        videoPlayer.style.boxShadow = 'none';
+        videoPlayer?.style.boxShadow = 'none';
       }
-      if (document.getElementById('tempValue')) document.getElementById('tempValue').textContent = temp;
-      if (document.getElementById('tintValue')) document.getElementById('tintValue').textContent = tint;
-      if (document.getElementById('vibranceValue')) document.getElementById('vibranceValue').textContent = vibrance;
-      if (document.getElementById('vignetteValue')) document.getElementById('vignetteValue').textContent = vignette;
+      if (document.getElementById('tempValue')) document.getElementById('tempValue')?.textContent = temp;
+      if (document.getElementById('tintValue')) document.getElementById('tintValue')?.textContent = tint;
+      if (document.getElementById('vibranceValue')) document.getElementById('vibranceValue')?.textContent = vibrance;
+      if (document.getElementById('vignetteValue')) document.getElementById('vignetteValue')?.textContent = vignette;
     }
     if (colorTempSlider) colorTempSlider.addEventListener('input', applyColorGrading);
     if (colorTintSlider) colorTintSlider.addEventListener('input', applyColorGrading);
@@ -4185,8 +4185,8 @@ function showToast(message, type = 'success') {
       overlay.className = 'pip-overlay';
       if (overlay.tagName === 'VIDEO') { overlay.autoplay = true; overlay.loop = true; overlay.muted = true; }
       overlay.src = URL.createObjectURL(file);
-      var size = (document.getElementById('pipSize') ? document.getElementById('pipSize').value : 30) + '%';
-      var radius = (document.getElementById('pipRadius') ? document.getElementById('pipRadius').value : 8) + 'px';
+      var size = (document.getElementById('pipSize') ? document.getElementById('pipSize')?.value : 30) + '%';
+      var radius = (document.getElementById('pipRadius') ? document.getElementById('pipRadius')?.value : 8) + 'px';
       var pos = pipPosition.split('-');
       overlay.style.cssText = 'position:absolute;width:' + size + ';z-index:15;border-radius:' + radius + ';box-shadow:0 4px 12px rgba(0,0,0,0.4);cursor:move;'
         + (pos[0] === 'top' ? 'top:8px;' : 'bottom:8px;')
@@ -4201,10 +4201,10 @@ function showToast(message, type = 'success') {
 
       // Update size and radius from sliders
       if (document.getElementById('pipSize')) {
-        document.getElementById('pipSize').addEventListener('input', function() { overlay.style.width = this.value + '%'; });
+        document.getElementById('pipSize')?.addEventListener('input', function() { overlay.style.width = this.value + '%'; });
       }
       if (document.getElementById('pipRadius')) {
-        document.getElementById('pipRadius').addEventListener('input', function() { overlay.style.borderRadius = this.value + 'px'; });
+        document.getElementById('pipRadius')?.addEventListener('input', function() { overlay.style.borderRadius = this.value + 'px'; });
       }
 
       showToast('PiP source added! Drag to reposition.');
@@ -4228,18 +4228,18 @@ function showToast(message, type = 'success') {
         if (!currentVideoFile) { showToast('Upload a video first', 'error'); return; }
         if (!activeKfProp) { showToast('Select a property first (Opacity, Scale, etc.)', 'error'); return; }
         if (!videoPlayer) return;
-        var time = videoPlayer.currentTime || 0;
+        var time = videoPlayer?.currentTime || 0;
         var value;
         switch (activeKfProp) {
-          case 'opacity': value = parseFloat(prompt('Opacity (0 to 1):', '1')) || 1; videoPlayer.style.opacity = value; break;
-          case 'scale': value = parseFloat(prompt('Scale (0.1 to 3):', '1')) || 1; videoPlayer.style.transform = 'scale(' + value + ')'; break;
+          case 'opacity': value = parseFloat(prompt('Opacity (0 to 1):', '1')) || 1; videoPlayer?.style.opacity = value; break;
+          case 'scale': value = parseFloat(prompt('Scale (0.1 to 3):', '1')) || 1; videoPlayer?.style.transform = 'scale(' + value + ')'; break;
           case 'position':
             var x = parseInt(prompt('X offset (px):', '0')) || 0;
             var y = parseInt(prompt('Y offset (px):', '0')) || 0;
             value = {x: x, y: y};
-            videoPlayer.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+            videoPlayer?.style.transform = 'translate(' + x + 'px,' + y + 'px)';
             break;
-          case 'rotation': value = parseInt(prompt('Rotation (degrees):', '0')) || 0; videoPlayer.style.transform = 'rotate(' + value + 'deg)'; break;
+          case 'rotation': value = parseInt(prompt('Rotation (degrees):', '0')) || 0; videoPlayer?.style.transform = 'rotate(' + value + 'deg)'; break;
         }
         keyframes.push({ property: activeKfProp, time: time.toFixed(2), value: value });
         showToast('Keyframe added at ' + time.toFixed(2) + 's: ' + activeKfProp + ' = ' + JSON.stringify(value));
@@ -4251,8 +4251,8 @@ function showToast(message, type = 'success') {
       clearKeyframesBtn.addEventListener('click', function() {
         keyframes = [];
         if (videoPlayer) {
-          videoPlayer.style.opacity = '';
-          videoPlayer.style.transform = '';
+          videoPlayer?.style.opacity = '';
+          videoPlayer?.style.transform = '';
         }
         showToast('Keyframes cleared');
       });
@@ -4263,19 +4263,19 @@ function showToast(message, type = 'success') {
     var pipSizeSlider = document.getElementById('pipSize');
     if (pipSizeSlider) {
       pipSizeSlider.addEventListener('input', function() {
-        if (document.getElementById('pipSizeValue')) document.getElementById('pipSizeValue').textContent = this.value + '%';
+        if (document.getElementById('pipSizeValue')) document.getElementById('pipSizeValue')?.textContent = this.value + '%';
       });
     }
     var pipRadiusSlider = document.getElementById('pipRadius');
     if (pipRadiusSlider) {
       pipRadiusSlider.addEventListener('input', function() {
-        if (document.getElementById('pipRadiusValue')) document.getElementById('pipRadiusValue').textContent = this.value + 'px';
+        if (document.getElementById('pipRadiusValue')) document.getElementById('pipRadiusValue')?.textContent = this.value + 'px';
       });
     }
 
     // ===== AUTO FOCUS MODE ON VIDEO LOAD =====
     if (videoPlayer) {
-      videoPlayer.addEventListener('loadeddata', function() {
+      videoPlayer?.addEventListener('loadeddata', function() {
         autoFocusMode();
         resizeAnnotCanvas();
       });
