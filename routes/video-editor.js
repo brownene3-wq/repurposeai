@@ -494,7 +494,7 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <span class="e-logo">RepurposeAI</span><div class="e-sep"></div>
+            <span class="e-logo">Splicora</span><div class="e-sep"></div>
             <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
             <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
             <button class="e-tb on">\ud83e\uddf2 Snap</button>
@@ -5909,7 +5909,7 @@ router.post('/apply-brand-template', requireAuth, upload.single('logo'), async (
 
     // Add brand text on the lower-third
     const fontOpts = fs.existsSync('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf') ? ':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' : '';
-    filters.push("drawtext=text='RepurposeAI':fontsize=18:fontcolor=" + textClr + ":x=15:y=ih-45" + fontOpts);
+    filters.push("drawtext=text='Splicora':fontsize=18:fontcolor=" + textClr + ":x=15:y=ih-45" + fontOpts);
 
     // If logo was uploaded, overlay it
     let ffArgs;
@@ -6408,7 +6408,7 @@ router.post('/export-premiere', requireAuth, async (req, res) => {
 <!DOCTYPE xmeml>
 <xmeml version="4">
   <sequence>
-    <name>RepurposeAI Export</name>
+    <name>Splicora Export</name>
     <duration>${totalFrames}</duration>
     <rate><timebase>${fps}</timebase><ntsc>FALSE</ntsc></rate>
     <media>
