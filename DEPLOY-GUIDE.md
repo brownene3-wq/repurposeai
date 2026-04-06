@@ -1,4 +1,4 @@
-# RepurposeAI — Complete Deployment Guide
+# Splicora — Complete Deployment Guide
 
 ## Step 1: Push to GitHub
 
@@ -8,7 +8,7 @@ First, create a GitHub repository and push your code:
 cd repurposeai
 git init
 git add -A
-git commit -m "Initial commit — RepurposeAI full-stack SaaS"
+git commit -m "Initial commit — Splicora full-stack SaaS"
 ```
 
 Then go to https://github.com/new, create a new repository called `repurposeai`, and:
@@ -61,14 +61,14 @@ Railway will auto-redeploy when you add variables.
 2. Click **"+ Add product"**
 
 **Product 1 — Pro Plan:**
-- Name: `RepurposeAI Pro`
+- Name: `Splicora Pro`
 - Price: **$29.00 / month** (recurring)
 - Click "Add product"
 - Copy the **Price ID** (starts with `price_...`)
 - Set this as `STRIPE_PRICE_PRO` in Railway
 
 **Product 2 — Enterprise Plan:**
-- Name: `RepurposeAI Enterprise`
+- Name: `Splicora Enterprise`
 - Price: **$99.00 / month** (recurring)
 - Click "Add product"
 - Copy the **Price ID** (starts with `price_...`)
@@ -93,7 +93,7 @@ Railway will auto-redeploy when you add variables.
 
 1. Go to https://formspree.io and create a free account
 2. Click **"+ New Form"**
-3. Name it "RepurposeAI Contact"
+3. Name it "Splicora Contact"
 4. Copy the form endpoint (looks like `https://formspree.io/f/xyzabc`)
 5. Set this as `FORMSPREE_ENDPOINT` in Railway
 
