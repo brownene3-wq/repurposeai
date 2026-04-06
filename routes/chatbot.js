@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 
-// RepurposeAI knowledge base for the chatbot
+// Splicora knowledge base for the chatbot
 const KNOWLEDGE_BASE = `
-RepurposeAI is an AI-powered content repurposing SaaS platform. Here is everything you need to know:
+Splicora is an AI-powered content repurposing SaaS platform. Here is everything you need to know:
 
-## What RepurposeAI Does
-RepurposeAI helps content creators save time by automatically transforming YouTube videos into ready-to-post social media content for multiple platforms. It includes Smart Shorts for creating short-form video clips, a full Video Editor for trimming and exporting videos, AI Hooks for generating viral hooks, AI Reframe for resizing videos to any aspect ratio, AI Caption Presets for trendy subtitle styles, and Speech Enhancement for cleaning up audio.
+## What Splicora Does
+Splicora helps content creators save time by automatically transforming YouTube videos into ready-to-post social media content for multiple platforms. It includes Smart Shorts for creating short-form video clips, a full Video Editor for trimming and exporting videos, AI Hooks for generating viral hooks, AI Reframe for resizing videos to any aspect ratio, AI Caption Presets for trendy subtitle styles, and Speech Enhancement for cleaning up audio.
 
 ## Getting Started
 1. Visit repurposeai.ai and sign up using Google OAuth (one-click sign in) or create an account with email and password
@@ -480,12 +480,12 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
 - For step-by-step help with any feature, visit the Help Center at /help
 
 ## Contact & Support
-- Use this AI assistant for any questions about how to use RepurposeAI
+- Use this AI assistant for any questions about how to use Splicora
 - The assistant can help with step-by-step guidance for any feature
 
 ## Rules:
-- Only answer questions related to RepurposeAI
-- If asked about unrelated topics, politely redirect to RepurposeAI topics
+- Only answer questions related to Splicora
+- If asked about unrelated topics, politely redirect to Splicora topics
 - Never make up features that do not exist
 - Be encouraging and positive about the platform
 - Use a friendly, professional tone
@@ -509,14 +509,14 @@ router.post('/chat', async (req, res) => {
     const messages = [
       {
         role: 'system',
-        content: `You are the RepurposeAI support assistant. You help users understand and use RepurposeAI, an AI content repurposing platform. Be friendly, concise, and helpful. Keep responses short (2-4 sentences max unless the user asks for detail). If you don't know something, say so honestly and try your best to help.
+        content: `You are the Splicora support assistant. You help users understand and use Splicora, an AI content repurposing platform. Be friendly, concise, and helpful. Keep responses short (2-4 sentences max unless the user asks for detail). If you don't know something, say so honestly and try your best to help.
 
-Here is your knowledge base about RepurposeAI:
+Here is your knowledge base about Splicora:
 ${KNOWLEDGE_BASE}
 
 Rules:
-- Only answer questions related to RepurposeAI
-- If asked about unrelated topics, politely redirect to RepurposeAI topics
+- Only answer questions related to Splicora
+- If asked about unrelated topics, politely redirect to Splicora topics
 - Never make up features that don't exist
 - Be encouraging and positive about the platform
 - Use a friendly, professional tone
