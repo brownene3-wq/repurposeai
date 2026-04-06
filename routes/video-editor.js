@@ -1486,6 +1486,7 @@ function showToast(message, type = 'success') {
     async function loadMusicLibrary(category = 'all', searchQuery = '') {
       currentCategory = category;
       const listContainer = document.getElementById('musicList');
+      if (!listContainer) return;
       listContainer.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:.85rem;padding:1rem"><span class="spinner" style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.2);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin-right:.5rem;vertical-align:middle"></span>Loading music...</div>';
 
       try {
