@@ -33,7 +33,7 @@ router.get('/', requireAuth, async (req, res) => {
   const css = getBaseCSS();
 
   res.send(`
-    ${getHeadHTML('Settings - RepurposeAI')}
+    ${getHeadHTML('Settings - Splicora')}
     <style>${css}
       .settings-nav{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:2rem;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:1rem}
       body.light .settings-nav,html.light .settings-nav{border-bottom-color:rgba(0,0,0,0.08)}
@@ -219,7 +219,7 @@ router.get('/', requireAuth, async (req, res) => {
             <div class="toggle-row">
               <div class="toggle-info">
                 <div class="toggle-label">Tips & Tutorials</div>
-                <div class="toggle-desc">Helpful guides on getting the most out of RepurposeAI</div>
+                <div class="toggle-desc">Helpful guides on getting the most out of Splicora</div>
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" data-setting="email_tips_tutorials" ${settings.email_tips_tutorials ? 'checked' : ''} onchange="saveSetting(this)">
@@ -326,7 +326,7 @@ router.get('/', requireAuth, async (req, res) => {
         <div class="settings-section" id="section-appearance">
           <div class="settings-card">
             <h2><span class="icon">&#x1F3A8;</span> Appearance</h2>
-            <p class="desc">Customize how RepurposeAI looks for you</p>
+            <p class="desc">Customize how Splicora looks for you</p>
 
             <div class="form-group">
               <label>Theme</label>
@@ -393,7 +393,7 @@ router.get('/', requireAuth, async (req, res) => {
             <div class="toggle-row">
               <div class="toggle-info">
                 <div class="toggle-label">Usage Analytics</div>
-                <div class="toggle-desc">Help us improve RepurposeAI by sharing anonymous usage data</div>
+                <div class="toggle-desc">Help us improve Splicora by sharing anonymous usage data</div>
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" data-setting="share_usage_analytics" ${settings.share_usage_analytics !== false ? 'checked' : ''} onchange="saveSetting(this)">
