@@ -232,7 +232,7 @@ const FEEDBACK_WIDGET_HTML = `
         </div>
         <div class="fb-field">
           <label>Page (optional)</label>
-          <input type="text" id="fbPage" placeholder="e.g. Dashboard, Repurpose, Billing..." />
+          <input type="text" id="fbPage" placeholder="e.g. Dashboard, Create, Billing..." />
         </div>
         <div class="fb-field">
           <label>Description</label>
