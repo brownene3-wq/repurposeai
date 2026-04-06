@@ -1136,12 +1136,12 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
         const htmlBody = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;background:#0c0c1d;color:#f0f0ff;border-radius:16px;overflow:hidden">
             <div style="background:linear-gradient(135deg,#7c3aed,#06b6d4);padding:30px 40px">
-              <h1 style="margin:0;font-size:24px;font-weight:800;color:#fff">RepurposeAI</h1>
+              <h1 style="margin:0;font-size:24px;font-weight:800;color:#fff">Splicora</h1>
             </div>
             <div style="padding:40px">
               <h2 style="margin:0 0 16px;font-size:20px;color:#f0f0ff">You're Invited!</h2>
               <p style="color:#a0a0c0;font-size:15px;line-height:1.7;margin:0 0 8px">
-                You've been invited to join <strong style="color:#f0f0ff">RepurposeAI</strong> as a <strong style="color:#8B5CF6">${roleName}</strong>.
+                You've been invited to join <strong style="color:#f0f0ff">Splicora</strong> as a <strong style="color:#8B5CF6">${roleName}</strong>.
               </p>
               <p style="color:#a0a0c0;font-size:15px;line-height:1.7;margin:0 0 24px">
                 Click the button below to accept your invitation and get started.
@@ -1163,7 +1163,7 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
         const rawEmail = [
           'From: support@repurposeai.ai',
           'To: ' + email,
-          'Subject: You\'re invited to join RepurposeAI',
+          'Subject: You\'re invited to join Splicora',
           'MIME-Version: 1.0',
           'Content-Type: text/html; charset=utf-8',
           '',
