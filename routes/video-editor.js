@@ -142,7 +142,7 @@ router.get('/', requireAuth, async (req, res) => {
   const html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:grid;grid-template-columns:300px 1fr 320px;grid-template-rows:38px 1fr 185px;height:100vh;gap:0;padding:0;overflow:hidden}
+    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:38px 1fr 185px;height:100vh;gap:0;padding:0;overflow:hidden}
     .editor-topbar{grid-column:1/4;grid-row:1}
     .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
     .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
@@ -290,8 +290,8 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.05),rgba(236,72,153,0.05));border-color:rgba(108,58,237,0.3)}
     body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
-    @media(max-width:1400px){.editor-container{grid-template-columns:200px 1fr 240px}}
-    @media(max-width:1200px){.editor-container{grid-template-columns:240px 1fr 260px}}
+    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px}}
+    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px}}
     @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:flex;flex-direction:column}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
