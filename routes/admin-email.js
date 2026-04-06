@@ -463,7 +463,7 @@ router.get('/setup', requireAuth, async (req, res) => {
         <div class="step">
           <h3><span class="num">5</span> Authorize Gmail Access</h3>
           ${hasCredentials ? `
-            <p>Click the button below to authorize RepurposeAI to read and send emails from your Gmail account.</p>
+            <p>Click the button below to authorize Splicora to read and send emails from your Gmail account.</p>
             <a href="/admin/email/oauth-start" class="btn-sm btn-primary-sm" style="display:inline-block;padding:.7rem 1.5rem;text-decoration:none;margin-top:.5rem">Authorize Gmail &#x2192;</a>
           ` : `
             <p>Complete step 4 first, then come back here to authorize.</p>
