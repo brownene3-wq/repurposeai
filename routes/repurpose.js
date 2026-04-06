@@ -767,7 +767,7 @@ async function transcribeUploadedFile(audioPath) {
 // GET - Premium repurpose form page
 router.get('/', requireAuth, (req, res) => {
   res.send(`
-    ${getHeadHTML('Repurpose')}
+    ${getHeadHTML('Create')}
       <style>
         ${getBaseCSS()}
 
@@ -1392,7 +1392,7 @@ router.get('/', requireAuth, (req, res) => {
               </div>
 
               <div class="button-group">
-                <button class="btn btn-primary" onclick="repurposeContent()">✨ Repurpose Now</button>
+                <button class="btn btn-primary" onclick="repurposeContent()">✨ Create Now</button>
               </div>
             </div>
           </div>
@@ -1735,7 +1735,7 @@ router.get('/', requireAuth, (req, res) => {
 
 // POST - Stream content generation (Server-Sent Events)
 // Process uploaded file: extract audio → transcribe → generate content (SSE stream)
-router.post('/process-upload', requireAuth, checkPlanLimit('repurposesPerMonth'), upload.single('file'), async (req, res) => {
+router.post('/process-upload', requireAuth, checkPlanLimit('creationsPerMonth'), upload.single('file'), async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1824,7 +1824,7 @@ router.post('/process-upload', requireAuth, checkPlanLimit('repurposesPerMonth')
   }
 });
 
-router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth'), async (req, res) => {
+router.post('/process-stream', requireAuth, checkPlanLimit('creationsPerMonth'), async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1906,7 +1906,7 @@ router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth')
 });
 
 // POST - Process and generate content
-router.post('/process', requireAuth, checkPlanLimit('repurposesPerMonth'), async (req, res) => {
+router.post('/process', requireAuth, checkPlanLimit('creationsPerMonth'), async (req, res) => {
   try {
     const { url, brandVoiceId } = req.body;
     const platforms = req.body.platforms || ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'];
@@ -2444,7 +2444,7 @@ router.get('/history', requireAuth, (req, res) => {
           ${getThemeToggle()}
           <div class="header">
             <h1>Content Library</h1>
-            <p>Browse and manage all your repurposed content</p>
+            <p>Browse and manage all your created content</p>
           </div>
 
           <div class="controls">
