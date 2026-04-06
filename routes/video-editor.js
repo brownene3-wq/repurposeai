@@ -1354,26 +1354,26 @@ function showToast(message, type = 'success') {
         });
         uploadZone.classList.add('has-video');
         videoPreviewArea.classList.add('has-video');
-        document.getElementById('trimButton')?.disabled = false;
-        document.getElementById('exportButton')?.disabled = false;
-        document.getElementById('splitButton')?.disabled = false;
-        document.getElementById('filterButton')?.disabled = false;
-        document.getElementById('speedButton')?.disabled = false;
-        document.getElementById('audioButton')?.disabled = false;
-        document.getElementById('previewVoiceButton')?.disabled = false;
-        document.getElementById('voiceoverButton')?.disabled = false;
-        document.getElementById('vtPreviewBtn')?.disabled = false;
-        document.getElementById('vtApplyBtn')?.disabled = false;
-        document.getElementById('textButton')?.disabled = false;
-        document.getElementById('speedSelect')?.disabled = false;
-        document.getElementById('addMusicButton')?.disabled = false;
-        document.getElementById('removeFillerWordsBtn')?.disabled = false;
-        document.getElementById('removePausesBtn')?.disabled = false;
-        document.getElementById('applyTransitionButton')?.disabled = false;
-        document.getElementById('applyCaptionsBtn')?.disabled = false;
+        document.getElementById('trimButton').disabled = false;
+        document.getElementById('exportButton').disabled = false;
+        document.getElementById('splitButton').disabled = false;
+        document.getElementById('filterButton').disabled = false;
+        document.getElementById('speedButton').disabled = false;
+        document.getElementById('audioButton').disabled = false;
+        document.getElementById('previewVoiceButton').disabled = false;
+        document.getElementById('voiceoverButton').disabled = false;
+        document.getElementById('vtPreviewBtn').disabled = false;
+        document.getElementById('vtApplyBtn').disabled = false;
+        document.getElementById('textButton').disabled = false;
+        document.getElementById('speedSelect').disabled = false;
+        document.getElementById('addMusicButton').disabled = false;
+        document.getElementById('removeFillerWordsBtn').disabled = false;
+        document.getElementById('removePausesBtn').disabled = false;
+        document.getElementById('applyTransitionButton').disabled = false;
+        document.getElementById('applyCaptionsBtn').disabled = false;
 
         // Set end time to video duration
-        document.getElementById('endTime')?.value = Math.round(videoDuration);
+        document.getElementById('endTime').value = Math.round(videoDuration);
 
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
@@ -1389,43 +1389,43 @@ function showToast(message, type = 'success') {
     document.querySelectorAll('.slider').forEach(slider => {
       if (slider.id === 'volumeSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('volumeValue')?.textContent = this.value + '%';
+          document.getElementById('volumeValue').textContent = this.value + '%';
         });
       } else if (slider.id === 'fadeInSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('fadeInValue')?.textContent = this.value + 's';
+          document.getElementById('fadeInValue').textContent = this.value + 's';
         });
       } else if (slider.id === 'fadeOutSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('fadeOutValue')?.textContent = this.value + 's';
+          document.getElementById('fadeOutValue').textContent = this.value + 's';
         });
       } else if (slider.id === 'bassSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('bassValue')?.textContent = this.value + 'dB';
+          document.getElementById('bassValue').textContent = this.value + 'dB';
         });
       } else if (slider.id === 'trebleSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('trebleValue')?.textContent = this.value + 'dB';
+          document.getElementById('trebleValue').textContent = this.value + 'dB';
         });
       } else if (slider.id === 'voiceVolumeSlider') {
         slider.addEventListener('input', function() {
-          document.getElementById('voiceVolumeValue')?.textContent = this.value + '%';
+          document.getElementById('voiceVolumeValue').textContent = this.value + '%';
         });
       } else if (slider.id === 'fontSize') {
         slider.addEventListener('input', function() {
-          document.getElementById('fontSizeValue')?.textContent = this.value + 'px';
+          document.getElementById('fontSizeValue').textContent = this.value + 'px';
         });
       } else if (slider.id === 'musicVolume') {
         slider.addEventListener('input', function() {
-          document.getElementById('musicVolumeValue')?.textContent = this.value + '%';
+          document.getElementById('musicVolumeValue').textContent = this.value + '%';
         });
       } else if (slider.id === 'vtStability') {
         slider.addEventListener('input', function() {
-          document.getElementById('vtStabilityValue')?.textContent = this.value + '%';
+          document.getElementById('vtStabilityValue').textContent = this.value + '%';
         });
       } else if (slider.id === 'vtSimilarity') {
         slider.addEventListener('input', function() {
-          document.getElementById('vtSimilarityValue')?.textContent = this.value + '%';
+          document.getElementById('vtSimilarityValue').textContent = this.value + '%';
         });
       } else if (slider.id === 'brightness' || slider.id === 'contrast' || slider.id === 'saturation') {
         slider.addEventListener('input', function() {
@@ -1527,7 +1527,7 @@ function showToast(message, type = 'success') {
       document.querySelectorAll('[data-track-id]').forEach(function(el) { el.style.borderColor = 'rgba(255,255,255,0.1)'; });
       element.style.borderColor = 'var(--primary)';
       selectedMusicFile = { id: trackId, name: trackName, downloadUrl: downloadUrl || null };
-      document.getElementById('addMusicButton')?.disabled = false;
+      document.getElementById('addMusicButton').disabled = false;
       showToast('Selected: ' + trackName, 'success');
     };
 
@@ -1591,7 +1591,7 @@ function showToast(message, type = 'success') {
       const file = e.target.files[0];
       if (file) {
         selectedMusicFile = { name: file.name, file: file };
-        document.getElementById('addMusicButton')?.disabled = false;
+        document.getElementById('addMusicButton').disabled = false;
         showToast('Selected: ' + file.name, 'success');
       }
     });
@@ -1717,7 +1717,7 @@ function showToast(message, type = 'success') {
 
     // Transition duration slider
     document.getElementById('transitionDuration')?.addEventListener('input', function() {
-      document.getElementById('transitionDurationValue')?.textContent = this.value + 's';
+      document.getElementById('transitionDurationValue').textContent = this.value + 's';
     });
 
     // Apply transitions handler
@@ -1777,7 +1777,7 @@ function showToast(message, type = 'success') {
     });
     document.getElementById('brandLogoInput')?.addEventListener('change', (e) => {
       if (e.target.files[0]) {
-        document.getElementById('brandLogoBtn')?.innerHTML = '📎 ' + e.target.files[0].name;
+        document.getElementById('brandLogoBtn').innerHTML = '📎 ' + e.target.files[0].name;
       }
     });
 
@@ -2252,12 +2252,12 @@ function showToast(message, type = 'success') {
 
           if (type === 'trimLeft') {
             timelineState.trimStart = Math.min(time, timelineState.trimEnd - 0.5);
-            document.getElementById('startTime')?.value = Math.round(timelineState.trimStart);
+            document.getElementById('startTime').value = Math.round(timelineState.trimStart);
             var leftPct = (timelineState.trimStart / videoDuration) * 100;
             document.getElementById('trimOverlayLeft')?.style.width = leftPct + '%';
           } else {
             timelineState.trimEnd = Math.max(time, timelineState.trimStart + 0.5);
-            document.getElementById('endTime')?.value = Math.round(timelineState.trimEnd);
+            document.getElementById('endTime').value = Math.round(timelineState.trimEnd);
             var rightPct = ((videoDuration - timelineState.trimEnd) / videoDuration) * 100;
             document.getElementById('trimOverlayRight')?.style.width = rightPct + '%';
           }
@@ -2362,7 +2362,7 @@ function showToast(message, type = 'success') {
         currentVideoFile = data;
         videoPlayer.src = data.serveUrl;
         videoDuration = data.duration;
-        document.getElementById('endTime')?.value = Math.round(videoDuration);
+        document.getElementById('endTime').value = Math.round(videoDuration);
 
         showToast('Video trimmed successfully!', 'success');
       } catch (error) {
@@ -2646,15 +2646,15 @@ function showToast(message, type = 'success') {
     });
     document.getElementById('vtAudioFile')?.addEventListener('change', function(e) {
       if (e.target.files.length > 0) {
-        document.getElementById('vtAudioFileName')?.textContent = '🎵 ' + e.target.files[0].name;
+        document.getElementById('vtAudioFileName').textContent = '🎵 ' + e.target.files[0].name;
         document.getElementById('vtAudioFileName')?.style.display = 'block';
       }
     });
     document.getElementById('vtStability')?.addEventListener('input', function() {
-      document.getElementById('vtStabilityValue')?.textContent = this.value + '%';
+      document.getElementById('vtStabilityValue').textContent = this.value + '%';
     });
     document.getElementById('vtSimilarity')?.addEventListener('input', function() {
-      document.getElementById('vtSimilarityValue')?.textContent = this.value + '%';
+      document.getElementById('vtSimilarityValue').textContent = this.value + '%';
     });
 
     // Voice Transform: apply handler
@@ -2859,8 +2859,8 @@ function showToast(message, type = 'success') {
         var rect = this.getBoundingClientRect();
         var xPercent = Math.round(((e.clientX - rect.left) / rect.width) * 100);
         var yPercent = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-        document.getElementById('textPosX')?.value = xPercent;
-        document.getElementById('textPosY')?.value = yPercent;
+        document.getElementById('textPosX').value = xPercent;
+        document.getElementById('textPosY').value = yPercent;
         dragMarker.style.left = xPercent + '%';
         dragMarker.style.top = yPercent + '%';
         showToast('Position set: ' + xPercent + '%, ' + yPercent + '%', 'success');
@@ -3101,7 +3101,7 @@ function showToast(message, type = 'success') {
           });
           uploadZone.classList.add('has-video');
           videoPreviewArea.classList.add('has-video');
-          document.getElementById('exportButton')?.disabled = false;
+          document.getElementById('exportButton').disabled = false;
         } catch (err) {
           showToast(err.message, 'error');
         } finally {
@@ -3142,7 +3142,7 @@ function showToast(message, type = 'success') {
                 });
                 uploadZone.classList.add('has-video');
                 videoPreviewArea.classList.add('has-video');
-                document.getElementById('exportButton')?.disabled = false;
+                document.getElementById('exportButton').disabled = false;
               } catch (err) {
                 showToast(err.message, 'error');
               } finally {
@@ -3195,7 +3195,7 @@ function showToast(message, type = 'success') {
           currentVideoFile = null;
           videoDuration = 0;
           uploadZone.classList.remove('has-video');
-          document.getElementById('exportButton')?.disabled = true;
+          document.getElementById('exportButton').disabled = true;
           showToast('Clip deleted');
         }
       });
@@ -3331,11 +3331,11 @@ function showToast(message, type = 'success') {
     const brollWidthSlider = document.getElementById('brollWidth');
     const brollOpacitySlider = document.getElementById('brollOpacity');
     if (brollWidthSlider) brollWidthSlider.addEventListener('input', function() {
-      document.getElementById('brollWidthVal')?.textContent = this.value + '%';
+      document.getElementById('brollWidthVal').textContent = this.value + '%';
       if (brollOverlay) brollOverlay.style.width = this.value + '%';
     });
     if (brollOpacitySlider) brollOpacitySlider.addEventListener('input', function() {
-      document.getElementById('brollOpacityVal')?.textContent = this.value + '%';
+      document.getElementById('brollOpacityVal').textContent = this.value + '%';
       if (brollOverlay) brollOverlay.style.opacity = this.value / 100;
     });
 
@@ -3362,7 +3362,7 @@ function showToast(message, type = 'success') {
           });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || 'Failed to generate hook');
-          document.getElementById('hookText')?.textContent = data.hook;
+          document.getElementById('hookText').textContent = data.hook;
           document.getElementById('hookResult')?.style.display = 'block';
           showToast('Hook generated!');
         } catch (err) {
@@ -3394,7 +3394,7 @@ function showToast(message, type = 'success') {
           });
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || 'Transcription failed');
-          document.getElementById('transcriptText')?.value = data.transcript;
+          document.getElementById('transcriptText').value = data.transcript;
           statusEl.textContent = '✅ Transcript generated!';
           setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
           showToast('Transcript generated!');
@@ -3410,7 +3410,7 @@ function showToast(message, type = 'success') {
 
     const clearTranscriptBtn = document.getElementById('clearTranscriptBtn');
     if (clearTranscriptBtn) clearTranscriptBtn.addEventListener('click', () => {
-      document.getElementById('transcriptText')?.value = '';
+      document.getElementById('transcriptText').value = '';
       showToast('Transcript cleared');
     });
 
@@ -3600,12 +3600,12 @@ function showToast(message, type = 'success') {
         var dashboard = document.querySelector('.dashboard');
         if (isFullscreen) {
           dashboard.classList.add('editor-fullscreen');
-          document.getElementById('fullscreenIcon')?.textContent = '⬅';
-          document.getElementById('fullscreenLabel')?.textContent = 'Show Menu';
+          document.getElementById('fullscreenIcon').textContent = '⬅';
+          document.getElementById('fullscreenLabel').textContent = 'Show Menu';
         } else {
           dashboard.classList.remove('editor-fullscreen');
-          document.getElementById('fullscreenIcon')?.textContent = '⛶';
-          document.getElementById('fullscreenLabel')?.textContent = 'Focus Mode';
+          document.getElementById('fullscreenIcon').textContent = '⛶';
+          document.getElementById('fullscreenLabel').textContent = 'Focus Mode';
         }
       });
     }
@@ -4067,9 +4067,9 @@ function showToast(message, type = 'success') {
       var px = panXSlider ? panXSlider.value : 0;
       var py = panYSlider ? panYSlider.value : 0;
       videoPlayer?.style.transform = 'scale(' + z + ') translate(' + px + '%, ' + py + '%)';
-      if (document.getElementById('zoomValue')) document.getElementById('zoomValue')?.textContent = Math.round(z * 100) + '%';
-      if (document.getElementById('panXValue')) document.getElementById('panXValue')?.textContent = px;
-      if (document.getElementById('panYValue')) document.getElementById('panYValue')?.textContent = py;
+      if (document.getElementById('zoomValue')) document.getElementById('zoomValue').textContent = Math.round(z * 100) + '%';
+      if (document.getElementById('panXValue')) document.getElementById('panXValue').textContent = px;
+      if (document.getElementById('panYValue')) document.getElementById('panYValue').textContent = py;
     }
     if (zoomSlider) zoomSlider.addEventListener('input', applyZoomPan);
     if (panXSlider) panXSlider.addEventListener('input', applyZoomPan);
@@ -4126,10 +4126,10 @@ function showToast(message, type = 'success') {
       } else {
         videoPlayer?.style.boxShadow = 'none';
       }
-      if (document.getElementById('tempValue')) document.getElementById('tempValue')?.textContent = temp;
-      if (document.getElementById('tintValue')) document.getElementById('tintValue')?.textContent = tint;
-      if (document.getElementById('vibranceValue')) document.getElementById('vibranceValue')?.textContent = vibrance;
-      if (document.getElementById('vignetteValue')) document.getElementById('vignetteValue')?.textContent = vignette;
+      if (document.getElementById('tempValue')) document.getElementById('tempValue').textContent = temp;
+      if (document.getElementById('tintValue')) document.getElementById('tintValue').textContent = tint;
+      if (document.getElementById('vibranceValue')) document.getElementById('vibranceValue').textContent = vibrance;
+      if (document.getElementById('vignetteValue')) document.getElementById('vignetteValue').textContent = vignette;
     }
     if (colorTempSlider) colorTempSlider.addEventListener('input', applyColorGrading);
     if (colorTintSlider) colorTintSlider.addEventListener('input', applyColorGrading);
@@ -4263,13 +4263,13 @@ function showToast(message, type = 'success') {
     var pipSizeSlider = document.getElementById('pipSize');
     if (pipSizeSlider) {
       pipSizeSlider.addEventListener('input', function() {
-        if (document.getElementById('pipSizeValue')) document.getElementById('pipSizeValue')?.textContent = this.value + '%';
+        if (document.getElementById('pipSizeValue')) document.getElementById('pipSizeValue').textContent = this.value + '%';
       });
     }
     var pipRadiusSlider = document.getElementById('pipRadius');
     if (pipRadiusSlider) {
       pipRadiusSlider.addEventListener('input', function() {
-        if (document.getElementById('pipRadiusValue')) document.getElementById('pipRadiusValue')?.textContent = this.value + 'px';
+        if (document.getElementById('pipRadiusValue')) document.getElementById('pipRadiusValue').textContent = this.value + 'px';
       });
     }
 
