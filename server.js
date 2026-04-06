@@ -227,7 +227,7 @@ app.get('/manifest.json', (req, res) => {
   res.json({
     name: 'Splicora',
     short_name: 'Splicora',
-    description: 'AI-powered content repurposing for creators',
+    description: 'AI-powered content creating for creators',
     start_url: '/dashboard',
     display: 'standalone',
     background_color: '#0a0a0a',
