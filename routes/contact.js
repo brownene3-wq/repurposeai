@@ -30,7 +30,7 @@ function renderContactPage(user) {
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#06060f">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Contact — RepurposeAI</title>
+<title>Contact — Splicora</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
