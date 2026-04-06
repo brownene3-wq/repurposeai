@@ -93,7 +93,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
 </style></head><body>
 <div class="bg-orb bg-orb--1"></div><div class="bg-orb bg-orb--2"></div>
 <nav><div class="nav-inner">
-  <a href="/" class="logo">Repurpose<span>AI</span></a>
+  <a href="/" class="logo">Create<span>AI</span></a>
   <button style="display:none;background:none;border:none;color:var(--text);font-size:1.5rem;cursor:pointer" class="mob-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mob-open')">&#9776;</button>
   <div class="nav-links">
     <a href="/">Home</a>
@@ -110,7 +110,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
     <div class="info-cards">
       <div class="info-card">
         <div class="info-card__icon info-card__icon--purple">&#9993;</div>
-        <div><div class="info-card__title">Email</div><div class="info-card__text">support@repurposeai.ai</div></div>
+        <div><div class="info-card__title">Email</div><div class="info-card__text">support@splicora.ai</div></div>
       </div>
       <div class="info-card">
         <div class="info-card__icon info-card__icon--cyan">&#128172;</div>
