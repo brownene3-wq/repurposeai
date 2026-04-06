@@ -4,7 +4,7 @@ const { optionalAuth } = require('../middleware/auth');
 let blogOps;
 try { blogOps = require('../db/database').blogOps; } catch(e) { blogOps = null; }
 
-const BRAND = { name: 'RepurposeAI' };
+const BRAND = { name: 'Splicora' };
 
 // Shared page shell (matches contact page styling)
 function pageShell(title, user, content) {
@@ -87,19 +87,19 @@ ${content}
 // ======== ABOUT PAGE ========
 router.get('/about', optionalAuth, (req, res) => {
   res.send(pageShell('About', req.user, `
-  <h1>About RepurposeAI</h1>
+  <h1>About Splicora</h1>
   <p class="subtitle">We're on a mission to help creators do more with less. One video, unlimited content â powered by AI.</p>
 
   <div class="card-grid">
     <div class="card">
       <div class="icon">&#x1F3AF;</div>
       <h3>Our Mission</h3>
-      <p>Content creation shouldn't mean spending hours reformatting the same ideas for every platform. We built RepurposeAI to let creators focus on what they do best â creating â while AI handles the rest.</p>
+      <p>Content creation shouldn't mean spending hours reformatting the same ideas for every platform. We built Splicora to let creators focus on what they do best â creating â while AI handles the rest.</p>
     </div>
     <div class="card">
       <div class="icon">&#x26A1;</div>
       <h3>What We Do</h3>
-      <p>RepurposeAI takes a single YouTube video and transforms it into platform-optimized content for Twitter/X, LinkedIn, Instagram, Facebook, TikTok, and more â in seconds, not hours.</p>
+      <p>Splicora takes a single YouTube video and transforms it into platform-optimized content for Twitter/X, LinkedIn, Instagram, Facebook, TikTok, and more â in seconds, not hours.</p>
     </div>
     <div class="card">
       <div class="icon">&#x1F680;</div>
@@ -109,7 +109,7 @@ router.get('/about', optionalAuth, (req, res) => {
   </div>
 
   <h2>Why Creators Choose Us</h2>
-  <p>Thousands of content creators, marketers, and businesses trust RepurposeAI to save time, stay consistent, and grow their audience across platforms. Our AI understands tone, context, and platform best practices â so every piece of content feels native, not copy-pasted.</p>
+  <p>Thousands of content creators, marketers, and businesses trust Splicora to save time, stay consistent, and grow their audience across platforms. Our AI understands tone, context, and platform best practices â so every piece of content feels native, not copy-pasted.</p>
 
   <div class="card-grid">
     <div class="card">
@@ -164,7 +164,7 @@ router.get('/blog', optionalAuth, async (req, res) => {
   <div class="cta-box">
     <h2>Never miss an update</h2>
     <p>Follow us for the latest tips and product updates to level up your content game.</p>
-    <a href="/auth/register" class="btn-cta">Join RepurposeAI &#x2192;</a>
+    <a href="/auth/register" class="btn-cta">Join Splicora &#x2192;</a>
   </div>
 `));
 });
@@ -187,7 +187,7 @@ router.get('/blog/:slug', optionalAuth, async (req, res) => {
       <div class="blog-body" style="color:var(--text2);line-height:1.9;font-size:1.02rem">${post.content}</div>
       <div class="cta-box" style="margin-top:3rem">
         <h2>Enjoyed this post?</h2>
-        <p>Try RepurposeAI free and turn your videos into content for every platform.</p>
+        <p>Try Splicora free and turn your videos into content for every platform.</p>
         <a href="/auth/register" class="btn-cta">Get Started Free &#x2192;</a>
       </div>
     `));
@@ -200,7 +200,7 @@ router.get('/blog/:slug', optionalAuth, async (req, res) => {
 // ======== CAREERS PAGE ========
 router.get('/careers', optionalAuth, (req, res) => {
   res.send(pageShell('Careers', req.user, `
-  <h1>Careers at RepurposeAI</h1>
+  <h1>Careers at Splicora</h1>
   <p class="subtitle">We're building the future of content creation. Come help us empower creators worldwide.</p>
 
   <div class="card-grid">
@@ -252,7 +252,7 @@ router.get('/privacy', optionalAuth, (req, res) => {
     <p>We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, disclosure, or destruction. All data is encrypted in transit and at rest.</p>
 
     <h2>5. Your Content</h2>
-    <p>Content you process through RepurposeAI (such as video URLs and generated text) is used solely to provide the service to you. We do not use your content to train AI models or share it with third parties without your consent.</p>
+    <p>Content you process through Splicora (such as video URLs and generated text) is used solely to provide the service to you. We do not use your content to train AI models or share it with third parties without your consent.</p>
 
     <h2>6. Cookies</h2>
     <p>We use cookies and similar tracking technologies to track activity on our service and hold certain information. You can instruct your browser to refuse all cookies or to indicate when a cookie is being sent. See our Cookie Policy for more details.</p>
@@ -280,25 +280,25 @@ router.get('/terms', optionalAuth, (req, res) => {
 
   <div class="legal-section">
     <h2>1. Acceptance of Terms</h2>
-    <p>By accessing or using RepurposeAI, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
+    <p>By accessing or using Splicora, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
 
     <h2>2. Description of Service</h2>
-    <p>RepurposeAI is an AI-powered platform that helps users repurpose video content into text-based content optimized for various social media platforms. The service includes content generation, smart video clip extraction, analytics, and scheduling features.</p>
+    <p>Splicora is an AI-powered platform that helps users repurpose video content into text-based content optimized for various social media platforms. The service includes content generation, smart video clip extraction, analytics, and scheduling features.</p>
 
     <h2>3. User Accounts</h2>
     <p>You are responsible for safeguarding the password you use to access the service and for any activities or actions under your account. You must notify us immediately upon becoming aware of any breach of security or unauthorized use of your account.</p>
 
     <h2>4. Acceptable Use</h2>
-    <p>You agree not to use RepurposeAI to generate content that is illegal, harmful, threatening, abusive, harassing, defamatory, or otherwise objectionable. You must not use the service to infringe upon the intellectual property rights of others.</p>
+    <p>You agree not to use Splicora to generate content that is illegal, harmful, threatening, abusive, harassing, defamatory, or otherwise objectionable. You must not use the service to infringe upon the intellectual property rights of others.</p>
 
     <h2>5. Content Ownership</h2>
-    <p>You retain all rights to the content you input into and generate through RepurposeAI. We do not claim ownership over your content. By using our service, you grant us a limited license to process your content solely for the purpose of providing the service.</p>
+    <p>You retain all rights to the content you input into and generate through Splicora. We do not claim ownership over your content. By using our service, you grant us a limited license to process your content solely for the purpose of providing the service.</p>
 
     <h2>6. Subscription and Billing</h2>
-    <p>Some features of RepurposeAI require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. You may cancel your subscription at any time, and cancellation will take effect at the end of the current billing period.</p>
+    <p>Some features of Splicora require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. You may cancel your subscription at any time, and cancellation will take effect at the end of the current billing period.</p>
 
     <h2>7. Limitation of Liability</h2>
-    <p>RepurposeAI is provided "as is" without warranties of any kind, either express or implied. In no event shall RepurposeAI be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the service.</p>
+    <p>Splicora is provided "as is" without warranties of any kind, either express or implied. In no event shall Splicora be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the service.</p>
 
     <h2>8. Modifications to Service</h2>
     <p>We reserve the right to modify or discontinue, temporarily or permanently, the service with or without notice. We shall not be liable to you or any third party for any modification, suspension, or discontinuance of the service.</p>
@@ -323,7 +323,7 @@ router.get('/cookies', optionalAuth, (req, res) => {
     <p>Cookies are small text files that are placed on your device when you visit a website. They are widely used to make websites work more efficiently and to provide information to the owners of the site.</p>
 
     <h2>2. How We Use Cookies</h2>
-    <p>RepurposeAI uses cookies for the following purposes:</p>
+    <p>Splicora uses cookies for the following purposes:</p>
     <ul>
       <li><strong>Essential Cookies:</strong> These are necessary for the website to function properly. They enable core functionality such as security, account authentication, and session management.</li>
       <li><strong>Preference Cookies:</strong> These remember your settings and preferences, such as your chosen theme (light/dark mode) and language preferences.</li>
@@ -359,7 +359,7 @@ const helpArticles = [
     id: 'getting-started',
     icon: '🚀',
     category: 'Getting Started',
-    title: 'Getting Started with RepurposeAI',
+    title: 'Getting Started with Splicora',
     summary: 'Learn how to sign up, navigate the dashboard, and repurpose your first video.',
     content: `
       <h2>Creating Your Account</h2>
@@ -670,7 +670,7 @@ router.get('/help', optionalAuth, (req, res) => {
 
   res.send(pageShell('Help Center', req.user, `
     <h1>Help Center</h1>
-    <p class="subtitle">Step-by-step guides for every feature in RepurposeAI. Can't find what you need? Use the chat assistant in the bottom-right corner for instant help.</p>
+    <p class="subtitle">Step-by-step guides for every feature in Splicora. Can't find what you need? Use the chat assistant in the bottom-right corner for instant help.</p>
     ${cardsHtml}
     <div class="cta-box">
       <h2>Still need help?</h2>
