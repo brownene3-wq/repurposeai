@@ -9,22 +9,22 @@ Splicora is an AI-powered content repurposing SaaS platform. Here is everything 
 Splicora helps content creators save time by automatically transforming YouTube videos into ready-to-post social media content for multiple platforms. It includes Smart Shorts for creating short-form video clips, a full Video Editor for trimming and exporting videos, AI Hooks for generating viral hooks, AI Reframe for resizing videos to any aspect ratio, AI Caption Presets for trendy subtitle styles, and Speech Enhancement for cleaning up audio.
 
 ## Getting Started
-1. Visit repurposeai.ai and sign up using Google OAuth (one-click sign in) or create an account with email and password
+1. Visit splicora.ai and sign up using Google OAuth (one-click sign in) or create an account with email and password
 2. After logging in, you will see the Dashboard with quick access to all features via the AI Tools grid
-3. The sidebar navigation includes: Dashboard, Repurpose, Library, Smart Shorts, AI Thumbnails, AI Captions, AI B-Roll, Brand Templates, Analytics, Calendar, Brand Voice, and Billing
-4. The Dashboard AI Tools grid gives quick access to: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
+3. The sidebar navigation includes: Dashboard, Create, Library, Smart Shorts, AI Thumbnails, AI Captions, AI B-Roll, Brand Templates, Analytics, Calendar, Brand Voice, and Billing
+4. The Dashboard AI Tools grid gives quick access to: Create, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
 5. You can also visit the Help Center at /help for step-by-step guides on how to use every feature
 
 ## Repurpose Feature (Content Generation)
 This is the core feature for turning YouTube videos into social media posts.
 
-### How to Repurpose a Video:
+### How to create content from a Video:
 1. Go to the "Repurpose" page from the sidebar
 2. Paste any YouTube video URL (regular videos or YouTube Shorts both work)
 3. Select which platforms you want content for: Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube descriptions, and Blog posts
 4. Choose a tone of voice: Professional, Casual, Humorous, Inspirational, or Educational
 5. Optionally select a Brand Voice you have created for consistent messaging
-6. Click "Repurpose Now" and content is generated in seconds
+6. Click "Create Now" and content is generated in seconds
 7. Copy the generated content and post it on your social media accounts
 
 ### How it works behind the scenes:
@@ -188,7 +188,7 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
 - Quick overview of your recent activity
 - Quick access links to all features via an AI Tools grid
 - Shows recent content and quick stats
-- The AI Tools grid provides one-click access to: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
+- The AI Tools grid provides one-click access to: Create, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar
 - AI Thumbnails is accessible from the sidebar as its own dedicated section
 
 ## Video Editor
@@ -434,17 +434,17 @@ The Smart Shorts page has a premium tool card grid at the top with 6 quick-acces
 
 ## Billing & Pricing Plans
 - Access from "Billing" in the sidebar
-- **Free Plan ($0/month)**: 3 videos/month, 5 repurposes/month, 1 brand voice, 7-day history
-- **Starter Plan ($19/month)**: 15 videos/month, 30 repurposes/month, 3 brand voices, Quick Narrate (your API key), 10 AI thumbnails/month, 30 clips/month, analytics & calendar, no watermark
-- **Pro Plan ($39/month)**: 50 videos/month, 100 repurposes/month, 10 brand voices, unlimited narrations, 50 thumbnails/month, 150 clips/month, A/B testing & batch analysis, unlimited history, full analytics & calendar
-- **Teams Plan ($79/month)**: 200 videos/month, 500 repurposes/month, 25 brand voices, unlimited narrations, 150 thumbnails/month, 500 clips/month, 5 team seats, priority processing, A/B thumbnail testing, batch content analysis
+- **Free Plan ($0/month)**: 3 videos/month, 5 creations/month, 1 brand voice, 7-day history
+- **Starter Plan ($19/month)**: 15 videos/month, 30 creations/month, 3 brand voices, Quick Narrate (your API key), 10 AI thumbnails/month, 30 clips/month, analytics & calendar, no watermark
+- **Pro Plan ($39/month)**: 50 videos/month, 100 creations/month, 10 brand voices, unlimited narrations, 50 thumbnails/month, 150 clips/month, A/B testing & batch analysis, unlimited history, full analytics & calendar
+- **Teams Plan ($79/month)**: 200 videos/month, 500 creations/month, 25 brand voices, unlimited narrations, 150 thumbnails/month, 500 clips/month, 5 team seats, priority processing, A/B thumbnail testing, batch content analysis
 - Upgrade or manage your subscription from the Billing page
 - Payments are processed securely through Stripe
 
 ## Account & Login
 - Sign up with Google OAuth (one-click sign in with Google)
 - Or create an account with email and password
-- Access your dashboard at repurposeai.ai/dashboard after logging in
+- Access your dashboard at splicora.ai/dashboard after logging in
 - Sign out using the "Sign Out" link at the bottom of the sidebar
 - Your content and settings are saved to your account
 
