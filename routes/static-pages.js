@@ -131,7 +131,7 @@ router.get('/about', optionalAuth, (req, res) => {
 
   <div class="cta-box">
     <h2>Ready to supercharge your content?</h2>
-    <p>Join thousands of creators who save hours every week with AI-powered content repurposing.</p>
+    <p>Join thousands of creators who save hours every week with AI-powered content content creation.</p>
     <a href="/auth/register" class="btn-cta">Get Started Free &#x2192;</a>
   </div>
 `));
@@ -240,7 +240,7 @@ router.get('/privacy', optionalAuth, (req, res) => {
 
   <div class="legal-section">
     <h2>1. Information We Collect</h2>
-    <p>We collect information you provide directly to us, such as when you create an account, use our services, or contact us for support. This includes your name, email address, and usage data related to content repurposing activities.</p>
+    <p>We collect information you provide directly to us, such as when you create an account, use our services, or contact us for support. This includes your name, email address, and usage data related to content content creation activities.</p>
 
     <h2>2. How We Use Your Information</h2>
     <p>We use the information we collect to provide, maintain, and improve our services, process transactions, send you technical notices and support messages, and respond to your comments and questions.</p>
@@ -368,7 +368,7 @@ const helpArticles = [
       <h2>Navigating the Dashboard</h2>
       <p>Your Dashboard is the central hub. You'll see an <strong>AI Tools grid</strong> with quick access to every feature: Create, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar. The sidebar also has links to all major sections.</p>
 
-      <h2>Repurposing Your First Video</h2>
+      <h2>content creation Your First Video</h2>
       <p>Go to the <strong>Create</strong> page, paste any YouTube video URL, select the platforms you want content for (Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube, Blog), choose a tone, and click <strong>Create Now</strong>. Content is generated in seconds — just copy and post!</p>
 
       <h2>Tips</h2>
@@ -577,7 +577,7 @@ const helpArticles = [
       <p>Go to <strong>Brand Voice</strong> from the sidebar. Enter a voice name, select a tone (Professional, Casual, Humorous, Inspirational, Educational), write a description of the style, and paste example content that represents the voice. Click <strong>Create Voice</strong>.</p>
 
       <h2>Using Your Brand Voice</h2>
-      <p>When repurposing content, select your brand voice from the dropdown. The AI will match that style across all generated content, ensuring every post sounds authentically like your brand.</p>
+      <p>When content creation content, select your brand voice from the dropdown. The AI will match that style across all generated content, ensuring every post sounds authentically like your brand.</p>
 
       <h2>Managing Voices</h2>
       <p>You can create multiple brand voices for different brands, clients, or content types. Edit or delete any voice at any time from the Brand Voice page.</p>
