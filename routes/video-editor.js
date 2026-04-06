@@ -143,7 +143,12 @@ router.get('/', requireAuth, async (req, res) => {
   <style>
     ${getBaseCSS()}
     .editor-container{display:grid;grid-template-columns:230px 1fr 270px;grid-template-rows:38px 1fr 185px;height:100vh;gap:0;padding:0;overflow:hidden}
-    .editor-main{display:flex;flex-direction:column;min-width:0;overflow-y:auto;overflow-x:hidden;background:#0a0612}
+    .editor-topbar{grid-column:1/4;grid-row:1}
+    .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
+    .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
+    .editor-sidebar{grid-column:3;grid-row:2;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
+    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12)}
+    .editor-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0a0612;grid-column:2;grid-row:2}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
@@ -155,7 +160,7 @@ router.get('/', requireAuth, async (req, res) => {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
     .video-preview-area.has-video{display:flex;background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000}
-.timeline-container{background:#1a1a2e;border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-top:.5rem;overflow:hidden;flex-shrink:0;user-select:none}
+.timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-column:1/4;grid-row:3}
     .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
     .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
     .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
@@ -230,7 +235,7 @@ router.get('/', requireAuth, async (req, res) => {
     #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
     .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
     .transcript-timestamp:hover{text-decoration:underline}
-    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;max-height:calc(100vh - 48px);padding:0;scrollbar-width:thin;background:#110d1c;border-left:1px solid rgba(108,58,237,.08)}
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;scrollbar-width:thin;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0}
     .editor-sidebar::-webkit-scrollbar{width:4px}
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
     .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
@@ -989,6 +994,13 @@ router.get('/', requireAuth, async (req, res) => {
   </div>
 
   <script>
+    // ═══ CINEMA SUITE PRO: Move timeline to grid root ═══
+    (function(){
+      var ec = document.querySelector(".editor-container");
+      var tl = document.getElementById("timelineContainer");
+      if(ec && tl && tl.parentElement !== ec) ec.appendChild(tl);
+    })();
+
     // ═══ CINEMA SUITE PRO: Category tab switching ═══
     function swCat2(el, cat) {
       document.querySelectorAll('.cat-btn').forEach(function(t) { t.classList.remove('on'); });
