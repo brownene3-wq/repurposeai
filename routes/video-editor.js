@@ -347,7 +347,7 @@ router.get('/', requireAuth, async (req, res) => {
     .keyframe-dot.active{background:#EC4899;box-shadow:0 0 6px rgba(236,72,153,0.5)}
     
     /* ═══ MEDIA LIBRARY (Left Panel) ═══ */
-    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow:hidden;grid-row:1/2}
+    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow:hidden;grid-column:1;grid-row:2}
     .ml-head{padding:8px 10px;border-bottom:1px solid rgba(108,58,237,.06);display:flex;align-items:center;gap:6px}
     .ml-head h3{font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.7px;flex:1}
     .ml-tabs{display:flex;border-bottom:1px solid rgba(108,58,237,.06)}
@@ -406,6 +406,11 @@ router.get('/', requireAuth, async (req, res) => {
     .dashboard{overflow:hidden!important}
     .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay,.main-content .theme-toggle{display:none!important}
     .feedback-btn{display:none!important}
+    /* Hide extra original editor panels inside video-container */
+    .video-container>div:not(.upload-zone):not(.video-preview-area):not(.filmstrip-wrap):not(.tools-section){display:none!important}
+    .video-container .tools-section{display:none!important}
+    .video-container{flex:1;display:flex;flex-direction:column;overflow:hidden}
+    .upload-zone{flex:1;background:#0a0612!important}
 
     /* ═══ TOP BAR ═══ */
     .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 12px;gap:5px;height:38px;z-index:100}
