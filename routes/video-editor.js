@@ -142,8 +142,8 @@ router.get('/', requireAuth, async (req, res) => {
   const html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:flex;height:calc(100vh - 48px);gap:.75rem;padding:.75rem;overflow:hidden}
-    .editor-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow-y:auto;overflow-x:hidden}
+    .editor-container{display:grid;grid-template-columns:230px 1fr 270px;height:calc(100vh - 48px);gap:0;padding:0;overflow:hidden}
+    .editor-main{display:flex;flex-direction:column;min-width:0;overflow-y:auto;overflow-x:hidden;background:#0a0612}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
@@ -230,7 +230,7 @@ router.get('/', requireAuth, async (req, res) => {
     #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
     .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
     .transcript-timestamp:hover{text-decoration:underline}
-    .editor-sidebar{width:310px;min-width:310px;display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;max-height:calc(100vh - 60px);padding-right:2px;scrollbar-width:thin}
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;max-height:calc(100vh - 48px);padding:0;scrollbar-width:thin;background:#110d1c;border-left:1px solid rgba(108,58,237,.08)}
     .editor-sidebar::-webkit-scrollbar{width:4px}
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
     .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
@@ -285,9 +285,9 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.05),rgba(236,72,153,0.05));border-color:rgba(108,58,237,0.3)}
     body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
-    @media(max-width:1400px){.editor-sidebar{width:250px;min-width:250px}}
-    @media(max-width:1200px){.editor-sidebar{width:230px;min-width:230px}}
-    @media(max-width:768px){.editor-container{flex-direction:column;height:auto;gap:.5rem}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    @media(max-width:1400px){.editor-container{grid-template-columns:200px 1fr 240px}}
+    @media(max-width:1200px){.editor-container{grid-template-columns:180px 1fr 220px}}
+    @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:none}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
   
@@ -340,6 +340,59 @@ router.get('/', requireAuth, async (req, res) => {
     .keyframe-bar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border-subtle);margin-top:6px}
     .keyframe-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);cursor:pointer}
     .keyframe-dot.active{background:#EC4899;box-shadow:0 0 6px rgba(236,72,153,0.5)}
+    
+    /* ═══ MEDIA LIBRARY (Left Panel) ═══ */
+    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow:hidden;grid-row:1/2}
+    .ml-head{padding:8px 10px;border-bottom:1px solid rgba(108,58,237,.06);display:flex;align-items:center;gap:6px}
+    .ml-head h3{font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.7px;flex:1}
+    .ml-tabs{display:flex;border-bottom:1px solid rgba(108,58,237,.06)}
+    .ml-tab{flex:1;padding:8px 4px;text-align:center;font-size:9.5px;font-weight:700;color:#4a3d65;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:.3px;background:none;border-top:none;border-left:none;border-right:none}
+    .ml-tab:hover{color:#a78bfa;background:rgba(108,58,237,.03)}
+    .ml-tab.active{color:#a78bfa;border-bottom-color:#7c3aed;background:rgba(108,58,237,.04)}
+    .ml-search{padding:5px 8px}
+    .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;outline:none}
+    .ml-body{flex:1;overflow-y:auto;padding:5px 6px}
+    .ml-upload{border:2px dashed rgba(108,58,237,.2);border-radius:9px;padding:12px;text-align:center;margin-bottom:7px;cursor:pointer;transition:all .25s;background:rgba(108,58,237,.02)}
+    .ml-upload:hover{border-color:#7c3aed;background:rgba(108,58,237,.06)}
+    .ml-section{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:6px 2px 3px;display:flex;align-items:center;gap:4px}
+    .ml-section::after{content:'';flex:1;height:1px;background:rgba(108,58,237,.05)}
+    .ml-folder{display:flex;align-items:center;gap:6px;padding:5px 7px;background:#16112a;border-radius:6px;border:1px solid rgba(108,58,237,.04);cursor:pointer;margin-bottom:2px;transition:all .2s}
+    .ml-folder:hover{border-color:rgba(108,58,237,.15);background:rgba(108,58,237,.04)}
+    .ml-fgrid{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:5px}
+    .ml-fitem{background:#16112a;border-radius:6px;border:1px solid rgba(108,58,237,.05);overflow:hidden;cursor:grab;transition:all .2s;position:relative}
+    .ml-fitem:hover{border-color:rgba(108,58,237,.25);transform:scale(1.02);box-shadow:0 2px 8px rgba(0,0,0,.25)}
+    .ml-fth{aspect-ratio:16/10;background:#0c0814;display:flex;align-items:center;justify-content:center;font-size:18px;position:relative}
+    .ml-fth .ml-badge{position:absolute;top:2px;left:2px;font-size:6px;padding:1px 4px;border-radius:2px;font-weight:700;color:#fff;text-transform:uppercase}
+    .ml-fth .ml-badge.vid{background:rgba(108,58,237,.75)}
+    .ml-fth .ml-badge.aud{background:rgba(34,197,94,.75)}
+    .ml-fth .ml-dur{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.75);color:#bbb;font-size:7px;padding:0 3px;border-radius:2px;font-weight:600}
+    .ml-fth .ml-add{position:absolute;bottom:2px;left:2px;background:rgba(108,58,237,.8);color:#fff;font-size:7px;padding:1px 4px;border-radius:2px;font-weight:700;opacity:0;transition:opacity .2s}
+    .ml-fitem:hover .ml-add{opacity:1}
+    .ml-fnm{padding:3px 5px;font-size:8px;color:#5a4d78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ml-foot{padding:5px 6px;border-top:1px solid rgba(108,58,237,.05);display:flex;gap:3px}
+    .ml-fb{flex:1;padding:5px;background:rgba(108,58,237,.05);border:1px solid rgba(108,58,237,.06);border-radius:5px;color:#5a4d78;font-size:8px;font-weight:700;cursor:pointer;text-align:center;transition:all .2s}
+    .ml-fb:hover{background:rgba(108,58,237,.12);color:#a78bfa}
+    .ml-fb.ai{background:linear-gradient(135deg,rgba(108,58,237,.08),rgba(236,72,153,.04));border-color:rgba(108,58,237,.1);color:#a78bfa}
+
+    /* ═══ FILMSTRIP + AUDIO WAVEFORM (CapCut-style) ═══ */
+    .filmstrip-wrap{width:100%;padding:2px 0 4px;position:relative}
+    .fs-ruler{display:flex;align-items:flex-end;padding:0 40px;height:18px;position:relative}
+    .fs-ruler span{flex:1;font-size:9px;color:#4a5568;font-variant-numeric:tabular-nums;font-weight:500}
+    .fs-playhead{position:absolute;left:calc(40px + 22%);top:0;z-index:10;display:flex;flex-direction:column;align-items:center;pointer-events:none}
+    .fs-playhead .ph-tri{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:10px solid #fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+    .fs-playhead .ph-line{width:2px;background:#fff;box-shadow:0 0 6px rgba(255,255,255,.4)}
+    .fs-row{display:flex;align-items:center;height:56px;position:relative;margin-bottom:2px}
+    .fs-row.audio-row{height:38px}
+    .fs-label{width:40px;font-size:9px;font-weight:800;color:#5a6a7a;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;text-align:right;padding-right:6px}
+    .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:2px solid rgba(0,200,200,.25)}
+    .fs-track.video-track{background:#0a1015}
+    .fs-track.audio-track{background:#0a1520;border-color:rgba(0,150,255,.2)}
+    .fs-thumbs{display:flex;height:100%;width:100%}
+    .fs-thumb{flex:1;background-size:cover;background-position:center;position:relative;border-right:1px solid rgba(0,0,0,.3)}
+    .fs-thumb:last-child{border-right:none}
+    .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
+    .fs-audio-canvas{width:100%;height:100%;display:block}
+
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -355,6 +408,38 @@ router.get('/', requireAuth, async (req, res) => {
       ${getThemeToggle()}
 
       <div class="editor-container">
+              <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
+              <div class="media-library" id="mediaLibrary">
+                <div class="ml-head"><h3>&#128194; Media</h3></div>
+                <div class="ml-tabs">
+                  <button class="ml-tab active" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Videos</button>
+                  <button class="ml-tab" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Audio</button>
+                  <button class="ml-tab" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Images</button>
+                  <button class="ml-tab" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Stock</button>
+                </div>
+                <div class="ml-search"><input placeholder="&#128269; Search media..." /></div>
+                <div class="ml-body">
+                  <div class="ml-upload">
+                    <div style="font-size:22px">&#9729;&#65039;</div>
+                    <div style="font-size:9px;color:#5a4d78;font-weight:600;margin-top:1px">Drop files or click to upload</div>
+                    <div style="font-size:8px;color:#3d3358;margin-top:1px">MP4, MOV, MP3, WAV, PNG, JPG</div>
+                    <button style="margin-top:5px;padding:4px 14px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:5px;color:#fff;font-size:9px;font-weight:700;border:none;cursor:pointer">+ Upload</button>
+                  </div>
+                  <div class="ml-section">Folders</div>
+                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Completed Videos</span><span style="font-size:8px;color:#3d3358">12</span></div>
+                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1">Not Completed</span><span style="font-size:8px;color:#3d3358">5</span></div>
+                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1">Leonardo AI Images</span><span style="font-size:8px;color:#3d3358">24</span></div>
+                  <div class="ml-section">Recent &mdash; drag to timeline</div>
+                  <div class="ml-fgrid" id="mediaFileGrid">
+                  </div>
+                </div>
+                <div class="ml-foot">
+                  <button class="ml-fb">&#128229; Import</button>
+                  <button class="ml-fb">&#128193; Folder</button>
+                  <button class="ml-fb ai">&#10024; AI B-Roll</button>
+                </div>
+              </div>
+
         <div class="editor-main">
           <div class="video-container">
             <div class="upload-zone" id="uploadZone">
@@ -391,7 +476,32 @@ router.get('/', requireAuth, async (req, res) => {
               <div class="crop-overlay" id="cropOverlay"></div>
             </div>
 
-            <div class="timeline-container" id="timelineContainer">
+            
+              <!-- ═══ FILMSTRIP + AUDIO WAVEFORM (CapCut-style) ═══ -->
+              <div class="filmstrip-wrap" id="filmstripWrap" style="display:none;padding:4px 8px;">
+                <div class="fs-ruler">
+                  <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span>
+                  <div class="fs-playhead" id="fsPlayhead">
+                    <div class="ph-tri"></div>
+                    <div class="ph-line"></div>
+                  </div>
+                </div>
+                <div class="fs-row">
+                  <div class="fs-label">VIDEO</div>
+                  <div class="fs-track video-track">
+                    <div class="fs-thumbs" id="fsThumbs"></div>
+                    <span class="fs-dur" id="fsDuration"></span>
+                  </div>
+                </div>
+                <div class="fs-row audio-row">
+                  <div class="fs-label">AUDIO</div>
+                  <div class="fs-track audio-track">
+                    <canvas class="fs-audio-canvas" id="fsAudioCanvas"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <div class="timeline-container" id="timelineContainer">
               <div class="timeline-ruler" id="timelineRuler"></div>
               <div class="timeline-tracks" id="timelineTracks">
                 <div class="timeline-playhead" id="timelinePlayhead" style="left:40px"><div class="timeline-playhead-hitbox" id="playheadHitbox"></div></div>
@@ -1259,6 +1369,114 @@ router.get('/', requireAuth, async (req, res) => {
   </div>
 
   <script>
+    // ═══ MEDIA LIBRARY: Populate file grid ═══
+    function populateMediaGrid() {
+      const grid = document.getElementById('mediaFileGrid');
+      if (!grid) return;
+      const files = [
+        {name:'0314(1).mp4',type:'vid',dur:'2:21',icon:'\ud83c\udfac'},
+        {name:'0314.mp4',type:'vid',dur:'0:35',icon:'\ud83c\udfac'},
+        {name:'intro_hook.mp4',type:'vid',dur:'1:30',icon:'\ud83c\udfac'},
+        {name:'beat_chill.mp3',type:'aud',dur:'3:15',icon:'\ud83c\udfb5'},
+        {name:'thumbnail.png',type:'img',dur:'',icon:'\ud83d\uddbc\ufe0f'},
+        {name:'broll_city.mp4',type:'vid',dur:'0:22',icon:'\ud83c\udfac'}
+      ];
+      grid.innerHTML = files.map(f => 
+        '<div class="ml-fitem" draggable="true">' +
+          '<div class="ml-fth">' + f.icon +
+            '<span class="ml-badge ' + f.type + '">' + f.type.toUpperCase() + '</span>' +
+            (f.dur ? '<span class="ml-dur">' + f.dur + '</span>' : '') +
+            '<span class="ml-add">+ Timeline</span>' +
+          '</div>' +
+          '<div class="ml-fnm">' + f.name + '</div>' +
+        '</div>'
+      ).join('');
+    }
+
+    // ═══ FILMSTRIP: Generate video thumbnails ═══
+    function generateFilmstripThumbs() {
+      var container = document.getElementById('fsThumbs');
+      if (!container) return;
+      container.innerHTML = '';
+      var colors1 = ['#1a3a5c','#2a5a3c','#3a2a5c','#5c3a1a','#1a5c5a','#5c1a3a','#3a5c1a','#2a3a5c','#5c5a1a','#1a3a2a','#4a2a5c','#5c2a4a','#2a5c3a','#3a1a5c'];
+      var colors2 = ['#2d4a3a','#4a2d3a','#3a4a2d','#2d3a4a','#4a3a2d','#3a2d4a','#5a3a2d','#2d5a3a','#3a5a2d','#2d3a5a','#5a2d3a','#3a2d5a','#4a5a2d','#2d4a5a'];
+      for (var i = 0; i < 14; i++) {
+        var thumb = document.createElement('div');
+        thumb.className = 'fs-thumb';
+        var angle = Math.floor(Math.random() * 360);
+        thumb.style.background = 'linear-gradient(' + angle + 'deg,' + colors1[i] + 'dd,' + colors2[i] + 'aa),radial-gradient(circle at ' + (30+Math.random()*40) + '% ' + (30+Math.random()*40) + '%,rgba(200,180,150,.3) 0%,transparent 50%),linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.3))';
+        if (Math.random() > 0.3) {
+          var face = document.createElement('div');
+          face.style.cssText = 'position:absolute;width:' + (18+Math.random()*12) + 'px;height:' + (22+Math.random()*14) + 'px;border-radius:50%;background:radial-gradient(circle,rgba(210,180,150,.45),rgba(180,150,120,.2));top:' + (5+Math.random()*15) + 'px;left:' + (20+Math.random()*40) + '%;filter:blur(1px)';
+          thumb.style.position = 'relative';
+          thumb.appendChild(face);
+        }
+        container.appendChild(thumb);
+      }
+    }
+
+    // ═══ FILMSTRIP: Draw blue audio waveform ═══
+    function drawFilmstripAudioWaveform() {
+      var canvas = document.getElementById('fsAudioCanvas');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var dpr = window.devicePixelRatio || 1;
+      var rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      var w = rect.width, h = rect.height, mid = h / 2;
+      var barWidth = 2, gap = 1, total = Math.floor(w / (barWidth + gap));
+      for (var i = 0; i < total; i++) {
+        var x = i * (barWidth + gap);
+        var base = Math.sin(i * 0.03) * Math.sin(i * 0.07) * Math.cos(i * 0.01);
+        var detail = Math.sin(i * 0.15) * 0.3 + Math.sin(i * 0.4) * 0.15;
+        var envelope = 0.5 + 0.5 * Math.sin(i * 0.005 + 1);
+        var amp = Math.abs(base + detail) * envelope;
+        if (Math.sin(i * 0.02) > 0.85) amp *= 0.15;
+        amp = Math.max(amp, 0.03);
+        var barH = amp * (h * 0.85);
+        var brightness = Math.floor(150 + amp * 105);
+        ctx.fillStyle = 'rgb(30,' + brightness + ',' + Math.floor(brightness * 1.4) + ')';
+        ctx.fillRect(x, mid - barH / 2, barWidth, barH);
+      }
+    }
+
+    // ═══ FILMSTRIP: Size playhead line ═══
+    function sizeFilmstripPlayhead() {
+      var wrap = document.getElementById('filmstripWrap');
+      var ph = document.getElementById('fsPlayhead');
+      if (!wrap || !ph) return;
+      var line = ph.querySelector('.ph-line');
+      if (line) line.style.height = (wrap.offsetHeight - 18) + 'px';
+    }
+
+    // ═══ Show filmstrip when video is loaded ═══
+    function showFilmstrip(duration) {
+      var wrap = document.getElementById('filmstripWrap');
+      if (wrap) {
+        wrap.style.display = 'block';
+        var durEl = document.getElementById('fsDuration');
+        if (durEl && duration) {
+          var mins = Math.floor(duration / 60);
+          var secs = Math.floor(duration % 60);
+          durEl.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+        }
+        setTimeout(function() {
+          generateFilmstripThumbs();
+          drawFilmstripAudioWaveform();
+          sizeFilmstripPlayhead();
+        }, 100);
+      }
+    }
+
+    // Initialize media library on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      populateMediaGrid();
+    });
+    if (document.readyState !== 'loading') { populateMediaGrid(); }
+
+
     ${getThemeScript()}
 
 
@@ -1443,6 +1661,9 @@ function showToast(message, type = 'success') {
 
         videoPlayer.src = data.serveUrl;
         videoPlayer.addEventListener('loadedmetadata', function() {
+            // Show filmstrip when video loads
+            if (typeof showFilmstrip === "function") showFilmstrip(this.duration);
+
           if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
             videoDuration = videoPlayer.duration;
           }
