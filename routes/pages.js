@@ -246,7 +246,7 @@ router.get('/', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
-  <meta name="description" content="AI-powered video repurposing platform. 9 tools in one: Smart Shorts, Video Editor, AI Captions, AI Hooks, B-Roll, Music Library, Reframe, Scheduler &amp; Brand Voice. Turn one video into unlimited content.">
+  <meta name="description" content="AI-powered video creation platform. 9 tools in one: Smart Shorts, Video Editor, AI Captions, AI Hooks, B-Roll, Music Library, Reframe, Scheduler &amp; Brand Voice. Turn one video into unlimited content.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
@@ -278,7 +278,7 @@ router.get('/', (req, res) => {
       <p>9 AI tools in one platform. Smart Shorts, Video Editor, AI Captions, Hooks, B-Roll, Music Library, Reframe, Scheduler, and Brand Voice. Paste a link and let AI do the rest.</p>
       <div class="hero-input-group">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
-        <button class="btn btn-primary">Repurpose &#x26A1;</button>
+        <button class="btn btn-primary">Create &#x26A1;</button>
         <button class="btn btn-outline">Upload Files</button>
       </div>
       <div class="carousel-container">
@@ -521,7 +521,7 @@ router.get('/', (req, res) => {
       <div class="pricing-grid">
         <div class="price-card">
           <h3>Free</h3><div class="price">$0<span>/month</span></div>
-          <p class="price-desc">Get started with AI content repurposing</p>
+          <p class="price-desc">Get started with AI content creation</p>
           <ul class="price-features"><li>3 videos per month</li><li>5 creations/month</li><li>1 brand voice</li><li>7-day history</li></ul>
           <a href="/auth/register" class="btn btn-outline">Start Free</a>
         </div>
@@ -693,7 +693,7 @@ router.get('/', (req, res) => {
       <p class="section-subtitle" style="margin:1rem auto 2rem">9 AI tools. Every platform. One subscription. Join thousands of creators who turn a single video into a week of content in under 5 minutes.</p>
       <div class="hero-input-group" style="margin-bottom:1rem">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
-        <button class="btn btn-primary">Repurpose &#x26A1;</button>
+        <button class="btn btn-primary">Create &#x26A1;</button>
       </div>
       <p style="color:var(--text-dim);font-size:.85rem">Free plan available &middot; No credit card required</p>
     </div>
@@ -705,7 +705,7 @@ router.get('/', (req, res) => {
       <div style="font-size:3rem;margin-bottom:1rem;">&#x1F4F1;</div>
       <h2 class="section-title" style="margin-bottom:.8rem;">Get the Splicora App</h2>
       <p style="color:var(--text-dim);font-size:1.05rem;line-height:1.8;margin-bottom:2rem;">
-        Install Splicora on your phone for the full app experience — no app store needed. Access all features, get notifications, and repurpose content on the go.
+        Install Splicora on your phone for the full app experience — no app store needed. Access all features, get notifications, and create content on the go.
       </p>
       <div style="display:flex;gap:1.5rem;justify-content:center;flex-wrap:wrap;margin-bottom:2.5rem;">
         <div style="background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:24px 28px;flex:1;min-width:250px;max-width:320px;text-align:left;">
@@ -735,7 +735,7 @@ router.get('/', (req, res) => {
     <div class="footer-grid">
       <div class="footer-brand">
         <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
-        <p>AI-powered content repurposing platform. Turn one YouTube video into optimized content for every major social platform.</p>
+        <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)">&#x1F4F1; Get the App</a></div>
       <div><h4>Company</h4><a href="/contact">Contact</a><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
