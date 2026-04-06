@@ -324,12 +324,12 @@ router.get('/', (req, res) => {
 
   <div class="stats-marquee">
     <div class="marquee-content">
-      <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Repurposed</div>
+      <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Created</div>
       <div class="marquee-item"><span class="marquee-num">50,000+</span> Posts Generated</div>
       <div class="marquee-item"><span class="marquee-num">7</span> Platforms Supported</div>
       <div class="marquee-item"><span class="marquee-num">99%</span> Time Saved</div>
       <div class="marquee-item"><span class="marquee-num">AI-Powered</span> Engine</div>
-      <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Repurposed</div>
+      <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Created</div>
       <div class="marquee-item"><span class="marquee-num">50,000+</span> Posts Generated</div>
       <div class="marquee-item"><span class="marquee-num">7</span> Platforms Supported</div>
       <div class="marquee-item"><span class="marquee-num">99%</span> Time Saved</div>
@@ -428,7 +428,7 @@ router.get('/', (req, res) => {
           <div class="feature-content">
             <h3>Social Scheduler</h3>
             <h2>Schedule a month's posts in 10 minutes</h2>
-            <p>Plan and auto-publish across all your platforms from one unified calendar. Schedule repurposed content for Instagram, TikTok, YouTube, LinkedIn, Twitter/X, Facebook, and Pinterest. Our AI suggests optimal posting times based on your audience's activity patterns for maximum reach and engagement.</p>
+            <p>Plan and auto-publish across all your platforms from one unified calendar. Schedule created content for Instagram, TikTok, YouTube, LinkedIn, Twitter/X, Facebook, and Pinterest. Our AI suggests optimal posting times based on your audience's activity patterns for maximum reach and engagement.</p>
             <span class="feature-tag">&#x1F4C5; Auto-Publish</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><div class="feature-mockup-content"><div class="feature-calendar-grid"><div class="feature-calendar-day">M</div><div class="feature-calendar-day">T</div><div class="feature-calendar-day">W</div><div class="feature-calendar-day">T</div><div class="feature-calendar-day">F</div><div class="feature-calendar-day">S</div><div class="feature-calendar-day">S</div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div></div></div></div></div>
@@ -439,7 +439,7 @@ router.get('/', (req, res) => {
           <div class="feature-content">
             <h3>Brand Voice</h3>
             <h2>Every piece of content sounds like you</h2>
-            <p>Train our AI on your best-performing content, and it learns your unique tone, vocabulary, and style. Every repurposed post — whether it's a tweet, LinkedIn article, or Instagram caption — comes out sounding authentically you. Set up custom tone profiles for different brands, clients, or content types.</p>
+            <p>Train our AI on your best-performing content, and it learns your unique tone, vocabulary, and style. Every created post — whether it's a tweet, LinkedIn article, or Instagram caption — comes out sounding authentically you. Set up custom tone profiles for different brands, clients, or content types.</p>
             <span class="feature-tag">&#x1F399; Custom AI Voice</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><div class="feature-mockup-content"><div class="feature-voice-layout"><div class="feature-voice-slider"><div class="feature-voice-slider-label">Tone</div><div class="feature-voice-slider-bar"><div class="feature-voice-slider-fill" style="width:60%"></div></div></div><div class="feature-voice-slider"><div class="feature-voice-slider-label">Engagement</div><div class="feature-voice-slider-bar"><div class="feature-voice-slider-fill" style="width:75%"></div></div></div><div class="feature-voice-slider"><div class="feature-voice-slider-label">Formality</div><div class="feature-voice-slider-bar"><div class="feature-voice-slider-fill" style="width:50%"></div></div></div></div></div></div></div>
@@ -522,25 +522,25 @@ router.get('/', (req, res) => {
         <div class="price-card">
           <h3>Free</h3><div class="price">$0<span>/month</span></div>
           <p class="price-desc">Get started with AI content repurposing</p>
-          <ul class="price-features"><li>3 videos per month</li><li>5 repurposes/month</li><li>1 brand voice</li><li>7-day history</li></ul>
+          <ul class="price-features"><li>3 videos per month</li><li>5 creations/month</li><li>1 brand voice</li><li>7-day history</li></ul>
           <a href="/auth/register" class="btn btn-outline">Start Free</a>
         </div>
         <div class="price-card featured">
           <h3>Starter</h3><div class="price">$19<span>/month</span></div>
           <p class="price-desc">Everything you need to grow</p>
-          <ul class="price-features"><li>15 videos/month</li><li>30 repurposes/month</li><li>3 brand voices</li><li>Quick Narrate (your API key)</li><li>10 AI thumbnails/month</li><li>30 clips/month</li><li>Analytics &amp; calendar</li><li>No watermark</li></ul>
+          <ul class="price-features"><li>15 videos/month</li><li>30 creations/month</li><li>3 brand voices</li><li>Quick Narrate (your API key)</li><li>10 AI thumbnails/month</li><li>30 clips/month</li><li>Analytics &amp; calendar</li><li>No watermark</li></ul>
           <a href="/auth/register?plan=starter" class="btn btn-primary">Get Started</a>
         </div>
         <div class="price-card">
           <h3>Pro</h3><div class="price">$39<span>/month</span></div>
           <p class="price-desc">For creators serious about growth</p>
-          <ul class="price-features"><li>50 videos/month</li><li>100 repurposes/month</li><li>10 brand voices</li><li>Unlimited narrations</li><li>50 thumbnails/month</li><li>150 clips/month</li><li>A/B testing &amp; batch analysis</li><li>Unlimited history</li><li>Full analytics &amp; calendar</li></ul>
+          <ul class="price-features"><li>50 videos/month</li><li>100 creations/month</li><li>10 brand voices</li><li>Unlimited narrations</li><li>50 thumbnails/month</li><li>150 clips/month</li><li>A/B testing &amp; batch analysis</li><li>Unlimited history</li><li>Full analytics &amp; calendar</li></ul>
           <a href="/auth/register?plan=pro" class="btn btn-primary">Go Pro</a>
         </div>
         <div class="price-card">
           <h3>Teams</h3><div class="price">$79<span>/month</span></div>
           <p class="price-desc">Scale with your whole team</p>
-          <ul class="price-features"><li>200 videos/month</li><li>500 repurposes/month</li><li>25 brand voices</li><li>Unlimited narrations</li><li>150 thumbnails/month</li><li>500 clips/month</li><li>5 team seats</li><li>Priority processing</li><li>A/B thumbnail testing</li><li>Batch content analysis</li><li>Full analytics &amp; calendar</li><li>Unlimited history</li></ul>
+          <ul class="price-features"><li>200 videos/month</li><li>500 creations/month</li><li>25 brand voices</li><li>Unlimited narrations</li><li>150 thumbnails/month</li><li>500 clips/month</li><li>5 team seats</li><li>Priority processing</li><li>A/B thumbnail testing</li><li>Batch content analysis</li><li>Full analytics &amp; calendar</li><li>Unlimited history</li></ul>
           <a href="/auth/register?plan=teams" class="btn btn-primary">Start Teams</a>
         </div>
       </div>
@@ -712,7 +712,7 @@ router.get('/', (req, res) => {
           <div style="font-size:1.8rem;margin-bottom:.8rem;">&#xF8FF;</div>
           <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">iPhone / iPad</div>
           <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
-            <li>Open <strong style="color:var(--text)">repurposeai.ai</strong> in Safari</li>
+            <li>Open <strong style="color:var(--text)">splicora.ai</strong> in Safari</li>
             <li>Tap the <strong style="color:var(--text)">Share</strong> button &#x2191;</li>
             <li>Tap <strong style="color:var(--text)">Add to Home Screen</strong></li>
           </ol>
@@ -721,7 +721,7 @@ router.get('/', (req, res) => {
           <div style="font-size:1.8rem;margin-bottom:.8rem;">&#x1F4F1;</div>
           <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">Android</div>
           <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
-            <li>Open <strong style="color:var(--text)">repurposeai.ai</strong> in Chrome</li>
+            <li>Open <strong style="color:var(--text)">splicora.ai</strong> in Chrome</li>
             <li>Tap the <strong style="color:var(--text)">menu</strong> &#x22EE; (three dots)</li>
             <li>Tap <strong style="color:var(--text)">Install app</strong> or <strong style="color:var(--text)">Add to Home Screen</strong></li>
           </ol>
