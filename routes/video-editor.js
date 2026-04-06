@@ -1343,7 +1343,7 @@ function showToast(message, type = 'success') {
         videoDuration = data.duration || 0;
         initTimeline();
 
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoPlayer?.addEventListener('loadedmetadata', function() {
             // Show filmstrip when video loads
             if (typeof showFilmstrip === "function") showFilmstrip(this.duration);
@@ -1760,7 +1760,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         showToast('Brand template applied!', 'success');
       } catch (error) {
@@ -1810,7 +1810,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         showToast('Transitions applied successfully!', 'success');
       } catch (error) {
         showToast('Failed: ' + error.message, 'error');
@@ -1881,7 +1881,7 @@ function showToast(message, type = 'success') {
 
         var data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         initTimeline();
 
@@ -2136,7 +2136,7 @@ function showToast(message, type = 'success') {
         var diff = Math.abs(seekedPct - dragPct);
         if (diff > 0.05 && dragPct > 0.01) {
           // Seek failed or landed far from target — force currentTime again
-          videoPlayer?.currentTime = dragPct * videoDuration;
+          videoPlayer.currentTime = dragPct * videoDuration;
         }
         playheadSeeking = false;
         lockedLeft = null;
@@ -2197,7 +2197,7 @@ function showToast(message, type = 'success') {
         // Now seek the video — but keep playhead LOCKED until seek completes
         if (videoDuration) {
           playheadSeeking = true;
-          videoPlayer?.currentTime = dragPct * videoDuration;
+          videoPlayer.currentTime = dragPct * videoDuration;
           // Safety timeout: if seeked event never fires, unlock after 5s
           setTimeout(function() { if (playheadSeeking) { playheadSeeking = false; lockedLeft = null; } }, 5000);
         }
@@ -2222,7 +2222,7 @@ function showToast(message, type = 'success') {
       if (playhead) playhead.style.left = result.left + 'px';
       // Seek the video with lock
       playheadSeeking = true;
-      videoPlayer?.currentTime = dragPct * videoDuration;
+      videoPlayer.currentTime = dragPct * videoDuration;
       setTimeout(function() { if (playheadSeeking) { playheadSeeking = false; lockedLeft = null; } }, 5000);
       // Start dragging so user can keep sliding
       playheadDragging = true;
@@ -2360,7 +2360,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration;
         document.getElementById('endTime')?.value = Math.round(videoDuration);
 
@@ -2442,7 +2442,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
 
         showToast('Filter applied successfully!', 'success');
@@ -2467,7 +2467,7 @@ function showToast(message, type = 'success') {
       if (speed === 1) {
         if (originalVideoFile) {
           currentVideoFile = { ...originalVideoFile };
-          videoPlayer?.src = originalVideoFile.serveUrl;
+          videoPlayer.src = originalVideoFile.serveUrl;
           videoDuration = originalVideoFile.duration || videoDuration;
           initTimeline();
           showToast('Speed reset to normal', 'success');
@@ -2496,7 +2496,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         initTimeline();
 
@@ -2548,7 +2548,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
 
         showToast('Audio enhanced successfully!', 'success');
@@ -2625,7 +2625,7 @@ function showToast(message, type = 'success') {
         }
         var data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         showToast('Voiceover applied successfully!', 'success');
       } catch (error) {
@@ -2709,7 +2709,7 @@ function showToast(message, type = 'success') {
 
         var data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
         progressBar.style.width = '100%';
         progressText.textContent = 'Voice transformed successfully!';
@@ -2812,7 +2812,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration || videoDuration;
 
         showToast('Text overlay applied successfully!', 'success');
@@ -2966,7 +2966,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration;
 
         addMusicToTimeline(selectedMusicFile.name || 'Music', document.getElementById('musicVolume')?.value);
@@ -3008,7 +3008,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration;
         progressBar.style.width = '100%';
 
@@ -3053,7 +3053,7 @@ function showToast(message, type = 'success') {
 
         const data = await response.json();
         currentVideoFile = data;
-        videoPlayer?.src = data.serveUrl;
+        videoPlayer.src = data.serveUrl;
         videoDuration = data.duration;
         progressBar.style.width = '100%';
 
@@ -3091,7 +3091,7 @@ function showToast(message, type = 'success') {
           showToast('YouTube video imported!');
           currentVideoFile = data;
           videoDuration = data.duration || 0;
-          videoPlayer?.src = data.serveUrl;
+          videoPlayer.src = data.serveUrl;
           if (videoDuration > 0) initTimeline();
           videoPlayer?.addEventListener('loadedmetadata', function() {
             if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
@@ -3132,7 +3132,7 @@ function showToast(message, type = 'success') {
                 showToast('Dropbox video imported!');
                 currentVideoFile = data;
                 videoDuration = data.duration || 0;
-                videoPlayer?.src = data.serveUrl;
+                videoPlayer.src = data.serveUrl;
                 if (videoDuration > 0) initTimeline();
                 videoPlayer?.addEventListener('loadedmetadata', function() {
                   if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
@@ -3191,7 +3191,7 @@ function showToast(message, type = 'success') {
       deleteClipBtn.addEventListener('click', function() {
         if (!currentVideoFile) { showToast('No video loaded', 'error'); return; }
         if (confirm('Are you sure you want to delete this clip?')) {
-          videoPlayer?.src = '';
+          videoPlayer.src = '';
           currentVideoFile = null;
           videoDuration = 0;
           uploadZone.classList.remove('has-video');
