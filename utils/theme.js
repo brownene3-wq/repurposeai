@@ -124,7 +124,7 @@ function getSidebar(activePage, user, teamPermissions) {
   const allLinks = [
     // --- Core Content Tools ---
     { href: '/dashboard', icon: '\u{1F3AC}', label: 'Dashboard', key: 'dashboard', perm: null },
-    { href: '/repurpose', icon: '\u{1F504}', label: 'Repurpose', key: 'repurpose', perm: 'use_repurpose' },
+    { href: '/repurpose', icon: '\u{1F504}', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/repurpose/history', icon: '\u{1F4DA}', label: 'Library', key: 'library', perm: 'use_repurpose' },
     { href: '/shorts', icon: '\u{2702}\u{FE0F}', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
     { href: '/video-editor', icon: '\u{1F3AC}', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
@@ -173,7 +173,7 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 15px;display:flex;align-items:center;justify-content:space-between;">
-        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Splicora</a>
         <a href="/dashboard" class="logo-mini" style="padding:0;margin:0 auto;text-decoration:none;border-left:none;display:none;">R<span>AI</span></a>
       </div>
       <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">&#x276E;</button>
