@@ -53,7 +53,7 @@ function getAdminSidebar(activePage) {
   return `
     <aside class="sidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Create<span>AI</span></a>
         <div style="margin-top:8px;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:#6C3AED;font-weight:700;">Admin Panel</div>
       </div>
       ${navLinks}
@@ -636,7 +636,7 @@ router.get('/team', requireAuth, requireAdmin, async (req, res) => {
     const invitations = await teamOps.getInvitations();
 
     const allPermissions = [
-      { key: 'use_repurpose', label: 'Use Repurpose Tool' },
+      { key: 'use_repurpose', label: 'Use Create Tool' },
       { key: 'use_shorts', label: 'Use Smart Shorts' },
       { key: 'use_calendar', label: 'Use Calendar' },
       { key: 'use_brand_voice', label: 'Use Brand Voice' },
@@ -970,14 +970,14 @@ router.post('/messages/reply', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Gmail not configured. Set up Gmail in Email Inbox settings first.' });
     }
 
-    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://splicora.ai/admin/email/oauth-callback');
     oauth2Client.setCredentials({ refresh_token: refreshToken });
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
     const replySubject = subject?.startsWith('Re:') ? subject : 'Re: ' + (subject || 'Your message');
 
     const rawEmail = [
-      'From: support@repurposeai.ai',
+      'From: support@splicora.ai',
       'To: ' + to,
       'Subject: ' + replySubject,
       'Content-Type: text/plain; charset=utf-8',
@@ -1120,7 +1120,7 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
     const { email, role, permissions } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
     const invitation = await teamOps.createInvitation(req.user.id, email, role || 'editor', permissions || {});
-    const inviteLink = 'https://repurposeai.ai/admin/invite/' + invitation.token;
+    const inviteLink = 'https://splicora.ai/admin/invite/' + invitation.token;
 
     // Send invitation email via Gmail
     const clientId = process.env.GMAIL_CLIENT_ID;
@@ -1128,7 +1128,7 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
     const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
     if (clientId && clientSecret && refreshToken) {
       try {
-        const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+        const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://splicora.ai/admin/email/oauth-callback');
         oauth2Client.setCredentials({ refresh_token: refreshToken });
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
@@ -1161,7 +1161,7 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
         `;
 
         const rawEmail = [
-          'From: support@repurposeai.ai',
+          'From: support@splicora.ai',
           'To: ' + email,
           'Subject: You\'re invited to join Splicora',
           'MIME-Version: 1.0',
@@ -1502,11 +1502,11 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
               <div class="value">${summary.active_30d || 0}</div>
             </div>
             <div class="stat-card">
-              <div class="label">Total Repurposes</div>
+              <div class="label">Total creations</div>
               <div class="value">${summary.total_outputs || 0}</div>
             </div>
             <div class="stat-card">
-              <div class="label">Repurposes (30d)</div>
+              <div class="label">creations (30d)</div>
               <div class="value">${summary.outputs_30d || 0}</div>
             </div>
             <div class="stat-card">
@@ -1525,7 +1525,7 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
             <div style="overflow-x:auto">
               <table class="data-table" id="usageTable">
                 <thead><tr>
-                  <th>User</th><th>Plan</th><th>Repurposes</th><th>Content</th><th>Shorts</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th><th>Stripe</th>
+                  <th>User</th><th>Plan</th><th>creations</th><th>Content</th><th>Shorts</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th><th>Stripe</th>
                 </tr></thead>
                 <tbody>${userRows}</tbody>
               </table>
@@ -1575,8 +1575,8 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
           const lowUsers = [];
           rows.forEach(r => {
             const cells = r.querySelectorAll('td');
-            const repurposes = parseInt(cells[2].textContent) || 0;
-            if (repurposes <= 2) {
+            const creations = parseInt(cells[2].textContent) || 0;
+            if (creations <= 2) {
               r.style.background = 'rgba(239,68,68,0.06)';
               lowUsers.push(cells[0].textContent.trim().split('\n')[0]);
             }
