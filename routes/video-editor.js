@@ -905,13 +905,7 @@ router.get('/', requireAuth, async (req, res) => {
                   <div class="tb3">\ud83c\udf9e\ufe0f Keyframe</div>
                 </div>
               </div>
-              <div class="s-panel">
-                <h4>\u2702\ufe0f Trim Video</h4>
-                <div class="s-row"><span class="s-lbl">Start</span><div class="s-track"><div class="s-fill" style="width:0;background:#7c3aed"></div></div><span class="s-val">0:00</span></div>
-                <div class="s-row"><span class="s-lbl">End</span><div class="s-track"><div class="s-fill" style="width:100%;background:#7c3aed"></div></div><span class="s-val">2:21</span></div>
-                <button class="s-apply">Apply Trim</button>
-              </div>
-              <div class="s-panel" style="margin-top:4px">
+                            <div class="s-panel" style="margin-top:4px">
                 <h4>\u2699\ufe0f Properties</h4>
                 <div class="s-row"><span class="s-lbl">Opacity</span><div class="s-track"><div class="s-fill" style="width:100%;background:#7c3aed"></div></div><span class="s-val">100%</span></div>
                 <div class="s-row"><span class="s-lbl">Volume</span><div class="s-track"><div class="s-fill" style="width:80%;background:#22c55e"></div></div><span class="s-val">80%</span></div>
