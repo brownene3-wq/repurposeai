@@ -1450,7 +1450,7 @@ function showToast(message, type = 'success') {
       var b = parseInt(document.getElementById('brightness')?.value) || 100;
       var c = parseInt(document.getElementById('contrast')?.value) || 100;
       var s = parseInt(document.getElementById('saturation')?.value) || 100;
-      videoPlayer?.style.filter = 'brightness(' + (b / 100) + ') contrast(' + (c / 100) + ') saturate(' + (s / 100) + ')';
+      videoPlayer.style.filter = 'brightness(' + (b / 100) + ') contrast(' + (c / 100) + ') saturate(' + (s / 100) + ')';
     }
 
     // Tool panel switching
@@ -2254,12 +2254,12 @@ function showToast(message, type = 'success') {
             timelineState.trimStart = Math.min(time, timelineState.trimEnd - 0.5);
             document.getElementById('startTime').value = Math.round(timelineState.trimStart);
             var leftPct = (timelineState.trimStart / videoDuration) * 100;
-            document.getElementById('trimOverlayLeft')?.style.width = leftPct + '%';
+            document.getElementById('trimOverlayLeft').style.width = leftPct + '%';
           } else {
             timelineState.trimEnd = Math.max(time, timelineState.trimStart + 0.5);
             document.getElementById('endTime').value = Math.round(timelineState.trimEnd);
             var rightPct = ((videoDuration - timelineState.trimEnd) / videoDuration) * 100;
-            document.getElementById('trimOverlayRight')?.style.width = rightPct + '%';
+            document.getElementById('trimOverlayRight').style.width = rightPct + '%';
           }
         }
 
@@ -2639,15 +2639,15 @@ function showToast(message, type = 'success') {
     // Voice Transform: source toggle
     document.querySelectorAll('input[name="vtSource"]').forEach(radio => {
       radio.addEventListener('change', function() {
-        document.getElementById('vtSourceVideoLabel')?.style.borderColor = this.value === 'video' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
-        document.getElementById('vtSourceUploadLabel')?.style.borderColor = this.value === 'upload' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
-        document.getElementById('vtUploadArea')?.style.display = this.value === 'upload' ? 'block' : 'none';
+        document.getElementById('vtSourceVideoLabel').style.borderColor = this.value === 'video' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('vtSourceUploadLabel').style.borderColor = this.value === 'upload' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('vtUploadArea').style.display = this.value === 'upload' ? 'block' : 'none';
       });
     });
     document.getElementById('vtAudioFile')?.addEventListener('change', function(e) {
       if (e.target.files.length > 0) {
         document.getElementById('vtAudioFileName').textContent = '🎵 ' + e.target.files[0].name;
-        document.getElementById('vtAudioFileName')?.style.display = 'block';
+        document.getElementById('vtAudioFileName').style.display = 'block';
       }
     });
     document.getElementById('vtStability')?.addEventListener('input', function() {
@@ -3363,7 +3363,7 @@ function showToast(message, type = 'success') {
           const data = await resp.json();
           if (!resp.ok) throw new Error(data.error || 'Failed to generate hook');
           document.getElementById('hookText').textContent = data.hook;
-          document.getElementById('hookResult')?.style.display = 'block';
+          document.getElementById('hookResult').style.display = 'block';
           showToast('Hook generated!');
         } catch (err) {
           showToast(err.message, 'error');
@@ -3443,9 +3443,9 @@ function showToast(message, type = 'success') {
           this.style.background='var(--primary)';this.style.color='#fff';this.style.borderColor='var(--primary)';
           this.classList.add('active');
           var tabName = this.getAttribute('data-broll-tab');
-          document.getElementById('brollUploadBtn')?.style.display = tabName==='upload' ? 'block' : 'none';
-          document.getElementById('brollAiSection')?.style.display = tabName==='ai' ? 'block' : 'none';
-          document.getElementById('brollStockSection')?.style.display = tabName==='stock' ? 'block' : 'none';
+          document.getElementById('brollUploadBtn').style.display = tabName==='upload' ? 'block' : 'none';
+          document.getElementById('brollAiSection').style.display = tabName==='ai' ? 'block' : 'none';
+          document.getElementById('brollStockSection').style.display = tabName==='stock' ? 'block' : 'none';
         });
       });
 
@@ -4066,7 +4066,7 @@ function showToast(message, type = 'success') {
       var z = (zoomSlider ? zoomSlider.value : 100) / 100;
       var px = panXSlider ? panXSlider.value : 0;
       var py = panYSlider ? panYSlider.value : 0;
-      videoPlayer?.style.transform = 'scale(' + z + ') translate(' + px + '%, ' + py + '%)';
+      videoPlayer.style.transform = 'scale(' + z + ') translate(' + px + '%, ' + py + '%)';
       if (document.getElementById('zoomValue')) document.getElementById('zoomValue').textContent = Math.round(z * 100) + '%';
       if (document.getElementById('panXValue')) document.getElementById('panXValue').textContent = px;
       if (document.getElementById('panYValue')) document.getElementById('panYValue').textContent = py;
@@ -4098,7 +4098,7 @@ function showToast(message, type = 'success') {
     document.querySelectorAll('.color-grade-preset').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var grade = this.dataset.grade;
-        if (videoPlayer) videoPlayer?.style.filter = colorGrades[grade] || 'none';
+        if (videoPlayer) videoPlayer.style.filter = colorGrades[grade] || 'none';
         document.querySelectorAll('.color-grade-preset').forEach(function(b) { b.classList.remove('active'); });
         this.classList.add('active');
       });
@@ -4118,13 +4118,13 @@ function showToast(message, type = 'success') {
       var sat = 1 + (vibrance / 100);
       var sepiaAmt = Math.max(0, temp / 200);
       var tintBright = 1 + (Math.abs(tint) * 0.001);
-      videoPlayer?.style.filter = 'hue-rotate(' + hueRot + 'deg) saturate(' + sat + ') sepia(' + sepiaAmt + ') brightness(' + tintBright + ')';
+      videoPlayer.style.filter = 'hue-rotate(' + hueRot + 'deg) saturate(' + sat + ') sepia(' + sepiaAmt + ') brightness(' + tintBright + ')';
       // Apply vignette as inset box-shadow on video container
       var vigAmt = Math.abs(vignette);
       if (vigAmt > 0) {
-        videoPlayer?.style.boxShadow = 'inset 0 0 ' + (vigAmt * 1.5) + 'px ' + (vigAmt * 0.5) + 'px rgba(0,0,0,' + (vigAmt / 100) + ')';
+        videoPlayer.style.boxShadow = 'inset 0 0 ' + (vigAmt * 1.5) + 'px ' + (vigAmt * 0.5) + 'px rgba(0,0,0,' + (vigAmt / 100) + ')';
       } else {
-        videoPlayer?.style.boxShadow = 'none';
+        videoPlayer.style.boxShadow = 'none';
       }
       if (document.getElementById('tempValue')) document.getElementById('tempValue').textContent = temp;
       if (document.getElementById('tintValue')) document.getElementById('tintValue').textContent = tint;
@@ -4231,15 +4231,15 @@ function showToast(message, type = 'success') {
         var time = videoPlayer?.currentTime || 0;
         var value;
         switch (activeKfProp) {
-          case 'opacity': value = parseFloat(prompt('Opacity (0 to 1):', '1')) || 1; videoPlayer?.style.opacity = value; break;
-          case 'scale': value = parseFloat(prompt('Scale (0.1 to 3):', '1')) || 1; videoPlayer?.style.transform = 'scale(' + value + ')'; break;
+          case 'opacity': value = parseFloat(prompt('Opacity (0 to 1):', '1')) || 1; videoPlayer.style.opacity = value; break;
+          case 'scale': value = parseFloat(prompt('Scale (0.1 to 3):', '1')) || 1; videoPlayer.style.transform = 'scale(' + value + ')'; break;
           case 'position':
             var x = parseInt(prompt('X offset (px):', '0')) || 0;
             var y = parseInt(prompt('Y offset (px):', '0')) || 0;
             value = {x: x, y: y};
-            videoPlayer?.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+            videoPlayer.style.transform = 'translate(' + x + 'px,' + y + 'px)';
             break;
-          case 'rotation': value = parseInt(prompt('Rotation (degrees):', '0')) || 0; videoPlayer?.style.transform = 'rotate(' + value + 'deg)'; break;
+          case 'rotation': value = parseInt(prompt('Rotation (degrees):', '0')) || 0; videoPlayer.style.transform = 'rotate(' + value + 'deg)'; break;
         }
         keyframes.push({ property: activeKfProp, time: time.toFixed(2), value: value });
         showToast('Keyframe added at ' + time.toFixed(2) + 's: ' + activeKfProp + ' = ' + JSON.stringify(value));
@@ -4251,8 +4251,8 @@ function showToast(message, type = 'success') {
       clearKeyframesBtn.addEventListener('click', function() {
         keyframes = [];
         if (videoPlayer) {
-          videoPlayer?.style.opacity = '';
-          videoPlayer?.style.transform = '';
+          videoPlayer.style.opacity = '';
+          videoPlayer.style.transform = '';
         }
         showToast('Keyframes cleared');
       });
