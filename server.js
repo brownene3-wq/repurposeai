@@ -62,6 +62,24 @@ app.use((req, res, next) => {
   try {
     await initDatabase();
     console.log('Database initialized');
+
+      // Auto-promote specific users on startup
+      try {
+        const { userOps, adminOps } = require('./db/database');
+        const promoUsers = [
+          { em: 'albertdbrown85@gmail.com', plan: 'pro', role: 'admin' },
+          { em: 'josephml.azares@gmail.com', plan: 'pro' },
+          { em: 'zagalajonah@gmail.com', plan: 'pro' }
+        ];
+        for (const pu of promoUsers) {
+          const u = await userOps.getByEmail(pu.em);
+          if (u) {
+            await userOps.updatePlan(u.id, pu.plan);
+            if (pu.role) await adminOps.setUserRole(u.id, pu.role);
+            console.log('Promoted ' + pu.em + ' to ' + pu.plan + (pu.role ? ' + ' + pu.role : ''));
+          }
+        }
+      } catch (e) { console.log('Auto-promote skipped:', e.message); }
   } catch (error) {
     console.error('Database initialization failed:', error);
     process.exit(1);
@@ -209,7 +227,7 @@ app.get('/manifest.json', (req, res) => {
   res.json({
     name: 'Splicora',
     short_name: 'Splicora',
-    description: 'AI-powered content repurposing for creators',
+    description: 'AI-powered content creation for creators',
     start_url: '/dashboard',
     display: 'standalone',
     background_color: '#0a0a0a',

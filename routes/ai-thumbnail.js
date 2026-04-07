@@ -280,7 +280,7 @@ function applyGradientOverlay(inputFrame, outputPath) {
 
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,drawbox=x=0:y=0:w=1200:h=630:color=6C3AED@0.4:t=fill,colorlevels=rh=0.95:gh=0.8:bh=1.0`,
+      '-vf', `scale=1200:630,colorbalance=rs=0.35:gs=-0.1:bs=0.3:ms=0.25:mh=-0.05:mb=0.2,eq=contrast=1.1:saturation=1.2`,
       '-y', outputPath
     ];
 
@@ -308,11 +308,7 @@ function applyDarkCinematic(inputFrame, outputPath) {
   return new Promise((resolve, reject) => {
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,
-        drawbox=x=0:y=0:w=1200:h=200:color=000000@0.6:t=fill,
-        drawbox=x=0:y=430:w=1200:h=200:color=000000@0.6:t=fill,
-        colorlevels=rh=0.9:gh=0.85:bh=0.95,
-        eq=brightness=0.05:contrast=1.2`,
+      '-vf', 'scale=1200:630,vignette=PI/4,eq=brightness=-0.05:contrast=1.3:saturation=0.9',
       '-y', outputPath
     ];
 
@@ -370,10 +366,9 @@ function applySplitDesign(inputFrame, outputPath) {
   return new Promise((resolve, reject) => {
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,
-        drawbox=x=0:y=0:w=600:h=630:color=1a1a2e:t=fill,
-        drawbox=x=600:y=0:w=600:h=630:color=6C3AED:t=fill,
-        overlay=0:0`,
+      '-filter_complex', '[0:v]scale=1100:570[img];color=c=0x1a1a2e:s=600x630:d=1[left];color=c=0x6C3AED:s=600x630:d=1[right];[left][right]hstack[bg];[bg][img]overlay=50:30[out]',
+      '-map', '[out]',
+      '-frames:v', '1',
       '-y', outputPath
     ];
 
@@ -401,9 +396,7 @@ function applyTextFocus(inputFrame, outputPath) {
   return new Promise((resolve, reject) => {
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,
-        drawbox=x=0:y=450:w=1200:h=180:color=000000@0.7:t=fill,
-        colorlevels=rh=0.95:gh=0.9:bh=1.0`,
+      '-vf', 'scale=1200:630,drawbox=x=0:y=450:w=1200:h=180:color=0x000000:t=fill,eq=brightness=0.05:contrast=1.1',
       '-y', outputPath
     ];
 

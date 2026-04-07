@@ -456,7 +456,7 @@ router.get('/', requireAuth, (req, res) => {
     .container {
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 80px);
+      min-height: calc(100vh - 80px);
       padding: 1.5rem;
       width: 100%;
       box-sizing: border-box;
@@ -486,7 +486,8 @@ router.get('/', requireAuth, (req, res) => {
       grid-template-columns: 1fr 1fr;
       gap: 1.5rem;
       flex: 1;
-      overflow: hidden;
+      overflow: visible;
+      min-height: 400px;
     }
 
     .section {
@@ -558,6 +559,12 @@ router.get('/', requireAuth, (req, res) => {
     .btn-primary:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
     .input-group {
@@ -1028,7 +1035,7 @@ router.get('/', requireAuth, (req, res) => {
 
           <div class="section" style="margin-top: 1rem;">
             <div class="section-title">📥 Export</div>
-            <button class="btn-primary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
+            <button class="btn-primary" class="btn-primary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
               Apply & Export
             </button>
             <button class="btn-secondary" style="width: 100%;" id="downloadBtn" onclick="downloadVideo()" disabled>
@@ -1224,7 +1231,6 @@ router.get('/', requireAuth, (req, res) => {
         updateProgress(100, 'Transcript ready!');
         showToast('Captions generated! Now click Apply & Export.', 'success');
         document.getElementById('exportBtn').disabled = false;
-        document.getElementById('downloadBtn').disabled = false;
       } catch (err) {
         showToast('Caption generation failed: ' + err.message, 'error');
         updateProgress(0, '');

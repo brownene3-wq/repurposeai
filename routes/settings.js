@@ -21,6 +21,15 @@ router.get('/', requireAuth, async (req, res) => {
   let settings = {};
   try { settings = await getUserSettings(user.id); } catch (e) { console.error('Settings load error:', e); }
 
+  // Load ElevenLabs API key
+  let elevenLabsKey = '';
+  try {
+    const bkResult = await getDb().query('SELECT elevenlabs_api_key FROM brand_kits WHERE user_id = $1', [user.id]);
+    if (bkResult.rows.length > 0 && bkResult.rows[0].elevenlabs_api_key) {
+      elevenLabsKey = bkResult.rows[0].elevenlabs_api_key;
+    }
+  } catch (e) { console.error('ElevenLabs key load error:', e); }
+
   const css = getBaseCSS();
 
   res.send(`
@@ -100,6 +109,7 @@ router.get('/', requireAuth, async (req, res) => {
           <button class="settings-nav-btn" data-section="captions" onclick="switchSection('captions',this)">Captions</button>
           <button class="settings-nav-btn" data-section="appearance" onclick="switchSection('appearance',this)">Appearance</button>
           <button class="settings-nav-btn" data-section="privacy" onclick="switchSection('privacy',this)">Data & Privacy</button>
+          <button class="settings-nav-btn" data-section="apikeys" onclick="switchSection('apikeys',this)">API Keys</button>
         </div>
 
         <!-- ===== PROFILE SECTION ===== -->
@@ -407,6 +417,45 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
         </div>
 
+        <!-- ===== API KEYS SECTION ===== -->
+        <div class="settings-section" id="section-apikeys">
+          <div class="settings-card">
+            <h2><span class="icon">&#x1F511;</span> API Keys</h2>
+            <p class="desc">Manage your third-party API keys for enhanced features</p>
+
+            <div style="margin-top:1.5rem">
+              <div style="margin-bottom:1.5rem;padding:1.2rem;border-radius:12px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.15)">
+                <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">
+                  <span style="font-size:1.3rem">&#x1F3A4;</span>
+                  <h3 style="margin:0;font-size:1rem;font-weight:600;color:var(--text)">ElevenLabs</h3>
+                  <a href="https://elevenlabs.io" target="_blank" style="font-size:.75rem;color:var(--primary,#6C3AED);text-decoration:none;margin-left:auto">Get API Key &rarr;</a>
+                </div>
+                <p style="font-size:.8rem;color:var(--text-muted);margin:0 0 .8rem 0">Used for AI Voiceover in the Video Editor. Get your key from elevenlabs.io &rarr; Profile &rarr; API Keys.</p>
+                <div style="display:flex;gap:.6rem;align-items:center">
+                  <input type="password" id="elevenLabsKeyInput" value="${elevenLabsKey}" placeholder="Enter your ElevenLabs API key..." style="flex:1;padding:.6rem .9rem;border-radius:8px;border:1px solid var(--border-subtle,rgba(255,255,255,0.1));background:var(--dark-2);color:var(--text);font-size:.85rem;outline:none">
+                  <button onclick="toggleKeyVisibility('elevenLabsKeyInput', this)" style="padding:.6rem .8rem;border-radius:8px;border:1px solid var(--border-subtle,rgba(255,255,255,0.1));background:var(--dark-2);color:var(--text-muted);cursor:pointer;font-size:.8rem">Show</button>
+                  <button onclick="saveElevenLabsKey()" style="padding:.6rem 1.2rem;border-radius:8px;border:none;background:linear-gradient(135deg,#6C3AED,#8B5CF6);color:#fff;font-weight:600;cursor:pointer;font-size:.85rem">Save</button>
+                </div>
+              </div>
+
+              <div style="margin-bottom:1.5rem;padding:1.2rem;border-radius:12px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.15)">
+                <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">
+                  <span style="font-size:1.3rem">&#x1F4E6;</span>
+                  <h3 style="margin:0;font-size:1rem;font-weight:600;color:var(--text)">Dropbox</h3>
+                  <a href="https://www.dropbox.com/developers" target="_blank" style="font-size:.75rem;color:var(--primary,#6C3AED);text-decoration:none;margin-left:auto">Get App Key &rarr;</a>
+                </div>
+                <p style="font-size:.8rem;color:var(--text-muted);margin:0 0 .8rem 0">Used for Dropbox file imports. Create an app at dropbox.com/developers to get your App Key.</p>
+                <div style="display:flex;gap:.6rem;align-items:center">
+                  <input type="password" id="dropboxKeyInput" value="" placeholder="Enter your Dropbox App Key..." style="flex:1;padding:.6rem .9rem;border-radius:8px;border:1px solid var(--border-subtle,rgba(255,255,255,0.1));background:var(--dark-2);color:var(--text);font-size:.85rem;outline:none">
+                  <button onclick="toggleKeyVisibility('dropboxKeyInput', this)" style="padding:.6rem .8rem;border-radius:8px;border:1px solid var(--border-subtle,rgba(255,255,255,0.1));background:var(--dark-2);color:var(--text-muted);cursor:pointer;font-size:.8rem">Show</button>
+                  <button onclick="saveDropboxKey()" style="padding:.6rem 1.2rem;border-radius:8px;border:none;background:linear-gradient(135deg,#6C3AED,#8B5CF6);color:#fff;font-weight:600;cursor:pointer;font-size:.85rem">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">&#x1F512; Your API keys are encrypted and stored securely. They are never shared with third parties.</p>
+          </div>
+
       </div>
     </div>
 
@@ -585,7 +634,54 @@ router.get('/', requireAuth, async (req, res) => {
           showToast(e.message || 'Failed to delete account', 'error');
         }
       }
-    </script>
+    
+      // API Keys functions
+      function toggleKeyVisibility(inputId, btn) {
+        var inp = document.getElementById(inputId);
+        if (inp.type === 'password') {
+          inp.type = 'text';
+          btn.textContent = 'Hide';
+        } else {
+          inp.type = 'password';
+          btn.textContent = 'Show';
+        }
+      }
+
+      async function saveElevenLabsKey() {
+        var key = document.getElementById('elevenLabsKeyInput').value.trim();
+        if (!key) { showToast('Please enter an API key', 'error'); return; }
+        try {
+          var res = await fetch('/video-editor/save-elevenlabs-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: key })
+          });
+          var data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to save');
+          showToast('ElevenLabs API key saved successfully!', 'success');
+        } catch (e) {
+          showToast(e.message || 'Failed to save API key', 'error');
+        }
+      }
+
+      async function saveDropboxKey() {
+        var key = document.getElementById('dropboxKeyInput').value.trim();
+        if (!key) { showToast('Please enter a Dropbox App Key', 'error'); return; }
+        try {
+          var res = await fetch('/settings/save-dropbox-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: key })
+          });
+          var data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to save');
+          showToast('Dropbox App Key saved successfully!', 'success');
+        } catch (e) {
+          showToast(e.message || 'Failed to save Dropbox key', 'error');
+        }
+      }
+
+</script>
     </body></html>
   `);
 });
@@ -681,6 +777,21 @@ router.post('/api/delete-account', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Account deletion error:', error);
     res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+// Save Dropbox App Key
+router.post('/save-dropbox-key', requireAuth, async (req, res) => {
+  try {
+    const { key } = req.body;
+    if (!key) return res.status(400).json({ error: 'API key is required' });
+    const db = getDb();
+    // Store in user_settings table
+    await db.query('UPDATE user_settings SET dropbox_app_key = $1 WHERE user_id = $2', [key, req.session.userId || req.user.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Save Dropbox key error:', error);
+    res.status(500).json({ error: 'Failed to save key' });
   }
 });
 

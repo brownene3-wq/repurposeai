@@ -53,7 +53,7 @@ function getAdminSidebar(activePage) {
   return `
     <aside class="sidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Create<span>AI</span></a>
         <div style="margin-top:8px;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:#6C3AED;font-weight:700;">Admin Panel</div>
       </div>
       ${navLinks}
@@ -668,7 +668,7 @@ router.get('/team', requireAuth, requireAdmin, async (req, res) => {
     const invitations = await teamOps.getInvitations();
 
     const allPermissions = [
-      { key: 'use_repurpose', label: 'Use Repurpose Tool' },
+      { key: 'use_repurpose', label: 'Use Create Tool' },
       { key: 'use_shorts', label: 'Use Smart Shorts' },
       { key: 'use_calendar', label: 'Use Calendar' },
       { key: 'use_brand_voice', label: 'Use Brand Voice' },
@@ -1545,11 +1545,11 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
               <div class="value">${summary.active_30d || 0}</div>
             </div>
             <div class="stat-card">
-              <div class="label">Total Repurposes</div>
+              <div class="label">Total creations</div>
               <div class="value">${summary.total_outputs || 0}</div>
             </div>
             <div class="stat-card">
-              <div class="label">Repurposes (30d)</div>
+              <div class="label">creations (30d)</div>
               <div class="value">${summary.outputs_30d || 0}</div>
             </div>
             <div class="stat-card">
@@ -1604,7 +1604,7 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
             <div style="overflow-x:auto">
               <table class="data-table" id="usageTable">
                 <thead><tr>
-                  <th>User</th><th>Plan</th><th>Repurposes</th><th>Content</th><th>Shorts</th><th>Captions</th><th>Hooks</th><th>B-Roll</th><th>Thumbnails</th><th>Reframe</th><th>Editor</th><th>Styles</th><th>Enhance</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th><th>Stripe</th>
+                  <th>User</th><th>Plan</th><th>Creations</th><th>Content</th><th>Shorts</th><th>Captions</th><th>Hooks</th><th>B-Roll</th><th>Thumbnails</th><th>Reframe</th><th>Editor</th><th>Styles</th><th>Enhance</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th><th>Stripe</th>
                 </tr></thead>
                 <tbody>${userRows}</tbody>
               </table>
@@ -1660,8 +1660,8 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
           const lowUsers = [];
           rows.forEach(r => {
             const cells = r.querySelectorAll('td');
-            const repurposes = parseInt(cells[2].textContent) || 0;
-            if (repurposes <= 2) {
+            const creations = parseInt(cells[2].textContent) || 0;
+            if (creations <= 2) {
               r.style.background = 'rgba(239,68,68,0.06)';
               lowUsers.push(cells[0].textContent.trim().split('\n')[0]);
             }

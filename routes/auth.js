@@ -219,7 +219,7 @@ function authPage(type) {
  <div class="auth-form-container">
  <a href="/" class="auth-logo">&#x26A1; Splicora</a>
  <h1>${isLogin ? 'Welcome Back' : 'Create Account'}</h1>
- <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start repurposing content in seconds'}</p>
+ <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start creating content in seconds'}</p>
  <div class="error-msg ${new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('error') ? 'show' : ''}" id="errorMsg"></div>
 
  <div class="oauth-buttons">

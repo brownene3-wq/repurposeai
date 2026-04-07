@@ -60,7 +60,7 @@ router.get('/', requireAuth, async (req, res) => {
     // Build recent activity HTML
     let recentHtml;
     if (recentItems.length === 0) {
-      recentHtml = `<div class="empty-state"><p>&#x1F4AD;</p><p>No activity yet. Start repurposing content to see your analytics here.</p></div>`;
+      recentHtml = `<div class="empty-state"><p>&#x1F4AD;</p><p>No activity yet. Start creating content to see your analytics here.</p></div>`;
     } else {
       recentHtml = `<table style="width:100%;border-collapse:collapse;">
         <tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:8px 12px;color:#888;font-size:0.8em;">Platform</th><th style="text-align:left;padding:8px 12px;color:#888;font-size:0.8em;">Content</th><th style="text-align:left;padding:8px 12px;color:#888;font-size:0.8em;">Date</th><th style="text-align:right;padding:8px 12px;color:#888;font-size:0.8em;">Characters</th></tr>
