@@ -299,6 +299,20 @@ const initDatabase = async () => {
       )
     `);
 
+    // Feature usage tracking for admin analytics
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS feature_usage (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        metadata TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_user ON feature_usage(user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_feature ON feature_usage(feature)`);
+
 console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -929,42 +943,63 @@ const adminOps = {
     return result.rows[0];
   },
   async getStats() {
-    const [users, content, outputs, shorts] = await Promise.all([
+    const [users, content, outputs, shorts, featureTotals] = await Promise.all([
       pool.query(`SELECT COUNT(*) FROM users`),
       pool.query(`SELECT COUNT(*) FROM content_items`),
       pool.query(`SELECT COUNT(*) FROM generated_outputs`),
-      pool.query(`SELECT COUNT(*) FROM smart_shorts`)
+      pool.query(`SELECT COUNT(*) FROM smart_shorts`),
+      pool.query(`SELECT feature, COUNT(*) as count FROM feature_usage GROUP BY feature`)
     ]);
     const recentUsers = await pool.query(
       `SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'`
     );
+    const featureMap = {};
+    featureTotals.rows.forEach(r => { featureMap[r.feature] = parseInt(r.count, 10); });
     return {
       totalUsers: parseInt(users.rows[0].count, 10),
       totalContent: parseInt(content.rows[0].count, 10),
       totalOutputs: parseInt(outputs.rows[0].count, 10),
       totalShorts: parseInt(shorts.rows[0].count, 10),
-      newUsersThisMonth: parseInt(recentUsers.rows[0].count, 10)
+      newUsersThisMonth: parseInt(recentUsers.rows[0].count, 10),
+      featureBreakdown: featureMap
     };
   }
 ,
 
   async getUserUsageStats() {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         u.id, u.name, u.email, u.plan, u.stripe_customer_id, u.created_at, u.last_login_at, u.login_count,
         COALESCE(go_count.total, 0) as repurpose_count,
         COALESCE(ci_count.total, 0) as content_items_count,
         COALESCE(ss_count.total, 0) as smart_shorts_count,
         COALESCE(bv_count.total, 0) as brand_voices_count,
         COALESCE(cal_count.total, 0) as calendar_entries_count,
-        COALESCE(go_recent.last_used, u.created_at) as last_activity
+        COALESCE(fu_captions.total, 0) as ai_captions_count,
+        COALESCE(fu_hooks.total, 0) as ai_hooks_count,
+        COALESCE(fu_broll.total, 0) as ai_broll_count,
+        COALESCE(fu_thumbnails.total, 0) as ai_thumbnails_count,
+        COALESCE(fu_reframe.total, 0) as ai_reframe_count,
+        COALESCE(fu_editor.total, 0) as video_editor_count,
+        COALESCE(fu_styles.total, 0) as caption_styles_count,
+        COALESCE(fu_enhance.total, 0) as enhance_speech_count,
+        COALESCE(GREATEST(go_recent.last_used, fu_recent.last_used), u.created_at) as last_activity
       FROM users u
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM generated_outputs GROUP BY user_id) go_count ON u.id = go_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM content_items GROUP BY user_id) ci_count ON u.id = ci_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM smart_shorts GROUP BY user_id) ss_count ON u.id = ss_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM brand_voices GROUP BY user_id) bv_count ON u.id = bv_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM calendar_entries GROUP BY user_id) cal_count ON u.id = cal_count.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_captions' GROUP BY user_id) fu_captions ON u.id = fu_captions.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_hooks' GROUP BY user_id) fu_hooks ON u.id = fu_hooks.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_broll' GROUP BY user_id) fu_broll ON u.id = fu_broll.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_thumbnails' GROUP BY user_id) fu_thumbnails ON u.id = fu_thumbnails.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_reframe' GROUP BY user_id) fu_reframe ON u.id = fu_reframe.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'video_editor' GROUP BY user_id) fu_editor ON u.id = fu_editor.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'caption_styles' GROUP BY user_id) fu_styles ON u.id = fu_styles.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'enhance_speech' GROUP BY user_id) fu_enhance ON u.id = fu_enhance.user_id
       LEFT JOIN (SELECT user_id, MAX(created_at) as last_used FROM generated_outputs GROUP BY user_id) go_recent ON u.id = go_recent.user_id
+      LEFT JOIN (SELECT user_id, MAX(created_at) as last_used FROM feature_usage GROUP BY user_id) fu_recent ON u.id = fu_recent.user_id
       ORDER BY u.created_at DESC
     `);
     return result.rows;
@@ -977,19 +1012,54 @@ const adminOps = {
     return result.rows;
   },
 
+  async getFeatureBreakdown() {
+    const result = await pool.query(`
+      SELECT feature, COUNT(*) as count FROM feature_usage GROUP BY feature ORDER BY count DESC
+    `);
+    return result.rows;
+  },
+
   async getUsageSummary() {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         (SELECT COUNT(*) FROM users) as total_users,
         (SELECT COUNT(*) FROM generated_outputs) as total_outputs,
         (SELECT COUNT(*) FROM content_items) as total_content,
         (SELECT COUNT(*) FROM smart_shorts) as total_shorts,
         (SELECT COUNT(*) FROM users WHERE last_login_at > NOW() - INTERVAL '7 days') as active_7d,
         (SELECT COUNT(*) FROM users WHERE last_login_at > NOW() - INTERVAL '30 days') as active_30d,
-        (SELECT COUNT(*) FROM generated_outputs WHERE created_at > NOW() - INTERVAL '30 days') as outputs_30d
+        (SELECT COUNT(*) FROM generated_outputs WHERE created_at > NOW() - INTERVAL '30 days') as outputs_30d,
+        (SELECT COUNT(*) FROM feature_usage) as total_feature_uses,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_captions') as total_captions,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_hooks') as total_hooks,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_broll') as total_broll,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_thumbnails') as total_thumbnails,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_reframe') as total_reframe,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'video_editor') as total_editor,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'caption_styles') as total_caption_styles,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'enhance_speech') as total_enhance
     `);
     return result.rows[0];
   }};
+
+// Feature usage tracking operations
+const featureUsageOps = {
+  async log(userId, feature, metadata = '') {
+    const id = uuidv4();
+    await pool.query(
+      `INSERT INTO feature_usage (id, user_id, feature, metadata) VALUES ($1, $2, $3, $4)`,
+      [id, userId, feature, metadata]
+    );
+    return id;
+  },
+  async getByUser(userId) {
+    const result = await pool.query(
+      `SELECT feature, COUNT(*) as count FROM feature_usage WHERE user_id = $1 GROUP BY feature`,
+      [userId]
+    );
+    return result.rows;
+  }
+};
 
 // Bug report operations
 const bugReportOps = {
@@ -1056,5 +1126,6 @@ module.exports = {
   blogOps,
   bugReportOps,
   teamOps,
-  adminOps
+  adminOps,
+  featureUsageOps
 };

@@ -8,6 +8,7 @@ const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { featureUsageOps } = require('../db/database');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -968,6 +969,7 @@ Return ONLY the hook text, nothing else.`;
       platform,
       videoPath: req.file ? req.file.path : null
     });
+    featureUsageOps.log(req.user.id, 'ai_hooks').catch(() => {});
   } catch (error) {
     console.error('AI Hook error:', error);
     res.status(500).json({ error: 'Failed to generate hook' });

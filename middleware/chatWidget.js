@@ -15,7 +15,7 @@ function injectChatWidget(req, res, next) {
 }
 
 const CHAT_WIDGET_HTML = `
-<!-- RepurposeAI Chat Widget -->
+<!-- Splicora Chat Widget -->
 <style>
   .chat-widget-btn {
     position: fixed;
@@ -219,15 +219,15 @@ const CHAT_WIDGET_HTML = `
     <div class="chat-header-left">
       <div class="chat-header-avatar">⚡</div>
       <div class="chat-header-info">
-        <h4>RepurposeAI Assistant</h4>
-        <p>Ask me anything about RepurposeAI</p>
+        <h4>Splicora Assistant</h4>
+        <p>Ask me anything about Splicora</p>
       </div>
     </div>
     <button class="chat-close-btn" onclick="toggleChat()">&times;</button>
   </div>
   <div class="chat-messages" id="chatMessages">
     <div class="chat-msg bot">
-      <div class="chat-bubble">Hi! 👋 I'm the RepurposeAI assistant. How can I help you today?</div>
+      <div class="chat-bubble">Hi! 👋 I'm the Splicora assistant. How can I help you today?</div>
     </div>
   </div>
   <div class="chat-input-area">
@@ -305,7 +305,7 @@ const CHAT_WIDGET_HTML = `
   }
 })();
 </script>
-<!-- End Chat Widget -->
+<!-- End Splicora Chat Widget -->
 `;
 
 module.exports = { injectChatWidget };

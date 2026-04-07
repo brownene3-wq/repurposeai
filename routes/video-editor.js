@@ -6,6 +6,7 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { featureUsageOps } = require('../db/database');
 
 // FFmpeg detection and setup
 let ffmpegPath = null;
@@ -2572,6 +2573,7 @@ router.post('/export', requireAuth, async (req, res) => {
       downloadUrl: `/video-editor/download/${outputFilename}`,
       size: fs.statSync(outputPath).size
     });
+    featureUsageOps.log(req.user.id, 'video_editor').catch(() => {});
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

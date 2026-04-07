@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { featureUsageOps } = require('../db/database');
 
 router.get('/', requireAuth, (req, res) => {
   const headHTML = getHeadHTML('Caption Styles');
@@ -1083,6 +1084,7 @@ router.post('/save-preference', requireAuth, async (req, res) => {
     });
 
     res.json({ success: true, style, name });
+    featureUsageOps.log(req.user.id, 'caption_styles').catch(() => {});
   } catch (error) {
     console.error('Save caption preference error:', error);
     res.status(500).json({ error: 'Failed to save preference' });

@@ -13,7 +13,7 @@ function injectFeedbackWidget(req, res, next) {
 }
 
 const FEEDBACK_WIDGET_HTML = `
-<!-- RepurposeAI Feedback Widget -->
+<!-- Splicora Feedback Widget -->
 <style>
   .feedback-btn {
     position: fixed;

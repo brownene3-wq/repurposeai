@@ -17,7 +17,7 @@ router.post('/api/submit', async (req, res) => {
       const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
       if (token) {
         const jwt = require('jsonwebtoken');
-        const JWT_SECRET = process.env.JWT_SECRET || 'repurposeai-secret-key-change-in-production';
+        const JWT_SECRET = process.env.JWT_SECRET || 'splicora-secret-key-change-in-production';
         const decoded = jwt.verify(token, JWT_SECRET);
         const { userOps } = require('../db/database');
         const user = await userOps.getById(decoded.id);

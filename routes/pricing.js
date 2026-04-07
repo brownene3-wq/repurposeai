@@ -4,7 +4,7 @@ const { optionalAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', optionalAuth, (req, res) => {
-  const html = `${getHeadHTML('Pricing - RepurposeAI')}
+  const html = `${getHeadHTML('Pricing - Splicora')}
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap');
       ${getBaseCSS()}
@@ -49,7 +49,7 @@ router.get('/', optionalAuth, (req, res) => {
   </head>
   <body>
     <nav class="nav-bar">
-      <a href="/" class="nav-logo">RepurposeAI</a>
+      <a href="/" class="nav-logo">Splicora</a>
       <div class="nav-links">
         <a href="/#features">Features</a>
         <a href="/pricing">Pricing</a>

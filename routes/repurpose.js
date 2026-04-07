@@ -53,6 +53,7 @@ function decodeEntities(text) {
 
 // Fetch YouTube video title using oEmbed API
 async function fetchVideoTitle(videoId) {
+  // Method 1: oEmbed API
   try {
     const oembedUrl = 'https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + videoId + '&format=json';
     const response = await httpsRequest(oembedUrl);
@@ -61,9 +62,41 @@ async function fetchVideoTitle(videoId) {
       if (data.title) return data.title;
     }
   } catch (e) {
-    console.error('Failed to fetch video title for', videoId, ':', e.message);
+    console.error('oEmbed title fetch failed for', videoId, ':', e.message);
   }
-  return 'Video: ' + videoId;
+
+  // Method 2: Scrape from YouTube watch page <title> tag
+  try {
+    const watchUrl = 'https://www.youtube.com/watch?v=' + videoId;
+    const response = await httpsRequest(watchUrl);
+    if (response.status === 200 && response.data) {
+      // Try og:title meta tag first (most reliable)
+      const ogMatch = response.data.match(/<meta\s+property="og:title"\s+content="([^"]+)"/);
+      if (ogMatch && ogMatch[1]) return decodeEntities(ogMatch[1]);
+      // Try <title> tag (contains " - YouTube" suffix)
+      const titleMatch = response.data.match(/<title>([^<]+)<\/title>/);
+      if (titleMatch && titleMatch[1]) {
+        const title = titleMatch[1].replace(/\s*-\s*YouTube\s*$/, '').trim();
+        if (title && title !== 'YouTube') return decodeEntities(title);
+      }
+    }
+  } catch (e) {
+    console.error('Page scrape title fetch failed for', videoId, ':', e.message);
+  }
+
+  // Method 3: noembed.com fallback
+  try {
+    const noembedUrl = 'https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + videoId;
+    const response = await httpsRequest(noembedUrl);
+    if (response.status === 200) {
+      const data = JSON.parse(response.data);
+      if (data.title) return data.title;
+    }
+  } catch (e) {
+    console.error('noembed title fetch failed for', videoId, ':', e.message);
+  }
+
+  return 'Untitled Video';
 }
 
 // Parse transcript XML into text

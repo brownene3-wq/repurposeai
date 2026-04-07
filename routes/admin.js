@@ -183,6 +183,38 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
               <div class="label">Smart Shorts</div>
               <div class="value">${stats.totalShorts}</div>
             </div>
+            <div class="stat-card">
+              <div class="label">AI Captions</div>
+              <div class="value">${stats.featureBreakdown?.ai_captions || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI Hooks</div>
+              <div class="value">${stats.featureBreakdown?.ai_hooks || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI B-Roll</div>
+              <div class="value">${stats.featureBreakdown?.ai_broll || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI Thumbnails</div>
+              <div class="value">${stats.featureBreakdown?.ai_thumbnails || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI Reframe</div>
+              <div class="value">${stats.featureBreakdown?.ai_reframe || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Video Editor</div>
+              <div class="value">${stats.featureBreakdown?.video_editor || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Caption Styles</div>
+              <div class="value">${stats.featureBreakdown?.caption_styles || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Enhance Speech</div>
+              <div class="value">${stats.featureBreakdown?.enhance_speech || 0}</div>
+            </div>
           </div>
 
           <div class="card">
@@ -970,14 +1002,14 @@ router.post('/messages/reply', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Gmail not configured. Set up Gmail in Email Inbox settings first.' });
     }
 
-    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://splicora.ai/admin/email/oauth-callback');
     oauth2Client.setCredentials({ refresh_token: refreshToken });
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
     const replySubject = subject?.startsWith('Re:') ? subject : 'Re: ' + (subject || 'Your message');
 
     const rawEmail = [
-      'From: support@repurposeai.ai',
+      'From: support@splicora.ai',
       'To: ' + to,
       'Subject: ' + replySubject,
       'Content-Type: text/plain; charset=utf-8',
@@ -1120,7 +1152,7 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
     const { email, role, permissions } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
     const invitation = await teamOps.createInvitation(req.user.id, email, role || 'editor', permissions || {});
-    const inviteLink = 'https://repurposeai.ai/admin/invite/' + invitation.token;
+    const inviteLink = 'https://splicora.ai/admin/invite/' + invitation.token;
 
     // Send invitation email via Gmail
     const clientId = process.env.GMAIL_CLIENT_ID;
@@ -1128,7 +1160,7 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
     const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
     if (clientId && clientSecret && refreshToken) {
       try {
-        const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+        const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://splicora.ai/admin/email/oauth-callback');
         oauth2Client.setCredentials({ refresh_token: refreshToken });
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
@@ -1136,12 +1168,12 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
         const htmlBody = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;background:#0c0c1d;color:#f0f0ff;border-radius:16px;overflow:hidden">
             <div style="background:linear-gradient(135deg,#7c3aed,#06b6d4);padding:30px 40px">
-              <h1 style="margin:0;font-size:24px;font-weight:800;color:#fff">RepurposeAI</h1>
+              <h1 style="margin:0;font-size:24px;font-weight:800;color:#fff">Splicora</h1>
             </div>
             <div style="padding:40px">
               <h2 style="margin:0 0 16px;font-size:20px;color:#f0f0ff">You're Invited!</h2>
               <p style="color:#a0a0c0;font-size:15px;line-height:1.7;margin:0 0 8px">
-                You've been invited to join <strong style="color:#f0f0ff">RepurposeAI</strong> as a <strong style="color:#8B5CF6">${roleName}</strong>.
+                You've been invited to join <strong style="color:#f0f0ff">Splicora</strong> as a <strong style="color:#8B5CF6">${roleName}</strong>.
               </p>
               <p style="color:#a0a0c0;font-size:15px;line-height:1.7;margin:0 0 24px">
                 Click the button below to accept your invitation and get started.
@@ -1161,9 +1193,9 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
         `;
 
         const rawEmail = [
-          'From: support@repurposeai.ai',
+          'From: support@splicora.ai',
           'To: ' + email,
-          'Subject: You\'re invited to join RepurposeAI',
+          'Subject: You\'re invited to join Splicora',
           'MIME-Version: 1.0',
           'Content-Type: text/html; charset=utf-8',
           '',
@@ -1425,13 +1457,16 @@ router.post('/bugs/:id/responded', requireAuth, requireAdmin, async (req, res) =
 // ==================== USAGE ====================
 router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const [usageStats, platformBreakdown, summary] = await Promise.all([
+    const [usageStats, platformBreakdown, featureBreakdown, summary] = await Promise.all([
       adminOps.getUserUsageStats(),
       adminOps.getPlatformBreakdown(),
+      adminOps.getFeatureBreakdown(),
       adminOps.getUsageSummary()
     ]);
 
     const platformRows = platformBreakdown.map(p => `<tr><td>${p.platform || 'Unknown'}</td><td class="value">${p.count}</td></tr>`).join('');
+    const featureNames = { ai_captions: 'AI Captions', ai_hooks: 'AI Hooks', ai_broll: 'AI B-Roll', ai_thumbnails: 'AI Thumbnails', ai_reframe: 'AI Reframe', video_editor: 'Video Editor', caption_styles: 'Caption Styles', enhance_speech: 'Enhance Speech' };
+    const featureRows = featureBreakdown.map(f => `<tr><td>${featureNames[f.feature] || f.feature}</td><td class="value">${f.count}</td></tr>`).join('');
 
     const userRows = usageStats.map(u => {
       const plan = (u.plan || 'free').toLowerCase();
@@ -1445,6 +1480,14 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
         <td class="value">${u.repurpose_count || 0}</td>
         <td class="value">${u.content_items_count || 0}</td>
         <td class="value">${u.smart_shorts_count || 0}</td>
+        <td class="value">${u.ai_captions_count || 0}</td>
+        <td class="value">${u.ai_hooks_count || 0}</td>
+        <td class="value">${u.ai_broll_count || 0}</td>
+        <td class="value">${u.ai_thumbnails_count || 0}</td>
+        <td class="value">${u.ai_reframe_count || 0}</td>
+        <td class="value">${u.video_editor_count || 0}</td>
+        <td class="value">${u.caption_styles_count || 0}</td>
+        <td class="value">${u.enhance_speech_count || 0}</td>
         <td class="value">${u.brand_voices_count || 0}</td>
         <td class="value">${u.calendar_entries_count || 0}</td>
         <td>${u.login_count || 0}</td>
@@ -1517,6 +1560,42 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
               <div class="label">Smart Shorts</div>
               <div class="value">${summary.total_shorts || 0}</div>
             </div>
+            <div class="stat-card">
+              <div class="label">AI Captions</div>
+              <div class="value">${summary.total_captions || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI Hooks</div>
+              <div class="value">${summary.total_hooks || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI B-Roll</div>
+              <div class="value">${summary.total_broll || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI Thumbnails</div>
+              <div class="value">${summary.total_thumbnails || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">AI Reframe</div>
+              <div class="value">${summary.total_reframe || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Video Editor</div>
+              <div class="value">${summary.total_editor || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Caption Styles</div>
+              <div class="value">${summary.total_caption_styles || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Enhance Speech</div>
+              <div class="value">${summary.total_enhance || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Total Feature Uses</div>
+              <div class="value">${summary.total_feature_uses || 0}</div>
+            </div>
           </div>
 
           <div class="usage-table-wrap">
@@ -1525,7 +1604,7 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
             <div style="overflow-x:auto">
               <table class="data-table" id="usageTable">
                 <thead><tr>
-                  <th>User</th><th>Plan</th><th>Repurposes</th><th>Content</th><th>Shorts</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th><th>Stripe</th>
+                  <th>User</th><th>Plan</th><th>Repurposes</th><th>Content</th><th>Shorts</th><th>Captions</th><th>Hooks</th><th>B-Roll</th><th>Thumbnails</th><th>Reframe</th><th>Editor</th><th>Styles</th><th>Enhance</th><th>Voices</th><th>Calendar</th><th>Logins</th><th>Last Login</th><th>Last Activity</th><th>Joined</th><th>Stripe</th>
                 </tr></thead>
                 <tbody>${userRows}</tbody>
               </table>
@@ -1537,6 +1616,12 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
               <h3>Platform Breakdown</h3>
               <table class="platform-table">
                 <tbody>${platformRows}</tbody>
+              </table>
+            </div>
+            <div class="platform-card">
+              <h3>Feature Usage Breakdown</h3>
+              <table class="platform-table">
+                <tbody>${featureRows || '<tr><td colspan="2" style="color:var(--text-muted)">No feature usage data yet</td></tr>'}</tbody>
               </table>
             </div>
             <div class="platform-card">

@@ -90,13 +90,13 @@ function getHeadHTML(title) {
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>${title} - RepurposeAI</title>
+  <title>${title} - Splicora</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RepurposeAI">
+  <meta name="apple-mobile-web-app-title" content="Splicora">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <script>
     // Apply theme BEFORE body renders to prevent flash of wrong theme (FOUC)
@@ -169,8 +169,8 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 15px;display:flex;align-items:center;justify-content:space-between;">
-        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
-        <a href="/dashboard" class="logo-mini" style="padding:0;margin:0 auto;text-decoration:none;border-left:none;display:none;">R<span>AI</span></a>
+        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Spli<span>cora</span></a>
+        <a href="/dashboard" class="logo-mini" style="padding:0;margin:0 auto;text-decoration:none;border-left:none;display:none;">S<span>ai</span></a>
       </div>
       <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">&#x276E;</button>
 ${navLinks}

@@ -207,8 +207,8 @@ app.use('/ai-captions', aiCaptionsRouter);
 // ========================
 app.get('/manifest.json', (req, res) => {
   res.json({
-    name: 'RepurposeAI',
-    short_name: 'RepurposeAI',
+    name: 'Splicora',
+    short_name: 'Splicora',
     description: 'AI-powered content repurposing for creators',
     start_url: '/dashboard',
     display: 'standalone',
@@ -231,7 +231,7 @@ app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Service-Worker-Allowed', '/');
   res.send(`
-    const CACHE_NAME = 'repurposeai-v1';
+    const CACHE_NAME = 'splicora-v1';
     const OFFLINE_URL = '/offline';
 
     self.addEventListener('install', (event) => {
@@ -262,7 +262,7 @@ app.get('/sw.js', (req, res) => {
 
 app.get('/offline', (req, res) => {
   res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<title>RepurposeAI - Offline</title>' +
+    '<title>Splicora - Offline</title>' +
     '<style>body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}' +
     '.box{padding:2rem}h1{font-size:2rem;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem}' +
     'p{color:#a0aec0;font-size:1.1rem;line-height:1.7}button{margin-top:1.5rem;padding:12px 32px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:600;cursor:pointer}</style>' +

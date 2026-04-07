@@ -7,6 +7,7 @@ const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { featureUsageOps } = require('../db/database');
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -1188,6 +1189,7 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
     }
 
     res.json({ success: true, files: results });
+    featureUsageOps.log(req.user.id, 'ai_reframe').catch(() => {});
   } catch (error) {
     console.error('Processing error:', error);
     // Clean up downloaded file on error

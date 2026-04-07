@@ -7,6 +7,7 @@ const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { featureUsageOps } = require('../db/database');
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -1488,6 +1489,7 @@ router.post('/style', requireAuth, async (req, res) => {
     }
 
     res.json({ success: true, thumbnails: thumbnails });
+    featureUsageOps.log(req.user.id, 'ai_thumbnails').catch(() => {});
   } catch (error) {
     console.error('Style error:', error);
     res.status(500).json({ success: false, message: error.message || 'Style application failed' });

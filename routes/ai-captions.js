@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { featureUsageOps } = require('../db/database');
 
 // Try to load ytdl-core
 let ytdl;
@@ -1391,6 +1392,7 @@ router.post('/generate', requireAuth, async (req, res) => {
     try { fs.unlinkSync(actualAudioPath); } catch (e) {}
 
     res.json({ transcript });
+    featureUsageOps.log(req.user.id, 'ai_captions').catch(() => {});
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

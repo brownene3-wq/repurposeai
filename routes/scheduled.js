@@ -12,7 +12,7 @@ router.get('/', requireAuth, (req, res) => {
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
-  <title>Scheduled - RepurposeAI</title>
+  <title>Scheduled - Splicora</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; }
@@ -56,7 +56,7 @@ router.get('/', requireAuth, (req, res) => {
   <div class="layout">
     <div class="sidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Splicora</a>
       </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>

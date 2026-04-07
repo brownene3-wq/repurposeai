@@ -6,6 +6,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
+const { featureUsageOps } = require('../db/database');
 
 // FFmpeg path detection
 let ffmpegPath = null;
@@ -592,6 +593,7 @@ router.post('/process', requireAuth, upload.single('file'), async (req, res) => 
       originalUrl: originalUrl,
       enhancedUrl: enhancedUrl
     });
+    featureUsageOps.log(req.user.id, 'enhance_speech').catch(() => {});
   } catch (error) {
     console.error('Audio processing error:', error);
     res.status(500).json({ error: error.message || 'Audio processing failed' });

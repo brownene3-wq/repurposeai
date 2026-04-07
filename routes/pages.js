@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const BRAND = { name: 'RepurposeAI', tagline: 'Turn One Video Into Unlimited Content' };
+const BRAND = { name: 'Splicora', tagline: 'Turn One Video Into Unlimited Content' };
 
 function getStyles() {
   return `
@@ -252,7 +252,7 @@ router.get('/', (req, res) => {
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RepurposeAI">
+  <meta name="apple-mobile-web-app-title" content="Splicora">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <style>${getStyles()}</style>
 </head>
@@ -362,7 +362,7 @@ router.get('/', (req, res) => {
           <div class="feature-content">
             <h3>Video Editor</h3>
             <h2>A full professional editor right in your browser</h2>
-            <p>No more switching between apps. Our built-in video editor features a full multi-track timeline with real audio waveform visualization, a curated music library with 123 royalty-free tracks across 11 genres, AI-powered captions, and precision playhead seeking. Trim, add music, overlay captions, and export — all without leaving RepurposeAI.</p>
+            <p>No more switching between apps. Our built-in video editor features a full multi-track timeline with real audio waveform visualization, a curated music library with 123 royalty-free tracks across 11 genres, AI-powered captions, and precision playhead seeking. Trim, add music, overlay captions, and export — all without leaving Splicora.</p>
             <span class="feature-tag">&#x1F3AC; Full Editor</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><div class="feature-mockup-content" style="display:flex;flex-direction:column;gap:10px;padding:10px"><div style="flex:1;background:linear-gradient(135deg,#151525 0%,#1a1a30 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:100px;position:relative"><div style="font-size:1.5rem">&#x25B6;</div><div style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:.7rem;color:#fff;background:rgba(0,0,0,0.7);padding:3px 10px;border-radius:4px">Timeline with real waveform</div></div><div style="display:flex;gap:6px"><div style="flex:1;height:24px;border-radius:4px;background:linear-gradient(90deg,rgba(108,58,237,0.3),rgba(59,130,246,0.2));position:relative"><span style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:.55rem;color:var(--text-muted)">Video</span></div></div><div style="display:flex;gap:6px"><div style="flex:1;height:18px;border-radius:4px;background:linear-gradient(90deg,rgba(16,185,129,0.25),rgba(59,130,246,0.15));position:relative"><span style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:.55rem;color:var(--text-muted)">Audio</span></div></div></div></div></div>
@@ -460,7 +460,7 @@ router.get('/', (req, res) => {
         <div class="workflow-card">
           <div class="workflow-number">1</div>
           <h3>Upload or Paste</h3>
-          <p>Drop any YouTube URL, upload a video file (MP4, MOV, WebM), or paste a transcript. RepurposeAI extracts everything it needs — transcripts, key moments, and visual context — automatically.</p>
+          <p>Drop any YouTube URL, upload a video file (MP4, MOV, WebM), or paste a transcript. Splicora extracts everything it needs — transcripts, key moments, and visual context — automatically.</p>
         </div>
         <div class="workflow-card">
           <div class="workflow-number">2</div>
@@ -484,7 +484,7 @@ router.get('/', (req, res) => {
   <section style="background:var(--dark)">
     <div class="section-inner">
       <div class="section-header">
-        <div class="section-label">Why RepurposeAI</div>
+        <div class="section-label">Why Splicora</div>
         <h2 class="section-title">The Only Platform You Need</h2>
         <p class="section-subtitle">Everything other tools charge extra for, we include in one powerful suite.</p>
       </div>
@@ -504,7 +504,7 @@ router.get('/', (req, res) => {
         <div class="team-card">
           <div class="team-card-icon">&#x1F46B;</div>
           <h3>Built for Teams</h3>
-          <p>Invite your team, assign brand voices, share content libraries, and publish from one workspace. From solo creators to agencies managing 20+ clients — RepurposeAI scales with you.</p>
+          <p>Invite your team, assign brand voices, share content libraries, and publish from one workspace. From solo creators to agencies managing 20+ clients — Splicora scales with you.</p>
           <div class="team-card-mockup">&#x1F680;</div>
         </div>
       </div>
@@ -552,19 +552,19 @@ router.get('/', (req, res) => {
       <div class="section-header">
         <div class="section-label">Testimonials</div>
         <h2 class="section-title">Loved by Creators</h2>
-        <p class="section-subtitle">See what our users are saying about RepurposeAI.</p>
+        <p class="section-subtitle">See what our users are saying about Splicora.</p>
       </div>
       <div class="marquee-testimonials">
         <div class="marquee-container">
           <div class="testimonial-marquee-card">
             <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
-            <p class="testimonial-quote">"RepurposeAI saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
+            <p class="testimonial-quote">"Splicora saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
             <div class="testimonial-author-name">Jake Morrison</div>
             <div class="testimonial-author-role">YouTube Creator, 500K subs</div>
           </div>
           <div class="testimonial-marquee-card">
             <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
-            <p class="testimonial-quote">"Our agency manages 20+ clients. RepurposeAI turned a 3-person job into something one person handles easily."</p>
+            <p class="testimonial-quote">"Our agency manages 20+ clients. Splicora turned a 3-person job into something one person handles easily."</p>
             <div class="testimonial-author-name">Sarah Rodriguez</div>
             <div class="testimonial-author-role">Digital Agency Owner</div>
           </div>
@@ -594,7 +594,7 @@ router.get('/', (req, res) => {
           </div>
           <div class="testimonial-marquee-card">
             <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
-            <p class="testimonial-quote">"RepurposeAI saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
+            <p class="testimonial-quote">"Splicora saves me 10+ hours every week. I paste my YouTube link and get perfect content for all my socials instantly."</p>
             <div class="testimonial-author-name">Jake Morrison</div>
             <div class="testimonial-author-role">YouTube Creator, 500K subs</div>
           </div>
@@ -608,12 +608,12 @@ router.get('/', (req, res) => {
       <div class="section-header">
         <div class="section-label">FAQ</div>
         <h2 class="section-title">Got Questions?</h2>
-        <p class="section-subtitle">Find answers to common questions about RepurposeAI.</p>
+        <p class="section-subtitle">Find answers to common questions about Splicora.</p>
       </div>
       <div class="faq-container">
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
-            <h3>How does RepurposeAI work?</h3>
+            <h3>How does Splicora work?</h3>
             <span class="faq-toggle">+</span>
           </div>
           <div class="faq-content">
@@ -671,7 +671,7 @@ router.get('/', (req, res) => {
             <span class="faq-toggle">+</span>
           </div>
           <div class="faq-content">
-            <p>Yes! Our Free plan lets you try RepurposeAI with 3 videos per month. You get access to all core tools including the video editor, AI captions, and free AI voices. Upgrade to unlock more videos, clips, and premium features.</p>
+            <p>Yes! Our Free plan lets you try Splicora with 3 videos per month. You get access to all core tools including the video editor, AI captions, and free AI voices. Upgrade to unlock more videos, clips, and premium features.</p>
           </div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
@@ -703,16 +703,16 @@ router.get('/', (req, res) => {
   <section id="get-app" style="padding:80px 2rem;text-align:center;background:linear-gradient(180deg,var(--dark) 0%,rgba(108,58,237,0.08) 50%,var(--dark) 100%);">
     <div style="max-width:700px;margin:0 auto;">
       <div style="font-size:3rem;margin-bottom:1rem;">&#x1F4F1;</div>
-      <h2 class="section-title" style="margin-bottom:.8rem;">Get the RepurposeAI App</h2>
+      <h2 class="section-title" style="margin-bottom:.8rem;">Get the Splicora App</h2>
       <p style="color:var(--text-dim);font-size:1.05rem;line-height:1.8;margin-bottom:2rem;">
-        Install RepurposeAI on your phone for the full app experience — no app store needed. Access all features, get notifications, and repurpose content on the go.
+        Install Splicora on your phone for the full app experience — no app store needed. Access all features, get notifications, and repurpose content on the go.
       </p>
       <div style="display:flex;gap:1.5rem;justify-content:center;flex-wrap:wrap;margin-bottom:2.5rem;">
         <div style="background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:24px 28px;flex:1;min-width:250px;max-width:320px;text-align:left;">
           <div style="font-size:1.8rem;margin-bottom:.8rem;">&#xF8FF;</div>
           <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">iPhone / iPad</div>
           <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
-            <li>Open <strong style="color:var(--text)">repurposeai.ai</strong> in Safari</li>
+            <li>Open <strong style="color:var(--text)">splicora.ai</strong> in Safari</li>
             <li>Tap the <strong style="color:var(--text)">Share</strong> button &#x2191;</li>
             <li>Tap <strong style="color:var(--text)">Add to Home Screen</strong></li>
           </ol>
@@ -721,7 +721,7 @@ router.get('/', (req, res) => {
           <div style="font-size:1.8rem;margin-bottom:.8rem;">&#x1F4F1;</div>
           <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">Android</div>
           <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
-            <li>Open <strong style="color:var(--text)">repurposeai.ai</strong> in Chrome</li>
+            <li>Open <strong style="color:var(--text)">splicora.ai</strong> in Chrome</li>
             <li>Tap the <strong style="color:var(--text)">menu</strong> &#x22EE; (three dots)</li>
             <li>Tap <strong style="color:var(--text)">Install app</strong> or <strong style="color:var(--text)">Add to Home Screen</strong></li>
           </ol>
@@ -752,7 +752,7 @@ router.get('/', (req, res) => {
     <div style="display:flex;align-items:center;justify-content:center;gap:12px;max-width:600px;margin:0 auto;">
       <div style="font-size:1.5rem;">&#x26A1;</div>
       <div style="flex:1;text-align:left;">
-        <div style="font-weight:700;font-size:.9rem;color:#fff;">Get the RepurposeAI App</div>
+        <div style="font-weight:700;font-size:.9rem;color:#fff;">Get the Splicora App</div>
         <div style="font-size:.75rem;color:rgba(255,255,255,0.8);" id="installHint">Install for the best experience</div>
       </div>
       <button id="installBtn" onclick="installApp()" style="padding:8px 20px;background:#fff;color:#6C3AED;border:none;border-radius:50px;font-weight:700;font-size:.82rem;cursor:pointer;white-space:nowrap;">Install</button>
