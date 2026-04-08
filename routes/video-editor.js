@@ -2303,6 +2303,7 @@ function showToast(message, type = 'success') {
         document.body.style.cursor = 'col-resize';
 
         function onMove(ev) {
+          if (!document.getElementById("startTime")) return;
           var rect = trackContent.getBoundingClientRect();
           var pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
           var time = pct * videoDuration;
