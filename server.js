@@ -47,7 +47,8 @@ app.use((req, res, next) => {
   // Only set no-cache for HTML page requests (not API/JSON or static assets)
   const isApiRequest = req.path.includes('/api/') || req.path === '/billing/webhook';
   const isStreamRequest = req.path.includes('/process-stream');
-  if (!isApiRequest && !isStreamRequest) {
+  const isStaticAsset = req.path.startsWith('/public/');
+  if (!isApiRequest && !isStreamRequest && !isStaticAsset) {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
