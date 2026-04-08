@@ -4573,7 +4573,7 @@ function showToast(message, type = 'success') {
     // ═══════════════════════════════════════════════════════════
     // WIRE UP ALL INTERACTIVE UI ELEMENTS
     // ═══════════════════════════════════════════════════════════
-    (function wireAllUI() {
+    setTimeout(function wireAllUI() {
 
       // ── 1. FOLDERS (Completed Videos, Not Completed, Leonardo AI) ──
       document.querySelectorAll('.ml-folder').forEach(function(folder) {
@@ -4778,7 +4778,79 @@ function showToast(message, type = 'success') {
         setTimeout(function() { toast.remove(); }, 2400);
       }
 
-    })();
+    }, 800);
+
+    // Re-wire dynamically added media items (e.g. after upload or folder open)
+    var _wireObserver = new MutationObserver(function(mutations) {
+      mutations.forEach(function(m) {
+        m.addedNodes.forEach(function(node) {
+          if (node.nodeType !== 1) return;
+          // Wire new .ml-fitem elements
+          var items = node.classList && node.classList.contains('ml-fitem') ? [node] : (node.querySelectorAll ? node.querySelectorAll('.ml-fitem') : []);
+          items.forEach(function(item) {
+            if (item._wired) return;
+            item._wired = true;
+            item.style.setProperty('cursor', 'pointer', 'important');
+            item.addEventListener('click', function(e) {
+              if (e.target.classList.contains('ml-add')) return;
+              document.querySelectorAll('.ml-fitem').forEach(function(c) { c.classList.remove('selected'); });
+              this.classList.add('selected');
+              var nameEl = this.querySelector('.ml-fnm');
+              var msg = nameEl ? 'Selected: ' + nameEl.textContent.trim() : 'Clip selected';
+              var t = document.createElement('div');
+              t.className = 'wire-toast';
+              t.textContent = msg;
+              t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(108,58,237,.95);color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;pointer-events:none;animation:toastIn .3s ease;box-shadow:0 4px 20px rgba(0,0,0,.4)';
+              document.body.appendChild(t);
+              setTimeout(function() { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 2000);
+              setTimeout(function() { t.remove(); }, 2400);
+            });
+            var addBtn = item.querySelector('.ml-add');
+            if (addBtn) {
+              addBtn.style.setProperty('cursor', 'pointer', 'important');
+              addBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var nameEl = item.querySelector('.ml-fnm');
+                var fn = nameEl ? nameEl.textContent.trim() : 'clip';
+                var t = document.createElement('div');
+                t.className = 'wire-toast';
+                t.textContent = 'Added to timeline: ' + fn;
+                t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(108,58,237,.95);color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;pointer-events:none;animation:toastIn .3s ease;box-shadow:0 4px 20px rgba(0,0,0,.4)';
+                document.body.appendChild(t);
+                setTimeout(function() { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 2000);
+                setTimeout(function() { t.remove(); }, 2400);
+              });
+            }
+          });
+        });
+      });
+    });
+    var _mediaGrid = document.querySelector('.ml-fgrid');
+    if (_mediaGrid) _wireObserver.observe(_mediaGrid, {childList: true, subtree: true});
+    // Also wire existing clips after a brief delay
+    setTimeout(function() {
+      document.querySelectorAll('.ml-fitem').forEach(function(item) {
+        if (item._wired) return;
+        item._wired = true;
+        item.style.setProperty('cursor', 'pointer', 'important');
+        item.addEventListener('click', function(e) {
+          if (e.target.classList.contains('ml-add')) return;
+          document.querySelectorAll('.ml-fitem').forEach(function(c) { c.classList.remove('selected'); });
+          this.classList.add('selected');
+          var nameEl = this.querySelector('.ml-fnm');
+          if (nameEl) {
+            var t = document.createElement('div');
+            t.className = 'wire-toast';
+            t.textContent = 'Selected: ' + nameEl.textContent.trim();
+            t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(108,58,237,.95);color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;z-index:99999;pointer-events:none;animation:toastIn .3s ease;box-shadow:0 4px 20px rgba(0,0,0,.4)';
+            document.body.appendChild(t);
+            setTimeout(function() { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 2000);
+            setTimeout(function() { t.remove(); }, 2400);
+          }
+        });
+      });
+    }, 1200);
+    
     </script>
 </body>
 </html>`;
