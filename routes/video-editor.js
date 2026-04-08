@@ -548,10 +548,10 @@ router.get('/', requireAuth, async (req, res) => {
               <div class="media-library" id="mediaLibrary">
                 <div class="ml-head"><h3>&#128194; Media</h3></div>
                 <div class="ml-tabs">
-                  <button class="ml-tab active" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Videos</button>
-                  <button class="ml-tab" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Audio</button>
-                  <button class="ml-tab" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Images</button>
-                  <button class="ml-tab" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">Stock</button>
+                  <button class="ml-tab active" data-filter="all" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=''})">Videos</button>
+                  <button class="ml-tab" data-filter="aud" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='aud'?'':'none'})">Audio</button>
+                  <button class="ml-tab" data-filter="img" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='img'?'':'none'})">Images</button>
+                  <button class="ml-tab" data-filter="stock" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display='none'})">Stock</button>
                 </div>
                 <div class="ml-search"><input placeholder="&#128269; Search media..." /></div>
                 <div class="ml-body">
@@ -1122,7 +1122,7 @@ router.get('/', requireAuth, async (req, res) => {
         {name:'broll_city.mp4',type:'vid',dur:'0:22',icon:'\ud83c\udfac'}
       ];
       grid.innerHTML = files.map(f => 
-        '<div class="ml-fitem" draggable="true">' +
+        '<div class="ml-fitem" draggable="true" data-media-type="' + f.type + '">' +
           '<div class="ml-fth">' + f.icon +
             '<span class="ml-badge ' + f.type + '">' + f.type.toUpperCase() + '</span>' +
             (f.dur ? '<span class="ml-dur">' + f.dur + '</span>' : '') +
@@ -4337,6 +4337,66 @@ function showToast(message, type = 'success') {
         resizeAnnotCanvas();
       });
     }
+</script>
+<script>
+(function(){
+  // Hidden file input for Upload button
+  var fi = document.createElement('input');
+  fi.type = 'file';
+  fi.multiple = true;
+  fi.accept = 'video/*,audio/*,image/*';
+  fi.style.display = 'none';
+  fi.id = 'mediaFileInput';
+  document.body.appendChild(fi);
+
+  // Wire up the + Upload button
+  var uploadBtns = document.querySelectorAll('button');
+  uploadBtns.forEach(function(btn){
+    if(btn.textContent.trim().indexOf('Upload') !== -1 && btn.textContent.trim().indexOf('+') !== -1){
+      btn.onclick = function(e){
+        e.preventDefault();
+        fi.click();
+      };
+    }
+  });
+
+  // Also wire the ml-upload drop zone click
+  var mlUpload = document.querySelector('.ml-upload');
+  if(mlUpload){
+    mlUpload.style.cursor = 'pointer';
+    mlUpload.addEventListener('click', function(e){
+      if(e.target.tagName !== 'BUTTON') fi.click();
+    });
+  }
+
+  // Handle file selection
+  fi.addEventListener('change', function(){
+    if(!fi.files.length) return;
+    var grid = document.getElementById('mediaFileGrid');
+    if(!grid) return;
+    Array.from(fi.files).forEach(function(file){
+      var ext = file.name.split('.').pop().toLowerCase();
+      var mediaType = 'vid';
+      var emoji = '\ud83c\udfac';
+      var badge = 'vid';
+      if(['mp3','wav','ogg','aac','flac','m4a'].indexOf(ext) !== -1){
+        mediaType = 'aud'; emoji = '\ud83c\udfb5'; badge = 'aud';
+      } else if(['png','jpg','jpeg','gif','webp','svg','bmp'].indexOf(ext) !== -1){
+        mediaType = 'img'; emoji = '\ud83d\uddbc\ufe0f'; badge = 'img';
+      }
+      var item = document.createElement('div');
+      item.className = 'ml-fitem';
+      item.draggable = true;
+      item.dataset.mediaType = mediaType;
+      item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">'+emoji+'</div>'
+        + '<span class="ml-badge '+badge+'">'+badge.toUpperCase()+'</span>'
+        + '<span class="ml-fname" style="font-size:9px;color:#c4b5fd;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+file.name+'</span>'
+        + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
+      grid.insertBefore(item, grid.firstChild);
+    });
+    fi.value = '';
+  });
+})();
 </script>
 </body>
 </html>`;
