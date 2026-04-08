@@ -1069,6 +1069,8 @@ router.get('/', requireAuth, async (req, res) => {
   </div>
 
   <script>
+    (function(){var orig=document.getElementById.bind(document);var noop={disabled:false,value:'',textContent:'',innerHTML:'',src:'',checked:false,selectedIndex:0,style:{},classList:{add:function(){},remove:function(){},toggle:function(){},contains:function(){return false}},addEventListener:function(){},removeEventListener:function(){},appendChild:function(){return this},removeChild:function(){},insertBefore:function(){},setAttribute:function(){},getAttribute:function(){return null},querySelector:function(){return null},querySelectorAll:function(){return[]},focus:function(){},blur:function(){},click:function(){},play:function(){return Promise.resolve()},pause:function(){},getBoundingClientRect:function(){return{top:0,left:0,right:0,bottom:0,width:0,height:0,x:0,y:0}},offsetWidth:0,offsetHeight:0,offsetTop:0,offsetLeft:0,scrollWidth:0,scrollHeight:0,children:[],childNodes:[],parentNode:null,parentElement:null,nextSibling:null,previousSibling:null,firstChild:null,lastChild:null,dataset:{},tagName:'DIV',nodeName:'DIV',nodeType:1};noop.style=new Proxy({},{set:function(){return true},get:function(){return''}});document.getElementById=function(id){return orig(id)||noop}})();
+
     // ═══ CINEMA SUITE PRO: Move timeline to grid root ═══
     (function(){
       var ec = document.querySelector(".editor-container");
@@ -1410,26 +1412,26 @@ function showToast(message, type = 'success') {
         });
         uploadZone.classList.add('has-video');
         videoPreviewArea.classList.add('has-video');
-        document.getElementById('trimButton').disabled = false;
-        document.getElementById('exportButton').disabled = false;
-        document.getElementById('splitButton').disabled = false;
-        document.getElementById('filterButton').disabled = false;
-        document.getElementById('speedButton').disabled = false;
-        document.getElementById('audioButton').disabled = false;
-        document.getElementById('previewVoiceButton').disabled = false;
-        document.getElementById('voiceoverButton').disabled = false;
-        document.getElementById('vtPreviewBtn').disabled = false;
-        document.getElementById('vtApplyBtn').disabled = false;
-        document.getElementById('textButton').disabled = false;
-        document.getElementById('speedSelect').disabled = false;
-        document.getElementById('addMusicButton').disabled = false;
-        document.getElementById('removeFillerWordsBtn').disabled = false;
-        document.getElementById('removePausesBtn').disabled = false;
-        document.getElementById('applyTransitionButton').disabled = false;
-        document.getElementById('applyCaptionsBtn').disabled = false;
+        (function(){var e=document.getElementById('trimButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('exportButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('splitButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('filterButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('speedButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('audioButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('previewVoiceButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('voiceoverButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('vtPreviewBtn');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('vtApplyBtn');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('textButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('speedSelect');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('addMusicButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('removeFillerWordsBtn');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('removePausesBtn');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('applyTransitionButton');if(e)e.disabled=false;})();
+        (function(){var e=document.getElementById('applyCaptionsBtn');if(e)e.disabled=false;})();
 
         // Set end time to video duration
-        document.getElementById('endTime').value = Math.round(videoDuration);
+        (function(){var e=document.getElementById('endTime');if(e)e.value=Math.round(videoDuration);})();
 
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
@@ -1963,6 +1965,8 @@ function showToast(message, type = 'success') {
     };
 
     function initTimeline() {
+          if (!document.getElementById("timelineTracks")) return;
+
       if (!videoDuration || videoDuration <= 0) return;
       timelineState.trimEnd = videoDuration;
 
