@@ -393,7 +393,7 @@ router.get('/', requireAuth, async (req, res) => {
     .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:2px solid rgba(0,200,200,.25)}
     .fs-track.video-track{background:#0a1015}
     .fs-track.audio-track{background:#0a1520;border-color:rgba(0,150,255,.2)}
-    .fs-thumbs{display:flex;height:100%;width:100%}
+    .fs-thumbs{display:flex;height:100%;width:100%;overflow:hidden;gap:0}.fs-thumbs img,.fs-thumb-placeholder{flex:1;height:100%;object-fit:cover;min-width:0;display:block}.fs-thumb-placeholder{background:linear-gradient(135deg,#1a2a3c 0%,#2a1a3c 100%);animation:fsPulse 1.5s ease-in-out infinite alternate}@keyframes fsPulse{0%{opacity:.4}100%{opacity:.7}}
     .fs-thumb{flex:1;background-size:cover;background-position:center;position:relative;border-right:1px solid rgba(0,0,0,.3)}
     .fs-thumb:last-child{border-right:none}
     .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
@@ -1138,22 +1138,92 @@ router.get('/', requireAuth, async (req, res) => {
     // ═══ FILMSTRIP: Generate video thumbnails ═══
     function generateFilmstripThumbs() {
       var container = document.getElementById('fsThumbs');
-      if (!container) return;
+      if (!container || !container.innerHTML && container.innerHTML !== '') return;
       container.innerHTML = '';
-      var colors1 = ['#1a3a5c','#2a5a3c','#3a2a5c','#5c3a1a','#1a5c5a','#5c1a3a','#3a5c1a','#2a3a5c','#5c5a1a','#1a3a2a','#4a2a5c','#5c2a4a','#2a5c3a','#3a1a5c'];
-      var colors2 = ['#2d4a3a','#4a2d3a','#3a4a2d','#2d3a4a','#4a3a2d','#3a2d4a','#5a3a2d','#2d5a3a','#3a5a2d','#2d3a5a','#5a2d3a','#3a2d5a','#4a5a2d','#2d4a5a'];
-      for (var i = 0; i < 14; i++) {
-        var thumb = document.createElement('div');
-        thumb.className = 'fs-thumb';
-        var angle = Math.floor(Math.random() * 360);
-        thumb.style.background = 'linear-gradient(' + angle + 'deg,' + colors1[i] + 'dd,' + colors2[i] + 'aa),radial-gradient(circle at ' + (30+Math.random()*40) + '% ' + (30+Math.random()*40) + '%,rgba(200,180,150,.3) 0%,transparent 50%),linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.3))';
-        if (Math.random() > 0.3) {
-          var face = document.createElement('div');
-          face.style.cssText = 'position:absolute;width:' + (18+Math.random()*12) + 'px;height:' + (22+Math.random()*14) + 'px;border-radius:50%;background:radial-gradient(circle,rgba(210,180,150,.45),rgba(180,150,120,.2));top:' + (5+Math.random()*15) + 'px;left:' + (20+Math.random()*40) + '%;filter:blur(1px)';
-          thumb.style.position = 'relative';
-          thumb.appendChild(face);
+
+      var video = document.getElementById('videoPlayer');
+      if (!video || !video.src || !video.duration || !isFinite(video.duration)) {
+        // Fallback: show colored placeholders if no video loaded
+        for (var i = 0; i < 16; i++) {
+          var ph = document.createElement('div');
+          ph.className = 'fs-thumb-placeholder';
+          container.appendChild(ph);
         }
-        container.appendChild(thumb);
+        return;
+      }
+
+      var duration = video.duration;
+      var NUM_THUMBS = Math.min(24, Math.max(8, Math.round(duration / 3)));
+      var interval = duration / NUM_THUMBS;
+
+      // Show loading placeholders first
+      for (var p = 0; p < NUM_THUMBS; p++) {
+        var placeholder = document.createElement('div');
+        placeholder.className = 'fs-thumb-placeholder';
+        placeholder.setAttribute('data-idx', p);
+        container.appendChild(placeholder);
+      }
+
+      // Create hidden canvas for frame extraction
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
+      canvas.width = 160;
+      canvas.height = 90;
+
+      // Clone the video element to avoid disrupting playback
+      var extractor = document.createElement('video');
+      extractor.crossOrigin = 'anonymous';
+      extractor.muted = true;
+      extractor.preload = 'auto';
+      extractor.src = video.src;
+
+      var currentIdx = 0;
+
+      function extractFrame() {
+        if (currentIdx >= NUM_THUMBS) {
+          extractor.removeEventListener('seeked', onSeeked);
+          extractor.src = '';
+          extractor = null;
+          return;
+        }
+        var seekTime = Math.min(currentIdx * interval + 0.5, duration - 0.1);
+        extractor.currentTime = seekTime;
+      }
+
+      function onSeeked() {
+        try {
+          ctx.drawImage(extractor, 0, 0, canvas.width, canvas.height);
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+
+          var img = document.createElement('img');
+          img.src = dataUrl;
+          img.alt = 'Frame ' + currentIdx;
+          img.draggable = false;
+
+          // Replace the placeholder at this index
+          var ph = container.querySelector('[data-idx="' + currentIdx + '"]');
+          if (ph) {
+            ph.replaceWith(img);
+          } else {
+            container.appendChild(img);
+          }
+        } catch (e) {
+          // CORS or other error - leave placeholder
+        }
+
+        currentIdx++;
+        // Use requestAnimationFrame to keep UI responsive
+        requestAnimationFrame(extractFrame);
+      }
+
+      extractor.addEventListener('seeked', onSeeked);
+      extractor.addEventListener('loadeddata', function() {
+        extractFrame();
+      });
+
+      // If already loaded
+      if (extractor.readyState >= 2) {
+        extractFrame();
       }
     }
 
