@@ -4984,7 +4984,16 @@ setTimeout(function comprehensiveUIFix(){
     if(v&&v.textContent!==undefined)v.textContent=rs.value+" deg";
   });
 
-  // Folder expand/collapse with clip grids
+    // Debounce classList.toggle("open") to prevent double-toggle from competing handlers
+  var _origToggle=DOMTokenList.prototype.toggle;
+  DOMTokenList.prototype.toggle=function(cls){
+    if(cls==="open"&&this._toggleLock)return this.contains(cls);
+    var r=_origToggle.apply(this,arguments);
+    if(cls==="open"){this._toggleLock=true;var s=this;setTimeout(function(){s._toggleLock=false;},0);}
+    return r;
+  };
+
+// Folder expand/collapse with clip grids
   document.querySelectorAll(".ml-folder").forEach(function(folder){
     if(folder.nextElementSibling&&folder.nextElementSibling.classList&&folder.nextElementSibling.classList.contains("ml-fgrid-sub"))return;
     var spans=folder.querySelectorAll("span");
