@@ -38,15 +38,15 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .hero-cta{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem}
 .hero-input-group{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem;max-width:700px;margin-left:auto;margin-right:auto}
 .hero-input{flex:1;min-width:250px;padding:1rem 1.5rem;background:var(--surface);border:1px solid rgba(108,58,237,0.3);border-radius:50px;color:var(--text);font-size:.95rem}
-.carousel-container{position:relative;margin-top:4rem;max-width:1400px;margin-left:50%;transform:translateX(-50%);width:100vw;padding:0 40px;box-sizing:border-box}
+.carousel-container{position:relative;margin-top:4rem;max-width:1200px;margin-left:50%;transform:translateX(-50%);width:95vw;padding:0 40px;box-sizing:border-box}
 .carousel{display:flex;overflow:hidden;transition:transform .5s ease-in-out}
-.carousel-slide{flex:0 0 100%;display:flex;justify-content:center;align-items:center;min-height:700px}
+.carousel-slide{flex:0 0 100%;display:flex;justify-content:center;align-items:center;min-height:620px}
 .carousel-showcase{width:100%;display:flex;align-items:center;justify-content:center;gap:32px;padding:20px}
 .carousel-showcase.layout-editor{flex-direction:column;gap:0}
 .carousel-showcase.layout-beforeafter{flex-direction:row;gap:40px}
 .carousel-showcase.layout-centered{flex-direction:column;align-items:center}
 .carousel-screen{background:#111118;border-radius:16px;border:1px solid rgba(255,255,255,0.08);overflow:hidden;position:relative;box-shadow:0 25px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.05)}
-.carousel-screen-main{width:100%;max-width:1200px;aspect-ratio:16/9;display:flex;flex-direction:column}
+.carousel-screen-main{width:100%;max-width:1000px;aspect-ratio:16/9;display:flex;flex-direction:column}
 .carousel-screen-topbar{height:36px;background:#1a1a28;display:flex;align-items:center;padding:0 14px;gap:8px;border-bottom:1px solid rgba(255,255,255,0.06)}
 .carousel-screen-dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.1)}
 .carousel-screen-dot:nth-child(1){background:#ff5f57}
