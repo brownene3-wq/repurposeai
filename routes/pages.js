@@ -246,7 +246,7 @@ router.get('/', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
-  <meta name="description" content="AI-powered video creation platform. 9 tools in one: Smart Shorts, Video Editor, AI Captions, AI Hooks, B-Roll, Music Library, Reframe, Scheduler &amp; Brand Voice. Turn one video into unlimited content.">
+  <meta name="description" content="AI-powered video creation platform. 8 tools in one: Smart Shorts, Video Editor, AI Captions, AI Hooks, B-Roll, Music Library, Reframe &amp; Brand Voice. Turn one video into unlimited content.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
@@ -275,7 +275,7 @@ router.get('/', (req, res) => {
     <div class="hero-content">
       <div class="hero-badge">&#x2728; AI-Powered Content Engine</div>
       <h1>Turn One Video Into<br><span class="gradient-text">Unlimited Content</span></h1>
-      <p>9 AI tools in one platform. Smart Shorts, Video Editor, AI Captions, Hooks, B-Roll, Music Library, Reframe, Scheduler, and Brand Voice. Paste a link and let AI do the rest.</p>
+      <p>8 AI tools in one platform. Smart Shorts, Video Editor, AI Captions, Hooks, B-Roll, Music Library, Reframe, and Brand Voice. Paste a link and let AI do the rest.</p>
       <div class="hero-input-group">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
         <button class="btn btn-primary">Create &#x26A1;</button>
@@ -297,15 +297,13 @@ router.get('/', (req, res) => {
           <div class="carousel-slide"><div class="carousel-showcase layout-beforeafter"><div class="cs-device cs-device-landscape"><div class="cs-device-inner" style="background:linear-gradient(135deg,#1a1030,#2d1b4e)"><div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:6px"><div style="font-size:2rem">&#x1F4D0;</div><div style="font-size:.8rem;font-weight:600;color:#fff">16:9 Original</div></div></div><div class="cs-device-label">Original Video</div></div><div class="cs-arrow">&#x2192;</div><div class="cs-device cs-device-portrait"><div class="cs-device-inner" style="background:linear-gradient(135deg,#1a1030,#2d1b4e)"><div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:6px"><div style="font-size:1.5rem">&#x1F4F1;</div><div style="font-size:.7rem;font-weight:600;color:#fff">9:16 Reframed</div></div></div><div class="cs-device-label">TikTok / Reels</div></div></div></div>
           <!-- Slide 7: Music Library -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main" style="max-width:720px"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Music Library — 123 Royalty-Free Tracks</span></div><div class="carousel-screen-body"><div class="carousel-video-area"><div class="carousel-video-placeholder" style="background:linear-gradient(135deg,#0a1628 0%,#1a1040 50%,#0a1628 100%)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:16px"><div style="font-size:2.5rem">&#x1F3B5;</div><div style="font-size:.9rem;font-weight:700;color:#fff">123 Curated Tracks</div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;max-width:400px"><span style="padding:3px 8px;border-radius:12px;background:rgba(108,58,237,0.25);color:#c4b5fd;font-size:.6rem">Ambient</span><span style="padding:3px 8px;border-radius:12px;background:rgba(236,72,153,0.25);color:#f9a8d4;font-size:.6rem">Lo-Fi</span><span style="padding:3px 8px;border-radius:12px;background:rgba(59,130,246,0.25);color:#93c5fd;font-size:.6rem">Corporate</span><span style="padding:3px 8px;border-radius:12px;background:rgba(245,158,11,0.25);color:#fcd34d;font-size:.6rem">Cinematic</span><span style="padding:3px 8px;border-radius:12px;background:rgba(16,185,129,0.25);color:#6ee7b7;font-size:.6rem">Upbeat</span><span style="padding:3px 8px;border-radius:12px;background:rgba(239,68,68,0.25);color:#fca5a5;font-size:.6rem">Hip-Hop</span><span style="padding:3px 8px;border-radius:12px;background:rgba(168,85,247,0.25);color:#d8b4fe;font-size:.6rem">Electronic</span><span style="padding:3px 8px;border-radius:12px;background:rgba(20,184,166,0.25);color:#5eead4;font-size:.6rem">Acoustic</span><span style="padding:3px 8px;border-radius:12px;background:rgba(251,146,60,0.25);color:#fdba74;font-size:.6rem">Jazz</span><span style="padding:3px 8px;border-radius:12px;background:rgba(129,140,248,0.25);color:#a5b4fc;font-size:.6rem">Classical</span><span style="padding:3px 8px;border-radius:12px;background:rgba(52,211,153,0.25);color:#6ee7b7;font-size:.6rem">Nature</span></div><div style="display:flex;gap:6px;align-items:center;margin-top:8px"><div style="width:28px;height:28px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#fff">&#x25B6;</div><div style="flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,0.1);max-width:200px"><div style="width:45%;height:100%;border-radius:2px;background:var(--gradient-1)"></div></div><span style="font-size:.6rem;color:var(--text-muted)">Preview tracks before adding</span></div></div></div></div></div></div></div></div>
-          <!-- Slide 8: Social Scheduler -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main" style="max-width:680px"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Social Scheduler — Auto-Publish</span></div><div class="carousel-screen-body"><div class="carousel-video-area"><div class="carousel-video-placeholder" style="background:linear-gradient(135deg,#0d1117 0%,#1a1a30 50%,#0d1117 100%)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px"><div style="font-size:2.5rem">&#x1F4C5;</div><div style="font-size:.9rem;font-weight:700;color:#fff">Schedule a Month in 10 Minutes</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;width:70%;max-width:280px;margin-top:6px"><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">M</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">T</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">W</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.35);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:#c4b5fd">T</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">F</span><span style="height:20px;border-radius:3px;background:rgba(236,72,153,.25);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:#f9a8d4">S</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.15);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">S</span></div><div style="font-size:.7rem;color:var(--text-muted);margin-top:6px">All major platforms supported</div></div></div></div></div></div></div></div>
-          <!-- Slide 9: Brand Voice -->
+          <!-- Slide 8: Brand Voice -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main" style="max-width:680px"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Brand Voice — AI That Sounds Like You</span></div><div class="carousel-screen-body"><div class="carousel-video-area"><div class="carousel-video-placeholder" style="background:linear-gradient(135deg,#1a0a2e 0%,#0d1117 50%,#1a0a2e 100%)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:16px"><div style="font-size:2.5rem">&#x1F399;&#xFE0F;</div><div style="font-size:.9rem;font-weight:700;color:#fff">Train AI on Your Content Style</div><div style="width:80%;max-width:300px;display:flex;flex-direction:column;gap:8px;margin-top:6px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:.65rem;color:var(--text-muted);width:60px">Tone</span><div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,0.08)"><div style="width:65%;height:100%;border-radius:3px;background:linear-gradient(90deg,#6C3AED,#EC4899)"></div></div></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:.65rem;color:var(--text-muted);width:60px">Energy</span><div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,0.08)"><div style="width:80%;height:100%;border-radius:3px;background:linear-gradient(90deg,#6C3AED,#3B82F6)"></div></div></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:.65rem;color:var(--text-muted);width:60px">Formality</span><div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,0.08)"><div style="width:45%;height:100%;border-radius:3px;background:linear-gradient(90deg,#F59E0B,#EF4444)"></div></div></div></div><div style="font-size:.7rem;color:var(--text-muted);margin-top:6px">Every post matches your unique voice</div></div></div></div></div></div></div></div>
         </div>
       </div>
       <div class="carousel-controls">
         <button class="carousel-btn" onclick="prevSlide()">&#x2190;</button>
-        <span style="color:var(--text-muted);font-size:.9rem" id="slideCounter">1 / 9</span>
+        <span style="color:var(--text-muted);font-size:.9rem" id="slideCounter">1 / 8</span>
         <button class="carousel-btn" onclick="nextSlide()">&#x2192;</button>
       </div>
       <div class="carousel-labels">
@@ -316,8 +314,7 @@ router.get('/', (req, res) => {
         <div class="carousel-label" onclick="goToSlide(4)">AI B-Roll</div>
         <div class="carousel-label" onclick="goToSlide(5)">AI Reframe</div>
         <div class="carousel-label" onclick="goToSlide(6)">Music Library</div>
-        <div class="carousel-label" onclick="goToSlide(7)">Scheduler</div>
-        <div class="carousel-label" onclick="goToSlide(8)">Brand Voice</div>
+        <div class="carousel-label" onclick="goToSlide(7)">Brand Voice</div>
       </div>
     </div>
   </section>
@@ -423,18 +420,7 @@ router.get('/', (req, res) => {
           <div class="feature-mockup"><div class="feature-mock-inner"><div class="feature-mockup-content"><div class="feature-reframe-preview"><div class="feature-reframe-card"><div class="feature-reframe-video" style="width:100px;height:150px"></div><div class="feature-reframe-label">9:16 Vertical</div></div><div class="feature-reframe-card"><div class="feature-reframe-video" style="width:120px;height:120px"></div><div class="feature-reframe-label">1:1 Square</div></div><div class="feature-reframe-card"><div class="feature-reframe-video" style="width:150px;height:80px"></div><div class="feature-reframe-label">16:9 Wide</div></div></div></div></div></div>
         </div>
 
-        <!-- Feature 8: Social Scheduler -->
-        <div class="feature-row reverse">
-          <div class="feature-content">
-            <h3>Social Scheduler</h3>
-            <h2>Schedule a month's posts in 10 minutes</h2>
-            <p>Plan and auto-publish across all your platforms from one unified calendar. Schedule created content for Instagram, TikTok, YouTube, LinkedIn, Twitter/X, Facebook, and Pinterest. Our AI suggests optimal posting times based on your audience's activity patterns for maximum reach and engagement.</p>
-            <span class="feature-tag">&#x1F4C5; Auto-Publish</span>
-          </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><div class="feature-mockup-content"><div class="feature-calendar-grid"><div class="feature-calendar-day">M</div><div class="feature-calendar-day">T</div><div class="feature-calendar-day">W</div><div class="feature-calendar-day">T</div><div class="feature-calendar-day">F</div><div class="feature-calendar-day">S</div><div class="feature-calendar-day">S</div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div><div class="feature-calendar-cell"></div><div class="feature-calendar-cell active"></div></div></div></div></div>
-        </div>
-
-        <!-- Feature 9: Brand Voice -->
+        <!-- Feature 8: Brand Voice -->
         <div class="feature-row">
           <div class="feature-content">
             <h3>Brand Voice</h3>
@@ -474,8 +460,8 @@ router.get('/', (req, res) => {
         </div>
         <div class="workflow-card">
           <div class="workflow-number">4</div>
-          <h3>Publish Everywhere</h3>
-          <p>Schedule and auto-publish to Instagram, TikTok, YouTube Shorts, LinkedIn, Twitter/X, Facebook, and Pinterest. Our AI suggests the best posting times for maximum engagement.</p>
+          <h3>Export &amp; Share</h3>
+          <p>Download your finished content in HD or 4K quality, optimized for every platform. Each export is automatically formatted for Instagram, TikTok, YouTube Shorts, LinkedIn, and more.</p>
         </div>
       </div>
     </div>
@@ -491,8 +477,8 @@ router.get('/', (req, res) => {
       <div class="teams-grid">
         <div class="team-card">
           <div class="team-card-icon">&#x1F3AC;</div>
-          <h3>9 AI Tools in One</h3>
-          <p>Smart Shorts, Video Editor, AI Captions, AI Hooks, AI B-Roll, Music Library, AI Reframe, Social Scheduler, and Brand Voice — all under one roof. No juggling between 5 different apps.</p>
+          <h3>8 AI Tools in One</h3>
+          <p>Smart Shorts, Video Editor, AI Captions, AI Hooks, AI B-Roll, Music Library, AI Reframe, and Brand Voice — all under one roof. No juggling between 5 different apps.</p>
           <div class="team-card-mockup">&#x26A1;</div>
         </div>
         <div class="team-card">
@@ -635,7 +621,7 @@ router.get('/', (req, res) => {
             <span class="faq-toggle">+</span>
           </div>
           <div class="faq-content">
-            <p>You get access to 9 powerful tools: Smart Shorts (AI clipping), a full Video Editor with timeline, AI Captions (6 animated styles), AI Hook Generator (with free built-in voices), AI B-Roll (millions of stock clips), a Music Library (123 royalty-free tracks), AI Reframe (auto-resize), Social Scheduler, and Brand Voice AI.</p>
+            <p>You get access to 8 powerful tools: Smart Shorts (AI clipping), a full Video Editor with timeline, AI Captions (6 animated styles), AI Hook Generator (with free built-in voices), AI B-Roll (millions of stock clips), a Music Library (123 royalty-free tracks), AI Reframe (auto-resize), and Brand Voice AI.</p>
           </div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
@@ -690,7 +676,7 @@ router.get('/', (req, res) => {
   <section class="cta-section">
     <div class="section-inner">
       <h2 class="section-title">Stop Wasting Hours on One Platform</h2>
-      <p class="section-subtitle" style="margin:1rem auto 2rem">9 AI tools. Every platform. One subscription. Join thousands of creators who turn a single video into a week of content in under 5 minutes.</p>
+      <p class="section-subtitle" style="margin:1rem auto 2rem">8 AI tools. Every platform. One subscription. Join thousands of creators who turn a single video into a week of content in under 5 minutes.</p>
       <div class="hero-input-group" style="margin-bottom:1rem">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
         <button class="btn btn-primary">Create &#x26A1;</button>
@@ -764,7 +750,7 @@ router.get('/', (req, res) => {
     // Carousel functionality
     let currentSlide = 0;
     const carousel = document.getElementById('carousel');
-    const totalSlides = 9;
+    const totalSlides = 8;
 
     // Generate dots
     (function() {
