@@ -4852,242 +4852,327 @@ function showToast(message, type = 'success') {
     }, 1200);
     
 
-// ============================================================
-// COMPREHENSIVE UI FIX v2 - Panels, Folders, Tabs, Filmstrip
-// ============================================================
-setTimeout(function comprehensiveUIFix() {
-  var sidebar = document.querySelector(".editor-sidebar");
-  if (!sidebar) return;
 
-  // --- Create missing tool panels ---
-  var mp = [
-    ["trimPanel","Trim","<div class=s-row><span>Start</span><input type=text id=trimStart value=00:00:00 class=tp-input></div><div class=s-row><span>End</span><input type=text id=trimEnd value=00:00:00 class=tp-input></div><div class=tp-btns><button class=crop-preset id=trimApplyBtn>Apply Trim</button><button class=crop-preset id=trimResetBtn>Reset</button></div>"],
-    ["speedPanel","Speed","<div class=slider-group><div class=slider-label><span>Playback Speed</span><span id=speedValue>1.0x</span></div><input type=range id=speedSlider min=0.1 max=4 step=0.1 value=1 style=width:100%></div><div class=tp-presets><button class=crop-preset data-speed=0.25>0.25x</button><button class=crop-preset data-speed=0.5>0.5x</button><button class=crop-preset data-speed=1>1x</button><button class=crop-preset data-speed=1.5>1.5x</button><button class=crop-preset data-speed=2>2x</button><button class=crop-preset data-speed=4>4x</button></div>"],
-    ["flipPanel","Flip","<div class=tp-btns><button class=crop-preset id=flipHBtn>Flip Horizontal</button><button class=crop-preset id=flipVBtn>Flip Vertical</button></div>"],
-    ["resizePanel","Resize","<div class=s-row><span>Width</span><input type=number id=resizeW value=1920 class=tp-input></div><div class=s-row><span>Height</span><input type=number id=resizeH value=1080 class=tp-input></div><div class=tp-presets><button class=crop-preset data-w=1920 data-h=1080>1080p</button><button class=crop-preset data-w=1280 data-h=720>720p</button><button class=crop-preset data-w=3840 data-h=2160>4K</button><button class=crop-preset data-w=1080 data-h=1920>9:16</button></div>"],
-    ["rotatePanel","Rotate","<div class=slider-group><div class=slider-label><span>Rotation</span><span id=rotateValue>0 deg</span></div><input type=range id=rotateSlider min=0 max=360 step=1 value=0 style=width:100%></div><div class=tp-presets><button class=crop-preset data-deg=0>0</button><button class=crop-preset data-deg=90>90</button><button class=crop-preset data-deg=180>180</button><button class=crop-preset data-deg=270>270</button></div>"]
-  ];
+// ====== COMPREHENSIVE UI FIX v3 - DOM-only ======
+setTimeout(function comprehensiveUIFix(){
+  var sidebar=document.querySelector(".editor-sidebar");
+  if(!sidebar)return;
 
-  mp.forEach(function(p) {
-    if (document.querySelector("#" + p[0])) return;
-    var d = document.createElement("div");
-    d.id = p[0]; d.className = "tool-panel";
-    d.style.cssText = "display:none;padding:12px 16px;background:rgba(108,58,237,.06);border-radius:10px;margin-top:8px";
-    d.innerHTML = "<div class=tp-head><h4>" + p[1] + "</h4><button class=tp-close>&times;</button></div>" + p[2];
-    sidebar.appendChild(d);
-    d.querySelector(".tp-close").onclick = function() { d.style.display = "none"; };
-  });
+  // Helper to create elements
+  function el(tag,attrs,children){
+    var e=document.createElement(tag);
+    if(attrs)Object.keys(attrs).forEach(function(k){
+      if(k==="text")e.textContent=attrs[k];
+      else if(k==="css")e.style.cssText=attrs[k];
+      else if(k==="cls")e.className=attrs[k];
+      else e.setAttribute(k,attrs[k]);
+    });
+    if(children)children.forEach(function(c){if(c)e.appendChild(c);});
+    return e;
+  }
 
-  // --- PART 2: Wire TB3 buttons to toggle tool panels ---
-  var panelMap = {
-    "Trim":"trimPanel","Split":"trimPanel","Speed":"speedPanel","Crop":"cropPanel",
-    "Resize":"resizePanel","Rotate":"rotatePanel","Flip":"flipPanel",
-    "Position":"pipPanel","Reverse":"speedPanel","Loop":"speedPanel",
-    "Freeze":"trimPanel","Keyframe":"keyframesPanel","Zoom":"zoomPanel",
-    "PiP":"pipPanel","Annotations":"annotationsPanel","Elements":"elementsPanel",
-    "Color Grade":"colorGradePanel","Color":"colorGradePanel"
-  };
+  var panelStyle="display:none;padding:12px 16px;background:rgba(108,58,237,.06);border-radius:10px;margin-top:8px";
+  var inputStyle="width:80px;background:#1a1333;color:#fff;border:1px solid rgba(108,58,237,.2);border-radius:4px;padding:4px 6px;font-size:12px";
+  var btnRow="margin-top:8px;display:flex;gap:6px";
+  var presetRow="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap";
 
-  document.querySelectorAll(".tb3").forEach(function(btn) {
-    btn.addEventListener("click", function(e) {
+  // --- Trim Panel ---
+  if(!document.getElementById("trimPanel")){
+    var tp=el("div",{id:"trimPanel",cls:"tool-panel",css:panelStyle},[
+      el("div",{css:"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"},[
+        el("h4",{text:"Trim",css:"margin:0;color:#fff;font-size:13px"}),
+        el("button",{text:"x",cls:"tp-x",css:"background:none;border:none;color:#888;cursor:pointer;font-size:16px"})
+      ]),
+      el("div",{cls:"s-row"},[el("span",{text:"Start"}),el("input",{type:"text",id:"trimStart",value:"00:00:00",css:inputStyle})]),
+      el("div",{cls:"s-row"},[el("span",{text:"End"}),el("input",{type:"text",id:"trimEnd",value:"00:00:00",css:inputStyle})]),
+      el("div",{css:btnRow},[el("button",{text:"Apply Trim",cls:"crop-preset",css:"flex:1"}),el("button",{text:"Reset",cls:"crop-preset",css:"flex:1"})])
+    ]);
+    sidebar.appendChild(tp);
+    tp.querySelector(".tp-x").onclick=function(){tp.style.display="none";};
+  }
+  if(!document.getElementById("speedPanel")){
+    var sp=el("div",{id:"speedPanel",cls:"tool-panel",css:panelStyle},[
+      el("div",{css:"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"},[
+        el("h4",{text:"Speed",css:"margin:0;color:#fff;font-size:13px"}),
+        el("button",{text:"x",cls:"tp-x",css:"background:none;border:none;color:#888;cursor:pointer;font-size:16px"})
+      ]),
+      el("div",{cls:"slider-group"},[
+        el("div",{cls:"slider-label"},[el("span",{text:"Playback Speed"}),el("span",{id:"speedValue",text:"1.0x"})]),
+        el("input",{type:"range",id:"speedSlider",min:"0.1",max:"4",step:"0.1",value:"1",css:"width:100%"})
+      ]),
+      el("div",{css:presetRow},[
+        el("button",{text:"0.25x",cls:"crop-preset","data-speed":"0.25"}),
+        el("button",{text:"0.5x",cls:"crop-preset","data-speed":"0.5"}),
+        el("button",{text:"1x",cls:"crop-preset","data-speed":"1"}),
+        el("button",{text:"1.5x",cls:"crop-preset","data-speed":"1.5"}),
+        el("button",{text:"2x",cls:"crop-preset","data-speed":"2"}),
+        el("button",{text:"4x",cls:"crop-preset","data-speed":"4"})
+      ])
+    ]);
+    sidebar.appendChild(sp);
+    sp.querySelector(".tp-x").onclick=function(){sp.style.display="none";};
+  }
+  if(!document.getElementById("flipPanel")){
+    var fp=el("div",{id:"flipPanel",cls:"tool-panel",css:panelStyle},[
+      el("div",{css:"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"},[
+        el("h4",{text:"Flip",css:"margin:0;color:#fff;font-size:13px"}),
+        el("button",{text:"x",cls:"tp-x",css:"background:none;border:none;color:#888;cursor:pointer;font-size:16px"})
+      ]),
+      el("div",{css:btnRow},[
+        el("button",{text:"Flip Horizontal",cls:"crop-preset",css:"flex:1"}),
+        el("button",{text:"Flip Vertical",cls:"crop-preset",css:"flex:1"})
+      ])
+    ]);
+    sidebar.appendChild(fp);
+    fp.querySelector(".tp-x").onclick=function(){fp.style.display="none";};
+  }
+  if(!document.getElementById("resizePanel")){
+    var rp=el("div",{id:"resizePanel",cls:"tool-panel",css:panelStyle},[
+      el("div",{css:"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"},[
+        el("h4",{text:"Resize",css:"margin:0;color:#fff;font-size:13px"}),
+        el("button",{text:"x",cls:"tp-x",css:"background:none;border:none;color:#888;cursor:pointer;font-size:16px"})
+      ]),
+      el("div",{cls:"s-row"},[el("span",{text:"Width"}),el("input",{type:"number",id:"resizeW",value:"1920",css:inputStyle})]),
+      el("div",{cls:"s-row"},[el("span",{text:"Height"}),el("input",{type:"number",id:"resizeH",value:"1080",css:inputStyle})]),
+      el("div",{css:presetRow},[
+        el("button",{text:"1080p",cls:"crop-preset","data-w":"1920","data-h":"1080"}),
+        el("button",{text:"720p",cls:"crop-preset","data-w":"1280","data-h":"720"}),
+        el("button",{text:"4K",cls:"crop-preset","data-w":"3840","data-h":"2160"}),
+        el("button",{text:"9:16",cls:"crop-preset","data-w":"1080","data-h":"1920"})
+      ])
+    ]);
+    sidebar.appendChild(rp);
+    rp.querySelector(".tp-x").onclick=function(){rp.style.display="none";};
+  }
+  if(!document.getElementById("rotatePanel")){
+    var rotp=el("div",{id:"rotatePanel",cls:"tool-panel",css:panelStyle},[
+      el("div",{css:"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"},[
+        el("h4",{text:"Rotate",css:"margin:0;color:#fff;font-size:13px"}),
+        el("button",{text:"x",cls:"tp-x",css:"background:none;border:none;color:#888;cursor:pointer;font-size:16px"})
+      ]),
+      el("div",{cls:"slider-group"},[
+        el("div",{cls:"slider-label"},[el("span",{text:"Rotation"}),el("span",{id:"rotateValue",text:"0 deg"})]),
+        el("input",{type:"range",id:"rotateSlider",min:"0",max:"360",step:"1",value:"0",css:"width:100%"})
+      ]),
+      el("div",{css:presetRow},[
+        el("button",{text:"0",cls:"crop-preset","data-deg":"0"}),
+        el("button",{text:"90",cls:"crop-preset","data-deg":"90"}),
+        el("button",{text:"180",cls:"crop-preset","data-deg":"180"}),
+        el("button",{text:"270",cls:"crop-preset","data-deg":"270"})
+      ])
+    ]);
+    sidebar.appendChild(rotp);
+    rotp.querySelector(".tp-x").onclick=function(){rotp.style.display="none";};
+  }
+
+  // Wire TB3 buttons to toggle tool panels
+  var pm={"Trim":"trimPanel","Split":"trimPanel","Speed":"speedPanel","Crop":"cropPanel","Resize":"resizePanel","Rotate":"rotatePanel","Flip":"flipPanel","Position":"pipPanel","Keyframe":"keyframesPanel","Zoom":"zoomPanel","PiP":"pipPanel","Annotations":"annotationsPanel","Elements":"elementsPanel","Color":"colorGradePanel"};
+  document.querySelectorAll(".tb3").forEach(function(btn){
+    btn.addEventListener("click",function(e){
       e.stopPropagation();
-      var label = btn.textContent.trim().replace(/^[^a-zA-Z]+/, "").split("\n")[0].trim();
-      var panelId = null;
-      Object.keys(panelMap).forEach(function(k) {
-        if (label.indexOf(k) !== -1) panelId = panelMap[k];
-      });
-      if (!panelId) return;
-      var panel = document.getElementById(panelId);
-      if (!panel || !panel.style) return;
-      // Hide all other tool panels first
-      document.querySelectorAll(".tool-panel").forEach(function(tp) {
-        if (tp.id !== panelId) tp.style.display = "none";
-      });
-      // Toggle this panel
-      panel.style.display = panel.style.display === "none" ? "block" : "none";
-      // Scroll panel into view
-      if (panel.style.display === "block") panel.scrollIntoView({behavior:"smooth",block:"nearest"});
+      var lbl=btn.textContent.trim().replace(/^[^a-zA-Z]+/,"").split("\n")[0].trim();
+      var pid=null;
+      Object.keys(pm).forEach(function(k){if(lbl.indexOf(k)!==-1)pid=pm[k];});
+      if(!pid)return;
+      var panel=document.getElementById(pid);
+      if(!panel||!panel.style)return;
+      document.querySelectorAll(".tool-panel").forEach(function(t){if(t.id!==pid)t.style.display="none";});
+      panel.style.display=panel.style.display==="none"?"block":"none";
+      if(panel.style.display==="block")panel.scrollIntoView({behavior:"smooth",block:"nearest"});
     });
   });
 
-  // Wire speed slider
-  var ss = document.getElementById("speedSlider");
-  if (ss) ss.addEventListener("input", function() {
-    var v = document.getElementById("speedValue");
-    if (v) v.textContent = parseFloat(ss.value).toFixed(1) + "x";
-    var vid = document.querySelector("video");
-    if (vid) vid.playbackRate = parseFloat(ss.value);
+  var ss=document.getElementById("speedSlider");
+  if(ss)ss.addEventListener("input",function(){
+    var v=document.getElementById("speedValue");
+    if(v)v.textContent=parseFloat(ss.value).toFixed(1)+"x";
+    var vid=document.querySelector("video");
+    if(vid)vid.playbackRate=parseFloat(ss.value);
   });
-  // Wire speed presets
-  document.querySelectorAll("[data-speed]").forEach(function(b) {
-    b.addEventListener("click", function() {
-      var val = parseFloat(b.dataset.speed);
-      if (ss) { ss.value = val; ss.dispatchEvent(new Event("input")); }
+  document.querySelectorAll("[data-speed]").forEach(function(b){
+    b.addEventListener("click",function(){
+      if(ss){ss.value=b.dataset.speed;ss.dispatchEvent(new Event("input"));}
     });
   });
-  // Wire rotate slider
-  var rs = document.getElementById("rotateSlider");
-  if (rs) rs.addEventListener("input", function() {
-    var v = document.getElementById("rotateValue");
-    if (v) v.textContent = rs.value + " deg";
+  var rs=document.getElementById("rotateSlider");
+  if(rs)rs.addEventListener("input",function(){
+    var v=document.getElementById("rotateValue");
+    if(v)v.textContent=rs.value+" deg";
   });
 
-  // --- PART 3: Folder expand/collapse with clip grids ---
-  document.querySelectorAll(".ml-folder").forEach(function(folder) {
-    // Check if this folder already has a grid sibling
-    var existing = folder.nextElementSibling;
-    if (existing && existing.classList.contains("ml-fgrid-sub")) return;
-    // Get folder name and count
-    var spans = folder.querySelectorAll("span");
-    var fname = spans.length > 1 ? spans[1].textContent.trim() : "";
-    var fcount = spans.length > 2 ? parseInt(spans[2].textContent) || 0 : 0;
-    // Create a collapsible grid
-    var grid = document.createElement("div");
-    grid.className = "ml-fgrid ml-fgrid-sub";
-    grid.style.cssText = "display:none;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:5px";
-    // Populate with placeholder clips from the main grid
-    var mainGrid = document.querySelector(".ml-fgrid:not(.ml-fgrid-sub)");
-    var allClips = mainGrid ? mainGrid.querySelectorAll(".ml-fitem") : [];
-    var clipCount = Math.min(fcount, allClips.length);
-    for (var i = 0; i < clipCount; i++) {
-      var clone = allClips[i].cloneNode(true);
-      clone._wired = false;
+  // Folder expand/collapse with clip grids
+  document.querySelectorAll(".ml-folder").forEach(function(folder){
+    if(folder.nextElementSibling&&folder.nextElementSibling.classList.contains("ml-fgrid-sub"))return;
+    var spans=folder.querySelectorAll("span");
+    var fcount=spans.length>2?parseInt(spans[2].textContent)||0:0;
+    var grid=document.createElement("div");
+    grid.className="ml-fgrid ml-fgrid-sub";
+    grid.style.cssText="display:none;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:5px";
+    var mainGrid=document.querySelector(".ml-fgrid:not(.ml-fgrid-sub)");
+    var allClips=mainGrid?mainGrid.querySelectorAll(".ml-fitem"):[];
+    var cnt=Math.min(fcount,allClips.length);
+    for(var i=0;i<cnt;i++){
+      var clone=allClips[i].cloneNode(true);
+      clone._wired=false;
       grid.appendChild(clone);
     }
-    if (clipCount === 0) {
-      grid.innerHTML = "<div style=\"grid-column:1/-1;padding:12px;text-align:center;color:#666;font-size:12px\">No clips in this folder</div>";
+    if(cnt===0){
+      var empty=document.createElement("div");
+      empty.style.cssText="grid-column:1/-1;padding:12px;text-align:center;color:#666;font-size:12px";
+      empty.textContent="No clips in this folder";
+      grid.appendChild(empty);
     }
-    folder.parentNode.insertBefore(grid, folder.nextSibling);
-
-    // Toggle on click
-    folder.addEventListener("click", function(e) {
+    folder.parentNode.insertBefore(grid,folder.nextSibling);
+    folder.addEventListener("click",function(e){
       e.stopPropagation();
-      var isOpen = folder.classList.toggle("open");
-      grid.style.display = isOpen ? "grid" : "none";
-      // Close other folders
-      document.querySelectorAll(".ml-folder").forEach(function(f) {
-        if (f !== folder && f.classList.contains("open")) {
+      var isOpen=folder.classList.toggle("open");
+      grid.style.display=isOpen?"grid":"none";
+      document.querySelectorAll(".ml-folder").forEach(function(f){
+        if(f!==folder&&f.classList.contains("open")){
           f.classList.remove("open");
-          var fg = f.nextElementSibling;
-          if (fg && fg.classList.contains("ml-fgrid-sub")) fg.style.display = "none";
+          var fg=f.nextElementSibling;
+          if(fg&&fg.classList.contains("ml-fgrid-sub"))fg.style.display="none";
         }
       });
     });
   });
 
-  // --- PART 4: Fix left panel tab content switching ---
-  var mlBody = document.querySelector(".ml-body");
-  var mlTabs = document.querySelectorAll(".ml-tab");
-  if (mlBody && mlTabs.length >= 4) {
-    // Save original Videos content
-    var videosHTML = mlBody.innerHTML;
-    var tabContents = {};
-    tabContents["Videos"] = null; // will use original
-    tabContents["Audio"] = '<div class="ml-section" style="display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px">Audio Files</div>';
-    tabContents["Audio"] += '<div class="ml-upload" style="border:1px dashed rgba(108,58,237,.2);border-radius:8px;padding:20px;text-align:center"><p style="color:#888;margin:0 0 8px;font-size:12px">Drop audio files or click to upload</p><p style="color:#555;margin:0;font-size:11px">MP3, WAV, AAC, FLAC</p><button class="ml-upload-btn" style="margin-top:10px;background:linear-gradient(135deg,#6c3aed,#7c4dff);color:#fff;border:none;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:12px">+ Upload Audio</button></div>';
-    tabContents["Audio"] += '<div class="ml-section" style="display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px;margin-top:8px">Background Music</div>';
-    tabContents["Audio"] += '<div style="padding:12px;text-align:center;color:#555;font-size:12px">No background music added yet.<br>Upload or browse stock audio.</div>';
-    tabContents["Images"] = '<div class="ml-section" style="display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px">Image Files</div>';
-    tabContents["Images"] += '<div class="ml-upload" style="border:1px dashed rgba(108,58,237,.2);border-radius:8px;padding:20px;text-align:center"><p style="color:#888;margin:0 0 8px;font-size:12px">Drop images or click to upload</p><p style="color:#555;margin:0;font-size:11px">PNG, JPG, GIF, SVG, WebP</p><button class="ml-upload-btn" style="margin-top:10px;background:linear-gradient(135deg,#6c3aed,#7c4dff);color:#fff;border:none;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:12px">+ Upload Images</button></div>';
-    tabContents["Images"] += '<div style="padding:12px;text-align:center;color:#555;font-size:12px">No images added yet.</div>';
-    tabContents["Stock"] = '<div class="ml-section" style="display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px">Stock Library</div>';
-    tabContents["Stock"] += '<div style="padding:8px 0"><input type="text" placeholder="Search stock videos and images..." style="width:100%;background:#1a1333;color:#fff;border:1px solid rgba(108,58,237,.2);border-radius:6px;padding:8px 12px;font-size:12px;box-sizing:border-box"></div>';
-    tabContents["Stock"] += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px"><div style="background:#1a1333;border-radius:8px;padding:16px;text-align:center;cursor:pointer;border:1px solid rgba(108,58,237,.1)"><div style="font-size:20px;margin-bottom:4px">&#127909;</div><div style="color:#aaa;font-size:11px">Stock Videos</div></div><div style="background:#1a1333;border-radius:8px;padding:16px;text-align:center;cursor:pointer;border:1px solid rgba(108,58,237,.1)"><div style="font-size:20px;margin-bottom:4px">&#127912;</div><div style="color:#aaa;font-size:11px">Stock Images</div></div><div style="background:#1a1333;border-radius:8px;padding:16px;text-align:center;cursor:pointer;border:1px solid rgba(108,58,237,.1)"><div style="font-size:20px;margin-bottom:4px">&#127925;</div><div style="color:#aaa;font-size:11px">Stock Audio</div></div><div style="background:#1a1333;border-radius:8px;padding:16px;text-align:center;cursor:pointer;border:1px solid rgba(108,58,237,.1)"><div style="font-size:20px;margin-bottom:4px">&#127776;</div><div style="color:#aaa;font-size:11px">AI Generated</div></div></div>';
-    mlTabs.forEach(function(tab) {
-      tab.addEventListener("click", function() {
-        mlTabs.forEach(function(t) { t.classList.remove("active"); });
+  // Left panel tab switching
+  var mlBody=document.querySelector(".ml-body");
+  var mlTabs=document.querySelectorAll(".ml-tab");
+  if(mlBody&&mlTabs.length>=4){
+    var origNodes=[];
+    for(var ci=0;ci<mlBody.childNodes.length;ci++)origNodes.push(mlBody.childNodes[ci]);
+
+    function makeTabContent(name){
+      var wrap=document.createElement("div");
+      var sec=el("div",{cls:"ml-section",css:"display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px"},[el("span",{text:name+" Files"})]);
+      var upl=el("div",{cls:"ml-upload",css:"border:1px dashed rgba(108,58,237,.2);border-radius:8px;padding:20px;text-align:center"},[
+        el("p",{text:"Drop "+name.toLowerCase()+" files or click to upload",css:"color:#888;margin:0 0 8px;font-size:12px"}),
+        el("button",{text:"+ Upload "+name,css:"margin-top:10px;background:linear-gradient(135deg,#6c3aed,#7c4dff);color:#fff;border:none;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:12px"})
+      ]);
+      var msg=el("div",{text:"No "+name.toLowerCase()+" files added yet.",css:"padding:12px;text-align:center;color:#555;font-size:12px"});
+      wrap.appendChild(sec);wrap.appendChild(upl);wrap.appendChild(msg);
+      return wrap;
+    }
+
+    function makeStockContent(){
+      var wrap=document.createElement("div");
+      var sec=el("div",{cls:"ml-section",css:"display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px"},[el("span",{text:"Stock Library"})]);
+      var search=el("div",{css:"padding:8px 0"},[el("input",{type:"text",placeholder:"Search stock videos and images...",css:"width:100%;background:#1a1333;color:#fff;border:1px solid rgba(108,58,237,.2);border-radius:6px;padding:8px 12px;font-size:12px;box-sizing:border-box"})]);
+      var grid=el("div",{css:"display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px"});
+      var cats=[["Stock Videos","film"],["Stock Images","image"],["Stock Audio","headphones"],["AI Generated","wand"]];
+      cats.forEach(function(c){
+        grid.appendChild(el("div",{css:"background:#1a1333;border-radius:8px;padding:16px;text-align:center;cursor:pointer;border:1px solid rgba(108,58,237,.1)"},[
+          el("div",{text:c[1]==="film"?"\uD83C\uDFAC":c[1]==="image"?"\uD83D\uDDBC":c[1]==="headphones"?"\uD83C\uDFA7":"\u2728",css:"font-size:20px;margin-bottom:4px"}),
+          el("div",{text:c[0],css:"color:#aaa;font-size:11px"})
+        ]));
+      });
+      wrap.appendChild(sec);wrap.appendChild(search);wrap.appendChild(grid);
+      return wrap;
+    }
+
+    mlTabs.forEach(function(tab){
+      tab.addEventListener("click",function(){
+        mlTabs.forEach(function(t){t.classList.remove("active");});
         tab.classList.add("active");
-        var name = tab.textContent.trim();
-        if (name === "Videos") { mlBody.innerHTML = videosHTML; comprehensiveUIFix(); }
-        else if (tabContents[name]) { mlBody.innerHTML = tabContents[name]; }
+        var name=tab.textContent.trim();
+        if(name==="Videos"){
+          mlBody.innerHTML="";
+          origNodes.forEach(function(n){mlBody.appendChild(n);});
+        }else if(name==="Stock"){
+          mlBody.innerHTML="";
+          var sc=makeStockContent();
+          while(sc.firstChild)mlBody.appendChild(sc.firstChild);
+        }else{
+          mlBody.innerHTML="";
+          var tc=makeTabContent(name);
+          while(tc.firstChild)mlBody.appendChild(tc.firstChild);
+        }
       });
     });
   }
 
-  // --- PART 5: Bottom tabs functionality ---
-  var bottomTabs = document.querySelectorAll(".ml-fb");
-  bottomTabs.forEach(function(tab) {
-    tab.addEventListener("click", function() {
-      var name = tab.textContent.trim();
-      if (name.indexOf("Folder") !== -1) {
-        var fn = prompt("Enter folder name:");
-        if (fn && fn.trim()) {
-          var mlBody = document.querySelector(".ml-body");
-          var section = mlBody.querySelector(".ml-section");
-          if (section) {
-            var newFolder = document.createElement("div");
-            newFolder.className = "ml-folder";
-            newFolder.style.cssText = "display:flex;align-items:center;gap:6px;padding:5px 7px;background:#16112a;border-radius:6px;cursor:pointer;border:1px solid rgba(108,58,237,.05);margin-top:3px";
-            newFolder.innerHTML = "<span>&#128193;</span><span>" + fn.trim() + "</span><span style=\"margin-left:auto;color:#666;font-size:11px\">0</span>";
-            section.parentNode.insertBefore(newFolder, section.nextSibling);
-            showToast("Folder created: " + fn.trim());
+  // Bottom tabs (Folder create, AI B-Roll)
+  document.querySelectorAll(".ml-fb").forEach(function(tab){
+    tab.addEventListener("click",function(){
+      var name=tab.textContent.trim();
+      if(name.indexOf("Folder")!==-1){
+        var fn=prompt("Enter folder name:");
+        if(fn&&fn.trim()){
+          var mlb=document.querySelector(".ml-body");
+          var sec=mlb?mlb.querySelector(".ml-section"):null;
+          if(sec){
+            var nf=document.createElement("div");
+            nf.className="ml-folder";
+            nf.style.cssText="display:flex;align-items:center;gap:6px;padding:5px 7px;background:#16112a;border-radius:6px;cursor:pointer;border:1px solid rgba(108,58,237,.05);margin-top:3px";
+            var s1=document.createElement("span");s1.textContent="\uD83D\uDCC1";
+            var s2=document.createElement("span");s2.textContent=fn.trim();
+            var s3=document.createElement("span");s3.textContent="0";s3.style.cssText="margin-left:auto;color:#666;font-size:11px";
+            nf.appendChild(s1);nf.appendChild(s2);nf.appendChild(s3);
+            sec.parentNode.insertBefore(nf,sec.nextSibling);
+            if(typeof showToast==="function")showToast("Folder created: "+fn.trim());
           }
         }
-      } else if (name.indexOf("B-Roll") !== -1 || name.indexOf("AI") !== -1) {
-        showToast("Analyzing video for B-Roll suggestions...");
-        setTimeout(function() { showToast("AI B-Roll analysis complete. 3 suggestions found."); }, 2000);
+      }else if(name.indexOf("B-Roll")!==-1||name.indexOf("AI")!==-1){
+        if(typeof showToast==="function")showToast("Analyzing video for B-Roll suggestions...");
+        setTimeout(function(){if(typeof showToast==="function")showToast("AI B-Roll analysis complete.");},2000);
       }
     });
   });
 
-  // --- PART 6: Inject CSS for new elements ---
-  var style = document.createElement("style");
-  style.textContent = ".tp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px} .tp-head h4{margin:0;color:#fff;font-size:13px} .tp-close{background:none;border:none;color:#888;cursor:pointer;font-size:16px;padding:2px 6px} .tp-close:hover{color:#fff} .tp-input{width:80px;background:#1a1333;color:#fff;border:1px solid rgba(108,58,237,.2);border-radius:4px;padding:4px 6px;font-size:12px} .tp-btns{margin-top:8px;display:flex;gap:6px} .tp-btns button{flex:1} .tp-presets{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap} .ml-folder.open{background:rgba(108,58,237,.12);border-color:rgba(108,58,237,.25)} .ml-fgrid-sub .ml-fitem{cursor:pointer !important} .ml-fgrid-sub .ml-fitem:hover{border-color:rgba(108,58,237,.25);transform:scale(1.02)}";
-  document.head.appendChild(style);
+  // Inject CSS
+  var sty=document.createElement("style");
+  sty.textContent=".ml-folder.open{background:rgba(108,58,237,.12)!important;border-color:rgba(108,58,237,.25)!important} .ml-fgrid-sub .ml-fitem{cursor:pointer!important} .ml-fgrid-sub .ml-fitem:hover{border-color:rgba(108,58,237,.25);transform:scale(1.02)}";
+  document.head.appendChild(sty);
 
-}, 1000);
+},1000);
 
-// --- Filmstrip thumbnail optimization ---
-// Override generateFilmstripThumbs with a faster parallel version
-var _origGFT = typeof generateFilmstripThumbs === "function" ? generateFilmstripThumbs : null;
-generateFilmstripThumbs = function generateFilmstripThumbs() {
-  var video = document.querySelector("video");
-  var container = document.querySelector(".fs-thumbs");
-  if (!video || !container || !video.duration || isNaN(video.duration)) {
-    if (_origGFT) return _origGFT();
+// Filmstrip thumbnail optimization
+var _origGFT=typeof generateFilmstripThumbs==="function"?generateFilmstripThumbs:null;
+generateFilmstripThumbs=function(){
+  var video=document.querySelector("video");
+  var container=document.querySelector(".fs-thumbs");
+  if(!video||!container||!video.duration||isNaN(video.duration)){
+    if(_origGFT)return _origGFT();
     return;
   }
-  var duration = video.duration;
-  var NUM = Math.min(20, Math.max(6, Math.round(duration / 5)));
-  container.innerHTML = "";
-  // Create placeholders immediately
-  var placeholders = [];
-  for (var i = 0; i < NUM; i++) {
-    var ph = document.createElement("div");
-    ph.className = "fs-thumb-placeholder";
-    ph.style.cssText = "flex:1;min-width:0;height:100%;background:#1a1333;animation:pulse 1.5s ease infinite";
+  var dur=video.duration;
+  var NUM=Math.min(20,Math.max(6,Math.round(dur/5)));
+  container.innerHTML="";
+  var phs=[];
+  for(var i=0;i<NUM;i++){
+    var ph=document.createElement("div");
+    ph.style.cssText="flex:1;min-width:0;height:100%;background:#1a1333;animation:pulse 1.5s ease infinite";
     container.appendChild(ph);
-    placeholders.push(ph);
+    phs.push(ph);
   }
-  // Use a single extractor video with batch processing
-  var extractor = document.createElement("video");
-  extractor.src = video.src;
-  extractor.muted = true;
-  extractor.preload = "auto";
-  var canvas = document.createElement("canvas");
-  canvas.width = 120; canvas.height = 68;
-  var ctx = canvas.getContext("2d");
-  var times = [];
-  for (var j = 0; j < NUM; j++) times.push((j + 0.5) * duration / NUM);
-  var idx = 0;
-  function extractNext() {
-    if (idx >= times.length) { extractor.remove(); return; }
-    extractor.currentTime = times[idx];
+  var ext=document.createElement("video");
+  ext.src=video.src;ext.muted=true;ext.preload="auto";
+  var cvs=document.createElement("canvas");
+  cvs.width=120;cvs.height=68;
+  var ctx=cvs.getContext("2d");
+  var times=[];
+  for(var j=0;j<NUM;j++)times.push((j+0.5)*dur/NUM);
+  var idx=0;
+  function extractNext(){
+    if(idx>=times.length){ext.remove();return;}
+    ext.currentTime=times[idx];
   }
-  extractor.addEventListener("seeked", function onSeeked() {
-    requestAnimationFrame(function() {
-      ctx.drawImage(extractor, 0, 0, 120, 68);
-      var img = document.createElement("img");
-      img.src = canvas.toDataURL("image/jpeg", 0.5);
-      img.style.cssText = "flex:1;min-width:0;height:100%;object-fit:cover";
-      if (placeholders[idx]) container.replaceChild(img, placeholders[idx]);
+  ext.addEventListener("seeked",function(){
+    requestAnimationFrame(function(){
+      ctx.drawImage(ext,0,0,120,68);
+      var img=document.createElement("img");
+      img.src=cvs.toDataURL("image/jpeg",0.5);
+      img.style.cssText="flex:1;min-width:0;height:100%;object-fit:cover";
+      if(phs[idx])container.replaceChild(img,phs[idx]);
       idx++;
       extractNext();
     });
   });
-  extractor.addEventListener("loadeddata", function() { extractNext(); });
+  ext.addEventListener("loadeddata",function(){extractNext();});
 };
-    </script>
+</script>
 </body>
 </html>`;
   res.send(html);
