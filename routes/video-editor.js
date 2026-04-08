@@ -429,7 +429,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     /* ═══ TOP BAR ═══ */
     .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 12px;gap:5px;height:38px;z-index:100}
-    .e-logo{font-size:13px;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:8px}
+    .e-logo{font-size:13px;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:8px;cursor:pointer}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
     .e-tb{padding:4px 9px;font-size:10px;font-weight:600;color:#5a4d78;background:transparent;border:1px solid rgba(108,58,237,.08);border-radius:5px;cursor:pointer;transition:all .2s}
     .e-tb:hover{color:#a78bfa;border-color:#7c3aed}
@@ -495,7 +495,7 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <span class="e-logo">Splicora</span><div class="e-sep"></div>
+            <a href="/" style="text-decoration:none"><span class="e-logo">Splicora</span></a><div class="e-sep"></div>
             <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
             <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
             <button class="e-tb on">\ud83e\uddf2 Snap</button>
