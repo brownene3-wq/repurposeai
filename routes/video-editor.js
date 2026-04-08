@@ -143,12 +143,12 @@ router.get('/', requireAuth, async (req, res) => {
   const html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:38px 1fr 185px;height:100vh;gap:0;padding:0;overflow:hidden}
+    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:38px 1fr 260px;height:100vh;gap:0;padding:0;overflow:hidden}
     .editor-topbar{grid-column:1/4;grid-row:1}
     .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
     .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
     .editor-sidebar{grid-column:3;grid-row:2;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
-    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12)}
+    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden}
     .editor-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0a0612;grid-column:2;grid-row:2}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center}
@@ -478,6 +478,45 @@ router.get('/', requireAuth, async (req, res) => {
     .tl-info-text{font-size:8px;color:#2d2344}
     .tl-add-btn{padding:3px 8px;font-size:9px;font-weight:700;color:#a78bfa;background:rgba(108,58,237,.08);border:1px solid rgba(108,58,237,.12);border-radius:4px;cursor:pointer}
     .tl-add-btn:hover{background:rgba(108,58,237,.15)}
+    
+    /* Multi-Track Timeline Editor */
+    .mt-toolbar{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1)}
+    .mt-toolbar-left,.mt-toolbar-right{display:flex;align-items:center;gap:6px}
+    .mt-tool-btn{display:flex;align-items:center;gap:4px;padding:4px 10px;font-size:11px;font-weight:600;color:#5a4d7a;background:transparent;border:1px solid rgba(108,58,237,.1);border-radius:6px;cursor:pointer;transition:all .2s}
+    .mt-tool-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.25);background:rgba(108,58,237,.06)}
+    .mt-tool-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
+    .mt-tool-btn svg{flex-shrink:0}
+    .mt-add-track-btn{display:flex;align-items:center;gap:4px;padding:4px 10px;font-size:11px;font-weight:600;color:#a78bfa;background:rgba(108,58,237,.08);border:1px solid rgba(108,58,237,.15);border-radius:6px;cursor:pointer;transition:all .2s}
+    .mt-add-track-btn:hover{background:rgba(108,58,237,.18);border-color:rgba(108,58,237,.3)}
+    .mt-info{font-size:10px;color:#4a3d6a;font-weight:500}
+    .mt-timeline-body{display:flex;flex:1;overflow:hidden}
+    .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px}
+    .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04)}
+    .mt-label-video{color:#a78bfa}
+    .mt-label-audio{color:#38bdf8}
+    .mt-label-music{color:#f472b6}
+    .mt-label-text{color:#facc15}
+    .mt-label-fx{color:#34d399}
+    .mt-tracks-area{flex:1;overflow-x:auto;overflow-y:hidden;position:relative;background:#0a0612}
+    .mt-time-ruler{display:flex;align-items:center;height:22px;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18}
+    .mt-time-ruler span{flex:1;font-size:9px;color:#3d3358;font-variant-numeric:tabular-nums}
+    .mt-track{height:36px;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
+    .mt-track:hover{background:rgba(108,58,237,.03)}
+    .mt-track-video{background:rgba(124,58,237,.03)}
+    .mt-track-audio{background:rgba(56,189,248,.03)}
+    .mt-track-music{background:rgba(244,114,182,.02)}
+    .mt-track-text{background:rgba(250,204,21,.02)}
+    .mt-track-fx{background:rgba(52,211,153,.02)}
+    .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab;transition:box-shadow .2s}
+    .mt-clip:hover{box-shadow:0 0 12px rgba(124,58,237,.3)}
+    .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:1px solid rgba(124,58,237,.4)}
+    .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:1px solid rgba(56,189,248,.35)}
+    .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:1px solid rgba(244,114,182,.35)}
+    .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
+    .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
+    .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mt-playhead{position:absolute;top:0;left:80px;width:2px;height:100%;background:#7c3aed;z-index:10;pointer-events:none}
+    .mt-playhead::before{content:'';position:absolute;top:0;left:-5px;width:12px;height:8px;background:#7c3aed;border-radius:0 0 3px 3px}
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -599,19 +638,41 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
 
               <div class="timeline-container" id="timelineContainer">
-
-              <div class="tl-toolbar">
-                <button class="tl-btn on">\u2702\ufe0f Razor</button>
-                <button class="tl-btn">\ud83d\udc46 Select</button>
-                <button class="tl-btn">\ud83e\uddf2 Snap</button>
-                <div class="tl-spacer"></div>
-                <button class="tl-add-btn">\u2795 Add Track</button>
-                <span class="tl-info-text">5 tracks \u2022 3 clips \u2022 4:16 total</span>
+              <div class="mt-toolbar">
+                <div class="mt-toolbar-left">
+                  <button class="mt-tool-btn active" id="mtRazorBtn" title="Razor Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.121 14.121L7.05 21.192a2 2 0 01-2.828 0l-.414-.414a2 2 0 010-2.828l7.07-7.071"/><path d="M16.243 11.999L21.9 6.343a2 2 0 000-2.829l-.707-.707a2 2 0 00-2.828 0L12.707 8.464"/><line x1="8" y1="8" x2="16" y2="16"/></svg> Razor</button>
+                  <button class="mt-tool-btn" id="mtSelectBtn" title="Select Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg> Select</button>
+                  <button class="mt-tool-btn" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
+                </div>
+                <div class="mt-toolbar-right">
+                  <button class="mt-add-track-btn" id="mtAddTrackBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Track</button>
+                  <span class="mt-info">5 tracks &bull; 0:00</span>
+                </div>
               </div>
-              <div class="timeline-ruler" id="timelineRuler"></div>
-              <div class="timeline-tracks" id="timelineTracks">
-                <div class="timeline-playhead" id="timelinePlayhead" style="left:40px"><div class="timeline-playhead-hitbox" id="playheadHitbox"></div></div>
-                <div class="timeline-empty" id="timelineEmpty">Upload a video to see the timeline</div>
+              <div class="mt-timeline-body">
+                <div class="mt-labels">
+                  <div class="mt-label mt-label-video">V1</div>
+                  <div class="mt-label mt-label-audio">A1</div>
+                  <div class="mt-label mt-label-music">M1</div>
+                  <div class="mt-label mt-label-text">T1</div>
+                  <div class="mt-label mt-label-fx">FX</div>
+                </div>
+                <div class="mt-tracks-area" id="mtTracksArea">
+                  <div class="mt-time-ruler" id="mtTimeRuler">
+                    <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span><span>3:30</span><span>4:00</span>
+                  </div>
+                  <div class="mt-track mt-track-video" data-type="video">
+                    <div class="mt-clip mt-clip-video" style="left:0;width:35%"><span class="mt-clip-label">clip_01.mp4</span></div>
+                    <div class="mt-clip mt-clip-video" style="left:37%;width:25%"><span class="mt-clip-label">clip_02.mp4</span></div>
+                  </div>
+                  <div class="mt-track mt-track-audio" data-type="audio">
+                    <div class="mt-clip mt-clip-audio" style="left:0;width:60%"><span class="mt-clip-label">audio_main.wav</span></div>
+                  </div>
+                  <div class="mt-track mt-track-music" data-type="music"></div>
+                  <div class="mt-track mt-track-text" data-type="text"></div>
+                  <div class="mt-track mt-track-fx" data-type="fx"></div>
+                  <div class="mt-playhead" id="mtPlayhead"></div>
+                </div>
               </div>
             </div>
 
