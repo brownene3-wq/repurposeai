@@ -191,6 +191,12 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// Serve static assets (landing page videos, images, etc.)
+app.use('/public', express.static(path.join(__dirname, 'public'), {
+  maxAge: '7d',
+  immutable: true
+}));
+
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
 app.use('/auth', authRouter);
