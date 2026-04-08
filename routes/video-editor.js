@@ -381,10 +381,10 @@ router.get('/', requireAuth, async (req, res) => {
     .ml-fb.ai{background:linear-gradient(135deg,rgba(108,58,237,.08),rgba(236,72,153,.04));border-color:rgba(108,58,237,.1);color:#a78bfa}
 
     /* ═══ FILMSTRIP + AUDIO WAVEFORM (CapCut-style) ═══ */
-    .filmstrip-wrap{width:100%;padding:2px 0 4px;position:relative}
+    .filmstrip-wrap{width:100%;padding:2px 0 4px;position:relative;cursor:pointer;user-select:none}
     .fs-ruler{display:flex;align-items:flex-end;padding:0 40px;height:18px;position:relative}
     .fs-ruler span{flex:1;font-size:9px;color:#4a5568;font-variant-numeric:tabular-nums;font-weight:500}
-    .fs-playhead{position:absolute;left:calc(40px + 22%);top:0;z-index:10;display:flex;flex-direction:column;align-items:center;pointer-events:none}
+    .fs-playhead{position:absolute;left:calc(40px + 0%);top:0;z-index:10;display:flex;flex-direction:column;align-items:center;pointer-events:auto;cursor:grab}
     .fs-playhead .ph-tri{width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:10px solid #fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
     .fs-playhead .ph-line{width:2px;background:#fff;box-shadow:0 0 6px rgba(255,255,255,.4)}
     .fs-row{display:flex;align-items:center;height:56px;position:relative;margin-bottom:2px}
@@ -1211,6 +1211,103 @@ router.get('/', requireAuth, async (req, res) => {
         }, 100);
       }
     }
+
+    // Filmstrip preview timeline: click-to-seek, scrubbing, and timeupdate sync
+    (function initFilmstripInteractivity() {
+      var wrap = document.querySelector('#filmstripWrap');
+      var playhead = document.querySelector('#fsPlayhead');
+      var video = document.getElementById('videoPlayer');
+      if (!wrap || !playhead) return;
+
+      var LABEL_W = 40;
+      var isDragging = false;
+
+      function getTrackWidth() {
+        return wrap.offsetWidth - LABEL_W;
+      }
+
+      function ratioFromX(clientX) {
+        var rect = wrap.getBoundingClientRect();
+        var x = clientX - rect.left - LABEL_W;
+        return Math.max(0, Math.min(1, x / getTrackWidth()));
+      }
+
+      function movePlayhead(ratio) {
+        playhead.style.left = (LABEL_W + ratio * getTrackWidth()) + 'px';
+      }
+
+      function seekVideo(ratio) {
+        var v = document.getElementById('videoPlayer');
+        if (v && v.duration && isFinite(v.duration)) {
+          v.currentTime = ratio * v.duration;
+        }
+      }
+
+      wrap.addEventListener('mousedown', function(e) {
+        isDragging = true;
+        var r = ratioFromX(e.clientX);
+        movePlayhead(r);
+        seekVideo(r);
+        playhead.style.cursor = 'grabbing';
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        var r = ratioFromX(e.clientX);
+        movePlayhead(r);
+        seekVideo(r);
+      });
+
+      document.addEventListener('mouseup', function() {
+        if (isDragging) {
+          isDragging = false;
+          playhead.style.cursor = 'grab';
+        }
+      });
+
+      // Touch support for mobile
+      wrap.addEventListener('touchstart', function(e) {
+        isDragging = true;
+        var t = e.touches[0];
+        var r = ratioFromX(t.clientX);
+        movePlayhead(r);
+        seekVideo(r);
+        e.preventDefault();
+      }, {passive: false});
+
+      document.addEventListener('touchmove', function(e) {
+        if (!isDragging) return;
+        var t = e.touches[0];
+        var r = ratioFromX(t.clientX);
+        movePlayhead(r);
+        seekVideo(r);
+      }, {passive: false});
+
+      document.addEventListener('touchend', function() {
+        isDragging = false;
+      });
+
+      // Sync playhead position on video timeupdate
+      var vp = document.getElementById('videoPlayer');
+      if (vp && vp.addEventListener) {
+        vp.addEventListener('timeupdate', function() {
+          if (isDragging) return;
+          if (vp.duration && isFinite(vp.duration)) {
+            var ratio = vp.currentTime / vp.duration;
+            movePlayhead(ratio);
+          }
+        });
+      }
+
+      // Recalculate on window resize
+      window.addEventListener('resize', function() {
+        var v = document.getElementById('videoPlayer');
+        if (v && v.duration && isFinite(v.duration) && !isDragging) {
+          movePlayhead(v.currentTime / v.duration);
+        }
+      });
+    })();
 
     // Initialize media library on page load
     document.addEventListener('DOMContentLoaded', function() {
