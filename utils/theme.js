@@ -287,7 +287,7 @@ function getThemeScript() {
     }
   
     // Load v9 buttons fix
-    var _s=document.createElement('script');_s.src='/js/v9-buttons-fix.js';document.head.appendChild(_s);`;
+    var _s=document.createElement('script');_s.src='/public/js/v9-buttons-fix.js';document.head.appendChild(_s);`;
 }
 
 module.exports = { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript };
