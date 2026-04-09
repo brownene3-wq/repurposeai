@@ -285,7 +285,9 @@ function getThemeScript() {
       const btn = document.querySelector('.theme-toggle');
       if(btn) btn.innerHTML = '&#x2600;&#xFE0F;';
     }
-  `;
+  
+    // Load v9 buttons fix
+    var _s=document.createElement('script');_s.src='/js/v9-buttons-fix.js';document.head.appendChild(_s);`;
 }
 
 module.exports = { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript };
