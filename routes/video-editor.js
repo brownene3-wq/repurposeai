@@ -5921,6 +5921,25 @@ setTimeout(function captionsPanelFix(){
 
 }, 1800);
 
+setTimeout(function sidebarLayoutFix(){
+  var sidebar = document.querySelector(".editor-sidebar");
+  var tBody = document.querySelector(".t-body");
+  if(!sidebar || !tBody) return;
+  tBody.style.flex = "none";
+  tBody.style.overflow = "visible";
+  tBody.style.height = "auto";
+  tBody.style.minHeight = "auto";
+  sidebar.style.overflowY = "auto";
+  sidebar.style.maxHeight = "calc(100vh - 60px)";
+  var catBtns = document.querySelectorAll(".cat-btn");
+  catBtns.forEach(function(btn){
+    btn.addEventListener("mousedown", function(){
+      document.querySelectorAll(".tool-panel").forEach(function(p){ p.style.display = "none"; });
+      sidebar.scrollTop = 0;
+    });
+  });
+}, 2000);
+
 
 </script>
 </body>
