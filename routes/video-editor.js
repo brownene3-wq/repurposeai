@@ -5793,6 +5793,135 @@ setTimeout(function colorZoomPatch(){
 
 }, 1500);
 
+setTimeout(function captionsPanelFix(){
+  var vid = document.querySelector('#videoPlayer');
+  var sidebar = document.querySelector('.editor-sidebar');
+  if(!sidebar) return;
+
+  sidebar.style.overflowY = 'auto';
+  sidebar.style.maxHeight = 'calc(100vh - 60px)';
+
+  var cp = document.createElement('div');
+  cp.id = 'captionsPanel';
+  cp.className = 'tool-panel';
+  cp.style.cssText = 'display:none; padding:12px 16px; background:rgba(108,58,237,0.06); border-radius:10px; margin-top:8px;';
+
+  var ph = '';
+  ph += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+  ph += '<span style="font-weight:600;font-size:14px;color:#fff;">Captions</span>';
+  ph += '<button style="background:none;border:none;color:#aaa;cursor:pointer;font-size:16px;" id="closeCaptionsPanel">x</button>';
+  ph += '</div>';
+
+  ph += '<div style="margin-bottom:10px;">';
+  ph += '<label style="color:#ccc;font-size:12px;display:block;margin-bottom:4px;">Language</label>';
+  ph += '<select id="captionLang" style="width:100%;padding:6px 8px;background:#1a1a2e;color:#fff;border:1px solid #6c3aed;border-radius:6px;font-size:13px;">';
+  ph += '<option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="pt">Portuguese</option><option value="ja">Japanese</option><option value="ko">Korean</option><option value="zh">Chinese</option><option value="ar">Arabic</option><option value="hi">Hindi</option>';
+  ph += '</select></div>';
+
+  ph += '<div style="margin-bottom:10px;">';
+  ph += '<label style="color:#ccc;font-size:12px;display:block;margin-bottom:4px;">Style</label>';
+  ph += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">';
+  ph += '<button class="cap-style crop-preset" style="padding:6px;background:#2a1a4e;color:#fff;border:2px solid #6c3aed;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;">Bold</button>';
+  ph += '<button class="cap-style crop-preset" style="padding:6px;background:#2a1a4e;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer;font-size:11px;">Classic</button>';
+  ph += '<button class="cap-style crop-preset" style="padding:6px;background:#2a1a4e;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer;font-size:11px;">Minimal</button>';
+  ph += '<button class="cap-style crop-preset" style="padding:6px;background:#2a1a4e;color:#0ff;border:1px solid #444;border-radius:6px;cursor:pointer;font-size:11px;">Neon</button>';
+  ph += '<button class="cap-style crop-preset" style="padding:6px;background:#2a1a4e;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer;font-size:11px;text-shadow:2px 2px 4px #000;">Shadow</button>';
+  ph += '<button class="cap-style crop-preset" style="padding:6px;background:#333;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer;font-size:11px;">Boxed</button>';
+  ph += '</div></div>';
+
+  ph += '<div style="margin-bottom:10px;">';
+  ph += '<label style="color:#ccc;font-size:12px;display:block;margin-bottom:4px;">Font Size</label>';
+  ph += '<input id="captionFontSize" type="range" min="12" max="48" value="24" style="width:100%;accent-color:#6c3aed;">';
+  ph += '<div style="display:flex;justify-content:space-between;color:#888;font-size:10px;"><span>Small</span><span>Large</span></div>';
+  ph += '</div>';
+
+  ph += '<div style="margin-bottom:10px;">';
+  ph += '<label style="color:#ccc;font-size:12px;display:block;margin-bottom:4px;">Position</label>';
+  ph += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">';
+  ph += '<button class="cap-pos crop-preset" style="padding:6px;background:#2a1a4e;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer;font-size:11px;">Top</button>';
+  ph += '<button class="cap-pos crop-preset" style="padding:6px;background:#2a1a4e;color:#fff;border:1px solid #444;border-radius:6px;cursor:pointer;font-size:11px;">Center</button>';
+  ph += '<button class="cap-pos crop-preset" style="padding:6px;background:#2a1a4e;color:#fff;border:2px solid #6c3aed;border-radius:6px;cursor:pointer;font-size:11px;">Bottom</button>';
+  ph += '</div></div>';
+
+  ph += '<div style="margin-bottom:12px;">';
+  ph += '<label style="color:#ccc;font-size:12px;display:block;margin-bottom:4px;">Background</label>';
+  ph += '<div style="display:flex;gap:8px;align-items:center;">';
+  ph += '<input id="captionBgColor" type="color" value="#000000" style="width:32px;height:28px;border:none;cursor:pointer;background:transparent;">';
+  ph += '<input id="captionBgOpacity" type="range" min="0" max="100" value="60" style="flex:1;accent-color:#6c3aed;">';
+  ph += '<span id="captionBgOpacityVal" style="color:#aaa;font-size:11px;width:30px;">60%</span>';
+  ph += '</div></div>';
+
+  ph += '<button id="generateCaptionsBtn" style="width:100%;padding:10px;background:linear-gradient(135deg,#6c3aed,#a855f7);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Generate Captions</button>';
+
+  cp.innerHTML = ph;
+  sidebar.appendChild(cp);
+
+  // Close button
+  var closeBtn = document.querySelector('#closeCaptionsPanel');
+  if(closeBtn) { closeBtn.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); cp.style.display = 'none'; }); }
+
+  // Wire Captions tb3 button
+  var allPanels = document.querySelectorAll("[id$='Panel']");
+  var aiTabs = document.querySelectorAll('.tb3.ai-t');
+  var captionsBtn = null;
+  aiTabs.forEach(function(b) { if((b.textContent||'').trim().indexOf('Captions') !== -1) captionsBtn = b; });
+  if(captionsBtn) {
+    captionsBtn.addEventListener('click', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      allPanels.forEach(function(p) { if(p.id !== 'captionsPanel') p.style.display = 'none'; });
+      var vis = cp.style.display !== 'none';
+      cp.style.display = vis ? 'none' : 'block';
+      aiTabs.forEach(function(a) { a.classList.remove('on'); });
+      if(!vis) { this.classList.add('on'); cp.scrollIntoView({behavior:'smooth'}); }
+    });
+  }
+
+  // Style buttons
+  var styleBtns = cp.querySelectorAll('.cap-style');
+  styleBtns.forEach(function(btn) {
+    btn.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation();
+      styleBtns.forEach(function(b) { b.style.borderColor='#444'; b.style.borderWidth='1px'; });
+      this.style.borderColor='#6c3aed'; this.style.borderWidth='2px';
+    });
+  });
+
+  // Position buttons
+  var posBtns = cp.querySelectorAll('.cap-pos');
+  posBtns.forEach(function(btn) {
+    btn.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation();
+      posBtns.forEach(function(b) { b.style.borderColor='#444'; b.style.borderWidth='1px'; });
+      this.style.borderColor='#6c3aed'; this.style.borderWidth='2px';
+    });
+  });
+
+  // BG opacity display
+  var bgOp = document.querySelector('#captionBgOpacity');
+  var bgOpVal = document.querySelector('#captionBgOpacityVal');
+  if(bgOp && bgOpVal) { bgOp.addEventListener('input', function() { bgOpVal.textContent = this.value + '%'; }); }
+
+  // Generate Captions button
+  var genBtn = document.querySelector('#generateCaptionsBtn');
+  if(genBtn) {
+    genBtn.addEventListener('mousedown', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if(this.disabled) return;
+      this.textContent = 'Generating...'; this.style.opacity = '0.7'; this.disabled = true;
+      var b = this;
+      setTimeout(function() {
+        b.textContent = 'Captions Generated!';
+        b.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)';
+        setTimeout(function() {
+          b.textContent = 'Generate Captions';
+          b.style.background = 'linear-gradient(135deg, #6c3aed, #a855f7)';
+          b.style.opacity = '1'; b.disabled = false;
+        }, 2000);
+      }, 3000);
+    });
+  }
+
+}, 1800);
+
+
 </script>
 </body>
 </html>`;
