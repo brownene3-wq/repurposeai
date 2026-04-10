@@ -1,4 +1,4 @@
-// media-panel-fix.js â v1.0
+// media-panel-fix.js â v1.1
 // Fixes all video editor media panel bugs:
 // 1. +Upload button (opens file picker for correct type per tab)
 // 2. Tab switching shows correct upload UI and accept types
@@ -285,9 +285,20 @@
     gridDiv.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px;';
     stockPanel.appendChild(gridDiv);
 
-    // Insert into ml-body
+    // Insert into ml-body â BEFORE the file grid so it's visible in the scroll area
     var mlBody = document.querySelector('.ml-body');
-    if (mlBody) mlBody.appendChild(stockPanel);
+    if (mlBody) {
+      // Ensure ml-body can scroll to show new content
+      mlBody.style.overflowY = 'auto';
+      var fileGrid = document.getElementById('mediaFileGrid');
+      if (fileGrid) {
+        // Hide the file grid when stock is shown, insert stock panel before it
+        fileGrid.style.display = 'none';
+        mlBody.insertBefore(stockPanel, fileGrid);
+      } else {
+        mlBody.insertBefore(stockPanel, mlBody.firstChild);
+      }
+    }
 
     // Wire search
     var searchInput = document.getElementById('stockSearchInput');
@@ -306,6 +317,9 @@
 
   function hideStockPanel() {
     if (stockPanel) stockPanel.style.display = 'none';
+    // Restore file grid visibility
+    var fileGrid = document.getElementById('mediaFileGrid');
+    if (fileGrid) fileGrid.style.display = '';
   }
 
   function loadStockContent(type, query) {
@@ -440,9 +454,7 @@
     if (text.indexOf('Folder') !== -1) {
       btn.addEventListener('click', function(e) {
         e.stopPropagation();
-        var name = prompt('Enter folder name:');
-        if (!name) return;
-        createFolder(name);
+        showFolderNameDialog();
       }, true);
     }
 
@@ -453,6 +465,46 @@
       }, true);
     }
   });
+
+  // ââ 6b. Custom folder name dialog (replaces prompt()) ââ
+  function showFolderNameDialog() {
+    var existing = document.getElementById('folderNameDialog');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'folderNameDialog';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;';
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1a1028;border:2px solid #7c3aed;border-radius:12px;padding:20px;width:320px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.5);';
+    box.innerHTML = '<h3 style="color:#fff;margin:0 0 12px;font-size:14px">\uD83D\uDCC1 New Folder</h3>'
+      + '<input id="folderNameInput" type="text" placeholder="Enter folder name..." style="width:100%;padding:8px 12px;background:#0c0814;border:1px solid rgba(124,58,237,.4);border-radius:6px;color:#fff;font-size:12px;outline:none;box-sizing:border-box;margin-bottom:12px" />'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+      + '<button id="folderCancel" style="padding:6px 16px;background:#2a2040;border:1px solid #3a3050;border-radius:6px;color:#999;font-size:11px;cursor:pointer">Cancel</button>'
+      + '<button id="folderCreate" style="padding:6px 16px;background:#7c3aed;border:none;border-radius:6px;color:#fff;font-size:11px;cursor:pointer;font-weight:600">Create</button>'
+      + '</div>';
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    var input = document.getElementById('folderNameInput');
+    input.focus();
+
+    function close() { overlay.remove(); }
+    function submit() {
+      var name = input.value.trim();
+      if (name) createFolder(name);
+      close();
+    }
+
+    document.getElementById('folderCancel').addEventListener('click', close);
+    document.getElementById('folderCreate').addEventListener('click', submit);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') submit();
+      if (e.key === 'Escape') close();
+    });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
+  }
 
   // ââ 7. Create folder function ââ
   function createFolder(name) {
@@ -479,12 +531,17 @@
 
   // ââ 8. AI B-Roll panel ââ
   function showAIBRollPanel() {
-    var existing = document.getElementById('aiBrollPanel');
-    if (existing) { existing.style.display = existing.style.display === 'none' ? 'block' : 'none'; return; }
+    var existing = document.getElementById('aiBrollOverlay');
+    if (existing) { existing.style.display = existing.style.display === 'none' ? 'flex' : 'none'; return; }
+
+    // Create overlay backdrop for guaranteed visibility
+    var overlay = document.createElement('div');
+    overlay.id = 'aiBrollOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;';
 
     var panel = document.createElement('div');
     panel.id = 'aiBrollPanel';
-    panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1028;border:2px solid #7c3aed;border-radius:16px;padding:24px;z-index:99999;width:400px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.6);';
+    panel.style.cssText = 'background:#1a1028;border:2px solid #7c3aed;border-radius:16px;padding:24px;width:400px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.6);';
     panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'
       + '<h3 style="color:#fff;margin:0;font-size:16px">\u2728 AI B-Roll Generator</h3>'
       + '<span id="closeBroll" style="color:#999;cursor:pointer;font-size:20px">&times;</span>'
@@ -499,9 +556,11 @@
       + '<button id="analyzeBroll" style="width:100%;padding:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">\uD83D\uDD0D Analyze Video for B-Roll</button>'
       + '<div id="brollResults" style="margin-top:12px"></div>';
 
-    document.body.appendChild(panel);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
 
-    document.getElementById('closeBroll').addEventListener('click', function() { panel.style.display = 'none'; });
+    document.getElementById('closeBroll').addEventListener('click', function() { overlay.style.display = 'none'; });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.style.display = 'none'; });
 
     document.getElementById('analyzeBroll').addEventListener('click', function() {
       var results = document.getElementById('brollResults');
@@ -542,5 +601,5 @@
   // ââ Make showToast globally available for inline onclick ââ
   window.showToast = showToast;
 
-  console.log('media-panel-fix v1.0: all media panel features wired');
+  console.log('media-panel-fix v1.1: all media panel features wired');
 })();
