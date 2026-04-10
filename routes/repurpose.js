@@ -2655,8 +2655,9 @@ router.get('/history', requireAuth, (req, res) => {
             filteredContent = allContent.filter(function(item) {
               const title = (item.title || '').toLowerCase();
               const preview = (item.preview || '').toLowerCase();
+              const content = (item.content || '').toLowerCase();
               const platforms = (item.platforms || []).join(' ').toLowerCase();
-              return title.includes(searchTerm) || preview.includes(searchTerm) || platforms.includes(searchTerm);
+              return title.includes(searchTerm) || preview.includes(searchTerm) || content.includes(searchTerm) || platforms.includes(searchTerm);
             });
           }
           currentPage = 1;
@@ -2684,7 +2685,8 @@ router.get('/api/history', requireAuth, async (req, res) => {
           title: content.title,
           created_at: content.created_at,
           platforms: outputs.map(o => o.platform),
-          preview: outputs[0]?.generated_content?.substring(0, 100) || ''
+          preview: outputs[0]?.generated_content?.substring(0, 100) || '',
+          content: outputs[0]?.generated_content || ''
         };
       })
     );
