@@ -617,5 +617,40 @@
   // ââ Make showToast globally available for inline onclick ââ
   window.showToast = showToast;
 
-  console.log('media-panel-fix v1.3: all media panel features wired');
+  
+  // ── MutationObserver: wire dynamically-revealed media items ──
+  var mediaObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+      mutation.addedNodes.forEach(function(node) {
+        if (node.nodeType === 1) {
+          // Wire the node itself if it has data-media-type
+          if (node.dataset && node.dataset.mediaType && !node.dataset.wiredV13) {
+            wireItem(node);
+          }
+          // Wire any children with data-media-type
+          var children = node.querySelectorAll ? node.querySelectorAll('[data-media-type]') : [];
+          children.forEach(function(child) {
+            if (!child.dataset.wiredV13) wireItem(child);
+          });
+        }
+      });
+      // Also check for items that became visible (display changed from none)
+      if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+        var target = mutation.target;
+        if (target.dataset && target.dataset.mediaType && !target.dataset.wiredV13) {
+          wireItem(target);
+        }
+      }
+    });
+  });
+  // Observe the media list container for new items
+  var mlContainer = document.querySelector('.ml-list') || document.querySelector('[class*="media"]');
+  if (mlContainer) {
+    mediaObserver.observe(mlContainer, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+  } else {
+    // Fallback: observe the whole body
+    mediaObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+console.log('media-panel-fix v1.4: all media panel features wired + MutationObserver');
 })();
