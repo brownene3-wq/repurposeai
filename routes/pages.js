@@ -961,6 +961,9 @@ router.get('/', (req, res) => {
 <script src="/public/js/media-panel-fix.js"></script>
 </body>
 </html>`;
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   res.send(html);
 });
 
