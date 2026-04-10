@@ -39,7 +39,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .hero-input-group{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem;max-width:700px;margin-left:auto;margin-right:auto}
 .hero-input{flex:1;min-width:250px;padding:1rem 1.5rem;background:var(--surface);border:1px solid rgba(108,58,237,0.3);border-radius:50px;color:var(--text);font-size:.95rem}
 .carousel-container{position:relative;margin-top:4rem;max-width:980px;margin-left:50%;transform:translateX(-50%);width:85vw;padding:0 40px;box-sizing:border-box}
-.carousel{display:flex;overflow:hidden;transition:transform .5s ease-in-out;will-change:transform;transform:translate3d(0,0,0);backface-visibility:hidden}
+.carousel{display:flex;overflow:hidden}
 .carousel-slide{flex:0 0 100%;display:flex;justify-content:center;align-items:center;min-height:530px}
 .carousel-showcase{width:100%;display:flex;align-items:center;justify-content:center;gap:32px;padding:20px}
 .carousel-showcase.layout-editor{flex-direction:column;gap:0}
