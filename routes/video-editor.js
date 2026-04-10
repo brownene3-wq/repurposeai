@@ -5942,7 +5942,7 @@ setTimeout(function sidebarLayoutFix(){
 
 
 </script>
-<script src="/public/js/media-panel-fix.js"></script>
+<script src="/public/js/media-panel-fix.js?v=${Date.now()}"></script>
 </body>
 </html>`;
   res.send(html);
