@@ -82,10 +82,20 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .carousel-dots{display:flex;gap:8px;justify-content:center;margin-top:1rem}
 .carousel-dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.15);cursor:pointer;transition:all .3s}
 .carousel-dot.active{background:var(--primary);box-shadow:0 0 10px rgba(108,58,237,0.5)}
-.carousel-btn-side{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;background:rgba(20,20,36,0.8);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:1.4rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s;z-index:10;backdrop-filter:blur(10px)}
-.carousel-btn-side:hover{background:rgba(108,58,237,0.3);border-color:rgba(108,58,237,0.5)}
-.carousel-btn-side.prev{left:0}
-.carousel-btn-side.next{right:0}
+.carousel-nav{position:absolute;top:50%;transform:translateY(-50%);width:56px;height:56px;border-radius:50%;background:rgba(15,15,25,0.55);border:1px solid rgba(255,255,255,0.12);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .35s cubic-bezier(.34,1.56,.64,1),background .3s,border-color .3s,box-shadow .35s;z-index:20;backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);box-shadow:0 10px 30px rgba(0,0,0,0.35),inset 0 0 0 1px rgba(255,255,255,0.04)}
+.carousel-nav svg{width:22px;height:22px;stroke:#fff;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;transition:transform .3s}
+.carousel-nav::before{content:"";position:absolute;inset:-2px;border-radius:50%;padding:2px;background:linear-gradient(135deg,rgba(108,58,237,.85),rgba(236,72,153,.85));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .35s}
+.carousel-nav:hover{transform:translateY(-50%) scale(1.08);background:rgba(20,18,38,0.75);box-shadow:0 16px 42px rgba(108,58,237,0.45),0 0 0 1px rgba(255,255,255,0.12)}
+.carousel-nav:hover::before{opacity:1}
+.carousel-nav:hover svg{transform:scale(1.1)}
+.carousel-nav.prev{left:-8px}
+.carousel-nav.next{right:-8px}
+.carousel-nav.prev:hover svg{transform:scale(1.1) translateX(-2px)}
+.carousel-nav.next:hover svg{transform:scale(1.1) translateX(2px)}
+.carousel-nav:active{transform:translateY(-50%) scale(.96)}
+.carousel-counter{display:inline-flex;align-items:center;gap:10px;margin-top:20px;padding:8px 18px;background:rgba(20,20,36,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:50px;font-size:.78rem;color:var(--text-muted);font-weight:500;backdrop-filter:blur(10px);letter-spacing:.3px}
+.carousel-counter-dot{width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);box-shadow:0 0 8px rgba(108,58,237,.6)}
+.carousel-counter-wrap{display:flex;justify-content:center}
 .carousel-slide-label{text-align:center;margin-top:16px;font-size:.85rem;color:var(--text-muted);font-weight:500}
 .carousel-cta{display:flex;align-items:center;gap:12px;justify-content:center;margin-top:24px;padding:14px 24px;background:rgba(20,20,36,0.6);border-radius:50px;border:1px solid rgba(255,255,255,0.08);max-width:500px;margin-left:auto;margin-right:auto}
 .carousel-cta-input{flex:1;background:none;border:none;color:var(--text-muted);font-size:.9rem;outline:none}
@@ -282,11 +292,13 @@ router.get('/', (req, res) => {
         <button class="btn btn-outline">Upload Files</button>
       </div>
       <div class="carousel-container">
+        <button class="carousel-nav prev" onclick="prevSlide()" aria-label="Previous slide"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+        <button class="carousel-nav next" onclick="nextSlide()" aria-label="Next slide"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
         <div class="carousel" id="carousel">
           <!-- Slide 1: Smart Shorts / AI Clipping (Full Cinema) -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Smart Shorts — AI Clipping</span></div><div style="flex:1;overflow:hidden;background:#0d0d14"><video data-src="/public/videos/ai-clipping-v3.mp4" muted loop playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:#141420;border-top:1px solid rgba(255,255,255,0.06)"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(108,58,237,0.25);border:1px solid rgba(108,58,237,0.4);font-size:.7rem;font-weight:700;color:#a78bfa;white-space:nowrap">&#x2702;&#xFE0F; AI-Powered Clipping</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Drop a long video &#x2192; Get viral-ready shorts for every platform</div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Smart Shorts — AI Clipping</span></div><div style="flex:1;overflow:hidden;background:#0d0d14"><video data-src="/public/videos/ai-clipping-v3.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:#141420;border-top:1px solid rgba(255,255,255,0.06)"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(108,58,237,0.25);border:1px solid rgba(108,58,237,0.4);font-size:.7rem;font-weight:700;color:#a78bfa;white-space:nowrap">&#x2702;&#xFE0F; AI-Powered Clipping</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Drop a long video &#x2192; Get viral-ready shorts for every platform</div></div></div></div></div>
           <!-- Slide 2: AI Captions (Full Cinema) -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Captions — Animated Subtitles</span></div><div style="flex:1;overflow:hidden;background:#0d0d14"><video data-src="/public/videos/ai-captions-v1.mp4" muted loop playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:#141420;border-top:1px solid rgba(255,255,255,0.06)"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(236,72,153,0.25);border:1px solid rgba(236,72,153,0.4);font-size:.7rem;font-weight:700;color:#f472b6;white-space:nowrap">&#x1F4DD; 6 Animated Styles</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Auto-generated captions with karaoke, neon, cinematic &amp; more</div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Captions — Animated Subtitles</span></div><div style="flex:1;overflow:hidden;background:#0d0d14"><video data-src="/public/videos/ai-captions-v1.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:#141420;border-top:1px solid rgba(255,255,255,0.06)"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(236,72,153,0.25);border:1px solid rgba(236,72,153,0.4);font-size:.7rem;font-weight:700;color:#f472b6;white-space:nowrap">&#x1F4DD; 6 Animated Styles</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Auto-generated captions with karaoke, neon, cinematic &amp; more</div></div></div></div></div>
           <!-- Slide 3: Video Editor -->
           <div class="carousel-slide"><div class="carousel-showcase layout-editor"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Video Editor — Full Timeline</span></div><div class="carousel-screen-body"><div class="carousel-video-area"><div class="carousel-video-placeholder" style="background:linear-gradient(135deg,#111827 0%,#1e1b4b 50%,#111827 100%)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px"><div style="font-size:2.5rem">&#x1F3AC;</div><div style="font-size:.9rem;font-weight:700;color:#fff">Professional Video Editor</div><div style="font-size:.75rem;color:var(--text-muted)">Timeline, waveform, music &amp; effects</div></div></div></div><div class="carousel-sidebar"><div class="carousel-sidebar-item"><div class="carousel-sidebar-thumb" style="background:linear-gradient(135deg,rgba(16,185,129,0.3),rgba(59,130,246,0.2))"></div><span>Music</span><span class="carousel-sidebar-badge">123</span></div><div class="carousel-sidebar-item"><div class="carousel-sidebar-thumb" style="background:linear-gradient(135deg,rgba(245,158,11,0.3),rgba(236,72,153,0.2))"></div><span>Filters</span><span class="carousel-sidebar-badge">NEW</span></div><div class="carousel-sidebar-item"><div class="carousel-sidebar-thumb" style="background:linear-gradient(135deg,rgba(108,58,237,0.3),rgba(59,130,246,0.2))"></div><span>Captions</span><span class="carousel-sidebar-badge">AI</span></div><div class="carousel-sidebar-item"><div class="carousel-sidebar-thumb" style="background:linear-gradient(135deg,rgba(239,68,68,0.3),rgba(245,158,11,0.2))"></div><span>Export</span><span class="carousel-sidebar-badge">HD</span></div></div></div><div class="carousel-timeline-bar"><div style="display:flex;flex-direction:column;gap:3px;width:100%"><div style="display:flex;align-items:center;gap:4px"><span style="font-size:.55rem;color:var(--text-muted);width:32px">Video</span><div class="carousel-timeline-clip active" style="flex:1"><div class="carousel-timeline-clip-inner"></div><div class="carousel-timeline-scrubber" style="left:35%"></div></div></div><div style="display:flex;align-items:center;gap:4px"><span style="font-size:.55rem;color:var(--text-muted);width:32px">Audio</span><div class="carousel-timeline-clip" style="flex:1;height:28px"><div class="carousel-timeline-clip-inner" style="background:linear-gradient(135deg,rgba(16,185,129,0.2),rgba(59,130,246,0.15))"></div></div></div></div></div></div></div></div>
           <!-- Slide 4: AI Hook Generator -->
@@ -294,7 +306,7 @@ router.get('/', (req, res) => {
           <!-- Slide 5: AI B-Roll -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main" style="max-width:680px"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI B-Roll — Stock Footage</span></div><div class="carousel-screen-body"><div class="carousel-video-area"><div class="carousel-video-placeholder" style="background:linear-gradient(135deg,#0d1117 0%,#162030 50%,#0d1117 100%)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px"><div style="font-size:2.5rem">&#x1F3AC;</div><div style="font-size:.9rem;font-weight:700;color:#fff">Millions of Stock Video Clips</div><div style="font-size:.75rem;color:var(--text-muted)">Powered by Pixabay Video API</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;width:80%;max-width:300px"><div style="aspect-ratio:16/9;border-radius:6px;background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(59,130,246,0.15));border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:.8rem">&#x25B6;</div><div style="aspect-ratio:16/9;border-radius:6px;background:linear-gradient(135deg,rgba(236,72,153,0.2),rgba(245,158,11,0.15));border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:.8rem">&#x25B6;</div><div style="aspect-ratio:16/9;border-radius:6px;background:linear-gradient(135deg,rgba(16,185,129,0.2),rgba(59,130,246,0.15));border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:.8rem">&#x25B6;</div><div style="aspect-ratio:16/9;border-radius:6px;background:linear-gradient(135deg,rgba(245,158,11,0.2),rgba(239,68,68,0.15));border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:.8rem">&#x25B6;</div><div style="aspect-ratio:16/9;border-radius:6px;background:linear-gradient(135deg,rgba(59,130,246,0.2),rgba(108,58,237,0.15));border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:.8rem">&#x25B6;</div><div style="aspect-ratio:16/9;border-radius:6px;background:linear-gradient(135deg,rgba(239,68,68,0.2),rgba(236,72,153,0.15));border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:.8rem">&#x25B6;</div></div></div></div></div></div></div></div></div>
           <!-- Slide 6: AI Reframe (Full Cinema) -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Reframe — Auto Resize</span></div><div style="flex:1;overflow:hidden;background:#0d0d14"><video data-src="/public/videos/ai-reframe-v1.mp4" muted loop playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:#141420;border-top:1px solid rgba(255,255,255,0.06)"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(59,130,246,0.25);border:1px solid rgba(59,130,246,0.4);font-size:.7rem;font-weight:700;color:#60a5fa;white-space:nowrap">&#x1F4D0; Smart Reframe</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Turn 16:9 into 9:16 or 1:1 — perfect for TikTok, Reels &amp; Shorts</div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Reframe — Auto Resize</span></div><div style="flex:1;overflow:hidden;background:#0d0d14"><video data-src="/public/videos/ai-reframe-v1.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:#141420;border-top:1px solid rgba(255,255,255,0.06)"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(59,130,246,0.25);border:1px solid rgba(59,130,246,0.4);font-size:.7rem;font-weight:700;color:#60a5fa;white-space:nowrap">&#x1F4D0; Smart Reframe</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Turn 16:9 into 9:16 or 1:1 — perfect for TikTok, Reels &amp; Shorts</div></div></div></div></div>
           <!-- Slide 7: Music Library -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main" style="max-width:720px"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Music Library — 123 Royalty-Free Tracks</span></div><div class="carousel-screen-body"><div class="carousel-video-area"><div class="carousel-video-placeholder" style="background:linear-gradient(135deg,#0a1628 0%,#1a1040 50%,#0a1628 100%)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:16px"><div style="font-size:2.5rem">&#x1F3B5;</div><div style="font-size:.9rem;font-weight:700;color:#fff">123 Curated Tracks</div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center;max-width:400px"><span style="padding:3px 8px;border-radius:12px;background:rgba(108,58,237,0.25);color:#c4b5fd;font-size:.6rem">Ambient</span><span style="padding:3px 8px;border-radius:12px;background:rgba(236,72,153,0.25);color:#f9a8d4;font-size:.6rem">Lo-Fi</span><span style="padding:3px 8px;border-radius:12px;background:rgba(59,130,246,0.25);color:#93c5fd;font-size:.6rem">Corporate</span><span style="padding:3px 8px;border-radius:12px;background:rgba(245,158,11,0.25);color:#fcd34d;font-size:.6rem">Cinematic</span><span style="padding:3px 8px;border-radius:12px;background:rgba(16,185,129,0.25);color:#6ee7b7;font-size:.6rem">Upbeat</span><span style="padding:3px 8px;border-radius:12px;background:rgba(239,68,68,0.25);color:#fca5a5;font-size:.6rem">Hip-Hop</span><span style="padding:3px 8px;border-radius:12px;background:rgba(168,85,247,0.25);color:#d8b4fe;font-size:.6rem">Electronic</span><span style="padding:3px 8px;border-radius:12px;background:rgba(20,184,166,0.25);color:#5eead4;font-size:.6rem">Acoustic</span><span style="padding:3px 8px;border-radius:12px;background:rgba(251,146,60,0.25);color:#fdba74;font-size:.6rem">Jazz</span><span style="padding:3px 8px;border-radius:12px;background:rgba(129,140,248,0.25);color:#a5b4fc;font-size:.6rem">Classical</span><span style="padding:3px 8px;border-radius:12px;background:rgba(52,211,153,0.25);color:#6ee7b7;font-size:.6rem">Nature</span></div><div style="display:flex;gap:6px;align-items:center;margin-top:8px"><div style="width:28px;height:28px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#fff">&#x25B6;</div><div style="flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,0.1);max-width:200px"><div style="width:45%;height:100%;border-radius:2px;background:var(--gradient-1)"></div></div><span style="font-size:.6rem;color:var(--text-muted)">Preview tracks before adding</span></div></div></div></div></div></div></div></div>
           <!-- Slide 8: Brand Voice -->
@@ -305,10 +317,8 @@ router.get('/', (req, res) => {
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main" style="max-width:680px"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Content Calendar — Plan &amp; Schedule</span></div><div class="carousel-screen-body"><div class="carousel-video-area"><div class="carousel-video-placeholder" style="background:linear-gradient(135deg,#0d1117 0%,#1a1a30 50%,#0d1117 100%)"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px"><div style="font-size:2.5rem">&#x1F4C5;</div><div style="font-size:.9rem;font-weight:700;color:#fff">Plan Your Content Calendar</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;width:70%;max-width:280px;margin-top:6px"><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">M</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">T</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">W</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.35);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:#c4b5fd">T</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.2);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">F</span><span style="height:20px;border-radius:3px;background:rgba(236,72,153,.25);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:#f9a8d4">S</span><span style="height:20px;border-radius:3px;background:rgba(108,58,237,.15);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:var(--text-muted)">S</span></div><div style="display:flex;gap:6px;margin-top:8px"><span style="padding:3px 8px;border-radius:4px;background:rgba(108,58,237,0.2);color:#c4b5fd;font-size:.6rem">30 min before</span><span style="padding:3px 8px;border-radius:4px;background:rgba(245,158,11,0.2);color:#fcd34d;font-size:.6rem">1 hour before</span><span style="padding:3px 8px;border-radius:4px;background:rgba(236,72,153,0.2);color:#f9a8d4;font-size:.6rem">1 day before</span></div><div style="font-size:.7rem;color:var(--text-muted);margin-top:6px">Email reminders so you never miss a post</div></div></div></div></div></div></div></div>
         </div>
       </div>
-      <div class="carousel-controls">
-        <button class="carousel-btn" onclick="prevSlide()">&#x2190;</button>
-        <span style="color:var(--text-muted);font-size:.9rem" id="slideCounter">1 / 10</span>
-        <button class="carousel-btn" onclick="nextSlide()">&#x2192;</button>
+      <div class="carousel-counter-wrap">
+        <div class="carousel-counter"><span class="carousel-counter-dot"></span><span id="slideCounter">1 / 10</span></div>
       </div>
       <div class="carousel-labels">
         <div class="carousel-label active" onclick="goToSlide(0)">Smart Shorts</div>
@@ -792,6 +802,13 @@ router.get('/', (req, res) => {
       }
     })();
 
+    var slideTimer = null;
+    var NON_VIDEO_SLIDE_MS = 6000;
+
+    function clearSlideTimer() {
+      if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+    }
+
     function updateCarousel() {
       carousel.style.transform = 'translateX(-' + (currentSlide * 100) + '%)';
       updateCarouselLabels();
@@ -801,6 +818,7 @@ router.get('/', (req, res) => {
       var counter = document.getElementById('slideCounter');
       if (counter) counter.textContent = (currentSlide + 1) + ' / ' + totalSlides;
       updateCarouselVideos();
+      scheduleNextAdvance();
     }
 
     function updateCarouselVideos() {
@@ -811,18 +829,46 @@ router.get('/', (req, res) => {
         if (idx === currentSlide) {
           if (!video.src) {
             video.src = video.dataset.src;
-            video.load();
+            try { video.load(); } catch (e) {}
           }
+          try { video.currentTime = 0; } catch (e) {}
           var p = video.play();
           if (p && p.catch) p.catch(function(){});
         } else {
-          video.pause();
+          try { video.pause(); } catch (e) {}
         }
       });
     }
 
-    // Kick off the active slide's video on initial load
+    function scheduleNextAdvance() {
+      clearSlideTimer();
+      var activeSlide = document.querySelectorAll('.carousel-slide')[currentSlide];
+      var activeVideo = activeSlide ? activeSlide.querySelector('video[data-src]') : null;
+      if (activeVideo) {
+        // Wait for this specific video to finish, then advance
+        var advanced = false;
+        var onEnded = function() {
+          if (advanced) return;
+          advanced = true;
+          activeVideo.removeEventListener('ended', onEnded);
+          nextSlide();
+        };
+        activeVideo.addEventListener('ended', onEnded);
+        // Fallback timeout in case 'ended' never fires (stalled video, etc.)
+        slideTimer = setTimeout(function() {
+          if (advanced) return;
+          advanced = true;
+          activeVideo.removeEventListener('ended', onEnded);
+          nextSlide();
+        }, 15000);
+      } else {
+        slideTimer = setTimeout(nextSlide, NON_VIDEO_SLIDE_MS);
+      }
+    }
+
+    // Kick off the carousel once the DOM is ready
     updateCarouselVideos();
+    scheduleNextAdvance();
 
     function updateCarouselLabels() {
       document.querySelectorAll('.carousel-label').forEach((label, idx) => {
