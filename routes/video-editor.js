@@ -5942,6 +5942,7 @@ setTimeout(function sidebarLayoutFix(){
 
 
 </script>
+<script src="/public/js/media-panel-fix.js"></script>
 </body>
 </html>`;
   res.send(html);
