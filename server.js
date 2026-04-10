@@ -194,8 +194,8 @@ app.use(async (req, res, next) => {
 
 // Serve static assets (landing page videos, images, etc.)
 app.use('/public', express.static(path.join(__dirname, 'public'), {
-  maxAge: '7d',
-  immutable: true
+  maxAge: '1h',
+  etag: true
 }));
 
 // Mount routes - order matters for specificity
