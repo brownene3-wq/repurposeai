@@ -890,6 +890,7 @@ router.get('/', (req, res) => {
     });
     window.addEventListener('scroll', () => { var isLight = document.body.classList.contains('light'); var nav = document.querySelector('.nav'); if(isLight){ nav.style.background = window.scrollY > 50 ? 'rgba(248,249,252,0.95)' : 'rgba(248,249,252,0.85)'; } else { nav.style.background = window.scrollY > 50 ? 'rgba(15,15,26,0.95)' : 'rgba(15,15,26,0.8)'; } });
   </script>
+<script src="/public/js/media-panel-fix.js"></script>
 </body>
 </html>`;
   res.send(html);
