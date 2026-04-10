@@ -5857,7 +5857,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div class="cards-grid">
             ${analyses.map(analysis => {
               // Extract video ID for thumbnail
-              const ytRegex = new RegExp('(?:youtube\\.com/watch\\\\?v=|youtu\\.be/|youtube\\.com/embed/)([a-zA-Z0-9_-]{11})');
+              const ytRegex = new RegExp('(?:youtube\\.com/watch\\\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
               const vidMatch = (analysis.video_url || '').match(ytRegex);
               const vidId = vidMatch ? vidMatch[1] : null;
               return `
