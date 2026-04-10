@@ -1,4 +1,4 @@
-// v9.8 - all 48 buttons fully functional - fix Reverse wiring, enforce Trim/Split/Keyframe, add BG Remove/AI Voice/Translate, real Music
+// v9.9 - fix native panel override: block click/pointer events on wired buttons, delayed native panel suppression
 setTimeout(function allButtonsFix(){
 if(window._v9Loaded)return;window._v9Loaded=true;
 var video=document.querySelector('#videoPlayer');
@@ -18,9 +18,11 @@ window._vf=window._vf||{brightness:100,contrast:100,saturate:100,hueRotate:0,blu
 
 function show(title,html,fn){
 pan=document.getElementById('v9P');
-document.querySelectorAll('.tool-panel').forEach(function(p){p.style.display='none';});
+function hideNative(){document.querySelectorAll('.tool-panel').forEach(function(p){p.style.display='none';});}
+hideNative();
 pan.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><span style="color:#fff;font-weight:600;font-size:14px;">'+title+'</span><span id="v9X" style="color:#999;cursor:pointer;font-size:18px;">&times;</span></div>'+html;
 pan.style.display='block';
+setTimeout(hideNative,50);setTimeout(hideNative,150);setTimeout(hideNative,300);
 document.getElementById('v9X').addEventListener('mousedown',function(e){e.stopPropagation();pan.style.display='none';});
 if(fn)fn();
 }
@@ -95,7 +97,10 @@ return{html:html,init:function(){fns.forEach(function(f){f();});}};
 
 function wire(b,handler){
 if(!b)return;
-b.addEventListener('mousedown',function(e){e.preventDefault();e.stopPropagation();handler(e);});
+b.addEventListener('mousedown',function(e){e.preventDefault();e.stopPropagation();handler(e);},true);
+b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();},true);
+b.addEventListener('pointerdown',function(e){e.stopPropagation();},true);
+b.addEventListener('pointerup',function(e){e.stopPropagation();},true);
 b.style.cursor='pointer';
 }
 
@@ -941,5 +946,5 @@ var b1=btn('Clear All','#ef4444',function(){var svg=document.getElementById('v9s
 show('Annotations',g.html+b1.html,function(){g.init();b1.init();});
 });
 
-console.log('v9 allButtonsFix: 48 buttons wired with REAL functionality (v9.8)');
+console.log('v9 allButtonsFix: 48 buttons wired with REAL functionality (v9.9)');
 },2200);
