@@ -1,4 +1,4 @@
-// media-panel-fix.js â v1.1
+// media-panel-fix.js â v1.2
 // Fixes all video editor media panel bugs:
 // 1. +Upload button (opens file picker for correct type per tab)
 // 2. Tab switching shows correct upload UI and accept types
@@ -291,11 +291,12 @@
       // Ensure ml-body can scroll to show new content
       mlBody.style.overflowY = 'auto';
       var fileGrid = document.getElementById('mediaFileGrid');
-      if (fileGrid) {
+      if (fileGrid && fileGrid.parentElement === mlBody) {
         // Hide the file grid when stock is shown, insert stock panel before it
         fileGrid.style.display = 'none';
         mlBody.insertBefore(stockPanel, fileGrid);
       } else {
+        if (fileGrid) fileGrid.style.display = 'none';
         mlBody.insertBefore(stockPanel, mlBody.firstChild);
       }
     }
@@ -601,5 +602,5 @@
   // ââ Make showToast globally available for inline onclick ââ
   window.showToast = showToast;
 
-  console.log('media-panel-fix v1.1: all media panel features wired');
+  console.log('media-panel-fix v1.2: all media panel features wired');
 })();
