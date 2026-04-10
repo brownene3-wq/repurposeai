@@ -39,7 +39,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .hero-input-group{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem;max-width:700px;margin-left:auto;margin-right:auto}
 .hero-input{flex:1;min-width:250px;padding:1rem 1.5rem;background:var(--surface);border:1px solid rgba(108,58,237,0.3);border-radius:50px;color:var(--text);font-size:.95rem}
 .carousel-container{position:relative;margin-top:4rem;max-width:980px;margin-left:50%;transform:translateX(-50%);width:85vw;padding:0 40px;box-sizing:border-box}
-.carousel{display:flex;overflow:hidden;transition:transform .5s ease-in-out}
+.carousel{display:flex;overflow:hidden;transition:transform .5s ease-in-out;will-change:transform;transform:translate3d(0,0,0);backface-visibility:hidden}
 .carousel-slide{flex:0 0 100%;display:flex;justify-content:center;align-items:center;min-height:530px}
 .carousel-showcase{width:100%;display:flex;align-items:center;justify-content:center;gap:32px;padding:20px}
 .carousel-showcase.layout-editor{flex-direction:column;gap:0}
@@ -810,14 +810,26 @@ router.get('/', (req, res) => {
     }
 
     function updateCarousel() {
-      carousel.style.transform = 'translateX(-' + (currentSlide * 100) + '%)';
+      // Set transform using translate3d to force GPU compositing path.
+      // Without translate3d, the inline transform can fail to apply on some browsers
+      // when another reflow (like loading a video) happens in the same tick.
+      carousel.style.transform = 'translate3d(-' + (currentSlide * 100) + '%, 0, 0)';
+      // Force a layout/paint commit of the transform BEFORE we touch any videos.
+      // Reading offsetWidth forces a synchronous reflow.
+      void carousel.offsetWidth;
       updateCarouselLabels();
       document.querySelectorAll('.carousel-dot').forEach(function(dot, idx) {
         dot.classList.toggle('active', idx === currentSlide);
       });
       var counter = document.getElementById('slideCounter');
       if (counter) counter.textContent = (currentSlide + 1) + ' / ' + totalSlides;
-      updateCarouselVideos();
+      // Defer video loading to the next animation frame so the transform transition
+      // has a chance to start before we kick off any video decoding work.
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(updateCarouselVideos);
+      } else {
+        setTimeout(updateCarouselVideos, 16);
+      }
       scheduleNextAdvance();
     }
 
