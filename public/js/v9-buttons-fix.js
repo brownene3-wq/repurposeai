@@ -1,3 +1,4 @@
+// v9.1 - force redeploy - all 48 buttons with real functionality
 setTimeout(function allButtonsFix(){
 var video=document.querySelector('#videoPlayer');
 var sidebar=document.querySelector('.editor-sidebar');
