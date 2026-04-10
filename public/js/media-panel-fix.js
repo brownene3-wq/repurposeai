@@ -206,6 +206,9 @@
   }
 
   function wireItem(item) {
+    // Guard against double-wiring from dual-load
+    if (item.dataset.wiredV13) return;
+    item.dataset.wiredV13 = '1';
     item.style.cursor = 'pointer';
 
     // Click to select
@@ -215,11 +218,13 @@
       this.classList.add('selected');
     });
 
-    // Wire +Timeline button
+    // Wire +Timeline button — clone to strip any v1.0 listeners
     var addBtn = item.querySelector('.ml-add');
     if (addBtn) {
-      addBtn.style.cursor = 'pointer';
-      addBtn.addEventListener('click', function(e) {
+      var newBtn = addBtn.cloneNode(true);
+      addBtn.parentNode.replaceChild(newBtn, addBtn);
+      newBtn.style.cursor = 'pointer';
+      newBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         var nameEl = item.querySelector('.ml-fname');
         var fileName = nameEl ? nameEl.textContent.trim() : 'clip';
@@ -442,6 +447,12 @@
   // ââ 6. Import button - opens file picker ââ
   var footBtns = document.querySelectorAll('.ml-fb');
   footBtns.forEach(function(btn) {
+    var clone = btn.cloneNode(true);
+    if (btn.parentNode) btn.parentNode.replaceChild(clone, btn);
+  });
+  // Re-query after cloning
+  footBtns = document.querySelectorAll('.ml-fb');
+  footBtns.forEach(function(btn) {
     var text = btn.textContent.trim();
 
     if (text.indexOf('Import') !== -1) {
@@ -533,7 +544,11 @@
   // ââ 8. AI B-Roll panel ââ
   function showAIBRollPanel() {
     var existing = document.getElementById('aiBrollOverlay');
-    if (existing) { existing.style.display = existing.style.display === 'none' ? 'flex' : 'none'; return; }
+    if (existing && existing.parentElement && existing.style.display !== '') {
+      // Already visible — toggle off
+      existing.style.display = 'none'; return;
+    }
+    if (existing) existing.remove(); // Remove stale/hidden overlay and recreate fresh
 
     // Create overlay backdrop for guaranteed visibility
     var overlay = document.createElement('div');
@@ -602,5 +617,5 @@
   // ââ Make showToast globally available for inline onclick ââ
   window.showToast = showToast;
 
-  console.log('media-panel-fix v1.2: all media panel features wired');
+  console.log('media-panel-fix v1.3: all media panel features wired');
 })();
