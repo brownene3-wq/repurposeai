@@ -324,14 +324,26 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
   });
 
   // --- FIX 1: Click-to-add blocks ---
-  // GrapesJS only supports drag by default. Add click handler so clicking
-  // a block inserts it near the selected component and scrolls to it.
-  editor.on('block:drag:stop', function() {}); // keep default drag working
+  // GrapesJS blocks are draggable="true", which prevents normal click events.
+  // Use mousedown/mouseup timing to detect a quick click vs a drag attempt.
   var blocksEl = document.getElementById('blocks-container');
+  var _blockMouseDownTime = 0;
+  var _blockMouseDownTarget = null;
   if (blocksEl) {
-    blocksEl.addEventListener('click', function(e) {
+    blocksEl.addEventListener('mousedown', function(e) {
+      var blockEl = e.target.closest('.gjs-block');
+      if (blockEl) {
+        _blockMouseDownTime = Date.now();
+        _blockMouseDownTarget = blockEl;
+      }
+    });
+    blocksEl.addEventListener('mouseup', function(e) {
       var blockEl = e.target.closest('.gjs-block');
       if (!blockEl) return;
+      // Only treat as a click if mousedown was on same block and within 300ms
+      if (blockEl !== _blockMouseDownTarget) return;
+      if (Date.now() - _blockMouseDownTime > 300) return;
+      _blockMouseDownTarget = null;
       // Find the block by matching the element's label text
       var label = blockEl.querySelector('.gjs-block-label');
       var labelText = label ? label.textContent.trim() : '';
