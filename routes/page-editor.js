@@ -333,7 +333,7 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/grapesjs/0.21.13/grapes.min.js"></script>
   <script>var PAGE_SLUG = '${slug}';</script>
-  <script src="/public/js/page-editor-app.js"></script>
+  <script src="/public/js/page-editor-app.js?v=${Date.now()}"></script>
 </body>
 </html>`;
 
