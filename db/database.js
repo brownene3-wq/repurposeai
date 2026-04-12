@@ -187,6 +187,11 @@ const initDatabase = async () => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'`);
     } catch (e) { /* already exists */ }
 
+    // Page editor access permission (only specific users can edit pages)
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_edit_pages BOOLEAN DEFAULT FALSE`);
+    } catch (e) { /* already exists */ }
+
     // Blog posts table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS blog_posts (
@@ -958,6 +963,19 @@ const adminOps = {
       [userId, role]
     );
     return result.rows[0];
+  },
+  async setPageEditorAccess(userId, canEdit) {
+    const result = await pool.query(
+      `UPDATE users SET can_edit_pages = $2 WHERE id = $1 RETURNING id, email, name, role, can_edit_pages`,
+      [userId, canEdit]
+    );
+    return result.rows[0];
+  },
+  async getPageEditorUsers() {
+    const result = await pool.query(
+      `SELECT id, email, name, role, can_edit_pages FROM users WHERE role = 'admin' ORDER BY created_at ASC`
+    );
+    return result.rows;
   },
   async getStats() {
     const [users, content, outputs, shorts, featureTotals] = await Promise.all([

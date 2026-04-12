@@ -1076,6 +1076,36 @@ router.post('/api/set-role', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// Get admins with page editor access status
+router.get('/api/page-editor-access', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await adminOps.getPageEditorUsers();
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load page editor users' });
+  }
+});
+
+// Toggle page editor access for a specific admin
+router.post('/api/page-editor-access', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId, canEdit } = req.body;
+    // Only the site owner can change page editor permissions
+    const SITE_OWNER_EMAIL = 'albertdbrown85@gmail.com';
+    if (req.user.email !== SITE_OWNER_EMAIL) {
+      return res.status(403).json({ error: 'Only the site owner can manage page editor access' });
+    }
+    // Can't remove your own access
+    if (userId === req.user.id) {
+      return res.status(400).json({ error: 'You always have page editor access as the site owner' });
+    }
+    const user = await adminOps.setPageEditorAccess(userId, canEdit === true);
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update page editor access' });
+  }
+});
+
 // Set user plan
 router.post('/api/set-plan', requireAuth, requireAdmin, async (req, res) => {
   try {

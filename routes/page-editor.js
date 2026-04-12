@@ -5,16 +5,35 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
-const { userOps, pageContentOps } = require('../db/database');
+const { userOps, adminOps, pageContentOps } = require('../db/database');
 
-// --- Admin check (same pattern as admin.js) ---
-async function requireAdmin(req, res, next) {
+// Site owner email — always has page editor access
+const SITE_OWNER_EMAIL = 'albertdbrown85@gmail.com';
+
+// --- Page editor access check ---
+// Only the site owner OR admins explicitly granted can_edit_pages can access
+async function requirePageEditorAccess(req, res, next) {
   const fullUser = await userOps.getById(req.user.id);
-  if (!fullUser || fullUser.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+  if (!fullUser) {
+    return res.status(403).json({ error: 'User not found' });
   }
   req.user = fullUser;
-  next();
+
+  // Site owner always has access
+  if (fullUser.email === SITE_OWNER_EMAIL) {
+    return next();
+  }
+
+  // Other admins need explicit can_edit_pages permission
+  if (fullUser.role === 'admin' && fullUser.can_edit_pages === true) {
+    return next();
+  }
+
+  // Everyone else is denied
+  if (req.headers.accept && req.headers.accept.includes('application/json')) {
+    return res.status(403).json({ error: 'You don\'t have permission to edit pages. Contact the site owner.' });
+  }
+  return res.status(403).send('<div style="font-family:sans-serif;text-align:center;padding:80px 20px;color:#888"><h1 style="color:#EF4444;font-size:1.5rem">Access Denied</h1><p>You don\'t have permission to edit pages.<br>Contact the site owner to request access.</p><a href="/admin" style="color:#6C3AED">Back to Admin</a></div>');
 }
 
 // --- Media upload setup ---
@@ -44,7 +63,7 @@ const upload = multer({
 // ===========================
 
 // Load page content (draft or published)
-router.get('/api/page-content/:slug', requireAuth, requireAdmin, async (req, res) => {
+router.get('/api/page-content/:slug', requireAuth, requirePageEditorAccess, async (req, res) => {
   try {
     const { slug } = req.params;
     const status = req.query.status || 'draft';
@@ -61,7 +80,7 @@ router.get('/api/page-content/:slug', requireAuth, requireAdmin, async (req, res
 });
 
 // Save page content (draft)
-router.put('/api/page-content/:slug', requireAuth, requireAdmin, async (req, res) => {
+router.put('/api/page-content/:slug', requireAuth, requirePageEditorAccess, async (req, res) => {
   try {
     const { slug } = req.params;
     const { html, css, components, style } = req.body;
@@ -74,7 +93,7 @@ router.put('/api/page-content/:slug', requireAuth, requireAdmin, async (req, res
 });
 
 // Publish page content
-router.post('/api/page-content/:slug/publish', requireAuth, requireAdmin, async (req, res) => {
+router.post('/api/page-content/:slug/publish', requireAuth, requirePageEditorAccess, async (req, res) => {
   try {
     const { slug } = req.params;
     const published = await pageContentOps.publish(slug, req.user.id);
@@ -89,7 +108,7 @@ router.post('/api/page-content/:slug/publish', requireAuth, requireAdmin, async 
 });
 
 // Revert draft
-router.post('/api/page-content/:slug/revert', requireAuth, requireAdmin, async (req, res) => {
+router.post('/api/page-content/:slug/revert', requireAuth, requirePageEditorAccess, async (req, res) => {
   try {
     const { slug } = req.params;
     await pageContentOps.revert(slug);
@@ -101,7 +120,7 @@ router.post('/api/page-content/:slug/revert', requireAuth, requireAdmin, async (
 });
 
 // Upload media
-router.post('/api/page-editor/upload', requireAuth, requireAdmin, upload.single('file'), (req, res) => {
+router.post('/api/page-editor/upload', requireAuth, requirePageEditorAccess, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const url = `/public/uploads/${req.file.filename}`;
   res.json({ success: true, url, filename: req.file.filename });
@@ -110,8 +129,9 @@ router.post('/api/page-editor/upload', requireAuth, requireAdmin, upload.single(
 // ===========================
 // EDITOR UI ROUTE
 // ===========================
-router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
+router.get('/editor', requireAuth, requirePageEditorAccess, async (req, res) => {
   const slug = req.query.page || 'homepage';
+  const isSiteOwner = req.user.email === SITE_OWNER_EMAIL;
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -306,8 +326,25 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
         Publish
       </button>
       <button class="tb-btn danger" onclick="revertDraft()">Revert</button>
+      ${isSiteOwner ? '<button class="tb-btn" onclick="openAccessModal()" title="Manage who can edit pages">&#x1F512; Access</button>' : ''}
     </div>
   </div>
+
+  ${isSiteOwner ? `
+  <!-- Access Management Modal -->
+  <div id="accessModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;align-items:center;justify-content:center;">
+    <div style="background:#1a1a1a;border:1px solid #333;border-radius:16px;width:500px;max-width:90vw;max-height:80vh;overflow:auto;padding:32px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+        <h2 style="font-size:1.2rem;font-weight:700;">Page Editor Access</h2>
+        <button onclick="closeAccessModal()" style="background:none;border:none;color:#888;font-size:1.5rem;cursor:pointer;">&times;</button>
+      </div>
+      <p style="color:#888;font-size:.85rem;margin-bottom:20px;">Only admins listed below with access enabled can edit pages. You always have access as the site owner.</p>
+      <div id="accessList" style="display:flex;flex-direction:column;gap:12px;">
+        <div style="text-align:center;color:#666;padding:20px;">Loading...</div>
+      </div>
+    </div>
+  </div>
+  ` : ''}
 
   <!-- GrapesJS Editor -->
   <div class="editor-wrap">
@@ -333,8 +370,81 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/grapesjs/0.21.13/grapes.min.js"></script>
-  <script>var PAGE_SLUG = '${slug}';</script>
+  <script>
+    var PAGE_SLUG = '${slug}';
+    var IS_SITE_OWNER = ${isSiteOwner};
+  </script>
   <script src="/public/js/page-editor-app.js?v=${Date.now()}"></script>
+  ${isSiteOwner ? `<script>
+    function openAccessModal() {
+      var modal = document.getElementById('accessModal');
+      modal.style.display = 'flex';
+      loadAccessList();
+    }
+    function closeAccessModal() {
+      document.getElementById('accessModal').style.display = 'none';
+    }
+    function loadAccessList() {
+      var list = document.getElementById('accessList');
+      list.innerHTML = '<div style="text-align:center;color:#666;padding:20px;">Loading...</div>';
+      fetch('/admin/api/page-editor-access')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (!data.users || data.users.length === 0) {
+            list.innerHTML = '<div style="color:#666;text-align:center;padding:20px;">No admin users found.</div>';
+            return;
+          }
+          var html = '';
+          data.users.forEach(function(u) {
+            var isOwner = u.email === 'albertdbrown85@gmail.com';
+            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:#111;border:1px solid #222;border-radius:10px;">';
+            html += '<div>';
+            html += '<div style="font-weight:600;font-size:.9rem;">' + (u.name || u.email) + '</div>';
+            html += '<div style="font-size:.75rem;color:#666;">' + u.email + (isOwner ? ' &middot; <span style="color:#6C3AED;">Site Owner</span>' : '') + '</div>';
+            html += '</div>';
+            if (isOwner) {
+              html += '<span style="font-size:.75rem;color:#10B981;font-weight:600;">Always has access</span>';
+            } else {
+              var checked = u.can_edit_pages ? 'checked' : '';
+              html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">';
+              html += '<span style="font-size:.75rem;color:#888;">' + (u.can_edit_pages ? 'Can edit' : 'No access') + '</span>';
+              html += '<input type="checkbox" ' + checked + ' onchange="toggleAccess(this, \\'' + u.id + '\\')" style="width:18px;height:18px;accent-color:#6C3AED;cursor:pointer;">';
+              html += '</label>';
+            }
+            html += '</div>';
+          });
+          list.innerHTML = html;
+        })
+        .catch(function() {
+          list.innerHTML = '<div style="color:#EF4444;text-align:center;padding:20px;">Failed to load users.</div>';
+        });
+    }
+    function toggleAccess(checkbox, userId) {
+      var canEdit = checkbox.checked;
+      fetch('/admin/api/page-editor-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userId, canEdit: canEdit }),
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          showToast(canEdit ? 'Access granted' : 'Access revoked', 'success');
+          loadAccessList();
+        } else {
+          showToast(data.error || 'Failed', 'error');
+          checkbox.checked = !canEdit;
+        }
+      })
+      .catch(function() {
+        showToast('Failed to update', 'error');
+        checkbox.checked = !canEdit;
+      });
+    }
+    document.getElementById('accessModal').addEventListener('click', function(e) {
+      if (e.target === this) closeAccessModal();
+    });
+  </${'script'}>` : ''}
 </body>
 </html>`;
 
