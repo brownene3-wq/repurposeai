@@ -386,10 +386,10 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
 
     // Preview
     function previewPage() {
-      const html = editor.getHtml();
-      const css = editor.getCss();
-      const previewWindow = window.open('', '_blank');
-      previewWindow.document.write(\`<!DOCTYPE html><html><head><style>\${css}</style></head><body>\${html}</body></html>\`);
+      var html = editor.getHtml();
+      var css = editor.getCss();
+      var previewWindow = window.open('', '_blank');
+      previewWindow.document.write('<!DOCTYPE html><html><head><style>' + css + '</style></head><body>' + html + '</body></html>');
       previewWindow.document.close();
     }
 
@@ -403,28 +403,25 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
 
       try {
         // Try loading a saved draft/published version first
-        const resp = await fetch('/admin/api/page-content/' + PAGE_SLUG + '?status=draft');
-        const data = await resp.json();
+        var resp = await fetch('/admin/api/page-content/' + PAGE_SLUG + '?status=draft');
+        var data = await resp.json();
         if (data.content && data.content.content_components) {
           initialComponents = data.content.content_components;
           initialStyles = data.content.content_style;
         } else if (data.content && data.content.content_html) {
           initialHtml = data.content.content_html;
           initialCss = data.content.content_css || '';
-        } else {
-          // No saved content — load the live homepage HTML
-          const pageResp = await fetch('/?raw=1');
-          const pageText = await pageResp.text();
-          // Extract body content and style
-          const bodyMatch = pageText.match(/<body[^>]*>([\\\s\\\S]*)<\\/body>/i);
-          const styleMatch = pageText.match(/<style[^>]*>([\\\s\\\S]*?)<\\/style>/gi);
-          initialHtml = bodyMatch ? bodyMatch[1] : pageText;
-          if (styleMatch) {
-            initialCss = styleMatch.map(s => s.replace(/<\\/?style[^>]*>/gi, '')).join('\\n');
-          }
         }
       } catch (err) {
-        console.warn('Could not load saved content, starting blank:', err);
+        console.warn('Could not load saved content:', err);
+      }
+      // If no saved content, start with a starter template
+      if (!initialHtml && !initialComponents) {
+        initialHtml = '<section style="padding:80px 20px;text-align:center;max-width:1200px;margin:0 auto">' +
+          '<h1 style="font-size:3rem;font-weight:800;margin-bottom:1rem;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Your Homepage</h1>' +
+          '<p style="font-size:1.1rem;color:#a0aec0;max-width:600px;margin:0 auto 2rem">Click any text to edit it. Drag blocks from the right panel to add new content. Use Save Draft to save your work, and Publish to make it live.</p>' +
+          '<a style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C3AED,#8B5CF6);color:#fff;border-radius:50px;text-decoration:none;font-weight:700;font-size:1rem">Get Started</a>' +
+          '</section>';
       }
 
       const editorConfig = {
