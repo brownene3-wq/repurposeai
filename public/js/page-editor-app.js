@@ -155,8 +155,11 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
         { name: 'Mobile portrait', width: '375px', widthMedia: '480px' },
       ]
     },
-    // Use default GrapesJS panels for blocks/styles/layers sidebar
+    panels: { defaults: [] },
     canvas: { styles: [] },
+    layerManager: { appendTo: '#layers-container' },
+    traitManager: { appendTo: '#traits-container' },
+    selectorManager: { appendTo: '#styles-container' },
     assetManager: {
       uploadName: 'file',
       upload: '/admin/api/page-editor/upload',
@@ -185,6 +188,7 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
       autoAdd: true,
     },
     styleManager: {
+      appendTo: '#styles-container',
       sectors: [
         { name: 'Typography', open: true, properties: ['font-family','font-size','font-weight','letter-spacing','color','line-height','text-align','text-decoration','text-shadow'] },
         { name: 'Layout', properties: ['display','width','height','max-width','min-height','margin','padding'] },
@@ -194,6 +198,7 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
       ],
     },
     blockManager: {
+      appendTo: '#blocks-container',
       blocks: [
         {
           id: 'text-block',
@@ -271,10 +276,28 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
 
   editor = grapesjs.init(editorConfig);
 
-  // Open the blocks panel by default
-  editor.on('load', function() {
-    var bm = editor.Panels.getButton('views', 'open-blocks');
-    if (bm) bm.set('active', true);
+  // Build custom sidebar panel switcher
+  var switcher = document.getElementById('panelSwitcher');
+  var tabs = [
+    { id: 'blocks-container', label: 'Blocks' },
+    { id: 'styles-container', label: 'Style' },
+    { id: 'layers-container', label: 'Layers' },
+    { id: 'traits-container', label: 'Settings' },
+  ];
+  tabs.forEach(function(tab, idx) {
+    var btn = document.createElement('button');
+    btn.textContent = tab.label;
+    btn.className = 'gjs-pn-btn' + (idx === 0 ? ' gjs-pn-active' : '');
+    btn.addEventListener('click', function() {
+      // Toggle active button
+      switcher.querySelectorAll('.gjs-pn-btn').forEach(function(b) { b.classList.remove('gjs-pn-active'); });
+      btn.classList.add('gjs-pn-active');
+      // Toggle active panel
+      var panels = document.querySelectorAll('.panel__content > div');
+      panels.forEach(function(p) { p.classList.remove('active'); });
+      document.getElementById(tab.id).classList.add('active');
+    });
+    switcher.appendChild(btn);
   });
 
   // Track changes

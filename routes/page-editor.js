@@ -176,6 +176,31 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
     }
     #gjs { flex: 1; overflow: hidden; }
 
+    /* --- Right sidebar panel --- */
+    .panel__right {
+      width: 260px; min-width: 260px; background: #111;
+      border-left: 1px solid #222; display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .panel__switcher {
+      display: flex; border-bottom: 1px solid #222; background: #0d0d0d;
+    }
+    .panel__switcher .gjs-pn-btn {
+      flex: 1; text-align: center; padding: 10px 4px; font-size: .75rem;
+      font-weight: 600; cursor: pointer; color: #888; border: none;
+      background: transparent; transition: all .2s;
+    }
+    .panel__switcher .gjs-pn-btn:hover { color: #ccc; }
+    .panel__switcher .gjs-pn-btn.gjs-pn-active {
+      color: #6C3AED !important; background: rgba(108, 58, 237, .1) !important;
+      border-bottom: 2px solid #6C3AED;
+    }
+    .panel__content {
+      flex: 1; overflow-y: auto; padding: 8px;
+    }
+    .panel__content > div { display: none; }
+    .panel__content > div.active { display: block; }
+
     /* Override GrapesJS styles for dark theme */
     .gjs-one-bg { background: #111 !important; }
     .gjs-two-color { color: #ccc !important; }
@@ -286,6 +311,15 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
   <!-- GrapesJS Editor -->
   <div class="editor-wrap">
     <div id="gjs"></div>
+    <div class="panel__right">
+      <div class="panel__switcher" id="panelSwitcher"></div>
+      <div class="panel__content" id="panelContent">
+        <div id="blocks-container" class="active"></div>
+        <div id="styles-container"></div>
+        <div id="layers-container"></div>
+        <div id="traits-container"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Toast -->
