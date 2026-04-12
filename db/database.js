@@ -269,6 +269,23 @@ const initDatabase = async () => {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`).catch(() => {});
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0`).catch(() => {});
 
+    // Page content table (visual page editor)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS page_content (
+        id TEXT PRIMARY KEY,
+        page_slug TEXT NOT NULL,
+        content_html TEXT,
+        content_css TEXT,
+        content_components TEXT,
+        content_style TEXT,
+        status TEXT DEFAULT 'draft',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_by TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_page_content_slug_status ON page_content(page_slug, status)`).catch(() => {});
+
     // User settings table (preferences)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_settings (
@@ -1111,6 +1128,59 @@ const bugReportOps = {
 
 };
 
+const pageContentOps = {
+  async get(pageSlug, status) {
+    const result = await pool.query(
+      `SELECT * FROM page_content WHERE page_slug = $1 AND status = $2 ORDER BY updated_at DESC LIMIT 1`,
+      [pageSlug, status || 'published']
+    );
+    return result.rows[0] || null;
+  },
+  async save(pageSlug, data, userId) {
+    const id = uuidv4();
+    // Upsert draft for this page
+    const existing = await pool.query(
+      `SELECT id FROM page_content WHERE page_slug = $1 AND status = 'draft' LIMIT 1`,
+      [pageSlug]
+    );
+    if (existing.rows.length > 0) {
+      const result = await pool.query(
+        `UPDATE page_content SET content_html=$1, content_css=$2, content_components=$3, content_style=$4, updated_at=CURRENT_TIMESTAMP, updated_by=$5 WHERE id=$6 RETURNING *`,
+        [data.html, data.css, data.components, data.style, userId, existing.rows[0].id]
+      );
+      return result.rows[0];
+    }
+    const result = await pool.query(
+      `INSERT INTO page_content (id, page_slug, content_html, content_css, content_components, content_style, status, updated_by) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7) RETURNING *`,
+      [id, pageSlug, data.html, data.css, data.components, data.style, userId]
+    );
+    return result.rows[0];
+  },
+  async publish(pageSlug, userId) {
+    const draft = await this.get(pageSlug, 'draft');
+    if (!draft) return null;
+    // Mark any existing published row as archived
+    await pool.query(
+      `UPDATE page_content SET status='archived' WHERE page_slug=$1 AND status='published'`,
+      [pageSlug]
+    );
+    // Promote draft to published
+    const result = await pool.query(
+      `UPDATE page_content SET status='published', updated_at=CURRENT_TIMESTAMP, updated_by=$1 WHERE id=$2 RETURNING *`,
+      [userId, draft.id]
+    );
+    return result.rows[0];
+  },
+  async revert(pageSlug) {
+    // Delete draft, keep published
+    await pool.query(
+      `DELETE FROM page_content WHERE page_slug=$1 AND status='draft'`,
+      [pageSlug]
+    );
+    return true;
+  }
+};
+
 module.exports = {
   initDatabase,
   getDb,
@@ -1127,5 +1197,6 @@ module.exports = {
   bugReportOps,
   teamOps,
   adminOps,
-  featureUsageOps
+  featureUsageOps,
+  pageContentOps
 };

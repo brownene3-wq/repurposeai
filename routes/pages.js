@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { pageContentOps } = require('../db/database');
 
 const BRAND = { name: 'Splicora', tagline: 'Turn One Video Into Unlimited Content' };
 
@@ -249,7 +250,38 @@ section{padding:6rem 2rem}.section-inner{max-width:1200px;margin:0 auto}
 `;
 }
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
+  // If ?raw=1 is set, serve the base HTML for the page editor to consume
+  // Otherwise check if there's published content from the visual editor
+  if (!req.query.raw) {
+    try {
+      const published = await pageContentOps.get('homepage', 'published');
+      if (published && published.content_html) {
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${BRAND.name} - ${BRAND.tagline}</title>
+  <meta name="description" content="AI-powered video creation platform.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0a0a">
+  <style>${published.content_css || ''}</style>
+</head>
+<body>
+  ${published.content_html}
+</body>
+</html>`);
+      }
+    } catch (err) {
+      console.error('Page editor published content error:', err);
+      // Fall through to static HTML
+    }
+  }
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -44,6 +44,7 @@ function getAdminSidebar(activePage) {
     { href: '/admin/email', icon: '&#x1F4E7;', label: 'Email Inbox', key: 'email' },
     { href: '/admin/bugs', icon: '&#x1F41B;', label: 'Bug Reports', key: 'bugs' },
     { href: '/admin/usage', icon: '&#x1F4C8;', label: 'Usage', key: 'usage' },
+    { href: '/admin/editor?page=homepage', icon: '&#x1F3A8;', label: 'Page Editor', key: 'editor' },
   ];
   const navLinks = links.map(l => {
     const cls = l.key === activePage ? ' class="active"' : '';
