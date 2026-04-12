@@ -215,8 +215,9 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
     .gjs-pn-btn { color: #888 !important; border-radius: 6px !important; }
     .gjs-pn-btn.gjs-pn-active { color: #6C3AED !important; background: rgba(108, 58, 237, .15) !important; }
 
-    .gjs-block { background: #1a1a1a !important; border: 1px solid #333 !important; border-radius: 8px !important; color: #ccc !important; min-height: 70px !important; }
-    .gjs-block:hover { border-color: #6C3AED !important; }
+    .gjs-block { background: #1a1a1a !important; border: 1px solid #333 !important; border-radius: 8px !important; color: #ccc !important; min-height: 70px !important; cursor: pointer !important; }
+    .gjs-block:hover { border-color: #6C3AED !important; background: #222 !important; }
+    .gjs-block:active { transform: scale(0.97); }
     .gjs-block__media { color: #888 !important; }
 
     /* Layers / style manager */

@@ -300,6 +300,64 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
     switcher.appendChild(btn);
   });
 
+  // --- FIX 1: Click-to-add blocks ---
+  // GrapesJS only supports drag by default. Add click handler so clicking
+  // a block appends it to the canvas at the end.
+  editor.on('block:drag:stop', function() {}); // keep default drag working
+  var blocksEl = document.getElementById('blocks-container');
+  if (blocksEl) {
+    blocksEl.addEventListener('click', function(e) {
+      var blockEl = e.target.closest('.gjs-block');
+      if (!blockEl) return;
+      var blockId = blockEl.getAttribute('data-gjs-type') || '';
+      // Find the block by matching the element's title or label text
+      var label = blockEl.querySelector('.gjs-block-label');
+      var labelText = label ? label.textContent.trim() : '';
+      var allBlocks = editor.BlockManager.getAll();
+      var matchedBlock = null;
+      for (var i = 0; i < allBlocks.length; i++) {
+        var b = allBlocks.models[i];
+        if (b.get('label') === labelText) {
+          matchedBlock = b;
+          break;
+        }
+      }
+      if (matchedBlock) {
+        var content = matchedBlock.get('content');
+        editor.addComponents(content);
+        showToast('Added: ' + labelText, 'success');
+      }
+    });
+  }
+
+  // --- FIX 2: Expand layers tree on load ---
+  editor.on('load', function() {
+    // Open all layer folders so the tree is visible
+    setTimeout(function() {
+      var layerToggles = document.querySelectorAll('#layers-container .gjs-layer-caret');
+      layerToggles.forEach(function(toggle) { toggle.click(); });
+    }, 500);
+  });
+
+  // --- FIX 3: Settings empty state ---
+  var traitsC = document.getElementById('traits-container');
+  if (traitsC) {
+    var emptyMsg = document.createElement('div');
+    emptyMsg.id = 'traits-empty-msg';
+    emptyMsg.style.cssText = 'padding:24px 16px;text-align:center;color:#666;font-size:.85rem;';
+    emptyMsg.innerHTML = 'Click an element on the canvas to see its settings here.';
+    traitsC.appendChild(emptyMsg);
+    // Show/hide empty message based on selection
+    editor.on('component:selected', function() {
+      var msg = document.getElementById('traits-empty-msg');
+      if (msg) msg.style.display = 'none';
+    });
+    editor.on('component:deselected', function() {
+      var msg = document.getElementById('traits-empty-msg');
+      if (msg) msg.style.display = 'block';
+    });
+  }
+
   // Track changes
   editor.on('change:changesCount', function() {
     isDirty = true;
