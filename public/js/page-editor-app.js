@@ -234,14 +234,14 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
           id: 'image-block',
           label: 'Image',
           category: 'Content',
-          content: { type: 'image', style: { 'max-width': '100%', height: 'auto', 'border-radius': '12px' }, activeOnRender: 1 },
+          content: '<div data-gjs-type="image-placeholder" style="width:100%;min-height:200px;background:rgba(108,58,237,0.1);border:2px dashed rgba(108,58,237,0.4);border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:40px;text-align:center"><div style="color:rgba(108,58,237,0.7);font-size:14px"><div style="font-size:48px;margin-bottom:12px">&#128247;</div>Click to add image<br><span style="font-size:12px;opacity:0.7">or drag an image file here</span></div></div>',
           media: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
         },
         {
           id: 'video-block',
           label: 'Video',
           category: 'Content',
-          content: { type: 'video', src: '', style: { 'max-width': '100%', 'border-radius': '12px' } },
+          content: '<div data-gjs-type="video-placeholder" style="width:100%;min-height:200px;background:rgba(236,72,153,0.1);border:2px dashed rgba(236,72,153,0.4);border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:40px;text-align:center"><div style="color:rgba(236,72,153,0.7);font-size:14px"><div style="font-size:48px;margin-bottom:12px">&#127916;</div>Click to add video<br><span style="font-size:12px;opacity:0.7">YouTube, Vimeo, or direct .mp4 link</span></div></div>',
           media: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
         },
         {
@@ -325,15 +325,14 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
 
   // --- FIX 1: Click-to-add blocks ---
   // GrapesJS only supports drag by default. Add click handler so clicking
-  // a block appends it to the canvas at the end.
+  // a block inserts it near the selected component and scrolls to it.
   editor.on('block:drag:stop', function() {}); // keep default drag working
   var blocksEl = document.getElementById('blocks-container');
   if (blocksEl) {
     blocksEl.addEventListener('click', function(e) {
       var blockEl = e.target.closest('.gjs-block');
       if (!blockEl) return;
-      var blockId = blockEl.getAttribute('data-gjs-type') || '';
-      // Find the block by matching the element's title or label text
+      // Find the block by matching the element's label text
       var label = blockEl.querySelector('.gjs-block-label');
       var labelText = label ? label.textContent.trim() : '';
       var allBlocks = editor.BlockManager.getAll();
@@ -345,12 +344,101 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
           break;
         }
       }
-      if (matchedBlock) {
-        var content = matchedBlock.get('content');
-        editor.addComponents(content);
-        showToast('Added: ' + labelText, 'success');
+      if (!matchedBlock) return;
+
+      var content = matchedBlock.get('content');
+      var selected = editor.getSelected();
+      var added;
+
+      // Insert after selected component, or at end of wrapper if nothing selected
+      if (selected) {
+        var parent = selected.parent();
+        if (parent) {
+          var idx = parent.components().indexOf(selected);
+          added = parent.components().add(content, { at: idx + 1 });
+        } else {
+          added = editor.addComponents(content);
+        }
+      } else {
+        added = editor.addComponents(content);
       }
+
+      // Normalize added to a single component reference
+      var newComp = Array.isArray(added) ? added[0] : (added && added.models ? added.models[0] : added);
+
+      if (newComp) {
+        // Select the newly added component
+        editor.select(newComp);
+
+        // Scroll into view in the canvas
+        var el = newComp.getEl();
+        if (el) {
+          var frame = editor.Canvas.getFrameEl();
+          if (frame && frame.contentWindow) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        // For image placeholder blocks, prompt for image URL or open asset manager
+        var blockId = matchedBlock.get('id');
+        if (blockId === 'image-block') {
+          setTimeout(function() {
+            var imgUrl = prompt('Enter image URL (paste a link to your image):');
+            if (imgUrl && imgUrl.trim()) {
+              // Replace placeholder with actual image
+              var imgComp = newComp.parent().components().add(
+                { type: 'image', src: imgUrl.trim(), style: { 'max-width': '100%', height: 'auto', 'border-radius': '12px' } },
+                { at: newComp.parent().components().indexOf(newComp) }
+              );
+              newComp.remove();
+              var addedImg = Array.isArray(imgComp) ? imgComp[0] : (imgComp.models ? imgComp.models[0] : imgComp);
+              if (addedImg) editor.select(addedImg);
+              showToast('Image added!', 'success');
+            } else {
+              showToast('Image placeholder added — double-click it or use Settings to set URL', 'info');
+            }
+          }, 200);
+        }
+
+        // For video placeholder blocks, prompt for video URL
+        if (blockId === 'video-block') {
+          setTimeout(function() {
+            var videoUrl = prompt('Enter video URL (YouTube, Vimeo, or direct .mp4 link):');
+            if (videoUrl && videoUrl.trim()) {
+              videoUrl = videoUrl.trim();
+              var videoContent;
+              // Build appropriate embed based on URL type
+              if (videoUrl.indexOf('youtube.com') !== -1 || videoUrl.indexOf('youtu.be') !== -1) {
+                var ytId = extractYouTubeId(videoUrl);
+                videoContent = '<div style="position:relative;width:100%;padding-bottom:56.25%;border-radius:12px;overflow:hidden"><iframe src="https://www.youtube.com/embed/' + ytId + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none" allowfullscreen></iframe></div>';
+              } else if (videoUrl.indexOf('vimeo.com') !== -1) {
+                var vimeoMatch = videoUrl.match(/vimeo\.com\/(\d+)/);
+                var vimeoId = vimeoMatch ? vimeoMatch[1] : '';
+                videoContent = '<div style="position:relative;width:100%;padding-bottom:56.25%;border-radius:12px;overflow:hidden"><iframe src="https://player.vimeo.com/video/' + vimeoId + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none" allowfullscreen></iframe></div>';
+              } else {
+                videoContent = '<video src="' + videoUrl + '" controls style="max-width:100%;border-radius:12px"></video>';
+              }
+              // Replace placeholder with actual video embed
+              var vidComp = newComp.parent().components().add(videoContent, { at: newComp.parent().components().indexOf(newComp) });
+              newComp.remove();
+              var addedVid = Array.isArray(vidComp) ? vidComp[0] : (vidComp.models ? vidComp.models[0] : vidComp);
+              if (addedVid) editor.select(addedVid);
+              showToast('Video embedded!', 'success');
+            } else {
+              showToast('Video placeholder added — click it to set URL later', 'info');
+            }
+          }, 200);
+        }
+      }
+
+      showToast('Added: ' + labelText, 'success');
     });
+  }
+
+  // Helper to extract YouTube video ID from various URL formats
+  function extractYouTubeId(url) {
+    var match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return match ? match[1] : '';
   }
 
   // --- FIX 2: Expand layers tree on load ---
@@ -360,6 +448,52 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
       var layerToggles = document.querySelectorAll('#layers-container .gjs-layer-caret');
       layerToggles.forEach(function(toggle) { toggle.click(); });
     }, 500);
+  });
+
+  // --- FIX 2b: Handle double-click on placeholders inside the canvas ---
+  editor.on('component:dblclick', function(component) {
+    var el = component.getEl();
+    if (!el) return;
+    var attrType = el.getAttribute('data-gjs-type');
+    if (attrType === 'image-placeholder') {
+      var imgUrl = prompt('Enter image URL:');
+      if (imgUrl && imgUrl.trim()) {
+        var parent = component.parent();
+        var idx = parent.components().indexOf(component);
+        var imgComp = parent.components().add(
+          { type: 'image', src: imgUrl.trim(), style: { 'max-width': '100%', height: 'auto', 'border-radius': '12px' } },
+          { at: idx }
+        );
+        component.remove();
+        var addedImg = Array.isArray(imgComp) ? imgComp[0] : (imgComp.models ? imgComp.models[0] : imgComp);
+        if (addedImg) editor.select(addedImg);
+        showToast('Image set!', 'success');
+      }
+    }
+    if (attrType === 'video-placeholder') {
+      var videoUrl = prompt('Enter video URL (YouTube, Vimeo, or .mp4):');
+      if (videoUrl && videoUrl.trim()) {
+        videoUrl = videoUrl.trim();
+        var videoContent;
+        if (videoUrl.indexOf('youtube.com') !== -1 || videoUrl.indexOf('youtu.be') !== -1) {
+          var ytId = extractYouTubeId(videoUrl);
+          videoContent = '<div style="position:relative;width:100%;padding-bottom:56.25%;border-radius:12px;overflow:hidden"><iframe src="https://www.youtube.com/embed/' + ytId + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none" allowfullscreen></iframe></div>';
+        } else if (videoUrl.indexOf('vimeo.com') !== -1) {
+          var vimeoMatch = videoUrl.match(/vimeo\.com\/(\d+)/);
+          var vimeoId = vimeoMatch ? vimeoMatch[1] : '';
+          videoContent = '<div style="position:relative;width:100%;padding-bottom:56.25%;border-radius:12px;overflow:hidden"><iframe src="https://player.vimeo.com/video/' + vimeoId + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none" allowfullscreen></iframe></div>';
+        } else {
+          videoContent = '<video src="' + videoUrl + '" controls style="max-width:100%;border-radius:12px"></video>';
+        }
+        var parent = component.parent();
+        var idx = parent.components().indexOf(component);
+        var vidComp = parent.components().add(videoContent, { at: idx });
+        component.remove();
+        var addedVid = Array.isArray(vidComp) ? vidComp[0] : (vidComp.models ? vidComp.models[0] : vidComp);
+        if (addedVid) editor.select(addedVid);
+        showToast('Video embedded!', 'success');
+      }
+    }
   });
 
   // --- FIX 3: Settings empty state ---
