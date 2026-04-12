@@ -174,6 +174,7 @@ router.get('/editor', requireAuth, requireAdmin, async (req, res) => {
     .editor-wrap {
       display: flex; height: calc(100vh - 56px);
     }
+    #gjs { flex: 1; overflow: hidden; }
 
     /* Override GrapesJS styles for dark theme */
     .gjs-one-bg { background: #111 !important; }

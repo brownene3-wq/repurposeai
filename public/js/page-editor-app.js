@@ -155,7 +155,7 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
         { name: 'Mobile portrait', width: '375px', widthMedia: '480px' },
       ]
     },
-    panels: { defaults: [] },
+    // Use default GrapesJS panels for blocks/styles/layers sidebar
     canvas: { styles: [] },
     assetManager: {
       uploadName: 'file',
@@ -271,16 +271,10 @@ function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) 
 
   editor = grapesjs.init(editorConfig);
 
-  // Add panels: layers, blocks, style, traits
-  editor.Panels.addPanel({
-    id: 'panel-right',
-    el: '.gjs-pn-views-container',
-    buttons: [
-      { id: 'show-blocks', active: true, label: 'Blocks', command: 'show-blocks', togglable: false },
-      { id: 'show-style', label: 'Style', command: 'show-styles', togglable: false },
-      { id: 'show-layers', label: 'Layers', command: 'show-layers', togglable: false },
-      { id: 'show-traits', label: 'Settings', command: 'show-traits', togglable: false },
-    ],
+  // Open the blocks panel by default
+  editor.on('load', function() {
+    var bm = editor.Panels.getButton('views', 'open-blocks');
+    if (bm) bm.set('active', true);
   });
 
   // Track changes
