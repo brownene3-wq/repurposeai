@@ -129,17 +129,40 @@ function initEditor() {
       console.warn('Could not load saved content:', err);
     })
     .then(function() {
+      // If no saved content in DB, fetch the actual live homepage HTML
+      if (!initialHtml && !initialComponents) {
+        return fetch('/?raw=1')
+          .then(function(resp) { return resp.text(); })
+          .then(function(fullPage) {
+            // Extract the <body> content and <style> content from the live page
+            var bodyMatch = fullPage.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+            var styleMatches = fullPage.match(/<style[^>]*>([\s\S]*?)<\/style>/gi);
+            if (bodyMatch && bodyMatch[1]) {
+              // Remove <script> tags from body content (editor doesn't need JS)
+              initialHtml = bodyMatch[1].replace(/<script[\s\S]*?<\/script>/gi, '').trim();
+            }
+            if (styleMatches) {
+              initialCss = styleMatches.map(function(s) {
+                return s.replace(/<\/?style[^>]*>/gi, '');
+              }).join('\n');
+            }
+          })
+          .catch(function(err) {
+            console.warn('Could not fetch live homepage:', err);
+          });
+      }
+    })
+    .then(function() {
       buildEditor(initialHtml, initialCss, initialComponents, initialStyles);
     });
 }
 
 function buildEditor(initialHtml, initialCss, initialComponents, initialStyles) {
-  // If no saved content, start with a starter template
+  // If still no content after trying DB and live page, show minimal fallback
   if (!initialHtml && !initialComponents) {
     initialHtml = '<section style="padding:80px 20px;text-align:center;max-width:1200px;margin:0 auto">' +
-      '<h1 style="font-size:3rem;font-weight:800;margin-bottom:1rem;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Your Homepage</h1>' +
-      '<p style="font-size:1.1rem;color:#a0aec0;max-width:600px;margin:0 auto 2rem">Click any text to edit it. Drag blocks from the right panel to add new content. Use Save Draft to save your work, and Publish to make it live.</p>' +
-      '<a style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#6C3AED,#8B5CF6);color:#fff;border-radius:50px;text-decoration:none;font-weight:700;font-size:1rem">Get Started</a>' +
+      '<h1 style="font-size:2rem;font-weight:800;margin-bottom:1rem;color:#888">No page content found</h1>' +
+      '<p style="color:#666">Use the blocks panel on the right to start building your page.</p>' +
       '</section>';
   }
 
