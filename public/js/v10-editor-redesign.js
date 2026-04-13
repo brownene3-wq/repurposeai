@@ -633,10 +633,22 @@
 
   /* ===================== RUNNER ===================== */
 
+  var _applying = false;
+  var _scheduled = false;
+
   function applyAll(){
+    if (_applying) return;
+    _applying = true;
     try { injectCSS(); } catch(e){}
     try { patchMediaCorner(); } catch(e){}
     try { patchTimelineTracks(); } catch(e){}
+    _applying = false;
+  }
+
+  function scheduleApply(){
+    if (_scheduled || _applying) return;
+    _scheduled = true;
+    setTimeout(function(){ _scheduled = false; applyAll(); }, 250);
   }
 
   function boot(){
@@ -645,14 +657,14 @@
     var iv = setInterval(function(){
       applyAll();
       if (++tries > 60) clearInterval(iv);
-    }, 400);
-    var obs = new MutationObserver(function(){ applyAll(); });
+    }, 600);
+    var obs = new MutationObserver(scheduleApply);
     obs.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('loadedmetadata', function(e){
-      if (e.target && e.target.tagName === 'VIDEO') applyAll();
+      if (e.target && e.target.tagName === 'VIDEO') scheduleApply();
     }, true);
     document.addEventListener('play', function(e){
-      if (e.target && e.target.tagName === 'VIDEO') applyAll();
+      if (e.target && e.target.tagName === 'VIDEO') scheduleApply();
     }, true);
   }
 
