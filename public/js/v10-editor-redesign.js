@@ -86,7 +86,12 @@
     '.v10-preview-frame .v10-pf-content{position:relative;z-index:1;text-align:center;color:rgba(255,255,255,.85)}',
     '.v10-preview-frame .v10-pf-play{font-size:32px;margin-bottom:8px}',
     '.v10-preview-frame .v10-pf-name{font-size:13px;font-weight:600}',
-    '.v10-preview-frame .v10-pf-badge{font-size:10px;margin-top:4px;color:#a78bfa;font-weight:700;letter-spacing:.4px}'
+    '.v10-preview-frame .v10-pf-sub{font-size:11px;color:rgba(255,255,255,.55);margin-top:2px}',
+    '.v10-preview-frame .v10-pf-badge{font-size:10px;margin-top:6px;color:#a78bfa;font-weight:700;letter-spacing:.4px}',
+    '.v10-preview-frame .v10-pf-close{position:absolute;top:8px;right:10px;z-index:3;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff;width:28px;height:28px;border-radius:50%;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}',
+    '.v10-preview-frame .v10-pf-close:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25)}',
+    '.v10-preview-frame .v10-pf-replace{margin-top:14px;padding:7px 16px;border-radius:6px;border:1px solid rgba(139,92,246,.5);background:rgba(139,92,246,.12);color:#e2e0f0;font-size:11px;font-weight:600;cursor:pointer}',
+    '.v10-preview-frame .v10-pf-replace:hover{background:rgba(139,92,246,.25);border-color:#a78bfa}'
   ].join('\n');
 
   function injectCSS(){
@@ -116,9 +121,25 @@
       '<span class="v10-drop-fmt">MP4, MOV, MP3, WAV, PNG, JPG</span>'+
       '<button class="v10-drop-btn" type="button">+ Upload</button>';
 
+    function pickAllMediaInput(){
+      // Prefer an input that accepts ALL media types so the picker matches the drop zone's promise.
+      return document.getElementById('mlFileAll')
+          || document.getElementById('mediaFileInput')
+          || document.getElementById('fileInput')
+          || document.getElementById('mlFileVideo')
+          || document.querySelector('input[type="file"][accept*="video"][accept*="audio"]')
+          || document.querySelector('input[type="file"]');
+    }
+    function pickInputForFile(file){
+      var t = (file && file.type) || '';
+      if (/^video\//.test(t)) return document.getElementById('mlFileVideo') || pickAllMediaInput();
+      if (/^audio\//.test(t)) return document.getElementById('mlFileAudio') || pickAllMediaInput();
+      if (/^image\//.test(t)) return document.getElementById('mlFileImage') || pickAllMediaInput();
+      return pickAllMediaInput();
+    }
     function triggerUpload(){
-      var input = document.querySelector('input[type="file"][accept*="video"], input#videoUpload, input[type="file"]');
-      if (input){ input.click(); return; }
+      var input = pickAllMediaInput();
+      if (input){ try { input.click(); } catch(_){} return; }
       var up = Array.from(document.querySelectorAll('.media-library button, .media-library .ml-fb'))
         .find(function(b){ return /upload/i.test(b.textContent||''); });
       if (up) up.click();
@@ -134,7 +155,8 @@
       e.preventDefault(); d.classList.remove('over');
       var files = e.dataTransfer && e.dataTransfer.files;
       if (!files || !files.length) return;
-      var input = document.querySelector('input[type="file"]');
+      // Route by MIME type of the first dropped file so V9's per-type handlers run correctly.
+      var input = pickInputForFile(files[0]);
       if (input){
         try {
           var dt = new DataTransfer();
@@ -368,18 +390,23 @@
   function buildCompletedList(list){
     COMPLETED.forEach(function(v){
       var item = document.createElement('div');
-      item.className = 'v10-folder-item readonly';
+      item.className = 'v10-folder-item clickable';
       item.innerHTML =
         '<span class="v10-fi-ico" style="color:#f59e0b">\ud83c\udfac</span>'+
         '<div class="v10-fi-body">'+
           '<div class="v10-fi-name">'+escapeHtml(v.name)+'</div>'+
           '<span class="v10-fi-meta">'+escapeHtml(v.date+' \u00b7 '+v.size)+'</span>'+
-        '</div>';
+        '</div>'+
+        '<span class="v10-fi-hint">OPEN</span>';
+      item.addEventListener('click', function(e){
+        e.stopPropagation();
+        loadDraftIntoEditor({ name: v.name, date: v.date, size: v.size, kind: 'completed' });
+      });
       list.appendChild(item);
     });
     var note = document.createElement('div');
     note.className = 'v10-folder-note';
-    note.textContent = 'Read-only archive of finished projects';
+    note.textContent = 'Click to preview a finished project';
     list.appendChild(note);
   }
 
@@ -458,9 +485,21 @@
 
   /* ===================== DRAFT LOAD ===================== */
 
+  function closeDraftPreview(){
+    // Restore upload panel(s) we hid
+    document.querySelectorAll('[data-v10-hidden-for-draft="1"]').forEach(function(el){
+      el.style.display = '';
+      el.dataset.v10HiddenForDraft = '';
+    });
+    // Remove any preview frame we injected
+    document.querySelectorAll('[data-v10="preview-frame"]').forEach(function(n){ n.remove(); });
+  }
+
   function loadDraftIntoEditor(draft){
-    // Hide the upload panel (production DOM uses various selectors; we try them all)
+    // Hide the REAL V9 upload panel (the "Upload Your Video" card).
+    // Primary selector is #uploadZone on the live site; keep legacy fallbacks for resilience.
     var uploadPanelSelectors = [
+      '#uploadZone', '.upload-zone',
       '#uploadPanel', '.upload-panel', '.video-upload-panel', '.vu-panel',
       '.upload-container', '.preview-upload', '[class*="upload-panel"]'
     ];
@@ -473,8 +512,10 @@
       });
     });
 
-    // Find the preview container (central area)
+    // Find the preview container — prefer V9's real container.
     var previewWrap =
+      document.querySelector('.video-container') ||
+      document.getElementById('videoPreviewArea') ||
       document.querySelector('.preview-wrap') ||
       document.querySelector('#previewWrap') ||
       document.querySelector('.video-preview-wrap') ||
@@ -485,17 +526,41 @@
 
     if (previewWrap){
       // Remove any previous draft frame
-      previewWrap.querySelectorAll('[data-v10="preview-frame"]').forEach(function(n){ n.remove(); });
+      document.querySelectorAll('[data-v10="preview-frame"]').forEach(function(n){ n.remove(); });
       var frame = document.createElement('div');
       frame.className = 'v10-preview-frame';
       frame.setAttribute('data-v10','preview-frame');
+      var subtitleBits = [];
+      if (draft.date) subtitleBits.push(draft.date);
+      if (draft.size) subtitleBits.push(draft.size);
+      if (draft.dur)  subtitleBits.push(draft.dur);
+      var subtitle = subtitleBits.join(' \u00b7 ');
       frame.innerHTML =
+        '<button type="button" class="v10-pf-close" aria-label="Close preview">\u2715</button>'+
         '<div class="v10-pf-content">'+
           '<div class="v10-pf-play">\u25b6</div>'+
-          '<div class="v10-pf-name">'+escapeHtml(draft.name)+'.mp4</div>'+
-          '<div class="v10-pf-badge">DRAFT LOADED</div>'+
+          '<div class="v10-pf-name">'+escapeHtml(draft.name)+'</div>'+
+          (subtitle ? '<div class="v10-pf-sub">'+escapeHtml(subtitle)+'</div>' : '')+
+          '<div class="v10-pf-badge">'+escapeHtml((draft.kind||'DRAFT').toUpperCase()+' LOADED')+'</div>'+
+          '<button type="button" class="v10-pf-replace">Upload a video to edit</button>'+
         '</div>';
       previewWrap.appendChild(frame);
+
+      // Close button restores the upload panel
+      var closeBtn = frame.querySelector('.v10-pf-close');
+      if (closeBtn) closeBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        closeDraftPreview();
+        toast('Closed draft preview');
+      });
+      // "Upload a video" button restores panel AND opens the picker
+      var replaceBtn = frame.querySelector('.v10-pf-replace');
+      if (replaceBtn) replaceBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        closeDraftPreview();
+        var input = document.getElementById('mlFileAll') || document.getElementById('fileInput');
+        if (input) try { input.click(); } catch(_){}
+      });
     }
 
     // Also best-effort: poke real video loader if exposed
