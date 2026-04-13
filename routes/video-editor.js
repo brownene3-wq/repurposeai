@@ -5943,6 +5943,7 @@ setTimeout(function sidebarLayoutFix(){
 
 </script>
 <script src="/public/js/media-panel-fix.js?v=${Date.now()}"></script>
+<script src="/public/js/v10-editor-redesign.js?v=${Date.now()}"></script>
 </body>
 </html>`;
   res.send(html);
