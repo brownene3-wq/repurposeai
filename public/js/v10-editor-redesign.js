@@ -41,11 +41,22 @@
   ].join('\n');
 
   function injectCSS(){
-    if (document.getElementById('v10-editor-css')) return;
+    // Self-healing: the host app re-renders and removes our <style> tag.
+    // Every applyAll() tick we check the existing node is STILL connected
+    // with a live stylesheet; if not, we append a fresh one.
+    var existing = document.getElementById('v10-editor-css');
+    if (existing && existing.isConnected && existing.sheet){
+      return; // good, still live
+    }
+    // If there's a disconnected/stale node, remove any duplicates first
+    if (existing && existing.parentNode){
+      try { existing.parentNode.removeChild(existing); } catch(_){}
+    }
     var s = document.createElement('style');
     s.id = 'v10-editor-css';
-    s.textContent = CSS;
-    document.head.appendChild(s);
+    // appendChild(TextNode) is more reliable than textContent on some hosts
+    s.appendChild(document.createTextNode(CSS));
+    (document.head || document.documentElement).appendChild(s);
   }
 
   /* ===================== MEDIA CORNER ===================== */
