@@ -116,6 +116,7 @@ const captionPresetsRouter = require('./routes/caption-presets');
 const aiCaptionsRouter = require('./routes/ai-captions');
 const aiBrollRouter = require('./routes/ai-broll');
 const brandTemplatesRouter = require('./routes/brand-templates');
+const tiktokRouter = require('./routes/tiktok');
 
 // Team permission enforcement middleware
 // Restricts team members to only the features they have permission for
@@ -227,6 +228,8 @@ app.use('/ai-thumbnail', aiThumbnailRouter);
 app.use('/caption-presets', captionPresetsRouter);
 app.use('/ai-broll', aiBrollRouter);
 app.use('/brand-templates', brandTemplatesRouter);
+app.use('/tiktok', tiktokRouter);
+app.use('/auth/tiktok', tiktokRouter);
 app.use('/ai-captions', aiCaptionsRouter);
 
 // ========================
