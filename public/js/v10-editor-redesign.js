@@ -205,9 +205,7 @@
     var q = (term||'').trim().toLowerCase();
     var items = document.querySelectorAll('.media-library .ml-fitem');
     items.forEach(function(it){
-      if (it.style.display === 'none' && !q) return; // skip tab-hidden items
       var name = (it.getAttribute('data-search-name') || (it.textContent||'')).toLowerCase();
-      // Only filter within currently-visible items; set .v10-search-hit for filtered out
       if (!q){
         if (it.dataset.v10SearchHidden === '1'){
           it.dataset.v10SearchHidden = '';
@@ -224,6 +222,62 @@
           it.style.display = wasTabHidden2 ? 'none' : '';
         }
       }
+    });
+    // Also filter project folder items (Completed Videos / Drafts)
+    var fitems = document.querySelectorAll('.media-library .v10-folder-item');
+    fitems.forEach(function(fi){
+      var nmEl = fi.querySelector('.v10-fi-name');
+      var nm = (nmEl ? nmEl.textContent : fi.textContent || '').toLowerCase();
+      if (!q){
+        if (fi.dataset.v10SearchHidden === '1'){
+          fi.dataset.v10SearchHidden = '';
+          fi.style.display = fi.dataset.v10TabHidden === '1' ? 'none' : '';
+        }
+      } else {
+        if (nm.indexOf(q) === -1){
+          fi.dataset.v10SearchHidden = '1';
+          fi.style.display = 'none';
+        } else {
+          fi.dataset.v10SearchHidden = '';
+          fi.style.display = fi.dataset.v10TabHidden === '1' ? 'none' : '';
+        }
+      }
+    });
+    // Auto-expand folders that contain a search hit; hide empty folders entirely
+    document.querySelectorAll('.media-library [data-v10-folder]').forEach(function(wrap){
+      var header = wrap.querySelector('.ml-folder.v10-proj');
+      var list = wrap.querySelector('.v10-folder-list');
+      if (!header || !list) return;
+      var visible = Array.from(list.querySelectorAll('.v10-folder-item')).filter(function(e){
+        return e.style.display !== 'none';
+      }).length;
+      if (q){
+        if (visible === 0){
+          wrap.style.display = 'none';
+        } else {
+          wrap.style.display = '';
+          // Auto-expand while searching so hits are visible
+          header.classList.add('open');
+          list.classList.add('open');
+        }
+      } else {
+        wrap.style.display = '';
+      }
+    });
+    // Sync all search inputs so both bars show the same term
+    document.querySelectorAll('.media-library .v10-search input, .media-library .ml-search input').forEach(function(inp){
+      if (inp.value !== (term||'')) inp.value = (term||'');
+    });
+  }
+
+  function wireOrphanSearchInputs(){
+    // V9 has its own .ml-search input at the top of the panel. Wire it so it
+    // searches the same library (both folder items and recent items). The v10
+    // bar is already wired in ensureSearchBar().
+    document.querySelectorAll('.media-library .ml-search input').forEach(function(inp){
+      if (inp.__v10SearchWired) return;
+      inp.__v10SearchWired = true;
+      inp.addEventListener('input', function(){ applySearch(inp.value); });
     });
   }
 
@@ -242,9 +296,11 @@
     if (/\.(mp4|mov|webm|mkv|avi)\b/.test(txt)) return 'video';
     if (/\.(mp3|wav|aac|ogg|m4a|flac)\b/.test(txt)) return 'audio';
     if (/\.(png|jpe?g|gif|webp|svg|heic)\b/.test(txt)) return 'image';
-    if (/🎬|🎥|▶/i.test(el.innerHTML||'')) return 'video';
+    if (/🎬|🎥|🎞|🎞️|▶/i.test(el.innerHTML||'')) return 'video';
     if (/🎵|🎶|🔊/i.test(el.innerHTML||'')) return 'audio';
     if (/🖼|🏞/i.test(el.innerHTML||'')) return 'image';
+    // Folder items in Completed/Drafts are all video by design
+    if (el.classList && el.classList.contains('v10-folder-item')) return 'video';
     return 'other';
   }
 
@@ -259,6 +315,27 @@
         it.dataset.v10TabHidden = '1';
         it.style.display = 'none';
       }
+    });
+    // Also apply to project folder items (Completed Videos / Drafts)
+    var fitems = document.querySelectorAll('.media-library .v10-folder-item');
+    fitems.forEach(function(fi){
+      var t = classifyMediaItem(fi);
+      if (kind === 'all' || t === kind){
+        fi.dataset.v10TabHidden = '';
+        if (fi.dataset.v10SearchHidden !== '1') fi.style.display = '';
+      } else {
+        fi.dataset.v10TabHidden = '1';
+        fi.style.display = 'none';
+      }
+    });
+    // Hide whole folder if nothing inside it matches
+    document.querySelectorAll('.media-library [data-v10-folder]').forEach(function(wrap){
+      var list = wrap.querySelector('.v10-folder-list');
+      if (!list) return;
+      var visible = Array.from(list.querySelectorAll('.v10-folder-item')).filter(function(e){
+        return e.style.display !== 'none';
+      }).length;
+      wrap.style.display = visible === 0 ? 'none' : '';
     });
   }
 
@@ -594,6 +671,7 @@
     ensureDropZoneAboveTabs();
     renameStockTab();
     ensureSearchBar();
+    wireOrphanSearchInputs();
     removeImportFolderButtons();
     restyleMediaItems();
     rebuildFolders();
@@ -601,6 +679,9 @@
     var active = ml.querySelector('.ml-tab.active');
     var kind = (active && active.getAttribute('data-v10-kind')) || 'all';
     applyFilter(kind);
+    // Re-apply any existing search term (so newly-built folder items respect it)
+    var existingSearch = document.querySelector('.media-library .v10-search input, .media-library .ml-search input');
+    if (existingSearch && existingSearch.value) applySearch(existingSearch.value);
     return true;
   }
 
