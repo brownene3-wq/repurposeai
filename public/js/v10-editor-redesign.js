@@ -517,7 +517,7 @@
     var sections = ml.querySelectorAll('.ml-section');
     var header = null;
     sections.forEach(function(s){
-      if (/^\s*(folders|projects)\s*$/i.test(s.textContent)) header = s;
+      if (/^\s*(folders|projects|all files)\s*$/i.test(s.textContent)) header = s;
     });
     if (!header) return;
 
