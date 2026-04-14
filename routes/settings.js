@@ -18,6 +18,7 @@ async function getUserSettings(userId) {
 router.get('/', requireAuth, async (req, res) => {
   const user = req.user;
   const hasGoogle = !!user.google_id;
+  const hasTikTok = !!user.tiktok_id;
   let settings = {};
   try { settings = await getUserSettings(user.id); } catch (e) { console.error('Settings load error:', e); }
 
@@ -164,6 +165,23 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
               <button class="btn-save" onclick="changePassword()">Change Password</button>
             `}
+          </div>
+
+          <div class="settings-card">
+            <h2><span class="icon">&#x1F517;</span> Connected Accounts</h2>
+            <p class="desc">Link your social media accounts to publish content directly</p>
+            <div class="info-row" style="align-items:center">
+              <span class="label" style="display:flex;align-items:center;gap:8px">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.88-2.88 2.89 2.89 0 0 1 2.88-2.88c.28 0 .56.04.81.1v-3.5a6.37 6.37 0 0 0-.81-.05A6.34 6.34 0 0 0 3.15 15a6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.18 8.18 0 0 0 4.76 1.52V6.82a4.83 4.83 0 0 1-1-.13z" fill="currentColor"/></svg>
+                TikTok
+              </span>
+              ${hasTikTok ? `
+                <span class="value" style="color:#25F4EE;font-weight:600">Connected${user.tiktok_username ? ' as @' + user.tiktok_username : ''}</span>
+                <button class="btn-save" onclick="disconnectTikTok()" style="background:#ef4444;margin-left:12px;padding:6px 16px;font-size:.8rem">Disconnect</button>
+              ` : `
+                <a href="/tiktok/connect" class="btn-save" style="text-decoration:none;display:inline-block;padding:6px 16px;font-size:.8rem">Connect TikTok</a>
+              `}
+            </div>
           </div>
 
           <div class="settings-card">
@@ -522,6 +540,25 @@ router.get('/', requireAuth, async (req, res) => {
         // Update the moon/sun toggle button in the top-right
         var btn = document.querySelector('.theme-toggle');
         if (btn) btn.innerHTML = isLight ? '&#x2600;&#xFE0F;' : '&#x1F319;';
+      }
+
+      // Show success/error from URL params (TikTok callback etc)
+      (function() {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('success')) showToast(decodeURIComponent(params.get('success')), 'success');
+        if (params.get('error')) showToast(decodeURIComponent(params.get('error')), 'error');
+        if (params.get('success') || params.get('error')) history.replaceState({}, '', '/settings');
+      })();
+
+      async function disconnectTikTok() {
+        if (!confirm('Disconnect your TikTok account?')) return;
+        try {
+          var res = await fetch('/tiktok/disconnect', { method: 'POST' });
+          var data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed');
+          showToast('TikTok disconnected', 'success');
+          setTimeout(function() { location.reload(); }, 1000);
+        } catch (e) { showToast(e.message, 'error'); }
       }
 
       // Profile functions
