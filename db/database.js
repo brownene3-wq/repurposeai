@@ -33,6 +33,12 @@ const initDatabase = async () => {
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0`,
+      // TikTok integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_username TEXT`,
       // Content items table migrations
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS original_content TEXT`,
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS content_type TEXT`,
@@ -413,6 +419,27 @@ const userOps = {
 
   async trackLogin(userId) {
     await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, login_count = COALESCE(login_count, 0) + 1 WHERE id = $1', [userId]);
+  },
+
+  async updateTikTok(userId, { tiktokId, accessToken, refreshToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET tiktok_id = $1, tiktok_access_token = $2, tiktok_refresh_token = $3, tiktok_token_expires_at = $4, tiktok_username = $5 WHERE id = $6 RETURNING *`,
+      [tiktokId, accessToken, refreshToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+
+  async clearTikTok(userId) {
+    const result = await pool.query(
+      `UPDATE users SET tiktok_id = NULL, tiktok_access_token = NULL, tiktok_refresh_token = NULL, tiktok_token_expires_at = NULL, tiktok_username = NULL WHERE id = $1 RETURNING *`,
+      [userId]
+    );
+    return result.rows[0];
+  },
+
+  async getByTikTokId(tiktokId) {
+    const result = await pool.query(`SELECT * FROM users WHERE tiktok_id = $1`, [tiktokId]);
+    return result.rows[0];
   }
 };
 
