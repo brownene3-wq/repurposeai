@@ -7,7 +7,7 @@ const { getDb } = require('../db/database');
 
 const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID || '';
 const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET || '';
-const BASE_URL = process.env.BASE_URL || 'https://www.splicora.ai';
+const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 // ─── HTTP helpers (matching auth.js pattern) ──────────────────────
 
@@ -95,7 +95,7 @@ router.get('/connect', requireAuth, (req, res) => {
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
   // Store code verifier and user ID in secure httpOnly cookie for the callback
-  const stateData = Buffer.from(JSON.stringify({ userId: req.user.id, codeVerifier })).toString('base64url');
+  const stateData = Buffer.from(JSON.stringify({ userId: req.user.id, codeVerifier, redirect: req.query.redirect || '/distribute/connections' })).toString('base64url');
   res.cookie('twitter_auth_state', stateData, {
     httpOnly: true,
     secure: true,
@@ -108,7 +108,7 @@ router.get('/connect', requireAuth, (req, res) => {
     client_id: TWITTER_CLIENT_ID,
     redirect_uri: BASE_URL + '/auth/twitter/callback',
     scope: 'tweet.read tweet.write users.read offline.access',
-    state: Buffer.from(JSON.stringify({ userId: req.user.id })).toString('base64url'),
+    state: Buffer.from(JSON.stringify({ userId: req.user.id, redirect: req.query.redirect || '/distribute/connections' })).toString('base64url'),
     code_challenge: codeChallenge,
     code_challenge_method: 'S256'
   });
@@ -123,16 +123,17 @@ router.get('/callback', async (req, res) => {
 
     if (error || !code) {
       console.error('Twitter auth error:', error || 'no code');
-      return res.redirect('/settings?error=Twitter+connection+cancelled');
+      return res.redirect('/distribute/connections?error=Twitter+connection+cancelled');
     }
 
-    // Decode state to get userId
-    let userId;
+    // Decode state to get userId and redirect
+    let userId, redirectTo = '/distribute/connections';
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
       userId = stateData.userId;
+      redirectTo = stateData.redirect || '/distribute/connections';
     } catch (e) {
-      return res.redirect('/settings?error=Invalid+Twitter+auth+state');
+      return res.redirect('/distribute/connections?error=Invalid+Twitter+auth+state');
     }
 
     // Get PKCE code verifier from cookie
@@ -146,7 +147,7 @@ router.get('/callback', async (req, res) => {
       const authState = JSON.parse(Buffer.from(authStateCookie, 'base64url').toString());
       codeVerifier = authState.codeVerifier;
     } catch (e) {
-      return res.redirect('/settings?error=Invalid+Twitter+auth+cookie');
+      return res.redirect('/distribute/connections?error=Invalid+Twitter+auth+cookie');
     }
 
     // Exchange authorization code for access token
@@ -161,7 +162,7 @@ router.get('/callback', async (req, res) => {
 
     if (tokenData.error || !tokenData.access_token) {
       console.error('Twitter token exchange failed:', JSON.stringify(tokenData));
-      return res.redirect('/settings?error=Twitter+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
+      return res.redirect('/distribute/connections?error=Twitter+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
     }
 
     const { access_token, refresh_token, expires_in } = tokenData;
@@ -185,7 +186,7 @@ router.get('/callback', async (req, res) => {
 
     // Save Twitter tokens to user account
     const db = getDb();
-    const { userOps } = db;
+    const { userOps, connectedAccountOps } = db;
     await userOps.updateTwitter(userId, {
       twitterId: twitterId,
       accessToken: access_token,
@@ -194,14 +195,33 @@ router.get('/callback', async (req, res) => {
       username: username
     });
 
+    // Also save to connected_accounts for Repurpose feature
+    try {
+      const existing = await connectedAccountOps.getByUserAndPlatform(userId, 'twitter');
+      if (existing.length > 0) {
+        await connectedAccountOps.update(existing[0].id, {
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, platformUsername: username,
+          accountName: username || 'Twitter Account'
+        });
+      } else {
+        await connectedAccountOps.create(userId, {
+          platform: 'twitter', platformUserId: twitterId,
+          platformUsername: username, accountName: username || 'Twitter Account',
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, accountType: 'destination'
+        });
+      }
+    } catch (e) { console.error('Connected account save error:', e.message); }
+
     // Clear the auth state cookie
     res.clearCookie('twitter_auth_state');
 
-    res.redirect('/settings?success=Twitter+account+connected' + (username ? '+as+@' + encodeURIComponent(username) : ''));
+    res.redirect(redirectTo + (redirectTo.includes('?') ? '&' : '?') + 'success=Twitter+connected' + (username ? '+as+@' + encodeURIComponent(username) : ''));
 
   } catch (err) {
     console.error('Twitter OAuth error:', err.message || err);
-    res.redirect('/settings?error=Twitter+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
+    res.redirect('/distribute/connections?error=Twitter+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
   }
 });
 
