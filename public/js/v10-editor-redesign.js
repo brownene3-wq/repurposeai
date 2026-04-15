@@ -1,4 +1,4 @@
-/* v10-editor-redesign.js — Media Corner + Timeline redesign (V3 parity)
+/* v10-editor-redesign.js â Media Corner + Timeline redesign (V3 parity)
  * Loaded after v9-buttons-fix.js on /video-editor.
  *
  * Brings the live Splicora editor into visual + behavioural parity with the
@@ -110,6 +110,7 @@
     '.editor-sidebar .t-body.v10-hidden{display:none!important}',
     '.editor-sidebar .tool-panel.v10-hidden{display:none!important}',
     '.v10-rp-content{flex:1;overflow-y:auto;padding:14px}',
+    '.v10-rp-content.v10-rp-hidden{display:none!important}',
     '.v10-rp-section-title{font-size:10px;font-weight:800;color:#8886a0;letter-spacing:.6px;margin-bottom:8px;padding-top:6px}',
     '.v10-rp-section-title:first-child{padding-top:0}',
     '.v10-rp-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}',
@@ -119,7 +120,22 @@
     '.v10-rp-btn.active{background:rgba(139,92,246,.12);border-color:#8b5cf6}',
     '/* v10 right panel tab override */',
     '.cat-tabs-new .cat-btn.v10-on{background:linear-gradient(135deg,rgba(139,92,246,.15),rgba(236,72,153,.1))!important;color:#8b5cf6!important}',
-    '.cat-tabs-new .cat-btn.v10-off{background:transparent!important;color:#8886a0!important}'
+    '.cat-tabs-new .cat-btn.v10-off{background:transparent!important;color:#8886a0!important}',
+    '/* v10 audio cards */',
+    '.v10-audio-card{margin-bottom:10px;padding:10px;background:rgba(255,255,255,.03);border-radius:8px;border:1px solid #2a2545}',
+    '.v10-audio-card .v10-ac-head{display:flex;align-items:center;gap:6px;margin-bottom:8px}',
+    '.v10-audio-card .v10-ac-dot{width:8px;height:8px;border-radius:4px}',
+    '.v10-audio-card .v10-ac-head h5{font-size:11px;font-weight:600;color:#e2e0f0;margin:0}',
+    '.v10-audio-card .v10-ac-vol{display:flex;align-items:center;gap:6px;margin-bottom:6px}',
+    '.v10-audio-card .v10-ac-volbar{flex:1;height:5px;background:#0d0b1a;border-radius:3px;overflow:hidden}',
+    '.v10-audio-card .v10-ac-volfill{height:100%;border-radius:3px}',
+    '.v10-audio-card .v10-ac-voltxt{font-size:10px;color:#5c5a70}',
+    '.v10-audio-card .v10-ac-btns{display:flex;gap:4px}',
+    '.v10-audio-card .v10-ac-btns button{flex:1;padding:4px 6px;font-size:9px;background:rgba(255,255,255,.05);border:1px solid #2a2545;border-radius:4px;color:#5c5a70;cursor:pointer;transition:all .15s}',
+    '.v10-audio-card .v10-ac-btns button:hover{border-color:#8b5cf6;color:#8b5cf6}',
+    '/* v10 fx buttons */',
+    '.v10-fx-btn{display:block;width:100%;padding:10px 12px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid #2a2545;border-radius:8px;color:#e2e0f0;font-size:11px;font-weight:500;text-align:left;cursor:pointer;transition:all .15s}',
+    '.v10-fx-btn:hover{border-color:#8b5cf6;background:rgba(139,92,246,.06)}'
   ].join('\n');
 
   function injectCSS(){
@@ -324,9 +340,9 @@
     if (/\.(mp4|mov|webm|mkv|avi)\b/.test(txt)) return 'video';
     if (/\.(mp3|wav|aac|ogg|m4a|flac)\b/.test(txt)) return 'audio';
     if (/\.(png|jpe?g|gif|webp|svg|heic)\b/.test(txt)) return 'image';
-    if (/🎬|🎥|🎞|🎞️|▶/i.test(el.innerHTML||'')) return 'video';
-    if (/🎵|🎶|🔊/i.test(el.innerHTML||'')) return 'audio';
-    if (/🖼|🏞/i.test(el.innerHTML||'')) return 'image';
+    if (/ð¬|ð¥|ð|ðï¸|â¶/i.test(el.innerHTML||'')) return 'video';
+    if (/ðµ|ð¶|ð/i.test(el.innerHTML||'')) return 'audio';
+    if (/ð¼|ð/i.test(el.innerHTML||'')) return 'image';
     // Folder items in Completed/Drafts are all video by design
     if (el.classList && el.classList.contains('v10-folder-item')) return 'video';
     return 'other';
@@ -474,7 +490,7 @@
   }
 
   function parseMediaItemText(it){
-    // Expected format like "🎬VID2:21+ Timeline0314(1).mp4" — extract name + dur
+    // Expected format like "ð¬VID2:21+ Timeline0314(1).mp4" â extract name + dur
     var text = (it.textContent||'').replace(/\s+/g,' ').trim();
     // Try to pull out the filename (last thing with an extension)
     var nameMatch = text.match(/([A-Za-z0-9 _().\-]+\.(mp4|mov|webm|mp3|wav|png|jpg|jpeg|gif))/i);
@@ -688,7 +704,7 @@
       });
     });
 
-    // Find the preview container — prefer V9's real container.
+    // Find the preview container â prefer V9's real container.
     var previewWrap =
       document.querySelector('.video-container') ||
       document.getElementById('videoPreviewArea') ||
@@ -879,6 +895,77 @@
 
   /* ===================== RIGHT PANEL ===================== */
 
+  /* ========== RIGHT PANEL TAB CONTENT BUILDERS ========== */
+
+  function buildRPButtons(items){
+    return items.map(function(pair){
+      return '<button class="v10-rp-btn"><span class="v10-rp-ic">'+pair[0]+'</span>'+pair[1]+'</button>';
+    }).join('');
+  }
+
+  function buildEditContent(){
+    var div = document.createElement('div');
+    div.className = 'v10-rp-content';
+    div.setAttribute('data-v10', 'rp-edit');
+    div.innerHTML =
+      '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
+      '<div class="v10-rp-grid">'+
+        buildRPButtons([['\u2702\ufe0f','Trim'],['\ud83d\udd2a','Split'],['\u26a1','Speed'],['\u2b1c','Crop']])+
+      '</div>'+
+      '<div class="v10-rp-section-title">TRANSFORM</div>'+
+      '<div class="v10-rp-grid">'+
+        buildRPButtons([['\ud83d\udcd0','Resize'],['\ud83d\udd04','Rotate'],['\ud83e\ude9e','Flip'],['\ud83d\udccd','Position']])+
+      '</div>'+
+      '<div class="v10-rp-section-title">TIMING</div>'+
+      '<div class="v10-rp-grid">'+
+        buildRPButtons([['\u23ea','Reverse'],['\ud83d\udd01','Loop'],['\u2744\ufe0f','Freeze'],['\ud83c\udfaf','Keyframe']])+
+      '</div>';
+    wireRPToast(div);
+    return div;
+  }
+
+  function buildAudioContent(){
+    var div = document.createElement('div');
+    div.className = 'v10-rp-content';
+    div.setAttribute('data-v10', 'rp-audio');
+    var audioLayers = [
+      {name:'Voiceover.mp3', color:'#06b6d4', vol:78},
+      {name:'Background Music.mp3', color:'#3b82f6', vol:55},
+      {name:'SFX Whoosh.wav', color:'#8b5cf6', vol:90}
+    ];
+    var html = '<div class="v10-rp-section-title">AUDIO LAYERS</div>';
+    audioLayers.forEach(function(l){
+      html +=
+        '<div class="v10-audio-card">'+
+          '<div class="v10-ac-head"><div class="v10-ac-dot" style="background:'+l.color+'"></div><h5>'+l.name+'</h5></div>'+
+          '<div class="v10-ac-vol"><span>\ud83d\udd0a</span><div class="v10-ac-volbar"><div class="v10-ac-volfill" style="width:'+l.vol+'%;background:'+l.color+'"></div></div><span class="v10-ac-voltxt">'+l.vol+'%</span></div>'+
+          '<div class="v10-ac-btns">'+
+            '<button data-action="Solo: '+l.name+'">Solo</button>'+
+            '<button data-action="Mute: '+l.name+'">Mute</button>'+
+            '<button data-action="Fade: '+l.name+'">Fade</button>'+
+          '</div>'+
+        '</div>';
+    });
+    html +=
+      '<div class="v10-rp-section-title" style="margin-top:14px">AUDIO TOOLS</div>'+
+      '<div class="v10-rp-grid">'+
+        buildRPButtons([['\ud83c\udfa4','Voice Over'],['\ud83c\udfb5','Music'],['\ud83d\udd07','Denoise'],['\ud83d\udcc8','Normalize']])+
+      '</div>'+
+      '<div class="v10-rp-section-title">MIXING</div>'+
+      '<div class="v10-rp-grid">'+
+        buildRPButtons([['\ud83c\udfda\ufe0f','Fade In'],['\ud83c\udf05','Fade Out'],['\ud83d\udd17','Link Audio'],['\u2702\ufe0f','Split Audio']])+
+      '</div>';
+    div.innerHTML = html;
+    div.querySelectorAll('.v10-ac-btns button').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        toast(btn.getAttribute('data-action') || btn.textContent);
+      });
+    });
+    wireRPToast(div);
+    return div;
+  }
+
   function buildAITabContent(){
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
@@ -886,47 +973,88 @@
     div.innerHTML =
       '<div class="v10-rp-section-title">AI GENERATION</div>'+
       '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn active" onclick=""><span class="v10-rp-ic">\u2728</span>Enhance</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83d\udcac</span>Captions</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83c\udfa3</span>AI Hook</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83c\udfa8</span>Brand Kit</button>'+
+        '<button class="v10-rp-btn active"><span class="v10-rp-ic">\u2728</span>Enhance</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udcac</span>Captions</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa3</span>AI Hook</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa8</span>Brand Kit</button>'+
       '</div>'+
       '<div class="v10-rp-section-title">AI ANALYSIS</div>'+
       '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83d\udcdd</span>Transcript</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83c\udfac</span>B-Roll</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\u2702</span>Smart Cut</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83d\udd0d</span>Scene Detect</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udcdd</span>Transcript</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfac</span>B-Roll</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\u2702</span>Smart Cut</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udd0d</span>Scene Detect</button>'+
       '</div>'+
       '<div class="v10-rp-section-title">AI CREATIVE</div>'+
       '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83e\ude84</span>Style Transfer</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83d\uddbc</span>BG Remove</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83c\udfa4</span>AI Voice</button>'+
-        '<button class="v10-rp-btn" onclick=""><span class="v10-rp-ic">\ud83c\udf10</span>Translate</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83e\ude84</span>Style Transfer</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\uddbc</span>BG Remove</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa4</span>AI Voice</button>'+
+        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udf10</span>Translate</button>'+
       '</div>';
-    // Wire toast on each button
-    div.querySelectorAll('.v10-rp-btn').forEach(function(btn){
+    wireRPToast(div);
+    return div;
+  }
+
+  function buildFXContent(){
+    var div = document.createElement('div');
+    div.className = 'v10-rp-content';
+    div.setAttribute('data-v10', 'rp-fx');
+    var effects = ['Blur','Glow','Vignette','Film Grain','Sharpen','Chromatic Aberration','Pixelate','Noise'];
+    var html = '<div class="v10-rp-section-title">VISUAL EFFECTS</div>';
+    effects.forEach(function(f){
+      html += '<button class="v10-fx-btn" data-action="'+f+' applied">'+f+'</button>';
+    });
+    html +=
+      '<div class="v10-rp-section-title" style="margin-top:14px">COLOR</div>'+
+      '<div class="v10-rp-grid">'+
+        buildRPButtons([['\ud83c\udfa8','Color Grade'],['\u2600\ufe0f','Brightness'],['\ud83c\udf17','Contrast'],['\ud83d\udca7','Saturation']])+
+      '</div>';
+    div.innerHTML = html;
+    div.querySelectorAll('.v10-fx-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        toast(btn.getAttribute('data-action') || btn.textContent + ' applied');
+      });
+    });
+    wireRPToast(div);
+    return div;
+  }
+
+  function wireRPToast(container){
+    container.querySelectorAll('.v10-rp-btn').forEach(function(btn){
       btn.addEventListener('click', function(e){
         e.preventDefault();
         var name = btn.textContent.trim();
         toast(name + ' running...');
       });
     });
-    return div;
   }
 
-  function patchRightPanel(){
-    var es = document.querySelector('.editor-sidebar');
-    if (!es) return;
-    if (es.querySelector('[data-v10="rp-ai"]')) return; // already patched
+  /* ========== RIGHT PANEL TAB SWITCHING ========== */
 
-    // Switch to AI tab
+  var _rpActiveTab = 'AI'; // default
+
+  function identifyTab(btn){
+    var txt = (btn.textContent || '').trim().toUpperCase();
+    if (txt.indexOf('AUDIO') !== -1) return 'AUDIO';
+    if (txt.indexOf('EDIT') !== -1) return 'EDIT';
+    if (txt.indexOf('FX') !== -1) return 'FX';
+    if (txt.indexOf('AI') !== -1) return 'AI';
+    return '';
+  }
+
+  function switchRPTab(tabName, es){
+    if (!es) es = document.querySelector('.editor-sidebar');
+    if (!es) return;
+    _rpActiveTab = tabName;
+
+    // Update tab button highlights
     var catTabs = es.querySelector('.cat-tabs-new');
     if (catTabs){
       catTabs.querySelectorAll('.cat-btn').forEach(function(btn){
-        var txt = (btn.textContent||'').trim().toUpperCase();
-        if (txt.indexOf('AI') !== -1 && txt.indexOf('AUDIO') === -1){
+        var id = identifyTab(btn);
+        if (id === tabName){
           btn.classList.add('v10-on');
           btn.classList.remove('v10-off');
           btn.classList.add('on');
@@ -938,19 +1066,71 @@
       });
     }
 
-    // Hide the native t-body and all tool-panels
+    // Hide native panels
     var tBody = es.querySelector('.t-body');
     if (tBody) tBody.classList.add('v10-hidden');
     es.querySelectorAll('.tool-panel').forEach(function(p){ p.classList.add('v10-hidden'); });
 
-    // Insert AI content before exp-section
+    // Show/hide v10 content panels
+    var panels = es.querySelectorAll('.v10-rp-content');
+    panels.forEach(function(p){
+      var panelTab = (p.getAttribute('data-v10') || '').replace('rp-','').toUpperCase();
+      if (panelTab === tabName){
+        p.classList.remove('v10-rp-hidden');
+      } else {
+        p.classList.add('v10-rp-hidden');
+      }
+    });
+
+    // Show/hide export section based on tab (export only visible on AI)
     var expSec = es.querySelector('.exp-section');
-    var aiContent = buildAITabContent();
     if (expSec){
-      es.insertBefore(aiContent, expSec);
-    } else {
-      es.appendChild(aiContent);
+      expSec.style.display = (tabName === 'AI') ? '' : 'none';
     }
+  }
+
+  function patchRightPanel(){
+    var es = document.querySelector('.editor-sidebar');
+    if (!es) return;
+    if (es.getAttribute('data-v10-rp-patched') === '1') {
+      // Already patched â just ensure correct tab is active
+      switchRPTab(_rpActiveTab, es);
+      return;
+    }
+    es.setAttribute('data-v10-rp-patched', '1');
+
+    // Build all 4 tab content panels
+    var editContent = buildEditContent();
+    var audioContent = buildAudioContent();
+    var aiContent = buildAITabContent();
+    var fxContent = buildFXContent();
+
+    // Insert before exp-section
+    var expSec = es.querySelector('.exp-section');
+    var panels = [editContent, audioContent, aiContent, fxContent];
+    panels.forEach(function(panel){
+      if (expSec){
+        es.insertBefore(panel, expSec);
+      } else {
+        es.appendChild(panel);
+      }
+    });
+
+    // Hook into tab click events
+    var catTabs = es.querySelector('.cat-tabs-new');
+    if (catTabs){
+      catTabs.querySelectorAll('.cat-btn').forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          var tabName = identifyTab(btn);
+          if (tabName) switchRPTab(tabName, es);
+        }, true);
+      });
+    }
+
+    // Set initial state to AI
+    switchRPTab('AI', es);
   }
 
   /* ===================== RUNNER ===================== */
