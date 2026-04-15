@@ -87,7 +87,7 @@
     '.v10-filmstrip{position:absolute;inset:4px 4px;border-radius:5px;overflow:hidden;display:flex;box-shadow:0 2px 6px rgba(0,0,0,.35);border:1px solid rgba(124,58,237,.45);z-index:2;pointer-events:none}',
     '.v10-filmstrip::before,.v10-filmstrip::after{content:"";position:absolute;left:0;right:0;height:3px;background-image:repeating-linear-gradient(90deg,#0a0815 0 4px,transparent 4px 8px);z-index:3}',
     '.v10-filmstrip::before{top:0}.v10-filmstrip::after{bottom:0}',
-    '.v10-frame{flex:1;min-width:0;border-right:1px solid rgba(0,0,0,.35);position:relative;overflow:hidden}',
+    '.v10-frame{flex:1;min-width:0;border-right:1px solid rgba(0,0,0,.35);position:relative;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat}',
     '.v10-frame:last-child{border-right:none}',
     '.v10-fs-label{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.7);z-index:4;pointer-events:none}',
     '.v10-wf-dense{position:absolute;inset:4px 8px;display:flex;align-items:center;justify-content:center;gap:1px;z-index:2;pointer-events:none}',
@@ -833,10 +833,67 @@
     for (var i=0; i<24; i++){
       var pal = SCENE_PALETTE[i % SCENE_PALETTE.length];
       var angle = (i * 37) % 360;
-      frames += '<div class="v10-frame" style="background:linear-gradient('+angle+'deg,'+pal[0]+','+pal[1]+')"></div>';
+      frames += '<div class="v10-frame" data-frame-idx="'+i+'" style="background:linear-gradient('+angle+'deg,'+pal[0]+','+pal[1]+')"></div>';
     }
     fs.innerHTML = frames + '<span class="v10-fs-label">\ud83c\udfac '+escapeHtml(videoName||'Video')+'</span>';
     return fs;
+  }
+
+
+  /* Capture real video frames and apply them to the filmstrip */
+  var _captureInProgress = false;
+  var _lastCapturedSrc = '';
+
+  function captureVideoFrames(){
+    var video = document.querySelector('#videoPlayer, video');
+    if (!video || !video.currentSrc || video.readyState < 2 || video.duration <= 0) return;
+    if (_captureInProgress) return;
+    if (_lastCapturedSrc === video.currentSrc) return;
+    var filmstrip = document.querySelector('[data-v10="filmstrip"]');
+    if (!filmstrip) return;
+    var frameEls = filmstrip.querySelectorAll('.v10-frame');
+    if (!frameEls.length) return;
+
+    _captureInProgress = true;
+    var numFrames = frameEls.length;
+    var duration = video.duration;
+    var canvas = document.createElement('canvas');
+    canvas.width = 120;
+    canvas.height = 68;
+    var ctx = canvas.getContext('2d');
+    var savedTime = video.currentTime;
+    var frameIdx = 0;
+
+    function onSeeked(){
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        if (frameEls[frameIdx]){
+          frameEls[frameIdx].style.background = 'url(' + dataUrl + ') center/cover no-repeat';
+        }
+      } catch(e){ /* cross-origin — keep gradient */ }
+      frameIdx++;
+      if (frameIdx >= numFrames){
+        video.removeEventListener('seeked', onSeeked);
+        clearTimeout(safetyTimeout);
+        video.currentTime = savedTime;
+        _captureInProgress = false;
+        _lastCapturedSrc = video.currentSrc;
+        return;
+      }
+      var t = (frameIdx + 0.5) / numFrames * duration;
+      video.currentTime = t;
+    }
+
+    var safetyTimeout = setTimeout(function(){
+      video.removeEventListener('seeked', onSeeked);
+      video.currentTime = savedTime;
+      _captureInProgress = false;
+    }, 15000);
+
+    video.addEventListener('seeked', onSeeked);
+    var t = (0 + 0.5) / numFrames * duration;
+    video.currentTime = t;
   }
 
   function buildDenseWaveform(){
@@ -923,6 +980,7 @@
   function patchTimelineTracks(){
     if (!videoIsLoaded()){
       document.querySelectorAll('[data-v10="filmstrip"], [data-v10="wf"]').forEach(function(n){ n.remove(); });
+      _lastCapturedSrc = '';
       return;
     }
     var vTrack = document.querySelector('.mt-track-video') || document.querySelector('.fs-track.video-track');
@@ -1212,6 +1270,12 @@
     document.addEventListener('loadedmetadata', function(e){
       if (e.target && e.target.tagName === 'VIDEO') scheduleApply();
     }, true);
+    document.addEventListener('loadeddata', function(e){
+      if (e.target && e.target.tagName === 'VIDEO'){
+        scheduleApply();
+        setTimeout(captureVideoFrames, 500);
+      }
+    }, true);
     document.addEventListener('play', function(e){
       if (e.target && e.target.tagName === 'VIDEO') scheduleApply();
     }, true);
@@ -1223,5 +1287,6 @@
     setTimeout(boot, 50);
   }
 })();
+
 
 
