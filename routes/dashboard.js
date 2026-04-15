@@ -172,9 +172,23 @@ router.get('/', requireAuth, async (req, res) => {
           <label class="import-btn" style="cursor:pointer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Upload File
-            <input type="file" accept="video/*,audio/*" style="display:none" onchange="alert('File upload processing coming soon!')">
+            <input type="file" accept="video/*,audio/*" style="display:none" onchange="processUploadedFile(this.files[0])">
           </label>
         </div>
+      </div>
+
+      <!-- Loading State -->
+      <div class="loading-spinner" id="loading">
+        <div class="spinner"></div>
+        <p style="color:var(--text-muted)">AI is analyzing your video and generating content...</p>
+      </div>
+
+      <!-- Results (immediately after input so user sees them right away) -->
+      <div class="results-section" id="results" style="display:none;">
+        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
+        <div class="platform-tabs" id="platformTabs"></div>
+        <div id="platformContents"></div>
+        <p style="margin-top:1rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Want all 7 platforms? <a href="/repurpose" style="color:var(--primary);">Go to Repurpose</a></p>
       </div>
 
       <!-- AI Tools Grid -->
@@ -204,12 +218,29 @@ router.get('/', requireAuth, async (req, res) => {
           <a href="/video-editor" class="tool-card">
             <span class="tool-icon">&#x1F3AC;</span>
             <span class="tool-label">Video Editor</span>
+          </a>
+          <a href="/ai-captions" class="tool-card">
+            <span class="tool-icon">&#x1F4AC;</span>
+            <span class="tool-label">AI Captions</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/enhance-speech" class="tool-card">
             <span class="tool-icon">&#x1F399;&#xFE0F;</span>
             <span class="tool-label">Enhance Audio</span>
+          </a>
+          <a href="/ai-broll" class="tool-card">
+            <span class="tool-icon">&#x1F3A5;</span>
+            <span class="tool-label">AI B-Roll</span>
             <span class="tool-badge">New</span>
+          </a>
+          <a href="/brand-templates" class="tool-card">
+            <span class="tool-icon">&#x1F3A8;</span>
+            <span class="tool-label">Brand Templates</span>
+            <span class="tool-badge">New</span>
+          </a>
+          <a href="/ai-thumbnail" class="tool-card">
+            <span class="tool-icon">&#x1F5BC;&#xFE0F;</span>
+            <span class="tool-label">AI Thumbnails</span>
           </a>
           <a href="/brand-voice" class="tool-card">
             <span class="tool-icon">&#x1F3A4;</span>
@@ -224,20 +255,6 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">Analytics</span>
           </a>
         </div>
-      </div>
-
-      <!-- Loading State -->
-      <div class="loading-spinner" id="loading">
-        <div class="spinner"></div>
-        <p style="color:var(--text-muted)">AI is analyzing your video and generating content...</p>
-      </div>
-
-      <!-- Results -->
-      <div class="results-section" id="results" style="display:none;">
-        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
-        <div class="platform-tabs" id="platformTabs"></div>
-        <div id="platformContents"></div>
-        <p style="margin-top:1rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Want all 7 platforms? <a href="/repurpose" style="color:var(--primary);">Go to Repurpose</a></p>
       </div>
 
       <!-- Recent Projects -->
@@ -259,6 +276,86 @@ router.get('/', requireAuth, async (req, res) => {
 
   <script>
     ${getThemeScript()}
+
+    async function processUploadedFile(file) {
+      if (!file) return;
+      const maxSize = 200 * 1024 * 1024; // 200MB
+      if (file.size > maxSize) {
+        alert('File is too large. Maximum size is 200MB.');
+        return;
+      }
+
+      const btn = document.getElementById('processBtn');
+      btn.disabled = true; btn.innerHTML = 'Processing...';
+      document.getElementById('loading').classList.add('show');
+      document.getElementById('results').style.display = 'none';
+      document.getElementById('platformTabs').innerHTML = '';
+      document.getElementById('platformContents').innerHTML = '';
+      let platformCount = 0;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/repurpose/process-upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || 'Server error');
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const NL = String.fromCharCode(10);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const parts = buffer.split(NL);
+          buffer = parts.pop();
+
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(trimmed.slice(6));
+                if (data.error) { alert(data.error); break; }
+                if (data.status) {
+                  document.querySelector('.loading-spinner p').textContent = data.status;
+                  continue;
+                }
+                if (data.done) continue;
+                if (data.platform) {
+                  document.getElementById('loading').classList.remove('show');
+                  document.getElementById('results').style.display = 'block';
+                  document.getElementById('emptyState').style.display = 'none';
+                  if (platformCount === 0) {
+                    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                  addPlatformResult(data, platformCount === 0);
+                  platformCount++;
+                }
+              } catch(e) { console.log('Parse error:', e); }
+            }
+          }
+        }
+        if (platformCount === 0) {
+          alert('No content was generated. Try a different file.');
+        }
+      } catch (err) {
+        alert(err.message || 'Processing failed. Please try again.');
+      } finally {
+        btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose';
+        document.getElementById('loading').classList.remove('show');
+        document.querySelector('.loading-spinner p').textContent = 'AI is analyzing your video and generating content...';
+      }
+    }
 
     async function processVideo() {
       const url = document.getElementById('youtubeUrl').value.trim();
@@ -308,6 +405,9 @@ router.get('/', requireAuth, async (req, res) => {
                   document.getElementById('loading').classList.remove('show');
                   document.getElementById('results').style.display = 'block';
                   document.getElementById('emptyState').style.display = 'none';
+                  if (platformCount === 0) {
+                    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
                   addPlatformResult(data, platformCount === 0);
                   platformCount++;
                 }

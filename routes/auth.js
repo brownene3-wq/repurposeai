@@ -6,9 +6,9 @@ const https = require('https');
 const { userOps } = require('../db/database');
 const { sendPasswordResetEmail } = require('../utils/email');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'repurposeai-secret-key-change-in-production';
-const RESET_SECRET = process.env.JWT_SECRET ? process.env.JWT_SECRET + '-reset' : 'repurposeai-reset-secret';
-const BASE_URL = process.env.BASE_URL || 'https://repurposeai.ai';
+const JWT_SECRET = process.env.JWT_SECRET || 'splicora-secret-key-change-in-production';
+const RESET_SECRET = process.env.JWT_SECRET ? process.env.JWT_SECRET + '-reset' : 'splicora-reset-secret';
+const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 // OAuth Config
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -208,7 +208,7 @@ function authPage(type) {
 <head>
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
- <title>${isLogin ? 'Log In' : 'Sign Up'} - RepurposeAI</title>
+ <title>${isLogin ? 'Log In' : 'Sign Up'} - Splicora</title>
  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
  <style>${authStyles()}</style>
 </head>
@@ -217,9 +217,9 @@ function authPage(type) {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo">&#x26A1; RepurposeAI</a>
+ <a href="/" class="auth-logo">&#x26A1; Splicora</a>
  <h1>${isLogin ? 'Welcome Back' : 'Create Account'}</h1>
- <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start repurposing content in seconds'}</p>
+ <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start creating content in seconds'}</p>
  <div class="error-msg ${new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('error') ? 'show' : ''}" id="errorMsg"></div>
 
  <div class="oauth-buttons">
@@ -457,7 +457,7 @@ router.get('/forgot-password', (req, res) => {
 <head>
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
- <title>Forgot Password - RepurposeAI</title>
+ <title>Forgot Password - Splicora</title>
  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
  <style>${authStyles()}</style>
 </head>
@@ -466,7 +466,7 @@ router.get('/forgot-password', (req, res) => {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo">&#x26A1; RepurposeAI</a>
+ <a href="/" class="auth-logo">&#x26A1; Splicora</a>
  <h1>Reset Password</h1>
  <p class="subtitle">Enter your email and we'll send you a link to reset your password</p>
  <div class="error-msg" id="errorMsg"></div>
@@ -553,7 +553,7 @@ router.get('/reset-password', (req, res) => {
 <head>
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
- <title>Reset Password - RepurposeAI</title>
+ <title>Reset Password - Splicora</title>
  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
  <style>${authStyles()}</style>
 </head>
@@ -562,7 +562,7 @@ router.get('/reset-password', (req, res) => {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo">&#x26A1; RepurposeAI</a>
+ <a href="/" class="auth-logo">&#x26A1; Splicora</a>
  <h1>Create New Password</h1>
  <p class="subtitle">Enter your new password below</p>
  <div class="error-msg" id="errorMsg"></div>

@@ -4,7 +4,7 @@ const { optionalAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', optionalAuth, (req, res) => {
-  const html = `${getHeadHTML('Pricing - RepurposeAI')}
+  const html = `${getHeadHTML('Pricing - Splicora')}
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap');
       ${getBaseCSS()}
@@ -49,7 +49,7 @@ router.get('/', optionalAuth, (req, res) => {
   </head>
   <body>
     <nav class="nav-bar">
-      <a href="/" class="nav-logo">RepurposeAI</a>
+      <a href="/" class="nav-logo">Splicora</a>
       <div class="nav-links">
         <a href="/#features">Features</a>
         <a href="/pricing">Pricing</a>
@@ -71,7 +71,7 @@ router.get('/', optionalAuth, (req, res) => {
           <p class="desc">Get started and see the magic of AI-powered content repurposing.</p>
           <ul class="features-list">
             <li>3 Smart Shorts/month</li>
-            <li>5 content repurposes/month</li>
+            <li>5 content creations/month</li>
             <li>1 brand voice profile</li>
             <li>7-day content history</li>
             <li class="disabled">AI narrations</li>
@@ -87,7 +87,7 @@ router.get('/', optionalAuth, (req, res) => {
           <p class="desc">Everything you need to consistently create and repurpose content.</p>
           <ul class="features-list">
             <li>15 Smart Shorts/month</li>
-            <li>30 content repurposes/month</li>
+            <li>30 content creations/month</li>
             <li>3 brand voice profiles</li>
             <li>Quick Narrate (your API key)</li>
             <li>10 AI thumbnails/month</li>
@@ -106,7 +106,7 @@ router.get('/', optionalAuth, (req, res) => {
           <p class="desc">Maximum power for creators serious about scaling their content.</p>
           <ul class="features-list">
             <li>50 Smart Shorts/month</li>
-            <li>100 content repurposes/month</li>
+            <li>100 content creations/month</li>
             <li>10 brand voice profiles</li>
             <li>Unlimited AI narrations</li>
             <li>50 AI thumbnails/month</li>
@@ -126,7 +126,7 @@ router.get('/', optionalAuth, (req, res) => {
           <p class="desc">Scale with your whole team. Priority processing and all premium features.</p>
           <ul class="features-list">
             <li>200 Smart Shorts/month</li>
-            <li>500 content repurposes/month</li>
+            <li>500 content creations/month</li>
             <li>25 brand voice profiles</li>
             <li>Unlimited AI narrations</li>
             <li>150 AI thumbnails/month</li>

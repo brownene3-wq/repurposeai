@@ -6,6 +6,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
+const { featureUsageOps } = require('../db/database');
 
 // FFmpeg path detection
 let ffmpegPath = null;
@@ -321,6 +322,50 @@ ${pageStyles}
         <p>Remove background noise and enhance voice clarity with AI</p>
       </div>
 
+      <!-- Hero Visual Section -->
+      <div style="background:linear-gradient(135deg,rgba(139,92,246,0.15),rgba(236,72,153,0.1));border-radius:20px;padding:2.5rem;margin-bottom:2rem;position:relative;overflow:hidden;border:1px solid rgba(139,92,246,0.2)">
+        <div style="display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap">
+          <div style="background:linear-gradient(135deg,#8B5CF6,#EC4899);border-radius:16px;padding:2rem 3rem;position:relative;min-width:240px;text-align:center">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem">🎙️</div>
+            <div style="display:flex;align-items:center;gap:4px;justify-content:center;margin-top:8px">
+              <div style="width:3px;height:18px;background:rgba(255,255,255,0.6);border-radius:2px;animation:swave1 1s ease-in-out infinite"></div>
+              <div style="width:3px;height:28px;background:rgba(255,255,255,0.8);border-radius:2px;animation:swave2 1s ease-in-out infinite 0.1s"></div>
+              <div style="width:3px;height:22px;background:rgba(255,255,255,0.7);border-radius:2px;animation:swave1 1s ease-in-out infinite 0.2s"></div>
+              <div style="width:3px;height:32px;background:rgba(255,255,255,0.9);border-radius:2px;animation:swave2 1s ease-in-out infinite 0.3s"></div>
+              <div style="width:3px;height:18px;background:rgba(255,255,255,0.6);border-radius:2px;animation:swave1 1s ease-in-out infinite 0.4s"></div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="background:linear-gradient(135deg,#10B981,#34D399);border-radius:12px;padding:0.8rem 1.5rem;text-align:center;font-size:0.9rem;color:#fff">✨ Crystal Clear Audio</div>
+            <div style="background:linear-gradient(135deg,#F59E0B,#FBBF24);border-radius:12px;padding:0.8rem 1.5rem;text-align:center;font-size:0.9rem;color:#fff">🔇 Noise Removal</div>
+            <div style="background:linear-gradient(135deg,#6366F1,#818CF8);border-radius:12px;padding:0.8rem 1.5rem;text-align:center;font-size:0.9rem;color:#fff">🗣️ Voice Enhancement</div>
+          </div>
+        </div>
+        <style>
+          @keyframes swave1{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.5)}}
+          @keyframes swave2{0%,100%{transform:scaleY(1.5)}50%{transform:scaleY(0.7)}}
+        </style>
+      </div>
+
+      <!-- Link Input & Upload Options -->
+      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle)">
+        <div style="display:flex;gap:8px;margin-bottom:1rem;width:100%;max-width:600px;margin-left:auto;margin-right:auto">
+          <div style="position:relative;flex:1">
+            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
+            <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" readonly style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem;cursor:text" onclick="this.removeAttribute('readonly');this.focus()">
+          </div>
+          <button type="button" onclick="document.getElementById('heroLinkInput').removeAttribute('readonly');document.getElementById('heroLinkInput').focus()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <button type="button" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
+          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
+          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
+        </div>
+        <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem">You can upload videos up to 120 minutes long.</p>
+      </div>
+
+
+
       <div class="content-wrapper">
         <div class="upload-section" id="uploadSection" onclick="document.getElementById('fileInput').click()">
           <div class="upload-icon">📁</div>
@@ -499,7 +544,19 @@ ${pageStyles}
     });
 
     ${themeScript}
-  </script>
+  
+      // Rotating placeholder for hero link input
+      (function(){
+        var heroInput = document.getElementById('heroLinkInput');
+        if(!heroInput) return;
+        var placeholders = ['Drop a YouTube link','Drop a Rumble link','Drop a Zoom link','Drop a Twitch link'];
+        var idx = 0;
+        setInterval(function(){
+          idx = (idx + 1) % placeholders.length;
+          heroInput.placeholder = placeholders[idx];
+        }, 2500);
+      })();
+</script>
 </body>
 </html>`;
 
@@ -592,6 +649,7 @@ router.post('/process', requireAuth, upload.single('file'), async (req, res) => 
       originalUrl: originalUrl,
       enhancedUrl: enhancedUrl
     });
+    featureUsageOps.log(req.user.id, 'enhance_speech').catch(() => {});
   } catch (error) {
     console.error('Audio processing error:', error);
     res.status(500).json({ error: error.message || 'Audio processing failed' });

@@ -11,7 +11,7 @@ function getOAuth2Client() {
   const clientSecret = process.env.GMAIL_CLIENT_SECRET;
   const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
   if (!clientId || !clientSecret || !refreshToken) return null;
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://splicora.ai/admin/email/oauth-callback');
   oauth2Client.setCredentials({ refresh_token: refreshToken });
   return oauth2Client;
 }
@@ -69,7 +69,7 @@ function getAdminSidebar(activePage) {
   return `
     <aside class="sidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Repurpose<span>AI</span></a>
+        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Splicora</a>
         <div style="margin-top:8px;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:#6C3AED;font-weight:700;">Admin Panel</div>
       </div>
       ${navLinks}
@@ -153,7 +153,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
           <div class="setup-box">
             <div style="font-size:3rem;margin-bottom:1rem">&#x1F4E7;</div>
             <h2>Gmail Setup Required</h2>
-            <p>To view emails from <code>support@repurposeai.ai</code> in this panel, you need to set up 3 environment variables in Railway:</p>
+            <p>To view emails from <code>support@splicora.ai</code> in this panel, you need to set up 3 environment variables in Railway:</p>
             <ol>
               <li><code>GMAIL_CLIENT_ID</code> — from Google Cloud Console</li>
               <li><code>GMAIL_CLIENT_SECRET</code> — from Google Cloud Console</li>
@@ -178,7 +178,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
       <div class="main-content">
         <div class="page-header">
           <h1>Email Inbox</h1>
-          <p>Emails from support@repurposeai.ai</p>
+          <p>Emails from support@splicora.ai</p>
         </div>
 
         <div class="search-bar">
@@ -316,7 +316,7 @@ router.get('/', requireAuth, requireAdminOrEmailPerm, async (req, res) => {
           '<div class="meta">' +
             '<div>' +
               '<div class="from">From: ' + escapeHtml(email.from) + '</div>' +
-              '<div class="to-info">To: ' + escapeHtml(email.to || 'support@repurposeai.ai') + '</div>' +
+              '<div class="to-info">To: ' + escapeHtml(email.to || 'support@splicora.ai') + '</div>' +
             '</div>' +
             '<div class="date">' + formatLocalDateFull(email.date) + '</div>' +
           '</div>' +
@@ -431,7 +431,7 @@ router.get('/setup', requireAuth, async (req, res) => {
       <div class="main-content">
         <div class="page-header">
           <h1>Gmail Setup Guide</h1>
-          <p>Connect support@repurposeai.ai to your admin panel</p>
+          <p>Connect support@splicora.ai to your admin panel</p>
         </div>
 
         <div class="step">
@@ -448,7 +448,7 @@ router.get('/setup', requireAuth, async (req, res) => {
           <h3><span class="num">3</span> Create OAuth Credentials</h3>
           <p>Go to <strong>APIs &amp; Services &gt; Credentials &gt; Create Credentials &gt; OAuth Client ID</strong>.</p>
           <p>Application type: <code>Web application</code></p>
-          <p>Authorized redirect URI: <code>https://repurposeai.ai/admin/email/oauth-callback</code></p>
+          <p>Authorized redirect URI: <code>https://splicora.ai/admin/email/oauth-callback</code></p>
           <p>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong>.</p>
         </div>
 
@@ -463,7 +463,7 @@ router.get('/setup', requireAuth, async (req, res) => {
         <div class="step">
           <h3><span class="num">5</span> Authorize Gmail Access</h3>
           ${hasCredentials ? `
-            <p>Click the button below to authorize RepurposeAI to read and send emails from your Gmail account.</p>
+            <p>Click the button below to authorize Splicora to read and send emails from your Gmail account.</p>
             <a href="/admin/email/oauth-start" class="btn-sm btn-primary-sm" style="display:inline-block;padding:.7rem 1.5rem;text-decoration:none;margin-top:.5rem">Authorize Gmail &#x2192;</a>
           ` : `
             <p>Complete step 4 first, then come back here to authorize.</p>
@@ -495,7 +495,7 @@ router.get('/oauth-start', requireAuth, async (req, res) => {
   const clientSecret = process.env.GMAIL_CLIENT_SECRET;
   if (!clientId || !clientSecret) return res.redirect('/admin/email/setup');
 
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://splicora.ai/admin/email/oauth-callback');
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
@@ -518,7 +518,7 @@ router.get('/oauth-callback', requireAuth, async (req, res) => {
   try {
     const clientId = process.env.GMAIL_CLIENT_ID;
     const clientSecret = process.env.GMAIL_CLIENT_SECRET;
-    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://repurposeai.ai/admin/email/oauth-callback');
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, 'https://splicora.ai/admin/email/oauth-callback');
     const { tokens } = await oauth2Client.getToken(code);
 
     // Show the refresh token so user can save it as env var
@@ -740,7 +740,7 @@ router.post('/api/reply', requireAuth, requireAdminOrEmailPerm, async (req, res)
 
     // Build raw email
     const rawEmail = [
-      `From: support@repurposeai.ai`,
+      `From: support@splicora.ai`,
       `To: ${toEmail}`,
       `Subject: ${replySubject}`,
       `In-Reply-To: ${messageId}`,

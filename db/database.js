@@ -33,6 +33,48 @@ const initDatabase = async () => {
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0`,
+      // TikTok integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_username TEXT`,
+      // Twitter/X integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_username TEXT`,
+      // Instagram integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username TEXT`,
+      // LinkedIn integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_name TEXT`,
+      // Pinterest integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_username TEXT`,
+      // YouTube integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_channel_name TEXT`,
+      // Facebook integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_user_name TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_page_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_page_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_page_name TEXT`,
       // Content items table migrations
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS original_content TEXT`,
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS content_type TEXT`,
@@ -187,6 +229,11 @@ const initDatabase = async () => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'`);
     } catch (e) { /* already exists */ }
 
+    // Page editor access permission (only specific users can edit pages)
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_edit_pages BOOLEAN DEFAULT FALSE`);
+    } catch (e) { /* already exists */ }
+
     // Blog posts table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS blog_posts (
@@ -269,6 +316,23 @@ const initDatabase = async () => {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`).catch(() => {});
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0`).catch(() => {});
 
+    // Page content table (visual page editor)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS page_content (
+        id TEXT PRIMARY KEY,
+        page_slug TEXT NOT NULL,
+        content_html TEXT,
+        content_css TEXT,
+        content_components TEXT,
+        content_style TEXT,
+        status TEXT DEFAULT 'draft',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_by TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_page_content_slug_status ON page_content(page_slug, status)`).catch(() => {});
+
     // User settings table (preferences)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_settings (
@@ -298,6 +362,20 @@ const initDatabase = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Feature usage tracking for admin analytics
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS feature_usage (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        metadata TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_user ON feature_usage(user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_feature ON feature_usage(feature)`);
 
 console.log('Database initialized successfully');
   } catch (error) {
@@ -377,6 +455,99 @@ const userOps = {
 
   async trackLogin(userId) {
     await pool.query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, login_count = COALESCE(login_count, 0) + 1 WHERE id = $1', [userId]);
+  },
+
+  async updateTikTok(userId, { tiktokId, accessToken, refreshToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET tiktok_id = $1, tiktok_access_token = $2, tiktok_refresh_token = $3, tiktok_token_expires_at = $4, tiktok_username = $5 WHERE id = $6 RETURNING *`,
+      [tiktokId, accessToken, refreshToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+
+  async clearTikTok(userId) {
+    const result = await pool.query(
+      `UPDATE users SET tiktok_id = NULL, tiktok_access_token = NULL, tiktok_refresh_token = NULL, tiktok_token_expires_at = NULL, tiktok_username = NULL WHERE id = $1 RETURNING *`,
+      [userId]
+    );
+    return result.rows[0];
+  },
+
+  async getByTikTokId(tiktokId) {
+    const result = await pool.query(`SELECT * FROM users WHERE tiktok_id = $1`, [tiktokId]);
+    return result.rows[0];
+  },
+
+  // Twitter/X
+  async updateTwitter(userId, { twitterId, accessToken, refreshToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET twitter_id = $1, twitter_access_token = $2, twitter_refresh_token = $3, twitter_token_expires_at = $4, twitter_username = $5 WHERE id = $6 RETURNING *`,
+      [twitterId, accessToken, refreshToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+  async clearTwitter(userId) {
+    return (await pool.query(`UPDATE users SET twitter_id = NULL, twitter_access_token = NULL, twitter_refresh_token = NULL, twitter_token_expires_at = NULL, twitter_username = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // Instagram
+  async updateInstagram(userId, { instagramId, accessToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET instagram_id = $1, instagram_access_token = $2, instagram_token_expires_at = $3, instagram_username = $4 WHERE id = $5 RETURNING *`,
+      [instagramId, accessToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+  async clearInstagram(userId) {
+    return (await pool.query(`UPDATE users SET instagram_id = NULL, instagram_access_token = NULL, instagram_token_expires_at = NULL, instagram_username = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // LinkedIn
+  async updateLinkedIn(userId, { linkedinId, accessToken, refreshToken, expiresAt, name }) {
+    const result = await pool.query(
+      `UPDATE users SET linkedin_id = $1, linkedin_access_token = $2, linkedin_refresh_token = $3, linkedin_token_expires_at = $4, linkedin_name = $5 WHERE id = $6 RETURNING *`,
+      [linkedinId, accessToken, refreshToken, expiresAt, name, userId]
+    );
+    return result.rows[0];
+  },
+  async clearLinkedIn(userId) {
+    return (await pool.query(`UPDATE users SET linkedin_id = NULL, linkedin_access_token = NULL, linkedin_refresh_token = NULL, linkedin_token_expires_at = NULL, linkedin_name = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // Pinterest
+  async updatePinterest(userId, { pinterestId, accessToken, refreshToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET pinterest_id = $1, pinterest_access_token = $2, pinterest_refresh_token = $3, pinterest_token_expires_at = $4, pinterest_username = $5 WHERE id = $6 RETURNING *`,
+      [pinterestId, accessToken, refreshToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+  async clearPinterest(userId) {
+    return (await pool.query(`UPDATE users SET pinterest_id = NULL, pinterest_access_token = NULL, pinterest_refresh_token = NULL, pinterest_token_expires_at = NULL, pinterest_username = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // YouTube
+  async updateYouTube(userId, { youtubeId, accessToken, refreshToken, expiresAt, channelName }) {
+    const result = await pool.query(
+      `UPDATE users SET youtube_id = $1, youtube_access_token = $2, youtube_refresh_token = $3, youtube_token_expires_at = $4, youtube_channel_name = $5 WHERE id = $6 RETURNING *`,
+      [youtubeId, accessToken, refreshToken, expiresAt, channelName, userId]
+    );
+    return result.rows[0];
+  },
+  async clearYouTube(userId) {
+    return (await pool.query(`UPDATE users SET youtube_id = NULL, youtube_access_token = NULL, youtube_refresh_token = NULL, youtube_token_expires_at = NULL, youtube_channel_name = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // Facebook
+  async updateFacebook(userId, { facebookId, accessToken, userName, pageId, pageToken, pageName }) {
+    const result = await pool.query(
+      `UPDATE users SET facebook_id = $1, facebook_access_token = $2, facebook_user_name = $3, facebook_page_id = $4, facebook_page_token = $5, facebook_page_name = $6 WHERE id = $7 RETURNING *`,
+      [facebookId, accessToken, userName, pageId, pageToken, pageName, userId]
+    );
+    return result.rows[0];
+  },
+  async clearFacebook(userId) {
+    return (await pool.query(`UPDATE users SET facebook_id = NULL, facebook_access_token = NULL, facebook_user_name = NULL, facebook_page_id = NULL, facebook_page_token = NULL, facebook_page_name = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
   }
 };
 
@@ -928,43 +1099,77 @@ const adminOps = {
     );
     return result.rows[0];
   },
+  async setPageEditorAccess(userId, canEdit) {
+    const result = await pool.query(
+      `UPDATE users SET can_edit_pages = $2 WHERE id = $1 RETURNING id, email, name, role, can_edit_pages`,
+      [userId, canEdit]
+    );
+    return result.rows[0];
+  },
+  async getPageEditorUsers() {
+    const result = await pool.query(
+      `SELECT id, email, name, role, can_edit_pages FROM users WHERE role = 'admin' ORDER BY created_at ASC`
+    );
+    return result.rows;
+  },
   async getStats() {
-    const [users, content, outputs, shorts] = await Promise.all([
+    const [users, content, outputs, shorts, featureTotals] = await Promise.all([
       pool.query(`SELECT COUNT(*) FROM users`),
       pool.query(`SELECT COUNT(*) FROM content_items`),
       pool.query(`SELECT COUNT(*) FROM generated_outputs`),
-      pool.query(`SELECT COUNT(*) FROM smart_shorts`)
+      pool.query(`SELECT COUNT(*) FROM smart_shorts`),
+      pool.query(`SELECT feature, COUNT(*) as count FROM feature_usage GROUP BY feature`)
     ]);
     const recentUsers = await pool.query(
       `SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'`
     );
+    const featureMap = {};
+    featureTotals.rows.forEach(r => { featureMap[r.feature] = parseInt(r.count, 10); });
     return {
       totalUsers: parseInt(users.rows[0].count, 10),
       totalContent: parseInt(content.rows[0].count, 10),
       totalOutputs: parseInt(outputs.rows[0].count, 10),
       totalShorts: parseInt(shorts.rows[0].count, 10),
-      newUsersThisMonth: parseInt(recentUsers.rows[0].count, 10)
+      newUsersThisMonth: parseInt(recentUsers.rows[0].count, 10),
+      featureBreakdown: featureMap
     };
   }
 ,
 
   async getUserUsageStats() {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         u.id, u.name, u.email, u.plan, u.stripe_customer_id, u.created_at, u.last_login_at, u.login_count,
         COALESCE(go_count.total, 0) as repurpose_count,
         COALESCE(ci_count.total, 0) as content_items_count,
         COALESCE(ss_count.total, 0) as smart_shorts_count,
         COALESCE(bv_count.total, 0) as brand_voices_count,
         COALESCE(cal_count.total, 0) as calendar_entries_count,
-        COALESCE(go_recent.last_used, u.created_at) as last_activity
+        COALESCE(fu_captions.total, 0) as ai_captions_count,
+        COALESCE(fu_hooks.total, 0) as ai_hooks_count,
+        COALESCE(fu_broll.total, 0) as ai_broll_count,
+        COALESCE(fu_thumbnails.total, 0) as ai_thumbnails_count,
+        COALESCE(fu_reframe.total, 0) as ai_reframe_count,
+        COALESCE(fu_editor.total, 0) as video_editor_count,
+        COALESCE(fu_styles.total, 0) as caption_styles_count,
+        COALESCE(fu_enhance.total, 0) as enhance_speech_count,
+        COALESCE(GREATEST(go_recent.last_used, fu_recent.last_used), u.created_at) as last_activity
       FROM users u
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM generated_outputs GROUP BY user_id) go_count ON u.id = go_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM content_items GROUP BY user_id) ci_count ON u.id = ci_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM smart_shorts GROUP BY user_id) ss_count ON u.id = ss_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM brand_voices GROUP BY user_id) bv_count ON u.id = bv_count.user_id
       LEFT JOIN (SELECT user_id, COUNT(*) as total FROM calendar_entries GROUP BY user_id) cal_count ON u.id = cal_count.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_captions' GROUP BY user_id) fu_captions ON u.id = fu_captions.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_hooks' GROUP BY user_id) fu_hooks ON u.id = fu_hooks.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_broll' GROUP BY user_id) fu_broll ON u.id = fu_broll.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_thumbnails' GROUP BY user_id) fu_thumbnails ON u.id = fu_thumbnails.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'ai_reframe' GROUP BY user_id) fu_reframe ON u.id = fu_reframe.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'video_editor' GROUP BY user_id) fu_editor ON u.id = fu_editor.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'caption_styles' GROUP BY user_id) fu_styles ON u.id = fu_styles.user_id
+      LEFT JOIN (SELECT user_id, COUNT(*) as total FROM feature_usage WHERE feature = 'enhance_speech' GROUP BY user_id) fu_enhance ON u.id = fu_enhance.user_id
       LEFT JOIN (SELECT user_id, MAX(created_at) as last_used FROM generated_outputs GROUP BY user_id) go_recent ON u.id = go_recent.user_id
+      LEFT JOIN (SELECT user_id, MAX(created_at) as last_used FROM feature_usage GROUP BY user_id) fu_recent ON u.id = fu_recent.user_id
       ORDER BY u.created_at DESC
     `);
     return result.rows;
@@ -977,19 +1182,54 @@ const adminOps = {
     return result.rows;
   },
 
+  async getFeatureBreakdown() {
+    const result = await pool.query(`
+      SELECT feature, COUNT(*) as count FROM feature_usage GROUP BY feature ORDER BY count DESC
+    `);
+    return result.rows;
+  },
+
   async getUsageSummary() {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         (SELECT COUNT(*) FROM users) as total_users,
         (SELECT COUNT(*) FROM generated_outputs) as total_outputs,
         (SELECT COUNT(*) FROM content_items) as total_content,
         (SELECT COUNT(*) FROM smart_shorts) as total_shorts,
         (SELECT COUNT(*) FROM users WHERE last_login_at > NOW() - INTERVAL '7 days') as active_7d,
         (SELECT COUNT(*) FROM users WHERE last_login_at > NOW() - INTERVAL '30 days') as active_30d,
-        (SELECT COUNT(*) FROM generated_outputs WHERE created_at > NOW() - INTERVAL '30 days') as outputs_30d
+        (SELECT COUNT(*) FROM generated_outputs WHERE created_at > NOW() - INTERVAL '30 days') as outputs_30d,
+        (SELECT COUNT(*) FROM feature_usage) as total_feature_uses,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_captions') as total_captions,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_hooks') as total_hooks,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_broll') as total_broll,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_thumbnails') as total_thumbnails,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'ai_reframe') as total_reframe,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'video_editor') as total_editor,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'caption_styles') as total_caption_styles,
+        (SELECT COUNT(*) FROM feature_usage WHERE feature = 'enhance_speech') as total_enhance
     `);
     return result.rows[0];
   }};
+
+// Feature usage tracking operations
+const featureUsageOps = {
+  async log(userId, feature, metadata = '') {
+    const id = uuidv4();
+    await pool.query(
+      `INSERT INTO feature_usage (id, user_id, feature, metadata) VALUES ($1, $2, $3, $4)`,
+      [id, userId, feature, metadata]
+    );
+    return id;
+  },
+  async getByUser(userId) {
+    const result = await pool.query(
+      `SELECT feature, COUNT(*) as count FROM feature_usage WHERE user_id = $1 GROUP BY feature`,
+      [userId]
+    );
+    return result.rows;
+  }
+};
 
 // Bug report operations
 const bugReportOps = {
@@ -1041,6 +1281,59 @@ const bugReportOps = {
 
 };
 
+const pageContentOps = {
+  async get(pageSlug, status) {
+    const result = await pool.query(
+      `SELECT * FROM page_content WHERE page_slug = $1 AND status = $2 ORDER BY updated_at DESC LIMIT 1`,
+      [pageSlug, status || 'published']
+    );
+    return result.rows[0] || null;
+  },
+  async save(pageSlug, data, userId) {
+    const id = uuidv4();
+    // Upsert draft for this page
+    const existing = await pool.query(
+      `SELECT id FROM page_content WHERE page_slug = $1 AND status = 'draft' LIMIT 1`,
+      [pageSlug]
+    );
+    if (existing.rows.length > 0) {
+      const result = await pool.query(
+        `UPDATE page_content SET content_html=$1, content_css=$2, content_components=$3, content_style=$4, updated_at=CURRENT_TIMESTAMP, updated_by=$5 WHERE id=$6 RETURNING *`,
+        [data.html, data.css, data.components, data.style, userId, existing.rows[0].id]
+      );
+      return result.rows[0];
+    }
+    const result = await pool.query(
+      `INSERT INTO page_content (id, page_slug, content_html, content_css, content_components, content_style, status, updated_by) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7) RETURNING *`,
+      [id, pageSlug, data.html, data.css, data.components, data.style, userId]
+    );
+    return result.rows[0];
+  },
+  async publish(pageSlug, userId) {
+    const draft = await this.get(pageSlug, 'draft');
+    if (!draft) return null;
+    // Mark any existing published row as archived
+    await pool.query(
+      `UPDATE page_content SET status='archived' WHERE page_slug=$1 AND status='published'`,
+      [pageSlug]
+    );
+    // Promote draft to published
+    const result = await pool.query(
+      `UPDATE page_content SET status='published', updated_at=CURRENT_TIMESTAMP, updated_by=$1 WHERE id=$2 RETURNING *`,
+      [userId, draft.id]
+    );
+    return result.rows[0];
+  },
+  async revert(pageSlug) {
+    // Delete draft, keep published
+    await pool.query(
+      `DELETE FROM page_content WHERE page_slug=$1 AND status='draft'`,
+      [pageSlug]
+    );
+    return true;
+  }
+};
+
 module.exports = {
   initDatabase,
   getDb,
@@ -1056,5 +1349,7 @@ module.exports = {
   blogOps,
   bugReportOps,
   teamOps,
-  adminOps
+  adminOps,
+  featureUsageOps,
+  pageContentOps
 };

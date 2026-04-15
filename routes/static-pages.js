@@ -4,7 +4,7 @@ const { optionalAuth } = require('../middleware/auth');
 let blogOps;
 try { blogOps = require('../db/database').blogOps; } catch(e) { blogOps = null; }
 
-const BRAND = { name: 'RepurposeAI' };
+const BRAND = { name: 'Splicora' };
 
 // Shared page shell (matches contact page styling)
 function pageShell(title, user, content) {
@@ -69,7 +69,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
 </style></head><body>
 <div class="bg-orb bg-orb--1"></div><div class="bg-orb bg-orb--2"></div>
 <nav><div class="nav-inner">
-  <a href="/" class="logo">Repurpose<span>AI</span></a>
+  <a href="/" class="logo">Splicora</a>
   <div class="nav-links">
     <a href="/">Home</a>
     <a href="/pricing">Pricing</a>
@@ -87,19 +87,19 @@ ${content}
 // ======== ABOUT PAGE ========
 router.get('/about', optionalAuth, (req, res) => {
   res.send(pageShell('About', req.user, `
-  <h1>About RepurposeAI</h1>
+  <h1>About Splicora</h1>
   <p class="subtitle">We're on a mission to help creators do more with less. One video, unlimited content â powered by AI.</p>
 
   <div class="card-grid">
     <div class="card">
       <div class="icon">&#x1F3AF;</div>
       <h3>Our Mission</h3>
-      <p>Content creation shouldn't mean spending hours reformatting the same ideas for every platform. We built RepurposeAI to let creators focus on what they do best â creating â while AI handles the rest.</p>
+      <p>Content creation shouldn't mean spending hours reformatting the same ideas for every platform. We built Splicora to let creators focus on what they do best â creating â while AI handles the rest.</p>
     </div>
     <div class="card">
       <div class="icon">&#x26A1;</div>
       <h3>What We Do</h3>
-      <p>RepurposeAI takes a single YouTube video and transforms it into platform-optimized content for Twitter/X, LinkedIn, Instagram, Facebook, TikTok, and more â in seconds, not hours.</p>
+      <p>Splicora takes a single YouTube video and transforms it into platform-optimized content for Twitter/X, LinkedIn, Instagram, Facebook, TikTok, and more â in seconds, not hours.</p>
     </div>
     <div class="card">
       <div class="icon">&#x1F680;</div>
@@ -109,7 +109,7 @@ router.get('/about', optionalAuth, (req, res) => {
   </div>
 
   <h2>Why Creators Choose Us</h2>
-  <p>Thousands of content creators, marketers, and businesses trust RepurposeAI to save time, stay consistent, and grow their audience across platforms. Our AI understands tone, context, and platform best practices â so every piece of content feels native, not copy-pasted.</p>
+  <p>Thousands of content creators, marketers, and businesses trust Splicora to save time, stay consistent, and grow their audience across platforms. Our AI understands tone, context, and platform best practices â so every piece of content feels native, not copy-pasted.</p>
 
   <div class="card-grid">
     <div class="card">
@@ -131,7 +131,7 @@ router.get('/about', optionalAuth, (req, res) => {
 
   <div class="cta-box">
     <h2>Ready to supercharge your content?</h2>
-    <p>Join thousands of creators who save hours every week with AI-powered content repurposing.</p>
+    <p>Join thousands of creators who save hours every week with AI-powered content content creation.</p>
     <a href="/auth/register" class="btn-cta">Get Started Free &#x2192;</a>
   </div>
 `));
@@ -164,7 +164,7 @@ router.get('/blog', optionalAuth, async (req, res) => {
   <div class="cta-box">
     <h2>Never miss an update</h2>
     <p>Follow us for the latest tips and product updates to level up your content game.</p>
-    <a href="/auth/register" class="btn-cta">Join RepurposeAI &#x2192;</a>
+    <a href="/auth/register" class="btn-cta">Join Splicora &#x2192;</a>
   </div>
 `));
 });
@@ -187,7 +187,7 @@ router.get('/blog/:slug', optionalAuth, async (req, res) => {
       <div class="blog-body" style="color:var(--text2);line-height:1.9;font-size:1.02rem">${post.content}</div>
       <div class="cta-box" style="margin-top:3rem">
         <h2>Enjoyed this post?</h2>
-        <p>Try RepurposeAI free and turn your videos into content for every platform.</p>
+        <p>Try Splicora free and turn your videos into content for every platform.</p>
         <a href="/auth/register" class="btn-cta">Get Started Free &#x2192;</a>
       </div>
     `));
@@ -200,7 +200,7 @@ router.get('/blog/:slug', optionalAuth, async (req, res) => {
 // ======== CAREERS PAGE ========
 router.get('/careers', optionalAuth, (req, res) => {
   res.send(pageShell('Careers', req.user, `
-  <h1>Careers at RepurposeAI</h1>
+  <h1>Careers at Splicora</h1>
   <p class="subtitle">We're building the future of content creation. Come help us empower creators worldwide.</p>
 
   <div class="card-grid">
@@ -240,7 +240,7 @@ router.get('/privacy', optionalAuth, (req, res) => {
 
   <div class="legal-section">
     <h2>1. Information We Collect</h2>
-    <p>We collect information you provide directly to us, such as when you create an account, use our services, or contact us for support. This includes your name, email address, and usage data related to content repurposing activities.</p>
+    <p>We collect information you provide directly to us, such as when you create an account, use our services, or contact us for support. This includes your name, email address, and usage data related to content content creation activities.</p>
 
     <h2>2. How We Use Your Information</h2>
     <p>We use the information we collect to provide, maintain, and improve our services, process transactions, send you technical notices and support messages, and respond to your comments and questions.</p>
@@ -252,7 +252,7 @@ router.get('/privacy', optionalAuth, (req, res) => {
     <p>We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, disclosure, or destruction. All data is encrypted in transit and at rest.</p>
 
     <h2>5. Your Content</h2>
-    <p>Content you process through RepurposeAI (such as video URLs and generated text) is used solely to provide the service to you. We do not use your content to train AI models or share it with third parties without your consent.</p>
+    <p>Content you process through Splicora (such as video URLs and generated text) is used solely to provide the service to you. We do not use your content to train AI models or share it with third parties without your consent.</p>
 
     <h2>6. Cookies</h2>
     <p>We use cookies and similar tracking technologies to track activity on our service and hold certain information. You can instruct your browser to refuse all cookies or to indicate when a cookie is being sent. See our Cookie Policy for more details.</p>
@@ -261,13 +261,13 @@ router.get('/privacy', optionalAuth, (req, res) => {
     <p>We retain your personal data only for as long as necessary to fulfill the purposes for which it was collected, including to satisfy any legal, accounting, or reporting requirements.</p>
 
     <h2>8. Your Rights</h2>
-    <p>You have the right to access, update, or delete your personal information at any time. You may also request a copy of the data we hold about you. To exercise these rights, please contact us at support@repurposeai.ai.</p>
+    <p>You have the right to access, update, or delete your personal information at any time. You may also request a copy of the data we hold about you. To exercise these rights, please contact us at support@splicora.ai.</p>
 
     <h2>9. Changes to This Policy</h2>
     <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the "Last updated" date.</p>
 
     <h2>10. Contact Us</h2>
-    <p>If you have any questions about this Privacy Policy, please contact us at <a href="/contact">our contact page</a> or email support@repurposeai.ai.</p>
+    <p>If you have any questions about this Privacy Policy, please contact us at <a href="/contact">our contact page</a> or email support@splicora.ai.</p>
   </div>
 `));
 });
@@ -280,25 +280,25 @@ router.get('/terms', optionalAuth, (req, res) => {
 
   <div class="legal-section">
     <h2>1. Acceptance of Terms</h2>
-    <p>By accessing or using RepurposeAI, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
+    <p>By accessing or using Splicora, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.</p>
 
     <h2>2. Description of Service</h2>
-    <p>RepurposeAI is an AI-powered platform that helps users repurpose video content into text-based content optimized for various social media platforms. The service includes content generation, smart video clip extraction, analytics, and scheduling features.</p>
+    <p>Splicora is an AI-powered platform that helps users transform video content into text-based content optimized for various social media platforms. The service includes content generation, smart video clip extraction, analytics, and scheduling features.</p>
 
     <h2>3. User Accounts</h2>
     <p>You are responsible for safeguarding the password you use to access the service and for any activities or actions under your account. You must notify us immediately upon becoming aware of any breach of security or unauthorized use of your account.</p>
 
     <h2>4. Acceptable Use</h2>
-    <p>You agree not to use RepurposeAI to generate content that is illegal, harmful, threatening, abusive, harassing, defamatory, or otherwise objectionable. You must not use the service to infringe upon the intellectual property rights of others.</p>
+    <p>You agree not to use Splicora to generate content that is illegal, harmful, threatening, abusive, harassing, defamatory, or otherwise objectionable. You must not use the service to infringe upon the intellectual property rights of others.</p>
 
     <h2>5. Content Ownership</h2>
-    <p>You retain all rights to the content you input into and generate through RepurposeAI. We do not claim ownership over your content. By using our service, you grant us a limited license to process your content solely for the purpose of providing the service.</p>
+    <p>You retain all rights to the content you input into and generate through Splicora. We do not claim ownership over your content. By using our service, you grant us a limited license to process your content solely for the purpose of providing the service.</p>
 
     <h2>6. Subscription and Billing</h2>
-    <p>Some features of RepurposeAI require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. You may cancel your subscription at any time, and cancellation will take effect at the end of the current billing period.</p>
+    <p>Some features of Splicora require a paid subscription. Subscription fees are billed in advance on a monthly or annual basis. You may cancel your subscription at any time, and cancellation will take effect at the end of the current billing period.</p>
 
     <h2>7. Limitation of Liability</h2>
-    <p>RepurposeAI is provided "as is" without warranties of any kind, either express or implied. In no event shall RepurposeAI be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the service.</p>
+    <p>Splicora is provided "as is" without warranties of any kind, either express or implied. In no event shall Splicora be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the service.</p>
 
     <h2>8. Modifications to Service</h2>
     <p>We reserve the right to modify or discontinue, temporarily or permanently, the service with or without notice. We shall not be liable to you or any third party for any modification, suspension, or discontinuance of the service.</p>
@@ -307,7 +307,7 @@ router.get('/terms', optionalAuth, (req, res) => {
     <p>These Terms shall be governed by and construed in accordance with the laws of the United States, without regard to its conflict of law provisions.</p>
 
     <h2>10. Contact</h2>
-    <p>If you have any questions about these Terms, please contact us at <a href="/contact">our contact page</a> or email support@repurposeai.ai.</p>
+    <p>If you have any questions about these Terms, please contact us at <a href="/contact">our contact page</a> or email support@splicora.ai.</p>
   </div>
 `));
 });
@@ -323,7 +323,7 @@ router.get('/cookies', optionalAuth, (req, res) => {
     <p>Cookies are small text files that are placed on your device when you visit a website. They are widely used to make websites work more efficiently and to provide information to the owners of the site.</p>
 
     <h2>2. How We Use Cookies</h2>
-    <p>RepurposeAI uses cookies for the following purposes:</p>
+    <p>Splicora uses cookies for the following purposes:</p>
     <ul>
       <li><strong>Essential Cookies:</strong> These are necessary for the website to function properly. They enable core functionality such as security, account authentication, and session management.</li>
       <li><strong>Preference Cookies:</strong> These remember your settings and preferences, such as your chosen theme (light/dark mode) and language preferences.</li>
@@ -348,7 +348,7 @@ router.get('/cookies', optionalAuth, (req, res) => {
     <p>We may update this Cookie Policy from time to time. Any changes will be posted on this page with an updated revision date.</p>
 
     <h2>7. Contact Us</h2>
-    <p>If you have questions about our use of cookies, please contact us at <a href="/contact">our contact page</a> or email support@repurposeai.ai.</p>
+    <p>If you have questions about our use of cookies, please contact us at <a href="/contact">our contact page</a> or email support@splicora.ai.</p>
   </div>
 `));
 });
@@ -359,31 +359,31 @@ const helpArticles = [
     id: 'getting-started',
     icon: '🚀',
     category: 'Getting Started',
-    title: 'Getting Started with RepurposeAI',
-    summary: 'Learn how to sign up, navigate the dashboard, and repurpose your first video.',
+    title: 'Getting Started with Splicora',
+    summary: 'Learn how to sign up, navigate the dashboard, and create content from your first video.',
     content: `
       <h2>Creating Your Account</h2>
-      <p>Visit <a href="/auth/register">repurposeai.ai/register</a> and sign up using Google OAuth (one-click) or create an account with your email and password. Once registered, you'll land on your Dashboard.</p>
+      <p>Visit <a href="/auth/register">splicora.ai/register</a> and sign up using Google OAuth (one-click) or create an account with your email and password. Once registered, you'll land on your Dashboard.</p>
 
       <h2>Navigating the Dashboard</h2>
-      <p>Your Dashboard is the central hub. You'll see an <strong>AI Tools grid</strong> with quick access to every feature: Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar. The sidebar also has links to all major sections.</p>
+      <p>Your Dashboard is the central hub. You'll see an <strong>AI Tools grid</strong> with quick access to every feature: Create, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhance, Video Editor, Brand Voice, Analytics, and Calendar. The sidebar also has links to all major sections.</p>
 
-      <h2>Repurposing Your First Video</h2>
-      <p>Go to the <strong>Repurpose</strong> page, paste any YouTube video URL, select the platforms you want content for (Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube, Blog), choose a tone, and click <strong>Repurpose Now</strong>. Content is generated in seconds — just copy and post!</p>
+      <h2>content creation Your First Video</h2>
+      <p>Go to the <strong>Create</strong> page, paste any YouTube video URL, select the platforms you want content for (Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube, Blog), choose a tone, and click <strong>Create Now</strong>. Content is generated in seconds — just copy and post!</p>
 
       <h2>Tips</h2>
       <p>Make sure your YouTube video has captions/subtitles enabled for best results. Longer videos give the AI more material to work with. Try creating a Brand Voice first to keep your content consistent.</p>
     `
   },
   {
-    id: 'repurpose',
+    id: 'create',
     icon: '🔄',
     category: 'Core Features',
-    title: 'How to Repurpose a YouTube Video',
+    title: 'How to Create Content from a YouTube Video',
     summary: 'Turn any YouTube video into optimized social media posts for 7+ platforms.',
     content: `
       <h2>Step 1: Paste Your Link</h2>
-      <p>Go to the <strong>Repurpose</strong> page from the sidebar or Dashboard. Paste any YouTube video URL — regular videos and YouTube Shorts both work.</p>
+      <p>Go to the <strong>Create</strong> page from the sidebar or Dashboard. Paste any YouTube video URL — regular videos and YouTube Shorts both work.</p>
 
       <h2>Step 2: Choose Your Platforms</h2>
       <p>Select which platforms you want content for: Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube descriptions, and Blog posts. Each platform gets content tailored to its format.</p>
@@ -392,7 +392,7 @@ const helpArticles = [
       <p>Choose from Professional, Casual, Humorous, Inspirational, or Educational tone. You can also select a Brand Voice you've created for consistent messaging.</p>
 
       <h2>Step 4: Generate & Copy</h2>
-      <p>Click <strong>Repurpose Now</strong> and your content is generated in seconds. Each platform gets unique, optimized content — hashtags for Instagram, thread-style for Twitter, professional tone for LinkedIn, etc. Copy any piece with one click.</p>
+      <p>Click <strong>Create Now</strong> and your content is generated in seconds. Each platform gets unique, optimized content — hashtags for Instagram, thread-style for Twitter, professional tone for LinkedIn, etc. Copy any piece with one click.</p>
 
       <h2>How It Works</h2>
       <p>The AI extracts the video transcript, analyzes the content, and creates platform-specific posts. The video must have captions enabled on YouTube for transcript extraction.</p>
@@ -405,24 +405,36 @@ const helpArticles = [
     title: 'Using Smart Shorts to Create Viral Clips',
     summary: 'Analyze videos to find the best moments, generate clips with captions and narration.',
     content: `
-      <h2>Analyzing a Video</h2>
-      <p>Go to <strong>Smart Shorts</strong> from the sidebar. Paste a YouTube video URL and click <strong>Analyze Video</strong>. The AI identifies viral-worthy moments with timestamps, titles, and virality scores.</p>
+      <h2>Mode 1: Viral Moments Analysis</h2>
+      <p>Go to <strong>Smart Shorts</strong> from the sidebar. Paste a YouTube video URL and click <strong>Analyze Video</strong>. The AI identifies viral-worthy moments with timestamps, titles, and virality scores displayed as colored badges with visual bars.</p>
 
-      <h2>Generating Clips</h2>
-      <p>Select any suggested clip, choose a caption style, and click <strong>Generate Clip</strong>. The clip is created with burned-in captions in a TikTok/Reels style. Download the finished MP4 when ready.</p>
+      <h2>Generating Individual Clips</h2>
+      <p>Each clip card has a toolbar with buttons: Preview, Generate Clip, Captions, Translate, and Narrate. Select a clip, choose your caption style, and click <strong>Generate Clip</strong>. The clip is created with burned-in captions in a TikTok/Reels style. Download the finished MP4 when ready, or use <strong>Export All</strong> to download everything at once.</p>
+
+      <h2>Mode 2: Auto-Generate Shorts ⚡</h2>
+      <p>Click the <strong>Auto-Generate</strong> tool card (⚡ icon) in the premium tools grid. This lets you create multiple shorts from one long video automatically — similar to Opus Clip.</p>
+      <ul>
+        <li>Paste a YouTube URL</li>
+        <li>Choose how many shorts you want (1 to 20) using the slider</li>
+        <li>Select duration for each short: 30s, 45s, 60s, 90s, or Custom</li>
+        <li>Configure clip style, captions, and language</li>
+        <li>Click <strong>Generate Shorts</strong> and watch real-time progress</li>
+        <li>Download individual clips or <strong>Download All as ZIP</strong></li>
+      </ul>
 
       <h2>Tool Panel Features</h2>
-      <p>At the top of Smart Shorts, you'll find 5 quick-access tool cards:</p>
+      <p>At the top of Smart Shorts, you'll find 6 quick-access tool cards:</p>
       <ul>
         <li><strong>Quick Narrate</strong> — Add AI voiceover to any video using ElevenLabs voices</li>
         <li><strong>Workflow Templates</strong> — Save and reuse your favorite editing workflows</li>
         <li><strong>Batch Analyze</strong> — Analyze multiple YouTube videos at once</li>
         <li><strong>Brand Kit</strong> — Set brand colors, fonts, and styles for consistent branding</li>
         <li><strong>Settings</strong> — Configure your Smart Shorts preferences</li>
+        <li><strong>Auto-Generate</strong> — Create multiple shorts from one video instantly</li>
       </ul>
 
       <h2>Additional Features</h2>
-      <p>Caption translation to 20+ languages, AI thumbnails with DALL-E, thumbnail A/B testing, B-roll suggestions, and virality analysis are all available within Smart Shorts.</p>
+      <p>Caption translation to 20+ languages, B-roll suggestions, and virality analysis are all available within Smart Shorts. For standalone thumbnail creation, visit the dedicated <a href="/ai-thumbnail">AI Thumbnails</a> page.</p>
     `
   },
   {
@@ -445,7 +457,9 @@ const helpArticles = [
       <ul>
         <li><strong>Speed</strong> — Speed up or slow down your video (0.25x to 4x)</li>
         <li><strong>Text Overlay</strong> — Add custom text on top of your video</li>
-        <li><strong>Audio</strong> — Mute or adjust audio levels</li>
+        <li><strong>Audio</strong> — Volume, fade in/out, bass/treble EQ, noise reduction, audio ducking</li>
+        <li><strong>AI Voice</strong> — Generate AI voiceover from a script using ElevenLabs voices</li>
+        <li><strong>Voice Transform</strong> — Change the voice in your video to any AI voice using ElevenLabs Speech-to-Speech. Extract audio from the video or upload a separate audio file, pick a target voice, and the AI transforms it while keeping the same words and pacing. Great for faceless YouTube channels.</li>
       </ul>
 
       <h2>Exporting</h2>
@@ -477,13 +491,17 @@ const helpArticles = [
     summary: 'Convert landscape videos to vertical, square, or any aspect ratio with smart AI cropping.',
     content: `
       <h2>How to Reframe</h2>
-      <p>Open <strong>AI Reframe</strong> from the Dashboard. Upload your video, then select your target format: 9:16 (TikTok/Reels), 1:1 (Instagram Square), 4:5 (Instagram Portrait), or 16:9 (YouTube).</p>
+      <p>Open <strong>AI Reframe</strong> from the Dashboard. Paste a YouTube URL or upload a video file. Select your target formats: 9:16 (TikTok/Reels), 1:1 (Instagram Square), 4:5 (Instagram Portrait), or 16:9 (YouTube). You can select multiple at once.</p>
 
-      <h2>Smart Cropping</h2>
-      <p>The AI automatically keeps the subject in frame when converting between aspect ratios — no manual cropping needed. It's perfect for repurposing landscape YouTube videos into vertical TikTok or Reels content.</p>
+      <h2>Crop Modes</h2>
+      <p>Choose between two crop modes:</p>
+      <ul>
+        <li><strong>🎯 Center Crop</strong> — Fast, takes the center strip of the frame. Best when subjects are already centered.</li>
+        <li><strong>🧠 AI Face Tracking</strong> — Uses computer vision to detect faces and dynamically follow them as the video plays. Perfect for interviews, podcasts, and talking-head videos. The crop window smoothly follows the speaker so nobody gets cut off.</li>
+      </ul>
 
       <h2>Output</h2>
-      <p>Download the reframed video as an MP4. Processing time depends on video length.</p>
+      <p>Download each reframed video as an MP4. AI Face Tracking takes longer because it analyzes the video first, but produces much better results for videos with people.</p>
     `
   },
   {
@@ -501,6 +519,34 @@ const helpArticles = [
 
       <h2>Tips</h2>
       <p>Karaoke-style captions (where words highlight as they're spoken) tend to get the highest engagement on TikTok and Instagram Reels.</p>
+    `
+  },
+  {
+    id: 'ai-thumbnails',
+    icon: '🖼️',
+    category: 'Tools',
+    title: 'AI Thumbnails — Create Professional Thumbnails',
+    summary: 'Extract frames from any video and apply professional style presets for eye-catching thumbnails.',
+    content: `
+      <h2>Getting Started</h2>
+      <p>Go to <strong>AI Thumbnails</strong> from the sidebar (🖼️ icon). You can input a YouTube URL or upload a video file directly.</p>
+
+      <h2>Extracting Frames</h2>
+      <p>Click <strong>Extract Frames</strong> and the AI will pull key frames from throughout your video. You'll see a grid of frames under "Select a Frame to Style".</p>
+
+      <h2>Styling Your Thumbnail</h2>
+      <p>Click on any frame you like, then choose from 6 professional style presets:</p>
+      <ul>
+        <li><strong>Gradient Overlay</strong> — Stylish gradient effect</li>
+        <li><strong>Dark Cinematic</strong> — Dark, moody look with vignette</li>
+        <li><strong>Bold Border</strong> — Colorful borders that pop</li>
+        <li><strong>Split Design</strong> — Split-screen style layout</li>
+        <li><strong>Text Focus</strong> — Optimized for adding text</li>
+        <li><strong>Clean Minimal</strong> — Simple and professional</li>
+      </ul>
+
+      <h2>Downloading</h2>
+      <p>After styling, download your thumbnail at high resolution. Perfect for YouTube thumbnails, social media previews, and blog headers.</p>
     `
   },
   {
@@ -525,13 +571,13 @@ const helpArticles = [
     icon: '🎤',
     category: 'Content',
     title: 'Brand Voice — Keep Your Tone Consistent',
-    summary: 'Create custom voice profiles so all repurposed content matches your brand style.',
+    summary: 'Create custom voice profiles so all created content matches your brand style.',
     content: `
       <h2>Creating a Brand Voice</h2>
       <p>Go to <strong>Brand Voice</strong> from the sidebar. Enter a voice name, select a tone (Professional, Casual, Humorous, Inspirational, Educational), write a description of the style, and paste example content that represents the voice. Click <strong>Create Voice</strong>.</p>
 
       <h2>Using Your Brand Voice</h2>
-      <p>When repurposing content, select your brand voice from the dropdown. The AI will match that style across all generated content, ensuring every post sounds authentically like your brand.</p>
+      <p>When content creation content, select your brand voice from the dropdown. The AI will match that style across all generated content, ensuring every post sounds authentically like your brand.</p>
 
       <h2>Managing Voices</h2>
       <p>You can create multiple brand voices for different brands, clients, or content types. Edit or delete any voice at any time from the Brand Voice page.</p>
@@ -560,17 +606,17 @@ const helpArticles = [
     content: `
       <h2>Available Plans</h2>
       <ul>
-        <li><strong>Free ($0/month)</strong> — 3 videos/month, 5 repurposes, 1 brand voice, 7-day history</li>
-        <li><strong>Starter ($19/month)</strong> — 15 videos, 30 repurposes, 3 brand voices, Quick Narrate, 10 AI thumbnails, 30 clips, analytics, no watermark</li>
-        <li><strong>Pro ($39/month)</strong> — 50 videos, 100 repurposes, 10 brand voices, unlimited narrations, 50 thumbnails, 150 clips, A/B testing, batch analysis, unlimited history</li>
-        <li><strong>Teams ($79/month)</strong> — 200 videos, 500 repurposes, 25 brand voices, 150 thumbnails, 500 clips, 5 team seats, priority processing</li>
+        <li><strong>Free ($0/month)</strong> — 3 videos/month, 5 creations, 1 brand voice, 7-day history</li>
+        <li><strong>Starter ($19/month)</strong> — 15 videos, 30 creations, 3 brand voices, Quick Narrate, 10 AI thumbnails, 30 clips, analytics, no watermark</li>
+        <li><strong>Pro ($39/month)</strong> — 50 videos, 100 creations, 10 brand voices, unlimited narrations, 50 thumbnails, 150 clips, A/B testing, batch analysis, unlimited history</li>
+        <li><strong>Teams ($79/month)</strong> — 200 videos, 500 creations, 25 brand voices, 150 thumbnails, 500 clips, 5 team seats, priority processing</li>
       </ul>
 
       <h2>Upgrading</h2>
       <p>Go to <strong>Billing</strong> from the sidebar. Click the upgrade button on the plan you want. Payments are processed securely through Stripe. You can upgrade, downgrade, or cancel at any time.</p>
 
       <h2>Features by Plan</h2>
-      <p>All plans include access to Repurpose, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhancement, Video Editor, Brand Voice, Analytics, and Calendar. Higher plans unlock greater usage limits and premium features like batch analysis and A/B testing.</p>
+      <p>All plans include access to Create, Smart Shorts, AI Hooks, AI Reframe, Caption Presets, Speech Enhancement, Video Editor, Brand Voice, Analytics, and Calendar. Higher plans unlock greater usage limits and premium features like batch analysis and A/B testing.</p>
     `
   },
   {
@@ -588,6 +634,12 @@ const helpArticles = [
 
       <h2>Smart Shorts Processing</h2>
       <p>Longer processing times are normal for longer clips. If thumbnails fail, the system automatically falls back to the YouTube thumbnail.</p>
+
+      <h2>AI Thumbnails Issues</h2>
+      <p>If you see "No frames extracted from video," try a different YouTube URL or upload the video file directly. The video must be accessible and at least a few seconds long. If using a YouTube URL, make sure it's a valid, public video.</p>
+
+      <h2>Auto-Generate Shorts Issues</h2>
+      <p>If clip generation stalls, try reducing the number of shorts or using a shorter source video. The video must have spoken content with captions/subtitles for the AI analysis to work. Processing time increases with more clips and longer durations.</p>
 
       <h2>General Tips</h2>
       <ul>
@@ -618,7 +670,7 @@ router.get('/help', optionalAuth, (req, res) => {
 
   res.send(pageShell('Help Center', req.user, `
     <h1>Help Center</h1>
-    <p class="subtitle">Step-by-step guides for every feature in RepurposeAI. Can't find what you need? Use the chat assistant in the bottom-right corner for instant help.</p>
+    <p class="subtitle">Step-by-step guides for every feature in Splicora. Can't find what you need? Use the chat assistant in the bottom-right corner for instant help.</p>
     ${cardsHtml}
     <div class="cta-box">
       <h2>Still need help?</h2>

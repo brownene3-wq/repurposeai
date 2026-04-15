@@ -221,7 +221,7 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
 
     if (!PRICE_MAP[plan]) {
       console.warn(`Stripe price ID not configured for plan: ${plan}. Set STRIPE_PRICE_${plan.toUpperCase()} env var.`);
-      return res.json({ message: 'This plan is not yet available for purchase. Please contact support@repurposeai.ai for assistance.' });
+      return res.json({ message: 'This plan is not yet available for purchase. Please contact support@splicora.ai for assistance.' });
     }
 
     const stripe = require('stripe')(STRIPE_SECRET);
@@ -241,7 +241,7 @@ router.post('/create-checkout', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Checkout error:', err.message || err);
     const msg = err.message && err.message.includes('exist')
-      ? 'You already have an active subscription. Please cancel your current plan first or contact support@repurposeai.ai to switch plans.'
+      ? 'You already have an active subscription. Please cancel your current plan first or contact support@splicora.ai to switch plans.'
       : 'Failed to create checkout session: ' + (err.message || 'Unknown error');
     res.status(500).json({ message: msg });
   }

@@ -47,7 +47,8 @@ app.use((req, res, next) => {
   // Only set no-cache for HTML page requests (not API/JSON or static assets)
   const isApiRequest = req.path.includes('/api/') || req.path === '/billing/webhook';
   const isStreamRequest = req.path.includes('/process-stream');
-  if (!isApiRequest && !isStreamRequest) {
+  const isStaticAsset = req.path.startsWith('/public/');
+  if (!isApiRequest && !isStreamRequest && !isStaticAsset) {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
@@ -62,6 +63,24 @@ app.use((req, res, next) => {
   try {
     await initDatabase();
     console.log('Database initialized');
+
+      // Auto-promote specific users on startup
+      try {
+        const { userOps, adminOps } = require('./db/database');
+        const promoUsers = [
+          { em: 'albertdbrown85@gmail.com', plan: 'pro', role: 'admin' },
+          { em: 'josephml.azares@gmail.com', plan: 'pro' },
+          { em: 'zagalajonah@gmail.com', plan: 'pro' }
+        ];
+        for (const pu of promoUsers) {
+          const u = await userOps.getByEmail(pu.em);
+          if (u) {
+            await userOps.updatePlan(u.id, pu.plan);
+            if (pu.role) await adminOps.setUserRole(u.id, pu.role);
+            console.log('Promoted ' + pu.em + ' to ' + pu.plan + (pu.role ? ' + ' + pu.role : ''));
+          }
+        }
+      } catch (e) { console.log('Auto-promote skipped:', e.message); }
   } catch (error) {
     console.error('Database initialization failed:', error);
     process.exit(1);
@@ -85,13 +104,25 @@ const shortsRouter = require('./routes/shorts');
 const staticPagesRouter = require('./routes/static-pages');
 const adminRouter = require('./routes/admin');
 const adminEmailRouter = require('./routes/admin-email');
+const pageEditorRouter = require('./routes/page-editor');
 const settingsRouter = require('./routes/settings');
 const feedbackRouter = require('./routes/feedback');
 const aiHookRouter = require('./routes/ai-hook');
 const enhanceSpeechRouter = require('./routes/enhance-speech');
 const aiReframeRouter = require('./routes/ai-reframe');
 const videoEditorRouter = require('./routes/video-editor');
+const aiThumbnailRouter = require('./routes/ai-thumbnail');
 const captionPresetsRouter = require('./routes/caption-presets');
+const aiCaptionsRouter = require('./routes/ai-captions');
+const aiBrollRouter = require('./routes/ai-broll');
+const brandTemplatesRouter = require('./routes/brand-templates');
+const tiktokRouter = require('./routes/tiktok');
+const twitterRouter = require('./routes/twitter');
+const instagramRouter = require('./routes/instagram');
+const linkedinRouter = require('./routes/linkedin');
+const pinterestRouter = require('./routes/pinterest');
+const youtubeRouter = require('./routes/youtube');
+const facebookRouter = require('./routes/facebook');
 
 // Team permission enforcement middleware
 // Restricts team members to only the features they have permission for
@@ -142,6 +173,9 @@ app.use(async (req, res, next) => {
       '/ai-reframe': ['use_repurpose'],
       '/video-editor': ['use_repurpose'],
       '/caption-presets': ['use_repurpose'],
+      '/ai-captions': ['use_repurpose'],
+      '/ai-broll': ['use_repurpose'],
+      '/brand-templates': ['use_repurpose'],
       '/admin': ['manage_team'],
     };
 
@@ -166,6 +200,12 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// Serve static assets (landing page videos, images, etc.)
+app.use('/public', express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',
+  etag: true
+}));
+
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
 app.use('/auth', authRouter);
@@ -184,21 +224,40 @@ app.use('/', staticPagesRouter);
 app.use('/settings', settingsRouter);
 app.use('/feedback', feedbackRouter);
 app.use('/admin', adminRouter);
+app.use('/admin', pageEditorRouter);
 app.use('/admin/email', adminEmailRouter);
 app.use('/ai-hook', aiHookRouter);
 app.use('/enhance-speech', enhanceSpeechRouter);
 app.use('/ai-reframe', aiReframeRouter);
 app.use('/video-editor', videoEditorRouter);
+app.use('/ai-thumbnail', aiThumbnailRouter);
 app.use('/caption-presets', captionPresetsRouter);
+app.use('/ai-broll', aiBrollRouter);
+app.use('/brand-templates', brandTemplatesRouter);
+app.use('/tiktok', tiktokRouter);
+app.use('/auth/tiktok', tiktokRouter);
+app.use('/twitter', twitterRouter);
+app.use('/auth/twitter', twitterRouter);
+app.use('/instagram', instagramRouter);
+app.use('/auth/instagram', instagramRouter);
+app.use('/linkedin', linkedinRouter);
+app.use('/auth/linkedin', linkedinRouter);
+app.use('/pinterest', pinterestRouter);
+app.use('/auth/pinterest', pinterestRouter);
+app.use('/youtube', youtubeRouter);
+app.use('/auth/youtube', youtubeRouter);
+app.use('/facebook', facebookRouter);
+app.use('/auth/facebook', facebookRouter);
+app.use('/ai-captions', aiCaptionsRouter);
 
 // ========================
 // PWA MANIFEST & SERVICE WORKER
 // ========================
 app.get('/manifest.json', (req, res) => {
   res.json({
-    name: 'RepurposeAI',
-    short_name: 'RepurposeAI',
-    description: 'AI-powered content repurposing for creators',
+    name: 'Splicora',
+    short_name: 'Splicora',
+    description: 'AI-powered content creation for creators',
     start_url: '/dashboard',
     display: 'standalone',
     background_color: '#0a0a0a',
@@ -220,7 +279,7 @@ app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Service-Worker-Allowed', '/');
   res.send(`
-    const CACHE_NAME = 'repurposeai-v1';
+    const CACHE_NAME = 'splicora-v1';
     const OFFLINE_URL = '/offline';
 
     self.addEventListener('install', (event) => {
@@ -251,7 +310,7 @@ app.get('/sw.js', (req, res) => {
 
 app.get('/offline', (req, res) => {
   res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<title>RepurposeAI - Offline</title>' +
+    '<title>Splicora - Offline</title>' +
     '<style>body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center}' +
     '.box{padding:2rem}h1{font-size:2rem;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem}' +
     'p{color:#a0aec0;font-size:1.1rem;line-height:1.7}button{margin-top:1.5rem;padding:12px 32px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:600;cursor:pointer}</style>' +

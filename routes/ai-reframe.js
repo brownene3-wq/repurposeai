@@ -7,6 +7,7 @@ const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { featureUsageOps } = require('../db/database');
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -201,11 +202,9 @@ function calculateCropDimensions(inputWidth, inputHeight, targetWidth, targetHei
   let cropWidth, cropHeight;
 
   if (inputAspect > targetAspect) {
-    // Input is wider, crop width
     cropHeight = inputHeight;
     cropWidth = Math.floor(inputHeight * targetAspect);
   } else {
-    // Input is taller, crop height
     cropWidth = inputWidth;
     cropHeight = Math.floor(inputWidth / targetAspect);
   }
@@ -216,8 +215,106 @@ function calculateCropDimensions(inputWidth, inputHeight, targetWidth, targetHei
   return { cropWidth, cropHeight, x, y };
 }
 
-// Process video with ffmpeg
-function processVideo(inputPath, outputPath, aspectRatio) {
+// Run Python face detection script
+function detectFaces(videoPath) {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'face-detect.py');
+    const proc = spawn('python3', [scriptPath, videoPath, '0.5']);
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+
+    proc.on('close', code => {
+      if (code === 0 && stdout.trim()) {
+        try {
+          const data = JSON.parse(stdout.trim());
+          if (data.error) return reject(new Error(data.error));
+          resolve(data);
+        } catch (e) {
+          reject(new Error('Failed to parse face detection output'));
+        }
+      } else {
+        reject(new Error('Face detection failed: ' + (stderr || 'unknown error').slice(0, 300)));
+      }
+    });
+
+    proc.on('error', reject);
+    // Timeout after 2 minutes
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} reject(new Error('Face detection timed out')); }, 120000);
+  });
+}
+
+// Calculate smoothed face-tracking crop positions
+function calculateFaceTrackingCrop(faceData, inputWidth, inputHeight, targetWidth, targetHeight) {
+  const inputAspect = inputWidth / inputHeight;
+  const targetAspect = targetWidth / targetHeight;
+
+  // Calculate crop dimensions (same as center crop)
+  let cropWidth, cropHeight;
+  if (inputAspect > targetAspect) {
+    cropHeight = inputHeight;
+    cropWidth = Math.floor(inputHeight * targetAspect);
+  } else {
+    cropWidth = inputWidth;
+    cropHeight = Math.floor(inputWidth / targetAspect);
+  }
+
+  const samples = faceData.samples;
+
+  // Calculate face center for each sample (average of all faces, or center if no faces)
+  const positions = samples.map(sample => {
+    if (sample.faces.length > 0) {
+      // Average center of all detected faces
+      const avgCx = sample.faces.reduce((sum, f) => sum + f.cx, 0) / sample.faces.length;
+      const avgCy = sample.faces.reduce((sum, f) => sum + f.cy, 0) / sample.faces.length;
+      return { time: sample.time, cx: avgCx, cy: avgCy, hasFace: true };
+    } else {
+      return { time: sample.time, cx: 0.5, cy: 0.5, hasFace: false };
+    }
+  });
+
+  // Fill in gaps: if no face detected, use last known face position
+  let lastKnownCx = 0.5, lastKnownCy = 0.5;
+  for (let i = 0; i < positions.length; i++) {
+    if (positions[i].hasFace) {
+      lastKnownCx = positions[i].cx;
+      lastKnownCy = positions[i].cy;
+    } else {
+      positions[i].cx = lastKnownCx;
+      positions[i].cy = lastKnownCy;
+    }
+  }
+
+  // Smooth positions with moving average (window of 5) to prevent jitter
+  const smoothed = positions.map((pos, i) => {
+    const windowSize = 5;
+    const half = Math.floor(windowSize / 2);
+    let sumCx = 0, sumCy = 0, count = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(positions.length - 1, i + half); j++) {
+      sumCx += positions[j].cx;
+      sumCy += positions[j].cy;
+      count++;
+    }
+    return { time: pos.time, cx: sumCx / count, cy: sumCy / count };
+  });
+
+  // Convert to pixel crop positions, clamped to frame bounds
+  const cropPositions = smoothed.map(pos => {
+    let x = Math.round(pos.cx * inputWidth - cropWidth / 2);
+    let y = Math.round(pos.cy * inputHeight - cropHeight / 2);
+    // Clamp to frame bounds
+    x = Math.max(0, Math.min(inputWidth - cropWidth, x));
+    y = Math.max(0, Math.min(inputHeight - cropHeight, y));
+    return { time: pos.time, x, y };
+  });
+
+  return { cropWidth, cropHeight, positions: cropPositions };
+}
+
+// Process video with center crop (original method)
+function processVideoCenterCrop(inputPath, outputPath, aspectRatio) {
   return new Promise(async (resolve, reject) => {
     try {
       const dimensions = await getVideoDimensions(inputPath);
@@ -239,24 +336,116 @@ function processVideo(inputPath, outputPath, aspectRatio) {
 
       const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
       let errorOutput = '';
-
-      ffmpeg.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
+      ffmpeg.stderr.on('data', (data) => { errorOutput += data.toString(); });
       ffmpeg.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`FFmpeg failed with code ${code}: ${errorOutput}`));
-        }
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg failed with code ${code}: ${errorOutput}`));
       });
-
       ffmpeg.on('error', reject);
     } catch (error) {
       reject(error);
     }
   });
+}
+
+// Process video with face tracking (smart crop)
+function processVideoFaceTracking(inputPath, outputPath, aspectRatio, faceData) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const dimensions = await getVideoDimensions(inputPath);
+      const { width: targetWidth, height: targetHeight } = aspectRatios[aspectRatio];
+      const { cropWidth, cropHeight, positions } = calculateFaceTrackingCrop(
+        faceData, dimensions.width, dimensions.height, targetWidth, targetHeight
+      );
+
+      // If all positions are the same (no face movement), use simple crop
+      const allSameX = positions.every(p => p.x === positions[0].x);
+      const allSameY = positions.every(p => p.y === positions[0].y);
+      if (allSameX && allSameY) {
+        const filterComplex = `crop=${cropWidth}:${cropHeight}:${positions[0].x}:${positions[0].y},scale=${targetWidth}:${targetHeight}`;
+        const args = [
+          '-i', inputPath, '-vf', filterComplex,
+          '-c:v', 'libx264', '-crf', '23', '-c:a', 'aac', '-b:a', '128k',
+          '-movflags', '+faststart', outputPath
+        ];
+        const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
+        let errorOutput = '';
+        ffmpeg.stderr.on('data', d => { errorOutput += d.toString(); });
+        ffmpeg.on('close', code => {
+          if (code === 0) resolve();
+          else reject(new Error(`FFmpeg failed: ${errorOutput}`));
+        });
+        ffmpeg.on('error', reject);
+        return;
+      }
+
+      // Build dynamic crop expression using keyframe interpolation
+      // FFmpeg crop filter supports expressions with t (time in seconds)
+      // We build a piecewise linear interpolation using if/between expressions
+      let xExpr = String(positions[0].x);
+      let yExpr = String(positions[0].y);
+
+      // Build piecewise linear x expression
+      // For each segment between two keyframes, linearly interpolate
+      const xParts = [];
+      const yParts = [];
+      for (let i = 0; i < positions.length - 1; i++) {
+        const t0 = positions[i].time;
+        const t1 = positions[i + 1].time;
+        const x0 = positions[i].x;
+        const x1 = positions[i + 1].x;
+        const y0 = positions[i].y;
+        const y1 = positions[i + 1].y;
+        const dt = t1 - t0 || 0.001;
+        // Linear interpolation: x0 + (x1-x0) * (t-t0) / (t1-t0)
+        xParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${x0}+(${x1}-${x0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
+        yParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${y0}+(${y1}-${y0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
+      }
+
+      // Chain with nested if/else, fallback to last position
+      const lastX = positions[positions.length - 1].x;
+      const lastY = positions[positions.length - 1].y;
+
+      if (xParts.length > 0) {
+        // Nest the if expressions: if(cond1, val1, if(cond2, val2, ..., default))
+        xExpr = xParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastX));
+        yExpr = yParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastY));
+      }
+
+      const filterComplex = `crop=${cropWidth}:${cropHeight}:${xExpr}:${yExpr},scale=${targetWidth}:${targetHeight}`;
+
+      const args = [
+        '-i', inputPath,
+        '-vf', filterComplex,
+        '-c:v', 'libx264',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y',
+        outputPath
+      ];
+
+      const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
+      let errorOutput = '';
+      ffmpeg.stderr.on('data', d => { errorOutput += d.toString(); });
+      ffmpeg.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg face-tracking failed: ${errorOutput.slice(-500)}`));
+      });
+      ffmpeg.on('error', reject);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+// Main processVideo function - routes to center crop or face tracking
+function processVideo(inputPath, outputPath, aspectRatio, cropMode, faceData) {
+  if (cropMode === 'face-tracking' && faceData) {
+    return processVideoFaceTracking(inputPath, outputPath, aspectRatio, faceData);
+  }
+  return processVideoCenterCrop(inputPath, outputPath, aspectRatio);
 }
 
 // GET - Main page
@@ -606,6 +795,21 @@ ${pageStyles}
             </div>
           </div>
 
+          <div class="aspect-ratio-section" style="margin-top:1.5rem">
+            <label class="aspect-ratio-label">Crop Mode</label>
+            <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeCenterLabel">
+                <input type="radio" name="cropMode" value="center" checked style="accent-color:var(--primary)"> 🎯 Center Crop
+              </label>
+              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeFaceLabel">
+                <input type="radio" name="cropMode" value="face-tracking" style="accent-color:var(--primary)"> 🧠 AI Face Tracking
+              </label>
+            </div>
+            <div id="faceTrackingInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
+              <strong>🧠 AI Face Tracking</strong> — The AI will detect faces in your video and dynamically adjust the crop window to keep people centered in every frame. Perfect for interviews, podcasts, and talking-head videos where subjects aren't always in the center.
+            </div>
+          </div>
+
           <div class="aspect-ratio-section">
             <label class="aspect-ratio-label">Select Aspect Ratios to Generate</label>
             <div class="aspect-ratio-grid">
@@ -779,11 +983,19 @@ ${pageStyles}
       reframeBtn.disabled = !(hasUrl || hasFile) || !hasAspectRatio;
     }
 
+    // Crop mode toggle styling
+    document.querySelectorAll('input[name="cropMode"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        document.getElementById('modeCenterLabel').style.borderColor = this.value === 'center' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('modeFaceLabel').style.borderColor = this.value === 'face-tracking' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('faceTrackingInfo').style.display = this.value === 'face-tracking' ? 'block' : 'none';
+      });
+    });
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       clearError();
 
-      // Only use the active tab's input
       var useUrl = activeInputTab === 'url' && youtubeUrl.value.trim().length > 0;
       var useFile = activeInputTab === 'upload' && fileInput.files.length > 0;
 
@@ -798,22 +1010,23 @@ ${pageStyles}
         return;
       }
 
-      // Build FormData with ONLY the active tab's input
+      const cropMode = document.querySelector('input[name="cropMode"]:checked').value;
+
       const formData = new FormData();
       formData.set('aspects', JSON.stringify(selectedRatios));
       formData.set('inputMode', activeInputTab);
+      formData.set('cropMode', cropMode);
 
       if (useUrl) {
         formData.set('youtubeUrl', youtubeUrl.value.trim());
-        // Do NOT include the file even if one was previously selected
       } else if (useFile) {
         formData.set('videoFile', fileInput.files[0]);
-        // Do NOT include the URL
       }
 
       reframeBtn.disabled = true;
       reframeBtn.classList.add('loading');
-      reframeBtn.innerHTML = '<span class="spinner"></span> ' + (useUrl ? 'Downloading & Processing...' : 'Processing...');
+      var modeLabel = cropMode === 'face-tracking' ? 'Detecting faces & ' : '';
+      reframeBtn.innerHTML = '<span class="spinner"></span> ' + modeLabel + (useUrl ? 'Downloading & Processing...' : 'Processing...');
 
       try {
         const response = await fetch('/ai-reframe/process', {
@@ -876,6 +1089,7 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
     const youtubeUrl = req.body.youtubeUrl || '';
     const inputMode = req.body.inputMode || 'upload';
     const aspects = JSON.parse(req.body.aspects || '[]');
+    const cropMode = req.body.cropMode || 'center';
     const videoFile = req.file;
 
     if (!youtubeUrl && !videoFile) {
@@ -888,14 +1102,13 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
 
     let inputPath = null;
 
-    // If YouTube URL mode, download the video first
     if (inputMode === 'url' && youtubeUrl) {
       if (!isValidYouTubeUrl(youtubeUrl)) {
         return res.status(400).json({ success: false, message: 'Please enter a valid YouTube URL (e.g., https://youtube.com/watch?v=...)' });
       }
       try {
         inputPath = await downloadYouTubeVideo(youtubeUrl);
-        downloadedPath = inputPath; // Mark for cleanup
+        downloadedPath = inputPath;
       } catch (dlError) {
         return res.status(400).json({ success: false, message: dlError.message });
       }
@@ -911,6 +1124,21 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
       return res.status(400).json({ success: false, message: 'Video file not found' });
     }
 
+    // Run face detection if face-tracking mode selected
+    let faceData = null;
+    if (cropMode === 'face-tracking') {
+      try {
+        console.log('[AI Reframe] Running face detection...');
+        faceData = await detectFaces(inputPath);
+        const totalFaces = faceData.samples.filter(s => s.faces.length > 0).length;
+        console.log(`[AI Reframe] Face detection complete: ${totalFaces}/${faceData.total_samples} samples have faces`);
+      } catch (faceErr) {
+        console.log('[AI Reframe] Face detection failed, falling back to center crop:', faceErr.message);
+        // Fall back to center crop gracefully
+        faceData = null;
+      }
+    }
+
     const jobId = uuidv4();
     const results = [];
 
@@ -924,14 +1152,30 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
       const outputPath = path.join(outputDir, filename);
 
       try {
-        await processVideo(inputPath, outputPath, aspectRatio);
+        await processVideo(inputPath, outputPath, aspectRatio, cropMode, faceData);
         results.push({
           ratio: aspectRatio,
           dimensions: `${config.width}x${config.height}`,
-          filename: filename
+          filename: filename,
+          mode: faceData ? 'face-tracking' : 'center'
         });
       } catch (error) {
         console.error(`Failed to process ${aspectRatio}:`, error.message);
+        // If face tracking fails for this ratio, try center crop fallback
+        if (cropMode === 'face-tracking') {
+          try {
+            console.log(`[AI Reframe] Face tracking failed for ${aspectRatio}, trying center crop...`);
+            await processVideo(inputPath, outputPath, aspectRatio, 'center', null);
+            results.push({
+              ratio: aspectRatio,
+              dimensions: `${config.width}x${config.height}`,
+              filename: filename,
+              mode: 'center (fallback)'
+            });
+          } catch (fallbackErr) {
+            console.error(`Center crop fallback also failed for ${aspectRatio}:`, fallbackErr.message);
+          }
+        }
       }
     }
 
@@ -945,6 +1189,7 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
     }
 
     res.json({ success: true, files: results });
+    featureUsageOps.log(req.user.id, 'ai_reframe').catch(() => {});
   } catch (error) {
     console.error('Processing error:', error);
     // Clean up downloaded file on error

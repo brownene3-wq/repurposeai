@@ -53,6 +53,7 @@ function decodeEntities(text) {
 
 // Fetch YouTube video title using oEmbed API
 async function fetchVideoTitle(videoId) {
+  // Method 1: oEmbed API
   try {
     const oembedUrl = 'https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=' + videoId + '&format=json';
     const response = await httpsRequest(oembedUrl);
@@ -61,9 +62,41 @@ async function fetchVideoTitle(videoId) {
       if (data.title) return data.title;
     }
   } catch (e) {
-    console.error('Failed to fetch video title for', videoId, ':', e.message);
+    console.error('oEmbed title fetch failed for', videoId, ':', e.message);
   }
-  return 'Video: ' + videoId;
+
+  // Method 2: Scrape from YouTube watch page <title> tag
+  try {
+    const watchUrl = 'https://www.youtube.com/watch?v=' + videoId;
+    const response = await httpsRequest(watchUrl);
+    if (response.status === 200 && response.data) {
+      // Try og:title meta tag first (most reliable)
+      const ogMatch = response.data.match(/<meta\s+property="og:title"\s+content="([^"]+)"/);
+      if (ogMatch && ogMatch[1]) return decodeEntities(ogMatch[1]);
+      // Try <title> tag (contains " - YouTube" suffix)
+      const titleMatch = response.data.match(/<title>([^<]+)<\/title>/);
+      if (titleMatch && titleMatch[1]) {
+        const title = titleMatch[1].replace(/\s*-\s*YouTube\s*$/, '').trim();
+        if (title && title !== 'YouTube') return decodeEntities(title);
+      }
+    }
+  } catch (e) {
+    console.error('Page scrape title fetch failed for', videoId, ':', e.message);
+  }
+
+  // Method 3: noembed.com fallback
+  try {
+    const noembedUrl = 'https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + videoId;
+    const response = await httpsRequest(noembedUrl);
+    if (response.status === 200) {
+      const data = JSON.parse(response.data);
+      if (data.title) return data.title;
+    }
+  } catch (e) {
+    console.error('noembed title fetch failed for', videoId, ':', e.message);
+  }
+
+  return 'Untitled Video';
 }
 
 // Parse transcript XML into text
@@ -712,6 +745,10 @@ async function fetchTranscriptInnertube(videoId) {
 
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const { spawn, execSync } = require('child_process');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
 const { contentOps, outputOps, brandVoiceOps } = require('../db/database');
 
@@ -723,10 +760,47 @@ function getOpenAIClient() {
   return client;
 }
 
+// File upload setup for video/audio repurposing
+const uploadDir = path.join(__dirname, '..', 'uploads', 'repurpose');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
+
+// Find ffmpeg binary
+let ffmpegPath = null;
+const localFfmpeg = path.join(__dirname, '..', 'node_modules', 'ffmpeg-static', 'ffmpeg');
+if (fs.existsSync(localFfmpeg)) { ffmpegPath = localFfmpeg; }
+if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
+if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
+
+// Extract audio as MP3 for Whisper (keeps file under 25MB limit)
+function extractAudioForRepurpose(inputPath) {
+  const mp3Path = inputPath + '.mp3';
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) return reject(new Error('ffmpeg not available'));
+    const proc = spawn(ffmpegPath, [
+      '-i', inputPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-y', mp3Path
+    ]);
+    proc.on('close', (code) => code === 0 ? resolve(mp3Path) : reject(new Error('Audio extraction failed')));
+    proc.on('error', reject);
+  });
+}
+
+// Transcribe audio file using OpenAI Whisper
+async function transcribeUploadedFile(audioPath) {
+  const openai = getOpenAIClient();
+  const fileStream = fs.createReadStream(audioPath);
+  const response = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: fileStream,
+    response_format: 'text'
+  });
+  return response;
+}
+
 // GET - Premium repurpose form page
 router.get('/', requireAuth, (req, res) => {
   res.send(`
-    ${getHeadHTML('Repurpose')}
+    ${getHeadHTML('Create')}
       <style>
         ${getBaseCSS()}
 
@@ -1351,7 +1425,7 @@ router.get('/', requireAuth, (req, res) => {
               </div>
 
               <div class="button-group">
-                <button class="btn btn-primary" onclick="repurposeContent()">✨ Repurpose Now</button>
+                <button class="btn btn-primary" onclick="repurposeContent()">✨ Create Now</button>
               </div>
             </div>
           </div>
@@ -1693,7 +1767,97 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // POST - Stream content generation (Server-Sent Events)
-router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth'), async (req, res) => {
+// Process uploaded file: extract audio → transcribe → generate content (SSE stream)
+router.post('/process-upload', requireAuth, checkPlanLimit('creationsPerMonth'), upload.single('file'), async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  let filePath = null;
+  let audioPath = null;
+
+  try {
+    if (!req.file) {
+      res.write('data: ' + JSON.stringify({ error: 'No file uploaded' }) + '\n\n');
+      return res.end();
+    }
+
+    filePath = req.file.path;
+    const fileName = req.file.originalname || 'Uploaded Video';
+    const platforms = ['Instagram', 'Twitter', 'LinkedIn'];
+    const tone = 'Professional';
+    const userId = req.user.id;
+
+    const totalStart = Date.now();
+
+    // Step 1: Extract audio
+    res.write('data: ' + JSON.stringify({ status: 'Extracting audio...' }) + '\n\n');
+    try {
+      audioPath = await extractAudioForRepurpose(filePath);
+    } catch (err) {
+      // If audio extraction fails, try transcribing the file directly (might be audio-only)
+      audioPath = filePath;
+    }
+
+    // Step 2: Transcribe with Whisper
+    res.write('data: ' + JSON.stringify({ status: 'Transcribing with AI...' }) + '\n\n');
+    let transcript;
+    try {
+      transcript = await transcribeUploadedFile(audioPath);
+    } catch (err) {
+      console.error('Whisper transcription failed:', err.message);
+      res.write('data: ' + JSON.stringify({ error: 'Transcription failed: ' + err.message }) + '\n\n');
+      return res.end();
+    }
+
+    if (!transcript || transcript.trim().length === 0) {
+      res.write('data: ' + JSON.stringify({ error: 'Could not extract any speech from the file.' }) + '\n\n');
+      return res.end();
+    }
+
+    // Cap transcript to ~8000 words
+    const words = transcript.split(/\s+/);
+    if (words.length > 8000) {
+      transcript = words.slice(0, 8000).join(' ');
+    }
+
+    console.log('[Upload] Transcribed', words.length, 'words in', Date.now() - totalStart, 'ms');
+
+    // Step 3: Save to DB
+    const content = await contentOps.create(userId, fileName, transcript, 'upload', fileName);
+
+    // Step 4: Generate content for each platform (stream results)
+    res.write('data: ' + JSON.stringify({ status: 'Generating content...' }) + '\n\n');
+    const promises = platforms.map(async (platform) => {
+      try {
+        const generatedContent = await Promise.race([
+          generatePlatformContent(transcript, platform, tone, null),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('AI generation timed out for ' + platform)), 60000))
+        ]);
+        const output = await outputOps.create(content.id, userId, 'generated', generatedContent, platform, tone);
+        res.write('data: ' + JSON.stringify({ platform: output.platform, generated_content: output.generated_content, id: output.id }) + '\n\n');
+      } catch (err) {
+        console.error('Error generating ' + platform + ':', err.message);
+        res.write('data: ' + JSON.stringify({ platform: platform, error: err.message }) + '\n\n');
+      }
+    });
+
+    await Promise.allSettled(promises);
+    console.log('[Upload] Total process-upload:', Date.now() - totalStart, 'ms');
+    res.write('data: ' + JSON.stringify({ done: true }) + '\n\n');
+    res.end();
+  } catch (error) {
+    console.error('Upload stream error:', error);
+    res.write('data: ' + JSON.stringify({ error: error.message || 'Processing failed' }) + '\n\n');
+    res.end();
+  } finally {
+    // Clean up temp files
+    try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {}
+    try { if (audioPath && audioPath !== filePath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath); } catch (e) {}
+  }
+});
+
+router.post('/process-stream', requireAuth, checkPlanLimit('creationsPerMonth'), async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1775,7 +1939,7 @@ router.post('/process-stream', requireAuth, checkPlanLimit('repurposesPerMonth')
 });
 
 // POST - Process and generate content
-router.post('/process', requireAuth, checkPlanLimit('repurposesPerMonth'), async (req, res) => {
+router.post('/process', requireAuth, checkPlanLimit('creationsPerMonth'), async (req, res) => {
   try {
     const { url, brandVoiceId } = req.body;
     const platforms = req.body.platforms || ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'];
@@ -2313,7 +2477,7 @@ router.get('/history', requireAuth, (req, res) => {
           ${getThemeToggle()}
           <div class="header">
             <h1>Content Library</h1>
-            <p>Browse and manage all your repurposed content</p>
+            <p>Browse and manage all your created content</p>
           </div>
 
           <div class="controls">
@@ -2324,7 +2488,7 @@ router.get('/history', requireAuth, (req, res) => {
 
           <div class="empty-state" id="emptyState" style="display: none;">
             <h2>No content yet</h2>
-            <p>Start by repurposing a video to see it here</p>
+            <p>Start by creating a video to see it here</p>
           </div>
 
           <div class="pagination">
@@ -2491,8 +2655,9 @@ router.get('/history', requireAuth, (req, res) => {
             filteredContent = allContent.filter(function(item) {
               const title = (item.title || '').toLowerCase();
               const preview = (item.preview || '').toLowerCase();
+              const content = (item.content || '').toLowerCase();
               const platforms = (item.platforms || []).join(' ').toLowerCase();
-              return title.includes(searchTerm) || preview.includes(searchTerm) || platforms.includes(searchTerm);
+              return title.includes(searchTerm) || preview.includes(searchTerm) || content.includes(searchTerm) || platforms.includes(searchTerm);
             });
           }
           currentPage = 1;
@@ -2520,7 +2685,8 @@ router.get('/api/history', requireAuth, async (req, res) => {
           title: content.title,
           created_at: content.created_at,
           platforms: outputs.map(o => o.platform),
-          preview: outputs[0]?.generated_content?.substring(0, 100) || ''
+          preview: outputs[0]?.generated_content?.substring(0, 100) || '',
+          content: outputs[0]?.generated_content || ''
         };
       })
     );
