@@ -15,7 +15,7 @@ const PLATFORMS = [
   { id: 'pinterest', name: 'Pinterest', color: '#E60023', colorDark: '#FF4B5C', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24 18.635 24 24.003 18.633 24.003 12.013 24.003 5.393 18.635.028 12.017.028z"/></svg>' }
 ];
 
-// Shared CSS for Distribute pages
+// Shared CSS for Repurpose pages
 function getDistributeCSS() {
   return `
     /* ─── Filter Tabs (Repurpose.io style) ─── */
@@ -31,12 +31,15 @@ function getDistributeCSS() {
     .btn-gradient:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(108,58,237,0.4)}
 
     /* ─── Platform Icon Circles ─── */
-    .platform-icon-circle{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;transition:all 0.3s}
-    .platform-icon-circle svg{width:24px;height:24px}
+    .platform-icon-circle{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;transition:all 0.3s;pointer-events:none}
+    .platform-icon-circle svg{width:24px;height:24px;pointer-events:none}
     .platform-icon-circle.lg{width:56px;height:56px;border-radius:16px}
     .platform-icon-circle.lg svg{width:28px;height:28px}
     .platform-icon-circle.xl{width:64px;height:64px;border-radius:18px}
     .platform-icon-circle.xl svg{width:32px;height:32px}
+
+    /* Ensure clicks always hit the parent card, not child SVGs/spans */
+    .platform-card > *,.mode-card > *,.account-card > *,.platform-picker-item > *,.delay-btn > *{pointer-events:none}
 
     /* ─── Modal Overlay ─── */
     .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:10000;display:none;align-items:center;justify-content:center;opacity:0;transition:opacity 0.25s}
@@ -118,7 +121,7 @@ router.get('/', requireAuth, async (req, res) => {
   const css = getBaseCSS();
 
   res.send(`
-    ${getHeadHTML('Distribute - Splicora')}
+    ${getHeadHTML('Repurpose - Splicora')}
     <style>${css}
       ${getDistributeCSS()}
       .workflows-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem;gap:1rem;flex-wrap:wrap}
@@ -185,7 +188,7 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="main-content">
         <div class="workflows-header">
           <div>
-            <h1>Distribute</h1>
+            <h1>Repurpose</h1>
             <p style="color:var(--text-muted);font-size:0.95rem;margin:0.5rem 0 0">Automate posting content across platforms</p>
           </div>
           <a href="/distribute/create" class="btn-gradient">
@@ -210,7 +213,7 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="empty-state">
             <div class="empty-icon">📡</div>
             <h3>${filter === 'all' ? 'No workflows yet' : 'No ' + filter + ' workflows'}</h3>
-            <p>${filter === 'all' ? 'Create your first distribution workflow to start automatically posting content across platforms.' : 'No workflows match the selected filter.'}</p>
+            <p>${filter === 'all' ? 'Create your first repurposing workflow to start automatically posting content across platforms.' : 'No workflows match the selected filter.'}</p>
             ${filter === 'all' ? `<a href="/distribute/create" class="btn-gradient">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Create Workflow
@@ -443,7 +446,7 @@ router.get('/create', requireAuth, async (req, res) => {
             Back to Workflows
           </a>
           <h1 style="font-size:2rem;font-weight:800;margin-bottom:0.5rem;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Create Workflow</h1>
-          <p style="color:var(--text-muted);font-size:0.95rem;margin-bottom:2rem">Set up automated content distribution in a few steps</p>
+          <p style="color:var(--text-muted);font-size:0.95rem;margin-bottom:2rem">Set up automated content repurposing in a few steps</p>
 
           <div class="step-bar">
             <div class="step-indicator active" data-step="1"><span class="step-num">1</span> Mode</div>
@@ -462,12 +465,12 @@ router.get('/create', requireAuth, async (req, res) => {
           <!-- Step 1: Mode -->
           <div class="step-content active" data-step="1">
             <h2 class="step-title">Choose Workflow Mode</h2>
-            <p class="step-desc">How would you like to distribute your content?</p>
+            <p class="step-desc">How would you like to repurpose your content?</p>
             <div class="mode-grid">
               <div class="mode-card" onclick="selectMode('auto-publish', this)">
                 <div class="mode-icon">📤</div>
                 <div class="mode-title">Auto-Publish New Posts</div>
-                <div class="mode-desc">Automatically repost new content from your source platform to your destination — hands-free.</div>
+                <div class="mode-desc">Automatically repurpose new content from your source platform to your destination — hands-free.</div>
               </div>
               <div class="mode-card" onclick="selectMode('schedule-existing', this)">
                 <div class="mode-icon">📅</div>
@@ -802,7 +805,7 @@ router.get('/connections', requireAuth, async (req, res) => {
       <div class="main-content">
         <div class="connections-header">
           <div>
-            <h1>Distribute</h1>
+            <h1>Repurpose</h1>
             <p style="color:var(--text-muted);font-size:0.95rem;margin:0.5rem 0 0">Manage your platform integrations</p>
           </div>
           <button class="btn-gradient" onclick="openPlatformPicker()">
@@ -827,7 +830,7 @@ router.get('/connections', requireAuth, async (req, res) => {
           <div class="empty-state">
             <div class="empty-icon">🔗</div>
             <h3>${filter === 'all' ? 'No accounts connected' : 'No ' + filter + ' accounts'}</h3>
-            <p>${filter === 'all' ? 'Connect your social media accounts to start distributing content across platforms automatically.' : 'No accounts match the selected filter.'}</p>
+            <p>${filter === 'all' ? 'Connect your social media accounts to start repurposing content across platforms automatically.' : 'No accounts match the selected filter.'}</p>
             ${filter === 'all' ? `<button class="btn-gradient" onclick="openPlatformPicker()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Connection
