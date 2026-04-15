@@ -100,6 +100,84 @@ const initDatabase = async () => {
       try { await pool.query(sql); } catch (e) { /* table or column may not exist yet */ }
     }
 
+    // Connected accounts table (multi-account per platform)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS connected_accounts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        platform_user_id TEXT,
+        platform_username TEXT,
+        account_name TEXT,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_expires_at TIMESTAMP,
+        account_type TEXT DEFAULT 'source_destination',
+        is_active BOOLEAN DEFAULT true,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Workflows table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS workflows (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT,
+        source_account_id TEXT REFERENCES connected_accounts(id),
+        destination_account_id TEXT REFERENCES connected_accounts(id),
+        source_platform TEXT,
+        destination_platform TEXT,
+        content_type TEXT DEFAULT 'all',
+        playlist_id TEXT,
+        auto_publish BOOLEAN DEFAULT true,
+        is_active BOOLEAN DEFAULT true,
+        delay_hours INTEGER DEFAULT 0,
+        delay_mode TEXT DEFAULT 'immediate',
+        settings JSONB DEFAULT '{}',
+        content_scope TEXT DEFAULT 'future',
+        content_scope_date TIMESTAMP,
+        post_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Workflow schedule (time slots)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS workflow_schedules (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT REFERENCES workflows(id) ON DELETE CASCADE,
+        day_of_week INTEGER NOT NULL,
+        time_slot TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Content queue (videos to be published)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS content_queue (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT REFERENCES workflows(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL,
+        source_video_id TEXT,
+        source_url TEXT,
+        title TEXT,
+        description TEXT,
+        thumbnail_url TEXT,
+        duration INTEGER,
+        status TEXT DEFAULT 'pending',
+        scheduled_at TIMESTAMP,
+        published_at TIMESTAMP,
+        error_message TEXT,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Content items table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS content_items (
@@ -1351,5 +1429,72 @@ module.exports = {
   teamOps,
   adminOps,
   featureUsageOps,
-  pageContentOps
+  pageContentOps,
+  connectedAccountOps: {
+    async create(userId, data) {
+      const id = uuidv4();
+      const result = await pool.query(
+        `INSERT INTO connected_accounts (id, user_id, platform, platform_user_id, platform_username, account_name, access_token, refresh_token, token_expires_at, account_type, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [id, userId, data.platform, data.platformUserId, data.platformUsername, data.accountName, data.accessToken, data.refreshToken, data.tokenExpiresAt, data.accountType || 'source_destination', JSON.stringify(data.metadata || {})]
+      );
+      return result.rows[0];
+    },
+    async getByUser(userId) { return (await pool.query(`SELECT * FROM connected_accounts WHERE user_id = $1 AND is_active = true ORDER BY created_at DESC`, [userId])).rows; },
+    async getByUserAndPlatform(userId, platform) { return (await pool.query(`SELECT * FROM connected_accounts WHERE user_id = $1 AND platform = $2 AND is_active = true ORDER BY created_at DESC`, [userId, platform])).rows; },
+    async getById(id) { return (await pool.query(`SELECT * FROM connected_accounts WHERE id = $1`, [id])).rows[0]; },
+    async update(id, data) {
+      const result = await pool.query(
+        `UPDATE connected_accounts SET access_token = COALESCE($1, access_token), refresh_token = COALESCE($2, refresh_token), token_expires_at = COALESCE($3, token_expires_at), platform_username = COALESCE($4, platform_username), account_name = COALESCE($5, account_name), updated_at = CURRENT_TIMESTAMP WHERE id = $6 RETURNING *`,
+        [data.accessToken, data.refreshToken, data.tokenExpiresAt, data.platformUsername, data.accountName, id]
+      );
+      return result.rows[0];
+    },
+    async deactivate(id) { return (await pool.query(`UPDATE connected_accounts SET is_active = false WHERE id = $1 RETURNING *`, [id])).rows[0]; },
+    async delete(id) { await pool.query(`DELETE FROM connected_accounts WHERE id = $1`, [id]); }
+  },
+  workflowOps: {
+    async create(userId, data) {
+      const id = uuidv4();
+      const result = await pool.query(
+        `INSERT INTO workflows (id, user_id, name, source_account_id, destination_account_id, source_platform, destination_platform, content_type, auto_publish, delay_hours, delay_mode, settings, content_scope, content_scope_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        [id, userId, data.name, data.sourceAccountId, data.destinationAccountId, data.sourcePlatform, data.destinationPlatform, data.contentType || 'all', data.autoPublish !== false, data.delayHours || 0, data.delayMode || 'immediate', JSON.stringify(data.settings || {}), data.contentScope || 'future', data.contentScopeDate]
+      );
+      return result.rows[0];
+    },
+    async getByUser(userId) { return (await pool.query(`SELECT w.*, sa.platform_username as source_username, da.platform_username as dest_username FROM workflows w LEFT JOIN connected_accounts sa ON w.source_account_id = sa.id LEFT JOIN connected_accounts da ON w.destination_account_id = da.id WHERE w.user_id = $1 ORDER BY w.created_at DESC`, [userId])).rows; },
+    async getById(id) { return (await pool.query(`SELECT w.*, sa.platform_username as source_username, da.platform_username as dest_username FROM workflows w LEFT JOIN connected_accounts sa ON w.source_account_id = sa.id LEFT JOIN connected_accounts da ON w.destination_account_id = da.id WHERE w.id = $1`, [id])).rows[0]; },
+    async update(id, data) {
+      const sets = []; const vals = []; let idx = 1;
+      for (const [k, v] of Object.entries(data)) {
+        const col = k.replace(/[A-Z]/g, m => '_' + m.toLowerCase());
+        sets.push(`${col} = $${idx}`); vals.push(k === 'settings' ? JSON.stringify(v) : v); idx++;
+      }
+      sets.push(`updated_at = CURRENT_TIMESTAMP`);
+      vals.push(id);
+      return (await pool.query(`UPDATE workflows SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`, vals)).rows[0];
+    },
+    async toggleAutoPublish(id, value) { return (await pool.query(`UPDATE workflows SET auto_publish = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`, [value, id])).rows[0]; },
+    async toggleActive(id, value) { return (await pool.query(`UPDATE workflows SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`, [value, id])).rows[0]; },
+    async incrementPostCount(id) { return (await pool.query(`UPDATE workflows SET post_count = post_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`, [id])).rows[0]; },
+    async delete(id) { await pool.query(`DELETE FROM workflows WHERE id = $1`, [id]); }
+  },
+  contentQueueOps: {
+    async create(data) {
+      const id = uuidv4();
+      const result = await pool.query(
+        `INSERT INTO content_queue (id, workflow_id, user_id, source_video_id, source_url, title, description, thumbnail_url, duration, status, scheduled_at, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [id, data.workflowId, data.userId, data.sourceVideoId, data.sourceUrl, data.title, data.description, data.thumbnailUrl, data.duration, data.status || 'pending', data.scheduledAt, JSON.stringify(data.metadata || {})]
+      );
+      return result.rows[0];
+    },
+    async getByWorkflow(workflowId, status) {
+      const q = status ? `SELECT * FROM content_queue WHERE workflow_id = $1 AND status = $2 ORDER BY scheduled_at ASC` : `SELECT * FROM content_queue WHERE workflow_id = $1 ORDER BY created_at DESC`;
+      return (await pool.query(q, status ? [workflowId, status] : [workflowId])).rows;
+    },
+    async updateStatus(id, status, errorMessage) { return (await pool.query(`UPDATE content_queue SET status = $1, error_message = $2, published_at = CASE WHEN $1 = 'published' THEN CURRENT_TIMESTAMP ELSE published_at END WHERE id = $3 RETURNING *`, [status, errorMessage, id])).rows[0]; },
+    async getScheduled() { return (await pool.query(`SELECT cq.*, w.destination_platform, w.settings FROM content_queue cq JOIN workflows w ON cq.workflow_id = w.id WHERE cq.status = 'scheduled' AND cq.scheduled_at <= CURRENT_TIMESTAMP ORDER BY cq.scheduled_at ASC`)).rows; }
+  }
 };

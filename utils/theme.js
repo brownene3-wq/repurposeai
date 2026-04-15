@@ -141,6 +141,7 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/brand-templates', icon: '\u{1F5A8}\u{FE0F}', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
     { href: '/dashboard/calendar', icon: '\u{1F4C5}', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
     { href: '/dashboard/analytics', icon: '\u{1F4CA}', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
+    { href: '/distribute', icon: '\u{26A1}', label: 'Distribute', key: 'distribute', perm: null },
     // --- Account ---
     { href: '/billing', icon: '\u{1F4B3}', label: 'Billing', key: 'billing', perm: 'view_billing' },
     { href: '/settings', icon: '\u{2699}\u{FE0F}', label: 'Settings', key: 'settings', perm: 'manage_settings' },

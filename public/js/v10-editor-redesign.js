@@ -77,11 +77,17 @@
     '.v10-tl-empty{display:flex;align-items:center;justify-content:center;background:#0a0815}',
     '.v10-tl-placeholder{text-align:center;color:#5c5a70;font-size:12px;user-select:none}',
     '.v10-tl-placeholder svg{display:block;margin:0 auto 8px;opacity:.35}',
+    '/* v10 hide native filmstrip-wrap (mini-timeline) — consolidated into multi-track */',
+    '.filmstrip-wrap{display:none!important}',
+    '/* v10 enhanced multi-track timeline */',
+    '.mt-track-video,.mt-track-audio{height:52px!important;min-height:52px!important}',
+    '.mt-track-video .mt-clip,.mt-track-audio .mt-clip{height:100%!important}',
+    '.mt-tracks-area{cursor:pointer}',
     '/* v10 timeline overlays */',
     '.v10-filmstrip{position:absolute;inset:4px 4px;border-radius:5px;overflow:hidden;display:flex;box-shadow:0 2px 6px rgba(0,0,0,.35);border:1px solid rgba(124,58,237,.45);z-index:2;pointer-events:none}',
     '.v10-filmstrip::before,.v10-filmstrip::after{content:"";position:absolute;left:0;right:0;height:3px;background-image:repeating-linear-gradient(90deg,#0a0815 0 4px,transparent 4px 8px);z-index:3}',
     '.v10-filmstrip::before{top:0}.v10-filmstrip::after{bottom:0}',
-    '.v10-frame{flex:1;min-width:0;border-right:1px solid rgba(0,0,0,.35);position:relative;overflow:hidden}',
+    '.v10-frame{flex:1;min-width:0;border-right:1px solid rgba(0,0,0,.35);position:relative;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat}',
     '.v10-frame:last-child{border-right:none}',
     '.v10-fs-label{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.7);z-index:4;pointer-events:none}',
     '.v10-wf-dense{position:absolute;inset:4px 8px;display:flex;align-items:center;justify-content:center;gap:1px;z-index:2;pointer-events:none}',
@@ -827,20 +833,95 @@
     for (var i=0; i<24; i++){
       var pal = SCENE_PALETTE[i % SCENE_PALETTE.length];
       var angle = (i * 37) % 360;
-      frames += '<div class="v10-frame" style="background:linear-gradient('+angle+'deg,'+pal[0]+','+pal[1]+')"></div>';
+      frames += '<div class="v10-frame" data-frame-idx="'+i+'" style="background:linear-gradient('+angle+'deg,'+pal[0]+','+pal[1]+')"></div>';
     }
     fs.innerHTML = frames + '<span class="v10-fs-label">\ud83c\udfac '+escapeHtml(videoName||'Video')+'</span>';
     return fs;
   }
 
+
+  /* Capture real video frames and apply them to the filmstrip */
+  var _captureInProgress = false;
+  var _lastCapturedSrc = '';
+
+  function captureVideoFrames(){
+    var video = document.querySelector('#videoPlayer, video');
+    if (!video || !video.currentSrc || video.readyState < 2 || video.duration <= 0) return;
+    if (_captureInProgress) return;
+    if (_lastCapturedSrc === video.currentSrc) return;
+    var filmstrip = document.querySelector('[data-v10="filmstrip"]');
+    if (!filmstrip) return;
+    var frameEls = filmstrip.querySelectorAll('.v10-frame');
+    if (!frameEls.length) return;
+
+    _captureInProgress = true;
+    var numFrames = frameEls.length;
+    var duration = video.duration;
+    var canvas = document.createElement('canvas');
+    canvas.width = 120;
+    canvas.height = 68;
+    var ctx = canvas.getContext('2d');
+    var savedTime = video.currentTime;
+    var frameIdx = 0;
+
+    function onSeeked(){
+      try {
+        /* Cover-style draw: maintain aspect ratio, crop to fill canvas */
+        var vw = video.videoWidth || canvas.width;
+        var vh = video.videoHeight || canvas.height;
+        var cw = canvas.width;
+        var ch = canvas.height;
+        var videoRatio = vw / vh;
+        var canvasRatio = cw / ch;
+        var sx, sy, sw, sh;
+        if (videoRatio > canvasRatio) {
+          /* Video is wider — crop sides */
+          sh = vh; sw = vh * canvasRatio;
+          sx = (vw - sw) / 2; sy = 0;
+        } else {
+          /* Video is taller (portrait) — crop top/bottom */
+          sw = vw; sh = vw / canvasRatio;
+          sx = 0; sy = (vh - sh) / 2;
+        }
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        if (frameEls[frameIdx]){
+          frameEls[frameIdx].style.background = 'url(' + dataUrl + ') center/cover no-repeat';
+        }
+      } catch(e){ /* cross-origin — keep gradient */ }
+      frameIdx++;
+      if (frameIdx >= numFrames){
+        video.removeEventListener('seeked', onSeeked);
+        clearTimeout(safetyTimeout);
+        video.currentTime = savedTime;
+        _captureInProgress = false;
+        _lastCapturedSrc = video.currentSrc;
+        return;
+      }
+      var t = (frameIdx + 0.5) / numFrames * duration;
+      video.currentTime = t;
+    }
+
+    var safetyTimeout = setTimeout(function(){
+      video.removeEventListener('seeked', onSeeked);
+      video.currentTime = savedTime;
+      _captureInProgress = false;
+    }, 15000);
+
+    video.addEventListener('seeked', onSeeked);
+    var t = (0 + 0.5) / numFrames * duration;
+    video.currentTime = t;
+  }
+
+  var WF_BARS = 180;
+
   function buildDenseWaveform(){
     var wf = document.createElement('div');
     wf.className = 'v10-wf-dense';
     wf.setAttribute('data-v10','wf');
-    var N = 180;
     var bars = '';
-    for (var j=0; j<N; j++){
-      var p = j / N;
+    for (var j=0; j<WF_BARS; j++){
+      var p = j / WF_BARS;
       var env = 0.35
         + 0.55 * Math.exp(-Math.pow((p-0.35)/0.18, 2))
         + 0.65 * Math.exp(-Math.pow((p-0.78)/0.12, 2))
@@ -853,6 +934,63 @@
     }
     wf.innerHTML = bars;
     return wf;
+  }
+
+  /* Capture real audio waveform from the loaded video */
+  var _waveformCaptureInProgress = false;
+  var _lastWaveformSrc = '';
+
+  function captureAudioWaveform(){
+    var video = document.querySelector('#videoPlayer, video');
+    if (!video || !video.currentSrc || video.readyState < 2 || video.duration <= 0) return;
+    if (_waveformCaptureInProgress) return;
+    if (_lastWaveformSrc === video.currentSrc) return;
+    var wfEl = document.querySelector('[data-v10="wf"]');
+    if (!wfEl) return;
+
+    _waveformCaptureInProgress = true;
+
+    /* Fetch the video as an ArrayBuffer and decode its audio */
+    fetch(video.currentSrc).then(function(res){
+      if (!res.ok) throw new Error('fetch failed');
+      return res.arrayBuffer();
+    }).then(function(buf){
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      return ac.decodeAudioData(buf).then(function(audioBuf){
+        ac.close();
+        return audioBuf;
+      });
+    }).then(function(audioBuf){
+      /* Downsample to WF_BARS RMS amplitudes */
+      var raw = audioBuf.getChannelData(0);
+      var len = raw.length;
+      var segSize = Math.floor(len / WF_BARS);
+      var peaks = [];
+      var maxPeak = 0;
+      for (var i = 0; i < WF_BARS; i++){
+        var start = i * segSize;
+        var end = Math.min(start + segSize, len);
+        var sum = 0;
+        for (var s = start; s < end; s++){
+          sum += raw[s] * raw[s];
+        }
+        var rms = Math.sqrt(sum / (end - start));
+        peaks.push(rms);
+        if (rms > maxPeak) maxPeak = rms;
+      }
+      /* Normalize and apply to the waveform bars */
+      var spans = wfEl.querySelectorAll('span');
+      for (var b = 0; b < Math.min(spans.length, WF_BARS); b++){
+        var norm = maxPeak > 0 ? peaks[b] / maxPeak : 0;
+        var h = Math.max(6, Math.min(100, norm * 94 + 6));
+        spans[b].style.height = h.toFixed(1) + '%';
+      }
+      _lastWaveformSrc = video.currentSrc;
+      _waveformCaptureInProgress = false;
+    }).catch(function(){
+      /* On error (CORS, decode failure) keep the placeholder waveform */
+      _waveformCaptureInProgress = false;
+    });
   }
 
   function videoIsLoaded(){
@@ -884,11 +1022,19 @@
     return 'Video';
   }
 
+  function isUploadPanelVisible(){
+    var uz = document.querySelector('.upload-zone');
+    if (uz && uz.offsetHeight > 0 && getComputedStyle(uz).display !== 'none') return true;
+    var v = document.querySelector('#videoPlayer, video');
+    if (v && !v.currentSrc && !v.src && v.readyState === 0) return true;
+    return false;
+  }
+
   function patchTimelineVisibility(){
     var tc = document.querySelector('.timeline-container');
     if (!tc) return;
-    var loaded = videoIsLoaded();
-    if (!loaded){
+    var uploadVisible = isUploadPanelVisible();
+    if (uploadVisible){
       if (!tc.classList.contains('v10-tl-empty')){
         tc.classList.add('v10-tl-empty');
         if (!tc.querySelector('.v10-tl-placeholder')){
@@ -909,6 +1055,8 @@
   function patchTimelineTracks(){
     if (!videoIsLoaded()){
       document.querySelectorAll('[data-v10="filmstrip"], [data-v10="wf"]').forEach(function(n){ n.remove(); });
+      _lastCapturedSrc = '';
+      _lastWaveformSrc = '';
       return;
     }
     var vTrack = document.querySelector('.mt-track-video') || document.querySelector('.fs-track.video-track');
@@ -922,6 +1070,9 @@
       if (getComputedStyle(aTrack).position === 'static') aTrack.style.position = 'relative';
       aTrack.appendChild(buildDenseWaveform());
     }
+    // Attempt to capture real video frames and audio waveform
+    captureVideoFrames();
+    captureAudioWaveform();
   }
 
   /* ===================== RIGHT PANEL ===================== */
@@ -1198,6 +1349,13 @@
     document.addEventListener('loadedmetadata', function(e){
       if (e.target && e.target.tagName === 'VIDEO') scheduleApply();
     }, true);
+    document.addEventListener('loadeddata', function(e){
+      if (e.target && e.target.tagName === 'VIDEO'){
+        scheduleApply();
+        setTimeout(captureVideoFrames, 500);
+        setTimeout(captureAudioWaveform, 600);
+      }
+    }, true);
     document.addEventListener('play', function(e){
       if (e.target && e.target.tagName === 'VIDEO') scheduleApply();
     }, true);
@@ -1209,3 +1367,8 @@
     setTimeout(boot, 50);
   }
 })();
+
+
+
+
+
