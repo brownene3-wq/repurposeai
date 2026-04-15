@@ -12,7 +12,12 @@ const PLATFORMS = [
   { id: 'facebook', name: 'Facebook', color: '#1877F2', colorDark: '#4B9BFF', type: 'source_destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>' },
   { id: 'twitter', name: 'X (Twitter)', color: '#000000', colorDark: '#FFFFFF', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>' },
   { id: 'linkedin', name: 'LinkedIn', color: '#0A66C2', colorDark: '#3B99FC', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>' },
-  { id: 'pinterest', name: 'Pinterest', color: '#E60023', colorDark: '#FF4B5C', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24 18.635 24 24.003 18.633 24.003 12.013 24.003 5.393 18.635.028 12.017.028z"/></svg>' }
+  { id: 'pinterest', name: 'Pinterest', color: '#E60023', colorDark: '#FF4B5C', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24 18.635 24 24.003 18.633 24.003 12.013 24.003 5.393 18.635.028 12.017.028z"/></svg>' },
+  { id: 'threads', name: 'Threads', color: '#000000', colorDark: '#FFFFFF', type: 'source_destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.59 12c.025 3.086.718 5.496 2.057 7.164 1.432 1.783 3.631 2.698 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.31-.71-.873-1.3-1.634-1.75-.192 1.352-.622 2.446-1.284 3.272-.886 1.102-2.14 1.704-3.73 1.79-1.202.065-2.361-.218-3.259-.801-1.063-.689-1.685-1.74-1.752-2.96-.065-1.182.408-2.256 1.33-3.022.812-.674 1.926-1.075 3.233-1.162 1.07-.07 2.065.03 2.967.291-.07-.59-.233-1.105-.492-1.538-.449-.746-1.206-1.14-2.253-1.173-1.008.019-1.71.306-2.146.88l-1.63-1.162c.748-1.074 1.998-1.668 3.52-1.737h.146c1.489.043 2.685.583 3.493 1.563.661.8 1.076 1.842 1.238 3.1.581.2 1.109.467 1.575.798 1.19.845 2.032 2.085 2.404 3.558.56 2.212.145 4.86-1.833 6.828C18.18 23.145 15.66 23.97 12.186 24zm.08-8.39c-1.472.094-2.428.612-2.476 1.486.028.52.307.937.84 1.282.606.393 1.375.564 2.165.52 1.104-.06 1.937-.47 2.474-1.14.397-.494.663-1.14.79-1.92-.604-.216-1.27-.33-1.985-.3-.272.018-.543.042-.808.073z"/></svg>' },
+  { id: 'bluesky', name: 'Bluesky', color: '#0085FF', colorDark: '#38A3FF', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.785 2.627 3.601 3.497 6.267 3.248-4.67.699-8.776 2.455-3.76 8.504C8.292 27.584 10.6 18.21 12 14.042c1.4 4.168 3.218 13.14 8.87 7.957 5.015-6.049.91-7.805-3.76-8.504 2.665.249 5.482-.621 6.267-3.248C23.622 9.418 24 4.458 24 3.768c0-.69-.139-1.861-.902-2.203-.659-.299-1.664-.621-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z"/></svg>' },
+  { id: 'snapchat', name: 'Snapchat', color: '#FFFC00', colorDark: '#FFF700', type: 'source_destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.206.793c.99 0 4.347.276 5.93 3.821.529 1.193.403 3.219.299 4.847l-.003.06c-.012.18-.022.345-.03.51.075.045.203.09.401.09.3-.016.659-.12 1.033-.301.165-.088.344-.104.464-.104.182 0 .359.029.509.09.45.149.734.479.734.838.015.449-.39.839-1.213 1.168-.089.029-.209.075-.344.119-.45.135-1.139.36-1.333.81-.09.224-.061.524.12.868l.015.015c.06.136 1.526 3.475 4.791 4.014.255.044.435.27.42.509 0 .075-.015.149-.045.225-.24.569-1.273.988-3.146 1.271-.059.091-.12.375-.164.57-.029.179-.074.36-.134.553-.076.271-.27.405-.555.405h-.03c-.135 0-.313-.031-.538-.076-.375-.09-.84-.181-1.468-.181-.225 0-.435.015-.674.046-.811.106-1.439.5-2.144.955-1.019.659-2.189 1.41-4.029 1.41-1.84 0-3.01-.75-4.029-1.41-.705-.449-1.334-.85-2.144-.955-.24-.029-.449-.046-.674-.046-.629 0-1.093.091-1.468.181-.225.045-.39.076-.539.076h-.03c-.284 0-.48-.135-.555-.405-.06-.193-.105-.374-.134-.553-.045-.196-.105-.48-.165-.57C1.215 18.24.18 17.822-.06 17.254c-.03-.075-.045-.15-.045-.225-.015-.24.164-.465.42-.509 3.264-.54 4.73-3.879 4.791-4.02l.016-.029c.18-.345.224-.645.119-.869-.195-.434-.884-.674-1.333-.809-.136-.046-.254-.09-.345-.12C2.4 10.328 2 9.94 2.015 9.49c0-.359.255-.689.705-.838.15-.06.314-.09.494-.09.12 0 .314.016.479.104.374.181.733.302 1.048.302.194 0 .33-.045.406-.089-.009-.18-.019-.36-.034-.556l-.004-.074c-.104-1.628-.229-3.654.299-4.848C6.854 1.07 10.194.793 11.194.793h1.012z"/></svg>' },
+  { id: 'googledrive', name: 'Google Drive', color: '#4285F4', colorDark: '#5B9BFF', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.5L1.15 15l4.58 7.5H12L5.44 11 7.71 3.5zm8.58 0h-6.58l6.58 11h6.58L16.29 3.5zm-.71 12.5l-3.29 5.5h12.58l3.29-5.5H15.58zM8 15l4-6.69L8 2H2l6 13z"/></svg>' },
+  { id: 'dropbox', name: 'Dropbox', color: '#0061FF', colorDark: '#3B8BFF', type: 'destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2l6 3.75L6 9.5 0 5.75 6 2zm12 0l6 3.75-6 3.75-6-3.75L18 2zM0 13.25L6 9.5l6 3.75L6 17 0 13.25zm18-3.75l6 3.75L18 17l-6-3.75L18 9.5zM6 18.25l6-3.75 6 3.75L12 22l-6-3.75z"/></svg>' }
 ];
 
 // Shared CSS for Repurpose pages
@@ -434,6 +439,13 @@ router.get('/create', requireAuth, async (req, res) => {
       .btn-step.prev{background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text)}
       body.light .btn-step.prev,html.light .btn-step.prev{border-color:rgba(0,0,0,0.15)}
       .btn-step.prev:hover{border-color:var(--text);background:rgba(255,255,255,0.04)}
+
+      /* ─── Settings Toggle Rows ─── */
+      .setting-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1rem;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background 0.2s}
+      body.light .setting-toggle-row,html.light .setting-toggle-row{background:rgba(0,0,0,0.02);border-color:rgba(0,0,0,0.04)}
+      .setting-toggle-row:hover{background:rgba(108,58,237,0.04)}
+      .setting-label{font-size:0.85rem;font-weight:600;color:var(--text)}
+      @media(max-width:600px){.settings-card div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important}}
     </style>
     </head><body>
     <div class="dashboard">
@@ -570,6 +582,7 @@ router.get('/create', requireAuth, async (req, res) => {
               </div>
             </div>
 
+            <!-- Posting Schedule -->
             <div class="settings-card">
               <h3>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -577,16 +590,105 @@ router.get('/create', requireAuth, async (req, res) => {
               </h3>
               <div class="delay-grid">
                 <button class="delay-btn selected" onclick="selectDelay('immediate', this)">Immediately</button>
-                <button class="delay-btn" onclick="selectDelay('custom', this)">Custom Delay</button>
-                <button class="delay-btn" onclick="selectDelay('time-slot', this)">Specific Time</button>
+                <button class="delay-btn" onclick="selectDelay('custom', this)">Delay by Hours/Days</button>
+                <button class="delay-btn" onclick="selectDelay('time-slot', this)">Time Slots</button>
               </div>
               <div id="delayCustom" style="display:none;margin-top:0.8rem">
-                <label style="display:block;margin-bottom:0.4rem;color:var(--text-muted);font-size:0.85rem;font-weight:600">Post after (hours):</label>
-                <input type="number" id="delayHours" min="0" max="168" value="0" class="time-input" style="max-width:200px" />
+                <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
+                  <div>
+                    <label style="display:block;margin-bottom:0.4rem;color:var(--text-muted);font-size:0.85rem;font-weight:600">Post after:</label>
+                    <input type="number" id="delayHours" min="0" max="720" value="1" class="time-input" style="width:80px" />
+                  </div>
+                  <div>
+                    <select id="delayUnit" class="time-input" style="width:120px" onchange="state.delayUnit=this.value">
+                      <option value="hours">Hours</option>
+                      <option value="days">Days</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div id="delaySlot" style="display:none;margin-top:0.8rem">
-                <label style="display:block;margin-bottom:0.4rem;color:var(--text-muted);font-size:0.85rem;font-weight:600">Post at:</label>
-                <input type="time" id="timeSlot" class="time-input" style="max-width:200px" />
+                <label style="display:block;margin-bottom:0.4rem;color:var(--text-muted);font-size:0.85rem;font-weight:600">Post at these times (add up to 5 time slots):</label>
+                <div id="timeSlotsContainer">
+                  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+                    <input type="time" class="time-input time-slot-input" style="width:140px" value="09:00" />
+                    <button onclick="removeTimeSlot(this)" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.1rem;padding:0.3rem">✕</button>
+                  </div>
+                </div>
+                <button onclick="addTimeSlot()" style="background:rgba(108,58,237,0.1);border:1px dashed rgba(108,58,237,0.3);color:#6C3AED;padding:0.5rem 1rem;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.82rem;margin-top:0.3rem">+ Add Time Slot</button>
+              </div>
+            </div>
+
+            <!-- Video Processing -->
+            <div class="settings-card">
+              <h3>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+                Video Processing
+              </h3>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem">
+                <label class="setting-toggle-row">
+                  <span class="setting-label">Auto-resize for platform</span>
+                  <label class="toggle-switch"><input type="checkbox" id="settingResize" checked><span class="toggle-track"></span></label>
+                </label>
+                <label class="setting-toggle-row">
+                  <span class="setting-label">Burn subtitles</span>
+                  <label class="toggle-switch"><input type="checkbox" id="settingSubtitles"><span class="toggle-track"></span></label>
+                </label>
+                <label class="setting-toggle-row">
+                  <span class="setting-label">Add intro clip</span>
+                  <label class="toggle-switch"><input type="checkbox" id="settingIntro"><span class="toggle-track"></span></label>
+                </label>
+                <label class="setting-toggle-row">
+                  <span class="setting-label">Add outro clip</span>
+                  <label class="toggle-switch"><input type="checkbox" id="settingOutro"><span class="toggle-track"></span></label>
+                </label>
+              </div>
+            </div>
+
+            <!-- Captions & Hashtags -->
+            <div class="settings-card">
+              <h3>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Captions & Hashtags
+              </h3>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-bottom:1rem">
+                <label class="setting-toggle-row">
+                  <span class="setting-label">AI auto-generate captions</span>
+                  <label class="toggle-switch"><input type="checkbox" id="settingAICaptions"><span class="toggle-track"></span></label>
+                </label>
+                <label class="setting-toggle-row">
+                  <span class="setting-label">Use caption template</span>
+                  <label class="toggle-switch"><input type="checkbox" id="settingCaptionTemplate"><span class="toggle-track"></span></label>
+                </label>
+              </div>
+              <div id="captionTemplateBox" style="display:none;margin-bottom:1rem">
+                <label style="display:block;margin-bottom:0.4rem;color:var(--text-muted);font-size:0.85rem;font-weight:600">Caption template (use {title}, {description}):</label>
+                <textarea id="captionTemplate" class="time-input" style="width:100%;min-height:60px;resize:vertical;font-family:inherit" placeholder="Check out my latest: {title} #content #creator"></textarea>
+              </div>
+              <div>
+                <label style="display:block;margin-bottom:0.4rem;color:var(--text-muted);font-size:0.85rem;font-weight:600">Hashtag filter (comma-separated, leave empty for all):</label>
+                <input type="text" id="hashtagFilter" class="time-input" style="width:100%" placeholder="#viral, #trending, #fyp" />
+              </div>
+            </div>
+
+            <!-- Content Disclosure -->
+            <div class="settings-card">
+              <h3>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Content Disclosure
+              </h3>
+              <label class="setting-toggle-row" style="margin-bottom:0.8rem">
+                <span class="setting-label">Mark as branded/sponsored content</span>
+                <label class="toggle-switch"><input type="checkbox" id="settingDisclosure"><span class="toggle-track"></span></label>
+              </label>
+              <div id="disclosureBox" style="display:none">
+                <label style="display:block;margin-bottom:0.4rem;color:var(--text-muted);font-size:0.85rem;font-weight:600">Disclosure label:</label>
+                <select id="disclosureType" class="time-input" style="width:100%">
+                  <option value="paid_partnership">Paid Partnership</option>
+                  <option value="sponsored">Sponsored</option>
+                  <option value="brand_content">Branded Content</option>
+                  <option value="affiliate">Affiliate</option>
+                </select>
               </div>
             </div>
 
@@ -605,8 +707,35 @@ router.get('/create', requireAuth, async (req, res) => {
 
       const connectionsByPlatform = ${JSON.stringify(connectionsByPlatform)};
       const PLATFORMS_DATA = ${JSON.stringify(PLATFORMS.map(p => ({ id: p.id, name: p.name, color: p.color, svg: p.svg })))};
-      let state = { mode:null, sourcePlatform:null, sourceAccountId:null, destPlatform:null, destAccountId:null, delayMode:'immediate', delayHours:0, timeSlot:null };
+      let state = { mode:null, sourcePlatform:null, sourceAccountId:null, destPlatform:null, destAccountId:null, delayMode:'immediate', delayHours:0, delayUnit:'hours', timeSlots:['09:00'] };
       let currentStep = 1;
+
+      // Time slot management
+      function addTimeSlot() {
+        const container = document.getElementById('timeSlotsContainer');
+        if (container.children.length >= 5) { showToast('Maximum 5 time slots', 'error'); return; }
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem';
+        row.innerHTML = '<input type="time" class="time-input time-slot-input" style="width:140px" value="12:00" /><button onclick="removeTimeSlot(this)" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.1rem;padding:0.3rem">✕</button>';
+        container.appendChild(row);
+      }
+      function removeTimeSlot(btn) {
+        const container = document.getElementById('timeSlotsContainer');
+        if (container.children.length <= 1) { showToast('Need at least one time slot', 'error'); return; }
+        btn.parentElement.remove();
+      }
+
+      // Toggle caption template visibility
+      document.addEventListener('DOMContentLoaded', function() {
+        var ct = document.getElementById('settingCaptionTemplate');
+        if (ct) ct.addEventListener('change', function() {
+          document.getElementById('captionTemplateBox').style.display = this.checked ? 'block' : 'none';
+        });
+        var disc = document.getElementById('settingDisclosure');
+        if (disc) disc.addEventListener('change', function() {
+          document.getElementById('disclosureBox').style.display = this.checked ? 'block' : 'none';
+        });
+      });
 
       function selectMode(mode, el) {
         state.mode = mode;
@@ -696,8 +825,32 @@ router.get('/create', requireAuth, async (req, res) => {
       function prevStep() { if (currentStep > 1) { currentStep--; showStep(currentStep); } }
 
       async function createWorkflow() {
-        state.delayHours = state.delayMode === 'custom' ? parseInt(document.getElementById('delayHours').value) || 0 : 0;
-        state.timeSlot = state.delayMode === 'time-slot' ? document.getElementById('timeSlot').value : null;
+        // Gather delay settings
+        let delayHours = 0;
+        if (state.delayMode === 'custom') {
+          const val = parseInt(document.getElementById('delayHours').value) || 0;
+          const unit = document.getElementById('delayUnit').value;
+          delayHours = unit === 'days' ? val * 24 : val;
+        }
+        // Gather time slots
+        let timeSlots = [];
+        if (state.delayMode === 'time-slot') {
+          document.querySelectorAll('.time-slot-input').forEach(inp => { if (inp.value) timeSlots.push(inp.value); });
+        }
+        // Gather advanced settings
+        const settings = {
+          resize: document.getElementById('settingResize').checked,
+          burnSubtitles: document.getElementById('settingSubtitles').checked,
+          addIntro: document.getElementById('settingIntro').checked,
+          addOutro: document.getElementById('settingOutro').checked,
+          aiCaptions: document.getElementById('settingAICaptions').checked,
+          captionTemplate: document.getElementById('settingCaptionTemplate').checked ? (document.getElementById('captionTemplate').value || '') : '',
+          hashtagFilter: document.getElementById('hashtagFilter').value || '',
+          disclosure: document.getElementById('settingDisclosure').checked,
+          disclosureType: document.getElementById('settingDisclosure').checked ? document.getElementById('disclosureType').value : null,
+          timeSlots: timeSlots
+        };
+
         if (!state.mode || !state.sourcePlatform || !state.sourceAccountId || !state.destPlatform || !state.destAccountId) {
           showToast('Please complete all steps', 'error'); return;
         }
@@ -706,7 +859,11 @@ router.get('/create', requireAuth, async (req, res) => {
         try {
           const res = await fetch('/distribute/api/workflow', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: state.mode, sourcePlatform: state.sourcePlatform, sourceAccountId: state.sourceAccountId, destPlatform: state.destPlatform, destAccountId: state.destAccountId, delayMode: state.delayMode, delayHours: state.delayHours, timeSlot: state.timeSlot })
+            body: JSON.stringify({
+              mode: state.mode, sourcePlatform: state.sourcePlatform, sourceAccountId: state.sourceAccountId,
+              destPlatform: state.destPlatform, destAccountId: state.destAccountId,
+              delayMode: state.delayMode, delayHours: delayHours, settings: settings
+            })
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Failed to create workflow');
@@ -753,7 +910,12 @@ router.get('/connections', requireAuth, async (req, res) => {
     facebook: 'Posts, Reels & Stories',
     twitter: 'Text posts & threads',
     linkedin: 'Professional content',
-    pinterest: 'Pins & visual content'
+    pinterest: 'Pins & visual content',
+    threads: 'Text & image threads',
+    bluesky: 'Decentralized social posts',
+    snapchat: 'Snaps & Stories',
+    googledrive: 'Save to Google Drive',
+    dropbox: 'Save to Dropbox'
   };
 
   res.send(`
@@ -1122,17 +1284,20 @@ router.get('/workflow/:id', requireAuth, async (req, res) => {
 // Create workflow
 router.post('/api/workflow', requireAuth, async (req, res) => {
   try {
-    const { sourcePlatform, sourceAccountId, destPlatform, destAccountId, delayMode, delayHours, timeSlot } = req.body;
+    const { sourcePlatform, sourceAccountId, destPlatform, destAccountId, delayMode, delayHours, settings } = req.body;
     if (!sourcePlatform || !sourceAccountId || !destPlatform || !destAccountId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     const db = getDb();
-    const workflowName = `${sourcePlatform.charAt(0).toUpperCase()}${sourcePlatform.slice(1)} → ${destPlatform.charAt(0).toUpperCase()}${destPlatform.slice(1)}`;
+    const srcName = PLATFORMS.find(p => p.id === sourcePlatform)?.name || sourcePlatform;
+    const dstName = PLATFORMS.find(p => p.id === destPlatform)?.name || destPlatform;
+    const workflowName = `${srcName} → ${dstName}`;
     const workflow = await db.workflowOps.create(req.user.id, {
       name: workflowName, sourceAccountId, destinationAccountId: destAccountId,
       sourcePlatform, destinationPlatform: destPlatform, contentType: 'all',
-      autoPublish: true, delayHours: delayMode === 'custom' ? delayHours : 0,
-      delayMode: delayMode, settings: { timeSlot: timeSlot || null }
+      autoPublish: true, delayHours: delayHours || 0,
+      delayMode: delayMode || 'immediate',
+      settings: settings || {}
     });
     res.json({ success: true, workflowId: workflow.id });
   } catch (error) {
