@@ -866,7 +866,24 @@
 
     function onSeeked(){
       try {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        /* Cover-style draw: maintain aspect ratio, crop to fill canvas */
+        var vw = video.videoWidth || canvas.width;
+        var vh = video.videoHeight || canvas.height;
+        var cw = canvas.width;
+        var ch = canvas.height;
+        var videoRatio = vw / vh;
+        var canvasRatio = cw / ch;
+        var sx, sy, sw, sh;
+        if (videoRatio > canvasRatio) {
+          /* Video is wider — crop sides */
+          sh = vh; sw = vh * canvasRatio;
+          sx = (vw - sw) / 2; sy = 0;
+        } else {
+          /* Video is taller (portrait) — crop top/bottom */
+          sw = vw; sh = vw / canvasRatio;
+          sx = 0; sy = (vh - sh) / 2;
+        }
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
         var dataUrl = canvas.toDataURL('image/jpeg', 0.6);
         if (frameEls[frameIdx]){
           frameEls[frameIdx].style.background = 'url(' + dataUrl + ') center/cover no-repeat';
@@ -1287,6 +1304,7 @@
     setTimeout(boot, 50);
   }
 })();
+
 
 
 
