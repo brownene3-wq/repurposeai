@@ -913,14 +913,15 @@
     video.currentTime = t;
   }
 
+  var WF_BARS = 180;
+
   function buildDenseWaveform(){
     var wf = document.createElement('div');
     wf.className = 'v10-wf-dense';
     wf.setAttribute('data-v10','wf');
-    var N = 180;
     var bars = '';
-    for (var j=0; j<N; j++){
-      var p = j / N;
+    for (var j=0; j<WF_BARS; j++){
+      var p = j / WF_BARS;
       var env = 0.35
         + 0.55 * Math.exp(-Math.pow((p-0.35)/0.18, 2))
         + 0.65 * Math.exp(-Math.pow((p-0.78)/0.12, 2))
@@ -933,6 +934,63 @@
     }
     wf.innerHTML = bars;
     return wf;
+  }
+
+  /* Capture real audio waveform from the loaded video */
+  var _waveformCaptureInProgress = false;
+  var _lastWaveformSrc = '';
+
+  function captureAudioWaveform(){
+    var video = document.querySelector('#videoPlayer, video');
+    if (!video || !video.currentSrc || video.readyState < 2 || video.duration <= 0) return;
+    if (_waveformCaptureInProgress) return;
+    if (_lastWaveformSrc === video.currentSrc) return;
+    var wfEl = document.querySelector('[data-v10="wf"]');
+    if (!wfEl) return;
+
+    _waveformCaptureInProgress = true;
+
+    /* Fetch the video as an ArrayBuffer and decode its audio */
+    fetch(video.currentSrc).then(function(res){
+      if (!res.ok) throw new Error('fetch failed');
+      return res.arrayBuffer();
+    }).then(function(buf){
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      return ac.decodeAudioData(buf).then(function(audioBuf){
+        ac.close();
+        return audioBuf;
+      });
+    }).then(function(audioBuf){
+      /* Downsample to WF_BARS RMS amplitudes */
+      var raw = audioBuf.getChannelData(0);
+      var len = raw.length;
+      var segSize = Math.floor(len / WF_BARS);
+      var peaks = [];
+      var maxPeak = 0;
+      for (var i = 0; i < WF_BARS; i++){
+        var start = i * segSize;
+        var end = Math.min(start + segSize, len);
+        var sum = 0;
+        for (var s = start; s < end; s++){
+          sum += raw[s] * raw[s];
+        }
+        var rms = Math.sqrt(sum / (end - start));
+        peaks.push(rms);
+        if (rms > maxPeak) maxPeak = rms;
+      }
+      /* Normalize and apply to the waveform bars */
+      var spans = wfEl.querySelectorAll('span');
+      for (var b = 0; b < Math.min(spans.length, WF_BARS); b++){
+        var norm = maxPeak > 0 ? peaks[b] / maxPeak : 0;
+        var h = Math.max(6, Math.min(100, norm * 94 + 6));
+        spans[b].style.height = h.toFixed(1) + '%';
+      }
+      _lastWaveformSrc = video.currentSrc;
+      _waveformCaptureInProgress = false;
+    }).catch(function(){
+      /* On error (CORS, decode failure) keep the placeholder waveform */
+      _waveformCaptureInProgress = false;
+    });
   }
 
   function videoIsLoaded(){
@@ -998,6 +1056,7 @@
     if (!videoIsLoaded()){
       document.querySelectorAll('[data-v10="filmstrip"], [data-v10="wf"]').forEach(function(n){ n.remove(); });
       _lastCapturedSrc = '';
+      _lastWaveformSrc = '';
       return;
     }
     var vTrack = document.querySelector('.mt-track-video') || document.querySelector('.fs-track.video-track');
@@ -1011,6 +1070,9 @@
       if (getComputedStyle(aTrack).position === 'static') aTrack.style.position = 'relative';
       aTrack.appendChild(buildDenseWaveform());
     }
+    // Attempt to capture real video frames and audio waveform
+    captureVideoFrames();
+    captureAudioWaveform();
   }
 
   /* ===================== RIGHT PANEL ===================== */
@@ -1291,6 +1353,7 @@
       if (e.target && e.target.tagName === 'VIDEO'){
         scheduleApply();
         setTimeout(captureVideoFrames, 500);
+        setTimeout(captureAudioWaveform, 600);
       }
     }, true);
     document.addEventListener('play', function(e){
@@ -1304,6 +1367,7 @@
     setTimeout(boot, 50);
   }
 })();
+
 
 
 
