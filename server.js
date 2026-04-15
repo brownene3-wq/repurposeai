@@ -117,6 +117,12 @@ const aiCaptionsRouter = require('./routes/ai-captions');
 const aiBrollRouter = require('./routes/ai-broll');
 const brandTemplatesRouter = require('./routes/brand-templates');
 const tiktokRouter = require('./routes/tiktok');
+const twitterRouter = require('./routes/twitter');
+const instagramRouter = require('./routes/instagram');
+const linkedinRouter = require('./routes/linkedin');
+const pinterestRouter = require('./routes/pinterest');
+const youtubeRouter = require('./routes/youtube');
+const facebookRouter = require('./routes/facebook');
 
 // Team permission enforcement middleware
 // Restricts team members to only the features they have permission for
@@ -230,6 +236,18 @@ app.use('/ai-broll', aiBrollRouter);
 app.use('/brand-templates', brandTemplatesRouter);
 app.use('/tiktok', tiktokRouter);
 app.use('/auth/tiktok', tiktokRouter);
+app.use('/twitter', twitterRouter);
+app.use('/auth/twitter', twitterRouter);
+app.use('/instagram', instagramRouter);
+app.use('/auth/instagram', instagramRouter);
+app.use('/linkedin', linkedinRouter);
+app.use('/auth/linkedin', linkedinRouter);
+app.use('/pinterest', pinterestRouter);
+app.use('/auth/pinterest', pinterestRouter);
+app.use('/youtube', youtubeRouter);
+app.use('/auth/youtube', youtubeRouter);
+app.use('/facebook', facebookRouter);
+app.use('/auth/facebook', facebookRouter);
 app.use('/ai-captions', aiCaptionsRouter);
 
 // ========================

@@ -39,6 +39,42 @@ const initDatabase = async () => {
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_refresh_token TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_token_expires_at TIMESTAMP`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS tiktok_username TEXT`,
+      // Twitter/X integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_username TEXT`,
+      // Instagram integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS instagram_username TEXT`,
+      // LinkedIn integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS linkedin_name TEXT`,
+      // Pinterest integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS pinterest_username TEXT`,
+      // YouTube integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_refresh_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_token_expires_at TIMESTAMP`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS youtube_channel_name TEXT`,
+      // Facebook integration
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_access_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_user_name TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_page_id TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_page_token TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_page_name TEXT`,
       // Content items table migrations
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS original_content TEXT`,
       `ALTER TABLE content_items ADD COLUMN IF NOT EXISTS content_type TEXT`,
@@ -440,6 +476,78 @@ const userOps = {
   async getByTikTokId(tiktokId) {
     const result = await pool.query(`SELECT * FROM users WHERE tiktok_id = $1`, [tiktokId]);
     return result.rows[0];
+  },
+
+  // Twitter/X
+  async updateTwitter(userId, { twitterId, accessToken, refreshToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET twitter_id = $1, twitter_access_token = $2, twitter_refresh_token = $3, twitter_token_expires_at = $4, twitter_username = $5 WHERE id = $6 RETURNING *`,
+      [twitterId, accessToken, refreshToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+  async clearTwitter(userId) {
+    return (await pool.query(`UPDATE users SET twitter_id = NULL, twitter_access_token = NULL, twitter_refresh_token = NULL, twitter_token_expires_at = NULL, twitter_username = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // Instagram
+  async updateInstagram(userId, { instagramId, accessToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET instagram_id = $1, instagram_access_token = $2, instagram_token_expires_at = $3, instagram_username = $4 WHERE id = $5 RETURNING *`,
+      [instagramId, accessToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+  async clearInstagram(userId) {
+    return (await pool.query(`UPDATE users SET instagram_id = NULL, instagram_access_token = NULL, instagram_token_expires_at = NULL, instagram_username = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // LinkedIn
+  async updateLinkedIn(userId, { linkedinId, accessToken, refreshToken, expiresAt, name }) {
+    const result = await pool.query(
+      `UPDATE users SET linkedin_id = $1, linkedin_access_token = $2, linkedin_refresh_token = $3, linkedin_token_expires_at = $4, linkedin_name = $5 WHERE id = $6 RETURNING *`,
+      [linkedinId, accessToken, refreshToken, expiresAt, name, userId]
+    );
+    return result.rows[0];
+  },
+  async clearLinkedIn(userId) {
+    return (await pool.query(`UPDATE users SET linkedin_id = NULL, linkedin_access_token = NULL, linkedin_refresh_token = NULL, linkedin_token_expires_at = NULL, linkedin_name = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // Pinterest
+  async updatePinterest(userId, { pinterestId, accessToken, refreshToken, expiresAt, username }) {
+    const result = await pool.query(
+      `UPDATE users SET pinterest_id = $1, pinterest_access_token = $2, pinterest_refresh_token = $3, pinterest_token_expires_at = $4, pinterest_username = $5 WHERE id = $6 RETURNING *`,
+      [pinterestId, accessToken, refreshToken, expiresAt, username, userId]
+    );
+    return result.rows[0];
+  },
+  async clearPinterest(userId) {
+    return (await pool.query(`UPDATE users SET pinterest_id = NULL, pinterest_access_token = NULL, pinterest_refresh_token = NULL, pinterest_token_expires_at = NULL, pinterest_username = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // YouTube
+  async updateYouTube(userId, { youtubeId, accessToken, refreshToken, expiresAt, channelName }) {
+    const result = await pool.query(
+      `UPDATE users SET youtube_id = $1, youtube_access_token = $2, youtube_refresh_token = $3, youtube_token_expires_at = $4, youtube_channel_name = $5 WHERE id = $6 RETURNING *`,
+      [youtubeId, accessToken, refreshToken, expiresAt, channelName, userId]
+    );
+    return result.rows[0];
+  },
+  async clearYouTube(userId) {
+    return (await pool.query(`UPDATE users SET youtube_id = NULL, youtube_access_token = NULL, youtube_refresh_token = NULL, youtube_token_expires_at = NULL, youtube_channel_name = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
+  },
+
+  // Facebook
+  async updateFacebook(userId, { facebookId, accessToken, userName, pageId, pageToken, pageName }) {
+    const result = await pool.query(
+      `UPDATE users SET facebook_id = $1, facebook_access_token = $2, facebook_user_name = $3, facebook_page_id = $4, facebook_page_token = $5, facebook_page_name = $6 WHERE id = $7 RETURNING *`,
+      [facebookId, accessToken, userName, pageId, pageToken, pageName, userId]
+    );
+    return result.rows[0];
+  },
+  async clearFacebook(userId) {
+    return (await pool.query(`UPDATE users SET facebook_id = NULL, facebook_access_token = NULL, facebook_user_name = NULL, facebook_page_id = NULL, facebook_page_token = NULL, facebook_page_name = NULL WHERE id = $1 RETURNING *`, [userId])).rows[0];
   }
 };
 
