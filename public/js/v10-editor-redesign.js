@@ -77,6 +77,12 @@
     '.v10-tl-empty{display:flex;align-items:center;justify-content:center;background:#0a0815}',
     '.v10-tl-placeholder{text-align:center;color:#5c5a70;font-size:12px;user-select:none}',
     '.v10-tl-placeholder svg{display:block;margin:0 auto 8px;opacity:.35}',
+    '/* v10 hide native filmstrip-wrap (mini-timeline) — consolidated into multi-track */',
+    '.filmstrip-wrap{display:none!important}',
+    '/* v10 enhanced multi-track timeline */',
+    '.mt-track-video,.mt-track-audio{height:52px!important;min-height:52px!important}',
+    '.mt-track-video .mt-clip,.mt-track-audio .mt-clip{height:100%!important}',
+    '.mt-tracks-area{cursor:pointer}',
     '/* v10 timeline overlays */',
     '.v10-filmstrip{position:absolute;inset:4px 4px;border-radius:5px;overflow:hidden;display:flex;box-shadow:0 2px 6px rgba(0,0,0,.35);border:1px solid rgba(124,58,237,.45);z-index:2;pointer-events:none}',
     '.v10-filmstrip::before,.v10-filmstrip::after{content:"";position:absolute;left:0;right:0;height:3px;background-image:repeating-linear-gradient(90deg,#0a0815 0 4px,transparent 4px 8px);z-index:3}',
@@ -1217,4 +1223,5 @@
     setTimeout(boot, 50);
   }
 })();
+
 
