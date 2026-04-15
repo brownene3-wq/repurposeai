@@ -884,11 +884,19 @@
     return 'Video';
   }
 
+  function isUploadPanelVisible(){
+    var uz = document.querySelector('.upload-zone');
+    if (uz && uz.offsetHeight > 0 && getComputedStyle(uz).display !== 'none') return true;
+    var v = document.querySelector('#videoPlayer, video');
+    if (v && !v.currentSrc && !v.src && v.readyState === 0) return true;
+    return false;
+  }
+
   function patchTimelineVisibility(){
     var tc = document.querySelector('.timeline-container');
     if (!tc) return;
-    var loaded = videoIsLoaded();
-    if (!loaded){
+    var uploadVisible = isUploadPanelVisible();
+    if (uploadVisible){
       if (!tc.classList.contains('v10-tl-empty')){
         tc.classList.add('v10-tl-empty');
         if (!tc.querySelector('.v10-tl-placeholder')){
@@ -1209,3 +1217,4 @@
     setTimeout(boot, 50);
   }
 })();
+
