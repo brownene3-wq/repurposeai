@@ -2,6 +2,7 @@ const express = require('express'); // v1.0.1
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const { initDatabase } = require('./db/database');
+const { startWorkflowEngine } = require('./services/workflowEngine');
 
 const app = express();
 const fs = require('fs');
@@ -460,6 +461,9 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Start workflow engine for automated content repurposing
+  startWorkflowEngine();
 
   // Start calendar reminder checker (every 2 minutes)
   const { calendarOps } = require('./db/database');
