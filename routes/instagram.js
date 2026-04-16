@@ -6,7 +6,7 @@ const { getDb } = require('../db/database');
 
 const INSTAGRAM_CLIENT_ID = process.env.INSTAGRAM_CLIENT_ID || '804406049400199';
 const INSTAGRAM_CLIENT_SECRET = process.env.INSTAGRAM_CLIENT_SECRET || '';
-const BASE_URL = process.env.BASE_URL || 'https://www.splicora.ai';
+const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 // ─── HTTP helpers (matching auth.js pattern) ──────────────────────
 
@@ -79,8 +79,8 @@ router.get('/connect', requireAuth, (req, res) => {
     return res.status(500).send('Instagram integration not configured. Set INSTAGRAM_CLIENT_ID and INSTAGRAM_CLIENT_SECRET env vars.');
   }
 
-  // Store user ID in state to link the account after callback
-  const state = Buffer.from(JSON.stringify({ userId: req.user.id })).toString('base64url');
+  // Store user ID and redirect in state to link the account after callback
+  const state = Buffer.from(JSON.stringify({ userId: req.user.id, redirect: req.query.redirect || '/distribute/connections' })).toString('base64url');
 
   const params = new URLSearchParams({
     client_id: INSTAGRAM_CLIENT_ID,
@@ -100,16 +100,17 @@ router.get('/callback', async (req, res) => {
 
     if (error || !code) {
       console.error('Instagram auth error:', error || 'no code');
-      return res.redirect('/settings?error=Instagram+connection+cancelled');
+      return res.redirect('/distribute/connections?error=Instagram+connection+cancelled');
     }
 
-    // Decode state to get userId
-    let userId;
+    // Decode state to get userId and redirect
+    let userId, redirectTo = '/distribute/connections';
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
       userId = stateData.userId;
+      redirectTo = stateData.redirect || '/distribute/connections';
     } catch (e) {
-      return res.redirect('/settings?error=Invalid+Instagram+auth+state');
+      return res.redirect('/distribute/connections?error=Invalid+Instagram+auth+state');
     }
 
     // Step 2a: Exchange authorization code for short-lived token
@@ -123,7 +124,7 @@ router.get('/callback', async (req, res) => {
 
     if (shortTokenData.error || !shortTokenData.access_token) {
       console.error('Instagram short-lived token exchange failed:', JSON.stringify(shortTokenData));
-      return res.redirect('/settings?error=Instagram+auth+failed:+' + encodeURIComponent(shortTokenData.error_description || shortTokenData.error || 'unknown'));
+      return res.redirect('/distribute/connections?error=Instagram+auth+failed:+' + encodeURIComponent(shortTokenData.error_description || shortTokenData.error || 'unknown'));
     }
 
     const shortLivedToken = shortTokenData.access_token;
@@ -141,7 +142,7 @@ router.get('/callback', async (req, res) => {
 
     if (longTokenData.error || !longTokenData.access_token) {
       console.error('Instagram long-lived token exchange failed:', JSON.stringify(longTokenData));
-      return res.redirect('/settings?error=Instagram+token+upgrade+failed:+' + encodeURIComponent(longTokenData.error?.message || 'unknown'));
+      return res.redirect('/distribute/connections?error=Instagram+token+upgrade+failed:+' + encodeURIComponent(longTokenData.error?.message || 'unknown'));
     }
 
     const access_token = longTokenData.access_token;
@@ -165,7 +166,7 @@ router.get('/callback', async (req, res) => {
 
     // Save Instagram tokens to user account
     const db = getDb();
-    const { userOps } = db;
+    const { userOps, connectedAccountOps } = db;
     await userOps.updateInstagram(userId, {
       instagramId: userId_ig,
       accessToken: access_token,
@@ -173,11 +174,30 @@ router.get('/callback', async (req, res) => {
       username: username
     });
 
-    res.redirect('/settings?success=Instagram+account+connected' + (username ? '+as+@' + encodeURIComponent(username) : ''));
+    // Also save to connected_accounts for Repurpose feature
+    try {
+      const existing = await connectedAccountOps.getByUserAndPlatform(userId, 'instagram');
+      if (existing.length > 0) {
+        await connectedAccountOps.update(existing[0].id, {
+          accessToken: access_token, refreshToken: null,
+          tokenExpiresAt: expiresAt, platformUsername: username,
+          accountName: username || 'Instagram Account'
+        });
+      } else {
+        await connectedAccountOps.create(userId, {
+          platform: 'instagram', platformUserId: userId_ig,
+          platformUsername: username, accountName: username || 'Instagram Account',
+          accessToken: access_token, refreshToken: null,
+          tokenExpiresAt: expiresAt, accountType: 'source_destination'
+        });
+      }
+    } catch (e) { console.error('Connected account save error:', e.message); }
+
+    res.redirect(redirectTo + (redirectTo.includes('?') ? '&' : '?') + 'success=Instagram+connected' + (username ? '+as+@' + encodeURIComponent(username) : ''));
 
   } catch (err) {
     console.error('Instagram OAuth error:', err.message || err);
-    res.redirect('/settings?error=Instagram+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
+    res.redirect('/distribute/connections?error=Instagram+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
   }
 });
 

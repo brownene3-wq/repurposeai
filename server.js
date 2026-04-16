@@ -2,6 +2,7 @@ const express = require('express'); // v1.0.1
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const { initDatabase } = require('./db/database');
+const { startWorkflowEngine } = require('./services/workflowEngine');
 
 const app = express();
 const fs = require('fs');
@@ -124,6 +125,21 @@ const linkedinRouter = require('./routes/linkedin');
 const pinterestRouter = require('./routes/pinterest');
 const youtubeRouter = require('./routes/youtube');
 const facebookRouter = require('./routes/facebook');
+const threadsRouter = require('./routes/threads');
+const blueskyRouter = require('./routes/bluesky');
+const snapchatRouter = require('./routes/snapchat');
+const googledriveRouter = require('./routes/googledrive');
+const dropboxRouter = require('./routes/dropbox');
+const twitchRouter = require('./routes/twitch');
+const heygenRouter = require('./routes/heygen');
+const audiopodcastRouter = require('./routes/audiopodcast');
+const videopodcastRouter = require('./routes/videopodcast');
+const zoomRouter = require('./routes/zoom');
+const webexRouter = require('./routes/webex');
+const amazonRouter = require('./routes/amazon');
+const soundcloudRouter = require('./routes/soundcloud');
+const libsynRouter = require('./routes/libsyn');
+const captivateRouter = require('./routes/captivate');
 
 // Team permission enforcement middleware
 // Restricts team members to only the features they have permission for
@@ -248,6 +264,21 @@ app.use('/pinterest', pinterestRouter);
 app.use('/auth/pinterest', pinterestRouter);
 app.use('/youtube', youtubeRouter);
 app.use('/auth/youtube', youtubeRouter);
+app.use('/auth/threads', threadsRouter);
+app.use('/auth/bluesky', blueskyRouter);
+app.use('/auth/snapchat', snapchatRouter);
+app.use('/auth/googledrive', googledriveRouter);
+app.use('/auth/dropbox', dropboxRouter);
+app.use('/auth/twitch', twitchRouter);
+app.use('/auth/heygen', heygenRouter);
+app.use('/auth/audiopodcast', audiopodcastRouter);
+app.use('/auth/videopodcast', videopodcastRouter);
+app.use('/auth/zoom', zoomRouter);
+app.use('/auth/webex', webexRouter);
+app.use('/auth/amazon', amazonRouter);
+app.use('/auth/soundcloud', soundcloudRouter);
+app.use('/auth/libsyn', libsynRouter);
+app.use('/auth/captivate', captivateRouter);
 app.use('/facebook', facebookRouter);
 app.use('/auth/facebook', facebookRouter);
 app.use('/ai-captions', aiCaptionsRouter);
@@ -430,6 +461,9 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Start workflow engine for automated content repurposing
+  startWorkflowEngine();
 
   // Start calendar reminder checker (every 2 minutes)
   const { calendarOps } = require('./db/database');

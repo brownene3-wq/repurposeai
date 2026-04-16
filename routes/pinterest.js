@@ -6,7 +6,7 @@ const { getDb } = require('../db/database');
 
 const PINTEREST_CLIENT_ID = process.env.PINTEREST_CLIENT_ID || '';
 const PINTEREST_CLIENT_SECRET = process.env.PINTEREST_CLIENT_SECRET || '';
-const BASE_URL = process.env.BASE_URL || 'https://www.splicora.ai';
+const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 // ─── HTTP helpers (matching auth.js pattern) ──────────────────────
 
@@ -79,8 +79,8 @@ router.get('/connect', requireAuth, (req, res) => {
     return res.status(500).send('Pinterest integration not configured. Set PINTEREST_CLIENT_ID env var.');
   }
 
-  // Store user ID in state to link the account after callback
-  const state = Buffer.from(JSON.stringify({ userId: req.user.id })).toString('base64url');
+  // Store user ID and redirect in state to link the account after callback
+  const state = Buffer.from(JSON.stringify({ userId: req.user.id, redirect: req.query.redirect || '/distribute/connections' })).toString('base64url');
 
   const params = new URLSearchParams({
     client_id: PINTEREST_CLIENT_ID,
@@ -100,16 +100,17 @@ router.get('/callback', async (req, res) => {
 
     if (error || !code) {
       console.error('Pinterest auth error:', error || 'no code');
-      return res.redirect('/settings?error=Pinterest+connection+cancelled');
+      return res.redirect('/distribute/connections?error=Pinterest+connection+cancelled');
     }
 
-    // Decode state to get userId
-    let userId;
+    // Decode state to get userId and redirect
+    let userId, redirectTo = '/distribute/connections';
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
       userId = stateData.userId;
+      redirectTo = stateData.redirect || '/distribute/connections';
     } catch (e) {
-      return res.redirect('/settings?error=Invalid+Pinterest+auth+state');
+      return res.redirect('/distribute/connections?error=Invalid+Pinterest+auth+state');
     }
 
     // Create Basic Auth header (base64 encoded client_id:client_secret)
@@ -126,7 +127,7 @@ router.get('/callback', async (req, res) => {
 
     if (tokenData.error || !tokenData.access_token) {
       console.error('Pinterest token exchange failed:', JSON.stringify(tokenData));
-      return res.redirect('/settings?error=Pinterest+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
+      return res.redirect('/distribute/connections?error=Pinterest+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
     }
 
     const { access_token, refresh_token, expires_in } = tokenData;
@@ -148,7 +149,7 @@ router.get('/callback', async (req, res) => {
 
     // Save Pinterest tokens to user account
     const db = getDb();
-    const { userOps } = db;
+    const { userOps, connectedAccountOps } = db;
     await userOps.updatePinterest(userId, {
       pinterestId: profileData.data?.id || '',
       accessToken: access_token,
@@ -157,11 +158,30 @@ router.get('/callback', async (req, res) => {
       username: username
     });
 
-    res.redirect('/settings?success=Pinterest+account+connected' + (username ? '+as+' + encodeURIComponent(username) : ''));
+    // Also save to connected_accounts for Repurpose feature
+    try {
+      const existing = await connectedAccountOps.getByUserAndPlatform(userId, 'pinterest');
+      if (existing.length > 0) {
+        await connectedAccountOps.update(existing[0].id, {
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, platformUsername: username,
+          accountName: username || 'Pinterest Account'
+        });
+      } else {
+        await connectedAccountOps.create(userId, {
+          platform: 'pinterest', platformUserId: profileData.data?.id || '',
+          platformUsername: username, accountName: username || 'Pinterest Account',
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, accountType: 'destination'
+        });
+      }
+    } catch (e) { console.error('Connected account save error:', e.message); }
+
+    res.redirect(redirectTo + (redirectTo.includes('?') ? '&' : '?') + 'success=Pinterest+connected' + (username ? '+as+' + encodeURIComponent(username) : ''));
 
   } catch (err) {
     console.error('Pinterest OAuth error:', err.message || err);
-    res.redirect('/settings?error=Pinterest+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
+    res.redirect('/distribute/connections?error=Pinterest+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
   }
 });
 
