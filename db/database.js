@@ -1465,6 +1465,7 @@ module.exports = {
     },
     async getByUser(userId) { return (await pool.query(`SELECT w.*, sa.platform_username as source_username, da.platform_username as dest_username FROM workflows w LEFT JOIN connected_accounts sa ON w.source_account_id = sa.id LEFT JOIN connected_accounts da ON w.destination_account_id = da.id WHERE w.user_id = $1 ORDER BY w.created_at DESC`, [userId])).rows; },
     async getById(id) { return (await pool.query(`SELECT w.*, sa.platform_username as source_username, da.platform_username as dest_username FROM workflows w LEFT JOIN connected_accounts sa ON w.source_account_id = sa.id LEFT JOIN connected_accounts da ON w.destination_account_id = da.id WHERE w.id = $1`, [id])).rows[0]; },
+    async getActiveWorkflows() { return (await pool.query(`SELECT * FROM workflows WHERE auto_publish = true AND is_active = true ORDER BY created_at DESC`)).rows; },
     async update(id, data) {
       const sets = []; const vals = []; let idx = 1;
       for (const [k, v] of Object.entries(data)) {
@@ -1493,6 +1494,19 @@ module.exports = {
     async getByWorkflow(workflowId, status) {
       const q = status ? `SELECT * FROM content_queue WHERE workflow_id = $1 AND status = $2 ORDER BY scheduled_at ASC` : `SELECT * FROM content_queue WHERE workflow_id = $1 ORDER BY created_at DESC`;
       return (await pool.query(q, status ? [workflowId, status] : [workflowId])).rows;
+    },
+    async getByWorkflowAndSourceId(workflowId, sourceContentId) {
+      const result = await pool.query(
+        `SELECT * FROM content_queue WHERE workflow_id = $1 AND source_video_id = $2 LIMIT 1`,
+        [workflowId, sourceContentId]
+      );
+      return result.rows[0];
+    },
+    async getPendingByWorkflow(workflowId) {
+      return (await pool.query(`SELECT * FROM content_queue WHERE workflow_id = $1 AND status = 'pending' ORDER BY created_at ASC`, [workflowId])).rows;
+    },
+    async getActiveWorkflows() {
+      return (await pool.query(`SELECT * FROM workflows WHERE auto_publish = true AND is_active = true ORDER BY created_at DESC`)).rows;
     },
     async updateStatus(id, status, errorMessage) { return (await pool.query(`UPDATE content_queue SET status = $1, error_message = $2, published_at = CASE WHEN $1 = 'published' THEN CURRENT_TIMESTAMP ELSE published_at END WHERE id = $3 RETURNING *`, [status, errorMessage, id])).rows[0]; },
     async getScheduled() { return (await pool.query(`SELECT cq.*, w.destination_platform, w.settings FROM content_queue cq JOIN workflows w ON cq.workflow_id = w.id WHERE cq.status = 'scheduled' AND cq.scheduled_at <= CURRENT_TIMESTAMP ORDER BY cq.scheduled_at ASC`)).rows; }

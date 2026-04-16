@@ -487,4 +487,8 @@ app.listen(PORT, () => {
       // Silently ignore if DB not ready yet
     }
   }, 120000); // Check every 2 minutes
+
+  // Workflow engine - process active distribution workflows
+  const { startWorkflowEngine } = require('./services/workflowEngine');
+  startWorkflowEngine();
 });
