@@ -1478,7 +1478,13 @@ module.exports = {
     async toggleAutoPublish(id, value) { return (await pool.query(`UPDATE workflows SET auto_publish = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`, [value, id])).rows[0]; },
     async toggleActive(id, value) { return (await pool.query(`UPDATE workflows SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`, [value, id])).rows[0]; },
     async incrementPostCount(id) { return (await pool.query(`UPDATE workflows SET post_count = post_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`, [id])).rows[0]; },
-    async delete(id) { await pool.query(`DELETE FROM workflows WHERE id = $1`, [id]); }
+    async delete(id) { await pool.query(`DELETE FROM workflows WHERE id = $1`, [id]); },
+    getActiveWorkflows: async () => {
+      const result = await pool.query(
+        'SELECT * FROM workflows WHERE auto_publish = true AND is_active = true ORDER BY created_at DESC'
+      );
+      return result.rows;
+    }
   },
   contentQueueOps: {
     async create(data) {
@@ -1495,6 +1501,20 @@ module.exports = {
       return (await pool.query(q, status ? [workflowId, status] : [workflowId])).rows;
     },
     async updateStatus(id, status, errorMessage) { return (await pool.query(`UPDATE content_queue SET status = $1, error_message = $2, published_at = CASE WHEN $1 = 'published' THEN CURRENT_TIMESTAMP ELSE published_at END WHERE id = $3 RETURNING *`, [status, errorMessage, id])).rows[0]; },
-    async getScheduled() { return (await pool.query(`SELECT cq.*, w.destination_platform, w.settings FROM content_queue cq JOIN workflows w ON cq.workflow_id = w.id WHERE cq.status = 'scheduled' AND cq.scheduled_at <= CURRENT_TIMESTAMP ORDER BY cq.scheduled_at ASC`)).rows; }
+    async getScheduled() { return (await pool.query(`SELECT cq.*, w.destination_platform, w.settings FROM content_queue cq JOIN workflows w ON cq.workflow_id = w.id WHERE cq.status = 'scheduled' AND cq.scheduled_at <= CURRENT_TIMESTAMP ORDER BY cq.scheduled_at ASC`)).rows; },
+    getByWorkflowAndSourceId: async (workflowId, sourceId) => {
+      const result = await pool.query(
+        'SELECT * FROM content_queue WHERE workflow_id = $1 AND source_content_id = $2 LIMIT 1',
+        [workflowId, sourceId]
+      );
+      return result.rows[0] || null;
+    },
+    getPendingByWorkflow: async (workflowId) => {
+      const result = await pool.query(
+        'SELECT * FROM content_queue WHERE workflow_id = $1 AND status = $2 ORDER BY scheduled_at ASC',
+        [workflowId, 'pending']
+      );
+      return result.rows;
+    }
   }
 };
