@@ -492,9 +492,10 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-timeline-body{display:flex;flex:1;overflow:hidden;min-height:0}
     .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px;overflow-y:hidden}
     .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04);position:relative;flex-shrink:0}
-    .mt-label .mt-label-del{display:none;position:absolute;top:1px;right:1px;width:14px;height:14px;font-size:10px;line-height:12px;text-align:center;border-radius:50%;background:rgba(239,68,68,.15);color:#ef4444;cursor:pointer;border:1px solid rgba(239,68,68,.3);z-index:2}
-    .mt-label:hover .mt-label-del{display:block}
-    .mt-label .mt-label-del:hover{background:#ef4444;color:#fff}
+    /* Always-visible delete button on user-added audio tracks. Red bullet in
+       the top-right of the label. Turns solid red on hover for affordance. */
+    .mt-label .mt-label-del{display:block;position:absolute;top:2px;right:2px;width:14px;height:14px;font-size:10px;font-weight:700;line-height:13px;text-align:center;border-radius:50%;background:rgba(239,68,68,.25);color:#fca5a5;cursor:pointer;border:1px solid rgba(239,68,68,.5);z-index:2;user-select:none}
+    .mt-label .mt-label-del:hover{background:#ef4444;color:#fff;border-color:#ef4444}
     .mt-label-video{color:#a78bfa}
     .mt-label-audio{color:#38bdf8}
     .mt-label-music{color:#f472b6}

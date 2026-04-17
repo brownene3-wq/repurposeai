@@ -262,7 +262,9 @@
 
   function applySnap(candidateLeft, clipWidth, ignoreClip){
     if (!_timelineState.snap) return candidateLeft;
-    var threshold = 10; // px
+    // 20px feels magnetic without being sticky — user can still place a clip
+    // freely by dragging it far from any neighbor.
+    var threshold = 20;
     var targets = collectSnapTargets(ignoreClip);
     var edges = [
       {val: candidateLeft},
@@ -384,7 +386,25 @@
     }
     if (sel && !sel.dataset.v14){
       sel.dataset.v14 = '1';
-      sel.addEventListener('click', function(){ setActiveTool('select'); showToast('Select tool \u2014 click a clip to highlight, drag to move'); });
+      sel.addEventListener('click', function(){
+        // Toggle behaviour: click Select when active to switch back to Razor.
+        if (_timelineState.tool === 'select') {
+          setActiveTool('razor');
+          showToast('Select tool off');
+        } else {
+          setActiveTool('select');
+          showToast('Select tool \u2014 click a clip to highlight, drag to move');
+        }
+      });
+    }
+    // ESC also deactivates Select (maps to Razor, which is the default).
+    if (!document.body.dataset.v14Esc) {
+      document.body.dataset.v14Esc = '1';
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape' && _timelineState.tool === 'select'){
+          setActiveTool('razor');
+        }
+      });
     }
     if (snap && !snap.dataset.v14){
       snap.dataset.v14 = '1';
@@ -452,6 +472,45 @@
     }
   }
   try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
+
+  // Reverse sync: as the video plays, walk the playhead across the timeline
+  // so the user can visually track where they are in the sequence. Matches
+  // the loaded video.src back to a clip on V1 by dataset.mediaUrl, then
+  // positions the playhead at clip.left + currentTime * PX_PER_SEC.
+  function findClipForPlayer(video){
+    if (!video || !video.src) return null;
+    var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+    for (var i = 0; i < clips.length; i++){
+      if (clips[i].dataset.mediaUrl && clips[i].dataset.mediaUrl === video.src) return clips[i];
+    }
+    return null;
+  }
+  function syncPlayheadToVideo(){
+    var video = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!video) return;
+    var clip = findClipForPlayer(video);
+    if (!clip) return;
+    var clipLeft = parseFloat(clip.style.left) || 0;
+    var x = clipLeft + (video.currentTime || 0) * TIMELINE_PX_PER_SEC;
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = x + 'px';
+  }
+  function wireVideoPlayheadSync(){
+    var video = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!video || video.dataset.v14PlayheadSync) return;
+    video.dataset.v14PlayheadSync = '1';
+    video.addEventListener('timeupdate', syncPlayheadToVideo);
+    video.addEventListener('seeked',     syncPlayheadToVideo);
+    video.addEventListener('play',       syncPlayheadToVideo);
+  }
+  wireVideoPlayheadSync();
+  // If the <video> element is injected/replaced later, re-wire once it exists.
+  var _playheadSyncTries = 0;
+  var _playheadSyncInterval = setInterval(function(){
+    wireVideoPlayheadSync();
+    _playheadSyncTries++;
+    if (_playheadSyncTries > 40) clearInterval(_playheadSyncInterval); // 40 * 250ms = 10s
+  }, 250);
 
   // For video items: load the video into the editor's preview and sync editor
   // state so tools (trim/export/etc.) can operate on it. Called on click AND
