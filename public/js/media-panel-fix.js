@@ -161,10 +161,40 @@
     };
   } catch(_){}
 
-  // Handle file selection for sidebar file inputs (local-only, no server upload)
+  // Load metadata for a blob URL and return the media's duration via callback.
+  // Images resolve with duration=0 immediately (no meaningful duration).
+  function estimateMediaDuration(url, mediaType, cb){
+    if (mediaType === 'img' || !url) { cb(0); return; }
+    var el = mediaType === 'aud' ? new Audio() : document.createElement('video');
+    el.preload = 'metadata';
+    var done = false;
+    var finish = function(v){ if (done) return; done = true; cb(isFinite(v) && v > 0 ? v : 0); };
+    el.addEventListener('loadedmetadata', function(){ finish(el.duration); });
+    el.addEventListener('error', function(){ finish(0); });
+    setTimeout(function(){ finish(0); }, 4000); // safety timeout
+    try { el.src = url; } catch(_){ finish(0); }
+  }
+
+  // Handle file selection for sidebar file inputs (local-only, no server upload).
+  // Each picked file becomes a .ml-fitem in the Media library AND is auto-
+  // placed on the correct timeline track (V1/A1) after any existing clips.
   function handleFiles(files) {
     if (!files || !files.length) return;
-    Array.from(files).forEach(function(file){ appendMediaItem({file: file}); });
+    Array.from(files).forEach(function(file){
+      var item = appendMediaItem({file: file});
+      if (!item) return;
+      var url = item.dataset.mediaUrl;
+      var mediaType = item.dataset.mediaType || 'vid';
+      // Images go on V1 as a fixed-width placeholder (no real duration).
+      if (mediaType === 'img'){
+        try { addClipToTimeline(file.name, 'vid', 0, url); } catch(_){}
+        return;
+      }
+      estimateMediaDuration(url, mediaType, function(dur){
+        if (dur > 0) item.dataset.duration = String(dur);
+        try { addClipToTimeline(file.name, mediaType, dur, url); } catch(_){}
+      });
+    });
     showToast('Added ' + files.length + ' file(s) to media library');
   }
 
@@ -260,6 +290,51 @@
     return targets;
   }
 
+  // Overlap helpers — used to prevent clips from occupying the same x-range
+  // on a track. Two clips overlap if their [left, left+width] ranges intersect.
+  function clipOverlaps(track, left, width, ignoreClip){
+    var clips = track.querySelectorAll('.mt-clip');
+    for (var i = 0; i < clips.length; i++){
+      var c = clips[i];
+      if (c === ignoreClip) continue;
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (!(left + width <= l || left >= l + w)) return c;
+    }
+    return null;
+  }
+  // Clamp target position to the nearest non-overlapping spot on a track.
+  // Picks left-or-right of the conflicting clip depending on drag direction.
+  function clampAwayFromOverlap(track, targetLeft, width, ignoreClip){
+    var overlap = clipOverlaps(track, targetLeft, width, ignoreClip);
+    if (!overlap) return targetLeft;
+    var oL = parseFloat(overlap.style.left) || 0;
+    var oW = parseFloat(overlap.style.width) || 0;
+    var targetCenter = targetLeft + width/2;
+    var overlapCenter = oL + oW/2;
+    var candidate;
+    if (targetCenter < overlapCenter){
+      candidate = Math.max(0, oL - width);
+    } else {
+      candidate = oL + oW;
+    }
+    if (candidate < 0) candidate = 0;
+    // If the fallback also overlaps something else, give up and keep original.
+    if (clipOverlaps(track, candidate, width, ignoreClip)) return targetLeft;
+    return candidate;
+  }
+  // Look for another audio track (different from currentTrack) where this
+  // clip would not overlap. Returns null if none exists.
+  function findFreeAudioTrack(targetLeft, width, currentTrack, ignoreClip){
+    var tracks = document.querySelectorAll('.mt-track-audio');
+    for (var i = 0; i < tracks.length; i++){
+      var t = tracks[i];
+      if (t === currentTrack) continue;
+      if (!clipOverlaps(t, targetLeft, width, ignoreClip)) return t;
+    }
+    return null;
+  }
+
   function applySnap(candidateLeft, clipWidth, ignoreClip){
     if (!_timelineState.snap) return candidateLeft;
     // 20px feels magnetic without being sticky — user can still place a clip
@@ -325,6 +400,9 @@
     makeClipInteractive(right);
 
     updateTimelineInfo();
+    // Split changed which clip is under the playhead — refresh preview.
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
     showToast('Clip split');
     return true;
   }
@@ -365,11 +443,34 @@
       function onMove(ev){
         var target = Math.max(0, startLeft + (ev.clientX - startX));
         target = applySnap(target, width, clip);
+        var currentTrack = clip.parentElement;
+        var isAudio = clip.classList.contains('mt-clip-audio');
+        if (clipOverlaps(currentTrack, target, width, clip)){
+          if (isAudio){
+            // Audio: try to hop the clip to another audio track that has room.
+            // If no free track exists, fall back to clamping so clips still
+            // don't overlap.
+            var freeTrack = findFreeAudioTrack(target, width, currentTrack, clip);
+            if (freeTrack){
+              freeTrack.appendChild(clip);
+              currentTrack = freeTrack;
+            } else {
+              target = clampAwayFromOverlap(currentTrack, target, width, clip);
+            }
+          } else {
+            // Video: never allow overlap — clamp to the nearest edge.
+            target = clampAwayFromOverlap(currentTrack, target, width, clip);
+          }
+        }
         clip.style.left = target + 'px';
       }
       function onUp(){
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        // Drag may have moved the clip into/out of the playhead's range or
+        // swapped what's under the playhead — refresh the preview.
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
       }
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);

@@ -1597,9 +1597,7 @@ function showToast(message, type = 'success') {
 
         // Add the uploaded file to the Media library ("All" + correct type
         // tab) as a raw asset. Do NOT create a Draft here — Media and
-        // Projects are strictly separate: Media holds raw assets, Projects
-        // only holds drafts and completed exports. Drafts will be created
-        // by an explicit save action in a future iteration.
+        // Projects are strictly separate.
         try {
           if (typeof window.addUploadedMediaItem === 'function') {
             window.addUploadedMediaItem({
@@ -1607,8 +1605,21 @@ function showToast(message, type = 'success') {
               filename: data.filename,
               serveUrl: data.serveUrl,
               duration: videoDuration
-              // mediaType auto-classified from filename extension
             });
+          }
+        } catch (_) {}
+
+        // ALSO auto-place the uploaded video on V1, appended after any
+        // existing clips. addClipToTimeline uses findRightmostClipEnd so
+        // new clips sit back-to-back with whatever's already on the track.
+        try {
+          if (typeof window.addClipToTimeline === 'function') {
+            window.addClipToTimeline(
+              (file && file.name) || data.filename,
+              'vid',
+              videoDuration,
+              data.serveUrl
+            );
           }
         } catch (_) {}
 
