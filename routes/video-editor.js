@@ -516,7 +516,10 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .mt-playhead{position:absolute;top:0;left:80px;width:2px;height:100%;background:#7c3aed;z-index:10;pointer-events:none}
-    .mt-playhead::before{content:'';position:absolute;top:0;left:-5px;width:12px;height:8px;background:#7c3aed;border-radius:0 0 3px 3px}
+    .mt-playhead .mt-playhead-handle{position:absolute;top:0;left:-7px;width:16px;height:14px;background:#7c3aed;border-radius:0 0 4px 4px;cursor:ew-resize;pointer-events:auto;box-shadow:0 2px 4px rgba(0,0,0,.3)}
+    .mt-playhead .mt-playhead-handle:hover{background:#a78bfa}
+    .mt-playhead.mt-playhead-dragging .mt-playhead-handle{background:#a78bfa}
+    .mt-tracks-area{cursor:crosshair}
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -662,16 +665,13 @@ router.get('/', requireAuth, async (req, res) => {
                     <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span><span>3:30</span><span>4:00</span>
                   </div>
                   <div class="mt-track mt-track-video" data-type="video">
-                    <div class="mt-clip mt-clip-video" style="left:0;width:35%"><span class="mt-clip-label">clip_01.mp4</span></div>
-                    <div class="mt-clip mt-clip-video" style="left:37%;width:25%"><span class="mt-clip-label">clip_02.mp4</span></div>
                   </div>
                   <div class="mt-track mt-track-audio" data-type="audio">
-                    <div class="mt-clip mt-clip-audio" style="left:0;width:60%"><span class="mt-clip-label">audio_main.wav</span></div>
                   </div>
                   <div class="mt-track mt-track-music" data-type="music"></div>
                   <div class="mt-track mt-track-text" data-type="text"></div>
                   <div class="mt-track mt-track-fx" data-type="fx"></div>
-                  <div class="mt-playhead" id="mtPlayhead"></div>
+                  <div class="mt-playhead" id="mtPlayhead"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>
                 </div>
               </div>
             </div>
@@ -4629,14 +4629,105 @@ function showToast(message, type = 'success') {
         });
       });
 
-      // ── 5. + Add Track button ──
+      // ── 5. + Add Track button — creates a new audio track row ──
       var addTrackBtn = document.querySelector('.mt-add-track-btn');
-      if (addTrackBtn) {
+      if (addTrackBtn && !addTrackBtn.dataset.wired) {
+        addTrackBtn.dataset.wired = '1';
         addTrackBtn.style.cursor = 'pointer';
         addTrackBtn.addEventListener('click', function() {
-          showToast('Add Track: select track type');
+          var tracksArea = document.getElementById('mtTracksArea');
+          var labelsArea = document.querySelector('.mt-labels');
+          if (!tracksArea || !labelsArea) return;
+          // Count existing audio tracks to get the next number (A1, A2, ...)
+          var existingAudio = tracksArea.querySelectorAll('.mt-track-audio').length;
+          var n = existingAudio + 1;
+          // Create track element
+          var track = document.createElement('div');
+          track.className = 'mt-track mt-track-audio';
+          track.setAttribute('data-type', 'audio');
+          track.setAttribute('data-track-index', String(n));
+          // Insert after the LAST audio track (so A1, A2, A3 stay grouped)
+          var audioTracks = tracksArea.querySelectorAll('.mt-track-audio');
+          var insertAfter = audioTracks.length ? audioTracks[audioTracks.length - 1] : tracksArea.querySelector('.mt-track-video');
+          if (insertAfter && insertAfter.nextSibling) {
+            tracksArea.insertBefore(track, insertAfter.nextSibling);
+          } else if (insertAfter) {
+            insertAfter.parentNode.appendChild(track);
+          } else {
+            tracksArea.appendChild(track);
+          }
+          // Create matching label
+          var label = document.createElement('div');
+          label.className = 'mt-label mt-label-audio';
+          label.textContent = 'A' + n;
+          var audioLabels = labelsArea.querySelectorAll('.mt-label-audio');
+          var lastAudioLabel = audioLabels.length ? audioLabels[audioLabels.length - 1] : labelsArea.querySelector('.mt-label-video');
+          if (lastAudioLabel && lastAudioLabel.nextSibling) {
+            labelsArea.insertBefore(label, lastAudioLabel.nextSibling);
+          } else if (lastAudioLabel) {
+            labelsArea.appendChild(label);
+          } else {
+            labelsArea.appendChild(label);
+          }
+          // Update info text
+          var info = document.querySelector('.mt-info');
+          if (info) {
+            var total = document.querySelectorAll('.mt-track').length;
+            info.textContent = total + ' tracks \u2022 ' + (info.textContent.split('\u2022')[1] || '0:00').trim();
+          }
+          if (typeof showToast === 'function') showToast('Added audio track A' + n);
         });
       }
+
+      // ── 5b. Playhead drag + track-click navigation ──
+      (function(){
+        var playhead = document.getElementById('mtPlayhead');
+        var handle = document.getElementById('mtPlayheadHandle');
+        var tracksArea = document.getElementById('mtTracksArea');
+        if (!playhead || !tracksArea || playhead.dataset.wired) return;
+        playhead.dataset.wired = '1';
+
+        function videoElRef(){ return document.getElementById('videoPlayer') || document.querySelector('video'); }
+
+        function setPlayheadFromClientX(clientX){
+          var areaRect = tracksArea.getBoundingClientRect();
+          var x = Math.max(0, Math.min(clientX - areaRect.left + tracksArea.scrollLeft, tracksArea.scrollWidth));
+          playhead.style.left = x + 'px';
+          // Sync to video currentTime using the ruler scale.
+          // Ruler spans 0..4min at 30s intervals across the full scrollWidth.
+          // Prefer real video duration when available.
+          var video = videoElRef();
+          var scrollW = tracksArea.scrollWidth || areaRect.width;
+          if (video && video.duration && isFinite(video.duration) && video.duration > 0){
+            var pct = x / scrollW;
+            try { video.currentTime = Math.max(0, Math.min(video.duration, pct * video.duration)); } catch(_){}
+          }
+        }
+
+        function onMouseMove(e){ setPlayheadFromClientX(e.clientX); }
+        function onMouseUp(){
+          playhead.classList.remove('mt-playhead-dragging');
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        if (handle){
+          handle.addEventListener('mousedown', function(e){
+            e.preventDefault();
+            playhead.classList.add('mt-playhead-dragging');
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+          });
+        }
+
+        // Clicking anywhere in the tracks area (not on the handle itself or a clip)
+        // jumps the playhead to that x position.
+        tracksArea.addEventListener('click', function(e){
+          if (e.target.closest('.mt-playhead-handle')) return;
+          if (e.target.closest('.mt-clip')) return; // let clip click handlers run
+          setPlayheadFromClientX(e.clientX);
+        });
+      })();
 
       // ── 6. TOP TOOLBAR BUTTONS (Snap, Snapshot, Link Tracks) ──
       document.querySelectorAll('.e-tb').forEach(function(btn) {
