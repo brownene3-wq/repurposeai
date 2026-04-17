@@ -1585,24 +1585,19 @@ function showToast(message, type = 'success') {
         // Set end time to video duration
         (function(){var e=document.getElementById('endTime');if(e)e.value=Math.round(videoDuration);})();
 
-        // Record this upload as an in-progress draft in the Projects section
+        // Add the uploaded file to the Media library ("All" + correct type
+        // tab) as a raw asset. Do NOT create a Draft here — Media and
+        // Projects are strictly separate: Media holds raw assets, Projects
+        // only holds drafts and completed exports. Drafts will be created
+        // by an explicit save action in a future iteration.
         try {
-          if (typeof window.addDraftEntry === 'function') {
-            var _sizeMB = (file && file.size) ? (file.size / (1024*1024)).toFixed(1) + ' MB' : '';
-            var _dur = (typeof videoDuration === 'number' && videoDuration > 0)
-              ? (Math.floor(videoDuration/60) + ':' + String(Math.floor(videoDuration%60)).padStart(2,'0'))
-              : '';
-            var _now = new Date();
-            var _dateStr = _now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            window.addDraftEntry({
-              id: 'd_' + Date.now(),
-              name: (file && file.name) || data.filename || 'Untitled project',
+          if (typeof window.addUploadedMediaItem === 'function') {
+            window.addUploadedMediaItem({
+              name: (file && file.name) || data.filename,
               filename: data.filename,
               serveUrl: data.serveUrl,
-              duration: videoDuration,
-              size: _sizeMB,
-              dur:  _dur,
-              date: _dateStr
+              duration: videoDuration
+              // mediaType auto-classified from filename extension
             });
           }
         } catch (_) {}

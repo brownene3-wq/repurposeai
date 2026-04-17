@@ -87,36 +87,79 @@
     }, true);
   }
 
-  // Handle file selection for all file inputs
-  function handleFiles(files) {
+  // Map extension -> media type/emoji/badge. Shared by sidebar uploads and
+  // server-uploaded items arriving via addUploadedMediaItem.
+  function classifyFileName(name){
+    var ext = String(name || '').split('.').pop().toLowerCase();
+    if (['mp3','wav','ogg','aac','flac','m4a'].indexOf(ext) !== -1)  return {mediaType:'aud', emoji:'\uD83C\uDFB5', badge:'aud'};
+    if (['png','jpg','jpeg','gif','webp','svg','bmp'].indexOf(ext) !== -1) return {mediaType:'img', emoji:'\uD83D\uDDBC', badge:'img'};
+    return {mediaType:'vid', emoji:'\uD83C\uDFAC', badge:'vid'};
+  }
+
+  // Build a .ml-fitem DOM element and append it to the Media library grid.
+  // Supports two call patterns:
+  //   - Local sidebar upload: pass `file` (a File object). We create a blob
+  //     URL so the item can be played locally.
+  //   - Server upload (via /video-editor/upload): pass `serveUrl` + optional
+  //     `filename`. The item plays from the server URL.
+  function appendMediaItem(opts){
     var grid = document.getElementById('mediaFileGrid');
-    if (!grid || !files.length) return;
+    if (!grid) return null;
 
-    Array.from(files).forEach(function(file) {
-      var ext = file.name.split('.').pop().toLowerCase();
-      var mediaType = 'vid';
-      var emoji = '\uD83C\uDFAC';
-      var badge = 'vid';
-      if (['mp3','wav','ogg','aac','flac','m4a'].indexOf(ext) !== -1) {
-        mediaType = 'aud'; emoji = '\uD83C\uDFB5'; badge = 'aud';
-      } else if (['png','jpg','jpeg','gif','webp','svg','bmp'].indexOf(ext) !== -1) {
-        mediaType = 'img'; emoji = '\uD83D\uDDBC'; badge = 'img';
+    var file = opts.file;
+    var name = opts.name || (file && file.name) || opts.filename || 'file';
+    var c = classifyFileName(name);
+    if (opts.mediaType) { c.mediaType = opts.mediaType; c.badge = opts.mediaType; }
+
+    var url = opts.serveUrl || '';
+    if (!url && file){
+      try { url = URL.createObjectURL(file); } catch(_){}
+    }
+
+    var item = document.createElement('div');
+    item.className = 'ml-fitem';
+    item.draggable = true;
+    item.dataset.mediaType = c.mediaType;
+    item.dataset.fileName = name;
+    if (url)            item.dataset.mediaUrl   = url;
+    if (opts.filename)  item.dataset.serverFilename = opts.filename;
+    if (opts.duration)  item.dataset.duration   = String(opts.duration);
+    item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">' + c.emoji + '</div>'
+      + '<span class="ml-badge ' + c.badge + '">' + c.badge.toUpperCase() + '</span>'
+      + '<span class="ml-fname" style="font-size:9px;color:#c4bfda;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + name + '</span>'
+      + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 4px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
+
+    grid.insertBefore(item, grid.firstChild);
+    wireItem(item);
+
+    // Re-apply whatever tab filter is currently active so the newly-added
+    // item respects it (e.g. an audio upload while "Videos" is selected
+    // should be hidden immediately).
+    var activeTab = document.querySelector('.ml-tab.active');
+    if (activeTab && typeof activeTab.click === 'function'){
+      // The inline onclick on each tab is what does the per-item filter;
+      // trigger it by simulating a click with the active tab already chosen.
+      // This keeps the UI consistent.
+      var f = activeTab.getAttribute('data-filter');
+      if (f && f !== 'all'){
+        item.style.display = item.dataset.mediaType === f ? '' : 'none';
       }
+    }
+    return item;
+  }
 
-      var item = document.createElement('div');
-      item.className = 'ml-fitem';
-      item.draggable = true;
-      item.dataset.mediaType = mediaType;
-      item.dataset.fileName = file.name;
-      item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">' + emoji + '</div>'
-        + '<span class="ml-badge ' + badge + '">' + badge.toUpperCase() + '</span>'
-        + '<span class="ml-fname" style="font-size:9px;color:#c4bfda;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + file.name + '</span>'
-        + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 4px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
+  // Expose so the real /video-editor/upload handler can inject server-uploaded
+  // files into the Media library (not Drafts).
+  try {
+    window.addUploadedMediaItem = function(spec){
+      try { return appendMediaItem(spec || {}); } catch(_){ return null; }
+    };
+  } catch(_){}
 
-      grid.insertBefore(item, grid.firstChild);
-      wireItem(item);
-    });
-
+  // Handle file selection for sidebar file inputs (local-only, no server upload)
+  function handleFiles(files) {
+    if (!files || !files.length) return;
+    Array.from(files).forEach(function(file){ appendMediaItem({file: file}); });
     showToast('Added ' + files.length + ' file(s) to media library');
   }
 
@@ -208,15 +251,57 @@
   // Expose so other scripts (e.g. v10-editor-redesign draft loader) can reuse it
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
 
+  // For video items: load the video into the editor's preview and sync editor
+  // state so tools (trim/export/etc.) can operate on it. Called on click AND
+  // +Timeline button press so the preview updates immediately.
+  function loadMediaItemIntoPreview(item){
+    var mediaType = item.dataset.mediaType || 'vid';
+    if (mediaType !== 'vid') return; // only video items drive the main preview
+    var url = item.dataset.mediaUrl;
+    if (!url) return;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (player){
+      try { player.src = url; player.load(); } catch(_){}
+    }
+    // If this came from a server upload (has server filename), update
+    // currentVideoFile so the editor's export/trim/etc. call the right file.
+    var serverFilename = item.dataset.serverFilename;
+    if (serverFilename){
+      try {
+        window.currentVideoFile = {
+          filename: serverFilename,
+          serveUrl: url,
+          duration: parseFloat(item.dataset.duration || '0') || 0
+        };
+      } catch(_){}
+    }
+    // Hide the #uploadZone once a real video is active (mirrors the
+    // behavior of the draft-loader in v10-editor-redesign.js).
+    var uz = document.getElementById('uploadZone');
+    if (uz && getComputedStyle(uz).display !== 'none'){
+      uz.style.display = 'none';
+      uz.dataset.v10HiddenForDraft = '1';
+    }
+    // Enable editor action buttons that the upload handler normally enables.
+    ['trimButton','exportButton','splitButton','filterButton','speedButton',
+     'audioButton','previewVoiceButton','voiceoverButton','vtPreviewBtn',
+     'vtApplyBtn','textButton','speedSelect','addMusicButton',
+     'removeFillerWordsBtn','removePausesBtn','applyTransitionButton',
+     'applyCaptionsBtn'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.disabled = false;
+    });
+  }
+
   function wireItem(item) {
     // Guard against double-wiring from dual-load
     if (item.dataset.wiredV13) return;
     item.dataset.wiredV13 = '1';
     item.style.cursor = 'pointer';
 
-    // Click anywhere on the item (except the +Timeline button) to select AND
-    // add it to the timeline. Previously clicking the item did nothing
-    // functional — only the small +Timeline button worked.
+    // Click anywhere on the item (except the +Timeline button) to select, add
+    // it to the timeline, AND load it into the preview so the video actually
+    // renders in the preview window immediately.
     item.addEventListener('click', function(e) {
       if (e.target.classList.contains('ml-add')) return;
       document.querySelectorAll('.ml-fitem').forEach(function(c) { c.classList.remove('selected'); });
@@ -224,6 +309,7 @@
       var nameEl = item.querySelector('.ml-fname');
       var fileName = nameEl ? nameEl.textContent.trim() : (item.dataset.fileName || 'clip');
       var mediaType = item.dataset.mediaType || 'vid';
+      loadMediaItemIntoPreview(item);
       addClipToTimeline(fileName, mediaType);
     });
 
@@ -238,6 +324,7 @@
         var nameEl = item.querySelector('.ml-fname');
         var fileName = nameEl ? nameEl.textContent.trim() : 'clip';
         var mediaType = item.dataset.mediaType || 'vid';
+        loadMediaItemIntoPreview(item);
         addClipToTimeline(fileName, mediaType);
       });
     }
