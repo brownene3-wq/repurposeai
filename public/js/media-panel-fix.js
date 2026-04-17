@@ -211,29 +211,134 @@
   });
 
   // ââ 3. +Timeline button - add clips to timeline ââ
-  function addClipToTimeline(fileName, mediaType) {
-    var trackSelector;
-    var clipClass;
-    if (mediaType === 'aud') {
-      trackSelector = '.mt-track-audio';
-      clipClass = 'mt-clip mt-clip-audio';
-    } else if (mediaType === 'img') {
-      trackSelector = '.mt-track-video';
-      clipClass = 'mt-clip mt-clip-video';
-    } else {
-      trackSelector = '.mt-track-video';
-      clipClass = 'mt-clip mt-clip-video';
-    }
+  // Timeline clip sequencing + Select tool + Snap toggle.
+  //
+  // TIMELINE_PX_PER_SEC sets the visual time-scale. A 30s clip renders
+  // 30*PX_PER_SEC wide. The tracks area has overflow-x:auto so longer
+  // timelines scroll naturally.
+  var TIMELINE_PX_PER_SEC = 10;
+  // Default-on snap so edges magnetize out of the box.
+  var _timelineState = { tool: 'razor', snap: true };
 
-    var track = document.querySelector(trackSelector);
+  function findRightmostClipEnd(trackEl){
+    var maxEnd = 0;
+    trackEl.querySelectorAll('.mt-clip').forEach(function(c){
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (l + w > maxEnd) maxEnd = l + w;
+    });
+    return maxEnd;
+  }
+
+  // For now, new clicks from the Media panel always land on the FIRST track
+  // of the matching type (V1 for video, A1 for audio). Once on the timeline,
+  // the user can drag a clip onto A2/A3 if desired.
+  function findTargetTrack(mediaType){
+    var sel = mediaType === 'aud' ? '.mt-track-audio' : '.mt-track-video';
+    return document.querySelector(sel);
+  }
+
+  function updateTimelineInfo(){
+    var info = document.querySelector('.mt-info');
+    if (!info) return;
+    var tracks = document.querySelectorAll('.mt-track').length;
+    var clips = document.querySelectorAll('.mt-clip').length;
+    info.textContent = tracks + ' tracks \u2022 ' + clips + ' clips';
+  }
+
+  // Snap candidate positions: every other clip's left + right edge, plus the playhead.
+  function collectSnapTargets(ignoreClip){
+    var targets = [];
+    document.querySelectorAll('.mt-clip').forEach(function(c){
+      if (c === ignoreClip) return;
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      targets.push(l, l + w);
+    });
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) targets.push(parseFloat(ph.style.left) || 0);
+    return targets;
+  }
+
+  function applySnap(candidateLeft, clipWidth, ignoreClip){
+    if (!_timelineState.snap) return candidateLeft;
+    var threshold = 10; // px
+    var targets = collectSnapTargets(ignoreClip);
+    var edges = [
+      {val: candidateLeft},
+      {val: candidateLeft + clipWidth}
+    ];
+    var best = null;
+    targets.forEach(function(t){
+      edges.forEach(function(e){
+        var d = Math.abs(t - e.val);
+        if (d < threshold && (best === null || d < best.dist)){
+          best = {dist: d, shift: t - e.val};
+        }
+      });
+    });
+    return best !== null ? candidateLeft + best.shift : candidateLeft;
+  }
+
+  function makeClipInteractive(clip){
+    if (clip.dataset.interactive) return;
+    clip.dataset.interactive = '1';
+
+    // Select on click — only when the Select tool is active.
+    clip.addEventListener('click', function(e){
+      if (_timelineState.tool !== 'select') return;
+      e.stopPropagation();
+      document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+      clip.classList.add('selected');
+    });
+
+    // Drag to move — only when Select tool active.
+    clip.addEventListener('mousedown', function(e){
+      if (_timelineState.tool !== 'select') return;
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var startX = e.clientX;
+      var startLeft = parseFloat(clip.style.left) || 0;
+      var width = parseFloat(clip.style.width) || clip.offsetWidth || 100;
+      document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+      clip.classList.add('selected');
+      function onMove(ev){
+        var target = Math.max(0, startLeft + (ev.clientX - startX));
+        target = applySnap(target, width, clip);
+        clip.style.left = target + 'px';
+      }
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function addClipToTimeline(fileName, mediaType, duration) {
+    var track = findTargetTrack(mediaType);
     if (!track) { showToast('Timeline track not found'); return; }
 
-    var clip = document.createElement('div');
-    clip.className = clipClass;
-    clip.textContent = fileName;
-    clip.draggable = true;
-    clip.style.cssText = 'width:20%;min-width:80px;padding:4px 8px;font-size:10px;border-radius:4px;cursor:grab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    var secs = parseFloat(duration) || 0;
+    var width = secs > 0 ? Math.max(40, secs * TIMELINE_PX_PER_SEC) : 200;
+    var leftPos = findRightmostClipEnd(track);
 
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip ' + (mediaType === 'aud' ? 'mt-clip-audio' : 'mt-clip-video');
+    clip.textContent = fileName;
+    clip.dataset.fileName = fileName;
+    if (secs > 0) clip.dataset.duration = String(secs);
+    // position:absolute + top:3px + height:30px come from the base .mt-clip rule in CSS.
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.padding = '4px 8px';
+    clip.style.fontSize = '10px';
+    clip.style.overflow = 'hidden';
+    clip.style.textOverflow = 'ellipsis';
+    clip.style.whiteSpace = 'nowrap';
+    clip.style.userSelect = 'none';
     if (mediaType === 'aud') {
       clip.style.background = 'linear-gradient(135deg, #059669, #10b981)';
       clip.style.color = '#fff';
@@ -243,17 +348,58 @@
     }
 
     track.appendChild(clip);
+    makeClipInteractive(clip);
+    updateTimelineInfo();
     showToast('Added to timeline: ' + fileName);
+  }
 
-    // Update track info
-    var info = document.querySelector('.mt-info');
-    if (info) {
-      var clips = document.querySelectorAll('.mt-clip');
-      info.textContent = document.querySelectorAll('.mt-track').length + ' tracks \u2022 ' + clips.length + ' clips';
+  // Toolbar: Razor / Select (mutually exclusive) + Snap (independent boolean).
+  function setActiveTool(tool){
+    _timelineState.tool = tool;
+    document.body.dataset.timelineTool = tool;
+    var razor = document.getElementById('mtRazorBtn');
+    var sel   = document.getElementById('mtSelectBtn');
+    if (razor) razor.classList.toggle('active', tool === 'razor');
+    if (sel)   sel.classList.toggle('active',   tool === 'select');
+    if (tool !== 'select'){
+      // Leaving select clears any highlighted clips.
+      document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
     }
   }
 
-  // Expose so other scripts (e.g. v10-editor-redesign draft loader) can reuse it
+  function setSnapEnabled(on){
+    _timelineState.snap = !!on;
+    var btn = document.getElementById('mtSnapBtn');
+    if (btn) btn.classList.toggle('active', !!on);
+  }
+
+  function wireTimelineTools(){
+    var razor = document.getElementById('mtRazorBtn');
+    var sel   = document.getElementById('mtSelectBtn');
+    var snap  = document.getElementById('mtSnapBtn');
+    if (razor && !razor.dataset.v14){
+      razor.dataset.v14 = '1';
+      razor.addEventListener('click', function(){ setActiveTool('razor'); showToast('Razor tool'); });
+    }
+    if (sel && !sel.dataset.v14){
+      sel.dataset.v14 = '1';
+      sel.addEventListener('click', function(){ setActiveTool('select'); showToast('Select tool \u2014 click a clip to highlight, drag to move'); });
+    }
+    if (snap && !snap.dataset.v14){
+      snap.dataset.v14 = '1';
+      snap.addEventListener('click', function(){
+        _timelineState.snap = !_timelineState.snap;
+        setSnapEnabled(_timelineState.snap);
+        showToast('Snap ' + (_timelineState.snap ? 'on' : 'off'));
+      });
+    }
+    // Apply initial visual state (Razor active, Snap on by default).
+    setActiveTool(_timelineState.tool);
+    setSnapEnabled(_timelineState.snap);
+  }
+  wireTimelineTools();
+
+  // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
 
   // For video items: load the video into the editor's preview and sync editor
@@ -315,7 +461,7 @@
       var fileName = nameEl ? nameEl.textContent.trim() : (item.dataset.fileName || 'clip');
       var mediaType = item.dataset.mediaType || 'vid';
       loadMediaItemIntoPreview(item);
-      addClipToTimeline(fileName, mediaType);
+      addClipToTimeline(fileName, mediaType, item.dataset.duration);
     });
 
     // Wire +Timeline button — clone to strip any v1.0 listeners
@@ -330,7 +476,7 @@
         var fileName = nameEl ? nameEl.textContent.trim() : 'clip';
         var mediaType = item.dataset.mediaType || 'vid';
         loadMediaItemIntoPreview(item);
-        addClipToTimeline(fileName, mediaType);
+        addClipToTimeline(fileName, mediaType, item.dataset.duration);
       });
     }
   }

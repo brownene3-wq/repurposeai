@@ -823,9 +823,10 @@
         var el = document.getElementById(id);
         if (el) el.disabled = false;
       });
-      // Drop the video onto the timeline as a clip
+      // Drop the video onto the timeline as a clip, using the real duration
+      // so it takes up the right amount of track width.
       if (typeof window.addClipToTimeline === 'function'){
-        try { window.addClipToTimeline(draft.name, 'vid'); } catch(_){}
+        try { window.addClipToTimeline(draft.name, 'vid', draft.duration); } catch(_){}
       }
       toast('Loaded '+(draft.kind === 'completed' ? 'export' : 'draft')+': '+draft.name);
       return;

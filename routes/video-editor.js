@@ -511,6 +511,10 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-clip:hover{box-shadow:0 0 12px rgba(124,58,237,.3)}
     .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:1px solid rgba(124,58,237,.4)}
     .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:1px solid rgba(56,189,248,.35)}
+    .mt-clip.selected{outline:2px solid #a78bfa;outline-offset:-2px;box-shadow:0 0 16px rgba(139,92,246,.55)}
+    body[data-timeline-tool="select"] .mt-clip{cursor:grab}
+    body[data-timeline-tool="select"] .mt-clip:active{cursor:grabbing}
+    body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}
     .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:1px solid rgba(244,114,182,.35)}
     .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
@@ -4572,33 +4576,9 @@ function showToast(message, type = 'success') {
         });
       });
 
-      // ── 2. MEDIA CLIPS (click to load into player) ──
-      document.querySelectorAll('.ml-fitem').forEach(function(item) {
-        item.style.cursor = 'pointer';
-        item.addEventListener('click', function(e) {
-          // Don't trigger if clicking the "+ Timeline" button
-          if (e.target.classList.contains('ml-add')) return;
-          var nameEl = this.querySelector('.ml-fnm');
-          var fileName = nameEl ? nameEl.textContent.trim() : 'Unknown';
-          var type = this.getAttribute('data-media-type');
-          // Highlight selected clip
-          document.querySelectorAll('.ml-fitem').forEach(function(c) { c.classList.remove('selected'); });
-          this.classList.add('selected');
-          showToast('Selected: ' + fileName);
-        });
-
-        // Wire the "+ Timeline" button to add clip to timeline
-        var addBtn = item.querySelector('.ml-add');
-        if (addBtn) {
-          addBtn.style.cursor = 'pointer';
-          addBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var nameEl = item.querySelector('.ml-fnm');
-            var fileName = nameEl ? nameEl.textContent.trim() : 'clip';
-            showToast('Added to timeline: ' + fileName);
-          });
-        }
-      });
+      // ── 2. MEDIA CLIPS click-to-timeline — handled by media-panel-fix.js
+      // (appendMediaItem + wireItem). Legacy handler removed.
+      //
 
       // ── 3. BOTTOM TABS (Import, Folder, AI B-Roll) ──
       document.querySelectorAll('.ml-fb').forEach(function(btn) {
@@ -4619,15 +4599,10 @@ function showToast(message, type = 'success') {
       });
 
       // ── 4. TIMELINE TOOLS (Razor, Select, Snap) ──
-      document.querySelectorAll('.mt-tool-btn').forEach(function(btn) {
-        btn.style.cursor = 'pointer';
-        btn.addEventListener('click', function() {
-          document.querySelectorAll('.mt-tool-btn').forEach(function(b) { b.classList.remove('active'); });
-          this.classList.add('active');
-          var tool = this.textContent.trim();
-          showToast('Tool: ' + tool + ' activated');
-        });
-      });
+      // Wired by media-panel-fix.js wireTimelineTools() with proper semantics:
+      //   - Razor & Select are mutually exclusive (active tool)
+      //   - Snap is an independent boolean toggle
+      // Legacy handler removed (it treated all three as mutually exclusive).
 
       // ── 5. + Add Track button — creates a new audio track row ──
       var addTrackBtn = document.querySelector('.mt-add-track-btn');
