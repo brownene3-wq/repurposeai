@@ -112,7 +112,12 @@
     '.media-library .ml-search{display:none!important}',
     '.media-library .ml-body>.ml-upload{display:none!important}',
     '.media-library .ml-body>.ml-section:not([data-v10]){display:none!important}',
-    '.media-library .ml-body>.ml-fgrid{display:none!important}',
+    /* #mediaFileGrid (.ml-fgrid) is the container where sidebar uploads land
+       (media-panel-fix.js appendMediaItem) and where the real /video-editor/
+       upload handler injects items via window.addUploadedMediaItem. Keep it
+       visible so uploaded files actually appear in the Media library. */
+    '.media-library .ml-body>.ml-fgrid{display:flex;flex-direction:column;gap:5px;padding:4px 12px 8px}',
+    '.media-library .ml-body>.ml-fgrid:empty{display:none}',
     '/* v10 full-height media library sidebar */',
     '.editor-container .media-library{grid-row:2/4!important;overflow-y:hidden;display:flex;flex-direction:column}',
     '.editor-container .media-library .ml-body{flex:1 1 0;overflow-y:auto;min-height:0}',
