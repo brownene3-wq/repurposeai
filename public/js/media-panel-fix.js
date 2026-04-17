@@ -703,16 +703,26 @@
   // the playhead is over an image clip (HTML <video> can't render images).
   function ensureImageOverlay(){
     var existing = document.getElementById('tlImageOverlay');
-    if (existing && existing.isConnected) return existing;
+    if (existing && existing.isConnected && existing.tagName === 'IMG') return existing;
     var player = document.getElementById('videoPlayer') || document.querySelector('video');
-    if (!player) return null;
+    if (!player || !(player instanceof Element)) return null;
     var container = player.parentElement;
-    if (!container) return null;
+    if (!container || !(container instanceof Element)) return null;
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
-    var img = existing || document.createElement('img');
+    // If there's a stale non-IMG element holding that id, replace it.
+    if (existing && existing.tagName !== 'IMG'){
+      try { existing.remove(); } catch(_){}
+      existing = null;
+    }
+    var img;
+    if (existing instanceof Element && existing.tagName === 'IMG'){
+      img = existing;
+    } else {
+      img = document.createElement('img');
+    }
     img.id = 'tlImageOverlay';
     img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:6;pointer-events:none;display:none';
-    container.appendChild(img);
+    try { container.appendChild(img); } catch(_){ return null; }
     return img;
   }
   function showImagePreview(url){
