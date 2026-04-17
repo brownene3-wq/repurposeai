@@ -112,6 +112,9 @@
     '.media-library .ml-search{display:none!important}',
     '.media-library .ml-body>.ml-upload{display:none!important}',
     '.media-library .ml-body>.ml-section:not([data-v10]){display:none!important}',
+    /* Folders disabled for now — Projects section removed per request */
+    '.media-library .ml-folder{display:none!important}',
+    '.media-library [data-v10-folder]{display:none!important}',
     /* #mediaFileGrid (.ml-fgrid) is the container where sidebar uploads land
        (media-panel-fix.js appendMediaItem) and where the real /video-editor/
        upload handler injects items via window.addUploadedMediaItem. Keep it
@@ -924,13 +927,18 @@
     wireOrphanSearchInputs();
     removeImportFolderButtons();
     restyleMediaItems();
-    rebuildFolders();
-    injectMediaItems();
+    // Projects section (Completed Videos + Drafts folders) intentionally not
+    // rendered right now — Albert wants uploaded files to live in the area
+    // between the search bar and where Projects was. rebuildFolders() and
+    // injectMediaItems() are left defined so a future iteration can re-enable
+    // the Projects section as a separate, opt-in feature. The window hooks
+    // (addDraftEntry, addCompletedEntry, removeDraftByFilename) still work;
+    // they just won't render anything until the section is re-enabled.
     // Apply the currently active filter (default: all)
     var active = ml.querySelector('.ml-tab.active');
     var kind = (active && active.getAttribute('data-v10-kind')) || 'all';
     applyFilter(kind);
-    // Re-apply any existing search term (so newly-built folder items respect it)
+    // Re-apply any existing search term
     var existingSearch = document.querySelector('.media-library .v10-search input, .media-library .ml-search input');
     if (existingSearch && existingSearch.value) applySearch(existingSearch.value);
     return true;
