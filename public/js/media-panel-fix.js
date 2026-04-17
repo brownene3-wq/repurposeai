@@ -403,6 +403,8 @@
     // Split changed which clip is under the playhead — refresh preview.
     _lastPreviewUrl = null;
     try { syncPreviewToPlayhead(); } catch(_){}
+    if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+    pushTimelineHistory();
     showToast('Clip split');
     return true;
   }
@@ -467,10 +469,12 @@
       function onUp(){
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
-        // Drag may have moved the clip into/out of the playhead's range or
-        // swapped what's under the playhead — refresh the preview.
+        // If Snap is on and this was a video clip, close any gap created
+        // by the drag (keeps V1 side-by-side per Albert's requirement).
+        if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
         _lastPreviewUrl = null;
         try { syncPreviewToPlayhead(); } catch(_){}
+        pushTimelineHistory();
       }
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -511,6 +515,9 @@
     track.appendChild(clip);
     makeClipInteractive(clip);
     updateTimelineInfo();
+    // If Snap is on, enforce no-gap invariant for video clips.
+    if (mediaType !== 'aud' && _timelineState.snap){ compactVideoTrack(); }
+    pushTimelineHistory();
     showToast('Added to timeline: ' + fileName);
   }
 
@@ -534,10 +541,227 @@
     if (btn) btn.classList.toggle('active', !!on);
   }
 
-  // Proxies for the real undo/redo buttons that live in the tools-section.
-  // Clicking the moved toolbar buttons just forwards to the real ones so the
-  // existing editor-history logic (editorHistory, editorHistoryIndex,
-  // restoreEditorState) keeps working unchanged.
+  // ── Timeline history (Undo / Redo) ─────────────────────────────
+  // Full-snapshot history of all tracks' clips. Pushed after every
+  // mutation (add / delete / move / split / compact). Undo pops back one
+  // snapshot; Redo advances forward. Cap at 50 entries so we don't leak
+  // memory on long sessions.
+  var _tlHistory = [];
+  var _tlHistoryIndex = -1;
+  var _tlRestoring = false; // suppress history push while restoring
+  var HISTORY_LIMIT = 50;
+
+  function snapshotTimelineHistory(){
+    var tracksAll = Array.from(document.querySelectorAll('#mtTracksArea .mt-track'));
+    return tracksAll.map(function(track){
+      return {
+        type: track.getAttribute('data-type') || '',
+        cls:  track.className,
+        clips: Array.from(track.querySelectorAll('.mt-clip')).map(function(c){
+          return {
+            className: c.className,
+            text: c.textContent,
+            left: c.style.left,
+            width: c.style.width,
+            bg: c.style.background,
+            color: c.style.color,
+            fileName: c.dataset.fileName || '',
+            mediaUrl: c.dataset.mediaUrl || '',
+            serverFilename: c.dataset.serverFilename || '',
+            duration: c.dataset.duration || '',
+            sourceOffset: c.dataset.sourceOffset || ''
+          };
+        })
+      };
+    });
+  }
+  function restoreTimelineSnapshot(snap){
+    if (!snap) return;
+    _tlRestoring = true;
+    try {
+      var tracksArea = document.getElementById('mtTracksArea');
+      var labelsArea = document.querySelector('.mt-labels');
+      if (!tracksArea) return;
+      // Remove any audio tracks beyond A1 that aren't in the snapshot —
+      // simplest way to match user-added-track deletions.
+      var desiredAudioCount = snap.filter(function(t){ return t.type === 'audio'; }).length;
+      var existingAudioTracks = tracksArea.querySelectorAll('.mt-track-audio');
+      while (existingAudioTracks.length > desiredAudioCount){
+        var last = existingAudioTracks[existingAudioTracks.length - 1];
+        last.remove();
+        existingAudioTracks = tracksArea.querySelectorAll('.mt-track-audio');
+      }
+      var existingAudioLabels = labelsArea ? labelsArea.querySelectorAll('.mt-label-audio') : [];
+      while (existingAudioLabels.length > desiredAudioCount){
+        existingAudioLabels[existingAudioLabels.length - 1].remove();
+        existingAudioLabels = labelsArea.querySelectorAll('.mt-label-audio');
+      }
+      // Recreate any missing audio tracks (beyond A1) — call Add Track repeatedly
+      while (tracksArea.querySelectorAll('.mt-track-audio').length < desiredAudioCount){
+        var addBtn = document.querySelector('.mt-add-track-btn');
+        if (addBtn) addBtn.click();
+        else break;
+      }
+      // Clear all clips
+      tracksArea.querySelectorAll('.mt-clip').forEach(function(c){ c.remove(); });
+      // Map snapshot tracks to actual tracks and rebuild clips
+      var allTracks = tracksArea.querySelectorAll('.mt-track');
+      snap.forEach(function(trackSpec, i){
+        var track = allTracks[i];
+        if (!track) return;
+        trackSpec.clips.forEach(function(spec){
+          var c = document.createElement('div');
+          c.className = spec.className;
+          c.textContent = spec.text;
+          c.style.left = spec.left;
+          c.style.width = spec.width;
+          c.style.padding = '4px 8px';
+          c.style.fontSize = '10px';
+          c.style.overflow = 'hidden';
+          c.style.textOverflow = 'ellipsis';
+          c.style.whiteSpace = 'nowrap';
+          c.style.userSelect = 'none';
+          if (spec.bg)    c.style.background = spec.bg;
+          if (spec.color) c.style.color = spec.color;
+          if (spec.fileName)       c.dataset.fileName = spec.fileName;
+          if (spec.mediaUrl)       c.dataset.mediaUrl = spec.mediaUrl;
+          if (spec.serverFilename) c.dataset.serverFilename = spec.serverFilename;
+          if (spec.duration)       c.dataset.duration = spec.duration;
+          if (spec.sourceOffset)   c.dataset.sourceOffset = spec.sourceOffset;
+          track.appendChild(c);
+          makeClipInteractive(c);
+        });
+      });
+      updateTimelineInfo();
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+    } finally { _tlRestoring = false; }
+  }
+  function pushTimelineHistory(){
+    if (_tlRestoring) return;
+    _tlHistory = _tlHistory.slice(0, _tlHistoryIndex + 1);
+    _tlHistory.push(snapshotTimelineHistory());
+    if (_tlHistory.length > HISTORY_LIMIT){
+      _tlHistory.shift();
+    }
+    _tlHistoryIndex = _tlHistory.length - 1;
+  }
+  function tlUndo(){
+    if (_tlHistoryIndex <= 0){ showToast('Nothing to undo'); return; }
+    _tlHistoryIndex--;
+    restoreTimelineSnapshot(_tlHistory[_tlHistoryIndex]);
+    showToast('Undo');
+  }
+  function tlRedo(){
+    if (_tlHistoryIndex >= _tlHistory.length - 1){ showToast('Nothing to redo'); return; }
+    _tlHistoryIndex++;
+    restoreTimelineSnapshot(_tlHistory[_tlHistoryIndex]);
+    showToast('Redo');
+  }
+  // Capture initial empty state so first undo has somewhere to go.
+  setTimeout(pushTimelineHistory, 200);
+
+  // ── Snap compaction (no-gap enforcement on V1 when Snap ON) ────
+  function compactVideoTrack(){
+    var track = document.querySelector('.mt-track-video');
+    if (!track) return;
+    var clips = Array.from(track.querySelectorAll('.mt-clip'))
+      .sort(function(a, b){ return (parseFloat(a.style.left)||0) - (parseFloat(b.style.left)||0); });
+    var cursor = 0;
+    clips.forEach(function(c){
+      c.style.left = cursor + 'px';
+      cursor += (parseFloat(c.style.width) || 0);
+    });
+  }
+
+  // ── Black overlay + continuous playback through gaps ───────────
+  function ensureBlackOverlay(){
+    var existing = document.getElementById('tlBlackOverlay');
+    if (existing) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player) return null;
+    var container = player.parentElement;
+    if (!container) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var overlay = document.createElement('div');
+    overlay.id = 'tlBlackOverlay';
+    overlay.style.cssText = 'position:absolute;inset:0;background:#000;z-index:5;pointer-events:none;display:none';
+    container.appendChild(overlay);
+    return overlay;
+  }
+  function showBlackPreview(){
+    var o = ensureBlackOverlay();
+    if (o) o.style.display = 'block';
+  }
+  function hideBlackPreview(){
+    var o = document.getElementById('tlBlackOverlay');
+    if (o) o.style.display = 'none';
+  }
+
+  // Animate the playhead across an empty gap, then auto-play the next clip.
+  var _gapTimer = null;
+  function advancePlayheadThroughGap(startX){
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'))
+      .sort(function(a,b){ return (parseFloat(a.style.left)||0)-(parseFloat(b.style.left)||0); });
+    var next = null;
+    for (var i = 0; i < clips.length; i++){
+      var l = parseFloat(clips[i].style.left)||0;
+      if (l > startX + 0.5) { next = clips[i]; break; }
+    }
+    if (!next){
+      showBlackPreview();
+      return;
+    }
+    showBlackPreview();
+    var endX = parseFloat(next.style.left);
+    var gapPx = endX - startX;
+    if (gapPx <= 1){
+      loadAndPlayClipAt(next, 0);
+      return;
+    }
+    var gapMs = (gapPx / TIMELINE_PX_PER_SEC) * 1000;
+    var tStart = Date.now();
+    if (_gapTimer) clearInterval(_gapTimer);
+    _gapTimer = setInterval(function(){
+      var elapsed = Date.now() - tStart;
+      if (elapsed >= gapMs){
+        clearInterval(_gapTimer); _gapTimer = null;
+        ph.style.left = endX + 'px';
+        loadAndPlayClipAt(next, 0);
+        return;
+      }
+      ph.style.left = (startX + (elapsed / gapMs) * gapPx) + 'px';
+    }, 33);
+  }
+  function loadAndPlayClipAt(clip, offsetPx){
+    if (!clip) return;
+    var url = clip.dataset.mediaUrl;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player) return;
+    var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+    var seekSec = sourceOffset + (offsetPx / TIMELINE_PX_PER_SEC);
+    hideBlackPreview();
+    var normalizedCurrent = player.src;
+    var normalizedTarget = url ? normalizeUrl(url) : '';
+    if (url && normalizedCurrent !== normalizedTarget){
+      _lastPreviewUrl = url;
+      player.src = url;
+      player.load();
+      player.addEventListener('loadedmetadata', function once(){
+        player.removeEventListener('loadedmetadata', once);
+        try { player.currentTime = seekSec; } catch(_){}
+        try { player.play(); } catch(_){}
+      }, {once:true});
+    } else {
+      try { player.currentTime = seekSec; } catch(_){}
+      try { player.play(); } catch(_){}
+    }
+  }
+
+  // Proxy used only as a fallback in case the direct timeline undo/redo
+  // hasn't been set up yet (shouldn't happen in practice).
   function clickIfExists(id){
     var el = document.getElementById(id);
     if (el) el.click();
@@ -584,15 +808,26 @@
         _timelineState.snap = !_timelineState.snap;
         setSnapEnabled(_timelineState.snap);
         showToast('Snap ' + (_timelineState.snap ? 'on' : 'off'));
+        if (_timelineState.snap){
+          // When Snap toggles ON, immediately close all gaps on V1 so clips
+          // are side-by-side (Albert's "Gap Management" requirement).
+          compactVideoTrack();
+          _lastPreviewUrl = null;
+          try { syncPreviewToPlayhead(); } catch(_){}
+          pushTimelineHistory();
+        }
       });
     }
     if (undo && !undo.dataset.v14){
       undo.dataset.v14 = '1';
-      undo.addEventListener('click', function(){ clickIfExists('undoBtn'); });
+      // Use the timeline history stack so Undo reverts clip add/move/
+      // delete/split. The editor's own undo (inside the tools-section) is
+      // still reachable via its original #undoBtn button.
+      undo.addEventListener('click', tlUndo);
     }
     if (redo && !redo.dataset.v14){
       redo.dataset.v14 = '1';
-      redo.addEventListener('click', function(){ clickIfExists('redoBtn'); });
+      redo.addEventListener('click', tlRedo);
     }
     if (snapshot && !snapshot.dataset.v14){
       snapshot.dataset.v14 = '1';
@@ -678,10 +913,13 @@
       var selected = document.querySelectorAll('.mt-clip.selected');
       if (!selected.length) return;
       e.preventDefault();
+      var removedVideo = Array.from(selected).some(function(c){ return c.classList.contains('mt-clip-video'); });
       selected.forEach(function(c){ c.remove(); });
       updateTimelineInfo();
+      if (removedVideo && _timelineState.snap){ compactVideoTrack(); }
       _lastPreviewUrl = null;
       try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
       showToast(selected.length === 1 ? 'Clip removed' : (selected.length + ' clips removed'));
     });
   }
@@ -709,7 +947,14 @@
     if (!ph) return;
     var phX = parseFloat(ph.style.left) || 0;
     var hit = getClipAtPlayheadX(phX);
-    if (!hit) return;
+    if (!hit){
+      // Playhead is over a gap — show black overlay (Albert's Empty
+      // Sequence Visuals requirement). Don't swap video src; leave the
+      // last loaded clip paused underneath.
+      showBlackPreview();
+      return;
+    }
+    hideBlackPreview();
     var clip = hit.clip;
     var url = clip.dataset.mediaUrl;
     if (!url) return;
@@ -790,6 +1035,34 @@
     video.addEventListener('timeupdate', syncPlayheadToVideo);
     video.addEventListener('seeked',     syncPlayheadToVideo);
     video.addEventListener('play',       syncPlayheadToVideo);
+    // Continuous playback: when this clip ends, auto-advance through any
+    // gap to the next video clip and resume. If the playhead is already at
+    // the end of the sequence, just show the black overlay.
+    video.addEventListener('ended', function(){
+      var ph = document.getElementById('mtPlayhead');
+      if (!ph) return;
+      // Align playhead exactly to the end of the currently-playing clip.
+      var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+      var src = video.src;
+      var endedClip = null;
+      for (var i = 0; i < clips.length; i++){
+        var c = clips[i];
+        if (!c.dataset.mediaUrl) continue;
+        if (normalizeUrl(c.dataset.mediaUrl) !== src) continue;
+        var srcOff = parseFloat(c.dataset.sourceOffset) || 0;
+        var dur    = parseFloat(c.dataset.duration)    || 0;
+        // Pick the clip whose range we were playing
+        if (video.duration && Math.abs(video.currentTime - (srcOff + dur)) < 0.6){ endedClip = c; break; }
+      }
+      var startX;
+      if (endedClip){
+        startX = (parseFloat(endedClip.style.left)||0) + (parseFloat(endedClip.style.width)||0);
+      } else {
+        startX = parseFloat(ph.style.left) || 0;
+      }
+      ph.style.left = startX + 'px';
+      advancePlayheadThroughGap(startX);
+    });
   }
   wireVideoPlayheadSync();
   // If the <video> element is injected/replaced later, re-wire once it exists.
