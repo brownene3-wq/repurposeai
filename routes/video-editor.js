@@ -486,6 +486,8 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-tool-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.25);background:rgba(108,58,237,.06)}
     .mt-tool-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
     .mt-tool-btn svg{flex-shrink:0}
+    .mt-toolbar-sep{display:inline-block;width:1px;align-self:stretch;background:rgba(108,58,237,.2);margin:0 4px}
+    .mt-toolbar-left{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
     .mt-add-track-btn{display:flex;align-items:center;gap:4px;padding:4px 10px;font-size:11px;font-weight:600;color:#a78bfa;background:rgba(108,58,237,.08);border:1px solid rgba(108,58,237,.15);border-radius:6px;cursor:pointer;transition:all .2s}
     .mt-add-track-btn:hover{background:rgba(108,58,237,.18);border-color:rgba(108,58,237,.3)}
     .mt-info{font-size:10px;color:#4a3d6a;font-weight:500}
@@ -547,12 +549,7 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <a href="/dashboard" style="text-decoration:none"><span class="e-logo">Splicora</span></a><div class="e-sep"></div>
-            <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
-            <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
-            <button class="e-tb on">\ud83e\uddf2 Snap</button>
-            <button class="e-tb">\ud83d\udcf7 Snapshot</button>
-            <button class="e-tb">\ud83d\udd17 Link Tracks</button>
+            <a href="/dashboard" style="text-decoration:none"><span class="e-logo">Splicora</span></a>
             <div class="e-sp"></div>
             <button class="e-tb">\ud83d\udcbe Auto-saved</button>
             <button class="e-tb ex" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export</button>
@@ -655,7 +652,13 @@ router.get('/', requireAuth, async (req, res) => {
                 <div class="mt-toolbar-left">
                   <button class="mt-tool-btn active" id="mtRazorBtn" title="Razor Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.121 14.121L7.05 21.192a2 2 0 01-2.828 0l-.414-.414a2 2 0 010-2.828l7.07-7.071"/><path d="M16.243 11.999L21.9 6.343a2 2 0 000-2.829l-.707-.707a2 2 0 00-2.828 0L12.707 8.464"/><line x1="8" y1="8" x2="16" y2="16"/></svg> Razor</button>
                   <button class="mt-tool-btn" id="mtSelectBtn" title="Select Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg> Select</button>
-                  <button class="mt-tool-btn" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
+                  <span class="mt-toolbar-sep"></span>
+                  <button class="mt-tool-btn" id="mtUndoBtn" title="Undo">\u21a9 Undo</button>
+                  <button class="mt-tool-btn" id="mtRedoBtn" title="Redo">\u21aa Redo</button>
+                  <span class="mt-toolbar-sep"></span>
+                  <button class="mt-tool-btn active" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
+                  <button class="mt-tool-btn" id="mtSnapshotBtn" title="Snapshot">\ud83d\udcf7 Snapshot</button>
+                  <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
                 </div>
                 <div class="mt-toolbar-right">
                   <button class="mt-add-track-btn" id="mtAddTrackBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Track</button>

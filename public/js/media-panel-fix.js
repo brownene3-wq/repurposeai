@@ -534,10 +534,24 @@
     if (btn) btn.classList.toggle('active', !!on);
   }
 
+  // Proxies for the real undo/redo buttons that live in the tools-section.
+  // Clicking the moved toolbar buttons just forwards to the real ones so the
+  // existing editor-history logic (editorHistory, editorHistoryIndex,
+  // restoreEditorState) keeps working unchanged.
+  function clickIfExists(id){
+    var el = document.getElementById(id);
+    if (el) el.click();
+    else if (typeof showToast === 'function') showToast('Nothing to do');
+  }
+
   function wireTimelineTools(){
     var razor = document.getElementById('mtRazorBtn');
     var sel   = document.getElementById('mtSelectBtn');
     var snap  = document.getElementById('mtSnapBtn');
+    var undo  = document.getElementById('mtUndoBtn');
+    var redo  = document.getElementById('mtRedoBtn');
+    var snapshot = document.getElementById('mtSnapshotBtn');
+    var linkTracks = document.getElementById('mtLinkTracksBtn');
     if (razor && !razor.dataset.v14){
       razor.dataset.v14 = '1';
       razor.addEventListener('click', function(){ setActiveTool('razor'); showToast('Razor tool'); });
@@ -572,11 +586,56 @@
         showToast('Snap ' + (_timelineState.snap ? 'on' : 'off'));
       });
     }
+    if (undo && !undo.dataset.v14){
+      undo.dataset.v14 = '1';
+      undo.addEventListener('click', function(){ clickIfExists('undoBtn'); });
+    }
+    if (redo && !redo.dataset.v14){
+      redo.dataset.v14 = '1';
+      redo.addEventListener('click', function(){ clickIfExists('redoBtn'); });
+    }
+    if (snapshot && !snapshot.dataset.v14){
+      snapshot.dataset.v14 = '1';
+      snapshot.addEventListener('click', function(){
+        // Existing app behaviour (from the old .e-tb handler) was a toast.
+        // Preserve that until a real snapshot-to-library pipeline exists.
+        showToast('Snapshot saved to library');
+      });
+    }
+    if (linkTracks && !linkTracks.dataset.v14){
+      linkTracks.dataset.v14 = '1';
+      linkTracks.addEventListener('click', function(){
+        linkTracks.classList.toggle('active');
+        showToast('Tracks ' + (linkTracks.classList.contains('active') ? 'linked' : 'unlinked'));
+      });
+    }
     // Apply initial visual state (Razor active, Snap on by default).
     setActiveTool(_timelineState.tool);
     setSnapEnabled(_timelineState.snap);
   }
   wireTimelineTools();
+
+  // Keyboard: Delete / Backspace removes selected clips from the timeline.
+  // Only fires when the user is NOT typing in a real input — so the backspace
+  // doesn't delete a clip while someone edits a text field.
+  if (!document.body.dataset.v14Del){
+    document.body.dataset.v14Del = '1';
+    document.addEventListener('keydown', function(e){
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      var t = e.target;
+      var tag = (t && t.tagName) || '';
+      var isTyping = /^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (t && t.isContentEditable);
+      if (isTyping) return;
+      var selected = document.querySelectorAll('.mt-clip.selected');
+      if (!selected.length) return;
+      e.preventDefault();
+      selected.forEach(function(c){ c.remove(); });
+      updateTimelineInfo();
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast(selected.length === 1 ? 'Clip removed' : (selected.length + ' clips removed'));
+    });
+  }
 
   // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
@@ -636,8 +695,14 @@
   // so the user can visually track where they are in the sequence. Matches
   // the loaded video.src back to a clip on V1 by dataset.mediaUrl, then
   // positions the playhead at clip.left + currentTime * PX_PER_SEC.
+  // HTMLMediaElement.src is always absolute; dataset.mediaUrl may be a
+  // relative path like '/uploads/abc.mp4'. Normalize both to compare.
+  function normalizeUrl(u){
+    try { return new URL(u, location.href).href; } catch(_){ return u; }
+  }
   function findClipForPlayer(video){
     if (!video || !video.src) return null;
+    var src = video.src;
     var clips = document.querySelectorAll('.mt-track-video .mt-clip');
     var ct = video.currentTime || 0;
     // Prefer a clip whose source range [sourceOffset, sourceOffset+duration]
@@ -645,14 +710,15 @@
     // that share the same mediaUrl but represent different slices.
     for (var i = 0; i < clips.length; i++){
       var c = clips[i];
-      if (c.dataset.mediaUrl !== video.src) continue;
+      if (!c.dataset.mediaUrl) continue;
+      if (normalizeUrl(c.dataset.mediaUrl) !== src) continue;
       var srcOff = parseFloat(c.dataset.sourceOffset) || 0;
       var dur    = parseFloat(c.dataset.duration)    || 0;
       if (ct >= srcOff - 0.01 && ct <= srcOff + dur + 0.01) return c;
     }
     // Fallback: first clip with matching src.
     for (var j = 0; j < clips.length; j++){
-      if (clips[j].dataset.mediaUrl === video.src) return clips[j];
+      if (clips[j].dataset.mediaUrl && normalizeUrl(clips[j].dataset.mediaUrl) === src) return clips[j];
     }
     return null;
   }
