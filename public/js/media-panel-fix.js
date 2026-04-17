@@ -684,6 +684,185 @@
     });
   }
 
+  // ── Program Monitor simulation ──────────────────────────────────
+  // A toggleable <canvas> overlay that COMPOSITES the timeline frame-by-frame.
+  // Unlike the main <video> element (which only ever plays one source), the
+  // PGM canvas reads the clip at the current playhead position every frame
+  // and renders it — so cuts between clips, razor splits, image clips, and
+  // gaps all show up on a single output surface the way they would in a
+  // program monitor.
+  //
+  // Limits of this simulation (flagged in the watermark):
+  //   - Audio is not mixed: the main <video>'s own audio still plays.
+  //   - No transitions / effects / layering — just the topmost clip.
+  //   - Image sources are drawn statically; video sources seek to the right
+  //     frame each RAF tick using video.currentTime = offsetSec.
+  var _progEnabled = false;
+  var _progRAF = null;
+  var _progMediaCache = {};        // key = 'type|url' -> <video>|<img>
+  var _progSeekPending = {};       // suppress redundant seeks
+  function getOrCreateProgSource(url, type){
+    if (!url) return null;
+    var key = type + '|' + url;
+    if (_progMediaCache[key]) return _progMediaCache[key];
+    var el;
+    if (type === 'img'){
+      el = new Image();
+      el.crossOrigin = 'anonymous';
+      el.src = url;
+    } else {
+      el = document.createElement('video');
+      el.muted = true;
+      el.playsInline = true;
+      el.preload = 'auto';
+      el.crossOrigin = 'anonymous';
+      el.src = url;
+      // Hidden source — we draw it onto the canvas, it never renders on-page.
+      el.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
+      document.body.appendChild(el);
+    }
+    _progMediaCache[key] = el;
+    return el;
+  }
+  function progDrawContain(ctx, src, W, H, sW, sH){
+    if (!sW || !sH) return;
+    var srcAspect = sW / sH;
+    var dstAspect = W / H;
+    var dw, dh;
+    if (srcAspect > dstAspect){ dw = W; dh = W / srcAspect; }
+    else                     { dh = H; dw = H * srcAspect; }
+    ctx.drawImage(src, (W - dw)/2, (H - dh)/2, dw, dh);
+  }
+  function ensureProgramMonitor(){
+    var existing = document.getElementById('tlProgMonitor');
+    if (existing instanceof HTMLCanvasElement && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var canvas = (existing instanceof HTMLCanvasElement) ? existing : document.createElement('canvas');
+    canvas.id = 'tlProgMonitor';
+    canvas.width  = 1280;
+    canvas.height = 720;
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:#000;z-index:7;display:none;pointer-events:none';
+    try { container.appendChild(canvas); } catch(_){ return null; }
+    return canvas;
+  }
+  function ensureProgramToggleBtn(){
+    var existing = document.getElementById('tlProgBtn');
+    if (existing instanceof HTMLButtonElement && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var btn = (existing instanceof HTMLButtonElement) ? existing : document.createElement('button');
+    btn.id = 'tlProgBtn';
+    btn.type = 'button';
+    btn.title = 'Program Monitor — composited preview of the full timeline';
+    btn.textContent = 'PGM';
+    btn.style.cssText = 'position:absolute;top:10px;right:10px;z-index:8;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(139,92,246,.55);border-radius:6px;cursor:pointer;backdrop-filter:blur(4px)';
+    if (!btn.dataset.v14){
+      btn.dataset.v14 = '1';
+      btn.addEventListener('click', toggleProgramMonitor);
+    }
+    try { container.appendChild(btn); } catch(_){ return null; }
+    return btn;
+  }
+  function progLoop(){
+    if (!_progEnabled) { if (_progRAF){ cancelAnimationFrame(_progRAF); _progRAF = null; } return; }
+    var canvas = ensureProgramMonitor();
+    if (!canvas){ _progRAF = requestAnimationFrame(progLoop); return; }
+    var ctx = canvas.getContext('2d');
+    var W = canvas.width, H = canvas.height;
+
+    // Clear to black (this is also what shows during gaps).
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var hit = getClipAtPlayheadX(phX);
+    if (hit){
+      var clip = hit.clip;
+      var type = clip.dataset.clipType || (clip.classList.contains('mt-clip-audio') ? 'aud' : 'vid');
+      var url  = clip.dataset.mediaUrl;
+      if (type === 'aud'){
+        // Audio-only clip at V1's range would not happen (audio clips live on
+        // .mt-track-audio). Find the topmost video/image on V1 for visuals and
+        // fall back to black here.
+      } else if (type === 'img' && url){
+        var img = getOrCreateProgSource(url, 'img');
+        if (img && img.complete && img.naturalWidth > 0){
+          progDrawContain(ctx, img, W, H, img.naturalWidth, img.naturalHeight);
+        }
+      } else if (url){
+        var vid = getOrCreateProgSource(url, 'vid');
+        var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+        var seekSec = sourceOffset + (hit.offsetPx / TIMELINE_PX_PER_SEC);
+        if (vid){
+          // Seek only when drift > 0.1s (avoid spamming currentTime on every RAF).
+          if (vid.readyState >= 1 && Math.abs((vid.currentTime||0) - seekSec) > 0.1){
+            var pkey = 'vid|'+url;
+            if (!_progSeekPending[pkey]){
+              _progSeekPending[pkey] = true;
+              try { vid.currentTime = Math.max(0, seekSec); } catch(_){}
+              var clear = function(){ _progSeekPending[pkey] = false; vid.removeEventListener('seeked', clear); };
+              vid.addEventListener('seeked', clear, {once:true});
+              setTimeout(function(){ _progSeekPending[pkey] = false; }, 300);
+            }
+          }
+          if (vid.readyState >= 2 && vid.videoWidth){
+            progDrawContain(ctx, vid, W, H, vid.videoWidth, vid.videoHeight);
+          } else {
+            // Still loading — draw a subtle loading indicator
+            ctx.fillStyle = 'rgba(139,92,246,.3)';
+            ctx.fillRect(0, H - 2, W, 2);
+          }
+        }
+      }
+    }
+
+    // Watermark so the user knows this is a simulation — NOT the final export.
+    ctx.fillStyle = 'rgba(139,92,246,.95)';
+    ctx.font = 'bold 14px -apple-system,system-ui,sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText('PGM \u00B7 simulation', 12, 12);
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    ctx.font = '11px -apple-system,system-ui,sans-serif';
+    ctx.fillText('not final export (audio / transitions not rendered)', 12, 30);
+
+    _progRAF = requestAnimationFrame(progLoop);
+  }
+  function toggleProgramMonitor(){
+    _progEnabled = !_progEnabled;
+    var canvas = ensureProgramMonitor();
+    var btn = ensureProgramToggleBtn();
+    if (canvas) canvas.style.display = _progEnabled ? 'block' : 'none';
+    if (btn){
+      btn.textContent = _progEnabled ? 'PGM \u25CF' : 'PGM';
+      btn.style.background = _progEnabled ? 'rgba(139,92,246,.85)' : 'rgba(15,10,30,.75)';
+      btn.style.color = _progEnabled ? '#fff' : '#e2e0f0';
+    }
+    if (_progEnabled){
+      progLoop();
+      showToast('Program Monitor on \u2014 composited timeline preview');
+    } else {
+      if (_progRAF){ cancelAnimationFrame(_progRAF); _progRAF = null; }
+      showToast('Program Monitor off');
+    }
+  }
+  // Create the toggle button as soon as the video player is reachable.
+  (function retryWireProgBtn(){
+    if (ensureProgramToggleBtn()) return;
+    var tries = 0;
+    var iv = setInterval(function(){
+      tries++;
+      if (ensureProgramToggleBtn() || tries > 40) clearInterval(iv);
+    }, 250);
+  })();
+
   // ── Black overlay + continuous playback through gaps ───────────
   function ensureBlackOverlay(){
     var existing = document.getElementById('tlBlackOverlay');
