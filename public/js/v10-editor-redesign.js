@@ -305,22 +305,28 @@
         }
       }
     });
-    // Auto-expand folders that contain a search hit; hide empty folders entirely
+    // Auto-expand folders that contain a search hit; hide folders where all
+    // items got filtered out. An empty folder (0 items, only an empty-state
+    // note) stays visible — same rule as applyFilter.
     document.querySelectorAll('.media-library [data-v10-folder]').forEach(function(wrap){
       var header = wrap.querySelector('.ml-folder.v10-proj');
       var list = wrap.querySelector('.v10-folder-list');
       if (!header || !list) return;
-      var visible = Array.from(list.querySelectorAll('.v10-folder-item')).filter(function(e){
+      var allItems = list.querySelectorAll('.v10-folder-item');
+      var visible = Array.from(allItems).filter(function(e){
         return e.style.display !== 'none';
       }).length;
+      var isEmptyFolder = allItems.length === 0;
       if (q){
-        if (visible === 0){
-          wrap.style.display = 'none';
-        } else {
+        if (isEmptyFolder || visible > 0){
           wrap.style.display = '';
-          // Auto-expand while searching so hits are visible
-          header.classList.add('open');
-          list.classList.add('open');
+          if (visible > 0){
+            // Auto-expand while searching so hits are visible
+            header.classList.add('open');
+            list.classList.add('open');
+          }
+        } else {
+          wrap.style.display = 'none';
         }
       } else {
         wrap.style.display = '';
@@ -390,14 +396,18 @@
         fi.style.display = 'none';
       }
     });
-    // Hide whole folder if nothing inside it matches
+    // Hide whole folder only if it has real items that are all filtered out.
+    // Folders that are truly empty (showing just an empty-state note) should
+    // stay visible so the user can see the section header.
     document.querySelectorAll('.media-library [data-v10-folder]').forEach(function(wrap){
       var list = wrap.querySelector('.v10-folder-list');
       if (!list) return;
-      var visible = Array.from(list.querySelectorAll('.v10-folder-item')).filter(function(e){
+      var allItems = list.querySelectorAll('.v10-folder-item');
+      var visible = Array.from(allItems).filter(function(e){
         return e.style.display !== 'none';
       }).length;
-      wrap.style.display = visible === 0 ? 'none' : '';
+      var isEmptyFolder = allItems.length === 0;
+      wrap.style.display = (isEmptyFolder || visible > 0) ? '' : 'none';
     });
     // Also filter v10 virtual media items
     filterMediaList(kind);
