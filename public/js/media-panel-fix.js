@@ -317,7 +317,7 @@
     });
   }
 
-  function addClipToTimeline(fileName, mediaType, duration) {
+  function addClipToTimeline(fileName, mediaType, duration, mediaUrl) {
     var track = findTargetTrack(mediaType);
     if (!track) { showToast('Timeline track not found'); return; }
 
@@ -329,7 +329,8 @@
     clip.className = 'mt-clip ' + (mediaType === 'aud' ? 'mt-clip-audio' : 'mt-clip-video');
     clip.textContent = fileName;
     clip.dataset.fileName = fileName;
-    if (secs > 0) clip.dataset.duration = String(secs);
+    if (secs > 0)    clip.dataset.duration = String(secs);
+    if (mediaUrl)    clip.dataset.mediaUrl = mediaUrl;
     // position:absolute + top:3px + height:30px come from the base .mt-clip rule in CSS.
     clip.style.left = leftPos + 'px';
     clip.style.width = width + 'px';
@@ -401,6 +402,56 @@
 
   // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
+
+  // Active preview: when the playhead is over a video clip, load that clip's
+  // media into the preview window at the correct time offset. This makes the
+  // playhead a real scrub bar across the whole sequence rather than being
+  // stuck on the first uploaded clip.
+  var _lastPreviewUrl = null;
+  function getClipAtPlayheadX(phX){
+    var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+    for (var i = 0; i < clips.length; i++){
+      var c = clips[i];
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w) return {clip: c, offsetPx: phX - l};
+    }
+    return null;
+  }
+  function syncPreviewToPlayhead(){
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var phX = parseFloat(ph.style.left) || 0;
+    var hit = getClipAtPlayheadX(phX);
+    if (!hit) return;
+    var clip = hit.clip;
+    var url = clip.dataset.mediaUrl;
+    if (!url) return;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player) return;
+    var offsetSec = hit.offsetPx / TIMELINE_PX_PER_SEC;
+    // Only change src if the clip under the playhead actually changed —
+    // otherwise we cause a reload glitch on every mousemove.
+    if (_lastPreviewUrl !== url){
+      _lastPreviewUrl = url;
+      try { player.src = url; player.load(); } catch(_){}
+      var trySeek = function(){
+        try { player.currentTime = Math.max(0, Math.min((player.duration||offsetSec), offsetSec)); } catch(_){}
+      };
+      player.addEventListener('loadedmetadata', trySeek, {once:true});
+      trySeek();
+      try {
+        window.currentVideoFile = {
+          filename: clip.dataset.serverFilename || clip.dataset.fileName,
+          serveUrl: url,
+          duration: parseFloat(clip.dataset.duration) || 0
+        };
+      } catch(_){}
+    } else {
+      try { player.currentTime = Math.max(0, Math.min((player.duration||offsetSec), offsetSec)); } catch(_){}
+    }
+  }
+  try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
 
   // For video items: load the video into the editor's preview and sync editor
   // state so tools (trim/export/etc.) can operate on it. Called on click AND
@@ -476,7 +527,7 @@
         var fileName = nameEl ? nameEl.textContent.trim() : 'clip';
         var mediaType = item.dataset.mediaType || 'vid';
         loadMediaItemIntoPreview(item);
-        addClipToTimeline(fileName, mediaType, item.dataset.duration);
+        addClipToTimeline(fileName, mediaType, item.dataset.duration, item.dataset.mediaUrl);
       });
     }
   }

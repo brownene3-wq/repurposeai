@@ -489,16 +489,19 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-add-track-btn{display:flex;align-items:center;gap:4px;padding:4px 10px;font-size:11px;font-weight:600;color:#a78bfa;background:rgba(108,58,237,.08);border:1px solid rgba(108,58,237,.15);border-radius:6px;cursor:pointer;transition:all .2s}
     .mt-add-track-btn:hover{background:rgba(108,58,237,.18);border-color:rgba(108,58,237,.3)}
     .mt-info{font-size:10px;color:#4a3d6a;font-weight:500}
-    .mt-timeline-body{display:flex;flex:1;overflow:hidden}
-    .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px}
-    .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04)}
+    .mt-timeline-body{display:flex;flex:1;overflow:hidden;min-height:0}
+    .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px;overflow-y:hidden}
+    .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04);position:relative;flex-shrink:0}
+    .mt-label .mt-label-del{display:none;position:absolute;top:1px;right:1px;width:14px;height:14px;font-size:10px;line-height:12px;text-align:center;border-radius:50%;background:rgba(239,68,68,.15);color:#ef4444;cursor:pointer;border:1px solid rgba(239,68,68,.3);z-index:2}
+    .mt-label:hover .mt-label-del{display:block}
+    .mt-label .mt-label-del:hover{background:#ef4444;color:#fff}
     .mt-label-video{color:#a78bfa}
     .mt-label-audio{color:#38bdf8}
     .mt-label-music{color:#f472b6}
     .mt-label-text{color:#facc15}
     .mt-label-fx{color:#34d399}
-    .mt-tracks-area{flex:1;overflow-x:auto;overflow-y:hidden;position:relative;background:#0a0612}
-    .mt-time-ruler{display:flex;align-items:center;height:22px;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18}
+    .mt-tracks-area{flex:1;overflow-x:auto;overflow-y:auto;position:relative;background:#0a0612}
+    .mt-time-ruler{display:flex;align-items:center;height:22px;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18;position:sticky;top:0;z-index:5}
     .mt-time-ruler span{flex:1;font-size:9px;color:#3d3358;font-variant-numeric:tabular-nums}
     .mt-track{height:36px;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
     .mt-track:hover{background:rgba(108,58,237,.03)}
@@ -4631,10 +4634,38 @@ function showToast(message, type = 'success') {
           } else {
             tracksArea.appendChild(track);
           }
-          // Create matching label
+          // Create matching label with a small × delete button (user-added
+          // tracks only — A2, A3, ... can be deleted; A1 stays put).
           var label = document.createElement('div');
           label.className = 'mt-label mt-label-audio';
           label.textContent = 'A' + n;
+          if (n > 1){
+            var delBtn = document.createElement('span');
+            delBtn.className = 'mt-label-del';
+            delBtn.textContent = '\u00D7';
+            delBtn.title = 'Delete track';
+            delBtn.addEventListener('click', function(e){
+              e.stopPropagation();
+              track.remove();
+              label.remove();
+              // Renumber remaining A* labels so they stay sequential
+              Array.from(labelsArea.querySelectorAll('.mt-label-audio')).forEach(function(lbl, i){
+                var txt = 'A' + (i + 1);
+                // Preserve the delete button child when re-labeling
+                var del = lbl.querySelector('.mt-label-del');
+                lbl.textContent = txt;
+                if (del) lbl.appendChild(del);
+              });
+              // Update info
+              var info2 = document.querySelector('.mt-info');
+              if (info2) {
+                var total2 = document.querySelectorAll('.mt-track').length;
+                info2.textContent = total2 + ' tracks \u2022 ' + (info2.textContent.split('\u2022')[1] || '0:00').trim();
+              }
+              if (typeof showToast === 'function') showToast('Track removed');
+            });
+            label.appendChild(delBtn);
+          }
           var audioLabels = labelsArea.querySelectorAll('.mt-label-audio');
           var lastAudioLabel = audioLabels.length ? audioLabels[audioLabels.length - 1] : labelsArea.querySelector('.mt-label-video');
           if (lastAudioLabel && lastAudioLabel.nextSibling) {
@@ -4654,6 +4685,20 @@ function showToast(message, type = 'success') {
         });
       }
 
+      // ── 5c. Sync labels column vertical scroll with tracks area ──
+      (function(){
+        var tracksArea = document.getElementById('mtTracksArea');
+        var labelsArea = document.querySelector('.mt-labels');
+        if (!tracksArea || !labelsArea || tracksArea.dataset.vScrollWired) return;
+        tracksArea.dataset.vScrollWired = '1';
+        tracksArea.addEventListener('scroll', function(){
+          // Keep labels column scroll in lockstep with tracks-area vertical
+          // scroll so e.g. M1/T1/FX labels stay aligned with their rows when
+          // the user scrolls down past several audio tracks.
+          labelsArea.scrollTop = tracksArea.scrollTop;
+        });
+      })();
+
       // ── 5b. Playhead drag + track-click navigation ──
       (function(){
         var playhead = document.getElementById('mtPlayhead');
@@ -4668,9 +4713,15 @@ function showToast(message, type = 'success') {
           var areaRect = tracksArea.getBoundingClientRect();
           var x = Math.max(0, Math.min(clientX - areaRect.left + tracksArea.scrollLeft, tracksArea.scrollWidth));
           playhead.style.left = x + 'px';
-          // Sync to video currentTime using the ruler scale.
-          // Ruler spans 0..4min at 30s intervals across the full scrollWidth.
-          // Prefer real video duration when available.
+          // Swap the preview to whichever video clip the playhead is currently
+          // over, seeking to the correct offset inside that clip. This makes
+          // the playhead a true sequence scrubber instead of being stuck on
+          // the first uploaded video.
+          if (typeof window.syncPreviewToPlayhead === 'function'){
+            try { window.syncPreviewToPlayhead(); return; } catch(_){}
+          }
+          // Fallback (no clips / no mediaUrl): fall back to proportional
+          // scrubbing against the currently-loaded video, if any.
           var video = videoElRef();
           var scrollW = tracksArea.scrollWidth || areaRect.width;
           if (video && video.duration && isFinite(video.duration) && video.duration > 0){

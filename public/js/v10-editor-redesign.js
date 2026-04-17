@@ -824,9 +824,10 @@
         if (el) el.disabled = false;
       });
       // Drop the video onto the timeline as a clip, using the real duration
-      // so it takes up the right amount of track width.
+      // so it takes up the right amount of track width AND the serveUrl so
+      // the playhead-follow logic can swap the preview to this clip.
       if (typeof window.addClipToTimeline === 'function'){
-        try { window.addClipToTimeline(draft.name, 'vid', draft.duration); } catch(_){}
+        try { window.addClipToTimeline(draft.name, 'vid', draft.duration, realUrl); } catch(_){}
       }
       toast('Loaded '+(draft.kind === 'completed' ? 'export' : 'draft')+': '+draft.name);
       return;
@@ -1188,26 +1189,15 @@
   }
 
   function patchTimelineTracks(){
-    if (!videoIsLoaded()){
-      document.querySelectorAll('[data-v10="filmstrip"], [data-v10="wf"]').forEach(function(n){ n.remove(); });
-      _lastCapturedSrc = '';
-      _lastWaveformSrc = '';
-      return;
-    }
-    var vTrack = document.querySelector('.mt-track-video') || document.querySelector('.fs-track.video-track');
-    var aTrack = document.querySelector('.mt-track-audio') || document.querySelector('.fs-track.audio-track');
-
-    if (vTrack && !vTrack.querySelector('[data-v10="filmstrip"]')){
-      if (getComputedStyle(vTrack).position === 'static') vTrack.style.position = 'relative';
-      vTrack.appendChild(buildFilmstrip(currentVideoName()));
-    }
-    if (aTrack && !aTrack.querySelector('[data-v10="wf"]')){
-      if (getComputedStyle(aTrack).position === 'static') aTrack.style.position = 'relative';
-      aTrack.appendChild(buildDenseWaveform());
-    }
-    // Attempt to capture real video frames and audio waveform
-    captureVideoFrames();
-    captureAudioWaveform();
+    // Track-level filmstrip/waveform was placed inside .mt-track-video /
+    // .mt-track-audio with inset:4px 4px — it spanned the ENTIRE track and
+    // visually masked every individual clip on it. Albert wants each clip
+    // to have its own preview. For now we just ensure the old overlay is
+    // removed so clips are visible individually. (Real per-clip thumbnails
+    // can be layered back in a later iteration.)
+    document.querySelectorAll('[data-v10="filmstrip"], [data-v10="wf"]').forEach(function(n){ n.remove(); });
+    _lastCapturedSrc = '';
+    _lastWaveformSrc = '';
   }
 
   /* ===================== RIGHT PANEL ===================== */
