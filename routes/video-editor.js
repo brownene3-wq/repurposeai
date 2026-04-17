@@ -5675,27 +5675,12 @@ setTimeout(function videoControlsWiring(){
     });
   });
 
-  var toolBtns = document.querySelectorAll(".mt-tool-btn");
-  var activeToolBtn = null;
-  toolBtns.forEach(function(btn) {
-    btn.addEventListener("click", function(e) {
-      e.preventDefault();
-      if(activeToolBtn) {
-        activeToolBtn.classList.remove("active");
-      }
-      this.classList.add("active");
-      activeToolBtn = this;
-
-      var text = this.textContent || "";
-      if(text.indexOf("Razor") !== -1) {
-        showToastMsg("Razor tool selected");
-      } else if(text.indexOf("Select") !== -1) {
-        showToastMsg("Select tool active");
-      } else if(text.indexOf("Snap") !== -1) {
-        showToastMsg("Snap to grid enabled");
-      }
-    });
-  });
+  // .mt-tool-btn wiring is owned by media-panel-fix.js wireTimelineTools().
+  // Razor/Select are mutually exclusive (active tool); Snap is an independent
+  // boolean toggle. The legacy handler that once lived here treated all three
+  // as a single mutex group, which fought with the new semantics and caused
+  // Snap to appear stuck-on (it kept re-adding .active after the real handler
+  // removed it).
 
   applyTransforms();
   applyFilters();
