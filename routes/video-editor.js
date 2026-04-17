@@ -5057,56 +5057,13 @@ setTimeout(function comprehensiveUIFix(){
     });
   });
 
-  // Left panel tab switching
-  var mlBody=document.querySelector(".ml-body");
-  var mlTabs=document.querySelectorAll(".ml-tab");
-  if(mlBody&&mlTabs.length>=4){
-    var origChildren=[];
-    for(var ci=0;ci<mlBody.children.length;ci++)origChildren.push(mlBody.children[ci]);
-
-    function makeTabContent(name){
-      var wrap=document.createDocumentFragment();
-      wrap.appendChild(el("div",{cls:"ml-section",css:"display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px"},[el("span",{text:name+" Files"})]));
-      wrap.appendChild(el("div",{cls:"ml-upload",css:"border:1px dashed rgba(108,58,237,.2);border-radius:8px;padding:20px;text-align:center"},[
-        el("p",{text:"Drop "+name.toLowerCase()+" files or click to upload",css:"color:#888;margin:0 0 8px;font-size:12px"}),
-        el("button",{text:"+ Upload "+name,css:"margin-top:10px;background:linear-gradient(135deg,#6c3aed,#7c4dff);color:#fff;border:none;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:12px"})
-      ]));
-      wrap.appendChild(el("div",{text:"No "+name.toLowerCase()+" files added yet.",css:"padding:12px;text-align:center;color:#555;font-size:12px"}));
-      return wrap;
-    }
-
-    function makeStockContent(){
-      var wrap=document.createDocumentFragment();
-      wrap.appendChild(el("div",{cls:"ml-section",css:"display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px"},[el("span",{text:"Stock Library"})]));
-      wrap.appendChild(el("div",{css:"padding:8px 0"},[el("input",{type:"text",placeholder:"Search stock videos and images...",css:"width:100%;background:#1a1333;color:#fff;border:1px solid rgba(108,58,237,.2);border-radius:6px;padding:8px 12px;font-size:12px;box-sizing:border-box"})]));
-      var grid=el("div",{css:"display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px"});
-      var cats=[["Stock Videos","V"],["Stock Images","I"],["Stock Audio","A"],["AI Generated","AI"]];
-      cats.forEach(function(c){
-        grid.appendChild(el("div",{css:"background:#1a1333;border-radius:8px;padding:16px;text-align:center;cursor:pointer;border:1px solid rgba(108,58,237,.1)"},[
-          el("div",{text:c[1],css:"font-size:20px;margin-bottom:4px;color:#7c4dff"}),
-          el("div",{text:c[0],css:"color:#aaa;font-size:11px"})
-        ]));
-      });
-      wrap.appendChild(grid);
-      return wrap;
-    }
-
-    mlTabs.forEach(function(tab){
-      tab.addEventListener("click",function(){
-        mlTabs.forEach(function(t){t.classList.remove("active");});
-        tab.classList.add("active");
-        var name=tab.textContent.trim();
-        mlBody.innerHTML="";
-        if(name==="Videos"){
-          origChildren.forEach(function(n){mlBody.appendChild(n);});
-        }else if(name==="Stock"){
-          mlBody.appendChild(makeStockContent());
-        }else{
-          mlBody.appendChild(makeTabContent(name));
-        }
-      });
-    });
-  }
+  // Left panel tab switching is handled by:
+  //   1) the inline onclick on each .ml-tab above (type-based filtering)
+  //   2) v10-editor-redesign.js applyFilter() which keeps the Projects folders
+  //      (Completed Videos / Drafts) visible and filters folder items by type
+  // The earlier behavior here wiped mlBody.innerHTML on every Audio/Images/All
+  // click and replaced it with a throwaway "Audio Files" shell, which destroyed
+  // the real uploaded media list and the Projects section. Removed.
 
   // Bottom tabs (Folder create, AI B-Roll)
   document.querySelectorAll(".ml-fb").forEach(function(tab){
