@@ -1167,25 +1167,14 @@
   }
 
   function patchTimelineVisibility(){
+    // Timeline is now ALWAYS visible — users want to place clips / preview
+    // the timeline even before uploading a video. Defensive cleanup of any
+    // leftover empty-state class/placeholder from earlier sessions.
     var tc = document.querySelector('.timeline-container');
     if (!tc) return;
-    var uploadVisible = isUploadPanelVisible();
-    if (uploadVisible){
-      if (!tc.classList.contains('v10-tl-empty')){
-        tc.classList.add('v10-tl-empty');
-        if (!tc.querySelector('.v10-tl-placeholder')){
-          var ph = document.createElement('div');
-          ph.className = 'v10-tl-placeholder';
-          ph.setAttribute('data-v10','tl-placeholder');
-          ph.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20M8 4v4M16 4v4"/></svg>Upload a video to start editing';
-          tc.appendChild(ph);
-        }
-      }
-    } else {
-      tc.classList.remove('v10-tl-empty');
-      var ph = tc.querySelector('.v10-tl-placeholder');
-      if (ph) ph.remove();
-    }
+    tc.classList.remove('v10-tl-empty');
+    var ph = tc.querySelector('.v10-tl-placeholder');
+    if (ph) ph.remove();
   }
 
   function patchTimelineTracks(){

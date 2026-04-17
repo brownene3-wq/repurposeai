@@ -615,6 +615,55 @@
   }
   wireTimelineTools();
 
+  // Save as Draft button — serialize timeline state into the Drafts localStorage
+  // store (window.addDraftEntry, already defined in v10-editor-redesign.js).
+  // The Projects UI that renders drafts is hidden for now per Albert's earlier
+  // request, but the data still persists so it can be restored when a Drafts
+  // view is added back.
+  function snapshotTimelineState(){
+    var clips = Array.from(document.querySelectorAll('.mt-clip')).map(function(c){
+      var track = c.parentElement;
+      return {
+        track:        (track && track.getAttribute('data-type')) || 'video',
+        trackIndex:   track ? Array.from(track.parentElement.querySelectorAll('.mt-track')).indexOf(track) : 0,
+        left:         c.style.left,
+        width:        c.style.width,
+        duration:     c.dataset.duration || '',
+        sourceOffset: c.dataset.sourceOffset || '0',
+        mediaUrl:     c.dataset.mediaUrl || '',
+        filename:     c.dataset.fileName || ''
+      };
+    });
+    var current = (typeof window.currentVideoFile === 'object' && window.currentVideoFile) || null;
+    var firstVid = clips.find(function(c){ return c.track === 'video'; });
+    return {
+      id:       'd_' + Date.now(),
+      name:     (current && current.filename) || (firstVid && firstVid.filename) || 'Untitled draft',
+      filename: current && current.filename,
+      serveUrl: current && current.serveUrl,
+      duration: current && current.duration,
+      date:     new Date().toLocaleDateString(undefined, {month:'short', day:'numeric'}),
+      timelineClips: clips
+    };
+  }
+  function wireSaveAsDraft(){
+    var btn = document.getElementById('saveAsDraftBtn');
+    if (!btn || btn.dataset.v14) return;
+    btn.dataset.v14 = '1';
+    btn.addEventListener('click', function(){
+      var state = snapshotTimelineState();
+      if (!state.timelineClips.length && !state.filename){
+        showToast('Nothing to save yet \u2014 add a clip or upload a video first');
+        return;
+      }
+      if (typeof window.addDraftEntry === 'function'){
+        try { window.addDraftEntry(state); } catch(_){}
+      }
+      showToast('Draft saved (' + state.timelineClips.length + ' clip' + (state.timelineClips.length === 1 ? '' : 's') + ')');
+    });
+  }
+  wireSaveAsDraft();
+
   // Keyboard: Delete / Backspace removes selected clips from the timeline.
   // Only fires when the user is NOT typing in a real input — so the backspace
   // doesn't delete a clip while someone edits a text field.

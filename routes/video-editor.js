@@ -551,7 +551,7 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="editor-topbar">
             <a href="/dashboard" style="text-decoration:none"><span class="e-logo">Splicora</span></a>
             <div class="e-sp"></div>
-            <button class="e-tb">\ud83d\udcbe Auto-saved</button>
+            <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
             <button class="e-tb ex" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export</button>
           </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
