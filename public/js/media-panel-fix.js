@@ -677,13 +677,13 @@
   // ── Black overlay + continuous playback through gaps ───────────
   function ensureBlackOverlay(){
     var existing = document.getElementById('tlBlackOverlay');
-    if (existing) return existing;
+    if (existing && existing.isConnected) return existing;
     var player = document.getElementById('videoPlayer') || document.querySelector('video');
     if (!player) return null;
     var container = player.parentElement;
     if (!container) return null;
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
-    var overlay = document.createElement('div');
+    var overlay = existing || document.createElement('div');
     overlay.id = 'tlBlackOverlay';
     overlay.style.cssText = 'position:absolute;inset:0;background:#000;z-index:5;pointer-events:none;display:none';
     container.appendChild(overlay);
