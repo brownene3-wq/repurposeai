@@ -282,12 +282,69 @@
     return best !== null ? candidateLeft + best.shift : candidateLeft;
   }
 
+  // Split a clip at cutXInClip (in clip-local pixels) into two clips.
+  // The right half inherits mediaUrl and stores sourceOffset so when played
+  // it seeks to the correct point inside the original source.
+  function razorSplit(clip, cutXInClip){
+    var width = parseFloat(clip.style.width) || clip.offsetWidth || 0;
+    // Ignore clicks within 6px of either edge — don't create tiny slivers.
+    if (cutXInClip < 6 || cutXInClip > width - 6) return false;
+    var left = parseFloat(clip.style.left) || 0;
+    var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+    var dur = parseFloat(clip.dataset.duration) || (width / TIMELINE_PX_PER_SEC);
+    var cutSec = cutXInClip / TIMELINE_PX_PER_SEC;
+    var leftDur  = cutSec;
+    var rightDur = dur - cutSec;
+    if (leftDur <= 0 || rightDur <= 0) return false;
+
+    // Shrink original (becomes the left half)
+    clip.style.width = cutXInClip + 'px';
+    clip.dataset.duration = String(leftDur);
+
+    // Build the right half
+    var right = document.createElement('div');
+    right.className = clip.className.replace(/\s*selected\s*/, ' ');
+    right.textContent = clip.dataset.fileName || '';
+    right.dataset.fileName = clip.dataset.fileName || '';
+    if (clip.dataset.mediaUrl)        right.dataset.mediaUrl = clip.dataset.mediaUrl;
+    if (clip.dataset.serverFilename)  right.dataset.serverFilename = clip.dataset.serverFilename;
+    right.dataset.duration = String(rightDur);
+    right.dataset.sourceOffset = String(sourceOffset + cutSec);
+    // Position + style — match original
+    right.style.left = (left + cutXInClip) + 'px';
+    right.style.width = (width - cutXInClip) + 'px';
+    right.style.padding = '4px 8px';
+    right.style.fontSize = '10px';
+    right.style.overflow = 'hidden';
+    right.style.textOverflow = 'ellipsis';
+    right.style.whiteSpace = 'nowrap';
+    right.style.userSelect = 'none';
+    right.style.background = clip.style.background;
+    right.style.color = clip.style.color;
+    clip.parentNode.insertBefore(right, clip.nextSibling);
+    makeClipInteractive(right);
+
+    updateTimelineInfo();
+    showToast('Clip split');
+    return true;
+  }
+
   function makeClipInteractive(clip){
     if (clip.dataset.interactive) return;
     clip.dataset.interactive = '1';
 
-    // Select on click — only when the Select tool is active.
+    // Tool-aware click behaviour:
+    //   - Razor: split this clip at the click x position.
+    //   - Select: select it (add .selected highlight).
+    //   - Otherwise (default): let the timeline-area click handler run to
+    //     move the playhead.
     clip.addEventListener('click', function(e){
+      if (_timelineState.tool === 'razor'){
+        e.stopPropagation();
+        var rect = clip.getBoundingClientRect();
+        razorSplit(clip, e.clientX - rect.left);
+        return;
+      }
       if (_timelineState.tool !== 'select') return;
       e.stopPropagation();
       document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
@@ -449,14 +506,15 @@
     if (!url) return;
     var player = document.getElementById('videoPlayer') || document.querySelector('video');
     if (!player) return;
-    var offsetSec = hit.offsetPx / TIMELINE_PX_PER_SEC;
-    // Only change src if the clip under the playhead actually changed —
-    // otherwise we cause a reload glitch on every mousemove.
+    // Respect the source-offset stored on razor-split pieces so each half
+    // plays from the correct point inside the original source.
+    var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+    var seekTime = sourceOffset + (hit.offsetPx / TIMELINE_PX_PER_SEC);
     if (_lastPreviewUrl !== url){
       _lastPreviewUrl = url;
       try { player.src = url; player.load(); } catch(_){}
       var trySeek = function(){
-        try { player.currentTime = Math.max(0, Math.min((player.duration||offsetSec), offsetSec)); } catch(_){}
+        try { player.currentTime = Math.max(0, Math.min((player.duration||seekTime), seekTime)); } catch(_){}
       };
       player.addEventListener('loadedmetadata', trySeek, {once:true});
       trySeek();
@@ -468,7 +526,7 @@
         };
       } catch(_){}
     } else {
-      try { player.currentTime = Math.max(0, Math.min((player.duration||offsetSec), offsetSec)); } catch(_){}
+      try { player.currentTime = Math.max(0, Math.min((player.duration||seekTime), seekTime)); } catch(_){}
     }
   }
   try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
@@ -480,8 +538,20 @@
   function findClipForPlayer(video){
     if (!video || !video.src) return null;
     var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+    var ct = video.currentTime || 0;
+    // Prefer a clip whose source range [sourceOffset, sourceOffset+duration]
+    // contains the current video time — this matters for razor-split pieces
+    // that share the same mediaUrl but represent different slices.
     for (var i = 0; i < clips.length; i++){
-      if (clips[i].dataset.mediaUrl && clips[i].dataset.mediaUrl === video.src) return clips[i];
+      var c = clips[i];
+      if (c.dataset.mediaUrl !== video.src) continue;
+      var srcOff = parseFloat(c.dataset.sourceOffset) || 0;
+      var dur    = parseFloat(c.dataset.duration)    || 0;
+      if (ct >= srcOff - 0.01 && ct <= srcOff + dur + 0.01) return c;
+    }
+    // Fallback: first clip with matching src.
+    for (var j = 0; j < clips.length; j++){
+      if (clips[j].dataset.mediaUrl === video.src) return clips[j];
     }
     return null;
   }
@@ -491,7 +561,9 @@
     var clip = findClipForPlayer(video);
     if (!clip) return;
     var clipLeft = parseFloat(clip.style.left) || 0;
-    var x = clipLeft + (video.currentTime || 0) * TIMELINE_PX_PER_SEC;
+    var srcOff   = parseFloat(clip.dataset.sourceOffset) || 0;
+    var timeInClip = (video.currentTime || 0) - srcOff;
+    var x = clipLeft + Math.max(0, timeInClip) * TIMELINE_PX_PER_SEC;
     var ph = document.getElementById('mtPlayhead');
     if (ph) ph.style.left = x + 'px';
   }

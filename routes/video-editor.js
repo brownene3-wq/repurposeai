@@ -519,6 +519,8 @@ router.get('/', requireAuth, async (req, res) => {
     body[data-timeline-tool="select"] .mt-clip{cursor:grab}
     body[data-timeline-tool="select"] .mt-clip:active{cursor:grabbing}
     body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}
+    /* Razor tool: clicking a clip splits it at the click point */
+    body[data-timeline-tool="razor"] .mt-clip{cursor:col-resize}
     .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:1px solid rgba(244,114,182,.35)}
     .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
