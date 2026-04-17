@@ -687,16 +687,16 @@
   // ── Black overlay + continuous playback through gaps ───────────
   function ensureBlackOverlay(){
     var existing = document.getElementById('tlBlackOverlay');
-    if (existing && existing.isConnected) return existing;
+    if (existing instanceof Element && existing.isConnected) return existing;
     var player = document.getElementById('videoPlayer') || document.querySelector('video');
-    if (!player) return null;
+    if (!(player instanceof Element)) return null;
     var container = player.parentElement;
-    if (!container) return null;
+    if (!(container instanceof Element)) return null;
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
-    var overlay = existing || document.createElement('div');
+    var overlay = (existing instanceof Element) ? existing : document.createElement('div');
     overlay.id = 'tlBlackOverlay';
     overlay.style.cssText = 'position:absolute;inset:0;background:#000;z-index:5;pointer-events:none;display:none';
-    container.appendChild(overlay);
+    try { container.appendChild(overlay); } catch(_){ return null; }
     return overlay;
   }
   // Image preview: an <img> overlay layered above the video element for when
