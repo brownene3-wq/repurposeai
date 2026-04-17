@@ -548,10 +548,10 @@ router.get('/', requireAuth, async (req, res) => {
               <div class="media-library" id="mediaLibrary">
                 <div class="ml-head"><h3>&#128194; Media</h3></div>
                 <div class="ml-tabs">
-                  <button class="ml-tab active" data-filter="all" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=''})">Videos</button>
+                  <button class="ml-tab active" data-filter="vid" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='vid'?'':'none'})">Videos</button>
                   <button class="ml-tab" data-filter="aud" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='aud'?'':'none'})">Audio</button>
                   <button class="ml-tab" data-filter="img" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='img'?'':'none'})">Images</button>
-                  <button class="ml-tab" data-filter="stock" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display='none'})">Stock</button>
+                  <button class="ml-tab" data-filter="all" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=''})">All</button>
                 </div>
                 <div class="ml-search"><input placeholder="&#128269; Search media..." /></div>
                 <div class="ml-body">
@@ -1599,6 +1599,28 @@ function showToast(message, type = 'success') {
 
         // Set end time to video duration
         (function(){var e=document.getElementById('endTime');if(e)e.value=Math.round(videoDuration);})();
+
+        // Record this upload as an in-progress draft in the Projects section
+        try {
+          if (typeof window.addDraftEntry === 'function') {
+            var _sizeMB = (file && file.size) ? (file.size / (1024*1024)).toFixed(1) + ' MB' : '';
+            var _dur = (typeof videoDuration === 'number' && videoDuration > 0)
+              ? (Math.floor(videoDuration/60) + ':' + String(Math.floor(videoDuration%60)).padStart(2,'0'))
+              : '';
+            var _now = new Date();
+            var _dateStr = _now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            window.addDraftEntry({
+              id: 'd_' + Date.now(),
+              name: (file && file.name) || data.filename || 'Untitled project',
+              filename: data.filename,
+              serveUrl: data.serveUrl,
+              duration: videoDuration,
+              size: _sizeMB,
+              dur:  _dur,
+              date: _dateStr
+            });
+          }
+        } catch (_) {}
 
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
@@ -3146,6 +3168,26 @@ function showToast(message, type = 'success') {
         downloadLink.href = data.downloadUrl;
         downloadLink.download = data.filename;
         downloadLink.click();
+
+        // Promote this project from Drafts -> Completed Videos
+        try {
+          var _now = new Date();
+          var _dateStr = _now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          if (typeof window.addCompletedEntry === 'function') {
+            window.addCompletedEntry({
+              id: 'c_' + Date.now(),
+              name: data.filename || (currentVideoFile && currentVideoFile.filename) || 'Exported video',
+              filename: data.filename,
+              serveUrl: data.downloadUrl,
+              downloadUrl: data.downloadUrl,
+              size: '',
+              date: _dateStr
+            });
+          }
+          if (typeof window.removeDraftByFilename === 'function' && currentVideoFile && currentVideoFile.filename) {
+            window.removeDraftByFilename(currentVideoFile.filename);
+          }
+        } catch (_) {}
 
         showToast('Video exported successfully!', 'success');
       } catch (error) {

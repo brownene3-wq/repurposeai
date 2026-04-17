@@ -61,7 +61,7 @@
     var tab = getActiveTab();
     if (tab === 'audio') return fiAudio;
     if (tab === 'images') return fiImage;
-    if (tab === 'stock') return fiAll;
+    if (tab === 'stock' || tab === 'all') return fiAll;
     return fiVideo;
   }
 
@@ -205,17 +205,26 @@
     }
   }
 
+  // Expose so other scripts (e.g. v10-editor-redesign draft loader) can reuse it
+  try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
+
   function wireItem(item) {
     // Guard against double-wiring from dual-load
     if (item.dataset.wiredV13) return;
     item.dataset.wiredV13 = '1';
     item.style.cursor = 'pointer';
 
-    // Click to select
+    // Click anywhere on the item (except the +Timeline button) to select AND
+    // add it to the timeline. Previously clicking the item did nothing
+    // functional — only the small +Timeline button worked.
     item.addEventListener('click', function(e) {
       if (e.target.classList.contains('ml-add')) return;
       document.querySelectorAll('.ml-fitem').forEach(function(c) { c.classList.remove('selected'); });
       this.classList.add('selected');
+      var nameEl = item.querySelector('.ml-fname');
+      var fileName = nameEl ? nameEl.textContent.trim() : (item.dataset.fileName || 'clip');
+      var mediaType = item.dataset.mediaType || 'vid';
+      addClipToTimeline(fileName, mediaType);
     });
 
     // Wire +Timeline button — clone to strip any v1.0 listeners

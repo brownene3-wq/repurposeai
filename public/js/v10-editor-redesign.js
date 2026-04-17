@@ -439,22 +439,9 @@
     });
   }
 
-  var MEDIA_LIB = {
-    videos: [
-      {name:'intro_clip.mp4', size:'42 MB', dur:'0:18'},
-      {name:'product_demo.mp4', size:'128 MB', dur:'1:24'},
-      {name:'bRoll_warehouse.mp4', size:'76 MB', dur:'0:42'}
-    ],
-    audio: [
-      {name:'Voiceover.mp3', size:'4.2 MB', dur:'1:05'},
-      {name:'Background Music.mp3', size:'8.6 MB', dur:'2:10'},
-      {name:'SFX Whoosh.wav', size:'0.3 MB', dur:'0:08'}
-    ],
-    images: [
-      {name:'logo_white.png', size:'124 KB', dur:'\u2014'},
-      {name:'hero_banner.jpg', size:'2.1 MB', dur:'\u2014'}
-    ]
-  };
+  // Media library starts empty — only genuine user uploads populate it
+  // (via media-panel-fix.js handleFiles / the real upload flow).
+  var MEDIA_LIB = { videos: [], audio: [], images: [] };
 
   function buildMediaItemEl(m, type){
     var cls = type==='vid'?'vid':(type==='aud'?'aud':'img');
@@ -469,7 +456,15 @@
       '<div class="v10-mi-thumb '+cls+'">'+icon+'</div>'+
       '<div class="v10-mi-info"><h5>'+escapeHtml(m.name)+'</h5><small>'+escapeHtml(sub)+'</small></div>'+
       '<span class="v10-mi-badge '+cls+'">'+label+'</span>';
-    el.addEventListener('click', function(){ toast('Selected: '+m.name); });
+    el.addEventListener('click', function(){
+      // Route through the shared addClipToTimeline if available so this item
+      // actually lands on the timeline (not just a toast).
+      var kind = type === 'vid' ? 'vid' : (type === 'aud' ? 'aud' : 'img');
+      if (typeof window.addClipToTimeline === 'function'){
+        try { window.addClipToTimeline(m.name, kind); return; } catch(_){}
+      }
+      toast('Selected: '+m.name);
+    });
     return el;
   }
 
@@ -554,16 +549,55 @@
 
   /* ===================== PROJECT FOLDERS ===================== */
 
-  var COMPLETED = [
-    { name: 'Brand Intro Final.mp4',   date: 'Apr 10', size: '124 MB' },
-    { name: 'Product Demo v2.mp4',     date: 'Apr 8',  size: '89 MB'  },
-    { name: 'Social Ad - Summer.mp4',  date: 'Apr 5',  size: '45 MB'  }
-  ];
-  var DRAFTS = [
-    { id:'d1', name:'Landing Page Promo (WIP)', date:'Apr 12', size:'62 MB',  dur:'0:45' },
-    { id:'d2', name:'Spring Launch Teaser',     date:'Apr 11', size:'34 MB',  dur:'0:22' },
-    { id:'d3', name:'Q2 Investor Update',       date:'Apr 9',  size:'118 MB', dur:'2:05' }
-  ];
+  /* Projects are persisted per-user in localStorage. They start empty
+   * and are populated by the real upload / export flows (see
+   * window.addDraftEntry / window.addCompletedEntry below). */
+  var DRAFTS_KEY    = 'v10_projects_drafts_v1';
+  var COMPLETED_KEY = 'v10_projects_completed_v1';
+
+  function readStore(key){
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch(_){ return []; }
+  }
+  function writeStore(key, arr){
+    try { localStorage.setItem(key, JSON.stringify(arr || [])); } catch(_){}
+  }
+
+  function getDrafts(){ return readStore(DRAFTS_KEY); }
+  function getCompleted(){ return readStore(COMPLETED_KEY); }
+
+  function addDraft(entry){
+    if (!entry || !entry.name) return;
+    var list = getDrafts();
+    // dedupe on filename (server-side filename is unique per upload)
+    var filtered = list.filter(function(d){ return d.filename !== entry.filename; });
+    filtered.unshift(entry);
+    writeStore(DRAFTS_KEY, filtered);
+    try { rebuildFolders(); } catch(_){}
+  }
+  function removeDraftByFilename(filename){
+    if (!filename) return;
+    var list = getDrafts().filter(function(d){ return d.filename !== filename; });
+    writeStore(DRAFTS_KEY, list);
+    try { rebuildFolders(); } catch(_){}
+  }
+  function addCompleted(entry){
+    if (!entry || !entry.name) return;
+    var list = getCompleted();
+    list.unshift(entry);
+    writeStore(COMPLETED_KEY, list);
+    try { rebuildFolders(); } catch(_){}
+  }
+
+  // Expose so the real upload/export handlers (in routes/video-editor.js)
+  // can feed real data into the Projects section.
+  window.addDraftEntry = addDraft;
+  window.removeDraftByFilename = removeDraftByFilename;
+  window.addCompletedEntry = addCompleted;
 
   function buildProjFolder(opts){
     // opts: { label, count, icon, openByDefault, buildList }
@@ -598,37 +632,55 @@
   }
 
   function buildCompletedList(list){
-    COMPLETED.forEach(function(v){
+    var completed = getCompleted();
+    if (completed.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'v10-folder-note';
+      empty.textContent = 'No exported videos yet. Your exports will appear here.';
+      list.appendChild(empty);
+      return;
+    }
+    completed.forEach(function(v){
       var item = document.createElement('div');
       item.className = 'v10-folder-item clickable';
+      var meta = [v.date, v.size].filter(Boolean).join(' \u00b7 ');
       item.innerHTML =
         '<span class="v10-fi-ico" style="color:#f59e0b">\ud83c\udfac</span>'+
         '<div class="v10-fi-body">'+
           '<div class="v10-fi-name">'+escapeHtml(v.name)+'</div>'+
-          '<span class="v10-fi-meta">'+escapeHtml(v.date+' \u00b7 '+v.size)+'</span>'+
+          (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
         '</div>'+
         '<span class="v10-fi-hint">OPEN</span>';
       item.addEventListener('click', function(e){
         e.stopPropagation();
-        loadDraftIntoEditor({ name: v.name, date: v.date, size: v.size, kind: 'completed' });
+        loadDraftIntoEditor({
+          name: v.name, date: v.date, size: v.size,
+          filename: v.filename, serveUrl: v.serveUrl || v.downloadUrl,
+          kind: 'completed'
+        });
       });
       list.appendChild(item);
     });
-    var note = document.createElement('div');
-    note.className = 'v10-folder-note';
-    note.textContent = 'Click to preview a finished project';
-    list.appendChild(note);
   }
 
   function buildDraftsListInto(list){
-    DRAFTS.forEach(function(d){
+    var drafts = getDrafts();
+    if (drafts.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'v10-folder-note';
+      empty.textContent = 'No drafts yet. Uploaded projects will appear here until you export them.';
+      list.appendChild(empty);
+      return;
+    }
+    drafts.forEach(function(d){
       var item = document.createElement('div');
       item.className = 'v10-folder-item clickable';
+      var meta = [d.date, d.size, d.dur].filter(Boolean).join(' \u00b7 ');
       item.innerHTML =
         '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83c\udf9e\ufe0f</span>'+
         '<div class="v10-fi-body">'+
           '<div class="v10-fi-name">'+escapeHtml(d.name)+'</div>'+
-          '<span class="v10-fi-meta">'+escapeHtml(d.date+' \u00b7 '+d.size+' \u00b7 '+d.dur)+'</span>'+
+          (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
         '</div>'+
         '<span class="v10-fi-hint">LOAD</span>';
       item.addEventListener('click', function(e){
@@ -637,10 +689,6 @@
       });
       list.appendChild(item);
     });
-    var note = document.createElement('div');
-    note.className = 'v10-folder-note';
-    note.textContent = 'Click a draft to load it in the editor';
-    list.appendChild(note);
   }
 
   function rebuildFolders(){
@@ -671,9 +719,12 @@
     }
     toRemove.forEach(function(n){ n.remove(); });
 
+    var completedCount = getCompleted().length;
+    var draftsCount    = getDrafts().length;
+
     var completedFolder = buildProjFolder({
       label: 'Completed Videos',
-      count: COMPLETED.length,
+      count: completedCount,
       icon: '\ud83d\udce6',
       iconColor: '#f59e0b',
       openByDefault: false,
@@ -681,10 +732,10 @@
     });
     var draftsFolder = buildProjFolder({
       label: 'Drafts',
-      count: DRAFTS.length,
+      count: draftsCount,
       icon: '\ud83d\udcdd',
       iconColor: '#8b5cf6',
-      openByDefault: true,
+      openByDefault: draftsCount > 0,
       buildList: buildDraftsListInto
     });
 
@@ -706,6 +757,48 @@
   }
 
   function loadDraftIntoEditor(draft){
+    // If this draft has a real server-uploaded file, load it into the
+    // real video player / editor state instead of the fake preview overlay.
+    var realUrl = draft && (draft.serveUrl || draft.downloadUrl);
+    if (realUrl){
+      var player = document.getElementById('videoPlayer') || document.querySelector('video');
+      if (player){
+        try { player.src = realUrl; player.load(); } catch(_){}
+      }
+      // Wire the editor's currentVideoFile so export / tools can operate on it
+      if (draft.filename){
+        try {
+          window.currentVideoFile = {
+            filename: draft.filename,
+            serveUrl: realUrl,
+            duration: draft.duration || 0
+          };
+        } catch(_){}
+      }
+      // Hide the upload zone now that there's a real video loaded
+      var uz = document.getElementById('uploadZone');
+      if (uz){
+        uz.style.display = 'none';
+        uz.dataset.v10HiddenForDraft = '1';
+      }
+      // Enable editor buttons the upload flow normally enables
+      ['trimButton','exportButton','splitButton','filterButton','speedButton',
+       'audioButton','previewVoiceButton','voiceoverButton','vtPreviewBtn',
+       'vtApplyBtn','textButton','speedSelect','addMusicButton',
+       'removeFillerWordsBtn','removePausesBtn','applyTransitionButton',
+       'applyCaptionsBtn'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el) el.disabled = false;
+      });
+      // Drop the video onto the timeline as a clip
+      if (typeof window.addClipToTimeline === 'function'){
+        try { window.addClipToTimeline(draft.name, 'vid'); } catch(_){}
+      }
+      toast('Loaded '+(draft.kind === 'completed' ? 'export' : 'draft')+': '+draft.name);
+      return;
+    }
+
+    // Fallback (e.g. a completed export with only metadata): show preview overlay
     // Hide the REAL V9 upload panel (the "Upload Your Video" card).
     // Primary selector is #uploadZone on the live site; keep legacy fallbacks for resilience.
     var uploadPanelSelectors = [
