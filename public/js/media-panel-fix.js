@@ -485,7 +485,11 @@
     var track = findTargetTrack(mediaType);
     if (!track) { showToast('Timeline track not found'); return; }
 
+    // Images default to 5 seconds when no explicit duration is provided
+    // (no real duration on an image file). Videos/audio use the passed
+    // duration or fall back to a 200px placeholder if unknown.
     var secs = parseFloat(duration) || 0;
+    if (mediaType === 'img' && secs <= 0) secs = 5;
     var width = secs > 0 ? Math.max(40, secs * TIMELINE_PX_PER_SEC) : 200;
     var leftPos = findRightmostClipEnd(track);
 
@@ -493,6 +497,7 @@
     clip.className = 'mt-clip ' + (mediaType === 'aud' ? 'mt-clip-audio' : 'mt-clip-video');
     clip.textContent = fileName;
     clip.dataset.fileName = fileName;
+    clip.dataset.clipType = mediaType; // 'vid' | 'aud' | 'img'
     if (secs > 0)    clip.dataset.duration = String(secs);
     if (mediaUrl)    clip.dataset.mediaUrl = mediaUrl;
     // position:absolute + top:3px + height:30px come from the base .mt-clip rule in CSS.
@@ -506,6 +511,11 @@
     clip.style.userSelect = 'none';
     if (mediaType === 'aud') {
       clip.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+      clip.style.color = '#fff';
+    } else if (mediaType === 'img') {
+      // Distinct green/teal gradient so image clips are visually recognizable
+      // against video clips on the same track.
+      clip.style.background = 'linear-gradient(135deg, #22c55e, #06b6d4)';
       clip.style.color = '#fff';
     } else {
       clip.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
@@ -689,6 +699,32 @@
     container.appendChild(overlay);
     return overlay;
   }
+  // Image preview: an <img> overlay layered above the video element for when
+  // the playhead is over an image clip (HTML <video> can't render images).
+  function ensureImageOverlay(){
+    var existing = document.getElementById('tlImageOverlay');
+    if (existing && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player) return null;
+    var container = player.parentElement;
+    if (!container) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var img = existing || document.createElement('img');
+    img.id = 'tlImageOverlay';
+    img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:6;pointer-events:none;display:none';
+    container.appendChild(img);
+    return img;
+  }
+  function showImagePreview(url){
+    var img = ensureImageOverlay();
+    if (!img) return;
+    if (img.src !== url) img.src = url;
+    img.style.display = 'block';
+  }
+  function hideImagePreview(){
+    var img = document.getElementById('tlImageOverlay');
+    if (img) img.style.display = 'none';
+  }
   function showBlackPreview(){
     var o = ensureBlackOverlay();
     if (o) o.style.display = 'block';
@@ -832,9 +868,43 @@
     if (snapshot && !snapshot.dataset.v14){
       snapshot.dataset.v14 = '1';
       snapshot.addEventListener('click', function(){
-        // Existing app behaviour (from the old .e-tb handler) was a toast.
-        // Preserve that until a real snapshot-to-library pipeline exists.
-        showToast('Snapshot saved to library');
+        var player = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (!player || !player.videoWidth || !player.videoHeight){
+          showToast('Cannot snapshot \u2014 no video loaded');
+          return;
+        }
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width  = player.videoWidth;
+          canvas.height = player.videoHeight;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(player, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function(blob){
+            if (!blob){ showToast('Snapshot failed'); return; }
+            var url = URL.createObjectURL(blob);
+            // Counter persists across snapshots in this page session so the
+            // filenames increment sequentially (screenshot_01, _02, ...).
+            window.__snapshotCounter = (window.__snapshotCounter || 0) + 1;
+            var n = window.__snapshotCounter;
+            var name = 'screenshot_' + (n < 10 ? '0' + n : n) + '.png';
+            // Push to Media library via the shared helper — this makes the
+            // new image show up under both Images and All tabs immediately
+            // AND auto-place on V1 (same flow as a regular upload).
+            if (typeof window.addUploadedMediaItem === 'function'){
+              var item = window.addUploadedMediaItem({
+                name: name,
+                filename: name,
+                serveUrl: url,
+                mediaType: 'img'
+              });
+              // Also auto-place on V1 as a 5s clip.
+              try { addClipToTimeline(name, 'img', 5, url); } catch(_){}
+            }
+            showToast('Snapshot saved: ' + name);
+          }, 'image/png');
+        } catch(err){
+          showToast('Snapshot failed: ' + (err && err.message || 'unknown error'));
+        }
       });
     }
     if (linkTracks && !linkTracks.dataset.v14){
@@ -948,15 +1018,20 @@
     var phX = parseFloat(ph.style.left) || 0;
     var hit = getClipAtPlayheadX(phX);
     if (!hit){
-      // Playhead is over a gap — show black overlay (Albert's Empty
-      // Sequence Visuals requirement). Don't swap video src; leave the
-      // last loaded clip paused underneath.
+      // Playhead is over a gap — show black overlay.
+      hideImagePreview();
       showBlackPreview();
       return;
     }
     hideBlackPreview();
     var clip = hit.clip;
     var url = clip.dataset.mediaUrl;
+    // Image clips render as an <img> overlay above the video preview.
+    if (clip.dataset.clipType === 'img'){
+      if (url) showImagePreview(url);
+      return;
+    }
+    hideImagePreview();
     if (!url) return;
     var player = document.getElementById('videoPlayer') || document.querySelector('video');
     if (!player) return;
