@@ -1115,24 +1115,9 @@ router.get('/', requireAuth, async (req, res) => {
     function populateMediaGrid() {
       const grid = document.getElementById('mediaFileGrid');
       if (!grid) return;
-      const files = [
-        {name:'0314(1).mp4',type:'vid',dur:'2:21',icon:'\ud83c\udfac'},
-        {name:'0314.mp4',type:'vid',dur:'0:35',icon:'\ud83c\udfac'},
-        {name:'intro_hook.mp4',type:'vid',dur:'1:30',icon:'\ud83c\udfac'},
-        {name:'beat_chill.mp3',type:'aud',dur:'3:15',icon:'\ud83c\udfb5'},
-        {name:'thumbnail.png',type:'img',dur:'',icon:'\ud83d\uddbc\ufe0f'},
-        {name:'broll_city.mp4',type:'vid',dur:'0:22',icon:'\ud83c\udfac'}
-      ];
-      grid.innerHTML = files.map(f => 
-        '<div class="ml-fitem" draggable="true" data-media-type="' + f.type + '">' +
-          '<div class="ml-fth">' + f.icon +
-            '<span class="ml-badge ' + f.type + '">' + f.type.toUpperCase() + '</span>' +
-            (f.dur ? '<span class="ml-dur">' + f.dur + '</span>' : '') +
-            '<span class="ml-add">+ Timeline</span>' +
-          '</div>' +
-          '<div class="ml-fnm">' + f.name + '</div>' +
-        '</div>'
-      ).join('');
+      // Start empty — only real user uploads populate the media library.
+      // Items are appended by media-panel-fix.js handleFiles() on upload.
+      grid.innerHTML = '';
     }
 
     // ═══ FILMSTRIP: Generate video thumbnails ═══
