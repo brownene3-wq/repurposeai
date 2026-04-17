@@ -537,19 +537,28 @@
       var cls = t === 'video' ? 'vid' : (t === 'audio' ? 'aud' : 'img');
       var icon = t === 'video' ? '\u25b6' : (t === 'audio' ? '\u266a' : '\ud83d\uddbc');
       var label = t === 'video' ? 'VID' : (t === 'audio' ? 'AUD' : 'IMG');
+      // Prefer the clean filename stored on the dataset (set by
+      // media-panel-fix.js appendMediaItem). Fall back to parsing the
+      // textContent for legacy/server-rendered items.
       var parsed = parseMediaItemText(it);
-      it.setAttribute('data-search-name', parsed.name.toLowerCase());
+      var displayName = it.dataset.fileName || parsed.name;
+      it.setAttribute('data-search-name', String(displayName || '').toLowerCase());
       // Build restyled content
       var size = '';
-      // Try to pull size string like "42 MB" from original
       var sizeMatch = (it.textContent||'').match(/(\d+(\.\d+)?\s?(KB|MB|GB))/i);
       if (sizeMatch) size = sizeMatch[1];
-      var subtitle = size ? (parsed.dur ? (size + ' \u00b7 ' + parsed.dur) : size) : (parsed.dur || '');
+      var durFromDs = '';
+      if (it.dataset.duration){
+        var d = parseFloat(it.dataset.duration);
+        if (d > 0) durFromDs = Math.floor(d/60) + ':' + String(Math.floor(d%60)).padStart(2,'0');
+      }
+      var dur = durFromDs || parsed.dur;
+      var subtitle = size ? (dur ? (size + ' \u00b7 ' + dur) : size) : (dur || '');
       it.classList.add('v10-styled');
       it.innerHTML =
         '<div class="v10-mi-thumb '+cls+'">'+icon+'</div>'+
         '<div class="v10-mi-info">'+
-          '<h5>'+escapeHtml(parsed.name)+'</h5>'+
+          '<h5>'+escapeHtml(displayName)+'</h5>'+
           (subtitle ? '<small>'+escapeHtml(subtitle)+'</small>' : '')+
         '</div>'+
         '<span class="v10-mi-badge '+cls+'">'+label+'</span>';
