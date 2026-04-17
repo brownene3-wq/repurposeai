@@ -208,6 +208,12 @@
       return pickAllMediaInput();
     }
     function triggerUpload(){
+      // Throttle: if another upload was just triggered in the last 500ms,
+      // ignore this call. Prevents a second file dialog opening when the
+      // click path fires more than once for a single user click.
+      var now = Date.now();
+      if (window.__v10LastUploadTrigger && (now - window.__v10LastUploadTrigger) < 500) return;
+      window.__v10LastUploadTrigger = now;
       var input = pickAllMediaInput();
       if (input){ try { input.click(); } catch(_){} return; }
       var up = Array.from(document.querySelectorAll('.media-library button, .media-library .ml-fb'))

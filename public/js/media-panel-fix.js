@@ -66,6 +66,11 @@
   }
 
   function triggerUpload() {
+    // Share a throttle with v10-editor-redesign.js so paths from either file
+    // honor the same 500ms window — one user click = at most one dialog.
+    var now = Date.now();
+    if (window.__v10LastUploadTrigger && (now - window.__v10LastUploadTrigger) < 500) return;
+    window.__v10LastUploadTrigger = now;
     var fi = getFileInput();
     fi.value = '';
     fi.click();

@@ -4533,64 +4533,22 @@ function showToast(message, type = 'success') {
     }
 </script>
 <script>
-(function(){
-  // Hidden file input for Upload button
-  var fi = document.createElement('input');
-  fi.type = 'file';
-  fi.multiple = true;
-  fi.accept = 'video/*,audio/*,image/*';
-  fi.style.display = 'none';
-  fi.id = 'mediaFileInput';
-  document.body.appendChild(fi);
-
-  // Wire up the + Upload button
-  var uploadBtns = document.querySelectorAll('button');
-  uploadBtns.forEach(function(btn){
-    if(btn.textContent.trim().indexOf('Upload') !== -1 && btn.textContent.trim().indexOf('+') !== -1){
-      btn.onclick = function(e){
-        e.preventDefault();
-        fi.click();
-      };
-    }
-  });
-
-  // Also wire the ml-upload drop zone click
-  var mlUpload = document.querySelector('.ml-upload');
-  if(mlUpload){
-    mlUpload.style.cursor = 'pointer';
-    mlUpload.addEventListener('click', function(e){
-      if(e.target.tagName !== 'BUTTON') fi.click();
-    });
-  }
-
-  // Handle file selection
-  fi.addEventListener('change', function(){
-    if(!fi.files.length) return;
-    var grid = document.getElementById('mediaFileGrid');
-    if(!grid) return;
-    Array.from(fi.files).forEach(function(file){
-      var ext = file.name.split('.').pop().toLowerCase();
-      var mediaType = 'vid';
-      var emoji = '\ud83c\udfac';
-      var badge = 'vid';
-      if(['mp3','wav','ogg','aac','flac','m4a'].indexOf(ext) !== -1){
-        mediaType = 'aud'; emoji = '\ud83c\udfb5'; badge = 'aud';
-      } else if(['png','jpg','jpeg','gif','webp','svg','bmp'].indexOf(ext) !== -1){
-        mediaType = 'img'; emoji = '\ud83d\uddbc\ufe0f'; badge = 'img';
-      }
-      var item = document.createElement('div');
-      item.className = 'ml-fitem';
-      item.draggable = true;
-      item.dataset.mediaType = mediaType;
-      item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">'+emoji+'</div>'
-        + '<span class="ml-badge '+badge+'">'+badge.toUpperCase()+'</span>'
-        + '<span class="ml-fname" style="font-size:9px;color:#c4b5fd;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+file.name+'</span>'
-        + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
-      grid.insertBefore(item, grid.firstChild);
-    });
-    fi.value = '';
-  });
-})();
+/* Legacy +Upload wiring removed.
+ *
+ * Previously this IIFE created a separate #mediaFileInput and bound
+ *   btn.onclick = function(){ fi.click(); }
+ * to EVERY button on the page containing "+ Upload". That ran in parallel
+ * with v10-editor-redesign.js's addEventListener click handler on the same
+ * button, so a single user click opened TWO file dialogs (one per input).
+ *
+ * The entire responsibility — creating file inputs, handling the upload
+ * click, and appending media items on change — is now owned by
+ *   public/js/media-panel-fix.js  (handleFiles, appendMediaItem)
+ *   public/js/v10-editor-redesign.js  (buildDropZone, triggerUpload)
+ * which also store serveUrl/blob URLs on the .ml-fitem dataset so the
+ * preview window can play them. Removing the legacy block eliminates the
+ * double-dialog bug.
+ */
 
     // ═══════════════════════════════════════════════════════════
     // WIRE UP ALL INTERACTIVE UI ELEMENTS
