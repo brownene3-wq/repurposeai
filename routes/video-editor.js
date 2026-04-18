@@ -3134,16 +3134,89 @@ function showToast(message, type = 'success') {
 
     // Export handler
     document.getElementById('exportButton')?.addEventListener('click', async () => {
-      if (!currentVideoFile) {
-        showToast('Please upload a video first', 'error');
-        return;
-      }
+      // Timeline-aware export: if the user has built a sequence on V1, render
+      // the timeline (multiple clips + gaps + razor splits) via the new
+      // /video-editor/export-timeline endpoint. Fall back to the single-file
+      // /video-editor/export (with filters) only when the timeline is empty.
+      var timelineClips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'))
+        .map(function(c){
+          var track = c.parentElement;
+          return {
+            track: (track && track.getAttribute('data-type')) || 'video',
+            left: c.style.left,
+            width: c.style.width,
+            duration: c.dataset.duration || '',
+            sourceOffset: c.dataset.sourceOffset || '0',
+            mediaUrl: c.dataset.mediaUrl || '',
+            filename: c.dataset.serverFilename || c.dataset.fileName || '',
+            clipType: c.dataset.clipType || 'vid'
+          };
+        });
 
-      const button = document.getElementById('exportButton');
+      var button = document.getElementById('exportButton');
       button.disabled = true;
       button.innerHTML = '<span class="spinner"></span> Exporting...';
 
+      // Helper to kick off the download + housekeeping + UI reset
+      function handleSuccess(data){
+        var downloadLink = document.createElement('a');
+        downloadLink.href = data.downloadUrl;
+        downloadLink.download = data.filename;
+        downloadLink.click();
+        try {
+          var _now = new Date();
+          var _dateStr = _now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          if (typeof window.addCompletedEntry === 'function') {
+            window.addCompletedEntry({
+              id: 'c_' + Date.now(),
+              name: data.filename,
+              filename: data.filename,
+              serveUrl: data.downloadUrl,
+              downloadUrl: data.downloadUrl,
+              size: '',
+              date: _dateStr
+            });
+          }
+          if (typeof window.removeDraftByFilename === 'function' && currentVideoFile && currentVideoFile.filename) {
+            window.removeDraftByFilename(currentVideoFile.filename);
+          }
+        } catch (_) {}
+        var msg = data.renderedFromTimeline
+          ? 'Timeline exported (' + (data.clipCount||0) + ' clip' + (data.clipCount===1?'':'s') + ', ' + Math.round(data.duration||0) + 's)'
+          : 'Video exported successfully!';
+        showToast(msg, 'success');
+      }
+
       try {
+        // Path 1: timeline has clips → render the sequence
+        if (timelineClips.length > 0) {
+          var resp = await fetch('/video-editor/export-timeline', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clips: timelineClips,
+              pxPerSec: 10,
+              width: 1280,
+              height: 720,
+              format: 'mp4'
+            })
+          });
+          var dataTL = await resp.json();
+          if (!resp.ok) throw new Error(dataTL.error || 'Timeline export failed');
+          handleSuccess(dataTL);
+          button.disabled = false;
+          button.innerHTML = '\ud83d\udce5 Export Video';
+          return;
+        }
+
+        // Path 2: no timeline clips, but a single primary video loaded → filters export
+        if (!currentVideoFile) {
+          showToast('Please upload a video first or add clips to the timeline', 'error');
+          button.disabled = false;
+          button.innerHTML = '\ud83d\udce5 Export Video';
+          return;
+        }
+
         const brightness = parseFloat(document.getElementById('brightness')?.value);
         const contrast = parseFloat(document.getElementById('contrast')?.value);
         const saturation = parseFloat(document.getElementById('saturation')?.value);
@@ -6176,6 +6249,210 @@ router.post('/export', requireAuth, async (req, res) => {
     featureUsageOps.log(req.user.id, 'video_editor').catch(() => {});
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST: Export the TIMELINE (multiple clips in sequence) to a single MP4.
+//
+// Body shape:
+//   { clips: [{ track, left, width, duration, sourceOffset, mediaUrl,
+//               clipType, filename }, ...],
+//     pxPerSec: number,
+//     width: number, height: number,
+//     format?: 'mp4' }
+//
+// Algorithm (v1 — video track only; audio-track mixing is a future add):
+//   1. Filter clips to the first video track, sort by `left`.
+//   2. For each clip: produce a temp .mp4 segment at the output resolution:
+//        - Video clip: ffmpeg -ss SRC_OFF -i file -t DUR ... (trim source slice)
+//        - Image clip: ffmpeg -loop 1 -i img -t DUR ... (still → video)
+//   3. For each gap between clips, produce a black filler segment of the
+//      same duration (color=black + anullsrc).
+//   4. Concat all segments with the ffmpeg concat demuxer (-c copy works
+//      because every segment is encoded with the same codec/params).
+//   5. Return the final output via the existing /download/:filename route.
+router.post('/export-timeline', requireAuth, async (req, res) => {
+  const workDir = path.join(outputDir, 'tl_' + Date.now() + '_' + req.user.id);
+  try {
+    const body = req.body || {};
+    const clips = Array.isArray(body.clips) ? body.clips : [];
+    const pxPerSec = parseFloat(body.pxPerSec) || 10;
+    const outW = parseInt(body.width,  10) || 1280;
+    const outH = parseInt(body.height, 10) || 720;
+
+    // Only render the video track in v1 (audio-track mixing = follow-up).
+    const v1 = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      return (t === 'video' || t === 'vid' || t === '') && c.mediaUrl;
+    });
+    if (v1.length === 0) {
+      return res.status(400).json({
+        error: 'Timeline has no video clips to export. Add at least one clip to V1.'
+      });
+    }
+
+    // Sort clips left-to-right by timeline position.
+    v1.sort(function(a, b){
+      return (parseFloat(a.left)||0) - (parseFloat(b.left)||0);
+    });
+
+    // Resolve a mediaUrl (e.g. '/video-editor/download/xyz.mp4' or full URL)
+    // to a file on disk in either uploadDir or outputDir. Returns null for
+    // blob: URLs (sidebar-only files that have no server copy).
+    function urlToFilePath(url){
+      if (!url || url.indexOf('blob:') === 0) return null;
+      var m = /\/video-editor\/download\/([^?#]+)/.exec(url);
+      var name = m ? decodeURIComponent(m[1]) : null;
+      if (!name) return null;
+      var up = path.join(uploadDir, path.basename(name));
+      if (fs.existsSync(up)) return up;
+      var out = path.join(outputDir, path.basename(name));
+      if (fs.existsSync(out)) return out;
+      return null;
+    }
+
+    fs.mkdirSync(workDir, { recursive: true });
+
+    // Common encoding params — every segment uses THESE so the concat
+    // demuxer can -c copy them together without re-encoding at the end.
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+    var SCALE_PAD = 'scale=' + outW + ':' + outH +
+                    ':force_original_aspect_ratio=decrease,' +
+                    'pad=' + outW + ':' + outH + ':(ow-iw)/2:(oh-ih)/2:color=black,' +
+                    'setsar=1';
+
+    var segments = [];
+    var cursor = 0; // timeline seconds covered so far
+
+    for (var idx = 0; idx < v1.length; idx++){
+      var clip = v1[idx];
+      var leftPx  = parseFloat(clip.left)  || 0;
+      var widthPx = parseFloat(clip.width) || 0;
+      if (widthPx < 2) continue; // skip zero-width
+      var startSec = leftPx  / pxPerSec;
+      var durSec   = widthPx / pxPerSec;
+      var srcOff   = parseFloat(clip.sourceOffset) || 0;
+      var clipType = clip.clipType || 'vid';
+
+      // Fill gap before this clip
+      if (startSec > cursor + 0.05){
+        var gapDur = startSec - cursor;
+        var gapPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_gap.mp4');
+        await runFFmpeg([
+          '-f', 'lavfi', '-i', 'color=c=black:s=' + outW + 'x' + outH + ':d=' + gapDur.toFixed(3) + ':r=30',
+          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+          '-t', gapDur.toFixed(3),
+          '-vf', 'setsar=1'
+        ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-y', gapPath]));
+        segments.push(gapPath);
+      }
+
+      var srcPath = urlToFilePath(clip.mediaUrl);
+      if (!srcPath){
+        throw new Error('Source file not found on server: ' + (clip.filename || clip.mediaUrl) +
+          ' (files uploaded via the sidebar + Upload button live only in your browser and can\'t be exported yet)');
+      }
+
+      var segPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_clip.mp4');
+
+      if (clipType === 'img'){
+        // Image — loop for the clip duration with silent audio
+        await runFFmpeg([
+          '-loop', '1', '-framerate', '30', '-i', srcPath,
+          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+          '-t', durSec.toFixed(3),
+          '-vf', SCALE_PAD
+        ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-r', '30', '-y', segPath]));
+      } else {
+        // Video — seek to sourceOffset then capture durSec, scaled+padded
+        // to the output canvas. We use -ss BEFORE -i for fast (keyframe)
+        // seek then a small adjustment via setpts for precision.
+        var args = [
+          '-ss', srcOff.toFixed(3),
+          '-i', srcPath,
+          '-t', durSec.toFixed(3),
+          '-vf', SCALE_PAD,
+          '-r', '30'
+        ];
+        // If the source has no audio, FFmpeg fails the concat — inject silent.
+        args = args.concat(['-af', 'apad', '-shortest']);
+        args = args.concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
+        try {
+          await runFFmpeg(args);
+        } catch (e) {
+          // Fallback: source may be audio-less — re-encode with explicit silent track.
+          await runFFmpeg([
+            '-ss', srcOff.toFixed(3), '-i', srcPath,
+            '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+            '-t', durSec.toFixed(3),
+            '-vf', SCALE_PAD, '-r', '30',
+            '-map', '0:v:0', '-map', '1:a:0'
+          ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-y', segPath]));
+        }
+      }
+      segments.push(segPath);
+      cursor = startSec + durSec;
+    }
+
+    if (segments.length === 0){
+      return res.status(400).json({ error: 'No renderable clips found.' });
+    }
+
+    // Concat list
+    var listPath = path.join(workDir, 'concat.txt');
+    fs.writeFileSync(
+      listPath,
+      segments.map(function(p){ return "file '" + p.replace(/'/g, "'\\''") + "'"; }).join('\n') + '\n'
+    );
+
+    var outputFilename = 'timeline_export_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outputPath = path.join(outputDir, outputFilename);
+
+    // Concat demuxer with -c copy — all segments share identical codec/params
+    // so this stitches without a re-encode pass (fast).
+    try {
+      await runFFmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', '-y', outputPath]);
+    } catch (e) {
+      // Fallback: force a re-encode pass via concat filter if -c copy fails
+      // (can happen when segment params drift on edge cases).
+      var reInputs = [];
+      segments.forEach(function(p){ reInputs.push('-i', p); });
+      var n = segments.length;
+      var filter = '';
+      for (var i = 0; i < n; i++) filter += '[' + i + ':v][' + i + ':a]';
+      filter += 'concat=n=' + n + ':v=1:a=1[v][a]';
+      await runFFmpeg(reInputs.concat([
+        '-filter_complex', filter,
+        '-map', '[v]', '-map', '[a]'
+      ]).concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]));
+    }
+
+    // Clean up temp segments & concat list
+    try {
+      segments.forEach(function(p){ try { fs.unlinkSync(p); } catch(_){} });
+      try { fs.unlinkSync(listPath); } catch(_){}
+      try { fs.rmdirSync(workDir); } catch(_){}
+    } catch(_){}
+
+    var totalSec = cursor;
+    res.json({
+      filename: outputFilename,
+      downloadUrl: '/video-editor/download/' + outputFilename,
+      size: fs.statSync(outputPath).size,
+      duration: totalSec,
+      clipCount: v1.length,
+      renderedFromTimeline: true
+    });
+    featureUsageOps.log(req.user.id, 'video_editor').catch(function(){});
+  } catch (error) {
+    // Best-effort cleanup
+    try { if (fs.existsSync(workDir)) {
+      fs.readdirSync(workDir).forEach(function(f){ try { fs.unlinkSync(path.join(workDir, f)); } catch(_){} });
+      fs.rmdirSync(workDir);
+    } } catch(_){}
+    res.status(500).json({ error: error.message || 'Timeline export failed' });
   }
 });
 
