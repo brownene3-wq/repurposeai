@@ -3151,12 +3151,31 @@ function showToast(message, type = 'success') {
             mediaUrl:     c.dataset.mediaUrl     || '',
             filename:     c.dataset.serverFilename || c.dataset.fileName || '',
             clipType:     c.dataset.clipType     || 'vid',
+            // Text
             textContent:  c.dataset.textContent  || '',
             fontSize:     c.dataset.fontSize     || '',
             textColor:    c.dataset.textColor    || '',
             position:     c.dataset.position     || '',
+            // Audio
             volume:       c.dataset.volume       || '',
-            muted:        c.dataset.muted        || ''
+            muted:        c.dataset.muted        || '',
+            // Transform
+            scale:        c.dataset.scale        || '',
+            rotate:       c.dataset.rotate       || '',
+            flipH:        c.dataset.flipH        || '',
+            flipV:        c.dataset.flipV        || '',
+            // Clip Tools
+            speed:        c.dataset.speed        || '',
+            crop:         c.dataset.crop         || '',
+            trimIn:       c.dataset.trimIn       || '',
+            trimOut:      c.dataset.trimOut      || '',
+            // FX (color + visual)
+            fxBrightness: c.dataset.fxBrightness || '',
+            fxContrast:   c.dataset.fxContrast   || '',
+            fxSaturate:   c.dataset.fxSaturate   || '',
+            fxBlur:       c.dataset.fxBlur       || '',
+            fxHue:        c.dataset.fxHue        || '',
+            fxColorGrade: c.dataset.fxColorGrade || ''
           };
         });
 
@@ -6254,6 +6273,67 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
                     'pad=' + outW + ':' + outH + ':(ow-iw)/2:(oh-ih)/2:color=black,' +
                     'setsar=1';
 
+    // Build a per-clip filter chain that transforms the source BEFORE the
+    // standard SCALE_PAD output-fit stage. Each property is optional and
+    // composes in a sensible order:
+    //   crop → color (eq/hue/colorbalance/curves) → blur → transforms
+    //   (flip/rotate/scale-resize).
+    function buildClipVFChain(c){
+      var chain = [];
+      // Crop (x,y,w,h in %)
+      if (c.crop){
+        var cp = String(c.crop).split(',').map(function(s){ return parseFloat(s); });
+        if (cp.length === 4 && cp.every(function(v){ return isFinite(v); })){
+          chain.push('crop=iw*' + (cp[2]/100).toFixed(4) + ':ih*' + (cp[3]/100).toFixed(4) +
+                     ':iw*' + (cp[0]/100).toFixed(4) + ':ih*' + (cp[1]/100).toFixed(4));
+        }
+      }
+      // FX: brightness / contrast / saturation — FFmpeg `eq` takes
+      //   brightness as an OFFSET -1..1 (where 0 = neutral) while our UI
+      //   passes a multiplier 0..2 with 1 = neutral. Convert multiplier→offset.
+      var b = parseFloat(c.fxBrightness);
+      var ct = parseFloat(c.fxContrast);
+      var sat = parseFloat(c.fxSaturate);
+      if ((isFinite(b) && b !== 1) || (isFinite(ct) && ct !== 1) || (isFinite(sat) && sat !== 1)){
+        var eqParts = [];
+        if (isFinite(b)  && b  !== 1) eqParts.push('brightness=' + (b - 1).toFixed(2));
+        if (isFinite(ct) && ct !== 1) eqParts.push('contrast='   + ct.toFixed(2));
+        if (isFinite(sat)&& sat!== 1) eqParts.push('saturation=' + sat.toFixed(2));
+        if (eqParts.length) chain.push('eq=' + eqParts.join(':'));
+      }
+      // FX: hue rotate
+      var hue = parseFloat(c.fxHue);
+      if (isFinite(hue) && hue !== 0) chain.push('hue=h=' + hue.toFixed(2));
+      // FX: gaussian blur (sigma=Npx)
+      var blur = parseFloat(c.fxBlur);
+      if (isFinite(blur) && blur > 0) chain.push('gblur=sigma=' + blur.toFixed(2));
+      // FX: color-grade presets
+      if (c.fxColorGrade){
+        var g = String(c.fxColorGrade).toLowerCase();
+        if (g === 'warm')        chain.push('colorbalance=rs=0.1:bs=-0.08');
+        else if (g === 'cool')   chain.push('colorbalance=rs=-0.08:bs=0.1');
+        else if (g === 'vintage')chain.push('curves=preset=vintage');
+        else if (g === 'bw')     chain.push('hue=s=0');
+        else if (g === 'punch')  chain.push('eq=contrast=1.15:saturation=1.25');
+      }
+      // Transforms: hflip / vflip
+      if (c.flipH === 'true') chain.push('hflip');
+      if (c.flipV === 'true') chain.push('vflip');
+      // Transforms: rotate — in radians around center, original canvas size,
+      // black fill for exposed areas.
+      var rot = parseFloat(c.rotate);
+      if (isFinite(rot) && rot !== 0){
+        chain.push('rotate=' + (rot * Math.PI / 180).toFixed(4) + ':ow=iw:oh=ih:c=black');
+      }
+      // Transforms: scale (resize) — multiplicatively rescale the content
+      // before SCALE_PAD aspect-fits it into the output canvas.
+      var scl = parseFloat(c.scale);
+      if (isFinite(scl) && scl > 0 && scl !== 1){
+        chain.push('scale=trunc(iw*' + scl.toFixed(3) + '/2)*2:trunc(ih*' + scl.toFixed(3) + '/2)*2');
+      }
+      return chain;
+    }
+
     var segments = [];
     var cursor = 0; // timeline seconds covered so far
 
@@ -6288,37 +6368,66 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
 
       var segPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_clip.mp4');
 
+      // Assemble this clip's video-filter chain: per-clip FX/transform
+      // BEFORE the output SCALE_PAD fit. Image clips share the chain
+      // (cropping / color adjustment still apply) but not speed/atempo.
+      var clipChain = buildClipVFChain(clip);
+      var vfChain = clipChain.concat([SCALE_PAD]).join(',');
+
+      // Timing: per-clip speed. Valid range is >0; we clamp to 0.1..10 to
+      // avoid extreme atempo chains. For non-1.0 speed we scale video PTS
+      // and apply atempo to the audio stream. setpts=PTS/speed compresses
+      // or stretches time to fit durSec of OUTPUT from durSec*speed of
+      // source.
+      var speed = parseFloat(clip.speed);
+      if (!isFinite(speed) || speed <= 0) speed = 1;
+      speed = Math.max(0.1, Math.min(10, speed));
+      var readDurSec = durSec * speed;
+      // Chain atempo filters if speed is outside [0.5, 2.0] range.
+      function atempoChain(s){
+        var out = [];
+        var x = s;
+        while (x > 2.0){ out.push('atempo=2.0'); x /= 2.0; }
+        while (x < 0.5){ out.push('atempo=0.5'); x *= 2.0; }
+        out.push('atempo=' + x.toFixed(4));
+        return out.join(',');
+      }
+
       if (clipType === 'img'){
-        // Image — loop for the clip duration with silent audio
+        // Image — loop for the clip duration with silent audio. Speed
+        // has no meaning for a still image; we use durSec directly.
         await runFFmpeg([
           '-loop', '1', '-framerate', '30', '-i', srcPath,
           '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
           '-t', durSec.toFixed(3),
-          '-vf', SCALE_PAD
+          '-vf', vfChain
         ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-r', '30', '-y', segPath]));
       } else {
-        // Video — seek to sourceOffset then capture durSec, scaled+padded
-        // to the output canvas. We use -ss BEFORE -i for fast (keyframe)
-        // seek then a small adjustment via setpts for precision.
+        // Video — seek to sourceOffset, read durSec*speed of source,
+        // apply clip FX/transform, apply setpts to compress to durSec
+        // output, then SCALE_PAD. Audio: atempo + apad.
+        var vfWithSpeed = (speed !== 1) ? ('setpts=(PTS-STARTPTS)/' + speed.toFixed(4) + ',' + vfChain) : vfChain;
+        var afWithSpeed = (speed !== 1) ? (atempoChain(speed) + ',apad') : 'apad';
         var args = [
           '-ss', srcOff.toFixed(3),
           '-i', srcPath,
-          '-t', durSec.toFixed(3),
-          '-vf', SCALE_PAD,
-          '-r', '30'
+          '-t', readDurSec.toFixed(3),
+          '-vf', vfWithSpeed,
+          '-af', afWithSpeed,
+          '-r', '30',
+          '-shortest'
         ];
-        // If the source has no audio, FFmpeg fails the concat — inject silent.
-        args = args.concat(['-af', 'apad', '-shortest']);
         args = args.concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
         try {
           await runFFmpeg(args);
         } catch (e) {
-          // Fallback: source may be audio-less — re-encode with explicit silent track.
+          // Fallback: source may be audio-less — re-encode with an explicit
+          // silent track. Preserves the clip filter chain + speed.
           await runFFmpeg([
             '-ss', srcOff.toFixed(3), '-i', srcPath,
             '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-            '-t', durSec.toFixed(3),
-            '-vf', SCALE_PAD, '-r', '30',
+            '-t', readDurSec.toFixed(3),
+            '-vf', vfWithSpeed, '-r', '30',
             '-map', '0:v:0', '-map', '1:a:0'
           ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-y', segPath]));
         }
