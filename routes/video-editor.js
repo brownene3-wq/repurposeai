@@ -3169,6 +3169,9 @@ function showToast(message, type = 'success') {
             crop:         c.dataset.crop         || '',
             trimIn:       c.dataset.trimIn       || '',
             trimOut:      c.dataset.trimOut      || '',
+            reverse:      c.dataset.reverse      || '',
+            loop:         c.dataset.loop         || '',
+            freeze:       c.dataset.freeze       || '',
             // FX (color + visual)
             fxBrightness: c.dataset.fxBrightness || '',
             fxContrast:   c.dataset.fxContrast   || '',
@@ -6436,6 +6439,14 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         return out.join(',');
       }
 
+      // Clip Tools timing flags — mirror the preview semantics:
+      //   freeze  → hold on the frame at srcOff for durSec (speed/reverse/loop ignored)
+      //   loop    → source slice repeats to fill durSec (works with speed)
+      //   reverse → source slice plays backward (works with speed)
+      var freeze  = clip.freeze  === 'true';
+      var loopOn  = clip.loop    === 'true';
+      var reverse = clip.reverse === 'true';
+
       if (clipType === 'img'){
         // Image — loop for the clip duration with silent audio. Speed
         // has no meaning for a still image; we use durSec directly.
@@ -6445,34 +6456,75 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           '-t', durSec.toFixed(3),
           '-vf', vfChain
         ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-r', '30', '-y', segPath]));
+      } else if (freeze){
+        // Freeze: grab the single frame at srcOff and loop it for durSec
+        // with silent audio. loop filter (size=1) caches ONE frame then
+        // emits it forever; setpts=N/FRAME_RATE/TB rebases PTS so the
+        // output is a well-formed 30fps stream.
+        var freezeVfChain = ['loop=loop=-1:size=1:start=0', 'setpts=N/FRAME_RATE/TB']
+          .concat(clipChain).concat([buildScalePad(clip)]).join(',');
+        await runFFmpeg([
+          '-ss', srcOff.toFixed(3), '-i', srcPath,
+          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+          '-t', durSec.toFixed(3),
+          '-vf', freezeVfChain,
+          '-map', '0:v', '-map', '1:a',
+          '-r', '30', '-shortest'
+        ].concat(VCODEC).concat(ACODEC).concat(['-y', segPath]));
       } else {
         // Video — seek to sourceOffset, read durSec*speed of source,
         // apply clip FX/transform, apply setpts to compress to durSec
         // output, then SCALE_PAD. Audio: atempo + apad.
-        var vfWithSpeed = (speed !== 1) ? ('setpts=(PTS-STARTPTS)/' + speed.toFixed(4) + ',' + vfChain) : vfChain;
-        var afWithSpeed = (speed !== 1) ? (atempoChain(speed) + ',apad') : 'apad';
-        var args = [
-          '-ss', srcOff.toFixed(3),
-          '-i', srcPath,
-          '-t', readDurSec.toFixed(3),
+        //
+        // Order of composition within the vf chain:
+        //   setpts (speed) → FX/Transform chain → reverse → SCALE_PAD
+        // For loop we add `-stream_loop -1` input option and cut at
+        // durSec of OUTPUT.
+        var vfParts = [];
+        if (speed !== 1) vfParts.push('setpts=(PTS-STARTPTS)/' + speed.toFixed(4));
+        vfParts = vfParts.concat(clipChain);
+        if (reverse) vfParts.push('reverse');
+        vfParts.push(buildScalePad(clip));
+        var vfWithSpeed = vfParts.join(',');
+
+        var afParts = [];
+        if (speed !== 1) afParts.push(atempoChain(speed));
+        if (reverse) afParts.push('areverse');
+        afParts.push('apad');
+        var afWithSpeed = afParts.join(',');
+
+        // Input options: stream_loop + seek
+        var inputOpts = [];
+        if (loopOn) inputOpts.push('-stream_loop', '-1');
+        inputOpts.push('-ss', srcOff.toFixed(3), '-i', srcPath);
+
+        // Duration control: for loop, cap output at durSec; otherwise
+        // read exactly readDurSec of source (reverse needs the whole
+        // slice buffered so same limit applies).
+        var args = inputOpts.slice();
+        if (loopOn){
+          args.push('-t', durSec.toFixed(3));
+        } else {
+          args.push('-t', readDurSec.toFixed(3));
+        }
+        args.push(
           '-vf', vfWithSpeed,
           '-af', afWithSpeed,
-          '-r', '30',
-          '-shortest'
-        ];
+          '-r', '30', '-shortest'
+        );
         args = args.concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
         try {
           await runFFmpeg(args);
         } catch (e) {
           // Fallback: source may be audio-less — re-encode with an explicit
-          // silent track. Preserves the clip filter chain + speed.
-          await runFFmpeg([
-            '-ss', srcOff.toFixed(3), '-i', srcPath,
-            '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-            '-t', readDurSec.toFixed(3),
-            '-vf', vfWithSpeed, '-r', '30',
-            '-map', '0:v:0', '-map', '1:a:0'
-          ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-y', segPath]));
+          // silent track. Preserves the clip filter chain + speed/loop/reverse.
+          var fbArgs = inputOpts.slice();
+          fbArgs.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
+          if (loopOn) fbArgs.push('-t', durSec.toFixed(3));
+          else fbArgs.push('-t', readDurSec.toFixed(3));
+          fbArgs.push('-vf', vfWithSpeed, '-r', '30', '-map', '0:v:0', '-map', '1:a:0');
+          fbArgs = fbArgs.concat(VCODEC).concat(ACODEC).concat(['-shortest', '-y', segPath]);
+          await runFFmpeg(fbArgs);
         }
       }
       segments.push(segPath);
