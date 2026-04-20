@@ -661,7 +661,6 @@ router.get('/', requireAuth, async (req, res) => {
                   <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
                 </div>
                 <div class="mt-toolbar-right">
-                  <button class="mt-add-track-btn" id="mtAddTrackBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Track</button>
                   <span class="mt-info">5 tracks &bull; 0:00</span>
                 </div>
               </div>
@@ -4697,83 +4696,7 @@ function showToast(message, type = 'success') {
       //   - Snap is an independent boolean toggle
       // Legacy handler removed (it treated all three as mutually exclusive).
 
-      // ── 5. + Add Track button — creates a new audio track row ──
-      var addTrackBtn = document.querySelector('.mt-add-track-btn');
-      if (addTrackBtn && !addTrackBtn.dataset.wired) {
-        addTrackBtn.dataset.wired = '1';
-        addTrackBtn.style.cursor = 'pointer';
-        addTrackBtn.addEventListener('click', function() {
-          var tracksArea = document.getElementById('mtTracksArea');
-          var labelsArea = document.querySelector('.mt-labels');
-          if (!tracksArea || !labelsArea) return;
-          // Count existing audio tracks to get the next number (A1, A2, ...)
-          var existingAudio = tracksArea.querySelectorAll('.mt-track-audio').length;
-          var n = existingAudio + 1;
-          // Create track element
-          var track = document.createElement('div');
-          track.className = 'mt-track mt-track-audio';
-          track.setAttribute('data-type', 'audio');
-          track.setAttribute('data-track-index', String(n));
-          // Insert after the LAST audio track (so A1, A2, A3 stay grouped)
-          var audioTracks = tracksArea.querySelectorAll('.mt-track-audio');
-          var insertAfter = audioTracks.length ? audioTracks[audioTracks.length - 1] : tracksArea.querySelector('.mt-track-video');
-          if (insertAfter && insertAfter.nextSibling) {
-            tracksArea.insertBefore(track, insertAfter.nextSibling);
-          } else if (insertAfter) {
-            insertAfter.parentNode.appendChild(track);
-          } else {
-            tracksArea.appendChild(track);
-          }
-          // Create matching label with a small × delete button (user-added
-          // tracks only — A2, A3, ... can be deleted; A1 stays put).
-          var label = document.createElement('div');
-          label.className = 'mt-label mt-label-audio';
-          label.textContent = 'A' + n;
-          if (n > 1){
-            var delBtn = document.createElement('span');
-            delBtn.className = 'mt-label-del';
-            delBtn.textContent = '\u00D7';
-            delBtn.title = 'Delete track';
-            delBtn.addEventListener('click', function(e){
-              e.stopPropagation();
-              track.remove();
-              label.remove();
-              // Renumber remaining A* labels so they stay sequential
-              Array.from(labelsArea.querySelectorAll('.mt-label-audio')).forEach(function(lbl, i){
-                var txt = 'A' + (i + 1);
-                // Preserve the delete button child when re-labeling
-                var del = lbl.querySelector('.mt-label-del');
-                lbl.textContent = txt;
-                if (del) lbl.appendChild(del);
-              });
-              // Update info
-              var info2 = document.querySelector('.mt-info');
-              if (info2) {
-                var total2 = document.querySelectorAll('.mt-track').length;
-                info2.textContent = total2 + ' tracks \u2022 ' + (info2.textContent.split('\u2022')[1] || '0:00').trim();
-              }
-              if (typeof showToast === 'function') showToast('Track removed');
-            });
-            label.appendChild(delBtn);
-          }
-          var audioLabels = labelsArea.querySelectorAll('.mt-label-audio');
-          var lastAudioLabel = audioLabels.length ? audioLabels[audioLabels.length - 1] : labelsArea.querySelector('.mt-label-video');
-          if (lastAudioLabel && lastAudioLabel.nextSibling) {
-            labelsArea.insertBefore(label, lastAudioLabel.nextSibling);
-          } else if (lastAudioLabel) {
-            labelsArea.appendChild(label);
-          } else {
-            labelsArea.appendChild(label);
-          }
-          // Update info text
-          var info = document.querySelector('.mt-info');
-          if (info) {
-            var total = document.querySelectorAll('.mt-track').length;
-            info.textContent = total + ' tracks \u2022 ' + (info.textContent.split('\u2022')[1] || '0:00').trim();
-          }
-          if (typeof showToast === 'function') showToast('Added audio track A' + n);
-        });
-      }
+      // Add Track removed per request. Tracks are now fixed: V1, A1, M1, T1, FX.
 
       // ── 5c. Sync labels column vertical scroll with tracks area ──
       (function(){
