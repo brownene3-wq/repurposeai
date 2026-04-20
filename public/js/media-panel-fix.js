@@ -185,9 +185,10 @@
       if (!item) return;
       var url = item.dataset.mediaUrl;
       var mediaType = item.dataset.mediaType || 'vid';
-      // Images go on V1 as a fixed-width placeholder (no real duration).
+      // Images go on V1 with a 5-second default duration (addClipToTimeline
+      // applies the 5s fallback when duration is 0 for image clips).
       if (mediaType === 'img'){
-        try { addClipToTimeline(file.name, 'vid', 0, url); } catch(_){}
+        try { addClipToTimeline(file.name, 'img', 0, url); } catch(_){}
         return;
       }
       estimateMediaDuration(url, mediaType, function(dur){
@@ -1831,7 +1832,7 @@
       var fileName = nameEl ? nameEl.textContent.trim() : (item.dataset.fileName || 'clip');
       var mediaType = item.dataset.mediaType || 'vid';
       loadMediaItemIntoPreview(item);
-      addClipToTimeline(fileName, mediaType, item.dataset.duration);
+      addClipToTimeline(fileName, mediaType, item.dataset.duration, item.dataset.mediaUrl);
     });
 
     // Wire +Timeline button — clone to strip any v1.0 listeners
