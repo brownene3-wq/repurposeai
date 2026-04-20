@@ -605,7 +605,18 @@
             freeze: c.dataset.freeze || '',
             trimIn: c.dataset.trimIn || '',
             trimOut: c.dataset.trimOut || '',
-            crop: c.dataset.crop || ''
+            crop: c.dataset.crop || '',
+            fxBrightness: c.dataset.fxBrightness || '',
+            fxContrast:   c.dataset.fxContrast   || '',
+            fxSaturate:   c.dataset.fxSaturate   || '',
+            fxBlur:       c.dataset.fxBlur       || '',
+            fxHue:        c.dataset.fxHue        || '',
+            fxColorGrade: c.dataset.fxColorGrade || '',
+            fxGlow:       c.dataset.fxGlow       || '',
+            fxVignette:   c.dataset.fxVignette   || '',
+            fxGrain:      c.dataset.fxGrain      || '',
+            volume:       c.dataset.volume       || '',
+            muted:        c.dataset.muted        || ''
           };
         })
       };
@@ -683,6 +694,17 @@
           if (spec.trimIn)         c.dataset.trimIn  = spec.trimIn;
           if (spec.trimOut)        c.dataset.trimOut = spec.trimOut;
           if (spec.crop)           c.dataset.crop    = spec.crop;
+          if (spec.fxBrightness)   c.dataset.fxBrightness = spec.fxBrightness;
+          if (spec.fxContrast)     c.dataset.fxContrast   = spec.fxContrast;
+          if (spec.fxSaturate)     c.dataset.fxSaturate   = spec.fxSaturate;
+          if (spec.fxBlur)         c.dataset.fxBlur       = spec.fxBlur;
+          if (spec.fxHue)          c.dataset.fxHue        = spec.fxHue;
+          if (spec.fxColorGrade)   c.dataset.fxColorGrade = spec.fxColorGrade;
+          if (spec.fxGlow)         c.dataset.fxGlow       = spec.fxGlow;
+          if (spec.fxVignette)     c.dataset.fxVignette   = spec.fxVignette;
+          if (spec.fxGrain)        c.dataset.fxGrain      = spec.fxGrain;
+          if (spec.volume)         c.dataset.volume       = spec.volume;
+          if (spec.muted)          c.dataset.muted        = spec.muted;
           track.appendChild(c);
           makeClipInteractive(c);
         });
@@ -850,22 +872,28 @@
         playDur        = widthSec - into;
       }
       if (playDur <= 0) return;
+      // Respect per-clip Mute + Volume from the AUDIO sidebar.
+      if (clip.dataset.muted === 'true') return;
+      var volRaw = parseFloat(clip.dataset.volume);
+      var vol = isFinite(volRaw) ? Math.max(0, volRaw / 100) : 1;
       loadAudioBuffer(url).then(function(buffer){
-        // Avoid scheduling if transport stopped before decode finished.
         if (!_transport || !_transport.playing) return;
         var src = _audioCtx.createBufferSource();
         src.buffer = buffer;
-        src.connect(_audioMaster);
+        // Per-clip GainNode so volume + mute are honoured at scheduling
+        // time. vol is capped at 2.0 in the UI (slider max 200%).
+        var gainNode = _audioCtx.createGain();
+        gainNode.gain.value = Math.min(2, vol);
+        src.connect(gainNode);
+        gainNode.connect(_audioMaster);
         try { src.start(t0 + scheduleDelay, offsetInSource, playDur); } catch(_){}
         _audioActiveSources.push(src);
-        // Auto-cleanup when the source ends naturally
         src.addEventListener('ended', function(){
           var idx = _audioActiveSources.indexOf(src);
           if (idx >= 0) _audioActiveSources.splice(idx, 1);
+          try { gainNode.disconnect(); } catch(_){}
         });
-      }).catch(function(){
-        // Decode failed (CORS, codec, blob URL gone). Quietly skip this clip.
-      });
+      }).catch(function(){ /* quiet skip */ });
     });
   }
   function stopAudioMixing(){
@@ -1154,14 +1182,21 @@
     ctx.beginPath();
     ctx.rect(r.dx, r.dy, r.dw, r.dh);
     ctx.clip(); // pillar/letterbox area is now OUTSIDE the clip
+    // Apply clip-level FX filters (brightness/contrast/saturate/blur/grade)
+    // via ctx.filter. This is a CSS-like filter applied to subsequent
+    // drawing operations; reset to 'none' after drawImage.
+    var fxFilter = progBuildClipFilter(clip);
+    if (fxFilter) ctx.filter = fxFilter;
     // Per-clip transforms (scale/rotate/flip/offset) compose BELOW motion.
-    // Both are additive offsets on the base state — neither mutates the
-    // video's actual position/size, only the render composition.
     progApplyClipTransforms(ctx, W, H, clip);
     var state = progApplyMotion(ctx, W, H, activeMotion); // inner save + transform
     ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
     progExitMotionTransform(ctx, state);                  // inner restore only
-    ctx.restore();                                         // drops clip (AND resets clip transforms)
+    if (fxFilter) ctx.filter = 'none';                     // reset filter before post-FX
+    // Post-FX overlays (vignette / grain / glow) — drawn INSIDE the
+    // video-rect clip but OUTSIDE the filter + transform state.
+    progDrawClipPostFX(ctx, W, H, r, clip);
+    ctx.restore();                                         // drops clip
     return state;
   }
   function ensureProgramMonitor(){
@@ -1945,6 +1980,97 @@
     showToast('Keyframes coming soon');
   }
 
+  // ── FX: Visual Effects (toggles) ──
+  function toggleClipFlag(label, key){
+    withActiveClip(null, function(clip){
+      var now = boolDatasetToggle(clip, key);
+      showToast(label + ' ' + (now ? 'on' : 'off'));
+    });
+  }
+  function clipActionFxBlur(){
+    withActiveClip(null, function(clip){
+      var cur = parseFloat(clip.dataset.fxBlur) || 0;
+      var input = prompt('Blur amount in px (0 = off)', String(cur || 5));
+      if (input === null) return;
+      var v = parseFloat(input);
+      if (!isFinite(v) || v < 0){ showToast('Invalid value'); return; }
+      if (v === 0) delete clip.dataset.fxBlur;
+      else clip.dataset.fxBlur = String(v);
+      showToast('Blur ' + v + 'px');
+    });
+  }
+  function clipActionFxGlow(){     toggleClipFlag('Glow',     'fxGlow');     }
+  function clipActionFxVignette(){ toggleClipFlag('Vignette', 'fxVignette'); }
+  function clipActionFxGrain(){    toggleClipFlag('Film grain','fxGrain');   }
+  function clipActionFxSharpen(){  showToast('Sharpen not supported in preview yet'); }
+  function clipActionFxChromatic(){showToast('Chromatic aberration not supported in preview yet'); }
+  function clipActionFxPixelate(){ showToast('Pixelate not supported in preview yet'); }
+  function clipActionFxNoise(){    toggleClipFlag('Noise',    'fxGrain');    } // alias for grain
+
+  // ── FX: Color ──
+  function clipActionFxBrightness(){
+    withActiveClip(null, function(clip){
+      var cur = parseFloat(clip.dataset.fxBrightness) || 1;
+      var input = prompt('Brightness multiplier (1.0 = neutral, 0.5 dim, 1.5 bright)', String(cur));
+      if (input === null) return;
+      var v = parseFloat(input);
+      if (!isFinite(v) || v < 0){ showToast('Invalid'); return; }
+      if (v === 1) delete clip.dataset.fxBrightness; else clip.dataset.fxBrightness = String(v);
+      showToast('Brightness ' + v);
+    });
+  }
+  function clipActionFxContrast(){
+    withActiveClip(null, function(clip){
+      var cur = parseFloat(clip.dataset.fxContrast) || 1;
+      var input = prompt('Contrast multiplier (1.0 = neutral)', String(cur));
+      if (input === null) return;
+      var v = parseFloat(input);
+      if (!isFinite(v) || v < 0){ showToast('Invalid'); return; }
+      if (v === 1) delete clip.dataset.fxContrast; else clip.dataset.fxContrast = String(v);
+      showToast('Contrast ' + v);
+    });
+  }
+  function clipActionFxSaturation(){
+    withActiveClip(null, function(clip){
+      var cur = parseFloat(clip.dataset.fxSaturate) || 1;
+      var input = prompt('Saturation (1.0 = neutral, 0 = B&W, 2 = vivid)', String(cur));
+      if (input === null) return;
+      var v = parseFloat(input);
+      if (!isFinite(v) || v < 0){ showToast('Invalid'); return; }
+      if (v === 1) delete clip.dataset.fxSaturate; else clip.dataset.fxSaturate = String(v);
+      showToast('Saturation ' + v);
+    });
+  }
+  function clipActionFxColorGrade(){
+    withActiveClip(null, function(clip){
+      var cur = clip.dataset.fxColorGrade || '';
+      var input = prompt(
+        'Color grade preset (warm, cool, vintage, bw, punch, or blank to clear)',
+        cur);
+      if (input === null) return;
+      var v = (input || '').trim().toLowerCase();
+      if (!v) { delete clip.dataset.fxColorGrade; showToast('Grade cleared'); return; }
+      if (['warm','cool','vintage','bw','punch'].indexOf(v) === -1){ showToast('Unknown preset'); return; }
+      clip.dataset.fxColorGrade = v;
+      showToast('Grade: ' + v);
+    });
+  }
+
+  try {
+    window.clipActionFxBlur       = clipActionFxBlur;
+    window.clipActionFxGlow       = clipActionFxGlow;
+    window.clipActionFxVignette   = clipActionFxVignette;
+    window.clipActionFxGrain      = clipActionFxGrain;
+    window.clipActionFxSharpen    = clipActionFxSharpen;
+    window.clipActionFxChromatic  = clipActionFxChromatic;
+    window.clipActionFxPixelate   = clipActionFxPixelate;
+    window.clipActionFxNoise      = clipActionFxNoise;
+    window.clipActionFxBrightness = clipActionFxBrightness;
+    window.clipActionFxContrast   = clipActionFxContrast;
+    window.clipActionFxSaturation = clipActionFxSaturation;
+    window.clipActionFxColorGrade = clipActionFxColorGrade;
+  } catch(_){}
+
   // Expose so v10-editor-redesign.js EDIT-tab buttons can call them.
   try {
     window.clipActionTrim     = clipActionTrim;
@@ -1960,6 +2086,70 @@
     window.clipActionFreeze   = clipActionFreeze;
     window.clipActionKeyframe = clipActionKeyframe;
   } catch(_){}
+
+  // Build a ctx.filter CSS-filter string from the active clip's FX flags.
+  // Returns '' when no filters are active so the caller can skip setting.
+  function progBuildClipFilter(clip){
+    if (!clip) return '';
+    var parts = [];
+    var b = parseFloat(clip.dataset.fxBrightness);
+    var c = parseFloat(clip.dataset.fxContrast);
+    var s = parseFloat(clip.dataset.fxSaturate);
+    var blur = parseFloat(clip.dataset.fxBlur);
+    var hue = parseFloat(clip.dataset.fxHue);
+    var grad = clip.dataset.fxColorGrade;
+    if (isFinite(b) && b !== 1) parts.push('brightness(' + b + ')');
+    if (isFinite(c) && c !== 1) parts.push('contrast(' + c + ')');
+    if (isFinite(s) && s !== 1) parts.push('saturate(' + s + ')');
+    if (isFinite(blur) && blur > 0) parts.push('blur(' + blur + 'px)');
+    if (isFinite(hue) && hue !== 0) parts.push('hue-rotate(' + hue + 'deg)');
+    // Preset color grades translate to a shortcut set of filters
+    if (grad === 'warm')       parts.push('sepia(.25)','saturate(1.15)','hue-rotate(-10deg)');
+    else if (grad === 'cool')  parts.push('saturate(1.1)','hue-rotate(8deg)','brightness(.97)');
+    else if (grad === 'vintage') parts.push('sepia(.45)','contrast(1.05)','saturate(.85)');
+    else if (grad === 'bw')    parts.push('grayscale(1)','contrast(1.1)');
+    else if (grad === 'punch') parts.push('contrast(1.18)','saturate(1.25)');
+    return parts.join(' ');
+  }
+  // Post-draw FX overlays (vignette / grain / pixelate-indicator / glow
+  // ring) that can't be expressed as ctx.filter. Drawn INSIDE the clip
+  // rect so they never bleed into pillar/letterboxes.
+  function progDrawClipPostFX(ctx, W, H, rect, clip){
+    if (!clip || !rect) return;
+    // Vignette: radial gradient overlay centered on the video rect
+    if (clip.dataset.fxVignette === 'true'){
+      var cx = rect.dx + rect.dw/2, cy = rect.dy + rect.dh/2;
+      var rMax = Math.max(rect.dw, rect.dh) * 0.75;
+      var grad = ctx.createRadialGradient(cx, cy, rMax * 0.45, cx, cy, rMax);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(rect.dx, rect.dy, rect.dw, rect.dh);
+    }
+    // Film grain: pepper the rect with tiny random translucent dots
+    if (clip.dataset.fxGrain === 'true'){
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      for (var i = 0; i < 180; i++){
+        var rx = rect.dx + Math.random() * rect.dw;
+        var ry = rect.dy + Math.random() * rect.dh;
+        ctx.fillStyle = Math.random() < 0.5 ? '#ffffff' : '#000000';
+        ctx.fillRect(rx, ry, 1, 1);
+      }
+      ctx.restore();
+    }
+    // Glow: purple rim glow inside the rect edges
+    if (clip.dataset.fxGlow === 'true'){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      var g = ctx.createLinearGradient(rect.dx, rect.dy, rect.dx + rect.dw, rect.dy + rect.dh);
+      g.addColorStop(0, 'rgba(139,92,246,0.15)');
+      g.addColorStop(1, 'rgba(236,72,153,0.15)');
+      ctx.fillStyle = g;
+      ctx.fillRect(rect.dx, rect.dy, rect.dw, rect.dh);
+      ctx.restore();
+    }
+  }
 
   // Per-clip transform offsets composed UNDER motion in the render stack.
   // Applied inside the video-rect clip so pillar/letterboxes stay black.

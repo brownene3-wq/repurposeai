@@ -1282,41 +1282,93 @@
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-audio');
-    var audioLayers = [
-      {name:'Voiceover.mp3', color:'#06b6d4', vol:78},
-      {name:'Background Music.mp3', color:'#3b82f6', vol:55},
-      {name:'SFX Whoosh.wav', color:'#8b5cf6', vol:90}
-    ];
-    var html = '<div class="v10-rp-section-title">AUDIO LAYERS</div>';
-    audioLayers.forEach(function(l){
-      html +=
-        '<div class="v10-audio-card">'+
-          '<div class="v10-ac-head"><div class="v10-ac-dot" style="background:'+l.color+'"></div><h5>'+l.name+'</h5></div>'+
-          '<div class="v10-ac-vol"><span>\ud83d\udd0a</span><div class="v10-ac-volbar"><div class="v10-ac-volfill" style="width:'+l.vol+'%;background:'+l.color+'"></div></div><span class="v10-ac-voltxt">'+l.vol+'%</span></div>'+
-          '<div class="v10-ac-btns">'+
-            '<button data-action="Solo: '+l.name+'">Solo</button>'+
-            '<button data-action="Mute: '+l.name+'">Mute</button>'+
-            '<button data-action="Fade: '+l.name+'">Fade</button>'+
-          '</div>'+
-        '</div>';
-    });
-    html +=
-      '<div class="v10-rp-section-title" style="margin-top:14px">AUDIO TOOLS</div>'+
-      '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83c\udfa4','Voice Over'],['\ud83c\udfb5','Music'],['\ud83d\udd07','Denoise'],['\ud83d\udcc8','Normalize']])+
-      '</div>'+
-      '<div class="v10-rp-section-title">MIXING</div>'+
-      '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83c\udfda\ufe0f','Fade In'],['\ud83c\udf05','Fade Out'],['\ud83d\udd17','Link Audio'],['\u2702\ufe0f','Split Audio']])+
-      '</div>';
-    div.innerHTML = html;
-    div.querySelectorAll('.v10-ac-btns button').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        e.preventDefault();
-        toast(btn.getAttribute('data-action') || btn.textContent);
+    function escAudio(s){
+      return String(s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
       });
+    }
+    function renderLayers(){
+      var clips = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
+      var html = '<div class="v10-rp-section-title">AUDIO LAYERS</div>';
+      if (!clips.length){
+        html += '<div style="padding:12px 4px;color:#8886a0;font-size:12px;line-height:1.5">No audio clips on the timeline yet. Upload an audio file or click an audio item in the Media panel to add one.</div>';
+      } else {
+        clips.forEach(function(clip, i){
+          var name  = clip.dataset.fileName || ('Audio ' + (i + 1));
+          var vol   = parseFloat(clip.dataset.volume); if (!isFinite(vol)) vol = 100;
+          var muted = clip.dataset.muted === 'true';
+          var color = ['#06b6d4','#3b82f6','#8b5cf6','#ec4899','#22c55e'][i % 5];
+          html +=
+            '<div class="v10-audio-card" data-clip-idx="' + i + '">'+
+              '<div class="v10-ac-head"><div class="v10-ac-dot" style="background:' + color + '"></div><h5>' + escAudio(name) + '</h5></div>'+
+              '<div class="v10-ac-vol"><span>\ud83d\udd0a</span>'+
+                '<input type="range" min="0" max="200" value="' + vol + '" class="v10-ac-volrange" style="flex:1;margin:0 6px;accent-color:' + color + '"/>'+
+                '<span class="v10-ac-voltxt">' + Math.round(vol) + '%</span>'+
+              '</div>'+
+              '<div class="v10-ac-btns">'+
+                '<button data-ac-action="solo">Solo</button>'+
+                '<button data-ac-action="mute"' + (muted ? ' style="background:rgba(239,68,68,.85);color:#fff"' : '') + '>' + (muted ? 'Unmute' : 'Mute') + '</button>'+
+                '<button data-ac-action="fade">Fade</button>'+
+              '</div>'+
+            '</div>';
+        });
+      }
+      html +=
+        '<div class="v10-rp-section-title" style="margin-top:14px">AUDIO TOOLS</div>'+
+        '<div class="v10-rp-grid">'+
+          buildRPButtons([['\ud83c\udfa4','Voice Over'],['\ud83c\udfb5','Music'],['\ud83d\udd07','Denoise'],['\ud83d\udcc8','Normalize']])+
+        '</div>'+
+        '<div class="v10-rp-section-title">MIXING</div>'+
+        '<div class="v10-rp-grid">'+
+          buildRPButtons([['\ud83c\udfda\ufe0f','Fade In'],['\ud83c\udf05','Fade Out'],['\ud83d\udd17','Link Audio'],['\u2702\ufe0f','Split Audio']])+
+        '</div>';
+      div.innerHTML = html;
+
+      Array.from(div.querySelectorAll('.v10-audio-card')).forEach(function(card){
+        var idx = parseInt(card.getAttribute('data-clip-idx'), 10);
+        var clip = document.querySelectorAll('.mt-track-audio .mt-clip')[idx];
+        if (!clip) return;
+        var range = card.querySelector('.v10-ac-volrange');
+        var label = card.querySelector('.v10-ac-voltxt');
+        if (range){
+          range.addEventListener('input', function(){
+            var v = parseInt(range.value, 10);
+            clip.dataset.volume = String(v);
+            if (label) label.textContent = v + '%';
+          });
+          range.addEventListener('change', function(){ toast('Volume: ' + clip.dataset.volume + '%'); });
+        }
+        Array.from(card.querySelectorAll('[data-ac-action]')).forEach(function(btn){
+          btn.addEventListener('click', function(e){
+            e.preventDefault();
+            var act = btn.getAttribute('data-ac-action');
+            if (act === 'mute'){
+              var wasMuted = clip.dataset.muted === 'true';
+              clip.dataset.muted = wasMuted ? 'false' : 'true';
+              btn.textContent = wasMuted ? 'Mute' : 'Unmute';
+              btn.style.background = wasMuted ? '' : 'rgba(239,68,68,.85)';
+              btn.style.color = wasMuted ? '' : '#fff';
+              toast((wasMuted ? 'Unmuted' : 'Muted') + ': ' + (clip.dataset.fileName || 'clip'));
+            } else if (act === 'solo'){
+              toast('Solo not supported yet');
+            } else if (act === 'fade'){
+              toast('Fade — drag the slider to taper volume');
+            }
+          });
+        });
+      });
+      wireRPToast(div);
+    }
+    renderLayers();
+
+    // Re-render when the timeline's audio clips change
+    var timer = null;
+    var mo = new MutationObserver(function(){
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(renderLayers, 300);
     });
-    wireRPToast(div);
+    var ta = document.getElementById('mtTracksArea');
+    if (ta) mo.observe(ta, { subtree: true, childList: true });
     return div;
   }
 
@@ -1324,29 +1376,52 @@
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-ai');
-    div.innerHTML =
-      '<div class="v10-rp-section-title">AI GENERATION</div>'+
-      '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn active"><span class="v10-rp-ic">\u2728</span>Enhance</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udcac</span>Captions</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa3</span>AI Hook</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa8</span>Brand Kit</button>'+
-      '</div>'+
-      '<div class="v10-rp-section-title">AI ANALYSIS</div>'+
-      '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udcdd</span>Transcript</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfac</span>B-Roll</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\u2702</span>Smart Cut</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udd0d</span>Scene Detect</button>'+
-      '</div>'+
-      '<div class="v10-rp-section-title">AI CREATIVE</div>'+
-      '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83e\ude84</span>Style Transfer</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\uddbc</span>BG Remove</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa4</span>AI Voice</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udf10</span>Translate</button>'+
-      '</div>';
-    wireRPToast(div);
+    // Each button maps to a dedicated tool URL (existing full-page routes
+    // in the app). 'route' = URL to open in a new tab. A few don't have
+    // dedicated pages yet — those get a helpful toast.
+    var aiTools = [
+      { g:'AI GENERATION', ic:'\u2728',        label:'Enhance',       route:'/enhance-speech' },
+      { g:'AI GENERATION', ic:'\ud83d\udcac',  label:'Captions',      route:'/ai-captions' },
+      { g:'AI GENERATION', ic:'\ud83c\udfa3',  label:'AI Hook',       route:'/ai-hook' },
+      { g:'AI GENERATION', ic:'\ud83c\udfa8',  label:'Brand Kit',     route:'/brand-kits' },
+      { g:'AI ANALYSIS',   ic:'\ud83d\udcdd',  label:'Transcript',    route:'/ai-captions' }, // transcript = captions
+      { g:'AI ANALYSIS',   ic:'\ud83c\udfac',  label:'B-Roll',        route:'/ai-broll' },
+      { g:'AI ANALYSIS',   ic:'\u2702',        label:'Smart Cut',     route:null },
+      { g:'AI ANALYSIS',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:null },
+      { g:'AI CREATIVE',   ic:'\ud83e\ude84',  label:'Style Transfer',route:null },
+      { g:'AI CREATIVE',   ic:'\ud83d\uddbc',  label:'BG Remove',     route:null },
+      { g:'AI CREATIVE',   ic:'\ud83c\udfa4',  label:'AI Voice',      route:'/video-editor#voiceover' },
+      { g:'AI CREATIVE',   ic:'\ud83c\udf10',  label:'Translate',     route:null }
+    ];
+    var html = '';
+    var lastGroup = '';
+    aiTools.forEach(function(t, i){
+      if (t.g !== lastGroup){
+        if (lastGroup) html += '</div>';
+        html += '<div class="v10-rp-section-title"' +
+          (i === 0 ? '' : ' style="margin-top:14px"') + '>' + t.g + '</div>' +
+          '<div class="v10-rp-grid">';
+        lastGroup = t.g;
+      }
+      html += '<button class="v10-rp-btn" data-v10-ai-route="' + (t.route || '') + '" data-v10-ai-label="' + t.label + '"><span class="v10-rp-ic">' + t.ic + '</span>' + t.label + '</button>';
+    });
+    html += '</div>';
+    div.innerHTML = html;
+
+    // Wire each AI button to open its dedicated tool in a new tab.
+    Array.from(div.querySelectorAll('[data-v10-ai-route]')).forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        var route = btn.getAttribute('data-v10-ai-route');
+        var label = btn.getAttribute('data-v10-ai-label');
+        if (route){
+          try { window.open(route, '_blank'); } catch(_){ location.href = route; }
+          toast('Opening ' + label + ' \u2026');
+        } else {
+          toast(label + ' \u2014 not available yet');
+        }
+      }, true);
+    });
     return div;
   }
 
@@ -1374,41 +1449,62 @@
     });
     motionHtml += '</div>';
 
-    var effects = ['Blur','Glow','Vignette','Film Grain','Sharpen','Chromatic Aberration','Pixelate','Noise'];
+    // Visual Effects: each button maps to a clipAction*. Blur is a prompt
+    // (numeric), the rest are toggles that the PGM render honours via
+    // ctx.filter or post-FX overlays.
+    var fxButtons = [
+      {a:'FxBlur',      label:'Blur'},
+      {a:'FxGlow',      label:'Glow'},
+      {a:'FxVignette',  label:'Vignette'},
+      {a:'FxGrain',     label:'Film Grain'},
+      {a:'FxSharpen',   label:'Sharpen'},
+      {a:'FxChromatic', label:'Chromatic'},
+      {a:'FxPixelate',  label:'Pixelate'},
+      {a:'FxNoise',     label:'Noise'}
+    ];
     var html = motionHtml + '<div class="v10-rp-section-title" style="margin-top:14px">VISUAL EFFECTS</div>';
-    effects.forEach(function(f){
-      html += '<button class="v10-fx-btn" data-action="'+f+' applied">'+f+'</button>';
+    fxButtons.forEach(function(b){
+      html += '<button class="v10-fx-btn" data-v10-clip-action="' + b.a + '">' + b.label + '</button>';
     });
-    html +=
-      '<div class="v10-rp-section-title" style="margin-top:14px">COLOR</div>'+
-      '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83c\udfa8','Color Grade'],['\u2600\ufe0f','Brightness'],['\ud83c\udf17','Contrast'],['\ud83d\udca7','Saturation']])+
-      '</div>';
+    var colorButtons = [
+      {ic:'\ud83c\udfa8', label:'Color Grade', a:'FxColorGrade'},
+      {ic:'\u2600\ufe0f', label:'Brightness',  a:'FxBrightness'},
+      {ic:'\ud83c\udf17', label:'Contrast',    a:'FxContrast'},
+      {ic:'\ud83d\udca7', label:'Saturation',  a:'FxSaturation'}
+    ];
+    html += '<div class="v10-rp-section-title" style="margin-top:14px">COLOR</div><div class="v10-rp-grid">';
+    colorButtons.forEach(function(b){
+      html += '<button class="v10-rp-btn" data-v10-clip-action="' + b.a + '"><span class="v10-rp-ic">' + b.ic + '</span>' + b.label + '</button>';
+    });
+    html += '</div>';
     div.innerHTML = html;
 
-    // Wire motion buttons BEFORE wireRPToast so they don't get the generic
-    // toast-only handler. Each drops a motion clip onto M1 via
-    // window.addMotionClipToTimeline.
+    // Wire motion buttons (drops a motion clip onto M1)
     Array.from(div.querySelectorAll('[data-v10-motion]')).forEach(function(btn){
-      var clone = btn.cloneNode(true);
-      btn.parentNode.replaceChild(clone, btn);
-      var key = clone.getAttribute('data-v10-motion');
-      clone.addEventListener('click', function(e){
-        e.preventDefault();
+      btn.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        var key = btn.getAttribute('data-v10-motion');
         if (typeof window.addMotionClipToTimeline === 'function'){
           window.addMotionClipToTimeline(key, {duration: 3});
         } else {
           toast('Motion tool not ready');
         }
-      });
+      }, true);
     });
 
-    div.querySelectorAll('.v10-fx-btn').forEach(function(btn){
+    // Wire every clip-action button (Visual Effects + Color). These call
+    // window.clipActionFx* defined in media-panel-fix.js, which operate
+    // on the currently selected clip / fallback to clip under playhead.
+    Array.from(div.querySelectorAll('[data-v10-clip-action]')).forEach(function(btn){
       btn.addEventListener('click', function(e){
-        e.preventDefault();
-        toast(btn.getAttribute('data-action') || btn.textContent + ' applied');
-      });
+        e.preventDefault(); e.stopPropagation();
+        var act = btn.getAttribute('data-v10-clip-action');
+        var fn  = window['clipAction' + act];
+        if (typeof fn === 'function') fn();
+        else toast(act + ' not wired');
+      }, true);
     });
+
     wireRPToast(div);
     return div;
   }
