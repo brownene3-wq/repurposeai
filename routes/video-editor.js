@@ -6509,18 +6509,26 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       if (!c.mediaUrl) return false;
       return urlToFilePath(c.mediaUrl) !== null;
     });
-    // M1 motion clips — rotate / fade-in / fade-out / zoom-in bake into the
-    // stitched video as time-gated post-filters. Other motion effects
-    // (pan-left, pan-right, zoom-out, shake) are preview-only for now because
-    // FFmpeg's pad/scale filters don't accept per-frame expressions in the
-    // output dims and there's no clean deterministic translation.
-    var BAKEABLE_MOTION = { 'rotate': 1, 'fade-in': 1, 'fade-out': 1, 'zoom-in': 1 };
+    // M1 motion clips — bake into the stitched video as time-gated
+    // post-filters. Effects split into two categories by FFmpeg mechanics:
+    //
+    //   INLINE_MOTION  — filters that chain directly on [0:v]:
+    //                    rotate, fade-in, fade-out, zoom-in
+    //   OVERLAY_MOTION — effects that require split + black canvas +
+    //                    overlay with per-frame x/y/scale expressions:
+    //                    pan-left, pan-right, zoom-out, shake
+    //
+    // The full graph pipeline for motion looks like:
+    //   [0:v] -> inline filters -> split -> (fg:scale) -> overlay on black
+    //         -> drawtext -> [vout]
+    var INLINE_MOTION  = { 'rotate': 1, 'fade-in': 1, 'fade-out': 1, 'zoom-in': 1 };
+    var OVERLAY_MOTION = { 'pan-left': 1, 'pan-right': 1, 'zoom-out': 1, 'shake': 1 };
     var motionClips = clips.filter(function(c){
       var t = (c.track || '').toLowerCase();
       var isMotionTrack = (t === 'music' || t === 'mus' || c.clipType === 'motion');
       if (!isMotionTrack) return false;
       var eff = (c.motionEffect || '').toLowerCase();
-      return !!BAKEABLE_MOTION[eff];
+      return !!(INLINE_MOTION[eff] || OVERLAY_MOTION[eff]);
     });
 
     var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0;
@@ -6586,13 +6594,134 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         return null;
       }
 
-      var videoGraph = '[0:v]';
-      var graphBody = [];
-      // Motion filters FIRST (transform the pixels), then drawtext overlays
-      motionClips.forEach(function(mc){
-        var f = buildMotionFilter(mc);
-        if (f) graphBody.push(f);
+      // Split motion clips by pipeline category
+      var inlineMotion  = motionClips.filter(function(mc){
+        return !!INLINE_MOTION[(mc.motionEffect || '').toLowerCase()];
       });
+      var overlayMotion = motionClips.filter(function(mc){
+        return !!OVERLAY_MOTION[(mc.motionEffect || '').toLowerCase()];
+      });
+
+      // ---------- Overlay motion expression composers ----------
+      // All of these produce FFmpeg expression strings with commas and
+      // colons pre-escaped (\\,) for use inside single-quoted overlay/scale
+      // option values.
+      function fmtN(n){ return n.toFixed(3); }
+
+      // Sum of x-offset contributions (pan-left/right are signed, shake
+      // adds a high-frequency sin component). Every term is time-gated so
+      // clips outside their window contribute 0.
+      function buildOverlayXExpr(list){
+        var parts = ['0'];
+        list.forEach(function(mc){
+          var S = (parseFloat(mc.left)  || 0) / pxPerSec;
+          var D = (parseFloat(mc.width) || 0) / pxPerSec;
+          if (D <= 0.01) return;
+          var E = S + D;
+          var eff = (mc.motionEffect || '').toLowerCase();
+          var pulse = 'sin((t-' + fmtN(S) + ')/' + fmtN(D) + '*PI)';
+          var gate  = 'between(t\\,' + fmtN(S) + '\\,' + fmtN(E) + ')';
+          if (eff === 'pan-left'){
+            var AMT = Math.round(outW * 0.15);
+            parts.push('-' + AMT + '*if(' + gate + '\\,' + pulse + '\\,0)');
+          } else if (eff === 'pan-right'){
+            var AMT = Math.round(outW * 0.15);
+            parts.push('+' + AMT + '*if(' + gate + '\\,' + pulse + '\\,0)');
+          } else if (eff === 'shake'){
+            // High-frequency jitter during the window
+            parts.push('+12*if(' + gate + '\\,sin(40*(t-' + fmtN(S) + '))\\,0)');
+          }
+        });
+        return parts.join('');
+      }
+
+      function buildOverlayYExpr(list){
+        var parts = ['0'];
+        list.forEach(function(mc){
+          var S = (parseFloat(mc.left)  || 0) / pxPerSec;
+          var D = (parseFloat(mc.width) || 0) / pxPerSec;
+          if (D <= 0.01) return;
+          var E = S + D;
+          var eff = (mc.motionEffect || '').toLowerCase();
+          var gate = 'between(t\\,' + fmtN(S) + '\\,' + fmtN(E) + ')';
+          if (eff === 'shake'){
+            parts.push('+12*if(' + gate + '\\,cos(37*(t-' + fmtN(S) + '))\\,0)');
+          }
+        });
+        return parts.join('');
+      }
+
+      // Product of scale contributions from zoom-out clips. Each clip
+      // multiplies (1 - 0.3*sin pulse during window). Returns '1' if no
+      // zoom-out so caller can skip the scale step entirely.
+      function buildOverlayScaleExpr(list){
+        var zoomOuts = list.filter(function(c){
+          return (c.motionEffect || '').toLowerCase() === 'zoom-out';
+        });
+        if (zoomOuts.length === 0) return '1';
+        var parts = [];
+        zoomOuts.forEach(function(mc){
+          var S = (parseFloat(mc.left)  || 0) / pxPerSec;
+          var D = (parseFloat(mc.width) || 0) / pxPerSec;
+          if (D <= 0.01) return;
+          var E = S + D;
+          var gate  = 'between(t\\,' + fmtN(S) + '\\,' + fmtN(E) + ')';
+          var pulse = 'sin((t-' + fmtN(S) + ')/' + fmtN(D) + '*PI)';
+          parts.push('(1-0.3*if(' + gate + '\\,' + pulse + '\\,0))');
+        });
+        return parts.length > 0 ? parts.join('*') : '1';
+      }
+
+      // ---------- Assemble filter graph as a sequence of chains ----------
+      var chains      = [];
+      var currentLbl  = '[0:v]';
+      var lblCounter  = 0;
+
+      // Chain A: inline motion filters (rotate, fades, zoom-in)
+      if (inlineMotion.length > 0){
+        var inlineFilters = inlineMotion
+          .map(function(mc){ return buildMotionFilter(mc); })
+          .filter(Boolean);
+        if (inlineFilters.length > 0){
+          var nextLbl = '[vm' + (++lblCounter) + ']';
+          chains.push(currentLbl + inlineFilters.join(',') + nextLbl);
+          currentLbl = nextLbl;
+        }
+      }
+
+      // Chain B: overlay motion (split -> drawbox black -> scale fg -> overlay)
+      if (overlayMotion.length > 0){
+        lblCounter++;
+        var bgSrc    = '[mbg'  + lblCounter + ']';
+        var fgSrc    = '[mfg'  + lblCounter + ']';
+        var bgBlack  = '[mbgb' + lblCounter + ']';
+        var fgScaled = '[mfgs' + lblCounter + ']';
+        var afterOv  = '[vm'   + lblCounter + ']';
+
+        chains.push(currentLbl + 'split=2' + bgSrc + fgSrc);
+        chains.push(bgSrc + 'drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill' + bgBlack);
+
+        var scaleExpr = buildOverlayScaleExpr(overlayMotion);
+        if (scaleExpr === '1'){
+          // No zoom-out contributors — skip the scale step
+          fgScaled = fgSrc;
+        } else {
+          chains.push(fgSrc +
+            'scale=w=\'iw*' + scaleExpr + '\':h=\'ih*' + scaleExpr + '\':eval=frame' +
+            fgScaled);
+        }
+
+        var xExpr = buildOverlayXExpr(overlayMotion);
+        var yExpr = buildOverlayYExpr(overlayMotion);
+        chains.push(bgBlack + fgScaled +
+          'overlay=x=\'(W-w)/2' + xExpr + '\':y=\'(H-h)/2' + yExpr + '\':eval=frame' +
+          afterOv);
+
+        currentLbl = afterOv;
+      }
+
+      // Chain C: drawtext overlays (final chain -> [vout])
+      var videoGraph;
       if (textClips.length){
         var parts = textClips.map(function(tc){
           var leftSec = (parseFloat(tc.left)  || 0) / pxPerSec;
@@ -6617,14 +6746,17 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
             'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
           ].join(':');
         });
-        graphBody.push(parts.join(','));
-      }
-      if (graphBody.length === 0){
-        videoGraph += 'null';
+        chains.push(currentLbl + parts.join(',') + '[vout]');
+      } else if (chains.length === 0){
+        // No filters whatsoever for the video stream
+        chains.push('[0:v]null[vout]');
       } else {
-        videoGraph += graphBody.join(',');
+        // Motion filters ran but no text — rename the last label to [vout]
+        // by adding a terminal null chain.
+        chains.push(currentLbl + 'null[vout]');
       }
-      videoGraph += '[vout]';
+
+      videoGraph = chains.join(';');
 
       // Audio graph: mix video's own audio + every audio clip
       var audioGraph;
