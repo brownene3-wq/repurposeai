@@ -1754,53 +1754,63 @@
   // alpha to ctx BEFORE drawing the visual. Returns the alpha value to use
   // (so fades work correctly) and whether we wrapped ctx in a save/restore.
   // Callers must call progExitMotion(ctx, state) after drawing the visual.
+  // Motion effects are now PGM-preview no-ops for position / scale /
+  // rotation — the video ALWAYS renders at its default centered size so
+  // the base state is unchanged per Albert's request. Motion clips stay
+  // on the timeline as metadata (so they survive undo/redo and persist
+  // in Save-as-Draft) and will drive the actual render when the server
+  // export pipeline picks them up (future work).
+  //
+  // We still return {active, effects} so the caller can draw a small
+  // corner badge indicating which motion(s) are queued at the current
+  // playhead — the user sees feedback that their click registered
+  // without the video jumping around.
   function progApplyMotion(ctx, W, H, active){
     if (!active || !active.length) return null;
-    ctx.save();
-    var alpha = 1;
-    var cx = W / 2, cy = H / 2;
-    active.forEach(function(mo){
-      var key  = mo.clip.dataset.motionEffect;
-      var p    = Math.max(0, Math.min(1, mo.progress));
-      // Ease curve that peaks at the middle (progress 0.5 → 1) and returns
-      // to 0 at both endpoints. This ensures the visual starts AND ends
-      // at the default transform (position 0, scale 1, rotation 0°) so
-      // adding a motion clip never leaves a permanent offset when the
-      // playhead exits the clip.
-      var pulse = Math.sin(p * Math.PI);
-      if (key === 'zoom-in'){
-        var s = 1 + 0.3 * pulse;                   // 1.0 → 1.3 → 1.0
-        ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
-      } else if (key === 'zoom-out'){
-        var s2 = 1 - 0.2 * pulse;                   // 1.0 → 0.8 → 1.0
-        ctx.translate(cx, cy); ctx.scale(s2, s2); ctx.translate(-cx, -cy);
-      } else if (key === 'pan-left'){
-        ctx.translate(-W * 0.2 * pulse, 0);          // 0 → -20%W → 0
-      } else if (key === 'pan-right'){
-        ctx.translate( W * 0.2 * pulse, 0);          // 0 → +20%W → 0
-      } else if (key === 'fade-in'){
-        // Fade-in is inherently one-way — alpha moves 0 → 1. The END
-        // of the clip matches the default (alpha=1); the START is by
-        // definition transparent. No position/scale is altered.
-        alpha *= p;
-      } else if (key === 'fade-out'){
-        // Fade-out is the mirror — START matches default (alpha=1),
-        // END is transparent.
-        alpha *= (1 - p);
-      } else if (key === 'shake'){
-        // Shake amplitude scales with pulse so it eases IN and OUT.
-        var amp = 6 * pulse;
-        ctx.translate((Math.random()*2-1)*amp, (Math.random()*2-1)*amp);
-      } else if (key === 'rotate'){
-        var deg = 10 * pulse;                        // 0° → 10° → 0°
-        ctx.translate(cx, cy); ctx.rotate(deg * Math.PI/180); ctx.translate(-cx, -cy);
-      }
-    });
-    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-    return { active: true };
+    return {
+      active: true,
+      effects: active.map(function(m){ return m.clip.dataset.motionEffect || ''; })
+    };
   }
   function progExitMotion(ctx, state){
-    if (state && state.active){ ctx.restore(); }
+    // No save/restore needed since we no longer transform the canvas.
+    // Paint a compact badge listing the active motion names so the queue
+    // is visible in the preview.
+    if (!state || !state.active || !state.effects || !state.effects.length) return;
+    var W = ctx.canvas.width, H = ctx.canvas.height;
+    var names = state.effects.map(function(k){
+      return ({
+        'zoom-in':'Zoom In', 'zoom-out':'Zoom Out',
+        'pan-left':'Pan Left', 'pan-right':'Pan Right',
+        'fade-in':'Fade In', 'fade-out':'Fade Out',
+        'shake':'Shake', 'rotate':'Rotate'
+      })[k] || k;
+    }).filter(Boolean);
+    if (!names.length) return;
+    var label = 'Motion queued: ' + names.join(' + ');
+    ctx.save();
+    ctx.font = '600 12px -apple-system,system-ui,sans-serif';
+    ctx.textBaseline = 'top';
+    var padX = 10, padY = 6;
+    var textW = ctx.measureText(label).width;
+    var badgeW = textW + padX * 2;
+    var badgeH = 12 + padY * 2;
+    var bx = W - badgeW - 14;
+    var by = 50; // below the PGM watermark
+    // Rounded rect backdrop
+    ctx.fillStyle = 'rgba(236,72,153,.85)';
+    ctx.beginPath();
+    var r = 6;
+    ctx.moveTo(bx + r, by);
+    ctx.arcTo(bx + badgeW, by, bx + badgeW, by + badgeH, r);
+    ctx.arcTo(bx + badgeW, by + badgeH, bx, by + badgeH, r);
+    ctx.arcTo(bx, by + badgeH, bx, by, r);
+    ctx.arcTo(bx, by, bx + badgeW, by, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, bx + padX, by + padY);
+    ctx.restore();
   }
 
   // Return every text clip whose timeline range contains playhead x.
