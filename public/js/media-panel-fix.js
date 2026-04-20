@@ -428,8 +428,15 @@
       }
       if (_timelineState.tool !== 'select') return;
       e.stopPropagation();
-      document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
-      clip.classList.add('selected');
+      if (e.shiftKey){
+        // Shift+click toggles this clip in/out of the selection without
+        // disturbing the other selected clips \u2014 enables additive
+        // multi-select so broadcast edits can target a curated set.
+        clip.classList.toggle('selected');
+      } else {
+        document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+        clip.classList.add('selected');
+      }
     });
 
     // Drag to move — only when Select tool active.
@@ -2262,7 +2269,21 @@
     var hit = getClipAtPlayheadX(phX);
     return hit ? hit.clip : null;
   }
+  // Multi-clip target: every .selected clip; falls back to the single
+  // clip under the playhead so single-clip workflows keep working when
+  // nothing is explicitly selected.
+  function getActiveClips(){
+    var sels = Array.from(document.querySelectorAll('.mt-clip.selected'));
+    if (sels.length) return sels;
+    var one = getActiveClip();
+    return one ? [one] : [];
+  }
   function withActiveClip(successMsg, fn){
+    // Single-clip path preserved for handlers that contain their own
+    // prompt() calls — broadcasting an interactive prompt N times is
+    // worse UX than editing one clip. Handlers that WANT multi-clip
+    // broadcast should call promptToActiveClips / toggleDatasetForAll
+    // directly (see e.g. clipActionFxBlur, toggleClipFlag).
     var clip = getActiveClip();
     if (!clip){ showToast('Select a clip first'); return null; }
     fn(clip);
@@ -2272,11 +2293,40 @@
     if (successMsg) showToast(successMsg);
     return clip;
   }
+  // Prompt-once helper: gathers ONE input from the user (using the first
+  // active clip's current value as the default), then applies the
+  // resulting value to every selected clip via applyFn(clip, value).
+  // Used by all numeric / preset handlers so the user isn't asked the
+  // same question N times when broadcasting an edit.
+  function promptToActiveClips(promptFn, applyFn, successFmt){
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    var value = promptFn(clips[0]);
+    if (value === null || value === undefined) return;
+    clips.forEach(function(c){ try { applyFn(c, value); } catch(_){} });
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    if (successFmt){
+      var msg = String(successFmt).replace('{val}', value);
+      var suffix = clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : '';
+      showToast(msg + suffix);
+    }
+  }
   // Flip sign / toggle helpers
   function boolDatasetToggle(clip, key){
     var cur = clip.dataset[key] === 'true';
     clip.dataset[key] = cur ? 'false' : 'true';
     return !cur;
+  }
+  // Multi-clip toggle: target state is the opposite of the FIRST clip's
+  // current state (predictable "turn this on for everyone" behaviour).
+  function toggleDatasetForAll(clips, key){
+    if (!clips.length) return false;
+    var first = clips[0];
+    var on = first.dataset[key] !== 'true';
+    clips.forEach(function(c){ c.dataset[key] = on ? 'true' : 'false'; });
+    return on;
   }
 
   // ── Clip Tools ──
@@ -2312,67 +2362,97 @@
     razorSplit(clip, phX - l);
   }
   function clipActionSpeed(){
-    withActiveClip(null, function(clip){
-      var cur = parseFloat(clip.dataset.speed) || 1;
-      var input = prompt('Playback speed (1.0 = normal, 0.5 = half, 2.0 = 2x)', String(cur));
-      if (input === null) return;
-      var val = parseFloat(input);
-      if (!isFinite(val) || val <= 0){ showToast('Invalid speed'); return; }
-      clip.dataset.speed = String(val);
-      showToast('Speed ' + val + 'x');
-    });
+    promptToActiveClips(
+      function(c){
+        var cur = parseFloat(c.dataset.speed) || 1;
+        var input = prompt('Playback speed (1.0 = normal, 0.5 = half, 2.0 = 2x)', String(cur));
+        if (input === null) return null;
+        var val = parseFloat(input);
+        if (!isFinite(val) || val <= 0){ showToast('Invalid speed'); return null; }
+        return val;
+      },
+      function(c, v){ c.dataset.speed = String(v); },
+      'Speed {val}x'
+    );
   }
   function clipActionCrop(){
-    withActiveClip(null, function(clip){
-      var input = prompt('Crop as x,y,w,h percent (0-100) — blank to reset',
-        clip.dataset.crop || '0,0,100,100');
-      if (input === null) return;
-      if (!input.trim()){ delete clip.dataset.crop; showToast('Crop reset'); return; }
-      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
-      if (parts.length !== 4 || parts.some(function(v){ return !isFinite(v); })){
-        showToast('Invalid crop'); return;
-      }
-      clip.dataset.crop = parts.join(',');
-      showToast('Crop ' + parts.join(','));
-    });
+    promptToActiveClips(
+      function(c){
+        var input = prompt('Crop as x,y,w,h percent (0-100) \u2014 blank to reset',
+          c.dataset.crop || '0,0,100,100');
+        if (input === null) return null;
+        if (!input.trim()) return 'reset';
+        var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
+        if (parts.length !== 4 || parts.some(function(v){ return !isFinite(v); })){
+          showToast('Invalid crop'); return null;
+        }
+        return parts.join(',');
+      },
+      function(c, v){
+        if (v === 'reset') delete c.dataset.crop;
+        else c.dataset.crop = v;
+      },
+      'Crop {val}'
+    );
   }
   // ── Transform ──
   function clipActionResize(){
-    withActiveClip(null, function(clip){
-      var cur = parseFloat(clip.dataset.scale) || 1;
-      var input = prompt('Scale (1.0 = original)', String(cur));
-      if (input === null) return;
-      var val = parseFloat(input);
-      if (!isFinite(val) || val <= 0){ showToast('Invalid scale'); return; }
-      clip.dataset.scale = String(val);
-      showToast('Scale ' + val + 'x');
-    });
+    promptToActiveClips(
+      function(c){
+        var cur = parseFloat(c.dataset.scale) || 1;
+        var input = prompt('Scale (1.0 = original)', String(cur));
+        if (input === null) return null;
+        var val = parseFloat(input);
+        if (!isFinite(val) || val <= 0){ showToast('Invalid scale'); return null; }
+        return val;
+      },
+      function(c, v){ c.dataset.scale = String(v); },
+      'Scale {val}x'
+    );
   }
   function clipActionRotate(){
-    withActiveClip('Rotated 90\u00B0', function(clip){
-      var cur = parseFloat(clip.dataset.rotate) || 0;
-      clip.dataset.rotate = String((cur + 90) % 360);
+    // Relative 90\u00B0 step \u2014 each clip rotates by +90 from its own
+    // current value (rather than all set to the same absolute degree).
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    clips.forEach(function(c){
+      var cur = parseFloat(c.dataset.rotate) || 0;
+      c.dataset.rotate = String((cur + 90) % 360);
     });
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    showToast('Rotated 90\u00B0' + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
   }
   function clipActionFlip(){
-    withActiveClip('Flipped', function(clip){
-      boolDatasetToggle(clip, 'flipH');
-    });
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    // All clips flip to the inverse of the FIRST clip's current state
+    var on = toggleDatasetForAll(clips, 'flipH');
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    showToast('Flipped' + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
   }
   function clipActionPosition(){
-    withActiveClip(null, function(clip){
-      var cx = parseFloat(clip.dataset.offsetX) || 0;
-      var cy = parseFloat(clip.dataset.offsetY) || 0;
-      var input = prompt('X, Y offset in pixels (e.g. 50,-30)', cx + ',' + cy);
-      if (input === null) return;
-      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
-      if (parts.length !== 2 || !isFinite(parts[0]) || !isFinite(parts[1])){
-        showToast('Invalid position'); return;
-      }
-      clip.dataset.offsetX = String(parts[0]);
-      clip.dataset.offsetY = String(parts[1]);
-      showToast('Offset ' + parts[0] + ',' + parts[1]);
-    });
+    promptToActiveClips(
+      function(c){
+        var cx = parseFloat(c.dataset.offsetX) || 0;
+        var cy = parseFloat(c.dataset.offsetY) || 0;
+        var input = prompt('X, Y offset in pixels (e.g. 50,-30)', cx + ',' + cy);
+        if (input === null) return null;
+        var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
+        if (parts.length !== 2 || !isFinite(parts[0]) || !isFinite(parts[1])){
+          showToast('Invalid position'); return null;
+        }
+        return parts;
+      },
+      function(c, parts){
+        c.dataset.offsetX = String(parts[0]);
+        c.dataset.offsetY = String(parts[1]);
+      },
+      'Offset set'
+    );
   }
   // ── Text clip editors ──
   // Operate on the currently selected text clip. If none is selected,
@@ -2614,22 +2694,31 @@
 
   // ── FX: Visual Effects (toggles) ──
   function toggleClipFlag(label, key){
-    withActiveClip(null, function(clip){
-      var now = boolDatasetToggle(clip, key);
-      showToast(label + ' ' + (now ? 'on' : 'off'));
-    });
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    var on = toggleDatasetForAll(clips, key);
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    var suffix = clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : '';
+    showToast(label + ' ' + (on ? 'on' : 'off') + suffix);
   }
   function clipActionFxBlur(){
-    withActiveClip(null, function(clip){
-      var cur = parseFloat(clip.dataset.fxBlur) || 0;
-      var input = prompt('Blur amount in px (0 = off)', String(cur || 5));
-      if (input === null) return;
-      var v = parseFloat(input);
-      if (!isFinite(v) || v < 0){ showToast('Invalid value'); return; }
-      if (v === 0) delete clip.dataset.fxBlur;
-      else clip.dataset.fxBlur = String(v);
-      showToast('Blur ' + v + 'px');
-    });
+    promptToActiveClips(
+      function(c){
+        var cur = parseFloat(c.dataset.fxBlur) || 0;
+        var input = prompt('Blur amount in px (0 = off)', String(cur || 5));
+        if (input === null) return null;
+        var v = parseFloat(input);
+        if (!isFinite(v) || v < 0){ showToast('Invalid value'); return null; }
+        return v;
+      },
+      function(c, v){
+        if (v === 0) delete c.dataset.fxBlur;
+        else c.dataset.fxBlur = String(v);
+      },
+      'Blur {val}px'
+    );
   }
   function clipActionFxGlow(){     toggleClipFlag('Glow',     'fxGlow');     }
   function clipActionFxVignette(){ toggleClipFlag('Vignette', 'fxVignette'); }
@@ -2640,52 +2729,52 @@
   function clipActionFxNoise(){    toggleClipFlag('Noise',    'fxGrain');    } // alias for grain
 
   // ── FX: Color ──
-  function clipActionFxBrightness(){
-    withActiveClip(null, function(clip){
-      var cur = parseFloat(clip.dataset.fxBrightness) || 1;
-      var input = prompt('Brightness multiplier (1.0 = neutral, 0.5 dim, 1.5 bright)', String(cur));
-      if (input === null) return;
-      var v = parseFloat(input);
-      if (!isFinite(v) || v < 0){ showToast('Invalid'); return; }
-      if (v === 1) delete clip.dataset.fxBrightness; else clip.dataset.fxBrightness = String(v);
-      showToast('Brightness ' + v);
-    });
+  function promptColorProp(key, cur, label){
+    return function(){
+      promptToActiveClips(
+        function(c){
+          var curVal = parseFloat(c.dataset[key]) || 1;
+          var input = prompt(label, String(curVal));
+          if (input === null) return null;
+          var v = parseFloat(input);
+          if (!isFinite(v) || v < 0){ showToast('Invalid'); return null; }
+          return v;
+        },
+        function(c, v){
+          if (v === 1) delete c.dataset[key];
+          else c.dataset[key] = String(v);
+        },
+        cur + ' {val}'
+      );
+    };
   }
-  function clipActionFxContrast(){
-    withActiveClip(null, function(clip){
-      var cur = parseFloat(clip.dataset.fxContrast) || 1;
-      var input = prompt('Contrast multiplier (1.0 = neutral)', String(cur));
-      if (input === null) return;
-      var v = parseFloat(input);
-      if (!isFinite(v) || v < 0){ showToast('Invalid'); return; }
-      if (v === 1) delete clip.dataset.fxContrast; else clip.dataset.fxContrast = String(v);
-      showToast('Contrast ' + v);
-    });
-  }
-  function clipActionFxSaturation(){
-    withActiveClip(null, function(clip){
-      var cur = parseFloat(clip.dataset.fxSaturate) || 1;
-      var input = prompt('Saturation (1.0 = neutral, 0 = B&W, 2 = vivid)', String(cur));
-      if (input === null) return;
-      var v = parseFloat(input);
-      if (!isFinite(v) || v < 0){ showToast('Invalid'); return; }
-      if (v === 1) delete clip.dataset.fxSaturate; else clip.dataset.fxSaturate = String(v);
-      showToast('Saturation ' + v);
-    });
-  }
+  var clipActionFxBrightness = promptColorProp('fxBrightness', 'Brightness',
+    'Brightness multiplier (1.0 = neutral, 0.5 dim, 1.5 bright)');
+  var clipActionFxContrast = promptColorProp('fxContrast',   'Contrast',
+    'Contrast multiplier (1.0 = neutral)');
+  var clipActionFxSaturation = promptColorProp('fxSaturate', 'Saturation',
+    'Saturation (1.0 = neutral, 0 = B&W, 2 = vivid)');
   function clipActionFxColorGrade(){
-    withActiveClip(null, function(clip){
-      var cur = clip.dataset.fxColorGrade || '';
-      var input = prompt(
-        'Color grade preset (warm, cool, vintage, bw, punch, or blank to clear)',
-        cur);
-      if (input === null) return;
-      var v = (input || '').trim().toLowerCase();
-      if (!v) { delete clip.dataset.fxColorGrade; showToast('Grade cleared'); return; }
-      if (['warm','cool','vintage','bw','punch'].indexOf(v) === -1){ showToast('Unknown preset'); return; }
-      clip.dataset.fxColorGrade = v;
-      showToast('Grade: ' + v);
-    });
+    promptToActiveClips(
+      function(c){
+        var cur = c.dataset.fxColorGrade || '';
+        var input = prompt(
+          'Color grade preset (warm, cool, vintage, bw, punch, or blank to clear)',
+          cur);
+        if (input === null) return null;
+        var v = (input || '').trim().toLowerCase();
+        if (!v) return 'clear';
+        if (['warm','cool','vintage','bw','punch'].indexOf(v) === -1){
+          showToast('Unknown preset'); return null;
+        }
+        return v;
+      },
+      function(c, v){
+        if (v === 'clear') delete c.dataset.fxColorGrade;
+        else c.dataset.fxColorGrade = v;
+      },
+      'Grade: {val}'
+    );
   }
 
   try {

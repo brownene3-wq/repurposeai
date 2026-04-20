@@ -1383,42 +1383,61 @@
         if (sel) return sel;
         return document.querySelector('.mt-track-audio .mt-clip') || null;
       }
+      // Multi-clip target for audio FX: every SELECTED audio clip (from
+      // the timeline), or the primary target (selected-or-first-A1) as a
+      // single-clip fallback. Broadcast-style: prompts fire ONCE with the
+      // first clip's value and the result applies to all targets.
+      function getAudioFXTargets(){
+        var selAudio = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip.selected'));
+        if (selAudio.length) return selAudio;
+        var one = getTargetAudioClip();
+        return one ? [one] : [];
+      }
       Array.from(div.querySelectorAll('[data-audio-fx]')).forEach(function(btn){
         btn.addEventListener('click', function(e){
           e.preventDefault();
           e.stopPropagation();
           var fx = btn.getAttribute('data-audio-fx');
-          var clip = getTargetAudioClip();
-          if (!clip){
+          var targets = getAudioFXTargets();
+          if (!targets.length){
             toast('No audio clip on timeline');
             return;
           }
+          var first = targets[0];
+          var suffix = targets.length > 1 ? ' \u00b7 ' + targets.length + ' clips' : '';
+
           if (fx === 'fadein'){
-            var curIn = parseFloat(clip.dataset.fadeIn) || 0;
+            var curIn = parseFloat(first.dataset.fadeIn) || 0;
             var inp = prompt('Fade-in duration (seconds, 0 to remove)', curIn > 0 ? String(curIn) : '1');
             if (inp === null) return;
             var v = parseFloat(inp);
             if (!isFinite(v) || v < 0){ toast('Invalid value'); return; }
-            if (v === 0) delete clip.dataset.fadeIn;
-            else clip.dataset.fadeIn = String(v);
-            toast('Fade-in: ' + v + 's');
+            targets.forEach(function(c){
+              if (v === 0) delete c.dataset.fadeIn;
+              else c.dataset.fadeIn = String(v);
+            });
+            toast('Fade-in: ' + v + 's' + suffix);
           } else if (fx === 'fadeout'){
-            var curOut = parseFloat(clip.dataset.fadeOut) || 0;
+            var curOut = parseFloat(first.dataset.fadeOut) || 0;
             var inp2 = prompt('Fade-out duration (seconds, 0 to remove)', curOut > 0 ? String(curOut) : '1');
             if (inp2 === null) return;
             var v2 = parseFloat(inp2);
             if (!isFinite(v2) || v2 < 0){ toast('Invalid value'); return; }
-            if (v2 === 0) delete clip.dataset.fadeOut;
-            else clip.dataset.fadeOut = String(v2);
-            toast('Fade-out: ' + v2 + 's');
+            targets.forEach(function(c){
+              if (v2 === 0) delete c.dataset.fadeOut;
+              else c.dataset.fadeOut = String(v2);
+            });
+            toast('Fade-out: ' + v2 + 's' + suffix);
           } else if (fx === 'denoise'){
-            var now = clip.dataset.audioDenoise === 'true';
-            clip.dataset.audioDenoise = now ? 'false' : 'true';
-            toast('Denoise ' + (now ? 'off' : 'on'));
+            var now = first.dataset.audioDenoise === 'true';
+            var target = now ? 'false' : 'true';
+            targets.forEach(function(c){ c.dataset.audioDenoise = target; });
+            toast('Denoise ' + (now ? 'off' : 'on') + suffix);
           } else if (fx === 'normalize'){
-            var nowN = clip.dataset.audioNormalize === 'true';
-            clip.dataset.audioNormalize = nowN ? 'false' : 'true';
-            toast('Normalize ' + (nowN ? 'off' : 'on'));
+            var nowN = first.dataset.audioNormalize === 'true';
+            var targetN = nowN ? 'false' : 'true';
+            targets.forEach(function(c){ c.dataset.audioNormalize = targetN; });
+            toast('Normalize ' + (nowN ? 'off' : 'on') + suffix);
           }
           if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
         }, true);
