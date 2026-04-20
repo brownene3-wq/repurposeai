@@ -591,7 +591,8 @@
             textContent: c.dataset.textContent || '',
             fontSize: c.dataset.fontSize || '',
             textColor: c.dataset.textColor || '',
-            position: c.dataset.position || ''
+            position: c.dataset.position || '',
+            motionEffect: c.dataset.motionEffect || ''
           };
         })
       };
@@ -655,6 +656,7 @@
           if (spec.fontSize)       c.dataset.fontSize = spec.fontSize;
           if (spec.textColor)      c.dataset.textColor = spec.textColor;
           if (spec.position)       c.dataset.position = spec.position;
+          if (spec.motionEffect)   c.dataset.motionEffect = spec.motionEffect;
           track.appendChild(c);
           makeClipInteractive(c);
         });
@@ -1168,6 +1170,10 @@
     var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
     var hit = getClipAtPlayheadX(phX);
 
+    // Active motion effects on M1 at this instant (if any). We wrap the
+    // visual draw in save/restore so the transform only affects V1 pixels.
+    var activeMotion = getActiveMotionEffectsAtPlayheadX(phX);
+
     var drawn = false;
     if (hit){
       var clip = hit.clip;
@@ -1179,7 +1185,9 @@
         var img = getOrCreateProgSource(url, 'img');
         if (img && img.complete && img.naturalWidth > 0){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+          var moState1 = progApplyMotion(ctx, W, H, activeMotion);
           progDrawContain(ctx, img, W, H, img.naturalWidth, img.naturalHeight);
+          progExitMotion(ctx, moState1);
           drawn = true;
         }
       } else if (url){
@@ -1192,7 +1200,9 @@
           && normalizeUrl(mainVideo.src) === normalizeUrl(url);
         if (mainUsable){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+          var moState2 = progApplyMotion(ctx, W, H, activeMotion);
           progDrawContain(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight);
+          progExitMotion(ctx, moState2);
           drawn = true;
         } else {
           var vid = getOrCreateProgSource(url, 'vid');
@@ -1211,7 +1221,9 @@
             }
             if (vid.readyState >= 2 && vid.videoWidth){
               ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+              var moState3 = progApplyMotion(ctx, W, H, activeMotion);
               progDrawContain(ctx, vid, W, H, vid.videoWidth, vid.videoHeight);
+              progExitMotion(ctx, moState3);
               drawn = true;
             }
           }
@@ -1665,6 +1677,119 @@
     return clip;
   }
   try { window.addTextClipToTimeline = addTextClipToTimeline; } catch(_){}
+
+  // ── Motion effects on M1 ──
+  // A "motion effect" is a time-varying transform applied to whatever V1
+  // visual is at the playhead: zoom, pan, fade, rotate, shake, etc. Each
+  // motion effect lives as its own clip on the .mt-track-music row (M1)
+  // so the user can place / drag / delete them like any other clip.
+  var MOTION_EFFECTS = {
+    'zoom-in':    { label: 'Zoom In',    icon: '\ud83d\udd0d' },
+    'zoom-out':   { label: 'Zoom Out',   icon: '\ud83d\udd0e' },
+    'pan-left':   { label: 'Pan Left',   icon: '\u2b05\ufe0f' },
+    'pan-right':  { label: 'Pan Right',  icon: '\u27a1\ufe0f' },
+    'fade-in':    { label: 'Fade In',    icon: '\ud83c\udf11' },
+    'fade-out':   { label: 'Fade Out',   icon: '\ud83c\udf15' },
+    'shake':      { label: 'Shake',      icon: '\ud83c\udf00' },
+    'rotate':     { label: 'Rotate',     icon: '\ud83d\udd04' }
+  };
+
+  function addMotionClipToTimeline(effectKey, opts){
+    opts = opts || {};
+    var effect = MOTION_EFFECTS[effectKey];
+    if (!effect){ showToast('Unknown motion effect'); return null; }
+    var track = document.querySelector('.mt-track-music');
+    if (!track){ showToast('Motion track not found'); return null; }
+    var dur = parseFloat(opts.duration) || 3;
+    if (dur < 0.5) dur = 0.5;
+    var width = Math.max(40, dur * TIMELINE_PX_PER_SEC);
+    var leftPos = findRightmostClipEnd(track);
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip mt-clip-motion';
+    clip.textContent = effect.icon + ' ' + effect.label;
+    clip.dataset.fileName     = effect.label;
+    clip.dataset.clipType     = 'motion';
+    clip.dataset.motionEffect = effectKey;
+    clip.dataset.duration     = String(dur);
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.padding = '4px 8px';
+    clip.style.fontSize = '10px';
+    clip.style.overflow = 'hidden';
+    clip.style.textOverflow = 'ellipsis';
+    clip.style.whiteSpace = 'nowrap';
+    clip.style.userSelect = 'none';
+    clip.style.background = 'linear-gradient(135deg, #ec4899, #f472b6)';
+    clip.style.color = '#fff';
+    clip.style.fontWeight = '700';
+    track.appendChild(clip);
+    makeClipInteractive(clip);
+    updateTimelineInfo();
+    pushTimelineHistory();
+    if (!_progAutoEnabledOnce && !_progEnabled){
+      _progAutoEnabledOnce = true;
+      try { toggleProgramMonitor(); } catch(_){}
+    }
+    showToast('Motion: ' + effect.label);
+    return clip;
+  }
+  try { window.addMotionClipToTimeline = addMotionClipToTimeline; } catch(_){}
+
+  // Find motion clips on M1 whose timeline range contains playhead x,
+  // and return {clip, progress 0..1 across clip} for each.
+  function getActiveMotionEffectsAtPlayheadX(phX){
+    var out = [];
+    document.querySelectorAll('.mt-track-music .mt-clip').forEach(function(c){
+      if (c.dataset.clipType !== 'motion') return;
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w){
+        out.push({ clip: c, progress: (phX - l) / Math.max(1, w) });
+      }
+    });
+    return out;
+  }
+
+  // Given an array of active motion effects, apply the combined transform +
+  // alpha to ctx BEFORE drawing the visual. Returns the alpha value to use
+  // (so fades work correctly) and whether we wrapped ctx in a save/restore.
+  // Callers must call progExitMotion(ctx, state) after drawing the visual.
+  function progApplyMotion(ctx, W, H, active){
+    if (!active || !active.length) return null;
+    ctx.save();
+    var alpha = 1;
+    var cx = W / 2, cy = H / 2;
+    active.forEach(function(mo){
+      var key  = mo.clip.dataset.motionEffect;
+      var p    = Math.max(0, Math.min(1, mo.progress));
+      if (key === 'zoom-in'){
+        var s = 1 + 0.3 * p;                        // 1.0 → 1.3
+        ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
+      } else if (key === 'zoom-out'){
+        var s2 = 1.3 - 0.3 * p;                      // 1.3 → 1.0
+        ctx.translate(cx, cy); ctx.scale(s2, s2); ctx.translate(-cx, -cy);
+      } else if (key === 'pan-left'){
+        ctx.translate(-p * W * 0.2, 0);
+      } else if (key === 'pan-right'){
+        ctx.translate(p * W * 0.2, 0);
+      } else if (key === 'fade-in'){
+        alpha *= p;
+      } else if (key === 'fade-out'){
+        alpha *= (1 - p);
+      } else if (key === 'shake'){
+        var amp = 6;
+        ctx.translate((Math.random()*2-1)*amp, (Math.random()*2-1)*amp);
+      } else if (key === 'rotate'){
+        var deg = 10 * p;                            // 0° → 10°
+        ctx.translate(cx, cy); ctx.rotate(deg * Math.PI/180); ctx.translate(-cx, -cy);
+      }
+    });
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    return { active: true };
+  }
+  function progExitMotion(ctx, state){
+    if (state && state.active){ ctx.restore(); }
+  }
 
   // Return every text clip whose timeline range contains playhead x.
   function getTextClipsAtPlayheadX(phX){

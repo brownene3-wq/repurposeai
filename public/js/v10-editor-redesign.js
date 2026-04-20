@@ -1325,8 +1325,28 @@
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-fx');
+
+    // Motion menu — each button drops a 3-second motion clip onto M1 that
+    // the Program Monitor canvas animates over its duration.
+    var motions = [
+      {k:'zoom-in',    ic:'\ud83d\udd0d', label:'Zoom In'},
+      {k:'zoom-out',   ic:'\ud83d\udd0e', label:'Zoom Out'},
+      {k:'pan-left',   ic:'\u2b05\ufe0f', label:'Pan Left'},
+      {k:'pan-right',  ic:'\u27a1\ufe0f', label:'Pan Right'},
+      {k:'fade-in',    ic:'\ud83c\udf11', label:'Fade In'},
+      {k:'fade-out',   ic:'\ud83c\udf15', label:'Fade Out'},
+      {k:'shake',      ic:'\ud83c\udf00', label:'Shake'},
+      {k:'rotate',     ic:'\ud83d\udd04', label:'Rotate'}
+    ];
+    var motionHtml = '<div class="v10-rp-section-title">MOTION</div><div class="v10-rp-grid">';
+    motions.forEach(function(m){
+      motionHtml += '<button class="v10-rp-btn" data-v10-motion="' + m.k +
+        '"><span class="v10-rp-ic">' + m.ic + '</span>' + m.label + '</button>';
+    });
+    motionHtml += '</div>';
+
     var effects = ['Blur','Glow','Vignette','Film Grain','Sharpen','Chromatic Aberration','Pixelate','Noise'];
-    var html = '<div class="v10-rp-section-title">VISUAL EFFECTS</div>';
+    var html = motionHtml + '<div class="v10-rp-section-title" style="margin-top:14px">VISUAL EFFECTS</div>';
     effects.forEach(function(f){
       html += '<button class="v10-fx-btn" data-action="'+f+' applied">'+f+'</button>';
     });
@@ -1336,6 +1356,24 @@
         buildRPButtons([['\ud83c\udfa8','Color Grade'],['\u2600\ufe0f','Brightness'],['\ud83c\udf17','Contrast'],['\ud83d\udca7','Saturation']])+
       '</div>';
     div.innerHTML = html;
+
+    // Wire motion buttons BEFORE wireRPToast so they don't get the generic
+    // toast-only handler. Each drops a motion clip onto M1 via
+    // window.addMotionClipToTimeline.
+    Array.from(div.querySelectorAll('[data-v10-motion]')).forEach(function(btn){
+      var clone = btn.cloneNode(true);
+      btn.parentNode.replaceChild(clone, btn);
+      var key = clone.getAttribute('data-v10-motion');
+      clone.addEventListener('click', function(e){
+        e.preventDefault();
+        if (typeof window.addMotionClipToTimeline === 'function'){
+          window.addMotionClipToTimeline(key, {duration: 3});
+        } else {
+          toast('Motion tool not ready');
+        }
+      });
+    });
+
     div.querySelectorAll('.v10-fx-btn').forEach(function(btn){
       btn.addEventListener('click', function(e){
         e.preventDefault();
