@@ -701,6 +701,98 @@
   var _progRAF = null;
   var _progMediaCache = {};        // key = 'type|url' -> <video>|<img>
   var _progSeekPending = {};       // suppress redundant seeks
+
+  // ── PGM audio metering: WebAudio AnalyserNode on the main <video> ──
+  var _audioCtx = null;
+  var _audioAnalyser = null;
+  var _audioSourceEl = null;
+  var _audioTimeBuf = null;
+  function ensureAudioAnalyser(){
+    var video = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(video instanceof HTMLMediaElement)) return null;
+    if (_audioAnalyser && _audioSourceEl === video) return _audioAnalyser;
+    try {
+      if (!_audioCtx){
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      // createMediaElementSource can only be called once per element; so we
+      // only do this if we haven't connected to THIS <video> yet.
+      if (_audioSourceEl !== video){
+        var src = _audioCtx.createMediaElementSource(video);
+        _audioAnalyser = _audioCtx.createAnalyser();
+        _audioAnalyser.fftSize = 512;
+        _audioAnalyser.smoothingTimeConstant = 0.6;
+        _audioTimeBuf = new Uint8Array(_audioAnalyser.fftSize);
+        src.connect(_audioAnalyser);
+        // Route back to output so the user still HEARS the video while we tap it.
+        _audioAnalyser.connect(_audioCtx.destination);
+        _audioSourceEl = video;
+      }
+      if (_audioCtx.state === 'suspended'){
+        _audioCtx.resume().catch(function(){});
+      }
+      return _audioAnalyser;
+    } catch(_){
+      return null;
+    }
+  }
+  function progDrawAudioMeters(ctx, W, H){
+    var analyser = ensureAudioAnalyser();
+    if (!analyser || !_audioTimeBuf) return;
+    analyser.getByteTimeDomainData(_audioTimeBuf);
+    var buf = _audioTimeBuf;
+    // Peak + RMS on time-domain
+    var peak = 0, sumSq = 0;
+    for (var i = 0; i < buf.length; i++){
+      var v = Math.abs(buf[i] - 128);
+      if (v > peak) peak = v;
+      sumSq += v * v;
+    }
+    var peakN = Math.min(1, peak / 128);
+    var rmsN  = Math.min(1, Math.sqrt(sumSq / buf.length) / 128);
+
+    // Waveform: bottom strip spanning near-full width
+    var wfPad = 20;
+    var wfW = W - wfPad * 2;
+    var wfH = 46;
+    var wfX = wfPad;
+    var wfY = H - 92;
+    // Backdrop
+    ctx.fillStyle = 'rgba(8,6,18,.55)';
+    ctx.fillRect(wfX - 6, wfY - 6, wfW + 12, wfH + 12);
+    ctx.strokeStyle = 'rgba(139,92,246,.95)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    var step = wfW / buf.length;
+    for (var j = 0; j < buf.length; j++){
+      var norm = (buf[j] - 128) / 128;
+      var px = wfX + j * step;
+      var py = wfY + wfH/2 + norm * (wfH/2 - 2);
+      if (j === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Level meter + peak indicator under the waveform
+    var mW = Math.min(280, W - wfPad * 2);
+    var mH = 14;
+    var mX = W - wfPad - mW;
+    var mY = H - 36;
+    ctx.fillStyle = 'rgba(8,6,18,.7)';
+    ctx.fillRect(mX - 2, mY - 2, mW + 4, mH + 4);
+    var rmsW = rmsN * mW;
+    var color = rmsN < 0.7 ? '#22c55e' : (rmsN < 0.9 ? '#fbbf24' : '#ef4444');
+    ctx.fillStyle = color;
+    ctx.fillRect(mX, mY, rmsW, mH);
+    // Peak hold line
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(mX + Math.min(mW - 2, peakN * mW), mY, 2, mH);
+    // Label
+    ctx.fillStyle = 'rgba(255,255,255,.7)';
+    ctx.font = 'bold 10px -apple-system,system-ui,sans-serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('A1 · ' + Math.round(rmsN * 100) + '%  peak ' + Math.round(peakN * 100) + '%', mX, mY - 4);
+  }
   function getOrCreateProgSource(url, type){
     if (!url) return null;
     var key = type + '|' + url;
@@ -833,6 +925,11 @@
     ctx.font = '11px -apple-system,system-ui,sans-serif';
     ctx.fillText('not final export (audio / transitions not rendered)', 12, 30);
 
+    // Live audio metering — waveform + level meter for whatever is playing
+    // through the main <video>. Skips cleanly if WebAudio is unavailable or
+    // the source hasn't been attached yet.
+    try { progDrawAudioMeters(ctx, W, H); } catch(_){}
+
     _progRAF = requestAnimationFrame(progLoop);
   }
   function toggleProgramMonitor(){
@@ -846,6 +943,8 @@
       btn.style.color = _progEnabled ? '#fff' : '#e2e0f0';
     }
     if (_progEnabled){
+      // User-gesture-initiated: OK to create / resume the AudioContext here.
+      ensureAudioAnalyser();
       progLoop();
       showToast('Program Monitor on \u2014 composited timeline preview');
     } else {
@@ -1337,14 +1436,26 @@
     if (_playheadSyncTries > 40) clearInterval(_playheadSyncInterval); // 40 * 250ms = 10s
   }, 250);
 
-  // For video items: load the video into the editor's preview and sync editor
-  // state so tools (trim/export/etc.) can operate on it. Called on click AND
-  // +Timeline button press so the preview updates immediately.
+  // Load a clicked Media item into the main preview so the user sees it
+  // IMMEDIATELY upon placement — without waiting for the playhead to cross
+  // into its range on the timeline.
+  //
+  //   video → set videoPlayer.src + mount editor state (existing behavior)
+  //   image → show the image overlay on the preview window
+  //   audio → skip (no visual to show)
   function loadMediaItemIntoPreview(item){
     var mediaType = item.dataset.mediaType || 'vid';
-    if (mediaType !== 'vid') return; // only video items drive the main preview
     var url = item.dataset.mediaUrl;
     if (!url) return;
+    if (mediaType === 'img'){
+      // Image overlay takes over the preview; hide black if it was showing.
+      hideBlackPreview();
+      showImagePreview(url);
+      // If the PGM canvas is on, it's already drawing the image per-frame
+      // via the RAF loop — nothing more needed.
+      return;
+    }
+    if (mediaType !== 'vid') return; // audio: no visual change
     var player = document.getElementById('videoPlayer') || document.querySelector('video');
     if (player){
       try { player.src = url; player.load(); } catch(_){}
