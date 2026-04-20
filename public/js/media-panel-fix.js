@@ -616,7 +616,9 @@
             fxVignette:   c.dataset.fxVignette   || '',
             fxGrain:      c.dataset.fxGrain      || '',
             volume:       c.dataset.volume       || '',
-            muted:        c.dataset.muted        || ''
+            muted:        c.dataset.muted        || '',
+            solo:         c.dataset.solo         || '',
+            preSoloMuted: c.dataset.preSoloMuted || ''
           };
         })
       };
@@ -705,6 +707,8 @@
           if (spec.fxGrain)        c.dataset.fxGrain      = spec.fxGrain;
           if (spec.volume)         c.dataset.volume       = spec.volume;
           if (spec.muted)          c.dataset.muted        = spec.muted;
+          if (spec.solo)           c.dataset.solo         = spec.solo;
+          if (spec.preSoloMuted)   c.dataset.preSoloMuted = spec.preSoloMuted;
           track.appendChild(c);
           makeClipInteractive(c);
         });
@@ -943,7 +947,13 @@
     _transport.playing = false;
     stopAudioMixing();
     var video = document.getElementById('videoPlayer');
-    if (video && !video.paused){ try { video.pause(); } catch(_){} }
+    if (video){
+      if (!video.paused){ try { video.pause(); } catch(_){} }
+      // Reset transport-owned playback flags so a Speed / Loop / Freeze
+      // from the last-played clip doesn't leak into manual playback.
+      try { video.playbackRate = 1; } catch(_){}
+      try { video.loop = false; } catch(_){}
+    }
     if (_transport.raf){ cancelAnimationFrame(_transport.raf); _transport.raf = null; }
     updateTransportBtnUI();
   }
@@ -978,7 +988,17 @@
     if (!url) return;
     var srcOff = parseFloat(clip.dataset.sourceOffset) || 0;
     var offIn  = hit.offsetPx / TIMELINE_PX_PER_SEC;
-    var wantSec = srcOff + offIn;
+
+    // Timing flags from the EDIT-tab Timing section
+    var speed  = parseFloat(clip.dataset.speed);
+    if (!isFinite(speed) || speed <= 0) speed = 1;
+    var freeze = clip.dataset.freeze === 'true';
+    var loop   = clip.dataset.loop   === 'true';
+
+    // Speed scales source playback inside the clip's fixed timeline width:
+    // when wall-clock advances 1s, source advances `speed` seconds.
+    var wantSec = freeze ? srcOff : (srcOff + offIn * speed);
+
     var normCurrent = video.src;
     var normTarget  = normalizeUrl(url);
     if (normCurrent !== normTarget){
@@ -986,15 +1006,29 @@
       try { video.src = url; video.load(); } catch(_){}
       var playSeek = function(){
         try { video.currentTime = Math.max(0, wantSec); } catch(_){}
-        if (_transport.playing){ try { video.play(); } catch(_){} }
+        try { video.playbackRate = freeze ? 1 : speed; } catch(_){}
+        try { video.loop = !!loop; } catch(_){}
+        if (freeze){
+          try { video.pause(); } catch(_){}
+        } else if (_transport.playing){
+          try { video.play(); } catch(_){}
+        }
       };
       video.addEventListener('loadedmetadata', playSeek, {once:true});
     } else {
-      // Drift correction: if we're more than 0.3s off, snap.
-      if (Math.abs((video.currentTime || 0) - wantSec) > 0.3){
+      // Sync playbackRate + loop flag each frame (cheap)
+      try { if (video.playbackRate !== (freeze ? 1 : speed)) video.playbackRate = freeze ? 1 : speed; } catch(_){}
+      try { if (video.loop !== !!loop) video.loop = !!loop; } catch(_){}
+      // Drift correction. With freeze we ALWAYS want the exact srcOff frame.
+      var drift = Math.abs((video.currentTime || 0) - wantSec);
+      if (drift > 0.3 || (freeze && drift > 0.05)){
         try { video.currentTime = wantSec; } catch(_){}
       }
-      if (_transport.playing && video.paused){ try { video.play(); } catch(_){} }
+      if (freeze){
+        if (!video.paused){ try { video.pause(); } catch(_){} }
+      } else if (_transport.playing && video.paused){
+        try { video.play(); } catch(_){}
+      }
     }
   }
 
@@ -1181,22 +1215,32 @@
     ctx.save();
     ctx.beginPath();
     ctx.rect(r.dx, r.dy, r.dw, r.dh);
-    ctx.clip(); // pillar/letterbox area is now OUTSIDE the clip
-    // Apply clip-level FX filters (brightness/contrast/saturate/blur/grade)
-    // via ctx.filter. This is a CSS-like filter applied to subsequent
-    // drawing operations; reset to 'none' after drawImage.
+    ctx.clip();
     var fxFilter = progBuildClipFilter(clip);
     if (fxFilter) ctx.filter = fxFilter;
-    // Per-clip transforms (scale/rotate/flip/offset) compose BELOW motion.
     progApplyClipTransforms(ctx, W, H, clip);
-    var state = progApplyMotion(ctx, W, H, activeMotion); // inner save + transform
-    ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
-    progExitMotionTransform(ctx, state);                  // inner restore only
-    if (fxFilter) ctx.filter = 'none';                     // reset filter before post-FX
-    // Post-FX overlays (vignette / grain / glow) — drawn INSIDE the
-    // video-rect clip but OUTSIDE the filter + transform state.
+    var state = progApplyMotion(ctx, W, H, activeMotion);
+    // Crop support: when clip.dataset.crop is 'x,y,w,h' percent, use
+    // drawImage's 9-arg source-rect form so only that region of the
+    // source is rendered — scaled to fill the letterbox rect.
+    if (clip && clip.dataset.crop){
+      var cp = String(clip.dataset.crop).split(',').map(function(s){ return parseFloat(s); });
+      if (cp.length === 4 && cp.every(function(v){ return isFinite(v); })){
+        var sx = Math.max(0, Math.min(sW, sW * cp[0] / 100));
+        var sy = Math.max(0, Math.min(sH, sH * cp[1] / 100));
+        var sw = Math.max(1, Math.min(sW - sx, sW * cp[2] / 100));
+        var sh = Math.max(1, Math.min(sH - sy, sH * cp[3] / 100));
+        ctx.drawImage(src, sx, sy, sw, sh, r.dx, r.dy, r.dw, r.dh);
+      } else {
+        ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+      }
+    } else {
+      ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+    }
+    progExitMotionTransform(ctx, state);
+    if (fxFilter) ctx.filter = 'none';
     progDrawClipPostFX(ctx, W, H, r, clip);
-    ctx.restore();                                         // drops clip
+    ctx.restore();
     return state;
   }
   function ensureProgramMonitor(){
@@ -1979,6 +2023,42 @@
   function clipActionKeyframe(){
     showToast('Keyframes coming soon');
   }
+
+  // Solo this audio clip by muting every OTHER audio clip. Toggling solo
+  // off restores previous mute states (stored on each clip's dataset.preSoloMuted).
+  function clipActionSolo(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select an audio clip first'); return; }
+    if (!clip.classList.contains('mt-clip-audio')){
+      showToast('Solo works on audio clips');
+      return;
+    }
+    var allAudio = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
+    var wasSolo = clip.dataset.solo === 'true';
+    if (wasSolo){
+      // Un-solo: restore previous mute states
+      allAudio.forEach(function(c){
+        if (c.dataset.preSoloMuted !== undefined){
+          if (c.dataset.preSoloMuted === 'true') c.dataset.muted = 'true';
+          else delete c.dataset.muted;
+          delete c.dataset.preSoloMuted;
+        }
+      });
+      delete clip.dataset.solo;
+      showToast('Un-soloed');
+    } else {
+      // Solo: remember current mute states, mute everything except this clip
+      allAudio.forEach(function(c){
+        c.dataset.preSoloMuted = (c.dataset.muted === 'true') ? 'true' : 'false';
+        if (c === clip) delete c.dataset.muted;
+        else c.dataset.muted = 'true';
+      });
+      clip.dataset.solo = 'true';
+      showToast('Soloed: ' + (clip.dataset.fileName || 'clip'));
+    }
+    pushTimelineHistory();
+  }
+  try { window.clipActionSolo = clipActionSolo; } catch(_){}
 
   // ── FX: Visual Effects (toggles) ──
   function toggleClipFlag(label, key){

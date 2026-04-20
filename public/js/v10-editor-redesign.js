@@ -1306,7 +1306,7 @@
                 '<span class="v10-ac-voltxt">' + Math.round(vol) + '%</span>'+
               '</div>'+
               '<div class="v10-ac-btns">'+
-                '<button data-ac-action="solo">Solo</button>'+
+                '<button data-ac-action="solo"' + (clip.dataset.solo === 'true' ? ' style="background:rgba(245,204,21,.85);color:#000"' : '') + '>Solo</button>'+
                 '<button data-ac-action="mute"' + (muted ? ' style="background:rgba(239,68,68,.85);color:#fff"' : '') + '>' + (muted ? 'Unmute' : 'Mute') + '</button>'+
                 '<button data-ac-action="fade">Fade</button>'+
               '</div>'+
@@ -1350,7 +1350,11 @@
               btn.style.color = wasMuted ? '' : '#fff';
               toast((wasMuted ? 'Unmuted' : 'Muted') + ': ' + (clip.dataset.fileName || 'clip'));
             } else if (act === 'solo'){
-              toast('Solo not supported yet');
+              // Select this clip so clipActionSolo operates on it
+              document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+              clip.classList.add('selected');
+              if (typeof window.clipActionSolo === 'function') window.clipActionSolo();
+              setTimeout(renderLayers, 50); // re-render card states
             } else if (act === 'fade'){
               toast('Fade — drag the slider to taper volume');
             }
