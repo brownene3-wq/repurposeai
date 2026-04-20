@@ -1754,30 +1754,64 @@
   // alpha to ctx BEFORE drawing the visual. Returns the alpha value to use
   // (so fades work correctly) and whether we wrapped ctx in a save/restore.
   // Callers must call progExitMotion(ctx, state) after drawing the visual.
-  // Motion effects are now PGM-preview no-ops for position / scale /
-  // rotation — the video ALWAYS renders at its default centered size so
-  // the base state is unchanged per Albert's request. Motion clips stay
-  // on the timeline as metadata (so they survive undo/redo and persist
-  // in Save-as-Draft) and will drive the actual render when the server
-  // export pipeline picks them up (future work).
+  // Motion effects are render-time TRANSFORM OFFSETS composed on top of
+  // the video's base state. The underlying data model never mutates:
+  //   - The video element is always centered at its original size.
+  //   - The clip's "position" and "scale" properties stay at default.
+  // Each RAF we ctx.save() → apply offsets (translate/scale/rotate/alpha)
+  // → draw video → ctx.restore() so the canvas transform returns to
+  // identity. The offsets animate via sin(progress·π) so the effect
+  // peaks in the middle and returns to 0-offset at both clip endpoints
+  // (clean entry + exit, no permanent shift).
   //
-  // We still return {active, effects} so the caller can draw a small
-  // corner badge indicating which motion(s) are queued at the current
-  // playhead — the user sees feedback that their click registered
-  // without the video jumping around.
+  // progExitMotion additionally paints a compact badge naming the active
+  // motion(s) — useful feedback on long timelines when the viewer might
+  // otherwise miss a subtle pan / shake / rotate starting up.
   function progApplyMotion(ctx, W, H, active){
     if (!active || !active.length) return null;
-    return {
-      active: true,
-      effects: active.map(function(m){ return m.clip.dataset.motionEffect || ''; })
-    };
+    ctx.save();
+    var alpha = 1;
+    var cx = W / 2, cy = H / 2;
+    var effects = [];
+    active.forEach(function(mo){
+      var key  = mo.clip.dataset.motionEffect;
+      if (key) effects.push(key);
+      var p    = Math.max(0, Math.min(1, mo.progress));
+      // Pulse: 0 → 1 → 0 across the clip. Offsets start and end at zero.
+      var pulse = Math.sin(p * Math.PI);
+      if (key === 'zoom-in'){
+        var s = 1 + 0.3 * pulse;      // scale offset: +30% at midpoint
+        ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
+      } else if (key === 'zoom-out'){
+        var s2 = 1 - 0.2 * pulse;      // scale offset: -20% at midpoint
+        ctx.translate(cx, cy); ctx.scale(s2, s2); ctx.translate(-cx, -cy);
+      } else if (key === 'pan-left'){
+        ctx.translate(-W * 0.2 * pulse, 0);
+      } else if (key === 'pan-right'){
+        ctx.translate( W * 0.2 * pulse, 0);
+      } else if (key === 'fade-in'){
+        // Linear one-way — alpha 0 → 1 (base state at clip end is 1).
+        alpha *= p;
+      } else if (key === 'fade-out'){
+        // Linear one-way — alpha 1 → 0 (base state at clip start is 1).
+        alpha *= (1 - p);
+      } else if (key === 'shake'){
+        var amp = 6 * pulse;
+        ctx.translate((Math.random()*2-1)*amp, (Math.random()*2-1)*amp);
+      } else if (key === 'rotate'){
+        var deg = 10 * pulse;          // rotation offset: 10° at midpoint
+        ctx.translate(cx, cy); ctx.rotate(deg * Math.PI/180); ctx.translate(-cx, -cy);
+      }
+    });
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    return { active: true, effects: effects };
   }
   function progExitMotion(ctx, state){
-    // No save/restore needed since we no longer transform the canvas.
-    // Paint a compact badge listing the active motion names so the queue
-    // is visible in the preview.
-    if (!state || !state.active || !state.effects || !state.effects.length) return;
-    var W = ctx.canvas.width, H = ctx.canvas.height;
+    if (!state || !state.active) return;
+    ctx.restore(); // canvas transform back to identity — base state restored
+    if (!state.effects || !state.effects.length) return;
+    // Small corner badge naming which motion is currently running.
+    var W = ctx.canvas.width;
     var names = state.effects.map(function(k){
       return ({
         'zoom-in':'Zoom In', 'zoom-out':'Zoom Out',
@@ -1787,20 +1821,19 @@
       })[k] || k;
     }).filter(Boolean);
     if (!names.length) return;
-    var label = 'Motion queued: ' + names.join(' + ');
+    var label = names.join(' + ');
     ctx.save();
-    ctx.font = '600 12px -apple-system,system-ui,sans-serif';
+    ctx.font = '600 11px -apple-system,system-ui,sans-serif';
     ctx.textBaseline = 'top';
-    var padX = 10, padY = 6;
+    var padX = 8, padY = 5;
     var textW = ctx.measureText(label).width;
     var badgeW = textW + padX * 2;
-    var badgeH = 12 + padY * 2;
+    var badgeH = 11 + padY * 2;
     var bx = W - badgeW - 14;
-    var by = 50; // below the PGM watermark
-    // Rounded rect backdrop
+    var by = 50;
     ctx.fillStyle = 'rgba(236,72,153,.85)';
     ctx.beginPath();
-    var r = 6;
+    var r = 5;
     ctx.moveTo(bx + r, by);
     ctx.arcTo(bx + badgeW, by, bx + badgeW, by + badgeH, r);
     ctx.arcTo(bx + badgeW, by + badgeH, bx, by + badgeH, r);
