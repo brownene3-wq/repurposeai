@@ -701,6 +701,7 @@
   var _progRAF = null;
   var _progMediaCache = {};        // key = 'type|url' -> <video>|<img>
   var _progSeekPending = {};       // suppress redundant seeks
+  var _progHasFrame = false;       // keep last frame while a seek is loading
 
   // ── Audio system: master bus + AnalyserNode for the PGM meter ──
   // Master GainNode ── Analyser ── destination
@@ -1062,17 +1063,17 @@
     if (_progMediaCache[key]) return _progMediaCache[key];
     var el;
     if (type === 'img'){
+      // No crossOrigin — we only DRAW to the canvas, never read pixels out.
+      // Setting crossOrigin='anonymous' causes servers without CORS headers
+      // to fail the load entirely, which was painting the canvas black.
       el = new Image();
-      el.crossOrigin = 'anonymous';
       el.src = url;
     } else {
       el = document.createElement('video');
       el.muted = true;
       el.playsInline = true;
       el.preload = 'auto';
-      el.crossOrigin = 'anonymous';
       el.src = url;
-      // Hidden source — we draw it onto the canvas, it never renders on-page.
       el.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
       document.body.appendChild(el);
     }
@@ -1130,53 +1131,85 @@
     var canvas = ensureProgramMonitor();
     if (!canvas){ _progRAF = requestAnimationFrame(progLoop); return; }
     var ctx = canvas.getContext('2d');
+    // Sync internal buffer to CSS-rendered size so drawing isn't stretched
+    // by CSS's 100%×100% sizing of the canvas.
+    var rect = canvas.getBoundingClientRect();
+    var targetW = Math.max(320, Math.round(rect.width  || 1280));
+    var targetH = Math.max(180, Math.round(rect.height || 720));
+    if (canvas.width !== targetW || canvas.height !== targetH){
+      canvas.width  = targetW;
+      canvas.height = targetH;
+    }
     var W = canvas.width, H = canvas.height;
 
-    // Clear to black (this is also what shows during gaps).
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
-
+    // Figure out what to render first (before clearing) so that if the
+    // source isn't ready we keep the previous frame on screen instead of
+    // flashing black.
     var ph = document.getElementById('mtPlayhead');
     var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
     var hit = getClipAtPlayheadX(phX);
+
+    var drawn = false;
     if (hit){
       var clip = hit.clip;
       var type = clip.dataset.clipType || (clip.classList.contains('mt-clip-audio') ? 'aud' : 'vid');
       var url  = clip.dataset.mediaUrl;
       if (type === 'aud'){
-        // Audio-only clip at V1's range would not happen (audio clips live on
-        // .mt-track-audio). Find the topmost video/image on V1 for visuals and
-        // fall back to black here.
+        // On V1 we don't expect audio-only clips; fall through.
       } else if (type === 'img' && url){
         var img = getOrCreateProgSource(url, 'img');
         if (img && img.complete && img.naturalWidth > 0){
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
           progDrawContain(ctx, img, W, H, img.naturalWidth, img.naturalHeight);
+          drawn = true;
         }
       } else if (url){
-        var vid = getOrCreateProgSource(url, 'vid');
-        var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
-        var seekSec = sourceOffset + (hit.offsetPx / TIMELINE_PX_PER_SEC);
-        if (vid){
-          // Seek only when drift > 0.1s (avoid spamming currentTime on every RAF).
-          if (vid.readyState >= 1 && Math.abs((vid.currentTime||0) - seekSec) > 0.1){
-            var pkey = 'vid|'+url;
-            if (!_progSeekPending[pkey]){
-              _progSeekPending[pkey] = true;
-              try { vid.currentTime = Math.max(0, seekSec); } catch(_){}
-              var clear = function(){ _progSeekPending[pkey] = false; vid.removeEventListener('seeked', clear); };
-              vid.addEventListener('seeked', clear, {once:true});
-              setTimeout(function(){ _progSeekPending[pkey] = false; }, 300);
+        // Prefer the MAIN <video> when it's already loaded with this clip's
+        // source — avoids double decoding and keeps the canvas perfectly in
+        // sync with what the video element is playing.
+        var mainVideo = document.getElementById('videoPlayer');
+        var mainUsable = mainVideo && mainVideo.readyState >= 2
+          && mainVideo.videoWidth > 0 && mainVideo.src
+          && normalizeUrl(mainVideo.src) === normalizeUrl(url);
+        if (mainUsable){
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+          progDrawContain(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight);
+          drawn = true;
+        } else {
+          var vid = getOrCreateProgSource(url, 'vid');
+          var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+          var seekSec = sourceOffset + (hit.offsetPx / TIMELINE_PX_PER_SEC);
+          if (vid){
+            if (vid.readyState >= 1 && Math.abs((vid.currentTime||0) - seekSec) > 0.1){
+              var pkey = 'vid|'+url;
+              if (!_progSeekPending[pkey]){
+                _progSeekPending[pkey] = true;
+                try { vid.currentTime = Math.max(0, seekSec); } catch(_){}
+                var clear = function(){ _progSeekPending[pkey] = false; vid.removeEventListener('seeked', clear); };
+                vid.addEventListener('seeked', clear, {once:true});
+                setTimeout(function(){ _progSeekPending[pkey] = false; }, 300);
+              }
             }
-          }
-          if (vid.readyState >= 2 && vid.videoWidth){
-            progDrawContain(ctx, vid, W, H, vid.videoWidth, vid.videoHeight);
-          } else {
-            // Still loading — draw a subtle loading indicator
-            ctx.fillStyle = 'rgba(139,92,246,.3)';
-            ctx.fillRect(0, H - 2, W, 2);
+            if (vid.readyState >= 2 && vid.videoWidth){
+              ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+              progDrawContain(ctx, vid, W, H, vid.videoWidth, vid.videoHeight);
+              drawn = true;
+            }
           }
         }
       }
+    }
+
+    if (!drawn){
+      // Real gap or source still loading — if we've never drawn yet (no prior
+      // frame) clear to black; otherwise leave the previous frame up for one
+      // more tick so we don't flicker to black while a seek is in flight.
+      if (!_progHasFrame || (hit === null || hit === undefined)){
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
+      }
+    } else {
+      _progHasFrame = true;
     }
 
     // Watermark so the user knows this is a simulation — NOT the final export.
@@ -1208,10 +1241,12 @@
     if (_progEnabled){
       // User-gesture-initiated: OK to create / resume the AudioContext here.
       ensureAudioAnalyser();
+      _progHasFrame = false; // force a proper first-frame clear
       progLoop();
       showToast('Program Monitor on \u2014 composited timeline preview');
     } else {
       if (_progRAF){ cancelAnimationFrame(_progRAF); _progRAF = null; }
+      _progHasFrame = false;
       showToast('Program Monitor off');
     }
   }
