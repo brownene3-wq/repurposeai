@@ -592,7 +592,20 @@
             fontSize: c.dataset.fontSize || '',
             textColor: c.dataset.textColor || '',
             position: c.dataset.position || '',
-            motionEffect: c.dataset.motionEffect || ''
+            motionEffect: c.dataset.motionEffect || '',
+            scale: c.dataset.scale || '',
+            rotate: c.dataset.rotate || '',
+            flipH: c.dataset.flipH || '',
+            flipV: c.dataset.flipV || '',
+            offsetX: c.dataset.offsetX || '',
+            offsetY: c.dataset.offsetY || '',
+            speed: c.dataset.speed || '',
+            reverse: c.dataset.reverse || '',
+            loop: c.dataset.loop || '',
+            freeze: c.dataset.freeze || '',
+            trimIn: c.dataset.trimIn || '',
+            trimOut: c.dataset.trimOut || '',
+            crop: c.dataset.crop || ''
           };
         })
       };
@@ -657,6 +670,19 @@
           if (spec.textColor)      c.dataset.textColor = spec.textColor;
           if (spec.position)       c.dataset.position = spec.position;
           if (spec.motionEffect)   c.dataset.motionEffect = spec.motionEffect;
+          if (spec.scale)          c.dataset.scale   = spec.scale;
+          if (spec.rotate)         c.dataset.rotate  = spec.rotate;
+          if (spec.flipH)          c.dataset.flipH   = spec.flipH;
+          if (spec.flipV)          c.dataset.flipV   = spec.flipV;
+          if (spec.offsetX)        c.dataset.offsetX = spec.offsetX;
+          if (spec.offsetY)        c.dataset.offsetY = spec.offsetY;
+          if (spec.speed)          c.dataset.speed   = spec.speed;
+          if (spec.reverse)        c.dataset.reverse = spec.reverse;
+          if (spec.loop)           c.dataset.loop    = spec.loop;
+          if (spec.freeze)         c.dataset.freeze  = spec.freeze;
+          if (spec.trimIn)         c.dataset.trimIn  = spec.trimIn;
+          if (spec.trimOut)        c.dataset.trimOut = spec.trimOut;
+          if (spec.crop)           c.dataset.crop    = spec.crop;
           track.appendChild(c);
           makeClipInteractive(c);
         });
@@ -1121,17 +1147,21 @@
   // the pillar/letter boxes are clipped away, leaving the pre-painted
   // black fill visible in those regions. Returns the motion state so the
   // caller can draw the 'Motion queued' badge on top of the unclipped canvas.
-  function progDrawWithMotion(ctx, src, W, H, sW, sH, activeMotion){
+  function progDrawWithMotion(ctx, src, W, H, sW, sH, activeMotion, clip){
     var r = progContainRect(W, H, sW, sH);
     if (!r) return null;
     ctx.save();
     ctx.beginPath();
     ctx.rect(r.dx, r.dy, r.dw, r.dh);
     ctx.clip(); // pillar/letterbox area is now OUTSIDE the clip
+    // Per-clip transforms (scale/rotate/flip/offset) compose BELOW motion.
+    // Both are additive offsets on the base state — neither mutates the
+    // video's actual position/size, only the render composition.
+    progApplyClipTransforms(ctx, W, H, clip);
     var state = progApplyMotion(ctx, W, H, activeMotion); // inner save + transform
     ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
     progExitMotionTransform(ctx, state);                  // inner restore only
-    ctx.restore();                                         // drops clip
+    ctx.restore();                                         // drops clip (AND resets clip transforms)
     return state;
   }
   function ensureProgramMonitor(){
@@ -1219,7 +1249,7 @@
         var img = getOrCreateProgSource(url, 'img');
         if (img && img.complete && img.naturalWidth > 0){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-          var moState1 = progDrawWithMotion(ctx, img, W, H, img.naturalWidth, img.naturalHeight, activeMotion);
+          var moState1 = progDrawWithMotion(ctx, img, W, H, img.naturalWidth, img.naturalHeight, activeMotion, clip);
           progDrawMotionBadge(ctx, moState1);
           drawn = true;
         }
@@ -1233,7 +1263,7 @@
           && normalizeUrl(mainVideo.src) === normalizeUrl(url);
         if (mainUsable){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-          var moState2 = progDrawWithMotion(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight, activeMotion);
+          var moState2 = progDrawWithMotion(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight, activeMotion, clip);
           progDrawMotionBadge(ctx, moState2);
           drawn = true;
         } else {
@@ -1253,7 +1283,7 @@
             }
             if (vid.readyState >= 2 && vid.videoWidth){
               ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-              var moState3 = progDrawWithMotion(ctx, vid, W, H, vid.videoWidth, vid.videoHeight, activeMotion);
+              var moState3 = progDrawWithMotion(ctx, vid, W, H, vid.videoWidth, vid.videoHeight, activeMotion, clip);
               progDrawMotionBadge(ctx, moState3);
               drawn = true;
             }
@@ -1765,6 +1795,190 @@
     return clip;
   }
   try { window.addMotionClipToTimeline = addMotionClipToTimeline; } catch(_){}
+
+  // ── Clip-scope actions for the EDIT sidebar ──
+  // Every EDIT tool operates on the "active clip" — preference order:
+  //   1. The .mt-clip.selected on any track (from the Select tool).
+  //   2. The clip under the playhead on V1.
+  // If neither exists, the tool shows a friendly "Select a clip first" toast.
+  function getActiveClip(){
+    var sel = document.querySelector('.mt-clip.selected');
+    if (sel) return sel;
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return null;
+    var phX = parseFloat(ph.style.left) || 0;
+    var hit = getClipAtPlayheadX(phX);
+    return hit ? hit.clip : null;
+  }
+  function withActiveClip(successMsg, fn){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return null; }
+    fn(clip);
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    if (successMsg) showToast(successMsg);
+    return clip;
+  }
+  // Flip sign / toggle helpers
+  function boolDatasetToggle(clip, key){
+    var cur = clip.dataset[key] === 'true';
+    clip.dataset[key] = cur ? 'false' : 'true';
+    return !cur;
+  }
+
+  // ── Clip Tools ──
+  function clipActionTrim(){
+    withActiveClip(null, function(clip){
+      var curIn  = parseFloat(clip.dataset.trimIn)  || 0;
+      var curOut = parseFloat(clip.dataset.trimOut) || parseFloat(clip.dataset.duration) || 0;
+      var input = prompt('Trim in/out in seconds (e.g. 2,10 — leave blank to reset)',
+        curIn + ',' + curOut);
+      if (input === null) return;
+      if (!input.trim()){ delete clip.dataset.trimIn; delete clip.dataset.trimOut; showToast('Trim reset'); return; }
+      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
+      if (!isFinite(parts[0]) || !isFinite(parts[1]) || parts[1] <= parts[0]){
+        showToast('Invalid trim values'); return;
+      }
+      clip.dataset.trimIn  = String(parts[0]);
+      clip.dataset.trimOut = String(parts[1]);
+      showToast('Trim ' + parts[0] + 's \u2192 ' + parts[1] + 's');
+    });
+  }
+  function clipActionSplit(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var phX = parseFloat(ph.style.left) || 0;
+    var l = parseFloat(clip.style.left) || 0;
+    var w = parseFloat(clip.style.width) || 0;
+    if (phX <= l + 6 || phX >= l + w - 6){
+      showToast('Move the playhead into the clip to split');
+      return;
+    }
+    razorSplit(clip, phX - l);
+  }
+  function clipActionSpeed(){
+    withActiveClip(null, function(clip){
+      var cur = parseFloat(clip.dataset.speed) || 1;
+      var input = prompt('Playback speed (1.0 = normal, 0.5 = half, 2.0 = 2x)', String(cur));
+      if (input === null) return;
+      var val = parseFloat(input);
+      if (!isFinite(val) || val <= 0){ showToast('Invalid speed'); return; }
+      clip.dataset.speed = String(val);
+      showToast('Speed ' + val + 'x');
+    });
+  }
+  function clipActionCrop(){
+    withActiveClip(null, function(clip){
+      var input = prompt('Crop as x,y,w,h percent (0-100) — blank to reset',
+        clip.dataset.crop || '0,0,100,100');
+      if (input === null) return;
+      if (!input.trim()){ delete clip.dataset.crop; showToast('Crop reset'); return; }
+      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
+      if (parts.length !== 4 || parts.some(function(v){ return !isFinite(v); })){
+        showToast('Invalid crop'); return;
+      }
+      clip.dataset.crop = parts.join(',');
+      showToast('Crop ' + parts.join(','));
+    });
+  }
+  // ── Transform ──
+  function clipActionResize(){
+    withActiveClip(null, function(clip){
+      var cur = parseFloat(clip.dataset.scale) || 1;
+      var input = prompt('Scale (1.0 = original)', String(cur));
+      if (input === null) return;
+      var val = parseFloat(input);
+      if (!isFinite(val) || val <= 0){ showToast('Invalid scale'); return; }
+      clip.dataset.scale = String(val);
+      showToast('Scale ' + val + 'x');
+    });
+  }
+  function clipActionRotate(){
+    withActiveClip('Rotated 90\u00B0', function(clip){
+      var cur = parseFloat(clip.dataset.rotate) || 0;
+      clip.dataset.rotate = String((cur + 90) % 360);
+    });
+  }
+  function clipActionFlip(){
+    withActiveClip('Flipped', function(clip){
+      boolDatasetToggle(clip, 'flipH');
+    });
+  }
+  function clipActionPosition(){
+    withActiveClip(null, function(clip){
+      var cx = parseFloat(clip.dataset.offsetX) || 0;
+      var cy = parseFloat(clip.dataset.offsetY) || 0;
+      var input = prompt('X, Y offset in pixels (e.g. 50,-30)', cx + ',' + cy);
+      if (input === null) return;
+      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
+      if (parts.length !== 2 || !isFinite(parts[0]) || !isFinite(parts[1])){
+        showToast('Invalid position'); return;
+      }
+      clip.dataset.offsetX = String(parts[0]);
+      clip.dataset.offsetY = String(parts[1]);
+      showToast('Offset ' + parts[0] + ',' + parts[1]);
+    });
+  }
+  // ── Timing ──
+  function clipActionReverse(){
+    withActiveClip(null, function(clip){
+      var now = boolDatasetToggle(clip, 'reverse');
+      showToast('Reverse ' + (now ? 'on' : 'off'));
+    });
+  }
+  function clipActionLoop(){
+    withActiveClip(null, function(clip){
+      var now = boolDatasetToggle(clip, 'loop');
+      showToast('Loop ' + (now ? 'on' : 'off'));
+    });
+  }
+  function clipActionFreeze(){
+    withActiveClip(null, function(clip){
+      var now = boolDatasetToggle(clip, 'freeze');
+      showToast('Freeze ' + (now ? 'on' : 'off'));
+    });
+  }
+  function clipActionKeyframe(){
+    showToast('Keyframes coming soon');
+  }
+
+  // Expose so v10-editor-redesign.js EDIT-tab buttons can call them.
+  try {
+    window.clipActionTrim     = clipActionTrim;
+    window.clipActionSplit    = clipActionSplit;
+    window.clipActionSpeed    = clipActionSpeed;
+    window.clipActionCrop     = clipActionCrop;
+    window.clipActionResize   = clipActionResize;
+    window.clipActionRotate   = clipActionRotate;
+    window.clipActionFlip     = clipActionFlip;
+    window.clipActionPosition = clipActionPosition;
+    window.clipActionReverse  = clipActionReverse;
+    window.clipActionLoop     = clipActionLoop;
+    window.clipActionFreeze   = clipActionFreeze;
+    window.clipActionKeyframe = clipActionKeyframe;
+  } catch(_){}
+
+  // Per-clip transform offsets composed UNDER motion in the render stack.
+  // Applied inside the video-rect clip so pillar/letterboxes stay black.
+  function progApplyClipTransforms(ctx, W, H, clip){
+    if (!clip) return;
+    var scale = parseFloat(clip.dataset.scale)   || 1;
+    var rot   = parseFloat(clip.dataset.rotate)  || 0;
+    var flipH = clip.dataset.flipH === 'true';
+    var flipV = clip.dataset.flipV === 'true';
+    var offX  = parseFloat(clip.dataset.offsetX) || 0;
+    var offY  = parseFloat(clip.dataset.offsetY) || 0;
+    if (scale === 1 && rot === 0 && !flipH && !flipV && offX === 0 && offY === 0) return;
+    var cx = W/2, cy = H/2;
+    ctx.translate(cx + offX, cy + offY);
+    if (rot)   ctx.rotate(rot * Math.PI / 180);
+    if (scale !== 1) ctx.scale(scale, scale);
+    if (flipH || flipV) ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+    ctx.translate(-cx, -cy);
+  }
 
   // Find motion clips on M1 whose timeline range contains playhead x,
   // and return {clip, progress 0..1 across clip} for each.

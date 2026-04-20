@@ -1203,6 +1203,17 @@
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-edit');
+
+    // Every button here operates on the currently-SELECTED clip (fallback:
+    // the clip under the playhead). Data-v10-clip-action attribute routes
+    // to window.clipAction* on click.
+    //
+    // ic | label             | data-v10-clip-action
+    function rpBtn(ic, label, action){
+      return '<button class="v10-rp-btn" data-v10-clip-action="' + action +
+        '"><span class="v10-rp-ic">' + ic + '</span>' + label + '</button>';
+    }
+
     div.innerHTML =
       '<div class="v10-rp-section-title">TEXT</div>'+
       '<div class="v10-rp-grid">'+
@@ -1211,31 +1222,47 @@
       '</div>'+
       '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
       '<div class="v10-rp-grid">'+
-        buildRPButtons([['\u2702\ufe0f','Trim'],['\ud83d\udd2a','Split'],['\u26a1','Speed'],['\u2b1c','Crop']])+
+        rpBtn('\u2702\ufe0f','Trim','Trim')+
+        rpBtn('\ud83d\udd2a','Split','Split')+
+        rpBtn('\u26a1','Speed','Speed')+
+        rpBtn('\u2b1c','Crop','Crop')+
       '</div>'+
       '<div class="v10-rp-section-title">TRANSFORM</div>'+
       '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83d\udcd0','Resize'],['\ud83d\udd04','Rotate'],['\ud83e\ude9e','Flip'],['\ud83d\udccd','Position']])+
+        rpBtn('\ud83d\udcd0','Resize','Resize')+
+        rpBtn('\ud83d\udd04','Rotate','Rotate')+
+        rpBtn('\ud83e\ude9e','Flip','Flip')+
+        rpBtn('\ud83d\udccd','Position','Position')+
       '</div>'+
       '<div class="v10-rp-section-title">TIMING</div>'+
       '<div class="v10-rp-grid">'+
-        buildRPButtons([['\u23ea','Reverse'],['\ud83d\udd01','Loop'],['\u2744\ufe0f','Freeze'],['\ud83c\udfaf','Keyframe']])+
+        rpBtn('\u23ea','Reverse','Reverse')+
+        rpBtn('\ud83d\udd01','Loop','Loop')+
+        rpBtn('\u2744\ufe0f','Freeze','Freeze')+
+        rpBtn('\ud83c\udfaf','Keyframe','Keyframe')+
       '</div>';
-    wireRPToast(div);
-    // Wire the real Add-Text buttons BEFORE wireRPToast's generic toast
-    // handler. Both actions open the text modal with a different default size.
+
+    // Wire all clip-action buttons FIRST so wireRPToast doesn't overwrite
+    // them with the generic toast handler.
+    Array.from(div.querySelectorAll('[data-v10-clip-action]')).forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        var act = btn.getAttribute('data-v10-clip-action');
+        var fn  = window['clipAction' + act];
+        if (typeof fn === 'function'){ fn(); }
+        else { toast(act + ' not wired'); }
+      }, true); // capture phase so wireRPToast's bubble handler is pre-empted
+    });
+
+    // Wire the Add Text / Add Title buttons (same as before).
     Array.from(div.querySelectorAll('[data-v10-action="add-text"],[data-v10-action="add-title"]'))
       .forEach(function(btn){
-        // Strip the generic toast handler that wireRPToast attached
-        var clone = btn.cloneNode(true);
-        btn.parentNode.replaceChild(clone, btn);
-        var isTitle = clone.getAttribute('data-v10-action') === 'add-title';
-        clone.addEventListener('click', function(e){
+        var isTitle = btn.getAttribute('data-v10-action') === 'add-title';
+        btn.addEventListener('click', function(e){
           e.preventDefault();
-          if (typeof window.openTextInputModal !== 'function'){
-            toast('Text tool not ready');
-            return;
-          }
+          e.stopPropagation();
+          if (typeof window.openTextInputModal !== 'function'){ toast('Text tool not ready'); return; }
           window.openTextInputModal(function(text, opts){
             opts = opts || {};
             if (isTitle && !opts.fontSize) opts.fontSize = 84;
@@ -1244,8 +1271,10 @@
               window.addTextClipToTimeline(text, opts);
             }
           });
-        });
+        }, true);
       });
+
+    wireRPToast(div);
     return div;
   }
 
