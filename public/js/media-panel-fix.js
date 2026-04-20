@@ -702,40 +702,303 @@
   var _progMediaCache = {};        // key = 'type|url' -> <video>|<img>
   var _progSeekPending = {};       // suppress redundant seeks
 
-  // ── PGM audio metering: WebAudio AnalyserNode on the main <video> ──
+  // ── Audio system: master bus + AnalyserNode for the PGM meter ──
+  // Master GainNode ── Analyser ── destination
+  //   ↑                ↑
+  //   <video> source   scheduled AudioBufferSources (audio clips on A1+)
+  //
+  // All audio paths route through _audioMaster so the PGM meter (and the
+  // user's speakers) hear the SUM of the video's own audio + any audio
+  // clips scheduled on the timeline.
   var _audioCtx = null;
+  var _audioMaster = null;        // GainNode — master mix bus
   var _audioAnalyser = null;
-  var _audioSourceEl = null;
+  var _audioSourceEl = null;      // the <video> we connected via createMediaElementSource
   var _audioTimeBuf = null;
-  function ensureAudioAnalyser(){
+  var _audioBufferCache = {};     // mediaUrl -> decoded AudioBuffer (Promise<AudioBuffer>)
+  var _audioActiveSources = [];   // currently-playing AudioBufferSourceNodes (audio clips)
+
+  function ensureAudioSystem(){
     var video = document.getElementById('videoPlayer') || document.querySelector('video');
-    if (!(video instanceof HTMLMediaElement)) return null;
-    if (_audioAnalyser && _audioSourceEl === video) return _audioAnalyser;
     try {
       if (!_audioCtx){
         _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      // createMediaElementSource can only be called once per element; so we
-      // only do this if we haven't connected to THIS <video> yet.
-      if (_audioSourceEl !== video){
-        var src = _audioCtx.createMediaElementSource(video);
+        _audioMaster = _audioCtx.createGain();
+        _audioMaster.gain.value = 1.0;
         _audioAnalyser = _audioCtx.createAnalyser();
         _audioAnalyser.fftSize = 512;
         _audioAnalyser.smoothingTimeConstant = 0.6;
         _audioTimeBuf = new Uint8Array(_audioAnalyser.fftSize);
-        src.connect(_audioAnalyser);
-        // Route back to output so the user still HEARS the video while we tap it.
+        _audioMaster.connect(_audioAnalyser);
         _audioAnalyser.connect(_audioCtx.destination);
-        _audioSourceEl = video;
+      }
+      // Hook the <video>'s audio into the master bus exactly once per element.
+      if (video instanceof HTMLMediaElement && _audioSourceEl !== video){
+        try {
+          var src = _audioCtx.createMediaElementSource(video);
+          src.connect(_audioMaster);
+          _audioSourceEl = video;
+        } catch(_){ /* may already be connected by a prior session */ }
       }
       if (_audioCtx.state === 'suspended'){
         _audioCtx.resume().catch(function(){});
       }
-      return _audioAnalyser;
+      return _audioCtx;
     } catch(_){
       return null;
     }
   }
+  // Backward-compatible name used by the PGM meter draw fn.
+  function ensureAudioAnalyser(){ ensureAudioSystem(); return _audioAnalyser; }
+
+  // Decode and cache an audio file (returns Promise<AudioBuffer>).
+  function loadAudioBuffer(url){
+    if (!url) return Promise.reject(new Error('no url'));
+    if (_audioBufferCache[url]) return _audioBufferCache[url];
+    var p = fetch(url, { credentials: 'include' })
+      .then(function(r){
+        if (!r.ok) throw new Error('fetch ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function(buf){
+        return new Promise(function(resolve, reject){
+          _audioCtx.decodeAudioData(buf, resolve, reject);
+        });
+      })
+      .catch(function(err){
+        delete _audioBufferCache[url]; // allow retry
+        throw err;
+      });
+    _audioBufferCache[url] = p;
+    return p;
+  }
+
+  // Schedule every audio clip on every audio track, starting from
+  // startPlayheadSec. Each clip's source is decoded (or pulled from cache)
+  // and an AudioBufferSourceNode is created at the right time on the
+  // master bus.
+  function startAudioMixing(startPlayheadSec){
+    if (!ensureAudioSystem()) return;
+    stopAudioMixing(); // clear any prior schedule
+    var clips = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
+    var t0 = _audioCtx.currentTime;
+    clips.forEach(function(clip){
+      var url = clip.dataset.mediaUrl;
+      if (!url) return;
+      var leftSec  = (parseFloat(clip.style.left)  || 0) / TIMELINE_PX_PER_SEC;
+      var widthSec = (parseFloat(clip.style.width) || 0) / TIMELINE_PX_PER_SEC;
+      var srcOff   = parseFloat(clip.dataset.sourceOffset) || 0;
+      var clipEndSec = leftSec + widthSec;
+      if (clipEndSec <= startPlayheadSec) return; // already past this clip
+      var scheduleDelay, offsetInSource, playDur;
+      if (startPlayheadSec <= leftSec){
+        scheduleDelay  = leftSec - startPlayheadSec;
+        offsetInSource = srcOff;
+        playDur        = widthSec;
+      } else {
+        var into = startPlayheadSec - leftSec;
+        scheduleDelay  = 0;
+        offsetInSource = srcOff + into;
+        playDur        = widthSec - into;
+      }
+      if (playDur <= 0) return;
+      loadAudioBuffer(url).then(function(buffer){
+        // Avoid scheduling if transport stopped before decode finished.
+        if (!_transport || !_transport.playing) return;
+        var src = _audioCtx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(_audioMaster);
+        try { src.start(t0 + scheduleDelay, offsetInSource, playDur); } catch(_){}
+        _audioActiveSources.push(src);
+        // Auto-cleanup when the source ends naturally
+        src.addEventListener('ended', function(){
+          var idx = _audioActiveSources.indexOf(src);
+          if (idx >= 0) _audioActiveSources.splice(idx, 1);
+        });
+      }).catch(function(){
+        // Decode failed (CORS, codec, blob URL gone). Quietly skip this clip.
+      });
+    });
+  }
+  function stopAudioMixing(){
+    _audioActiveSources.forEach(function(src){
+      try { src.stop(); } catch(_){}
+      try { src.disconnect(); } catch(_){}
+    });
+    _audioActiveSources = [];
+  }
+
+  // ── Transport (Play/Pause) ──
+  var _transport = { playing: false, startTimestamp: 0, startPlayheadSec: 0, raf: null };
+  function getTimelineEndSec(){
+    var maxEnd = 0;
+    document.querySelectorAll('.mt-clip').forEach(function(c){
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (l + w > maxEnd) maxEnd = l + w;
+    });
+    return maxEnd / TIMELINE_PX_PER_SEC;
+  }
+  function tlIsPlaying(){ return !!_transport.playing; }
+  function tlPlay(){
+    if (_transport.playing) return;
+    ensureAudioSystem(); // user-gesture context
+    var ph = document.getElementById('mtPlayhead');
+    var phSec = ph ? ((parseFloat(ph.style.left) || 0) / TIMELINE_PX_PER_SEC) : 0;
+    var endSec = getTimelineEndSec();
+    if (phSec >= endSec - 0.05) {
+      // Wrap to start so pressing play at the end replays from 0
+      phSec = 0;
+      if (ph) ph.style.left = '0px';
+    }
+    _transport.playing         = true;
+    _transport.startPlayheadSec = phSec;
+    _transport.startTimestamp   = performance.now();
+    startAudioMixing(phSec);
+    // Drive whatever's at the playhead right now — video plays itself
+    // (its audio path is already on the master bus); image overlay shows
+    // for image clips; black for gaps.
+    transportTickAndRender(phSec);
+    _transport.raf = requestAnimationFrame(tlTransportRAF);
+    updateTransportBtnUI();
+  }
+  function tlPause(){
+    if (!_transport.playing) return;
+    _transport.playing = false;
+    stopAudioMixing();
+    var video = document.getElementById('videoPlayer');
+    if (video && !video.paused){ try { video.pause(); } catch(_){} }
+    if (_transport.raf){ cancelAnimationFrame(_transport.raf); _transport.raf = null; }
+    updateTransportBtnUI();
+  }
+  function tlTogglePlay(){ if (_transport.playing) tlPause(); else tlPlay(); }
+
+  function transportTickAndRender(phSec){
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = (phSec * TIMELINE_PX_PER_SEC) + 'px';
+    var phPx = phSec * TIMELINE_PX_PER_SEC;
+    var hit = getClipAtPlayheadX(phPx);
+    var video = document.getElementById('videoPlayer');
+    var clipType = hit ? (hit.clip.dataset.clipType || (hit.clip.classList.contains('mt-clip-audio') ? 'aud' : 'vid')) : null;
+    if (!hit || clipType === 'aud'){
+      // No video clip here — gap (or audio-only). Pause video, show black.
+      if (video && !video.paused){ try { video.pause(); } catch(_){} }
+      hideImagePreview();
+      showBlackPreview();
+      return;
+    }
+    if (clipType === 'img'){
+      if (video && !video.paused){ try { video.pause(); } catch(_){} }
+      hideBlackPreview();
+      if (hit.clip.dataset.mediaUrl) showImagePreview(hit.clip.dataset.mediaUrl);
+      return;
+    }
+    // Video clip — keep the <video> element pointed at the right src and time
+    hideImagePreview();
+    hideBlackPreview();
+    if (!video) return;
+    var clip = hit.clip;
+    var url = clip.dataset.mediaUrl;
+    if (!url) return;
+    var srcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+    var offIn  = hit.offsetPx / TIMELINE_PX_PER_SEC;
+    var wantSec = srcOff + offIn;
+    var normCurrent = video.src;
+    var normTarget  = normalizeUrl(url);
+    if (normCurrent !== normTarget){
+      _lastPreviewUrl = url;
+      try { video.src = url; video.load(); } catch(_){}
+      var playSeek = function(){
+        try { video.currentTime = Math.max(0, wantSec); } catch(_){}
+        if (_transport.playing){ try { video.play(); } catch(_){} }
+      };
+      video.addEventListener('loadedmetadata', playSeek, {once:true});
+    } else {
+      // Drift correction: if we're more than 0.3s off, snap.
+      if (Math.abs((video.currentTime || 0) - wantSec) > 0.3){
+        try { video.currentTime = wantSec; } catch(_){}
+      }
+      if (_transport.playing && video.paused){ try { video.play(); } catch(_){} }
+    }
+  }
+
+  function tlTransportRAF(){
+    if (!_transport.playing){ _transport.raf = null; return; }
+    var elapsed = (performance.now() - _transport.startTimestamp) / 1000;
+    var phSec = _transport.startPlayheadSec + elapsed;
+    var endSec = getTimelineEndSec();
+    if (phSec > endSec){
+      // Stop at the end of the sequence (and snap playhead exactly).
+      var ph = document.getElementById('mtPlayhead');
+      if (ph) ph.style.left = (endSec * TIMELINE_PX_PER_SEC) + 'px';
+      tlPause();
+      return;
+    }
+    transportTickAndRender(phSec);
+    _transport.raf = requestAnimationFrame(tlTransportRAF);
+  }
+
+  function ensureTransportBtn(){
+    var existing = document.getElementById('tlTransportBtn');
+    if (existing instanceof HTMLButtonElement && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var btn = (existing instanceof HTMLButtonElement) ? existing : document.createElement('button');
+    btn.id = 'tlTransportBtn';
+    btn.type = 'button';
+    btn.title = 'Play / pause the timeline (Space)';
+    btn.textContent = '\u25B6 Play';
+    btn.style.cssText = 'position:absolute;top:10px;right:74px;z-index:8;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(34,197,94,.55);border-radius:6px;cursor:pointer;backdrop-filter:blur(4px)';
+    if (!btn.dataset.v14){
+      btn.dataset.v14 = '1';
+      btn.addEventListener('click', function(){ tlTogglePlay(); });
+    }
+    try { container.appendChild(btn); } catch(_){ return null; }
+    return btn;
+  }
+  function updateTransportBtnUI(){
+    var btn = ensureTransportBtn();
+    if (!btn) return;
+    if (_transport.playing){
+      btn.textContent = '\u275A\u275A Pause';
+      btn.style.background = 'rgba(239,68,68,.85)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'rgba(239,68,68,.55)';
+    } else {
+      btn.textContent = '\u25B6 Play';
+      btn.style.background = 'rgba(15,10,30,.75)';
+      btn.style.color = '#e2e0f0';
+      btn.style.borderColor = 'rgba(34,197,94,.55)';
+    }
+  }
+  // Spacebar shortcut
+  if (!document.body.dataset.v14Space){
+    document.body.dataset.v14Space = '1';
+    document.addEventListener('keydown', function(e){
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      var t = e.target;
+      var tag = (t && t.tagName) || '';
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (t && t.isContentEditable)) return;
+      if (e.target instanceof HTMLButtonElement) return;
+      e.preventDefault();
+      tlTogglePlay();
+    });
+  }
+  // Lazily mount the button (waits for the player to exist).
+  (function retryMountTransport(){
+    if (ensureTransportBtn()) { updateTransportBtnUI(); return; }
+    var tries = 0;
+    var iv = setInterval(function(){
+      tries++;
+      if (ensureTransportBtn()){ updateTransportBtnUI(); clearInterval(iv); }
+      else if (tries > 40) clearInterval(iv);
+    }, 250);
+  })();
+  // Expose for other scripts / debugging
+  try { window.tlPlay = tlPlay; window.tlPause = tlPause; window.tlTogglePlay = tlTogglePlay; } catch(_){}
   function progDrawAudioMeters(ctx, W, H){
     var analyser = ensureAudioAnalyser();
     if (!analyser || !_audioTimeBuf) return;
@@ -1380,6 +1643,9 @@
     return null;
   }
   function syncPlayheadToVideo(){
+    // Transport owns the playhead when it's playing — skip passive sync
+    // so wall-clock and video-driven updates don't fight each other.
+    if (_transport && _transport.playing) return;
     var video = document.getElementById('videoPlayer') || document.querySelector('video');
     if (!video) return;
     var clip = findClipForPlayer(video);
@@ -1402,6 +1668,9 @@
     // gap to the next video clip and resume. If the playhead is already at
     // the end of the sequence, just show the black overlay.
     video.addEventListener('ended', function(){
+      // Transport manages sequencing during its own playback — don't
+      // double up the gap animation.
+      if (_transport && _transport.playing) return;
       var ph = document.getElementById('mtPlayhead');
       if (!ph) return;
       // Align playhead exactly to the end of the currently-playing clip.
