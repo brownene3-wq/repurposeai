@@ -3175,7 +3175,12 @@ function showToast(message, type = 'success') {
             fxSaturate:   c.dataset.fxSaturate   || '',
             fxBlur:       c.dataset.fxBlur       || '',
             fxHue:        c.dataset.fxHue        || '',
-            fxColorGrade: c.dataset.fxColorGrade || ''
+            fxColorGrade: c.dataset.fxColorGrade || '',
+            // Motion (M1)
+            motionEffect: c.dataset.motionEffect || '',
+            // Position offset
+            offsetX:      c.dataset.offsetX      || '',
+            offsetY:      c.dataset.offsetY      || ''
           };
         });
 
@@ -6504,8 +6509,21 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       if (!c.mediaUrl) return false;
       return urlToFilePath(c.mediaUrl) !== null;
     });
+    // M1 motion clips — rotate / fade-in / fade-out / zoom-in bake into the
+    // stitched video as time-gated post-filters. Other motion effects
+    // (pan-left, pan-right, zoom-out, shake) are preview-only for now because
+    // FFmpeg's pad/scale filters don't accept per-frame expressions in the
+    // output dims and there's no clean deterministic translation.
+    var BAKEABLE_MOTION = { 'rotate': 1, 'fade-in': 1, 'fade-out': 1, 'zoom-in': 1 };
+    var motionClips = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      var isMotionTrack = (t === 'music' || t === 'mus' || c.clipType === 'motion');
+      if (!isMotionTrack) return false;
+      var eff = (c.motionEffect || '').toLowerCase();
+      return !!BAKEABLE_MOTION[eff];
+    });
 
-    var hasPostPass = textClips.length > 0 || audioClips.length > 0;
+    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0;
 
     if (!hasPostPass){
       // Nothing to bake — just rename the intermediate to the final path.
@@ -6529,7 +6547,52 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           .replace(/\{/g, '\\{')
           .replace(/\}/g, '\\}');
       }
+      // Motion filters: rotate/fade-in/fade-out/zoom-in for M1 clips.
+      // Each filter is time-gated to its motion clip's timeline window via
+      // between(t, START, END); outside the window, the filter is a no-op.
+      function buildMotionFilter(mc){
+        var leftSec = (parseFloat(mc.left)  || 0) / pxPerSec;
+        var durSec  = (parseFloat(mc.width) || 0) / pxPerSec;
+        if (durSec <= 0.01) return null;
+        var S = leftSec;
+        var E = leftSec + durSec;
+        var D = durSec;
+        var eff = (mc.motionEffect || '').toLowerCase();
+        function f(n){ return n.toFixed(3); }
+        if (eff === 'fade-in'){
+          return 'fade=t=in:st=' + f(S) + ':d=' + f(D);
+        }
+        if (eff === 'fade-out'){
+          return 'fade=t=out:st=' + f(S) + ':d=' + f(D);
+        }
+        if (eff === 'rotate'){
+          // ±10° pulse via sin curve, zero at both endpoints so the video
+          // returns to its default state at the clip boundaries.
+          var pulse = '0.17453*sin((t-' + f(S) + ')/' + f(D) + '*PI)';
+          var gated = 'if(between(t\\,' + f(S) + '\\,' + f(E) + ')\\,' + pulse + '\\,0)';
+          return 'rotate=a=\'' + gated + '\':c=black:ow=iw:oh=ih';
+        }
+        if (eff === 'zoom-in'){
+          // Crop an ever-shrinking center region then scale back to the
+          // output dimensions — net effect is a zoom-in pulse. Divisor
+          // returns to 1 outside the motion window (no-op crop).
+          var scale = '1+0.3*sin((t-' + f(S) + ')/' + f(D) + '*PI)';
+          var gated = 'if(between(t\\,' + f(S) + '\\,' + f(E) + ')\\,' + scale + '\\,1)';
+          var wExpr = 'iw/(' + gated + ')';
+          var hExpr = 'ih/(' + gated + ')';
+          return 'crop=w=\'' + wExpr + '\':h=\'' + hExpr + '\':x=\'(iw-ow)/2\':y=\'(ih-oh)/2\'' +
+                 ',scale=' + outW + ':' + outH + ':flags=bicubic';
+        }
+        return null;
+      }
+
       var videoGraph = '[0:v]';
+      var graphBody = [];
+      // Motion filters FIRST (transform the pixels), then drawtext overlays
+      motionClips.forEach(function(mc){
+        var f = buildMotionFilter(mc);
+        if (f) graphBody.push(f);
+      });
       if (textClips.length){
         var parts = textClips.map(function(tc){
           var leftSec = (parseFloat(tc.left)  || 0) / pxPerSec;
@@ -6554,9 +6617,12 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
             'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
           ].join(':');
         });
-        videoGraph += parts.join(',');
-      } else {
+        graphBody.push(parts.join(','));
+      }
+      if (graphBody.length === 0){
         videoGraph += 'null';
+      } else {
+        videoGraph += graphBody.join(',');
       }
       videoGraph += '[vout]';
 
