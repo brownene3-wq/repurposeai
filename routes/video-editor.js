@@ -563,7 +563,6 @@ router.get('/', requireAuth, async (req, res) => {
             <a href="/dashboard" style="text-decoration:none"><span class="e-logo">Splicora</span></a>
             <div class="e-sp"></div>
             <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
-            <button class="e-tb ex" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export</button>
           </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
               <div class="media-library" id="mediaLibrary">
@@ -951,7 +950,7 @@ router.get('/', requireAuth, async (req, res) => {
               <button type="button" class="toolbar-btn" id="zoomInBtn" title="Zoom In">➕</button>
               <div style="flex:1"></div>
               <button type="button" class="toolbar-btn" id="saveChangesBtn" title="Save Changes" style="background:var(--primary);color:white;border-color:var(--primary)">💾 Save</button>
-              <button type="button" class="toolbar-btn" id="quickExportBtn" title="Export" style="background:linear-gradient(135deg,#10B981,#06B6D4);color:white;border-color:transparent">📥 Export</button>
+              <button type="button" class="toolbar-btn" id="quickSaveDraftBtn" title="Save the current project state as a draft" style="background:linear-gradient(135deg,#10B981,#06B6D4);color:white;border-color:transparent">💾 Save as Draft</button>
             </div>
           </div>
         </div>
@@ -1084,7 +1083,7 @@ router.get('/', requireAuth, async (req, res) => {
               <select class="exp-sel"><option>1080p</option><option>720p</option><option>4K</option></select>
               <select class="exp-sel"><option>MP4</option><option>MOV</option><option>WebM</option></select>
             </div>
-            <button class="exp-go" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export Video</button>
+            <button class="exp-go" id="exportButton" type="button">\ud83c\udfac Export Video</button>
           </div>
         </div>
       </div>
@@ -3261,7 +3260,7 @@ function showToast(message, type = 'success') {
           if (!resp.ok) throw new Error(dataTL.error || 'Timeline export failed');
           handleSuccess(dataTL);
           button.disabled = false;
-          button.innerHTML = '\ud83d\udce5 Export Video';
+          button.innerHTML = '\ud83c\udfac Export Video';
           return;
         }
 
@@ -3269,7 +3268,7 @@ function showToast(message, type = 'success') {
         if (!currentVideoFile) {
           showToast('Please upload a video first or add clips to the timeline', 'error');
           button.disabled = false;
-          button.innerHTML = '\ud83d\udce5 Export Video';
+          button.innerHTML = '\ud83c\udfac Export Video';
           return;
         }
 
@@ -3327,7 +3326,7 @@ function showToast(message, type = 'success') {
         showToast('Export failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '📥 Export Video';
+        button.innerHTML = '🎬 Export Video';
       }
     });
 
@@ -3621,9 +3620,19 @@ function showToast(message, type = 'success') {
     }
 
     const quickExportBtn = document.getElementById('quickExportBtn');
+    // Legacy quickExportBtn forwarder (no-op if button doesn't exist)
     if (quickExportBtn) {
       quickExportBtn.addEventListener('click', function() {
         document.getElementById('exportButton')?.click();
+      });
+    }
+    // Secondary Save as Draft button in the Editor Toolbar — forwards
+    // to the primary saveAsDraftBtn so both buttons share the exact
+    // same save-draft behaviour.
+    var quickSaveDraftBtn = document.getElementById('quickSaveDraftBtn');
+    if (quickSaveDraftBtn) {
+      quickSaveDraftBtn.addEventListener('click', function() {
+        document.getElementById('saveAsDraftBtn')?.click();
       });
     }
 
