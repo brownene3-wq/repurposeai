@@ -1101,14 +1101,38 @@
     _progMediaCache[key] = el;
     return el;
   }
-  function progDrawContain(ctx, src, W, H, sW, sH){
-    if (!sW || !sH) return;
+  function progContainRect(W, H, sW, sH){
+    if (!sW || !sH) return null;
     var srcAspect = sW / sH;
     var dstAspect = W / H;
     var dw, dh;
     if (srcAspect > dstAspect){ dw = W; dh = W / srcAspect; }
     else                     { dh = H; dw = H * srcAspect; }
-    ctx.drawImage(src, (W - dw)/2, (H - dh)/2, dw, dh);
+    return { dx: (W - dw) / 2, dy: (H - dh) / 2, dw: dw, dh: dh };
+  }
+  function progDrawContain(ctx, src, W, H, sW, sH){
+    var r = progContainRect(W, H, sW, sH);
+    if (!r) return;
+    ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+  }
+  // Draw a source (video or image) through a motion offset transform, with
+  // the drawing region CLIPPED to the source's letterbox-fit rect. Motion
+  // pans/zooms/rotates inside that rect; any pixels that would fall into
+  // the pillar/letter boxes are clipped away, leaving the pre-painted
+  // black fill visible in those regions. Returns the motion state so the
+  // caller can draw the 'Motion queued' badge on top of the unclipped canvas.
+  function progDrawWithMotion(ctx, src, W, H, sW, sH, activeMotion){
+    var r = progContainRect(W, H, sW, sH);
+    if (!r) return null;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.dx, r.dy, r.dw, r.dh);
+    ctx.clip(); // pillar/letterbox area is now OUTSIDE the clip
+    var state = progApplyMotion(ctx, W, H, activeMotion); // inner save + transform
+    ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+    progExitMotionTransform(ctx, state);                  // inner restore only
+    ctx.restore();                                         // drops clip
+    return state;
   }
   function ensureProgramMonitor(){
     var existing = document.getElementById('tlProgMonitor');
@@ -1195,9 +1219,8 @@
         var img = getOrCreateProgSource(url, 'img');
         if (img && img.complete && img.naturalWidth > 0){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-          var moState1 = progApplyMotion(ctx, W, H, activeMotion);
-          progDrawContain(ctx, img, W, H, img.naturalWidth, img.naturalHeight);
-          progExitMotion(ctx, moState1);
+          var moState1 = progDrawWithMotion(ctx, img, W, H, img.naturalWidth, img.naturalHeight, activeMotion);
+          progDrawMotionBadge(ctx, moState1);
           drawn = true;
         }
       } else if (url){
@@ -1210,9 +1233,8 @@
           && normalizeUrl(mainVideo.src) === normalizeUrl(url);
         if (mainUsable){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-          var moState2 = progApplyMotion(ctx, W, H, activeMotion);
-          progDrawContain(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight);
-          progExitMotion(ctx, moState2);
+          var moState2 = progDrawWithMotion(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight, activeMotion);
+          progDrawMotionBadge(ctx, moState2);
           drawn = true;
         } else {
           var vid = getOrCreateProgSource(url, 'vid');
@@ -1231,9 +1253,8 @@
             }
             if (vid.readyState >= 2 && vid.videoWidth){
               ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-              var moState3 = progApplyMotion(ctx, W, H, activeMotion);
-              progDrawContain(ctx, vid, W, H, vid.videoWidth, vid.videoHeight);
-              progExitMotion(ctx, moState3);
+              var moState3 = progDrawWithMotion(ctx, vid, W, H, vid.videoWidth, vid.videoHeight, activeMotion);
+              progDrawMotionBadge(ctx, moState3);
               drawn = true;
             }
           }
@@ -1816,11 +1837,14 @@
     ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
     return { active: true, effects: effects };
   }
-  function progExitMotion(ctx, state){
-    if (!state || !state.active) return;
-    ctx.restore(); // canvas transform back to identity — base state restored
-    if (!state.effects || !state.effects.length) return;
-    // Small corner badge naming which motion is currently running.
+  // Transform-only restore — used inside the clipped region before the
+  // outer clip save/restore unwinds. Separated from badge-draw so the
+  // badge can paint on the unclipped canvas AFTER the outer restore.
+  function progExitMotionTransform(ctx, state){
+    if (state && state.active) ctx.restore();
+  }
+  function progDrawMotionBadge(ctx, state){
+    if (!state || !state.effects || !state.effects.length) return;
     var W = ctx.canvas.width;
     var names = state.effects.map(function(k){
       return ({
