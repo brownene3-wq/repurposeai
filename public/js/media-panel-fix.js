@@ -529,6 +529,12 @@
     if (mediaType !== 'aud' && _timelineState.snap){ compactVideoTrack(); }
     pushTimelineHistory();
     showToast('Added to timeline: ' + fileName);
+    // Auto-enable the Program Monitor the first time the user adds any
+    // content to the timeline — makes PGM the default view for uploads.
+    if (!_progAutoEnabledOnce && !_progEnabled){
+      _progAutoEnabledOnce = true;
+      try { toggleProgramMonitor(); } catch(_){}
+    }
   }
 
   // Toolbar: Razor / Select (mutually exclusive) + Snap (independent boolean).
@@ -702,6 +708,8 @@
   var _progMediaCache = {};        // key = 'type|url' -> <video>|<img>
   var _progSeekPending = {};       // suppress redundant seeks
   var _progHasFrame = false;       // keep last frame while a seek is loading
+  var _progLastClipKey = null;     // identity of last-rendered clip — clear on transition
+  var _progAutoEnabledOnce = false; // auto-turn PGM on the first time content arrives
 
   // ── Audio system: master bus + AnalyserNode for the PGM meter ──
   // Master GainNode ── Analyser ── destination
@@ -1200,17 +1208,29 @@
       }
     }
 
+    // Transition detection: keyed on the clip's filename + url so undo /
+    // redo / drag-to-reorder all register as a "new" clip when appropriate.
+    var currentClipKey = hit
+      ? ((hit.clip.dataset.fileName || '') + '|' + (hit.clip.dataset.mediaUrl || '') + '|' + (hit.clip.dataset.clipType || ''))
+      : null;
+    var transitioned = currentClipKey !== _progLastClipKey;
+
     if (!drawn){
-      // Real gap or source still loading — if we've never drawn yet (no prior
-      // frame) clear to black; otherwise leave the previous frame up for one
-      // more tick so we don't flicker to black while a seek is in flight.
-      if (!_progHasFrame || (hit === null || hit === undefined)){
+      // We're showing a gap OR the new clip's source hasn't loaded yet.
+      // Clear to black when:
+      //   - we've never drawn a frame, OR
+      //   - we're in a gap (hit is null/undefined), OR
+      //   - the clip under the playhead just changed (don't keep painting
+      //     the previous clip's last frame on top of a new clip).
+      // Otherwise (same clip, brief seek in flight): keep the last frame.
+      if (!_progHasFrame || !hit || transitioned){
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, W, H);
       }
     } else {
       _progHasFrame = true;
     }
+    _progLastClipKey = currentClipKey;
 
     // Watermark so the user knows this is a simulation — NOT the final export.
     ctx.fillStyle = 'rgba(139,92,246,.95)';

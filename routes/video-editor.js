@@ -6396,7 +6396,15 @@ router.get('/download/:filename', requireAuth, (req, res) => {
 
     // Serve file for video playback (not just download)
     const ext = path.extname(filePath).toLowerCase();
-    const mimeTypes = { '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.avi': 'video/x-msvideo', '.gif': 'image/gif' };
+    const mimeTypes = {
+      '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
+      '.avi': 'video/x-msvideo',
+      '.gif': 'image/gif', '.png': 'image/png',
+      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp', '.svg': 'image/svg+xml',
+      '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+      '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac'
+    };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
     const stat = fs.statSync(filePath);
