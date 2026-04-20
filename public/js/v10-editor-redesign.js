@@ -1219,6 +1219,8 @@
       '<div class="v10-rp-grid">'+
         '<button class="v10-rp-btn" data-v10-action="add-text"><span class="v10-rp-ic">\ud83c\udd97</span>Add Text</button>'+
         '<button class="v10-rp-btn" data-v10-action="add-title"><span class="v10-rp-ic">\ud83d\udcdd</span>Add Title</button>'+
+        rpBtn('\ud83d\udd24','Font Size','TextFontSize')+
+        rpBtn('\ud83c\udfa8','Text Color','TextColor')+
       '</div>'+
       '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
       '<div class="v10-rp-grid">'+

@@ -2001,6 +2001,138 @@
   try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
   try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
 
+  // ── Timeline zoom ──────────────────────────────────────────────
+  // Rescales every clip's left/width and the playhead in pixels while
+  // keeping all second-domain data (sourceOffset, keyframes, fades,
+  // motion clip times) untouched. factor > 1 zooms in, factor < 1
+  // zooms out. Cumulative zoom is clamped so pxPerSec stays in
+  // [1, 200] — more than enough for frame-level editing at 30fps.
+  var MIN_PX_PER_SEC = 1;
+  var MAX_PX_PER_SEC = 200;
+  function setTimelineZoom(factor){
+    if (!isFinite(factor) || factor <= 0) return;
+    var current = TIMELINE_PX_PER_SEC;
+    var target  = current * factor;
+    target = Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, target));
+    var ratio = target / current;
+    if (Math.abs(ratio - 1) < 0.001) return;
+    TIMELINE_PX_PER_SEC = target;
+    try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
+    // Rescale every clip
+    Array.from(document.querySelectorAll('.mt-clip')).forEach(function(c){
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      c.style.left  = (l * ratio) + 'px';
+      c.style.width = (w * ratio) + 'px';
+      try { refreshKeyframeMarkers(c); } catch(_){}
+    });
+    // Rescale the playhead x-position
+    var ph = document.getElementById('mtPlayhead');
+    if (ph){
+      var phLeft = parseFloat(ph.style.left) || 0;
+      ph.style.left = (phLeft * ratio) + 'px';
+    }
+    try { updateTimelineInfo(); } catch(_){}
+    try { syncPreviewToPlayhead(); } catch(_){}
+    showToast('Zoom: ' + Math.round(target) + 'px/s');
+  }
+  try { window.setTimelineZoom = setTimelineZoom; } catch(_){}
+
+  // ── Marquee selection ─────────────────────────────────────────
+  // Drag on an empty area of the tracks to rubber-band select all
+  // overlapping clips. Shift adds to the existing selection; without
+  // Shift the previous selection is cleared on mousedown.
+  (function wireMarquee(){
+    var tracksArea = document.getElementById('mtTracksArea');
+    if (!tracksArea || tracksArea.dataset.v14Marquee) return;
+    tracksArea.dataset.v14Marquee = '1';
+
+    var marq = null;
+    var start = null;
+
+    tracksArea.addEventListener('mousedown', function(e){
+      // Only start marquee when the pointer isn't on a clip, handle,
+      // playhead, or track label — and only in Select tool mode.
+      if (_timelineState.tool !== 'select') return;
+      if (e.button !== 0) return;
+      if (e.target !== tracksArea && !e.target.classList.contains('mt-track')) return;
+
+      var rect = tracksArea.getBoundingClientRect();
+      start = {
+        x: e.clientX - rect.left + tracksArea.scrollLeft,
+        y: e.clientY - rect.top  + tracksArea.scrollTop
+      };
+
+      if (!e.shiftKey){
+        Array.from(document.querySelectorAll('.mt-clip.selected'))
+          .forEach(function(c){ c.classList.remove('selected'); });
+      }
+
+      marq = document.createElement('div');
+      marq.className = 'mt-marquee';
+      marq.style.left   = start.x + 'px';
+      marq.style.top    = start.y + 'px';
+      marq.style.width  = '0px';
+      marq.style.height = '0px';
+      tracksArea.appendChild(marq);
+      e.preventDefault();
+
+      function onMove(ev){
+        if (!marq || !start) return;
+        var r = tracksArea.getBoundingClientRect();
+        var cx = ev.clientX - r.left + tracksArea.scrollLeft;
+        var cy = ev.clientY - r.top  + tracksArea.scrollTop;
+        var x = Math.min(start.x, cx);
+        var y = Math.min(start.y, cy);
+        var w = Math.abs(cx - start.x);
+        var h = Math.abs(cy - start.y);
+        marq.style.left   = x + 'px';
+        marq.style.top    = y + 'px';
+        marq.style.width  = w + 'px';
+        marq.style.height = h + 'px';
+      }
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (!marq){ return; }
+        // Select every clip whose bounding box overlaps the marquee
+        var mx = parseFloat(marq.style.left)   || 0;
+        var my = parseFloat(marq.style.top)    || 0;
+        var mw = parseFloat(marq.style.width)  || 0;
+        var mh = parseFloat(marq.style.height) || 0;
+        var taBB = tracksArea.getBoundingClientRect();
+        Array.from(document.querySelectorAll('.mt-clip')).forEach(function(c){
+          var bb = c.getBoundingClientRect();
+          var cx1 = bb.left - taBB.left + tracksArea.scrollLeft;
+          var cy1 = bb.top  - taBB.top  + tracksArea.scrollTop;
+          var cx2 = cx1 + bb.width;
+          var cy2 = cy1 + bb.height;
+          var mx2 = mx + mw, my2 = my + mh;
+          var overlaps = !(cx2 < mx || cx1 > mx2 || cy2 < my || cy1 > my2);
+          if (overlaps && mw > 4 && mh > 4){
+            c.classList.add('selected');
+          }
+        });
+        // Only swallow the click if the marquee was more than a tiny
+        // drag — otherwise it's just a click on empty timeline area
+        // which should move the playhead (handled elsewhere).
+        if (mw > 4 || mh > 4){
+          // Prevent the subsequent click from firing on the tracks area
+          var swallow = function(ev2){
+            ev2.stopPropagation();
+            document.removeEventListener('click', swallow, true);
+          };
+          document.addEventListener('click', swallow, true);
+        }
+        if (marq.parentNode) marq.parentNode.removeChild(marq);
+        marq = null;
+        start = null;
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
+
   // ── Text clips ──
   // Text lives on T1 (.mt-track-text). It's rendered as an overlay on top
   // of whatever visual clip is below it on V1. Text clips behave like any
@@ -2240,6 +2372,52 @@
       clip.dataset.offsetX = String(parts[0]);
       clip.dataset.offsetY = String(parts[1]);
       showToast('Offset ' + parts[0] + ',' + parts[1]);
+    });
+  }
+  // ── Text clip editors ──
+  // Operate on the currently selected text clip. If none is selected,
+  // prompt to apply to ALL text clips on T1 (useful for caption runs).
+  function withTextClipsTarget(fn){
+    var sel = document.querySelector('.mt-clip.mt-clip-text.selected');
+    var all = Array.from(document.querySelectorAll('.mt-track-text .mt-clip'));
+    if (sel){ fn([sel]); return; }
+    if (all.length === 0){ showToast('Add a text clip first'); return; }
+    if (confirm('No text clip is selected. Apply to ALL ' + all.length + ' text clips on T1?')){
+      fn(all);
+    }
+  }
+  function clipActionTextFontSize(){
+    withTextClipsTarget(function(clips){
+      var first = clips[0];
+      var cur = parseInt(first.dataset.fontSize, 10) || 56;
+      var input = prompt('Font size in pixels (8-200)', String(cur));
+      if (input === null) return;
+      var v = parseInt(input, 10);
+      if (!isFinite(v) || v < 8 || v > 200){
+        showToast('Enter a number between 8 and 200');
+        return;
+      }
+      clips.forEach(function(c){ c.dataset.fontSize = String(v); });
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast('Font size: ' + v + 'px' + (clips.length > 1 ? ' (all)' : ''));
+    });
+  }
+  function clipActionTextColor(){
+    withTextClipsTarget(function(clips){
+      var first = clips[0];
+      var cur = first.dataset.textColor || '#ffffff';
+      var input = prompt('Text color (hex, e.g. #ffffff, #ffcc00)', cur);
+      if (input === null) return;
+      var v = String(input).trim();
+      if (!/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)){
+        showToast('Invalid color — use #rgb or #rrggbb');
+        return;
+      }
+      clips.forEach(function(c){ c.dataset.textColor = v; });
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast('Text color: ' + v + (clips.length > 1 ? ' (all)' : ''));
     });
   }
   // ── Timing ──
@@ -2539,6 +2717,8 @@
     window.clipActionLoop     = clipActionLoop;
     window.clipActionFreeze   = clipActionFreeze;
     window.clipActionKeyframe = clipActionKeyframe;
+    window.clipActionTextFontSize = clipActionTextFontSize;
+    window.clipActionTextColor    = clipActionTextColor;
   } catch(_){}
 
   // Build a ctx.filter CSS-filter string from the active clip's FX flags.

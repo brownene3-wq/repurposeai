@@ -523,6 +523,8 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-clip-trim.mt-trim-l{left:0;border-radius:6px 0 0 6px}
     .mt-clip-trim.mt-trim-r{right:0;border-radius:0 6px 6px 0}
     .mt-clip.mt-trimming{outline:2px solid #f59e0b;outline-offset:-2px}
+    /* Marquee selection rectangle (drawn while dragging across tracks) */
+    .mt-marquee{position:absolute;border:1px dashed #a78bfa;background:rgba(124,58,237,.15);pointer-events:none;z-index:9;border-radius:3px}
     /* Keyframe markers — yellow diamonds anchored along the top edge
        of the clip at each keyframe's relative t position. */
     .mt-kf-marker{position:absolute;top:-3px;width:7px;height:7px;background:#fde047;border:1px solid #ca8a04;transform:translateX(-50%) rotate(45deg);border-radius:1px;pointer-events:none;z-index:3;box-shadow:0 0 3px rgba(253,224,71,.8)}
@@ -3604,11 +3606,22 @@ function showToast(message, type = 'success') {
       });
     }
 
-    let timelineZoom = 1;
+    // Real timeline zoom — rescales every clip's left/width in pixels and
+    // updates the global px-per-second so cuts/clicks stay frame-accurate.
+    // (The old implementation applied a cosmetic scaleX transform which
+    // looked fine but broke playhead math and drop positions.)
     const zoomInBtn = document.getElementById('zoomInBtn');
     const zoomOutBtn = document.getElementById('zoomOutBtn');
-    if (zoomInBtn) zoomInBtn.addEventListener('click', () => { timelineZoom = Math.min(timelineZoom + 0.25, 4); if (timelineContainer) timelineContainer.style.transform = 'scaleX(' + timelineZoom + ')'; });
-    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => { timelineZoom = Math.max(timelineZoom - 0.25, 0.25); if (timelineContainer) timelineContainer.style.transform = 'scaleX(' + timelineZoom + ')'; });
+    function applyTimelineZoom(factor){
+      if (typeof window.setTimelineZoom === 'function'){
+        window.setTimelineZoom(factor);
+      } else {
+        // Fallback if the helper isn't loaded yet
+        showToast('Zoom not ready yet');
+      }
+    }
+    if (zoomInBtn)  zoomInBtn.addEventListener('click',  function(){ applyTimelineZoom(1.5);  });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', function(){ applyTimelineZoom(1/1.5); });
 
     const saveChangesBtn = document.getElementById('saveChangesBtn');
     if (saveChangesBtn) {
