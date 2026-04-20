@@ -3137,18 +3137,26 @@ function showToast(message, type = 'success') {
       // the timeline (multiple clips + gaps + razor splits) via the new
       // /video-editor/export-timeline endpoint. Fall back to the single-file
       // /video-editor/export (with filters) only when the timeline is empty.
-      var timelineClips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'))
+      // Collect EVERY clip from every track — V1 drives the visual concat,
+      // A1+ drive audio mixing in the export, T1 drives drawtext overlays.
+      var timelineClips = Array.from(document.querySelectorAll('.mt-clip'))
         .map(function(c){
           var track = c.parentElement;
           return {
-            track: (track && track.getAttribute('data-type')) || 'video',
-            left: c.style.left,
-            width: c.style.width,
-            duration: c.dataset.duration || '',
+            track:        (track && track.getAttribute('data-type')) || 'video',
+            left:         c.style.left,
+            width:        c.style.width,
+            duration:     c.dataset.duration     || '',
             sourceOffset: c.dataset.sourceOffset || '0',
-            mediaUrl: c.dataset.mediaUrl || '',
-            filename: c.dataset.serverFilename || c.dataset.fileName || '',
-            clipType: c.dataset.clipType || 'vid'
+            mediaUrl:     c.dataset.mediaUrl     || '',
+            filename:     c.dataset.serverFilename || c.dataset.fileName || '',
+            clipType:     c.dataset.clipType     || 'vid',
+            textContent:  c.dataset.textContent  || '',
+            fontSize:     c.dataset.fontSize     || '',
+            textColor:    c.dataset.textColor    || '',
+            position:     c.dataset.position     || '',
+            volume:       c.dataset.volume       || '',
+            muted:        c.dataset.muted        || ''
           };
         });
 
@@ -6330,16 +6338,12 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       segments.map(function(p){ return "file '" + p.replace(/'/g, "'\\''") + "'"; }).join('\n') + '\n'
     );
 
-    var outputFilename = 'timeline_export_' + Date.now() + '_' + req.user.id + '.mp4';
-    var outputPath = path.join(outputDir, outputFilename);
-
-    // Concat demuxer with -c copy — all segments share identical codec/params
-    // so this stitches without a re-encode pass (fast).
+    // Stage A: stitch the V1 video segments into an intermediate MP4
+    // (with the V1 clips' own audio as [0:a]).
+    var intermediatePath = path.join(workDir, 'stitched.mp4');
     try {
-      await runFFmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', '-y', outputPath]);
+      await runFFmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', '-y', intermediatePath]);
     } catch (e) {
-      // Fallback: force a re-encode pass via concat filter if -c copy fails
-      // (can happen when segment params drift on edge cases).
       var reInputs = [];
       segments.forEach(function(p){ reInputs.push('-i', p); });
       var n = segments.length;
@@ -6349,13 +6353,135 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       await runFFmpeg(reInputs.concat([
         '-filter_complex', filter,
         '-map', '[v]', '-map', '[a]'
-      ]).concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]));
+      ]).concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', intermediatePath]));
     }
 
-    // Clean up temp segments & concat list
+    // Stage B: bake in TEXT overlays (from T1) + MULTI-TRACK audio mix
+    // (from every audio track) via a final filter_complex pass.
+    //
+    // Text: one drawtext filter per text clip with
+    //       enable='between(t,startSec,endSec)'.
+    // Audio: each server-resolvable audio clip becomes another -i input;
+    //        atrim to its source slice, adelay to its timeline position,
+    //        volume scaled by its per-clip volume/100; amix with the
+    //        video's own audio track.
+    var outputFilename = 'timeline_export_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outputPath = path.join(outputDir, outputFilename);
+
+    var textClips = clips.filter(function(c){
+      return (c.clipType === 'text' || (c.track || '').toLowerCase() === 'text')
+        && (c.textContent || '').trim().length > 0;
+    });
+    var audioClips = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      if (t !== 'audio' && t !== 'aud') return false;
+      if (c.muted === 'true') return false;
+      if (!c.mediaUrl) return false;
+      return urlToFilePath(c.mediaUrl) !== null;
+    });
+
+    var hasPostPass = textClips.length > 0 || audioClips.length > 0;
+
+    if (!hasPostPass){
+      // Nothing to bake — just rename the intermediate to the final path.
+      fs.renameSync(intermediatePath, outputPath);
+    } else {
+      // Assemble the final filter graph.
+      var ffArgs = ['-i', intermediatePath];
+      audioClips.forEach(function(c){
+        var p = urlToFilePath(c.mediaUrl);
+        if (p) ffArgs.push('-i', p);
+      });
+
+      // Video filter chain: drawtext per text clip. Escape special chars.
+      function escDT(s){
+        return String(s || '')
+          .replace(/\\/g, '\\\\')
+          .replace(/'/g,  "\u2019")        // curly apostrophe dodges shell quoting
+          .replace(/:/g,  '\\:')
+          .replace(/,/g,  '\\,')
+          .replace(/%/g,  '\\%')
+          .replace(/\{/g, '\\{')
+          .replace(/\}/g, '\\}');
+      }
+      var videoGraph = '[0:v]';
+      if (textClips.length){
+        var parts = textClips.map(function(tc){
+          var leftSec = (parseFloat(tc.left)  || 0) / pxPerSec;
+          var durSec  = (parseFloat(tc.width) || 0) / pxPerSec;
+          var startSec = leftSec;
+          var endSec   = leftSec + durSec;
+          var txt   = escDT(tc.textContent);
+          var sz    = parseInt(tc.fontSize, 10) || 56;
+          var col   = (tc.textColor || '#ffffff').replace('#','0x');
+          var pos   = tc.position || 'center';
+          var y;
+          if (pos === 'top')         y = 'h*0.15';
+          else if (pos === 'bottom') y = 'h-h*0.15-text_h';
+          else                       y = '(h-text_h)/2';
+          return [
+            'drawtext=text=\'' + txt + '\'',
+            'fontsize=' + sz,
+            'fontcolor=' + col,
+            'borderw=3', 'bordercolor=black@0.6',
+            'x=(w-text_w)/2',
+            'y=' + y,
+            'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
+          ].join(':');
+        });
+        videoGraph += parts.join(',');
+      } else {
+        videoGraph += 'null';
+      }
+      videoGraph += '[vout]';
+
+      // Audio graph: mix video's own audio + every audio clip
+      var audioGraph;
+      if (audioClips.length === 0){
+        audioGraph = '[0:a]anull[aout]';
+      } else {
+        var lines = [];
+        var labels = ['[0:a]']; // intermediate's audio (video clips' own audio)
+        audioClips.forEach(function(c, i){
+          var inIdx = i + 1; // 0 is intermediate
+          var leftSec = (parseFloat(c.left)  || 0) / pxPerSec;
+          var durSec  = (parseFloat(c.width) || 0) / pxPerSec;
+          var srcOff  = parseFloat(c.sourceOffset) || 0;
+          var vRaw    = parseFloat(c.volume);
+          var vol     = isFinite(vRaw) ? Math.max(0, Math.min(2, vRaw / 100)) : 1;
+          var delayMs = Math.max(0, Math.round(leftSec * 1000));
+          // Trim from the source slice, zero-base its PTS, delay to its
+          // timeline position, and scale volume.
+          lines.push(
+            '[' + inIdx + ':a]' +
+            'atrim=start=' + srcOff.toFixed(3) + ':end=' + (srcOff + durSec).toFixed(3) + ',' +
+            'asetpts=PTS-STARTPTS,' +
+            'adelay=' + delayMs + '|' + delayMs + ',' +
+            'volume=' + vol.toFixed(3) +
+            '[a' + i + ']'
+          );
+          labels.push('[a' + i + ']');
+        });
+        lines.push(labels.join('') + 'amix=inputs=' + labels.length + ':duration=longest:dropout_transition=0,dynaudnorm[aout]');
+        audioGraph = lines.join(';');
+      }
+
+      var filterComplex = videoGraph + ';' + audioGraph;
+      ffArgs = ffArgs.concat([
+        '-filter_complex', filterComplex,
+        '-map', '[vout]',
+        '-map', '[aout]'
+      ]).concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]);
+
+      await runFFmpeg(ffArgs);
+    }
+
+    // Clean up temp segments, concat list, and (if still present) the
+    // stitched intermediate used as input to the post-pass.
     try {
       segments.forEach(function(p){ try { fs.unlinkSync(p); } catch(_){} });
       try { fs.unlinkSync(listPath); } catch(_){}
+      try { if (fs.existsSync(intermediatePath)) fs.unlinkSync(intermediatePath); } catch(_){}
       try { fs.rmdirSync(workDir); } catch(_){}
     } catch(_){}
 
