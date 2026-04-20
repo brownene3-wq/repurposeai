@@ -8983,4 +8983,245 @@ router.post('/export-premiere', requireAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────
+// Inline AI actions — called directly from the editor sidebar so
+// the user never leaves the editor. Each endpoint takes a mediaUrl
+// (same URLs we serve via /video-editor/download/) and does work
+// server-side, returning either a new asset URL or structured data.
+// ─────────────────────────────────────────────────────────────────
+
+// Module-level url→file path resolver shared by the inline-AI endpoints.
+// Mirrors the per-export helper: accepts only /video-editor/download/*
+// URLs and looks first in the upload dir, then the output dir.
+function resolveMediaUrlToPath(url){
+  if (!url || typeof url !== 'string') return null;
+  if (url.indexOf('blob:') === 0) return null;
+  var m = /\/video-editor\/download\/([^?#]+)/.exec(url);
+  var name = m ? decodeURIComponent(m[1]) : null;
+  if (!name) return null;
+  var safeName = path.basename(name);
+  var up = path.join(uploadDir, safeName);
+  if (fs.existsSync(up)) return up;
+  var out = path.join(outputDir, safeName);
+  if (fs.existsSync(out)) return out;
+  return null;
+}
+
+// POST /video-editor/ai-enhance
+// body: { mediaUrl: string, noiseLevel?: '1'|'2'|'3', voiceBoost?: boolean }
+// response: { success, enhancedUrl, filename, duration }
+//
+// Extracts the audio track from the given media file, runs it through
+// the same afftdn+highpass (+optional EQ) chain used by the full
+// /enhance-speech page, and saves the enhanced audio as a standalone
+// .m4a in the output dir. The frontend drops that file onto A1 as a
+// new clip so the user hears the cleaned-up audio alongside the video.
+router.post('/ai-enhance', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    var body = req.body || {};
+    var mediaUrl   = body.mediaUrl;
+    var noiseLevel = String(body.noiseLevel || '2');
+    var voiceBoost = body.voiceBoost === true || body.voiceBoost === 'true';
+
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({
+        error: 'Could not find that media on the server. ' +
+               'Files uploaded only in your browser need to be uploaded via the sidebar first.'
+      });
+    }
+
+    var NOISE_FILTERS = {
+      '1': 'afftdn=nf=-25',
+      '2': 'afftdn=nf=-40',
+      '3': 'afftdn=nf=-60'
+    };
+    var chain = (NOISE_FILTERS[noiseLevel] || NOISE_FILTERS['2']) + ',highpass=f=80';
+    if (voiceBoost){
+      chain += ',equalizer=f=1000:t=q:w=1:g=3,' +
+               'equalizer=f=3000:t=q:w=1:g=2,' +
+               'compand=attacks=0.02:decays=0.15:' +
+               'points=-80/-80|-45/-15|-27/-9|0/-3|20/-3:gain=3';
+    }
+
+    var outName = 'enhanced_' + Date.now() + '_' + req.user.id + '.m4a';
+    var outPath = path.join(outputDir, outName);
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vn',
+        '-af', chain,
+        '-c:a', 'aac',
+        '-b:a', '160k',
+        '-y', outPath
+      ]);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Enhance failed: ' + stderr.slice(-200)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Duration for the client (so it can build the A1 clip at the
+    // correct width without loading the audio file first)
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = '';
+      await new Promise(function(resolve, reject){
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error',
+          '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1',
+          outPath
+        ]);
+        p.stdout.on('data', function(d){ probeOut += d.toString(); });
+        p.on('close', function(){ resolve(); });
+        p.on('error', function(){ resolve(); });
+      });
+      duration = parseFloat(probeOut.trim()) || 0;
+    } catch(_){}
+
+    try { featureUsageOps.log(req.user.id, 'enhance_speech_inline').catch(function(){}); } catch(_){}
+
+    res.json({
+      success: true,
+      enhancedUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration,
+      voiceBoost: voiceBoost,
+      noiseLevel: noiseLevel
+    });
+  } catch (err){
+    console.error('[ai-enhance] error:', err);
+    res.status(500).json({ error: err.message || 'Enhance failed' });
+  }
+});
+
+// POST /video-editor/ai-captions
+// body: { mediaUrl: string }
+// response: { success, words: [{word, start, end}, ...], chunks: [{text, start, end}, ...] }
+//
+// Extracts a low-bitrate MP3 from the media file (under Whisper's 25MB
+// limit), sends it to Whisper-1 for word-level transcription, and also
+// groups consecutive words into ~4-word phrase chunks so the caller
+// can drop them onto T1 as text clips aligned to the soundtrack.
+router.post('/ai-captions', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
+
+    var mediaUrl = (req.body || {}).mediaUrl;
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({
+        error: 'Could not find that media on the server. ' +
+               'Upload via the sidebar first.'
+      });
+    }
+
+    // Extract mono 16kHz MP3 (Whisper-friendly, <25MB for long videos)
+    var mp3Path = path.join(uploadDir, 'captions_' + Date.now() + '_' + req.user.id + '.mp3');
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vn',
+        '-ac', '1',
+        '-ar', '16000',
+        '-b:a', '64k',
+        '-y', mp3Path
+      ]);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Audio extract failed: ' + stderr.slice(-200)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Transcribe
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var audioBuffer = fs.readFileSync(mp3Path);
+    var file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+    var transcript = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: file,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word']
+    });
+
+    // Clean up the extracted audio
+    try { fs.unlinkSync(mp3Path); } catch(_){}
+
+    var words = [];
+    if (transcript.words && Array.isArray(transcript.words)){
+      for (var i = 0; i < transcript.words.length; i++){
+        words.push({
+          word: transcript.words[i].word,
+          start: transcript.words[i].start,
+          end: transcript.words[i].end
+        });
+      }
+    } else {
+      // Fallback: spread words evenly across duration
+      var text = transcript.text || '';
+      var list = text.split(/\s+/).filter(function(w){ return !!w; });
+      var d = transcript.duration || (list.length * 0.45);
+      var tp = list.length > 0 ? d / list.length : 0.5;
+      for (var j = 0; j < list.length; j++){
+        words.push({ word: list[j], start: j * tp, end: (j + 1) * tp });
+      }
+    }
+
+    // Group words into ~4-word phrase chunks, breaking on gaps >0.6s
+    var CHUNK_SIZE = 4;
+    var GAP_BREAK  = 0.6;
+    var chunks = [];
+    var buf = [];
+    function flush(){
+      if (!buf.length) return;
+      chunks.push({
+        text: buf.map(function(w){ return w.word; }).join(' ').trim(),
+        start: buf[0].start,
+        end:   buf[buf.length - 1].end
+      });
+      buf = [];
+    }
+    for (var k = 0; k < words.length; k++){
+      var w = words[k];
+      if (buf.length){
+        var prev = buf[buf.length - 1];
+        if ((w.start - prev.end) > GAP_BREAK) flush();
+      }
+      buf.push(w);
+      if (buf.length >= CHUNK_SIZE) flush();
+    }
+    flush();
+
+    try { featureUsageOps.log(req.user.id, 'ai_captions_inline').catch(function(){}); } catch(_){}
+
+    res.json({
+      success: true,
+      words: words,
+      chunks: chunks,
+      duration: transcript.duration || 0
+    });
+  } catch (err){
+    console.error('[ai-captions] error:', err);
+    res.status(500).json({ error: err.message || 'Captions generation failed' });
+  }
+});
+
 module.exports = router;

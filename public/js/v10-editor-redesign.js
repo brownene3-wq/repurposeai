@@ -1472,21 +1472,30 @@
     html += '</div>';
     div.innerHTML = html;
 
-    // AI GENERATION buttons open their tool INLINE in a same-page modal
-    // (iframe) so the editor state is preserved. Non-generation buttons
-    // (AI ANALYSIS, AI CREATIVE) still open in a new tab if they have a
-    // route, or toast if the feature isn't wired up yet.
-    var INLINE_LABELS = { 'Enhance': 1, 'Captions': 1, 'AI Hook': 1, 'Brand Kit': 1 };
+    // AI wiring:
+    //   Enhance / Captions — DIRECT inline actions (no navigation at all)
+    //     • Enhance: runs afftdn+highpass+EQ on the selected clip's audio,
+    //                drops the cleaned-up audio onto A1 as a new clip
+    //     • Captions: transcribes the active video with Whisper and drops
+    //                 phrase-chunked text clips onto T1 at matching times
+    //   AI Hook / Brand Kit — still iframe-modal (those tools need a UI)
+    //   AI ANALYSIS / AI CREATIVE — new tab if route, toast otherwise
+    var DIRECT_ACTIONS = { 'Enhance': 'enhance', 'Captions': 'captions' };
+    var MODAL_LABELS   = { 'AI Hook': 1, 'Brand Kit': 1 };
     Array.from(div.querySelectorAll('[data-v10-ai-route]')).forEach(function(btn){
       btn.addEventListener('click', function(e){
         e.preventDefault(); e.stopPropagation();
         var route = btn.getAttribute('data-v10-ai-route');
         var label = btn.getAttribute('data-v10-ai-label');
+        if (DIRECT_ACTIONS[label]){
+          runInlineAIAction(DIRECT_ACTIONS[label], btn);
+          return;
+        }
         if (!route){
           toast(label + ' \u2014 not available yet');
           return;
         }
-        if (INLINE_LABELS[label]){
+        if (MODAL_LABELS[label]){
           openAIToolModal(label, route);
         } else {
           try { window.open(route, '_blank'); } catch(_){ location.href = route; }
@@ -1495,6 +1504,149 @@
       }, true);
     });
     return div;
+  }
+
+  // ── Direct inline AI actions ──────────────────────────────────────
+  // Picks the right clip for the action, POSTs to the inline endpoint,
+  // integrates the result back into the timeline.
+  function pickSourceClipForAI(action){
+    // Prefer selected clip if it has a media URL
+    var sel = document.querySelector('.mt-clip.selected');
+    if (sel && sel.dataset.mediaUrl && sel.dataset.clipType !== 'text' && sel.dataset.clipType !== 'motion'){
+      return sel;
+    }
+    // Otherwise prefer clip under playhead on V1
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var v1Clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
+    for (var i = 0; i < v1Clips.length; i++){
+      var c = v1Clips[i];
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w && c.dataset.mediaUrl) return c;
+    }
+    // Fallback: first V1 clip with media URL
+    var first = v1Clips.find(function(c){ return !!c.dataset.mediaUrl; });
+    if (first) return first;
+    // Final fallback for Enhance: first A1 clip
+    if (action === 'enhance'){
+      var a1 = document.querySelector('.mt-track-audio .mt-clip');
+      if (a1 && a1.dataset.mediaUrl) return a1;
+    }
+    return null;
+  }
+
+  function setAIButtonLoading(btn, loading, labelOverride){
+    if (!btn) return;
+    if (loading){
+      btn.dataset.v10AiBusy = '1';
+      btn.dataset.v10AiLabel = btn.innerHTML;
+      btn.disabled = true;
+      btn.style.opacity = '0.7';
+      btn.innerHTML = '<span class="v10-rp-ic">\u23f3</span>' + (labelOverride || 'Working\u2026');
+    } else {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      if (btn.dataset.v10AiLabel){
+        btn.innerHTML = btn.dataset.v10AiLabel;
+        delete btn.dataset.v10AiLabel;
+      }
+      delete btn.dataset.v10AiBusy;
+    }
+  }
+
+  async function runInlineAIAction(action, btn){
+    if (btn && btn.dataset.v10AiBusy === '1') return;  // re-entrancy guard
+
+    var clip = pickSourceClipForAI(action);
+    if (!clip){
+      toast('Add a video clip to the timeline first');
+      return;
+    }
+    var mediaUrl = clip.dataset.mediaUrl;
+    if (!mediaUrl){
+      toast('This clip has no server-side media to process');
+      return;
+    }
+    if (mediaUrl.indexOf('blob:') === 0){
+      toast('Upload this file via the sidebar first, then try again');
+      return;
+    }
+
+    if (action === 'enhance'){
+      setAIButtonLoading(btn, true, 'Enhancing\u2026');
+      toast('Enhancing audio\u2026');
+      try {
+        var resp = await fetch('/video-editor/ai-enhance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: mediaUrl, noiseLevel: '2', voiceBoost: true })
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.success){
+          throw new Error(data.error || 'Enhance failed');
+        }
+        // Drop the enhanced audio onto A1 as a new clip
+        if (typeof window.addClipToTimeline === 'function'){
+          window.addClipToTimeline(data.filename || 'Enhanced audio', 'aud', data.duration || 0, data.enhancedUrl);
+        } else {
+          toast('Enhanced audio saved: ' + data.filename);
+        }
+        toast('Enhanced audio added to A1');
+      } catch (err){
+        toast('Enhance error: ' + (err.message || err));
+      } finally {
+        setAIButtonLoading(btn, false);
+      }
+      return;
+    }
+
+    if (action === 'captions'){
+      setAIButtonLoading(btn, true, 'Transcribing\u2026');
+      toast('Transcribing video\u2026 (this can take a moment)');
+      try {
+        var respC = await fetch('/video-editor/ai-captions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: mediaUrl })
+        });
+        var dataC = await respC.json();
+        if (!respC.ok || !dataC.success){
+          throw new Error(dataC.error || 'Transcription failed');
+        }
+        var chunks = Array.isArray(dataC.chunks) ? dataC.chunks : [];
+        if (chunks.length === 0){
+          toast('No speech detected in this clip');
+          return;
+        }
+        // Anchor captions to the V1 clip's left edge on the timeline so
+        // the text's timeline-t matches the clip's playback time
+        var clipLeftPx = parseFloat(clip.style.left) || 0;
+        var PX_PER_SEC = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var added = 0;
+        chunks.forEach(function(ch){
+          if (!ch.text || !isFinite(ch.start) || !isFinite(ch.end)) return;
+          var leftPx  = clipLeftPx + Math.round(ch.start * PX_PER_SEC);
+          var widthPx = Math.max(20, Math.round((ch.end - ch.start) * PX_PER_SEC));
+          if (typeof window.addTextClipToTimeline === 'function'){
+            window.addTextClipToTimeline(ch.text, {
+              left:  leftPx + 'px',
+              width: widthPx + 'px',
+              fontSize: 48,
+              textColor: '#ffffff',
+              position: 'bottom'
+            });
+            added++;
+          }
+        });
+        toast('Captions added: ' + added + ' phrase' + (added === 1 ? '' : 's'));
+      } catch (err){
+        toast('Captions error: ' + (err.message || err));
+      } finally {
+        setAIButtonLoading(btn, false);
+      }
+      return;
+    }
   }
 
   // ── AI Tool Modal ─────────────────────────────────────────────────

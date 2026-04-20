@@ -1999,6 +1999,7 @@
   // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
   try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
+  try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
 
   // ── Text clips ──
   // Text lives on T1 (.mt-track-text). It's rendered as an overlay on top
@@ -2012,8 +2013,17 @@
     var safeText = String(text || '').slice(0, 200) || 'Text';
     var dur = parseFloat(opts.duration) || 5;
     if (dur < 1) dur = 1;
-    var width = Math.max(40, dur * TIMELINE_PX_PER_SEC);
-    var leftPos = findRightmostClipEnd(track);
+    // opts.left / opts.width (strings like '120px') let callers drop a
+    // text clip at a specific timeline position — used by the inline
+    // captions flow to align each phrase to its transcript time.
+    var explicitWidth = parseFloat(opts.width);
+    var width = isFinite(explicitWidth) && explicitWidth > 0
+      ? explicitWidth
+      : Math.max(40, dur * TIMELINE_PX_PER_SEC);
+    var explicitLeft = parseFloat(opts.left);
+    var leftPos = isFinite(explicitLeft) && explicitLeft >= 0
+      ? explicitLeft
+      : findRightmostClipEnd(track);
     var clip = document.createElement('div');
     clip.className = 'mt-clip mt-clip-text';
     clip.textContent = safeText.slice(0, 30);
