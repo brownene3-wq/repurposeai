@@ -1472,21 +1472,101 @@
     html += '</div>';
     div.innerHTML = html;
 
-    // Wire each AI button to open its dedicated tool in a new tab.
+    // AI GENERATION buttons open their tool INLINE in a same-page modal
+    // (iframe) so the editor state is preserved. Non-generation buttons
+    // (AI ANALYSIS, AI CREATIVE) still open in a new tab if they have a
+    // route, or toast if the feature isn't wired up yet.
+    var INLINE_LABELS = { 'Enhance': 1, 'Captions': 1, 'AI Hook': 1, 'Brand Kit': 1 };
     Array.from(div.querySelectorAll('[data-v10-ai-route]')).forEach(function(btn){
       btn.addEventListener('click', function(e){
         e.preventDefault(); e.stopPropagation();
         var route = btn.getAttribute('data-v10-ai-route');
         var label = btn.getAttribute('data-v10-ai-label');
-        if (route){
+        if (!route){
+          toast(label + ' \u2014 not available yet');
+          return;
+        }
+        if (INLINE_LABELS[label]){
+          openAIToolModal(label, route);
+        } else {
           try { window.open(route, '_blank'); } catch(_){ location.href = route; }
           toast('Opening ' + label + ' \u2026');
-        } else {
-          toast(label + ' \u2014 not available yet');
         }
       }, true);
     });
     return div;
+  }
+
+  // ── AI Tool Modal ─────────────────────────────────────────────────
+  // Overlay the editor with an iframe'd AI tool page so the user can
+  // work on captions / enhance / hooks / brand kits without navigating
+  // away. Dismissible via close button, Escape key, or backdrop click.
+  function openAIToolModal(label, route){
+    // Re-use existing modal if already open
+    var existing = document.getElementById('v10AiModal');
+    if (existing) existing.remove();
+
+    var backdrop = document.createElement('div');
+    backdrop.id = 'v10AiModal';
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:9998;' +
+      'background:rgba(8,6,18,.75);display:flex;align-items:center;' +
+      'justify-content:center;backdrop-filter:blur(4px);animation:v10AiFade .16s ease';
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#0c0814;border:1px solid rgba(124,58,237,.35);' +
+      'border-radius:14px;width:min(1180px,95vw);height:min(860px,92vh);' +
+      'display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.6);' +
+      'overflow:hidden';
+
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 18px;' +
+      'background:linear-gradient(90deg,rgba(124,58,237,.15),rgba(236,72,153,.08));' +
+      'border-bottom:1px solid rgba(124,58,237,.25);color:#e8e0ff;font-weight:600;font-size:14px';
+    head.innerHTML =
+      '<span style="font-size:18px">\u2728</span>' +
+      '<span>' + label + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<a href="' + route + '" target="_blank" rel="noopener" ' +
+        'style="color:#a78bfa;text-decoration:none;font-size:12px;padding:6px 10px;' +
+        'border:1px solid rgba(167,139,250,.35);border-radius:6px">Open in new tab \u2197</a>' +
+      '<button id="v10AiCloseBtn" title="Close" ' +
+        'style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);' +
+        'color:#f87171;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px">\u2715 Close</button>';
+
+    var body = document.createElement('div');
+    body.style.cssText = 'flex:1;position:relative;background:#050308';
+    var iframe = document.createElement('iframe');
+    iframe.src = route;
+    iframe.style.cssText = 'width:100%;height:100%;border:0;display:block';
+    iframe.setAttribute('title', label);
+    body.appendChild(iframe);
+
+    panel.appendChild(head);
+    panel.appendChild(body);
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+
+    function close(){
+      document.removeEventListener('keydown', onKey);
+      if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+    }
+    function onKey(e){ if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+
+    backdrop.addEventListener('click', function(e){
+      // Only close when the backdrop itself is clicked — not when the
+      // click bubbled up from the panel/iframe.
+      if (e.target === backdrop) close();
+    });
+    head.querySelector('#v10AiCloseBtn').addEventListener('click', close);
+
+    // Inject the fade keyframes once
+    if (!document.getElementById('v10AiModalStyles')){
+      var s = document.createElement('style');
+      s.id = 'v10AiModalStyles';
+      s.textContent = '@keyframes v10AiFade{from{opacity:0}to{opacity:1}}';
+      document.head.appendChild(s);
+    }
   }
 
   function buildFXContent(){
