@@ -586,7 +586,12 @@
             mediaUrl: c.dataset.mediaUrl || '',
             serverFilename: c.dataset.serverFilename || '',
             duration: c.dataset.duration || '',
-            sourceOffset: c.dataset.sourceOffset || ''
+            sourceOffset: c.dataset.sourceOffset || '',
+            clipType: c.dataset.clipType || '',
+            textContent: c.dataset.textContent || '',
+            fontSize: c.dataset.fontSize || '',
+            textColor: c.dataset.textColor || '',
+            position: c.dataset.position || ''
           };
         })
       };
@@ -645,6 +650,11 @@
           if (spec.serverFilename) c.dataset.serverFilename = spec.serverFilename;
           if (spec.duration)       c.dataset.duration = spec.duration;
           if (spec.sourceOffset)   c.dataset.sourceOffset = spec.sourceOffset;
+          if (spec.clipType)       c.dataset.clipType = spec.clipType;
+          if (spec.textContent)    c.dataset.textContent = spec.textContent;
+          if (spec.fontSize)       c.dataset.fontSize = spec.fontSize;
+          if (spec.textColor)      c.dataset.textColor = spec.textColor;
+          if (spec.position)       c.dataset.position = spec.position;
           track.appendChild(c);
           makeClipInteractive(c);
         });
@@ -1233,6 +1243,9 @@
     }
     _progLastClipKey = currentClipKey;
 
+    // Text overlays (from T1 clips) draw on top of the current visual.
+    try { progDrawTextOverlays(ctx, W, H, phX); } catch(_){}
+
     // Watermark so the user knows this is a simulation — NOT the final export.
     ctx.fillStyle = 'rgba(139,92,246,.95)';
     ctx.font = 'bold 14px -apple-system,system-ui,sans-serif';
@@ -1603,6 +1616,172 @@
 
   // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
+
+  // ── Text clips ──
+  // Text lives on T1 (.mt-track-text). It's rendered as an overlay on top
+  // of whatever visual clip is below it on V1. Text clips behave like any
+  // other .mt-clip — draggable (Select tool), deletable (Delete key), and
+  // recorded in the undo history.
+  function addTextClipToTimeline(text, opts){
+    opts = opts || {};
+    var track = document.querySelector('.mt-track-text');
+    if (!track){ showToast('Text track not found'); return null; }
+    var safeText = String(text || '').slice(0, 200) || 'Text';
+    var dur = parseFloat(opts.duration) || 5;
+    if (dur < 1) dur = 1;
+    var width = Math.max(40, dur * TIMELINE_PX_PER_SEC);
+    var leftPos = findRightmostClipEnd(track);
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip mt-clip-text';
+    clip.textContent = safeText.slice(0, 30);
+    clip.dataset.fileName    = safeText;
+    clip.dataset.clipType    = 'text';
+    clip.dataset.textContent = safeText;
+    clip.dataset.duration    = String(dur);
+    if (opts.fontSize)  clip.dataset.fontSize  = String(opts.fontSize);
+    if (opts.textColor) clip.dataset.textColor = opts.textColor;
+    if (opts.position)  clip.dataset.position  = opts.position;
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.padding = '4px 8px';
+    clip.style.fontSize = '10px';
+    clip.style.overflow = 'hidden';
+    clip.style.textOverflow = 'ellipsis';
+    clip.style.whiteSpace = 'nowrap';
+    clip.style.userSelect = 'none';
+    clip.style.background = 'linear-gradient(135deg, #facc15, #eab308)';
+    clip.style.color = '#0b0816';
+    clip.style.fontWeight = '700';
+    track.appendChild(clip);
+    makeClipInteractive(clip);
+    updateTimelineInfo();
+    pushTimelineHistory();
+    // Auto-enable PGM on first clip (same behaviour as addClipToTimeline).
+    if (!_progAutoEnabledOnce && !_progEnabled){
+      _progAutoEnabledOnce = true;
+      try { toggleProgramMonitor(); } catch(_){}
+    }
+    showToast('Text added: ' + safeText.slice(0, 30));
+    return clip;
+  }
+  try { window.addTextClipToTimeline = addTextClipToTimeline; } catch(_){}
+
+  // Return every text clip whose timeline range contains playhead x.
+  function getTextClipsAtPlayheadX(phX){
+    var out = [];
+    document.querySelectorAll('.mt-track-text .mt-clip').forEach(function(c){
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w) out.push(c);
+    });
+    return out;
+  }
+
+  // Draw text overlays from T1 clips on top of the PGM canvas.
+  function progDrawTextOverlays(ctx, W, H, phX){
+    var clips = getTextClipsAtPlayheadX(phX);
+    if (!clips.length) return;
+    clips.forEach(function(clip){
+      var text = clip.dataset.textContent || clip.dataset.fileName || '';
+      if (!text) return;
+      var size  = parseInt(clip.dataset.fontSize, 10) || Math.round(H * 0.08);
+      var color = clip.dataset.textColor || '#ffffff';
+      var pos   = clip.dataset.position || 'center';
+      ctx.save();
+      ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = color;
+      // Soft drop shadow for readability over any background.
+      ctx.shadowColor = 'rgba(0,0,0,.65)';
+      ctx.shadowBlur = size * 0.4;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = Math.round(size * 0.08);
+      var x = W / 2;
+      var y;
+      if (pos === 'top')         y = Math.round(H * 0.15) + size;
+      else if (pos === 'bottom') y = H - Math.round(H * 0.12);
+      else                        y = Math.round(H / 2 + size / 3);
+      // Wrap long text to ≤90% canvas width
+      var maxW = W * 0.9;
+      var words = String(text).split(/\s+/);
+      var lines = [];
+      var current = '';
+      words.forEach(function(w){
+        var test = current ? (current + ' ' + w) : w;
+        if (ctx.measureText(test).width > maxW && current){
+          lines.push(current); current = w;
+        } else { current = test; }
+      });
+      if (current) lines.push(current);
+      // Paint lines centered around y
+      var lineH = Math.round(size * 1.15);
+      var totalH = lineH * lines.length;
+      var startY = y - totalH / 2 + lineH / 2;
+      lines.forEach(function(ln, i){
+        ctx.fillText(ln, x, startY + i * lineH);
+      });
+      ctx.restore();
+    });
+  }
+
+  // Small modal for entering text + choosing size / color / duration / position.
+  function openTextInputModal(cb){
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,6,18,.72);z-index:100000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    overlay.innerHTML = ''+
+      '<div style="background:#1a1028;border:1px solid rgba(139,92,246,.5);border-radius:14px;padding:18px 18px 14px;width:360px;max-width:92vw;color:#e2e0f0;font-family:-apple-system,system-ui,sans-serif">'+
+        '<h3 style="margin:0 0 12px;font-size:15px;font-weight:800;letter-spacing:.3px">Add Text</h3>'+
+        '<label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">TEXT</label>'+
+        '<textarea id="mtTxtIn" rows="3" placeholder="Type your text here..." style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:8px 10px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">DURATION (s)</label>'+
+          '<input id="mtTxtDur" type="number" min="1" max="120" value="5" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:6px 8px;font-size:13px;box-sizing:border-box"/></div>'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">FONT SIZE (px)</label>'+
+          '<input id="mtTxtSize" type="number" min="12" max="200" value="56" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:6px 8px;font-size:13px;box-sizing:border-box"/></div>'+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">COLOR</label>'+
+          '<input id="mtTxtColor" type="color" value="#ffffff" style="width:100%;height:34px;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;padding:2px;cursor:pointer"/></div>'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">POSITION</label>'+
+          '<select id="mtTxtPos" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:7px 8px;font-size:13px"><option value="top">Top</option><option value="center" selected>Center</option><option value="bottom">Bottom</option></select></div>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">'+
+          '<button id="mtTxtCancel" style="padding:7px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#e2e0f0;cursor:pointer;font-weight:600">Cancel</button>'+
+          '<button id="mtTxtOk" style="padding:7px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:7px;color:#fff;cursor:pointer;font-weight:700">Add</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(overlay);
+    var ta = overlay.querySelector('#mtTxtIn');
+    var durI = overlay.querySelector('#mtTxtDur');
+    var sizeI = overlay.querySelector('#mtTxtSize');
+    var colorI = overlay.querySelector('#mtTxtColor');
+    var posI = overlay.querySelector('#mtTxtPos');
+    var ok = overlay.querySelector('#mtTxtOk');
+    var cancel = overlay.querySelector('#mtTxtCancel');
+    setTimeout(function(){ try { ta.focus(); } catch(_){} }, 50);
+    function close(){ try { overlay.remove(); } catch(_){} }
+    cancel.addEventListener('click', close);
+    overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+    ok.addEventListener('click', function(){
+      var text = (ta.value || '').trim();
+      if (!text){ ta.focus(); return; }
+      var spec = {
+        duration:  Math.max(1, Math.min(120, parseInt(durI.value, 10) || 5)),
+        fontSize:  Math.max(12, Math.min(200, parseInt(sizeI.value, 10) || 56)),
+        textColor: colorI.value || '#ffffff',
+        position:  posI.value || 'center'
+      };
+      close();
+      if (typeof cb === 'function') cb(text, spec);
+    });
+    // ESC closes, Ctrl/Cmd+Enter submits
+    overlay.addEventListener('keydown', function(e){
+      if (e.key === 'Escape'){ e.stopPropagation(); close(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); ok.click(); }
+    });
+    return overlay;
+  }
+  try { window.openTextInputModal = openTextInputModal; } catch(_){}
 
   // Active preview: when the playhead is over a video clip, load that clip's
   // media into the preview window at the correct time offset. This makes the

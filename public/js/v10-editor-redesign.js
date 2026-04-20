@@ -1204,6 +1204,11 @@
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-edit');
     div.innerHTML =
+      '<div class="v10-rp-section-title">TEXT</div>'+
+      '<div class="v10-rp-grid">'+
+        '<button class="v10-rp-btn" data-v10-action="add-text"><span class="v10-rp-ic">\ud83c\udd97</span>Add Text</button>'+
+        '<button class="v10-rp-btn" data-v10-action="add-title"><span class="v10-rp-ic">\ud83d\udcdd</span>Add Title</button>'+
+      '</div>'+
       '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
       '<div class="v10-rp-grid">'+
         buildRPButtons([['\u2702\ufe0f','Trim'],['\ud83d\udd2a','Split'],['\u26a1','Speed'],['\u2b1c','Crop']])+
@@ -1217,6 +1222,30 @@
         buildRPButtons([['\u23ea','Reverse'],['\ud83d\udd01','Loop'],['\u2744\ufe0f','Freeze'],['\ud83c\udfaf','Keyframe']])+
       '</div>';
     wireRPToast(div);
+    // Wire the real Add-Text buttons BEFORE wireRPToast's generic toast
+    // handler. Both actions open the text modal with a different default size.
+    Array.from(div.querySelectorAll('[data-v10-action="add-text"],[data-v10-action="add-title"]'))
+      .forEach(function(btn){
+        // Strip the generic toast handler that wireRPToast attached
+        var clone = btn.cloneNode(true);
+        btn.parentNode.replaceChild(clone, btn);
+        var isTitle = clone.getAttribute('data-v10-action') === 'add-title';
+        clone.addEventListener('click', function(e){
+          e.preventDefault();
+          if (typeof window.openTextInputModal !== 'function'){
+            toast('Text tool not ready');
+            return;
+          }
+          window.openTextInputModal(function(text, opts){
+            opts = opts || {};
+            if (isTitle && !opts.fontSize) opts.fontSize = 84;
+            if (isTitle && !opts.position) opts.position = 'top';
+            if (typeof window.addTextClipToTimeline === 'function'){
+              window.addTextClipToTimeline(text, opts);
+            }
+          });
+        });
+      });
     return div;
   }
 
