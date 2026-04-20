@@ -482,6 +482,7 @@
     });
 
     attachTrimHandles(clip);
+    refreshKeyframeMarkers(clip);
   }
 
   // ── Trim handles ────────────────────────────────────────────────
@@ -597,6 +598,9 @@
         _lastPreviewUrl = null;
         try { syncPreviewToPlayhead(); } catch(_){}
         if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+        // Keyframe markers are positioned as % of clip width; refresh
+        // their placement now that the width may have changed.
+        try { refreshKeyframeMarkers(clip); } catch(_){}
         pushTimelineHistory();
       }
 
@@ -758,7 +762,8 @@
             fadeIn:         c.dataset.fadeIn         || '',
             fadeOut:        c.dataset.fadeOut        || '',
             audioDenoise:   c.dataset.audioDenoise   || '',
-            audioNormalize: c.dataset.audioNormalize || ''
+            audioNormalize: c.dataset.audioNormalize || '',
+            keyframes:      c.dataset.keyframes      || ''
           };
         })
       };
@@ -856,6 +861,7 @@
           if (spec.fadeOut)        c.dataset.fadeOut        = spec.fadeOut;
           if (spec.audioDenoise)   c.dataset.audioDenoise   = spec.audioDenoise;
           if (spec.audioNormalize) c.dataset.audioNormalize = spec.audioNormalize;
+          if (spec.keyframes)      c.dataset.keyframes      = spec.keyframes;
           track.appendChild(c);
           makeClipInteractive(c);
         });
@@ -1388,7 +1394,7 @@
   // the pillar/letter boxes are clipped away, leaving the pre-painted
   // black fill visible in those regions. Returns the motion state so the
   // caller can draw the 'Motion queued' badge on top of the unclipped canvas.
-  function progDrawWithMotion(ctx, src, W, H, sW, sH, activeMotion, clip){
+  function progDrawWithMotion(ctx, src, W, H, sW, sH, activeMotion, clip, clipTimeSec){
     var r = progContainRect(W, H, sW, sH);
     if (!r) return null;
     ctx.save();
@@ -1397,7 +1403,7 @@
     ctx.clip();
     var fxFilter = progBuildClipFilter(clip);
     if (fxFilter) ctx.filter = fxFilter;
-    progApplyClipTransforms(ctx, W, H, clip);
+    progApplyClipTransforms(ctx, W, H, clip, clipTimeSec);
     var state = progApplyMotion(ctx, W, H, activeMotion);
     // Crop support: when clip.dataset.crop is 'x,y,w,h' percent, use
     // drawImage's 9-arg source-rect form so only that region of the
@@ -1544,13 +1550,15 @@
       var clip = hit.clip;
       var type = clip.dataset.clipType || (clip.classList.contains('mt-clip-audio') ? 'aud' : 'vid');
       var url  = clip.dataset.mediaUrl;
+      // Clip-local time (0 at clip left edge) — drives keyframe interpolation
+      var clipTimeSec = hit.offsetPx / TIMELINE_PX_PER_SEC;
       if (type === 'aud'){
         // On V1 we don't expect audio-only clips; fall through.
       } else if (type === 'img' && url){
         var img = getOrCreateProgSource(url, 'img');
         if (img && img.complete && img.naturalWidth > 0){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-          var moState1 = progDrawWithMotion(ctx, img, W, H, img.naturalWidth, img.naturalHeight, activeMotion, clip);
+          var moState1 = progDrawWithMotion(ctx, img, W, H, img.naturalWidth, img.naturalHeight, activeMotion, clip, clipTimeSec);
           progDrawMotionBadge(ctx, moState1);
           drawn = true;
         }
@@ -1564,7 +1572,7 @@
           && normalizeUrl(mainVideo.src) === normalizeUrl(url);
         if (mainUsable){
           ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-          var moState2 = progDrawWithMotion(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight, activeMotion, clip);
+          var moState2 = progDrawWithMotion(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight, activeMotion, clip, clipTimeSec);
           progDrawMotionBadge(ctx, moState2);
           drawn = true;
         } else {
@@ -1584,7 +1592,7 @@
             }
             if (vid.readyState >= 2 && vid.videoWidth){
               ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-              var moState3 = progDrawWithMotion(ctx, vid, W, H, vid.videoWidth, vid.videoHeight, activeMotion, clip);
+              var moState3 = progDrawWithMotion(ctx, vid, W, H, vid.videoWidth, vid.videoHeight, activeMotion, clip, clipTimeSec);
               progDrawMotionBadge(ctx, moState3);
               drawn = true;
             }
@@ -2243,8 +2251,141 @@
       showToast('Freeze ' + (now ? 'on' : 'off'));
     });
   }
+  // ── Keyframes ───────────────────────────────────────────────────
+  // Per-clip animation of scale / offsetX / offsetY over clip-local time.
+  // Keyframes live on clip.dataset.keyframes as a JSON array:
+  //   [{ t: number, scale?, offsetX?, offsetY? }, ...]
+  // where t is seconds from the clip's left edge. Any property absent
+  // from a keyframe is ignored for that keyframe (not animated).
+  //
+  // At clip-time `tnow`:
+  //   • 0 KFs for prop  → use the clip's static dataset value
+  //   • 1 KF  for prop  → constant = that KF's value
+  //   • surrounded by 2 → linear interpolation between bracketing KFs
+  //   • before first    → use first KF's value
+  //   • after  last     → use last  KF's value
+  //
+  // Export is preview-only for now — keyframes would need per-clip
+  // filter expressions in Stage A. That's a follow-up.
+  function readClipKeyframes(clip){
+    if (!clip || !clip.dataset.keyframes) return [];
+    try {
+      var arr = JSON.parse(clip.dataset.keyframes);
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(function(k){ return k && isFinite(k.t); })
+                .sort(function(a,b){ return a.t - b.t; });
+    } catch(_){ return []; }
+  }
+  function writeClipKeyframes(clip, arr){
+    if (!arr || !arr.length){ delete clip.dataset.keyframes; return; }
+    clip.dataset.keyframes = JSON.stringify(arr);
+  }
+  function interpolateKeyframeProp(keyframes, prop, tnow, fallback){
+    var kfs = keyframes.filter(function(k){ return typeof k[prop] !== 'undefined' && k[prop] !== null && isFinite(k[prop]); });
+    if (kfs.length === 0) return fallback;
+    if (kfs.length === 1) return kfs[0][prop];
+    if (tnow <= kfs[0].t) return kfs[0][prop];
+    if (tnow >= kfs[kfs.length - 1].t) return kfs[kfs.length - 1][prop];
+    for (var i = 0; i < kfs.length - 1; i++){
+      var a = kfs[i], b = kfs[i+1];
+      if (tnow >= a.t && tnow <= b.t){
+        var span = b.t - a.t;
+        if (span <= 0) return a[prop];
+        var p = (tnow - a.t) / span;
+        return a[prop] + (b[prop] - a[prop]) * p;
+      }
+    }
+    return fallback;
+  }
+  // Draw yellow keyframe markers along the top of each clip element. Called
+  // whenever the keyframes change or a clip is restored from a snapshot.
+  function refreshKeyframeMarkers(clip){
+    if (!clip) return;
+    Array.from(clip.querySelectorAll('.mt-kf-marker')).forEach(function(m){ m.remove(); });
+    var kfs = readClipKeyframes(clip);
+    if (kfs.length === 0) return;
+    var width = parseFloat(clip.style.width) || clip.offsetWidth || 1;
+    var clipDurSec = width / TIMELINE_PX_PER_SEC;
+    if (clipDurSec <= 0) return;
+    kfs.forEach(function(k){
+      var m = document.createElement('div');
+      m.className = 'mt-kf-marker';
+      var leftPct = Math.max(0, Math.min(1, k.t / clipDurSec)) * 100;
+      m.style.left = leftPct + '%';
+      clip.appendChild(m);
+    });
+  }
   function clipActionKeyframe(){
-    showToast('Keyframes coming soon');
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+    if (clip.classList.contains('mt-clip-audio')){ showToast('Keyframes not supported on audio'); return; }
+    // Determine current playhead time within the clip
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var clipLeft = parseFloat(clip.style.left) || 0;
+    var clipW    = parseFloat(clip.style.width) || 1;
+    var tnowPx   = phX - clipLeft;
+    if (tnowPx < 0 || tnowPx > clipW){
+      showToast('Move playhead over this clip first');
+      return;
+    }
+    var tnow = tnowPx / TIMELINE_PX_PER_SEC;
+    // Capture current static values (Scale / Position) as a keyframe.
+    // User-driven values come from the Resize / Position prompts.
+    var scale  = parseFloat(clip.dataset.scale)   || 1;
+    var offX   = parseFloat(clip.dataset.offsetX) || 0;
+    var offY   = parseFloat(clip.dataset.offsetY) || 0;
+    var kfs = readClipKeyframes(clip);
+    var menu = prompt(
+      'Keyframes at t=' + tnow.toFixed(2) + 's on this clip.\n\n' +
+      'Existing keyframes: ' + (kfs.length === 0 ? '(none)' :
+        kfs.map(function(k){
+          var bits = [];
+          if (typeof k.scale   === 'number') bits.push('scale='  + k.scale.toFixed(2));
+          if (typeof k.offsetX === 'number') bits.push('x='      + k.offsetX.toFixed(0));
+          if (typeof k.offsetY === 'number') bits.push('y='      + k.offsetY.toFixed(0));
+          return 't=' + k.t.toFixed(2) + ' [' + bits.join(', ') + ']';
+        }).join('\n  ')
+      ) + '\n\n' +
+      'Actions:\n' +
+      '  add    — capture current Scale/Position at playhead\n' +
+      '  del    — remove keyframe at playhead (±0.2s)\n' +
+      '  clear  — remove ALL keyframes on this clip',
+      'add'
+    );
+    if (menu === null) return;
+    var action = menu.trim().toLowerCase();
+    if (action === 'add'){
+      // Replace any existing KF within 0.05s of tnow, else append
+      var replaced = false;
+      for (var i = 0; i < kfs.length; i++){
+        if (Math.abs(kfs[i].t - tnow) < 0.05){
+          kfs[i] = { t: tnow, scale: scale, offsetX: offX, offsetY: offY };
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) kfs.push({ t: tnow, scale: scale, offsetX: offX, offsetY: offY });
+      kfs.sort(function(a,b){ return a.t - b.t; });
+      writeClipKeyframes(clip, kfs);
+      refreshKeyframeMarkers(clip);
+      pushTimelineHistory();
+      showToast('Keyframe ' + (replaced ? 'updated' : 'added') + ' at ' + tnow.toFixed(2) + 's');
+    } else if (action === 'del'){
+      var kept = kfs.filter(function(k){ return Math.abs(k.t - tnow) >= 0.2; });
+      if (kept.length === kfs.length){ showToast('No keyframe within 0.2s of playhead'); return; }
+      writeClipKeyframes(clip, kept);
+      refreshKeyframeMarkers(clip);
+      pushTimelineHistory();
+      showToast('Keyframe removed');
+    } else if (action === 'clear'){
+      writeClipKeyframes(clip, []);
+      refreshKeyframeMarkers(clip);
+      pushTimelineHistory();
+      showToast('All keyframes cleared');
+    } else {
+      showToast('Unknown action: ' + action);
+    }
   }
 
   // Solo this audio clip by muting every OTHER audio clip. Toggling solo
@@ -2459,7 +2600,9 @@
 
   // Per-clip transform offsets composed UNDER motion in the render stack.
   // Applied inside the video-rect clip so pillar/letterboxes stay black.
-  function progApplyClipTransforms(ctx, W, H, clip){
+  // If the clip has keyframes and clipTimeSec is provided, scale/offsetX/
+  // offsetY interpolate from the keyframe track at that time.
+  function progApplyClipTransforms(ctx, W, H, clip, clipTimeSec){
     if (!clip) return;
     var scale = parseFloat(clip.dataset.scale)   || 1;
     var rot   = parseFloat(clip.dataset.rotate)  || 0;
@@ -2467,6 +2610,13 @@
     var flipV = clip.dataset.flipV === 'true';
     var offX  = parseFloat(clip.dataset.offsetX) || 0;
     var offY  = parseFloat(clip.dataset.offsetY) || 0;
+    // Keyframe interpolation overrides statics for scale / offsetX / offsetY
+    var kfs = readClipKeyframes(clip);
+    if (kfs.length > 0 && isFinite(clipTimeSec)){
+      scale = interpolateKeyframeProp(kfs, 'scale',   clipTimeSec, scale);
+      offX  = interpolateKeyframeProp(kfs, 'offsetX', clipTimeSec, offX);
+      offY  = interpolateKeyframeProp(kfs, 'offsetY', clipTimeSec, offY);
+    }
     if (scale === 1 && rot === 0 && !flipH && !flipV && offX === 0 && offY === 0) return;
     var cx = W/2, cy = H/2;
     ctx.translate(cx + offX, cy + offY);
