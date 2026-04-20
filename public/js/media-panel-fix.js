@@ -1152,6 +1152,16 @@
     var canvas = ensureProgramMonitor();
     if (!canvas){ _progRAF = requestAnimationFrame(progLoop); return; }
     var ctx = canvas.getContext('2d');
+    // LAYER STACK RESET: force the canvas transform back to identity and
+    // alpha to 1 at the top of every frame. This is the BASE layer — the
+    // video's default position (centered) and original size are rendered
+    // through this identity transform. Any motion effect from M1 is
+    // layered ON TOP via save/transform/restore inside progApplyMotion,
+    // so it can only ever offset the rendered pixels — never the clip's
+    // underlying data. If a prior frame accidentally left a transform
+    // dangling, this line rolls it back.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
     // Sync internal buffer to CSS-rendered size so drawing isn't stretched
     // by CSS's 100%×100% sizing of the canvas.
     var rect = canvas.getBoundingClientRect();
