@@ -3183,6 +3183,9 @@ function showToast(message, type = 'success') {
             fxVignette:   c.dataset.fxVignette   || '',
             fxGlow:       c.dataset.fxGlow       || '',
             fxGrain:      c.dataset.fxGrain      || '',
+            fxSharpen:    c.dataset.fxSharpen    || '',
+            fxChromatic:  c.dataset.fxChromatic  || '',
+            fxPixelate:   c.dataset.fxPixelate   || '',
             // Motion (M1)
             motionEffect: c.dataset.motionEffect || '',
             // Position offset
@@ -6360,6 +6363,21 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       if (c.fxGlow === 'true') {
         chain.push('eq=brightness=0.05:saturation=1.1');
         chain.push('drawbox=x=0:y=0:w=iw:h=ih:color=0x8b5cf6@0.15:t=fill');
+      }
+      // FX: sharpen — native unsharp mask, luminance-only (bias 1.0).
+      if (c.fxSharpen === 'true') {
+        chain.push('unsharp=5:5:1.0:5:5:0.0');
+      }
+      // FX: chromatic aberration — shift red +3px right, blue -3px left.
+      if (c.fxChromatic === 'true') {
+        chain.push('rgbashift=rh=3:bh=-3');
+      }
+      // FX: pixelate — downsample then upsample with nearest-neighbor.
+      // Applied BEFORE the final SCALE_PAD fit so the blocky output still
+      // letterboxes cleanly into the output canvas.
+      if (c.fxPixelate === 'true') {
+        chain.push('scale=iw/8:ih/8:flags=neighbor');
+        chain.push('scale=iw*8:ih*8:flags=neighbor');
       }
       // Transforms: hflip / vflip
       if (c.flipH === 'true') chain.push('hflip');

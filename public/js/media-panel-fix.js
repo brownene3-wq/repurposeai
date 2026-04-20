@@ -615,6 +615,9 @@
             fxGlow:       c.dataset.fxGlow       || '',
             fxVignette:   c.dataset.fxVignette   || '',
             fxGrain:      c.dataset.fxGrain      || '',
+            fxSharpen:    c.dataset.fxSharpen    || '',
+            fxChromatic:  c.dataset.fxChromatic  || '',
+            fxPixelate:   c.dataset.fxPixelate   || '',
             volume:       c.dataset.volume       || '',
             muted:        c.dataset.muted        || '',
             solo:         c.dataset.solo         || '',
@@ -705,6 +708,9 @@
           if (spec.fxGlow)         c.dataset.fxGlow       = spec.fxGlow;
           if (spec.fxVignette)     c.dataset.fxVignette   = spec.fxVignette;
           if (spec.fxGrain)        c.dataset.fxGrain      = spec.fxGrain;
+          if (spec.fxSharpen)      c.dataset.fxSharpen    = spec.fxSharpen;
+          if (spec.fxChromatic)    c.dataset.fxChromatic  = spec.fxChromatic;
+          if (spec.fxPixelate)     c.dataset.fxPixelate   = spec.fxPixelate;
           if (spec.volume)         c.dataset.volume       = spec.volume;
           if (spec.muted)          c.dataset.muted        = spec.muted;
           if (spec.solo)           c.dataset.solo         = spec.solo;
@@ -1223,19 +1229,62 @@
     // Crop support: when clip.dataset.crop is 'x,y,w,h' percent, use
     // drawImage's 9-arg source-rect form so only that region of the
     // source is rendered — scaled to fill the letterbox rect.
-    if (clip && clip.dataset.crop){
+    var hasCrop = clip && clip.dataset.crop;
+    var cropArgs = null;
+    if (hasCrop){
       var cp = String(clip.dataset.crop).split(',').map(function(s){ return parseFloat(s); });
       if (cp.length === 4 && cp.every(function(v){ return isFinite(v); })){
-        var sx = Math.max(0, Math.min(sW, sW * cp[0] / 100));
-        var sy = Math.max(0, Math.min(sH, sH * cp[1] / 100));
-        var sw = Math.max(1, Math.min(sW - sx, sW * cp[2] / 100));
-        var sh = Math.max(1, Math.min(sH - sy, sH * cp[3] / 100));
-        ctx.drawImage(src, sx, sy, sw, sh, r.dx, r.dy, r.dw, r.dh);
-      } else {
-        ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+        cropArgs = {
+          sx: Math.max(0, Math.min(sW, sW * cp[0] / 100)),
+          sy: Math.max(0, Math.min(sH, sH * cp[1] / 100)),
+          sw: Math.max(1, Math.min(sW - 0, sW * cp[2] / 100)),
+          sh: Math.max(1, Math.min(sH - 0, sH * cp[3] / 100))
+        };
       }
+    }
+    var pixelate = clip && clip.dataset.fxPixelate === 'true';
+    if (pixelate){
+      // Downsample source to a tiny offscreen canvas then blit back at
+      // target size with smoothing off. Creates a blocky pixel look.
+      if (!window._v10PixOSC) window._v10PixOSC = document.createElement('canvas');
+      var osc = window._v10PixOSC;
+      var block = 10;
+      osc.width  = Math.max(4, Math.floor(r.dw / block));
+      osc.height = Math.max(4, Math.floor(r.dh / block));
+      var octx = osc.getContext('2d');
+      octx.imageSmoothingEnabled = false;
+      octx.clearRect(0, 0, osc.width, osc.height);
+      if (cropArgs){
+        octx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, 0, 0, osc.width, osc.height);
+      } else {
+        octx.drawImage(src, 0, 0, osc.width, osc.height);
+      }
+      var prevSmooth = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(osc, r.dx, r.dy, r.dw, r.dh);
+      ctx.imageSmoothingEnabled = prevSmooth;
+    } else if (cropArgs){
+      ctx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, r.dx, r.dy, r.dw, r.dh);
     } else {
       ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+    }
+    // Chromatic aberration: overlay the frame TWICE at small horizontal
+    // offsets through red/cyan tint filters using 'lighter' composite.
+    // Not true RGB channel shift (canvas doesn't expose that cheaply) but
+    // visually gives the fringing effect. Real rgbashift runs on export.
+    if (clip && clip.dataset.fxChromatic === 'true'){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.35;
+      // Red fringe — shift +3px
+      ctx.filter = 'sepia(1) saturate(6) hue-rotate(-50deg)';
+      if (cropArgs) ctx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, r.dx + 3, r.dy, r.dw, r.dh);
+      else ctx.drawImage(src, r.dx + 3, r.dy, r.dw, r.dh);
+      // Cyan fringe — shift -3px
+      ctx.filter = 'sepia(1) saturate(6) hue-rotate(150deg)';
+      if (cropArgs) ctx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, r.dx - 3, r.dy, r.dw, r.dh);
+      else ctx.drawImage(src, r.dx - 3, r.dy, r.dw, r.dh);
+      ctx.restore();
     }
     progExitMotionTransform(ctx, state);
     if (fxFilter) ctx.filter = 'none';
@@ -2082,9 +2131,9 @@
   function clipActionFxGlow(){     toggleClipFlag('Glow',     'fxGlow');     }
   function clipActionFxVignette(){ toggleClipFlag('Vignette', 'fxVignette'); }
   function clipActionFxGrain(){    toggleClipFlag('Film grain','fxGrain');   }
-  function clipActionFxSharpen(){  showToast('Sharpen not supported in preview yet'); }
-  function clipActionFxChromatic(){showToast('Chromatic aberration not supported in preview yet'); }
-  function clipActionFxPixelate(){ showToast('Pixelate not supported in preview yet'); }
+  function clipActionFxSharpen(){  toggleClipFlag('Sharpen',             'fxSharpen');   }
+  function clipActionFxChromatic(){toggleClipFlag('Chromatic aberration','fxChromatic'); }
+  function clipActionFxPixelate(){ toggleClipFlag('Pixelate',            'fxPixelate');  }
   function clipActionFxNoise(){    toggleClipFlag('Noise',    'fxGrain');    } // alias for grain
 
   // ── FX: Color ──
@@ -2183,6 +2232,9 @@
     if (isFinite(s) && s !== 1) parts.push('saturate(' + s + ')');
     if (isFinite(blur) && blur > 0) parts.push('blur(' + blur + 'px)');
     if (isFinite(hue) && hue !== 0) parts.push('hue-rotate(' + hue + 'deg)');
+    // Sharpen has no native CSS filter; approximate with a contrast +
+    // saturation bump. Real sharpen (unsharp mask) kicks in on export.
+    if (clip.dataset.fxSharpen === 'true') parts.push('contrast(1.15)', 'saturate(1.05)');
     // Preset color grades translate to a shortcut set of filters
     if (grad === 'warm')       parts.push('sepia(.25)','saturate(1.15)','hue-rotate(-10deg)');
     else if (grad === 'cool')  parts.push('saturate(1.1)','hue-rotate(8deg)','brightness(.97)');
