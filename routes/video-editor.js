@@ -515,6 +515,14 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-track-fx{background:rgba(52,211,153,.02)}
     .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab;transition:box-shadow .2s}
     .mt-clip:hover{box-shadow:0 0 12px rgba(124,58,237,.3)}
+    /* Trim handles — 8px grip zones anchored to each clip edge. Become
+       visible on hover so they don't clutter the timeline at rest. */
+    .mt-clip-trim{position:absolute;top:0;width:8px;height:100%;cursor:ew-resize;z-index:2;opacity:0;transition:opacity .15s;background:rgba(255,255,255,.35);pointer-events:auto}
+    .mt-clip:hover > .mt-clip-trim,.mt-clip.selected > .mt-clip-trim{opacity:.85}
+    .mt-clip-trim:hover{background:rgba(255,255,255,.85)}
+    .mt-clip-trim.mt-trim-l{left:0;border-radius:6px 0 0 6px}
+    .mt-clip-trim.mt-trim-r{right:0;border-radius:0 6px 6px 0}
+    .mt-clip.mt-trimming{outline:2px solid #f59e0b;outline-offset:-2px}
     .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:1px solid rgba(124,58,237,.4)}
     .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:1px solid rgba(56,189,248,.35)}
     .mt-clip.selected{outline:2px solid #a78bfa;outline-offset:-2px;box-shadow:0 0 16px rgba(139,92,246,.55)}

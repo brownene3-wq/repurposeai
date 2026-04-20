@@ -480,7 +480,140 @@
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
+
+    attachTrimHandles(clip);
   }
+
+  // ── Trim handles ────────────────────────────────────────────────
+  // Left and right 8px grip zones inside each clip. Hidden at rest,
+  // visible on clip hover (or while it's selected). Drag behaviors:
+  //   • Left handle:  shifts `left` + shrinks `width` + advances
+  //                   `sourceOffset` so the clip's right edge stays
+  //                   anchored to the same source frame.
+  //   • Right handle: adjusts `width` only (trims the tail).
+  // Both clamp to a 15px minimum, respect track boundaries, prevent
+  // overlap with neighbors, respect the source's remaining length for
+  // media clips, and apply timeline snap when enabled.
+  function attachTrimHandles(clip){
+    if (clip.querySelector('.mt-clip-trim')) return;
+
+    var lh = document.createElement('div');
+    lh.className = 'mt-clip-trim mt-trim-l';
+    var rh = document.createElement('div');
+    rh.className = 'mt-clip-trim mt-trim-r';
+    clip.appendChild(lh);
+    clip.appendChild(rh);
+
+    // Prevent clicks on handles from propagating to clip (razor/select)
+    ['click','dblclick'].forEach(function(ev){
+      lh.addEventListener(ev, function(e){ e.stopPropagation(); });
+      rh.addEventListener(ev, function(e){ e.stopPropagation(); });
+    });
+
+    function startTrim(side, e){
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      var startX      = e.clientX;
+      var startLeft   = parseFloat(clip.style.left)  || 0;
+      var startWidth  = parseFloat(clip.style.width) || clip.offsetWidth || 100;
+      var startSrcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+      var srcDur      = parseFloat(clip.dataset.duration)     || 0;
+      var clipType    = clip.dataset.clipType || '';
+      var isMedia     = (clipType === 'vid' || clipType === 'aud');
+      var track       = clip.parentElement;
+      var MIN_W       = 15;
+      clip.classList.add('mt-trimming');
+
+      function onMove(ev){
+        var dx = ev.clientX - startX;
+
+        if (side === 'l'){
+          var newLeft   = startLeft + dx;
+          var newWidth  = startWidth - dx;
+          var newSrcOff = startSrcOff + dx / TIMELINE_PX_PER_SEC;
+
+          // Clamp: min width (clamps dx via reverse-computation)
+          if (newWidth < MIN_W){
+            dx = startWidth - MIN_W;
+            newLeft = startLeft + dx;
+            newWidth = MIN_W;
+            newSrcOff = startSrcOff + dx / TIMELINE_PX_PER_SEC;
+          }
+          // Clamp: can't expose source content before time 0
+          if (isMedia && newSrcOff < 0){
+            dx = -startSrcOff * TIMELINE_PX_PER_SEC;
+            newLeft = startLeft + dx;
+            newWidth = startWidth - dx;
+            newSrcOff = 0;
+          }
+          // Clamp: track boundary
+          if (newLeft < 0){
+            var boundaryDx = -startLeft;
+            newLeft = 0;
+            newWidth = startWidth - boundaryDx;
+            newSrcOff = startSrcOff + boundaryDx / TIMELINE_PX_PER_SEC;
+          }
+          // Snap left edge (if snap is on)
+          var snappedLeft = applySnap(newLeft, newWidth, clip);
+          if (snappedLeft !== newLeft){
+            var snapDx = snappedLeft - startLeft;
+            newLeft   = snappedLeft;
+            newWidth  = startWidth - snapDx;
+            newSrcOff = startSrcOff + snapDx / TIMELINE_PX_PER_SEC;
+            if (newWidth < MIN_W){ newLeft = startLeft + (startWidth - MIN_W); newWidth = MIN_W; }
+          }
+          // Overlap with neighbors
+          if (clipOverlaps(track, newLeft, newWidth, clip)) return;
+
+          clip.style.left  = newLeft  + 'px';
+          clip.style.width = newWidth + 'px';
+          clip.dataset.sourceOffset = newSrcOff.toFixed(3);
+          // For NON-media clips (text/image/motion) keep duration in sync
+          // with timeline width since they don't track a source length.
+          if (!isMedia) clip.dataset.duration = (newWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+        } else {
+          // Right handle: width = startWidth + dx
+          var newW = startWidth + dx;
+          if (newW < MIN_W) newW = MIN_W;
+          // Clamp: max width = remaining source
+          if (isMedia && srcDur > 0){
+            var maxW = (srcDur - startSrcOff) * TIMELINE_PX_PER_SEC;
+            if (maxW > 0 && newW > maxW) newW = maxW;
+          }
+          // Overlap with right neighbor
+          if (clipOverlaps(track, startLeft, newW, clip)) return;
+
+          clip.style.width = newW + 'px';
+          if (!isMedia) clip.dataset.duration = (newW / TIMELINE_PX_PER_SEC).toFixed(3);
+        }
+      }
+
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        clip.classList.remove('mt-trimming');
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+        pushTimelineHistory();
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+
+    lh.addEventListener('mousedown', function(e){ startTrim('l', e); });
+    rh.addEventListener('mousedown', function(e){ startTrim('r', e); });
+  }
+
+  // Retrofit trim handles onto clips that existed before this code loaded
+  // (e.g. restored-from-snapshot clips). Re-run on every snapshot restore
+  // via the existing makeClipInteractive path.
+  try {
+    document.querySelectorAll('.mt-clip').forEach(attachTrimHandles);
+  } catch(_){}
 
   function addClipToTimeline(fileName, mediaType, duration, mediaUrl) {
     var track = findTargetTrack(mediaType);
