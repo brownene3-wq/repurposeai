@@ -3176,6 +3176,10 @@ function showToast(message, type = 'success') {
             fxBlur:       c.dataset.fxBlur       || '',
             fxHue:        c.dataset.fxHue        || '',
             fxColorGrade: c.dataset.fxColorGrade || '',
+            // FX (post-overlay boolean flags)
+            fxVignette:   c.dataset.fxVignette   || '',
+            fxGlow:       c.dataset.fxGlow       || '',
+            fxGrain:      c.dataset.fxGrain      || '',
             // Motion (M1)
             motionEffect: c.dataset.motionEffect || '',
             // Position offset
@@ -6335,6 +6339,24 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         else if (g === 'vintage')chain.push('curves=preset=vintage');
         else if (g === 'bw')     chain.push('hue=s=0');
         else if (g === 'punch')  chain.push('eq=contrast=1.15:saturation=1.25');
+      }
+      // FX post-overlays: vignette / glow / grain. These mirror the PGM
+      // canvas post-fx (radial darken / purple tint / film noise) and go
+      // LATE in the chain so they sit on top of crop + color grade.
+      //   • vignette  → native vignette filter (moderate PI/4 spread)
+      //   • grain     → native noise filter with temporal per-frame flag
+      //   • glow      → subtle brighten + slight saturation + purple tint
+      //                 overlay via drawbox (uniform approximation of the
+      //                 preview's purple→pink gradient)
+      if (c.fxVignette === 'true') {
+        chain.push('vignette=PI/4');
+      }
+      if (c.fxGrain === 'true') {
+        chain.push('noise=alls=18:allf=t+u');
+      }
+      if (c.fxGlow === 'true') {
+        chain.push('eq=brightness=0.05:saturation=1.1');
+        chain.push('drawbox=x=0:y=0:w=iw:h=ih:color=0x8b5cf6@0.15:t=fill');
       }
       // Transforms: hflip / vflip
       if (c.flipH === 'true') chain.push('hflip');
