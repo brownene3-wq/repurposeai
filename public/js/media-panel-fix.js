@@ -1762,25 +1762,37 @@
     active.forEach(function(mo){
       var key  = mo.clip.dataset.motionEffect;
       var p    = Math.max(0, Math.min(1, mo.progress));
+      // Ease curve that peaks at the middle (progress 0.5 → 1) and returns
+      // to 0 at both endpoints. This ensures the visual starts AND ends
+      // at the default transform (position 0, scale 1, rotation 0°) so
+      // adding a motion clip never leaves a permanent offset when the
+      // playhead exits the clip.
+      var pulse = Math.sin(p * Math.PI);
       if (key === 'zoom-in'){
-        var s = 1 + 0.3 * p;                        // 1.0 → 1.3
+        var s = 1 + 0.3 * pulse;                   // 1.0 → 1.3 → 1.0
         ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
       } else if (key === 'zoom-out'){
-        var s2 = 1.3 - 0.3 * p;                      // 1.3 → 1.0
+        var s2 = 1 - 0.2 * pulse;                   // 1.0 → 0.8 → 1.0
         ctx.translate(cx, cy); ctx.scale(s2, s2); ctx.translate(-cx, -cy);
       } else if (key === 'pan-left'){
-        ctx.translate(-p * W * 0.2, 0);
+        ctx.translate(-W * 0.2 * pulse, 0);          // 0 → -20%W → 0
       } else if (key === 'pan-right'){
-        ctx.translate(p * W * 0.2, 0);
+        ctx.translate( W * 0.2 * pulse, 0);          // 0 → +20%W → 0
       } else if (key === 'fade-in'){
+        // Fade-in is inherently one-way — alpha moves 0 → 1. The END
+        // of the clip matches the default (alpha=1); the START is by
+        // definition transparent. No position/scale is altered.
         alpha *= p;
       } else if (key === 'fade-out'){
+        // Fade-out is the mirror — START matches default (alpha=1),
+        // END is transparent.
         alpha *= (1 - p);
       } else if (key === 'shake'){
-        var amp = 6;
+        // Shake amplitude scales with pulse so it eases IN and OUT.
+        var amp = 6 * pulse;
         ctx.translate((Math.random()*2-1)*amp, (Math.random()*2-1)*amp);
       } else if (key === 'rotate'){
-        var deg = 10 * p;                            // 0° → 10°
+        var deg = 10 * pulse;                        // 0° → 10° → 0°
         ctx.translate(cx, cy); ctx.rotate(deg * Math.PI/180); ctx.translate(-cx, -cy);
       }
     });
