@@ -1313,14 +1313,26 @@
             '</div>';
         });
       }
+      // AUDIO TOOLS — Voice Over + Music are placeholders (routed to toast
+      // via wireRPToast); Denoise + Normalize toggle per-selected-audio-clip
+      // dataset flags that bake into the export.
+      function afxBtn(ic, label, fx){
+        return '<button class="v10-rp-btn" data-audio-fx="' + fx + '"><span class="v10-rp-ic">' + ic + '</span>' + label + '</button>';
+      }
       html +=
         '<div class="v10-rp-section-title" style="margin-top:14px">AUDIO TOOLS</div>'+
         '<div class="v10-rp-grid">'+
-          buildRPButtons([['\ud83c\udfa4','Voice Over'],['\ud83c\udfb5','Music'],['\ud83d\udd07','Denoise'],['\ud83d\udcc8','Normalize']])+
+          '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa4</span>Voice Over</button>'+
+          '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfb5</span>Music</button>'+
+          afxBtn('\ud83d\udd07', 'Denoise',   'denoise')+
+          afxBtn('\ud83d\udcc8', 'Normalize', 'normalize')+
         '</div>'+
         '<div class="v10-rp-section-title">MIXING</div>'+
         '<div class="v10-rp-grid">'+
-          buildRPButtons([['\ud83c\udfda\ufe0f','Fade In'],['\ud83c\udf05','Fade Out'],['\ud83d\udd17','Link Audio'],['\u2702\ufe0f','Split Audio']])+
+          afxBtn('\ud83c\udfda\ufe0f', 'Fade In',  'fadein')+
+          afxBtn('\ud83c\udf05',       'Fade Out', 'fadeout')+
+          '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udd17</span>Link Audio</button>'+
+          '<button class="v10-rp-btn"><span class="v10-rp-ic">\u2702\ufe0f</span>Split Audio</button>'+
         '</div>';
       div.innerHTML = html;
 
@@ -1360,6 +1372,54 @@
             }
           });
         });
+      });
+      // AUDIO FX handlers — operate on the currently selected audio clip,
+      // or fall back to the first audio clip on A1. Wired BEFORE wireRPToast
+      // (capture phase) so the generic toast handler doesn't fire first.
+      function getTargetAudioClip(){
+        var sel = document.querySelector('.mt-track-audio .mt-clip.selected');
+        if (sel) return sel;
+        return document.querySelector('.mt-track-audio .mt-clip') || null;
+      }
+      Array.from(div.querySelectorAll('[data-audio-fx]')).forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          var fx = btn.getAttribute('data-audio-fx');
+          var clip = getTargetAudioClip();
+          if (!clip){
+            toast('No audio clip on timeline');
+            return;
+          }
+          if (fx === 'fadein'){
+            var curIn = parseFloat(clip.dataset.fadeIn) || 0;
+            var inp = prompt('Fade-in duration (seconds, 0 to remove)', curIn > 0 ? String(curIn) : '1');
+            if (inp === null) return;
+            var v = parseFloat(inp);
+            if (!isFinite(v) || v < 0){ toast('Invalid value'); return; }
+            if (v === 0) delete clip.dataset.fadeIn;
+            else clip.dataset.fadeIn = String(v);
+            toast('Fade-in: ' + v + 's');
+          } else if (fx === 'fadeout'){
+            var curOut = parseFloat(clip.dataset.fadeOut) || 0;
+            var inp2 = prompt('Fade-out duration (seconds, 0 to remove)', curOut > 0 ? String(curOut) : '1');
+            if (inp2 === null) return;
+            var v2 = parseFloat(inp2);
+            if (!isFinite(v2) || v2 < 0){ toast('Invalid value'); return; }
+            if (v2 === 0) delete clip.dataset.fadeOut;
+            else clip.dataset.fadeOut = String(v2);
+            toast('Fade-out: ' + v2 + 's');
+          } else if (fx === 'denoise'){
+            var now = clip.dataset.audioDenoise === 'true';
+            clip.dataset.audioDenoise = now ? 'false' : 'true';
+            toast('Denoise ' + (now ? 'off' : 'on'));
+          } else if (fx === 'normalize'){
+            var nowN = clip.dataset.audioNormalize === 'true';
+            clip.dataset.audioNormalize = nowN ? 'false' : 'true';
+            toast('Normalize ' + (nowN ? 'off' : 'on'));
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        }, true);
       });
       wireRPToast(div);
     }

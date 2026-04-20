@@ -754,7 +754,11 @@
             volume:       c.dataset.volume       || '',
             muted:        c.dataset.muted        || '',
             solo:         c.dataset.solo         || '',
-            preSoloMuted: c.dataset.preSoloMuted || ''
+            preSoloMuted: c.dataset.preSoloMuted || '',
+            fadeIn:         c.dataset.fadeIn         || '',
+            fadeOut:        c.dataset.fadeOut        || '',
+            audioDenoise:   c.dataset.audioDenoise   || '',
+            audioNormalize: c.dataset.audioNormalize || ''
           };
         })
       };
@@ -848,6 +852,10 @@
           if (spec.muted)          c.dataset.muted        = spec.muted;
           if (spec.solo)           c.dataset.solo         = spec.solo;
           if (spec.preSoloMuted)   c.dataset.preSoloMuted = spec.preSoloMuted;
+          if (spec.fadeIn)         c.dataset.fadeIn         = spec.fadeIn;
+          if (spec.fadeOut)        c.dataset.fadeOut        = spec.fadeOut;
+          if (spec.audioDenoise)   c.dataset.audioDenoise   = spec.audioDenoise;
+          if (spec.audioNormalize) c.dataset.audioNormalize = spec.audioNormalize;
           track.appendChild(c);
           makeClipInteractive(c);
         });
@@ -1026,7 +1034,39 @@
         // Per-clip GainNode so volume + mute are honoured at scheduling
         // time. vol is capped at 2.0 in the UI (slider max 200%).
         var gainNode = _audioCtx.createGain();
-        gainNode.gain.value = Math.min(2, vol);
+        var targetVol = Math.min(2, vol);
+        // Fade-in / fade-out via gain automation. Fades are relative to
+        // the CLIP window (not the source), so when entering mid-clip we
+        // interpolate the starting gain to match where we'd be on the
+        // fade-in curve. For export, the same fades run via afade.
+        var fadeIn  = Math.max(0, parseFloat(clip.dataset.fadeIn)  || 0);
+        var fadeOut = Math.max(0, parseFloat(clip.dataset.fadeOut) || 0);
+        var playStart = t0 + scheduleDelay;
+        var playEnd   = playStart + playDur;
+        // Position in the clip where playback starts (0 when scheduleDelay>0,
+        // >0 when we entered mid-clip).
+        var clipEnter = (startPlayheadSec > leftSec) ? (startPlayheadSec - leftSec) : 0;
+
+        if (fadeIn > 0 && clipEnter < fadeIn){
+          // Still inside the fade-in region at playback start
+          var startGain    = targetVol * (clipEnter / fadeIn);
+          var fadeInRemain = Math.min(fadeIn - clipEnter, playDur);
+          gainNode.gain.setValueAtTime(startGain, playStart);
+          gainNode.gain.linearRampToValueAtTime(targetVol, playStart + fadeInRemain);
+        } else {
+          gainNode.gain.setValueAtTime(targetVol, playStart);
+        }
+        if (fadeOut > 0){
+          var fadeOutDur  = Math.min(fadeOut, playDur);
+          var fadeOutStart = playEnd - fadeOutDur;
+          if (fadeOutStart > playStart){
+            // Pin gain at targetVol right before fade-out so the ramp
+            // starts from the correct level.
+            gainNode.gain.setValueAtTime(targetVol, fadeOutStart);
+          }
+          gainNode.gain.linearRampToValueAtTime(0, playEnd);
+        }
+
         src.connect(gainNode);
         gainNode.connect(_audioMaster);
         try { src.start(t0 + scheduleDelay, offsetInSource, playDur); } catch(_){}
@@ -1950,6 +1990,7 @@
 
   // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
+  try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
 
   // ── Text clips ──
   // Text lives on T1 (.mt-track-text). It's rendered as an overlay on top

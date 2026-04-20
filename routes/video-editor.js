@@ -3167,6 +3167,10 @@ function showToast(message, type = 'success') {
             // Audio
             volume:       c.dataset.volume       || '',
             muted:        c.dataset.muted        || '',
+            fadeIn:          c.dataset.fadeIn          || '',
+            fadeOut:         c.dataset.fadeOut         || '',
+            audioDenoise:    c.dataset.audioDenoise    || '',
+            audioNormalize:  c.dataset.audioNormalize  || '',
             // Transform
             scale:        c.dataset.scale        || '',
             rotate:       c.dataset.rotate       || '',
@@ -6873,12 +6877,35 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           var vRaw    = parseFloat(c.volume);
           var vol     = isFinite(vRaw) ? Math.max(0, Math.min(2, vRaw / 100)) : 1;
           var delayMs = Math.max(0, Math.round(leftSec * 1000));
-          // Trim from the source slice, zero-base its PTS, delay to its
-          // timeline position, and scale volume.
+          // Per-clip Audio FX from the AUDIO tab sidebar. Applied INSIDE
+          // the trimmed/zero-based slice so fade times are relative to the
+          // clip, then adelay pushes to the timeline position, then volume.
+          //   • fadeIn    → afade=t=in  at clip-time 0 for fadeInDur
+          //   • fadeOut   → afade=t=out at clip-time (dur - fadeOutDur)
+          //   • denoise   → afftdn (FFT-based noise floor suppression)
+          //   • normalize → loudnorm (EBU R128 per-clip target)
+          var preDelay = [];  // filters applied before adelay (clip-time domain)
+          if (c.audioDenoise === 'true')    preDelay.push('afftdn=nf=-25');
+          if (c.audioNormalize === 'true')  preDelay.push('loudnorm=I=-16:TP=-1.5:LRA=11');
+          var fadeInDur  = Math.max(0, parseFloat(c.fadeIn)  || 0);
+          var fadeOutDur = Math.max(0, parseFloat(c.fadeOut) || 0);
+          if (fadeInDur > 0){
+            fadeInDur = Math.min(fadeInDur, durSec);
+            preDelay.push('afade=t=in:st=0:d=' + fadeInDur.toFixed(3));
+          }
+          if (fadeOutDur > 0){
+            fadeOutDur = Math.min(fadeOutDur, durSec);
+            var foStart = Math.max(0, durSec - fadeOutDur);
+            preDelay.push('afade=t=out:st=' + foStart.toFixed(3) + ':d=' + fadeOutDur.toFixed(3));
+          }
+          var preDelayStr = preDelay.length ? (preDelay.join(',') + ',') : '';
+          // Trim from the source slice, zero-base its PTS, apply Audio FX,
+          // delay to timeline position, then scale volume.
           lines.push(
             '[' + inIdx + ':a]' +
             'atrim=start=' + srcOff.toFixed(3) + ':end=' + (srcOff + durSec).toFixed(3) + ',' +
             'asetpts=PTS-STARTPTS,' +
+            preDelayStr +
             'adelay=' + delayMs + '|' + delayMs + ',' +
             'volume=' + vol.toFixed(3) +
             '[a' + i + ']'
