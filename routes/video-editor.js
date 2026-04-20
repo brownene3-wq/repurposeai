@@ -6273,6 +6273,21 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
                     'pad=' + outW + ':' + outH + ':(ow-iw)/2:(oh-ih)/2:color=black,' +
                     'setsar=1';
 
+    // Clip-aware version of SCALE_PAD — shifts the padded letterbox rect
+    // by the clip's Position (offsetX / offsetY) so the rendered frame is
+    // translated within a black-filled canvas. Preserves the base state
+    // (content stays at its original scale); this is purely a pad-offset.
+    function buildScalePad(clip){
+      var offX = parseFloat(clip && clip.offsetX) || 0;
+      var offY = parseFloat(clip && clip.offsetY) || 0;
+      var padX = (offX === 0) ? '(ow-iw)/2' : ('(ow-iw)/2+(' + offX.toFixed(2) + ')');
+      var padY = (offY === 0) ? '(oh-ih)/2' : ('(oh-ih)/2+(' + offY.toFixed(2) + ')');
+      return 'scale=' + outW + ':' + outH +
+             ':force_original_aspect_ratio=decrease,' +
+             'pad=' + outW + ':' + outH + ':' + padX + ':' + padY + ':color=black,' +
+             'setsar=1';
+    }
+
     // Build a per-clip filter chain that transforms the source BEFORE the
     // standard SCALE_PAD output-fit stage. Each property is optional and
     // composes in a sensible order:
@@ -6369,10 +6384,11 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       var segPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_clip.mp4');
 
       // Assemble this clip's video-filter chain: per-clip FX/transform
-      // BEFORE the output SCALE_PAD fit. Image clips share the chain
-      // (cropping / color adjustment still apply) but not speed/atempo.
+      // BEFORE the output SCALE_PAD fit. SCALE_PAD is built per-clip so
+      // the pad-anchor picks up the Position offsetX/offsetY, translating
+      // the rendered content off-center within the black canvas.
       var clipChain = buildClipVFChain(clip);
-      var vfChain = clipChain.concat([SCALE_PAD]).join(',');
+      var vfChain = clipChain.concat([buildScalePad(clip)]).join(',');
 
       // Timing: per-clip speed. Valid range is >0; we clamp to 0.1..10 to
       // avoid extreme atempo chains. For non-1.0 speed we scale video PTS
