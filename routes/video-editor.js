@@ -3206,7 +3206,11 @@ function showToast(message, type = 'success') {
             motionEffect: c.dataset.motionEffect || '',
             // Position offset
             offsetX:      c.dataset.offsetX      || '',
-            offsetY:      c.dataset.offsetY      || ''
+            offsetY:      c.dataset.offsetY      || '',
+            // FX-track clips (for the export server to merge into any
+            // overlapping V1 segment — drag-to-broadcast support)
+            fxKey:        c.dataset.fxKey        || '',
+            fxValue:      c.dataset.fxValue      || ''
           };
         });
 
@@ -6298,6 +6302,35 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       return (parseFloat(a.left)||0) - (parseFloat(b.left)||0);
     });
 
+    // FX-track clips broadcast their effect to every V1 clip they overlap
+    // in time. We build a per-V1-clip "effective FX" view by merging the
+    // V1 clip's own dataset with any FX-track clip whose range overlaps
+    // (fxClip.left < v1.left + v1.width AND fxClip.left + fxClip.width > v1.left).
+    const fxTrackClips = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      return (t === 'fx' || c.clipType === 'fx') && c.fxKey;
+    });
+    function mergeFxTrackIntoV1(v1Clip){
+      if (fxTrackClips.length === 0) return v1Clip;
+      var l1 = parseFloat(v1Clip.left)  || 0;
+      var w1 = parseFloat(v1Clip.width) || 0;
+      var r1 = l1 + w1;
+      var merged = Object.assign({}, v1Clip);
+      fxTrackClips.forEach(function(fx){
+        var l2 = parseFloat(fx.left)  || 0;
+        var w2 = parseFloat(fx.width) || 0;
+        var r2 = l2 + w2;
+        if (l2 >= r1 || r2 <= l1) return;  // no overlap
+        if (fx.fxValue === '' || fx.fxValue === 'false') return;
+        // Only override if the V1 clip doesn't already have a value
+        // (so per-clip settings still win when explicitly set).
+        if (!merged[fx.fxKey] || merged[fx.fxKey] === 'false'){
+          merged[fx.fxKey] = fx.fxValue;
+        }
+      });
+      return merged;
+    }
+
     // Resolve a mediaUrl (e.g. '/video-editor/download/xyz.mp4' or full URL)
     // to a file on disk in either uploadDir or outputDir. Returns null for
     // blob: URLs (sidebar-only files that have no server copy).
@@ -6472,8 +6505,12 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       // BEFORE the output SCALE_PAD fit. SCALE_PAD is built per-clip so
       // the pad-anchor picks up the Position offsetX/offsetY, translating
       // the rendered content off-center within the black canvas.
-      var clipChain = buildClipVFChain(clip);
-      var vfChain = clipChain.concat([buildScalePad(clip)]).join(',');
+      // mergeFxTrackIntoV1 injects effects from any FX-track clip whose
+      // time range overlaps this V1 clip, so a single FX-track clip
+      // dragged across multiple V1 clips applies to all of them.
+      var fxMerged = mergeFxTrackIntoV1(clip);
+      var clipChain = buildClipVFChain(fxMerged);
+      var vfChain = clipChain.concat([buildScalePad(fxMerged)]).join(',');
 
       // Timing: per-clip speed. Valid range is >0; we clamp to 0.1..10 to
       // avoid extreme atempo chains. For non-1.0 speed we scale video PTS
