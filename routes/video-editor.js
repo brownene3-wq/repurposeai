@@ -1082,8 +1082,17 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
           <div class="exp-section">
             <div class="exp-row">
-              <select class="exp-sel"><option>1080p</option><option>720p</option><option>4K</option></select>
-              <select class="exp-sel"><option>MP4</option><option>MOV</option><option>WebM</option></select>
+              <select class="exp-sel" id="exportQualitySel">
+                <option value="480p">480p</option>
+                <option value="720p" selected>720p</option>
+                <option value="1080p">1080p</option>
+                <option value="4K">4K</option>
+              </select>
+              <select class="exp-sel" id="exportFormatSel">
+                <option value="mp4" selected>MP4</option>
+                <option value="mov">MOV</option>
+                <option value="webm">WebM</option>
+              </select>
             </div>
             <button class="exp-go" id="exportButton" type="button">\ud83c\udfac Export Video</button>
           </div>
@@ -3336,29 +3345,63 @@ function showToast(message, type = 'success') {
 
           var stoppedByTimer = false;
           var finished = false;
+          // Read the user's Quality + Format selections so we transcode
+          // the WebM capture into the requested output before download.
+          var qSel = document.getElementById('exportQualitySel');
+          var fSel = document.getElementById('exportFormatSel');
+          var selQuality = (qSel && qSel.value) || '720p';
+          var selFormat  = (fSel && fSel.value) || 'mp4';
           await new Promise(function(resolve){
-            recorder.onstop = function(){
+            recorder.onstop = async function(){
               if (finished) return;
               finished = true;
               try { if (audioInfo && audioInfo.destination) window.disconnectFromAudioMaster(audioInfo.destination); } catch(_){}
               try { videoStream.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
               var blob = new Blob(chunks, { type: recMime || 'video/webm' });
-              var url = URL.createObjectURL(blob);
-              var a = document.createElement('a');
               var base = 'timeline_' + Date.now();
-              a.href = url;
-              a.download = base + '.webm';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
-              handleSuccess({
-                renderedFromTimeline: true,
-                clipCount: timelineClips.length,
-                duration: totalMs / 1000,
-                filename: base + '.webm',
-                downloadUrl: url
-              });
+              button.innerHTML = '\u23f3 Transcoding ' + selQuality + ' ' + selFormat.toUpperCase() + '\u2026';
+              try {
+                var fd = new FormData();
+                fd.append('clip', blob, base + '.webm');
+                fd.append('quality', selQuality);
+                fd.append('format',  selFormat);
+                var tResp = await fetch('/video-editor/transcode-export', {
+                  method: 'POST',
+                  body: fd,
+                  credentials: 'same-origin'
+                });
+                var tData = await tResp.json();
+                if (!tResp.ok || !tData.success){
+                  throw new Error((tData && tData.error) || 'Transcode failed');
+                }
+                // Download the transcoded file
+                var a = document.createElement('a');
+                a.href = tData.downloadUrl;
+                a.download = tData.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                handleSuccess({
+                  renderedFromTimeline: true,
+                  clipCount: timelineClips.length,
+                  duration: totalMs / 1000,
+                  filename: tData.filename,
+                  downloadUrl: tData.downloadUrl
+                });
+              } catch (txErr){
+                // Fall back to downloading the raw WebM so the user
+                // still gets SOMETHING when transcode breaks.
+                console.warn('[export] transcode failed, falling back to raw WebM:', txErr);
+                showToast('Transcode failed, downloading raw WebM: ' + (txErr.message || txErr), 'error');
+                var url = URL.createObjectURL(blob);
+                var a2 = document.createElement('a');
+                a2.href = url;
+                a2.download = base + '.webm';
+                document.body.appendChild(a2);
+                a2.click();
+                document.body.removeChild(a2);
+                setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+              }
               resolve();
             };
             recorder.start(200);
@@ -9389,6 +9432,69 @@ router.post('/ai-captions', requireAuth, async (req, res) => {
   } catch (err){
     console.error('[ai-captions] error:', err);
     res.status(500).json({ error: err.message || 'Captions generation failed' });
+  }
+});
+
+// ─── WYSIWYG export transcode ────────────────────────────────────
+// Accepts the WebM blob produced by the browser's MediaRecorder
+// capture of the Program Monitor, plus a quality + format selection,
+// and returns a resized/remuxed file the client can download.
+router.post('/transcode-export', requireAuth, upload.single('clip'), async (req, res) => {
+  try {
+    if (!ffmpegPath) return res.status(500).json({ error: 'FFmpeg not available' });
+    if (!req.file)   return res.status(400).json({ error: 'No clip uploaded' });
+
+    var quality = String(req.body.quality || '720p').toLowerCase();
+    var format  = String(req.body.format  || 'mp4').toLowerCase();
+
+    // Target height → output size (preserve aspect; use -2 for the other dim)
+    var targetH = ({ '480p': 480, '720p': 720, '1080p': 1080, '4k': 2160 })[quality] || 720;
+    var scaleFilter = 'scale=-2:' + targetH;
+
+    var allowed = { 'mp4': 1, 'mov': 1, 'webm': 1 };
+    if (!allowed[format]) format = 'mp4';
+    var outName = 'export_' + Date.now() + '_' + req.user.id + '.' + format;
+    var outPath = path.join(outputDir, outName);
+
+    var vcodec, acodec;
+    if (format === 'webm'){
+      vcodec = ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-pix_fmt', 'yuv420p'];
+      acodec = ['-c:a', 'libopus', '-b:a', '128k'];
+    } else {
+      // mp4 + mov share the same codec set (H.264 + AAC)
+      vcodec = ['-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.0'];
+      acodec = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '160k'];
+    }
+    var args = ['-y', '-i', req.file.path, '-vf', scaleFilter];
+    args = args.concat(vcodec).concat(acodec);
+    if (format === 'mp4') args.push('-movflags', '+faststart');
+    args.push(outPath);
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, args);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Transcode failed: ' + stderr.slice(-400)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Clean up the uploaded WebM once the transcode is written
+    try { fs.unlinkSync(req.file.path); } catch(_){}
+
+    res.json({
+      success: true,
+      filename: outName,
+      downloadUrl: '/video-editor/download/' + outName,
+      quality: quality,
+      format: format,
+      targetHeight: targetH
+    });
+  } catch (err){
+    console.error('[transcode-export] error:', err);
+    res.status(500).json({ error: err.message || 'Transcode failed' });
   }
 });
 
