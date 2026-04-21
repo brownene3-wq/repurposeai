@@ -1036,23 +1036,17 @@
     });
     document.body.appendChild(audio);
     _a1AudioEls[url] = audio;
-    // Route through WebAudio master bus so A1 mixes with V1 audio and
-    // the PGM meter shows A1 levels. One MES per element (permanent).
-    ensureAudioSystem();
-    if (_audioCtx && _audioMaster){
-      try {
-        var mes  = _audioCtx.createMediaElementSource(audio);
-        var gain = _audioCtx.createGain();
-        gain.gain.value = 1;
-        mes.connect(gain);
-        gain.connect(_audioMaster);
-        _a1Routes[url] = { mes: mes, gain: gain };
-      } catch(err){
-        // If MES fails (should never happen for a fresh element), the
-        // audio element still plays through its native default output.
-        console.warn('[a1] createMediaElementSource failed for', url, err);
-      }
-    }
+    // NOT routed through WebAudio's createMediaElementSource. Live
+    // testing showed the MES routing was leaving A1 audible-in-data
+    // (audio.currentTime advances, paused=false, no errors) but
+    // INAUDIBLE at the speakers — the WebAudio graph somehow loses
+    // the A1 path even though it reaches video's MES correctly. By
+    // leaving the <audio> element unwrapped, its native output reaches
+    // the OS audio device directly and mixes with V1's WebAudio
+    // destination output at the device level.
+    //
+    // Trade-off: the PGM meter (which taps WebAudio master) won't
+    // reflect A1 levels. Video's own audio is still metered.
     return audio;
   }
 
