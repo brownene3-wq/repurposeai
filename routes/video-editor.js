@@ -3260,172 +3260,41 @@ function showToast(message, type = 'success') {
       }
 
       try {
-        // Path 1 (WYSIWYG): capture the Program Monitor canvas + master
-        // audio bus via MediaRecorder while the timeline plays end-to-
-        // end. Produces an exact "what you see is what you hear"
-        // recording, so effects extending across multiple clips (FX-
-        // track clips, keyframe animations, motion overlays) are
-        // flattened into the output verbatim.
+        // Path 1: timeline has clips → server-side FFmpeg render.
+        // This is a REAL render of the timeline assets (not a screen
+        // capture of the preview). Each clip is re-encoded through the
+        // per-clip FX + transform + crop + speed chain, stitched with
+        // concat, text overlays drawn, audio tracks mixed, FX-track
+        // clips merged into any overlapping V1 segment. The final
+        // output is a high-quality encode at the user's selected
+        // quality + format.
         if (timelineClips.length > 0) {
-          var canvas = typeof window.getPgmCanvas === 'function' ? window.getPgmCanvas() : null;
-          if (!canvas || typeof canvas.captureStream !== 'function'){
-            // PGM not active yet — the user must have the Program
-            // Monitor running so there's a canvas to capture. Trigger
-            // it and bail back; the user can click Export again.
-            showToast('Enable the Program Monitor first so we can capture the preview', 'error');
-            button.disabled = false;
-            button.innerHTML = '\ud83c\udfac Export Video';
-            return;
-          }
-          if (typeof MediaRecorder === 'undefined'){
-            showToast('This browser does not support MediaRecorder. Try Chrome or Firefox.', 'error');
-            button.disabled = false;
-            button.innerHTML = '\ud83c\udfac Export Video';
-            return;
-          }
-
-          // Compute the total timeline duration (max left+width)
-          var totalMs = 0;
-          timelineClips.forEach(function(c){
-            var l = parseFloat(c.left)  || 0;
-            var w = parseFloat(c.width) || 0;
-            var endSec = (l + w) / 10; // pxPerSec = 10
-            if (endSec * 1000 > totalMs) totalMs = endSec * 1000;
-          });
-          if (totalMs < 500){
-            showToast('Timeline too short to export', 'error');
-            button.disabled = false;
-            button.innerHTML = '\ud83c\udfac Export Video';
-            return;
-          }
-
-          // Merge canvas video stream + master audio stream
-          var videoStream = canvas.captureStream(30);
-          var audioInfo = typeof window.getAudioMasterStream === 'function'
-            ? window.getAudioMasterStream() : null;
-          var tracks = Array.prototype.slice.call(videoStream.getVideoTracks());
-          if (audioInfo && audioInfo.stream){
-            audioInfo.stream.getAudioTracks().forEach(function(t){ tracks.push(t); });
-          }
-          var combined = new MediaStream(tracks);
-
-          // Pick the best supported recorder mime type
-          var mimeCandidates = [
-            'video/webm;codecs=vp9,opus',
-            'video/webm;codecs=vp8,opus',
-            'video/webm;codecs=h264,opus',
-            'video/webm'
-          ];
-          var recMime = '';
-          for (var mi = 0; mi < mimeCandidates.length; mi++){
-            if (MediaRecorder.isTypeSupported(mimeCandidates[mi])){
-              recMime = mimeCandidates[mi];
-              break;
-            }
-          }
-
-          var chunks = [];
-          var recorder;
-          try {
-            recorder = recMime
-              ? new MediaRecorder(combined, { mimeType: recMime, videoBitsPerSecond: 6_000_000 })
-              : new MediaRecorder(combined);
-          } catch (recErr){
-            showToast('Recorder init failed: ' + (recErr.message || recErr), 'error');
-            button.disabled = false;
-            button.innerHTML = '\ud83c\udfac Export Video';
-            return;
-          }
-          recorder.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
-
-          // Rewind + play the timeline
-          var phEl = document.getElementById('mtPlayhead');
-          if (phEl) phEl.style.left = '0px';
-          try { window.tlPause && window.tlPause(); } catch(_){}
-
-          var stoppedByTimer = false;
-          var finished = false;
-          // Read the user's Quality + Format selections so we transcode
-          // the WebM capture into the requested output before download.
           var qSel = document.getElementById('exportQualitySel');
           var fSel = document.getElementById('exportFormatSel');
           var selQuality = (qSel && qSel.value) || '720p';
           var selFormat  = (fSel && fSel.value) || 'mp4';
-          await new Promise(function(resolve){
-            recorder.onstop = async function(){
-              if (finished) return;
-              finished = true;
-              try { if (audioInfo && audioInfo.destination) window.disconnectFromAudioMaster(audioInfo.destination); } catch(_){}
-              try { videoStream.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
-              var blob = new Blob(chunks, { type: recMime || 'video/webm' });
-              var base = 'timeline_' + Date.now();
-              button.innerHTML = '\u23f3 Transcoding ' + selQuality + ' ' + selFormat.toUpperCase() + '\u2026';
-              try {
-                var fd = new FormData();
-                fd.append('clip', blob, base + '.webm');
-                fd.append('quality', selQuality);
-                fd.append('format',  selFormat);
-                var tResp = await fetch('/video-editor/transcode-export', {
-                  method: 'POST',
-                  body: fd,
-                  credentials: 'same-origin'
-                });
-                var tData = await tResp.json();
-                if (!tResp.ok || !tData.success){
-                  throw new Error((tData && tData.error) || 'Transcode failed');
-                }
-                // Download the transcoded file
-                var a = document.createElement('a');
-                a.href = tData.downloadUrl;
-                a.download = tData.filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                handleSuccess({
-                  renderedFromTimeline: true,
-                  clipCount: timelineClips.length,
-                  duration: totalMs / 1000,
-                  filename: tData.filename,
-                  downloadUrl: tData.downloadUrl
-                });
-              } catch (txErr){
-                // Fall back to downloading the raw WebM so the user
-                // still gets SOMETHING when transcode breaks.
-                console.warn('[export] transcode failed, falling back to raw WebM:', txErr);
-                showToast('Transcode failed, downloading raw WebM: ' + (txErr.message || txErr), 'error');
-                var url = URL.createObjectURL(blob);
-                var a2 = document.createElement('a');
-                a2.href = url;
-                a2.download = base + '.webm';
-                document.body.appendChild(a2);
-                a2.click();
-                document.body.removeChild(a2);
-                setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
-              }
-              resolve();
-            };
-            recorder.start(200);
-            // Kick off playback
-            try { window.tlPlay && window.tlPlay(); } catch(_){}
-            // Live countdown button label
-            var recStart = performance.now();
-            var totalSec = Math.ceil(totalMs / 1000);
-            var tickId = setInterval(function(){
-              if (finished){ clearInterval(tickId); return; }
-              var left = Math.max(0, totalSec - Math.floor((performance.now() - recStart) / 1000));
-              button.innerHTML = '\ud83d\udd34 Recording\u2026 ' + left + 's';
-            }, 250);
-            // Safety ceiling: stop slightly past the timeline duration
-            var safeStopMs = totalMs + 600;
-            setTimeout(function(){
-              clearInterval(tickId);
-              if (finished) return;
-              stoppedByTimer = true;
-              try { window.tlPause && window.tlPause(); } catch(_){}
-              try { recorder.stop(); } catch(_){}
-            }, safeStopMs);
-          });
 
+          // Quality → target height (we preserve the canvas aspect 16:9)
+          var heightMap = { '480p': 480, '720p': 720, '1080p': 1080, '4K': 2160, '4k': 2160 };
+          var targetH = heightMap[selQuality] || 720;
+          var targetW = Math.round(targetH * 16 / 9);
+
+          button.innerHTML = '\u23f3 Rendering ' + selQuality + ' ' + selFormat.toUpperCase() + '\u2026';
+          var resp = await fetch('/video-editor/export-timeline', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clips: timelineClips,
+              pxPerSec: 10,
+              width: targetW,
+              height: targetH,
+              format: selFormat,
+              quality: selQuality
+            })
+          });
+          var dataTL = await resp.json();
+          if (!resp.ok) throw new Error(dataTL.error || 'Timeline export failed');
+          handleSuccess(dataTL);
           button.disabled = false;
           button.innerHTML = '\ud83c\udfac Export Video';
           return;
@@ -7158,6 +7027,47 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       try { fs.rmdirSync(workDir); } catch(_){}
     } catch(_){}
 
+    // Format conversion: the stitched output is MP4 (H.264+AAC).
+    // If the user picked MOV, remux with stream-copy (fast). If they
+    // picked WebM, transcode to VP9+Opus (slower, re-encode needed).
+    // MP4 is the default and needs no conversion.
+    var reqFormat = String((body && body.format) || 'mp4').toLowerCase();
+    if (reqFormat !== 'mp4'){
+      var convertedName, convertArgs;
+      if (reqFormat === 'mov'){
+        convertedName = outputFilename.replace(/\.mp4$/i, '') + '.mov';
+        convertArgs = ['-y', '-i', outputPath, '-c', 'copy', '-movflags', '+faststart',
+                       path.join(outputDir, convertedName)];
+      } else if (reqFormat === 'webm'){
+        convertedName = outputFilename.replace(/\.mp4$/i, '') + '.webm';
+        convertArgs = ['-y', '-i', outputPath,
+                       '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-pix_fmt', 'yuv420p',
+                       '-c:a', 'libopus', '-b:a', '128k',
+                       path.join(outputDir, convertedName)];
+      }
+      if (convertedName && convertArgs){
+        try {
+          await new Promise(function(resolve, reject){
+            var proc = spawn(ffmpegPath, convertArgs);
+            var stderr = '';
+            proc.stderr.on('data', function(d){ stderr += d.toString(); });
+            proc.on('close', function(code){
+              if (code === 0) resolve();
+              else reject(new Error('Format conversion failed: ' + stderr.slice(-300)));
+            });
+            proc.on('error', reject);
+          });
+          // Delete the intermediate MP4 now that we have the target file
+          try { fs.unlinkSync(outputPath); } catch(_){}
+          outputFilename = convertedName;
+          outputPath = path.join(outputDir, convertedName);
+        } catch (convErr){
+          console.warn('[export-timeline] format conversion failed, returning MP4:', convErr.message);
+          // Fall through with MP4 — better than erroring out entirely
+        }
+      }
+    }
+
     var totalSec = cursor;
     res.json({
       filename: outputFilename,
@@ -7165,6 +7075,7 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       size: fs.statSync(outputPath).size,
       duration: totalSec,
       clipCount: v1.length,
+      format: reqFormat,
       renderedFromTimeline: true
     });
     featureUsageOps.log(req.user.id, 'video_editor').catch(function(){});
