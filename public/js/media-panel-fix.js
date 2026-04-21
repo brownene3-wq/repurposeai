@@ -439,6 +439,18 @@
       }
     });
 
+    // Double-click opens the slip editor for media clips (video/audio).
+    // Slip = slide the in/out window across the source while keeping
+    // the clip's timeline duration fixed.
+    clip.addEventListener('dblclick', function(e){
+      var ct = clip.dataset.clipType || '';
+      if (ct !== 'vid' && ct !== 'aud') return;
+      if (!clip.dataset.mediaUrl) return;
+      e.stopPropagation();
+      e.preventDefault();
+      openSlipEditor(clip);
+    });
+
     // Drag to move — only when Select tool active.
     clip.addEventListener('mousedown', function(e){
       if (_timelineState.tool !== 'select') return;
@@ -3660,6 +3672,257 @@
   }
 
   // Small modal for entering text + choosing size / color / duration / position.
+  // ── Slip editor modal ────────────────────────────────────────────
+  // Opens when the user double-clicks a V1/A1 clip. Shows the full
+  // source as a filmstrip (video) or decoded-peaks waveform (audio)
+  // with a draggable window representing the current in/out slice.
+  // Sliding the window changes sourceOffset while keeping the clip's
+  // timeline duration fixed — classic "slip" edit. Apply commits,
+  // Cancel rolls back.
+  function openSlipEditor(clip){
+    if (!clip) return;
+    var url   = clip.dataset.mediaUrl;
+    var type  = clip.dataset.clipType || 'vid';
+    if (!url) return;
+    var srcOff0  = parseFloat(clip.dataset.sourceOffset) || 0;
+    var srcDur   = parseFloat(clip.dataset.duration)     || 0;
+    var clipW    = parseFloat(clip.style.width)          || 0;
+    var clipDur  = clipW / TIMELINE_PX_PER_SEC;
+    if (clipDur <= 0){ showToast('Clip has no duration'); return; }
+
+    // Measure source duration (fall back to current clip.duration if
+    // the dataset has the source total)
+    var ensureSrcDur = new Promise(function(resolve){
+      if (srcDur > clipDur + 0.01){ resolve(srcDur); return; }
+      if (type === 'vid'){
+        var v = document.createElement('video');
+        v.preload = 'metadata';
+        v.muted = true;
+        v.src = url;
+        v.addEventListener('loadedmetadata', function(){
+          resolve(v.duration && isFinite(v.duration) ? v.duration : clipDur);
+        }, { once: true });
+        v.addEventListener('error', function(){ resolve(clipDur); }, { once: true });
+        setTimeout(function(){ resolve(clipDur); }, 5000);
+      } else {
+        var a = document.createElement('audio');
+        a.preload = 'metadata';
+        a.src = url;
+        a.addEventListener('loadedmetadata', function(){
+          resolve(a.duration && isFinite(a.duration) ? a.duration : clipDur);
+        }, { once: true });
+        a.addEventListener('error', function(){ resolve(clipDur); }, { once: true });
+        setTimeout(function(){ resolve(clipDur); }, 5000);
+      }
+    });
+
+    ensureSrcDur.then(function(effectiveSrcDur){
+      if (effectiveSrcDur <= clipDur + 0.01){
+        showToast('Source is the same length as the clip \u2014 nothing to slip');
+        return;
+      }
+      buildSlipModal(clip, url, type, srcOff0, clipDur, effectiveSrcDur);
+    });
+  }
+
+  function buildSlipModal(clip, url, type, initialSrcOff, clipDur, srcDur){
+    // Modal scaffolding
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,6,18,.75);z-index:100001;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+
+    var STRIP_W = Math.min(720, window.innerWidth - 80);
+    var STRIP_H = type === 'vid' ? 90 : 60;
+    var winW    = Math.max(12, Math.round((clipDur / srcDur) * STRIP_W));
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#110d1c;border:1px solid rgba(139,92,246,.4);border-radius:12px;padding:14px;width:' + (STRIP_W + 40) + 'px;max-width:95vw;color:#e2e0f0';
+    panel.innerHTML =
+      '<h3 style="margin:0 0 4px;font-size:14px;font-weight:800">Slip edit</h3>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:10px">' +
+        'Drag the highlighted window across the source. Clip length stays ' + clipDur.toFixed(2) + 's.' +
+      '</div>' +
+      '<div id="slipStripWrap" style="position:relative;width:' + STRIP_W + 'px;height:' + STRIP_H + 'px;background:#0a0612;border-radius:6px;overflow:hidden;margin:0 auto;user-select:none">' +
+        '<div id="slipStrip" style="position:absolute;inset:0;background:#1a1028"></div>' +
+        '<div id="slipWindow" style="position:absolute;top:0;height:100%;width:' + winW + 'px;background:rgba(139,92,246,.25);border:2px solid #a78bfa;border-radius:4px;cursor:grab;box-shadow:0 0 18px rgba(139,92,246,.45)"></div>' +
+      '</div>' +
+      '<div id="slipMeta" style="font-size:11px;color:#a78bfa;margin-top:10px;text-align:center;font-variant-numeric:tabular-nums">In: 0.00s \u2192 Out: 0.00s</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button id="slipCancel" type="button" style="padding:7px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#e2e0f0;cursor:pointer;font-weight:600">Cancel</button>' +
+        '<button id="slipApply" type="button" style="padding:7px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:7px;color:#fff;cursor:pointer;font-weight:700">Apply</button>' +
+      '</div>';
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    var stripWrap = panel.querySelector('#slipStripWrap');
+    var stripBg   = panel.querySelector('#slipStrip');
+    var winEl     = panel.querySelector('#slipWindow');
+    var meta      = panel.querySelector('#slipMeta');
+
+    // Populate strip background with thumbnails (video) or waveform (audio)
+    renderSlipStrip(type, url, STRIP_W, STRIP_H, srcDur).then(function(dataURL){
+      if (!dataURL) return;
+      stripBg.style.backgroundImage = 'url(' + dataURL + ')';
+      stripBg.style.backgroundSize = '100% 100%';
+    });
+
+    // Position the window based on the current sourceOffset
+    function offToPx(off){
+      return Math.max(0, Math.min(STRIP_W - winW, (off / srcDur) * STRIP_W));
+    }
+    function pxToOff(px){
+      return Math.max(0, Math.min(srcDur - clipDur, (px / STRIP_W) * srcDur));
+    }
+    var currentOff = initialSrcOff;
+    function renderWindow(){
+      winEl.style.left = offToPx(currentOff) + 'px';
+      var inS  = currentOff;
+      var outS = currentOff + clipDur;
+      meta.textContent = 'In: ' + inS.toFixed(2) + 's \u2192 Out: ' + outS.toFixed(2) + 's  (length ' + clipDur.toFixed(2) + 's of ' + srcDur.toFixed(2) + 's source)';
+    }
+    renderWindow();
+
+    // Drag-to-slip
+    var dragData = null;
+    winEl.addEventListener('mousedown', function(e){
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragData = { startX: e.clientX, startOff: currentOff };
+      winEl.style.cursor = 'grabbing';
+    });
+    function onMove(e){
+      if (!dragData) return;
+      var dx = e.clientX - dragData.startX;
+      var newPx = offToPx(dragData.startOff) + dx;
+      currentOff = pxToOff(newPx);
+      renderWindow();
+    }
+    function onUp(){
+      if (!dragData) return;
+      dragData = null;
+      winEl.style.cursor = 'grab';
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+
+    function close(){
+      try { document.removeEventListener('mousemove', onMove); } catch(_){}
+      try { document.removeEventListener('mouseup', onUp); } catch(_){}
+      try { overlay.remove(); } catch(_){}
+    }
+    panel.querySelector('#slipCancel').addEventListener('click', close);
+    overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+    panel.querySelector('#slipApply').addEventListener('click', function(){
+      clip.dataset.sourceOffset = currentOff.toFixed(3);
+      // Keep dataset.duration (source's total) unchanged. clipDur is
+      // encoded in style.width × TIMELINE_PX_PER_SEC; width stays the
+      // same, so the clip's timeline duration is preserved.
+      try { attachFilmstripOrWaveform(clip); } catch(_){}
+      try { syncPreviewToPlayhead(); } catch(_){}
+      try { pushTimelineHistory(); } catch(_){}
+      showToast('Slipped \u2014 in ' + currentOff.toFixed(2) + 's');
+      close();
+    });
+    // ESC closes
+    overlay.tabIndex = 0;
+    overlay.focus();
+    overlay.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
+  }
+
+  // Render the slip strip background for a given source URL. Returns
+  // a data-URL (JPEG for video, PNG for audio) or null on failure.
+  function renderSlipStrip(type, url, W, H, srcDur){
+    if (type === 'aud'){
+      return decodeAudioBuffer(url).then(function(buffer){
+        if (!buffer) return null;
+        var ch = buffer.getChannelData(0);
+        var samplesPerBucket = Math.max(1, Math.floor(ch.length / W));
+        var canvas = document.createElement('canvas');
+        canvas.width  = W;
+        canvas.height = H;
+        var ctx = canvas.getContext('2d');
+        var grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, 'rgba(5,150,105,0.85)');
+        grad.addColorStop(1, 'rgba(16,185,129,0.55)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        var mid = H / 2;
+        for (var x = 0; x < W; x++){
+          var start = x * samplesPerBucket;
+          var end   = Math.min(ch.length, start + samplesPerBucket);
+          var peak = 0;
+          for (var i = start; i < end; i++){
+            var v = Math.abs(ch[i]);
+            if (v > peak) peak = v;
+          }
+          var h = Math.round(peak * (H - 6));
+          ctx.moveTo(x + 0.5, mid - h / 2);
+          ctx.lineTo(x + 0.5, mid + h / 2);
+        }
+        ctx.stroke();
+        return canvas.toDataURL('image/png');
+      }).catch(function(){ return null; });
+    }
+    // Video: seek to evenly-spaced timestamps and draw frames
+    return new Promise(function(resolve){
+      var vid = document.createElement('video');
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'auto';
+      vid.src = url;
+      vid.addEventListener('error', function(){ resolve(null); }, { once: true });
+      vid.addEventListener('loadedmetadata', function(){
+        var vw = vid.videoWidth, vh = vid.videoHeight;
+        if (!vw || !vh){ resolve(null); return; }
+        var dur = vid.duration && isFinite(vid.duration) ? vid.duration : srcDur;
+        var thumbW = 60;
+        var slots = Math.max(1, Math.floor(W / thumbW));
+        var canvas = document.createElement('canvas');
+        canvas.width = slots * thumbW;
+        canvas.height = H;
+        var ctx = canvas.getContext('2d');
+        var slotIdx = 0;
+        function drawNext(){
+          if (slotIdx >= slots){
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            return;
+          }
+          var t = ((slotIdx + 0.5) / slots) * dur;
+          t = Math.min(Math.max(0, t), Math.max(0, dur - 0.05));
+          var onSeeked = function(){
+            vid.removeEventListener('seeked', onSeeked);
+            try {
+              var srcAR = vw / vh;
+              var dstAR = thumbW / H;
+              var sx, sy, sw, sh;
+              if (srcAR > dstAR){
+                sh = vh; sw = Math.round(sh * dstAR); sx = Math.round((vw - sw) / 2); sy = 0;
+              } else {
+                sw = vw; sh = Math.round(sw / dstAR); sx = 0; sy = Math.round((vh - sh) / 2);
+              }
+              ctx.drawImage(vid, sx, sy, sw, sh, slotIdx * thumbW, 0, thumbW, H);
+            } catch(_){}
+            slotIdx++;
+            drawNext();
+          };
+          vid.addEventListener('seeked', onSeeked);
+          try { vid.currentTime = t; } catch(_){ slotIdx = slots; drawNext(); }
+          setTimeout(function(){
+            if (slotIdx <= slots){
+              vid.removeEventListener('seeked', onSeeked);
+              slotIdx++;
+              drawNext();
+            }
+          }, 2500);
+        }
+        drawNext();
+      }, { once: true });
+      setTimeout(function(){ resolve(null); }, 8000);
+    });
+  }
+
   function openTextInputModal(cb){
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,6,18,.72);z-index:100000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
