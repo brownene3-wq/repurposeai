@@ -350,7 +350,10 @@ function applyGradientOverlay(inputFrame, outputPath, dims) {
     const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=${W}:${H}:flags=lanczos,colorbalance=rs=0.35:gs=-0.1:bs=0.3:ms=0.25:mh=-0.05:mb=0.2,eq=contrast=1.1:saturation=1.2`,
+      // Note: colorbalance midtone options are rm/gm/bm (not ms/mh/mb) —
+      // the old param names were invalid and caused every Gradient Overlay
+      // render to fail with "Option 'ms' not found".
+      '-vf', `scale=${W}:${H}:flags=lanczos,colorbalance=rs=0.35:gs=-0.1:bs=0.3:rm=0.25:gm=-0.05:bm=0.2,eq=contrast=1.1:saturation=1.2`,
       '-y', outputPath
     ];
 
