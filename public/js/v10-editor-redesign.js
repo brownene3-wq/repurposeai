@@ -1221,6 +1221,7 @@
         '<button class="v10-rp-btn" data-v10-action="add-title"><span class="v10-rp-ic">\ud83d\udcdd</span>Add Title</button>'+
         rpBtn('\ud83d\udd24','Font Size','TextFontSize')+
         rpBtn('\ud83c\udfa8','Text Color','TextColor')+
+        rpBtn('\ud83d\udccd','Text Position','TextPosition')+
       '</div>'+
       '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
       '<div class="v10-rp-grid">'+
@@ -1887,10 +1888,11 @@
       }
     });
 
-    // Show/hide export section based on tab (export only visible on AI)
+    // Export section is always visible — the user can export from any
+    // tab without having to switch to AI first.
     var expSec = es.querySelector('.exp-section');
     if (expSec){
-      expSec.style.display = (tabName === 'AI') ? '' : 'none';
+      expSec.style.display = '';
     }
   }
 

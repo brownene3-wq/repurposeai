@@ -249,7 +249,7 @@
   // timelines scroll naturally.
   var TIMELINE_PX_PER_SEC = 10;
   // Default-on snap so edges magnetize out of the box.
-  var _timelineState = { tool: 'razor', snap: true };
+  var _timelineState = { tool: 'select', snap: true };
 
   function findRightmostClipEnd(trackEl){
     var maxEnd = 0;
@@ -2255,6 +2255,53 @@
   }
   try { window.addMotionClipToTimeline = addMotionClipToTimeline; } catch(_){}
 
+  // ── FX track clips ─────────────────────────────────────────────
+  // When the user toggles a Visual Effect (Vignette/Glow/Grain/Sharpen/
+  // Chromatic/Pixelate) or picks a Color Grade preset, we ALSO drop a
+  // labeled clip onto the .mt-track-fx row so the effect is visible on
+  // the timeline. The actual effect still rides on the V1 clip's dataset
+  // (that's what the render + export pipelines read); the FX-track clip
+  // is purely an indicator the user can drag, delete, etc.
+  function addFxIndicatorClip(label, icon, opts){
+    opts = opts || {};
+    var track = document.querySelector('.mt-track-fx');
+    if (!track) return null;
+    // Span the ACTIVE clip's time range when possible (so the FX marker
+    // visually aligns with the V1 clip the effect applies to).
+    var active = opts.active || getActiveClip();
+    var leftPos, width;
+    if (active){
+      leftPos = parseFloat(active.style.left)  || 0;
+      width   = parseFloat(active.style.width) || (3 * TIMELINE_PX_PER_SEC);
+    } else {
+      width   = Math.max(40, (opts.duration || 3) * TIMELINE_PX_PER_SEC);
+      leftPos = findRightmostClipEnd(track);
+    }
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip mt-clip-fx';
+    clip.textContent = (icon ? icon + ' ' : '') + label;
+    clip.dataset.fileName = label;
+    clip.dataset.clipType = 'fx';
+    clip.dataset.fxLabel  = label;
+    clip.dataset.duration = String(width / TIMELINE_PX_PER_SEC);
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.padding = '4px 8px';
+    clip.style.fontSize = '10px';
+    clip.style.overflow = 'hidden';
+    clip.style.textOverflow = 'ellipsis';
+    clip.style.whiteSpace = 'nowrap';
+    clip.style.userSelect = 'none';
+    clip.style.background = 'linear-gradient(135deg, #34d399, #10b981)';
+    clip.style.color = '#0b0816';
+    clip.style.fontWeight = '700';
+    track.appendChild(clip);
+    makeClipInteractive(clip);
+    updateTimelineInfo();
+    return clip;
+  }
+  try { window.addFxIndicatorClip = addFxIndicatorClip; } catch(_){}
+
   // ── Clip-scope actions for the EDIT sidebar ──
   // Every EDIT tool operates on the "active clip" — preference order:
   //   1. The .mt-clip.selected on any track (from the Select tool).
@@ -2455,12 +2502,15 @@
     );
   }
   // ── Text clip editors ──
-  // Operate on the currently selected text clip. If none is selected,
-  // prompt to apply to ALL text clips on T1 (useful for caption runs).
+  // Target selection rules:
+  //   • If 2+ text clips are .selected, edit ALL of them.
+  //   • Else if exactly 1 text clip is .selected, edit just it.
+  //   • Else (nothing selected), confirm before applying to EVERY text
+  //     clip on T1 — useful for styling an entire caption run at once.
   function withTextClipsTarget(fn){
-    var sel = document.querySelector('.mt-clip.mt-clip-text.selected');
-    var all = Array.from(document.querySelectorAll('.mt-track-text .mt-clip'));
-    if (sel){ fn([sel]); return; }
+    var selAll = Array.from(document.querySelectorAll('.mt-clip.mt-clip-text.selected'));
+    var all    = Array.from(document.querySelectorAll('.mt-track-text .mt-clip'));
+    if (selAll.length >= 1){ fn(selAll); return; }
     if (all.length === 0){ showToast('Add a text clip first'); return; }
     if (confirm('No text clip is selected. Apply to ALL ' + all.length + ' text clips on T1?')){
       fn(all);
@@ -2469,7 +2519,7 @@
   function clipActionTextFontSize(){
     withTextClipsTarget(function(clips){
       var first = clips[0];
-      var cur = parseInt(first.dataset.fontSize, 10) || 56;
+      var cur = parseInt(first.dataset.fontSize, 10) || 10;
       var input = prompt('Font size in pixels (8-200)', String(cur));
       if (input === null) return;
       var v = parseInt(input, 10);
@@ -2480,7 +2530,7 @@
       clips.forEach(function(c){ c.dataset.fontSize = String(v); });
       try { syncPreviewToPlayhead(); } catch(_){}
       pushTimelineHistory();
-      showToast('Font size: ' + v + 'px' + (clips.length > 1 ? ' (all)' : ''));
+      showToast('Font size: ' + v + 'px' + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
     });
   }
   function clipActionTextColor(){
@@ -2491,13 +2541,30 @@
       if (input === null) return;
       var v = String(input).trim();
       if (!/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)){
-        showToast('Invalid color — use #rgb or #rrggbb');
+        showToast('Invalid color \u2014 use #rgb or #rrggbb');
         return;
       }
       clips.forEach(function(c){ c.dataset.textColor = v; });
       try { syncPreviewToPlayhead(); } catch(_){}
       pushTimelineHistory();
-      showToast('Text color: ' + v + (clips.length > 1 ? ' (all)' : ''));
+      showToast('Text color: ' + v + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+    });
+  }
+  function clipActionTextPosition(){
+    withTextClipsTarget(function(clips){
+      var first = clips[0];
+      var cur = first.dataset.position || 'bottom';
+      var input = prompt('Text position (top / center / bottom)', cur);
+      if (input === null) return;
+      var v = String(input).trim().toLowerCase();
+      if (['top','center','bottom'].indexOf(v) === -1){
+        showToast('Use top, center, or bottom');
+        return;
+      }
+      clips.forEach(function(c){ c.dataset.position = v; });
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast('Text position: ' + v + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
     });
   }
   // ── Timing ──
@@ -2693,10 +2760,28 @@
   try { window.clipActionSolo = clipActionSolo; } catch(_){}
 
   // ── FX: Visual Effects (toggles) ──
+  // When a visual effect toggles ON, also drop an indicator clip onto
+  // the .mt-track-fx row so the user can see what FX are active and
+  // when they apply. The underlying effect still lives on the V1 clip's
+  // dataset; the FX-track clip is a visual marker only.
+  var FX_TOGGLE_LABELS = {
+    fxGlow:       { label: 'Glow',       icon: '\u2728' },
+    fxVignette:   { label: 'Vignette',   icon: '\ud83d\udd06' },
+    fxGrain:      { label: 'Film Grain', icon: '\ud83d\udcfa' },
+    fxSharpen:    { label: 'Sharpen',    icon: '\ud83d\udd2a' },
+    fxChromatic:  { label: 'Chromatic',  icon: '\ud83c\udf08' },
+    fxPixelate:   { label: 'Pixelate',   icon: '\ud83d\udd32' },
+    fxNoise:      { label: 'Noise',      icon: '\ud83d\udcfd\ufe0f' }
+  };
   function toggleClipFlag(label, key){
     var clips = getActiveClips();
     if (!clips.length){ showToast('Select a clip first'); return; }
     var on = toggleDatasetForAll(clips, key);
+    // Drop an indicator clip on the FX track when toggling ON
+    if (on && FX_TOGGLE_LABELS[key]){
+      var meta = FX_TOGGLE_LABELS[key];
+      addFxIndicatorClip(meta.label, meta.icon, { active: clips[0] });
+    }
     pushTimelineHistory();
     _lastPreviewUrl = null;
     try { syncPreviewToPlayhead(); } catch(_){}
@@ -2704,13 +2789,17 @@
     showToast(label + ' ' + (on ? 'on' : 'off') + suffix);
   }
   function clipActionFxBlur(){
+    var wasJustEnabled = false;
+    var activeSnapshot = null;
     promptToActiveClips(
       function(c){
+        activeSnapshot = c;
         var cur = parseFloat(c.dataset.fxBlur) || 0;
         var input = prompt('Blur amount in px (0 = off)', String(cur || 5));
         if (input === null) return null;
         var v = parseFloat(input);
         if (!isFinite(v) || v < 0){ showToast('Invalid value'); return null; }
+        wasJustEnabled = (v > 0);
         return v;
       },
       function(c, v){
@@ -2719,6 +2808,7 @@
       },
       'Blur {val}px'
     );
+    if (wasJustEnabled) addFxIndicatorClip('Blur', '\ud83c\udf2b\ufe0f', { active: activeSnapshot });
   }
   function clipActionFxGlow(){     toggleClipFlag('Glow',     'fxGlow');     }
   function clipActionFxVignette(){ toggleClipFlag('Vignette', 'fxVignette'); }
@@ -2755,8 +2845,11 @@
   var clipActionFxSaturation = promptColorProp('fxSaturate', 'Saturation',
     'Saturation (1.0 = neutral, 0 = B&W, 2 = vivid)');
   function clipActionFxColorGrade(){
+    var gradeApplied = null;
+    var activeSnapshot = null;
     promptToActiveClips(
       function(c){
+        activeSnapshot = c;
         var cur = c.dataset.fxColorGrade || '';
         var input = prompt(
           'Color grade preset (warm, cool, vintage, bw, punch, or blank to clear)',
@@ -2767,6 +2860,7 @@
         if (['warm','cool','vintage','bw','punch'].indexOf(v) === -1){
           showToast('Unknown preset'); return null;
         }
+        gradeApplied = v;
         return v;
       },
       function(c, v){
@@ -2775,6 +2869,10 @@
       },
       'Grade: {val}'
     );
+    if (gradeApplied){
+      var pretty = gradeApplied.charAt(0).toUpperCase() + gradeApplied.slice(1);
+      addFxIndicatorClip('Grade: ' + pretty, '\ud83c\udfa8', { active: activeSnapshot });
+    }
   }
 
   try {
@@ -2808,6 +2906,7 @@
     window.clipActionKeyframe = clipActionKeyframe;
     window.clipActionTextFontSize = clipActionTextFontSize;
     window.clipActionTextColor    = clipActionTextColor;
+    window.clipActionTextPosition = clipActionTextPosition;
   } catch(_){}
 
   // Build a ctx.filter CSS-filter string from the active clip's FX flags.
@@ -3090,13 +3189,13 @@
           '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">DURATION (s)</label>'+
           '<input id="mtTxtDur" type="number" min="1" max="120" value="5" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:6px 8px;font-size:13px;box-sizing:border-box"/></div>'+
           '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">FONT SIZE (px)</label>'+
-          '<input id="mtTxtSize" type="number" min="12" max="200" value="56" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:6px 8px;font-size:13px;box-sizing:border-box"/></div>'+
+          '<input id="mtTxtSize" type="number" min="8" max="200" value="10" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:6px 8px;font-size:13px;box-sizing:border-box"/></div>'+
         '</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'+
           '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">COLOR</label>'+
           '<input id="mtTxtColor" type="color" value="#ffffff" style="width:100%;height:34px;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;padding:2px;cursor:pointer"/></div>'+
           '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">POSITION</label>'+
-          '<select id="mtTxtPos" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:7px 8px;font-size:13px"><option value="top">Top</option><option value="center" selected>Center</option><option value="bottom">Bottom</option></select></div>'+
+          '<select id="mtTxtPos" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:7px 8px;font-size:13px"><option value="top">Top</option><option value="center">Center</option><option value="bottom" selected>Bottom</option></select></div>'+
         '</div>'+
         '<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">'+
           '<button id="mtTxtCancel" style="padding:7px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#e2e0f0;cursor:pointer;font-weight:600">Cancel</button>'+
@@ -3120,9 +3219,9 @@
       if (!text){ ta.focus(); return; }
       var spec = {
         duration:  Math.max(1, Math.min(120, parseInt(durI.value, 10) || 5)),
-        fontSize:  Math.max(12, Math.min(200, parseInt(sizeI.value, 10) || 56)),
+        fontSize:  Math.max(8, Math.min(200, parseInt(sizeI.value, 10) || 10)),
         textColor: colorI.value || '#ffffff',
-        position:  posI.value || 'center'
+        position:  posI.value || 'bottom'
       };
       close();
       if (typeof cb === 'function') cb(text, spec);
