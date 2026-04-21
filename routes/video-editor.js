@@ -3278,7 +3278,7 @@ function showToast(message, type = 'success') {
             return;
           }
           if (typeof MediaRecorder === 'undefined'){
-            showToast('This browser doesn\'t support MediaRecorder. Try Chrome or Firefox.', 'error');
+            showToast('This browser does not support MediaRecorder. Try Chrome or Firefox.', 'error');
             button.disabled = false;
             button.innerHTML = '\ud83c\udfac Export Video';
             return;
