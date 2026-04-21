@@ -218,69 +218,105 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 }
 });
 
+// Get width/height of a frame using ffprobe — used to preserve the video's
+// original aspect ratio in the generated thumbnail (fixes stretch bug on 9:16 inputs).
+function getFrameDimensions(framePath) {
+  return new Promise((resolve) => {
+    const ffprobePath = ffmpegPath === 'ffmpeg' ? 'ffprobe' : ffmpegPath.replace(/ffmpeg([^/]*)$/, 'ffprobe$1');
+    const proc = spawn(ffprobePath, [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height',
+      '-of', 'csv=p=0',
+      framePath
+    ]);
+    let out = '';
+    proc.stdout.on('data', (d) => { out += d.toString(); });
+    proc.on('close', () => {
+      const parts = out.trim().split(',').map((s) => parseInt(s, 10));
+      if (parts[0] > 0 && parts[1] > 0) {
+        resolve({ width: parts[0], height: parts[1] });
+      } else {
+        // Fallback — default to landscape YouTube-ish size
+        resolve({ width: 1200, height: 630 });
+      }
+    });
+    proc.on('error', () => resolve({ width: 1200, height: 630 }));
+  });
+}
+
+// Compute target output size preserving the input aspect ratio.
+// Longest side is clamped to maxSide so we don't upscale small videos too far.
+// Dimensions are forced to even numbers (required by many codecs/filters).
+function computeOutputSize(width, height, maxSide = 1280) {
+  if (!width || !height) return { width: 1200, height: 630 };
+  const aspect = width / height;
+  let outW, outH;
+  if (width >= height) {
+    outW = Math.min(width, maxSide);
+    outH = Math.round(outW / aspect);
+  } else {
+    outH = Math.min(height, maxSide);
+    outW = Math.round(outH * aspect);
+  }
+  outW = Math.max(2, Math.round(outW / 2) * 2);
+  outH = Math.max(2, Math.round(outH / 2) * 2);
+  return { width: outW, height: outH };
+}
+
 // Thumbnail style presets with FFmpeg filter configurations
 const thumbnailStylePresets = {
   'gradient-overlay': {
     name: 'Gradient Overlay',
     description: 'Vibrant purple-to-pink gradient',
-    apply: (inputFrame, outputPath) => {
-      return applyGradientOverlay(inputFrame, outputPath, 'gradient');
+    apply: (inputFrame, outputPath, dims) => {
+      return applyGradientOverlay(inputFrame, outputPath, dims);
     }
   },
   'dark-cinematic': {
     name: 'Dark Cinematic',
     description: 'Dark vignette with high contrast',
-    apply: (inputFrame, outputPath) => {
-      return applyDarkCinematic(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyDarkCinematic(inputFrame, outputPath, dims);
     }
   },
   'bold-border': {
     name: 'Bold Border',
     description: 'Thick colored border with accent',
-    apply: (inputFrame, outputPath) => {
-      return applyBoldBorder(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyBoldBorder(inputFrame, outputPath, dims);
     }
   },
   'split-design': {
     name: 'Split Design',
     description: 'Two-tone split background design',
-    apply: (inputFrame, outputPath) => {
-      return applySplitDesign(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applySplitDesign(inputFrame, outputPath, dims);
     }
   },
   'text-focus': {
     name: 'Text Focus',
     description: 'Dark overlay for text legibility',
-    apply: (inputFrame, outputPath) => {
-      return applyTextFocus(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyTextFocus(inputFrame, outputPath, dims);
     }
   },
   'clean-minimal': {
     name: 'Clean Minimal',
     description: 'Subtle brightness and contrast boost',
-    apply: (inputFrame, outputPath) => {
-      return applyCleanMinimal(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyCleanMinimal(inputFrame, outputPath, dims);
     }
   }
 };
 
 // Apply gradient overlay style
-function applyGradientOverlay(inputFrame, outputPath) {
+function applyGradientOverlay(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
-    const filterComplex = `
-      format=yuv420p,
-      scale=1200:630,
-      [0]split[a][b];
-      [a]colorize=h=280:s=0.8:l=0.5[grad];
-      [b]colorchannelmixer=0.3:0.59:0.11:0:0.3:0.59:0.11:0:0.3:0.59:0.11:0[luma];
-      [grad]alphaextract[alpha];
-      [luma][alpha]alphamerge[dimmed];
-      [dimmed]colorlevels=rh=0.8:gh=0.4:bh=0.8[styled]
-    `;
-
+    const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,colorbalance=rs=0.35:gs=-0.1:bs=0.3:ms=0.25:mh=-0.05:mb=0.2,eq=contrast=1.1:saturation=1.2`,
+      '-vf', `scale=${W}:${H},colorbalance=rs=0.35:gs=-0.1:bs=0.3:ms=0.25:mh=-0.05:mb=0.2,eq=contrast=1.1:saturation=1.2`,
       '-y', outputPath
     ];
 
@@ -304,11 +340,12 @@ function applyGradientOverlay(inputFrame, outputPath) {
 }
 
 // Apply dark cinematic style
-function applyDarkCinematic(inputFrame, outputPath) {
+function applyDarkCinematic(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', 'scale=1200:630,vignette=PI/4,eq=brightness=-0.05:contrast=1.3:saturation=0.9',
+      '-vf', `scale=${W}:${H},vignette=PI/4,eq=brightness=-0.05:contrast=1.3:saturation=0.9`,
       '-y', outputPath
     ];
 
@@ -332,13 +369,22 @@ function applyDarkCinematic(inputFrame, outputPath) {
 }
 
 // Apply bold border style
-function applyBoldBorder(inputFrame, outputPath) {
+function applyBoldBorder(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
+    // 5% outer padding, 2.5% inner stroke offset — proportional so portrait and landscape both look balanced
+    const marginX = Math.max(2, Math.round(W * 0.05 / 2) * 2);
+    const marginY = Math.max(2, Math.round(H * 0.05 / 2) * 2);
+    const innerW = Math.max(2, W - marginX * 2);
+    const innerH = Math.max(2, H - marginY * 2);
+    const boxX = Math.round(marginX / 2);
+    const boxY = Math.round(marginY / 2);
+    const boxW = W - boxX * 2;
+    const boxH = H - boxY * 2;
+    const borderT = Math.max(3, Math.round(Math.min(W, H) * 0.006));
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1140:570,
-        pad=1200:630:(1200-1140)/2:(630-570)/2:EC4899,
-        drawbox=x=15:y=15:w=1170:h=600:color=6C3AED:t=3`,
+      '-vf', `scale=${innerW}:${innerH},pad=${W}:${H}:${marginX}:${marginY}:EC4899,drawbox=x=${boxX}:y=${boxY}:w=${boxW}:h=${boxH}:color=6C3AED:t=${borderT}`,
       '-y', outputPath
     ];
 
@@ -362,11 +408,19 @@ function applyBoldBorder(inputFrame, outputPath) {
 }
 
 // Apply split design style
-function applySplitDesign(inputFrame, outputPath) {
+function applySplitDesign(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
+    // Two-tone background halves + centered image overlay at ~90% of the frame
+    const halfW = Math.max(2, Math.round(W / 2 / 2) * 2);
+    const halfW2 = Math.max(2, W - halfW);
+    const innerW = Math.max(2, Math.round(W * 0.9 / 2) * 2);
+    const innerH = Math.max(2, Math.round(H * 0.9 / 2) * 2);
+    const overlayX = Math.round((W - innerW) / 2);
+    const overlayY = Math.round((H - innerH) / 2);
     const args = [
       '-i', inputFrame,
-      '-filter_complex', '[0:v]scale=1100:570[img];color=c=0x1a1a2e:s=600x630:d=1[left];color=c=0x6C3AED:s=600x630:d=1[right];[left][right]hstack[bg];[bg][img]overlay=50:30[out]',
+      '-filter_complex', `[0:v]scale=${innerW}:${innerH}[img];color=c=0x1a1a2e:s=${halfW}x${H}:d=1[left];color=c=0x6C3AED:s=${halfW2}x${H}:d=1[right];[left][right]hstack[bg];[bg][img]overlay=${overlayX}:${overlayY}[out]`,
       '-map', '[out]',
       '-frames:v', '1',
       '-y', outputPath
@@ -392,11 +446,15 @@ function applySplitDesign(inputFrame, outputPath) {
 }
 
 // Apply text focus style
-function applyTextFocus(inputFrame, outputPath) {
+function applyTextFocus(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
+    // Dark banner at bottom occupying ~28% of frame height (same proportion as original 180/630)
+    const bannerH = Math.max(2, Math.round(H * 0.285 / 2) * 2);
+    const bannerY = Math.max(0, H - bannerH);
     const args = [
       '-i', inputFrame,
-      '-vf', 'scale=1200:630,drawbox=x=0:y=450:w=1200:h=180:color=0x000000:t=fill,eq=brightness=0.05:contrast=1.1',
+      '-vf', `scale=${W}:${H},drawbox=x=0:y=${bannerY}:w=${W}:h=${bannerH}:color=0x000000:t=fill,eq=brightness=0.05:contrast=1.1`,
       '-y', outputPath
     ];
 
@@ -420,12 +478,12 @@ function applyTextFocus(inputFrame, outputPath) {
 }
 
 // Apply clean minimal style
-function applyCleanMinimal(inputFrame, outputPath) {
+function applyCleanMinimal(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,
-        eq=brightness=0.08:contrast=1.1:saturation=1.05`,
+      '-vf', `scale=${W}:${H},eq=brightness=0.08:contrast=1.1:saturation=1.05`,
       '-y', outputPath
     ];
 
@@ -777,8 +835,10 @@ router.get('/', requireAuth, (req, res) => {
 
       .frame-image {
         width: 100%;
-        aspect-ratio: 16 / 9;
-        object-fit: cover;
+        height: auto;
+        max-height: 360px;
+        object-fit: contain;
+        background: #000;
         display: block;
       }
 
@@ -918,8 +978,10 @@ router.get('/', requireAuth, (req, res) => {
 
       .thumbnail-image {
         width: 100%;
-        aspect-ratio: 1200 / 630;
-        object-fit: cover;
+        height: auto;
+        max-height: 480px;
+        object-fit: contain;
+        background: #000;
         display: block;
       }
 
@@ -1457,6 +1519,11 @@ router.post('/style', requireAuth, async (req, res) => {
     const thumbnails = [];
     const jobId = uuidv4();
 
+    // Detect the frame's real dimensions so the generated thumbnail matches
+    // the video's aspect ratio (9:16, 1:1, 16:9, etc.) instead of being stretched.
+    const frameDims = await getFrameDimensions(framePath);
+    const outputSize = computeOutputSize(frameDims.width, frameDims.height);
+
     for (const styleKey of styleKeys) {
       const preset = thumbnailStylePresets[styleKey];
       if (!preset) continue;
@@ -1465,7 +1532,7 @@ router.post('/style', requireAuth, async (req, res) => {
       const outputPath = path.join(outputDir, outputFilename);
 
       try {
-        await preset.apply(framePath, outputPath);
+        await preset.apply(framePath, outputPath, outputSize);
         thumbnails.push({
           filename: outputFilename,
           style: styleKey,
