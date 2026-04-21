@@ -3279,6 +3279,56 @@ function showToast(message, type = 'success') {
           var targetH = heightMap[selQuality] || 720;
           var targetW = Math.round(targetH * 16 / 9);
 
+          // Audio clips on A1 often carry blob: URLs (created by the
+          // sidebar's local file picker via URL.createObjectURL). The
+          // server can't resolve blob: URLs so those clips get silently
+          // dropped from the export's audio mix. Pre-upload any blob
+          // media to the server and rewrite the clip's mediaUrl to the
+          // returned serveUrl before we call /export-timeline.
+          var blobClips = timelineClips.filter(function(c){
+            return c.mediaUrl && c.mediaUrl.indexOf('blob:') === 0;
+          });
+          if (blobClips.length > 0){
+            button.innerHTML = '\u2b06\ufe0f Uploading ' + blobClips.length + ' local file' + (blobClips.length === 1 ? '' : 's') + '\u2026';
+            for (var bi = 0; bi < blobClips.length; bi++){
+              var bc = blobClips[bi];
+              try {
+                var blobResp = await fetch(bc.mediaUrl);
+                var blobData = await blobResp.blob();
+                var ext = '';
+                var fn = bc.filename || '';
+                if (fn && fn.lastIndexOf('.') >= 0) ext = fn.slice(fn.lastIndexOf('.'));
+                if (!ext){
+                  // Guess extension from blob mime type
+                  var mime = blobData.type || '';
+                  if (mime.indexOf('mp3')   >= 0) ext = '.mp3';
+                  else if (mime.indexOf('mpeg')  >= 0) ext = '.mp3';
+                  else if (mime.indexOf('wav')   >= 0) ext = '.wav';
+                  else if (mime.indexOf('mp4')   >= 0) ext = '.mp4';
+                  else if (mime.indexOf('webm')  >= 0) ext = '.webm';
+                  else if (mime.indexOf('image/png')  >= 0) ext = '.png';
+                  else if (mime.indexOf('image/jpeg') >= 0) ext = '.jpg';
+                  else ext = '.bin';
+                }
+                var fd = new FormData();
+                fd.append('file', blobData, (fn || 'clip') + (fn.endsWith(ext) ? '' : ext));
+                var upResp = await fetch('/video-editor/upload-blob', {
+                  method: 'POST',
+                  body: fd,
+                  credentials: 'same-origin'
+                });
+                var upData = await upResp.json();
+                if (!upResp.ok || !upData.success){
+                  throw new Error(upData.error || 'Blob upload failed');
+                }
+                bc.mediaUrl = upData.serveUrl;
+              } catch (upErr){
+                console.warn('[export] blob upload failed for', bc.filename, upErr);
+                showToast('Could not upload "' + (bc.filename || 'clip') + '" — will be skipped', 'error');
+              }
+            }
+          }
+
           button.innerHTML = '\u23f3 Rendering ' + selQuality + ' ' + selFormat.toUpperCase() + '\u2026';
           var resp = await fetch('/video-editor/export-timeline', {
             method: 'POST',
@@ -6721,13 +6771,25 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       return (c.clipType === 'text' || (c.track || '').toLowerCase() === 'text')
         && (c.textContent || '').trim().length > 0;
     });
-    var audioClips = clips.filter(function(c){
+    // Count A1 clips first so we can tell the client if any were
+    // dropped due to unresolvable URLs (blob: URLs that weren't
+    // pre-uploaded, expired files, etc.)
+    var allA1 = clips.filter(function(c){
       var t = (c.track || '').toLowerCase();
-      if (t !== 'audio' && t !== 'aud') return false;
+      return (t === 'audio' || t === 'aud') && !!c.mediaUrl;
+    });
+    var audioClips = allA1.filter(function(c){
       if (c.muted === 'true') return false;
-      if (!c.mediaUrl) return false;
       return urlToFilePath(c.mediaUrl) !== null;
     });
+    var droppedA1 = allA1.filter(function(c){
+      if (c.muted === 'true') return false;
+      return urlToFilePath(c.mediaUrl) === null;
+    });
+    if (droppedA1.length > 0){
+      console.warn('[export-timeline] A1 clips dropped (URL not resolvable server-side):',
+        droppedA1.map(function(c){ return { url: c.mediaUrl, file: c.filename }; }));
+    }
     // M1 motion clips — bake into the stitched video as time-gated
     // post-filters. Effects split into two categories by FFmpeg mechanics:
     //
@@ -9441,6 +9503,40 @@ router.post('/transcode-export', requireAuth, upload.single('clip'), async (req,
   } catch (err){
     console.error('[transcode-export] error:', err);
     res.status(500).json({ error: err.message || 'Transcode failed' });
+  }
+});
+
+// Generic media upload — accepts any file extension (used for the
+// A1 blob-URL pre-upload pass before export).
+const mediaUploadAny = multer({
+  dest: uploadDir,
+  limits: { fileSize: 500 * 1024 * 1024 }
+  // No fileFilter — caller's responsibility to send valid media.
+});
+
+// POST /video-editor/upload-blob
+// Accepts any media blob (audio, image, short video) and saves it to
+// the upload dir so it's resolvable by urlToFilePath during export.
+// Returns { success, filename, serveUrl }.
+router.post('/upload-blob', requireAuth, mediaUploadAny.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    var orig = req.file.originalname || 'blob';
+    var ext = path.extname(orig).toLowerCase();
+    // Fall back to .bin when extension is missing — FFmpeg's input
+    // demuxer figures out the format from the content anyway.
+    if (!ext || ext.length > 6) ext = '.bin';
+    var newName = 'blob_' + Date.now() + '_' + req.user.id + ext;
+    var newPath = path.join(uploadDir, newName);
+    fs.renameSync(req.file.path, newPath);
+    res.json({
+      success: true,
+      filename: newName,
+      serveUrl: '/video-editor/download/' + newName
+    });
+  } catch (err){
+    console.error('[upload-blob] error:', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
   }
 });
 
