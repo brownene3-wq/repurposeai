@@ -6316,6 +6316,29 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     const outW = parseInt(body.width,  10) || 1280;
     const outH = parseInt(body.height, 10) || 720;
 
+    // Pick a bold sans-serif font for drawtext so exported text looks
+    // like the PGM preview (which uses `700 …px system-ui, sans-serif`).
+    // Without a fontfile, FFmpeg falls back to its default which is
+    // usually a thin regular weight — visually different from preview.
+    var TEXT_FONTFILE = '';
+    var FONT_CANDIDATES = [
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+      '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf',
+      '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
+      '/System/Library/Fonts/Helvetica.ttc',
+      '/Library/Fonts/Arial Bold.ttf'
+    ];
+    for (var fci = 0; fci < FONT_CANDIDATES.length; fci++){
+      if (fs.existsSync(FONT_CANDIDATES[fci])){
+        // Escape drawtext-special chars in the path (: and \)
+        TEXT_FONTFILE = FONT_CANDIDATES[fci]
+          .replace(/\\/g, '\\\\')
+          .replace(/:/g, '\\:');
+        break;
+      }
+    }
+
     // Only render the video track in v1 (audio-track mixing = follow-up).
     const v1 = clips.filter(function(c){
       var t = (c.track || '').toLowerCase();
@@ -6932,15 +6955,27 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           if (pos === 'top')         y = 'h*0.15';
           else if (pos === 'bottom') y = 'h-h*0.15-text_h';
           else                       y = '(h-text_h)/2';
-          return [
+          // Shadow offset scales with font size, matching PGM canvas
+          // which uses shadowOffsetY = size * 0.08.
+          var shadowY = Math.max(1, Math.round(sz * 0.08));
+          var parts = [
             'drawtext=text=\'' + txt + '\'',
             'fontsize=' + sz,
             'fontcolor=' + col,
-            'borderw=3', 'bordercolor=black@0.6',
+            // Drop shadow (matches PGM's ctx.shadowColor rgba(0,0,0,.65))
+            'shadowx=0',
+            'shadowy=' + shadowY,
+            'shadowcolor=black@0.65',
+            // Thin dark outline for edge definition on any background
+            'borderw=1', 'bordercolor=black@0.4',
             'x=(w-text_w)/2',
             'y=' + y,
             'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
-          ].join(':');
+          ];
+          if (TEXT_FONTFILE){
+            parts.splice(3, 0, 'fontfile=' + TEXT_FONTFILE);
+          }
+          return parts.join(':');
         });
         chains.push(currentLbl + parts.join(',') + '[vout]');
       } else if (chains.length === 0){
