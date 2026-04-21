@@ -1007,23 +1007,21 @@
     return p;
   }
 
-  // HTMLAudioElement pool for A1 clips. We play A1 through NATIVE audio
-  // elements (NOT routed through WebAudio's master bus) so A1 output
-  // reaches the OS audio device in parallel with the video's WebAudio
-  // output. Both mix together at the OS level and are audible
-  // simultaneously. The earlier createBufferSource approach was
-  // producing silence in some browsers even though timing was correct.
-  //
-  // Trade-off: the PGM audio meter (which taps the WebAudio master
-  // bus) doesn't reflect A1 levels. Audibility wins.
-  var _a1AudioEls = {};
+  // HTMLAudioElement pool for A1 clips. Each element is ALSO routed
+  // through WebAudio (createMediaElementSource → gain → _audioMaster)
+  // so A1 mixes with the video's audio at the master bus and shows
+  // up in the PGM meter. We still use audio.play()/pause() for timing
+  // since it's reliable across browsers.
+  var _a1AudioEls = {};     // url -> HTMLAudioElement
+  var _a1Routes   = {};     // url -> { mes, gain }
   var _a1Timers   = [];
   var _a1Playing  = [];
 
   function getOrCreateA1Audio(url){
     if (!url) return null;
-    if (_a1AudioEls[url]) return _a1AudioEls[url];
-    var audio = document.createElement('audio');
+    var audio = _a1AudioEls[url];
+    if (audio) return audio;
+    audio = document.createElement('audio');
     audio.preload = 'auto';
     audio.src = url;
     audio.style.cssText = 'display:none';
@@ -1038,6 +1036,23 @@
     });
     document.body.appendChild(audio);
     _a1AudioEls[url] = audio;
+    // Route through WebAudio master bus so A1 mixes with V1 audio and
+    // the PGM meter shows A1 levels. One MES per element (permanent).
+    ensureAudioSystem();
+    if (_audioCtx && _audioMaster){
+      try {
+        var mes  = _audioCtx.createMediaElementSource(audio);
+        var gain = _audioCtx.createGain();
+        gain.gain.value = 1;
+        mes.connect(gain);
+        gain.connect(_audioMaster);
+        _a1Routes[url] = { mes: mes, gain: gain };
+      } catch(err){
+        // If MES fails (should never happen for a fresh element), the
+        // audio element still plays through its native default output.
+        console.warn('[a1] createMediaElementSource failed for', url, err);
+      }
+    }
     return audio;
   }
 
