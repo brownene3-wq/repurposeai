@@ -1254,8 +1254,8 @@
         rpBtn('\ud83d\udccd','Text Position','TextPosition')+
       '</div>'+
       textControls +
-      '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
-      '<div class="v10-rp-grid">'+
+      '<div class="v10-rp-section-title">CLIP TOOLS <span id="v10ClipToolsHint" style="font-weight:400;color:#8886a0;font-size:10px;margin-left:8px">select a V1 clip</span></div>'+
+      '<div class="v10-rp-grid" data-v10-clip-tools-group>'+
         rpBtn('\u2702\ufe0f','Trim','Trim')+
         rpBtn('\ud83d\udd2a','Split','Split')+
         rpBtn('\u2b1c','Crop','Crop')+
@@ -1375,8 +1375,23 @@
       if (!clips || !clips.length) return;
       clips.forEach(function(c){
         if (c.classList.contains('mt-clip-text') || c.classList.contains('mt-clip-fx')) return;
+        // Visually shorten (or lengthen) the clip width to match the
+        // new playback rate. We don't cache a "base" width — we recover
+        // the 1×-speed width from (currentWidth × currentSpeed) each
+        // time, so the math is correct regardless of timeline zoom or
+        // prior speed adjustments.
+        var curW = parseFloat(c.style.width) || 0;
+        var prevSpeed = parseFloat(c.dataset.speed) || 1;
+        var oneXWidth = curW * prevSpeed;
         c.dataset.speed = String(v);
+        var newW = oneXWidth / v;
+        if (newW < 20) newW = 20; // keep clip visible
+        c.style.width = newW + 'px';
+        // Force a filmstrip/waveform re-render at the new width so the
+        // preview reflects the new timeline footprint.
+        try { if (typeof window.attachFilmstripOrWaveform === 'function') window.attachFilmstripOrWaveform(c); } catch(_){}
       });
+      try { if (typeof window.updateTimelineInfo === 'function') window.updateTimelineInfo(); } catch(_){}
       try { window.syncPreviewToPlayhead && window.syncPreviewToPlayhead(); } catch(_){}
       if (typeof window.pushTimelineHistory === 'function'){
         try { window.pushTimelineHistory(); } catch(_){}
@@ -1417,7 +1432,235 @@
       });
 
     wireRPToast(div);
+
+    // ── Selection-driven gating of Clip Tools ────────────────────
+    // Trim / Split / Crop + Speed slider are only meaningful on a V1
+    // video clip. Grey them out until the user has one selected (or
+    // the playhead sits over one). Observe the timeline's .selected
+    // changes + playhead moves to flip enabled/disabled state.
+    var clipToolsGroup = div.querySelector('[data-v10-clip-tools-group]');
+    var speedInline   = div.querySelector('#v10SpeedSlider') && div.querySelector('#v10SpeedSlider').closest('.v10-rp-inline');
+    var hintEl        = div.querySelector('#v10ClipToolsHint');
+    function hasV1Target(){
+      var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+      if (sel) return true;
+      // Fallback: clip under playhead on V1
+      var ph = document.getElementById('mtPlayhead');
+      var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+      var v1Clips = document.querySelectorAll('.mt-track-video .mt-clip');
+      for (var i = 0; i < v1Clips.length; i++){
+        var c = v1Clips[i];
+        var l = parseFloat(c.style.left)  || 0;
+        var w = parseFloat(c.style.width) || 0;
+        if (phX >= l && phX <= l + w) return true;
+      }
+      return false;
+    }
+    function updateClipToolsState(){
+      var enabled = hasV1Target();
+      [clipToolsGroup, speedInline].forEach(function(el){
+        if (!el) return;
+        el.style.opacity = enabled ? '' : '0.45';
+        el.style.pointerEvents = enabled ? '' : 'none';
+      });
+      if (hintEl){
+        hintEl.style.display = enabled ? 'none' : '';
+      }
+    }
+    updateClipToolsState();
+    // Watch timeline DOM for selection + playhead changes
+    try {
+      var ta = document.getElementById('mtTracksArea');
+      if (ta){
+        var mo = new MutationObserver(function(){
+          updateClipToolsState();
+        });
+        mo.observe(ta, { subtree: true, childList: true, attributes: true,
+          attributeFilter: ['class', 'style'] });
+      }
+    } catch(_){}
+
     return div;
+  }
+
+  // ── One-click denoise / normalize via server FFmpeg ─────────────
+  // Takes a list of audio clip elements, POSTs each to
+  // /video-editor/process-audio-clip, replaces clip.dataset.mediaUrl
+  // with the returned processed file. Shows an indeterminate progress
+  // bar while the fleet is processing.
+  async function applyOneClickEnhancement(action, clips, btn){
+    if (!clips || !clips.length){ toast('No audio clip selected'); return; }
+    var pretty = action === 'denoise' ? 'Denoise' : 'Normalize';
+    var bar = showInlineProgress(btn, 'Processing ' + pretty + '\u2026');
+    try {
+      for (var i = 0; i < clips.length; i++){
+        var clip = clips[i];
+        bar.setLabel('Processing ' + pretty + ' (' + (i+1) + '/' + clips.length + ')\u2026');
+        var mediaUrl = clip.dataset.mediaUrl;
+        if (!mediaUrl){ continue; }
+        // Pre-upload blob URLs so the server can resolve them
+        if (mediaUrl.indexOf('blob:') === 0){
+          try {
+            var blob = await (await fetch(mediaUrl)).blob();
+            var fd = new FormData();
+            fd.append('file', blob, (clip.dataset.fileName || 'clip') + '.bin');
+            var upResp = await fetch('/video-editor/upload-blob', { method:'POST', body: fd, credentials:'same-origin' });
+            var upData = await upResp.json();
+            if (upResp.ok && upData.success){
+              mediaUrl = upData.serveUrl;
+              clip.dataset.mediaUrl = mediaUrl;
+            }
+          } catch (upErr){ console.warn('[enhance] blob upload failed', upErr); }
+        }
+        // Process via server
+        try {
+          var resp = await fetch('/video-editor/process-audio-clip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mediaUrl: mediaUrl, action: action })
+          });
+          var data = await resp.json();
+          if (!resp.ok || !data.success){
+            throw new Error((data && data.error) || (pretty + ' failed'));
+          }
+          clip.dataset.mediaUrl = data.serveUrl;
+          // Re-render waveform at new URL
+          try { if (typeof window.attachFilmstripOrWaveform === 'function') window.attachFilmstripOrWaveform(clip); } catch(_){}
+        } catch (procErr){
+          console.warn('[enhance]', procErr);
+          toast(pretty + ' error: ' + (procErr.message || procErr));
+        }
+      }
+      bar.complete();
+      toast(pretty + ' applied \u2014 ' + clips.length + ' clip' + (clips.length === 1 ? '' : 's'));
+      if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+    } catch (err){
+      bar.complete();
+      toast(pretty + ' failed: ' + (err.message || err));
+    }
+  }
+
+  // Small inline progress strip attached above a button. Used by the
+  // one-click enhancement + voice-over recording. Returns
+  // { setLabel, complete } for the caller to drive.
+  function showInlineProgress(anchorBtn, label){
+    var host = anchorBtn && anchorBtn.parentElement && anchorBtn.parentElement.parentElement;
+    if (!host) return { setLabel: function(){}, complete: function(){} };
+    var bar = document.createElement('div');
+    bar.className = 'v10-inline-progress';
+    bar.style.cssText =
+      'margin:6px 0;padding:8px 10px;background:rgba(124,58,237,.12);' +
+      'border:1px solid rgba(139,92,246,.4);border-radius:8px;' +
+      'font-size:11px;color:#e2e0f0;display:flex;align-items:center;gap:8px';
+    bar.innerHTML =
+      '<span class="v10-spinner" style="width:12px;height:12px;border:2px solid rgba(167,139,250,.3);border-top-color:#a78bfa;border-radius:50%;animation:v10spin 0.7s linear infinite;flex-shrink:0"></span>' +
+      '<span class="v10-ip-lbl">' + label + '</span>';
+    // One-shot keyframes for the spinner
+    if (!document.getElementById('v10SpinKF')){
+      var s = document.createElement('style');
+      s.id = 'v10SpinKF';
+      s.textContent = '@keyframes v10spin { to { transform: rotate(360deg); } }';
+      document.head.appendChild(s);
+    }
+    host.insertBefore(bar, host.firstChild);
+    return {
+      setLabel: function(t){ var el = bar.querySelector('.v10-ip-lbl'); if (el) el.textContent = t; },
+      complete: function(){ try { bar.remove(); } catch(_){} }
+    };
+  }
+
+  // ── Voice Over recording ────────────────────────────────────────
+  var _voLive = null; // active recorder instance
+  async function startVoiceOverRecording(btn){
+    if (_voLive){
+      // Second click stops the recording
+      try { _voLive.stop(); } catch(_){}
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      toast('This browser does not support microphone access');
+      return;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      var mime = ['audio/webm;codecs=opus','audio/webm','audio/mp4']
+        .find(function(m){ return typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m); });
+      var rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      var chunks = [];
+      rec.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+      // Visually flag the button as recording
+      var origLabel = btn.innerHTML;
+      btn.style.background = 'rgba(239,68,68,.85)';
+      btn.style.color = '#fff';
+      btn.innerHTML = '<span class="v10-rp-ic">\u23fa\ufe0f</span>Stop';
+      rec.onstop = function(){
+        btn.innerHTML = origLabel;
+        btn.style.background = '';
+        btn.style.color = '';
+        try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
+        _voLive = null;
+        var blob = new Blob(chunks, { type: mime || 'audio/webm' });
+        var url = URL.createObjectURL(blob);
+        // Drop a clip onto A1 at the current playhead
+        var ph = document.getElementById('mtPlayhead');
+        var PX_PER_SEC = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+        // Duration estimation — use recorded time
+        var recDurSec = rec._recDurSec || 3;
+        if (typeof window.addClipToTimeline === 'function'){
+          window.addClipToTimeline('voiceover.webm', 'aud', recDurSec, url);
+          // addClipToTimeline places at the rightmost; move it to phX
+          var audioTracks = document.querySelectorAll('.mt-track-audio');
+          var newest = null;
+          audioTracks.forEach(function(trk){
+            var clips = trk.querySelectorAll('.mt-clip');
+            if (clips.length) newest = clips[clips.length - 1];
+          });
+          if (newest){
+            newest.style.left = phX + 'px';
+          }
+        }
+        toast('Voice-over added at ' + (phX / PX_PER_SEC).toFixed(2) + 's');
+      };
+      _voLive = rec;
+      var startTs = performance.now();
+      rec.start(200);
+      // Track duration
+      var tick = setInterval(function(){
+        if (!_voLive){ clearInterval(tick); return; }
+        rec._recDurSec = (performance.now() - startTs) / 1000;
+      }, 500);
+    } catch (err){
+      toast('Voice-over error: ' + (err.message || err));
+    }
+  }
+
+  // ── Music upload (local files) ──────────────────────────────────
+  function openMusicUpload(){
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'audio/*';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', function(){
+      var f = input.files && input.files[0];
+      if (f && typeof window.addClipToTimeline === 'function'){
+        var url = URL.createObjectURL(f);
+        // Estimate duration via an <audio> metadata load
+        var a = new Audio();
+        a.preload = 'metadata';
+        a.src = url;
+        a.addEventListener('loadedmetadata', function(){
+          var dur = isFinite(a.duration) ? a.duration : 30;
+          window.addClipToTimeline(f.name, 'aud', dur, url);
+        }, { once: true });
+        a.addEventListener('error', function(){
+          window.addClipToTimeline(f.name, 'aud', 30, url);
+        }, { once: true });
+      }
+      try { input.remove(); } catch(_){}
+    });
+    input.click();
   }
 
   function buildAudioContent(){
@@ -1448,9 +1691,9 @@
                 '<span class="v10-ac-voltxt">' + Math.round(vol) + '%</span>'+
               '</div>'+
               '<div class="v10-ac-btns">'+
-                '<button data-ac-action="solo"' + (clip.dataset.solo === 'true' ? ' style="background:rgba(245,204,21,.85);color:#000"' : '') + '>Solo</button>'+
+                // Solo and Fade hidden per product decision; Mute is the
+                // only per-clip toggle in the card.
                 '<button data-ac-action="mute"' + (muted ? ' style="background:rgba(239,68,68,.85);color:#fff"' : '') + '>' + (muted ? 'Unmute' : 'Mute') + '</button>'+
-                '<button data-ac-action="fade">Fade</button>'+
               '</div>'+
             '</div>';
         });
@@ -1464,8 +1707,8 @@
       html +=
         '<div class="v10-rp-section-title" style="margin-top:14px">AUDIO TOOLS</div>'+
         '<div class="v10-rp-grid">'+
-          '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa4</span>Voice Over</button>'+
-          '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfb5</span>Music</button>'+
+          '<button class="v10-rp-btn" data-v10-audio-tool="voiceover"><span class="v10-rp-ic">\ud83c\udfa4</span>Voice Over</button>'+
+          '<button class="v10-rp-btn" data-v10-audio-tool="music-upload"><span class="v10-rp-ic">\ud83c\udfb5</span>Music</button>'+
           afxBtn('\ud83d\udd07', 'Denoise',   'denoise')+
           afxBtn('\ud83d\udcc8', 'Normalize', 'normalize')+
         '</div>'+
@@ -1484,13 +1727,23 @@
         if (!clip) return;
         var range = card.querySelector('.v10-ac-volrange');
         var label = card.querySelector('.v10-ac-voltxt');
+        // Reach into the live <audio> element for this URL so volume /
+        // mute changes take effect IMMEDIATELY (not just on next play).
+        function getLiveAudio(){
+          var url = clip.dataset.mediaUrl;
+          if (!url) return null;
+          return document.querySelector('audio[data-v10-a1][src="' + CSS.escape(url) + '"]')
+              || document.querySelector('audio[data-v10-a1]');
+        }
         if (range){
           range.addEventListener('input', function(){
             var v = parseInt(range.value, 10);
             clip.dataset.volume = String(v);
             if (label) label.textContent = v + '%';
+            // Apply to the currently-playing audio element (if any)
+            var live = getLiveAudio();
+            if (live){ live.volume = Math.min(1, Math.max(0, v / 100)); }
           });
-          range.addEventListener('change', function(){ toast('Volume: ' + clip.dataset.volume + '%'); });
         }
         Array.from(card.querySelectorAll('[data-ac-action]')).forEach(function(btn){
           btn.addEventListener('click', function(e){
@@ -1498,11 +1751,18 @@
             var act = btn.getAttribute('data-ac-action');
             if (act === 'mute'){
               var wasMuted = clip.dataset.muted === 'true';
-              clip.dataset.muted = wasMuted ? 'false' : 'true';
-              btn.textContent = wasMuted ? 'Mute' : 'Unmute';
-              btn.style.background = wasMuted ? '' : 'rgba(239,68,68,.85)';
-              btn.style.color = wasMuted ? '' : '#fff';
-              toast((wasMuted ? 'Unmuted' : 'Muted') + ': ' + (clip.dataset.fileName || 'clip'));
+              var nowMuted = !wasMuted;
+              clip.dataset.muted = nowMuted ? 'true' : 'false';
+              btn.textContent = nowMuted ? 'Unmute' : 'Mute';
+              btn.style.background = nowMuted ? 'rgba(239,68,68,.85)' : '';
+              btn.style.color      = nowMuted ? '#fff' : '';
+              // Kill / restore the signal on the live <audio> element
+              var live = getLiveAudio();
+              if (live){
+                live.muted = nowMuted;
+                if (nowMuted){ try { live.pause(); } catch(_){} }
+              }
+              toast((nowMuted ? 'Muted' : 'Unmuted') + ': ' + (clip.dataset.fileName || 'clip'));
             } else if (act === 'solo'){
               // Select this clip so clipActionSolo operates on it
               document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
@@ -1568,20 +1828,32 @@
               else c.dataset.fadeOut = String(v2);
             });
             toast('Fade-out: ' + v2 + 's' + suffix);
-          } else if (fx === 'denoise'){
-            var now = first.dataset.audioDenoise === 'true';
-            var target = now ? 'false' : 'true';
-            targets.forEach(function(c){ c.dataset.audioDenoise = target; });
-            toast('Denoise ' + (now ? 'off' : 'on') + suffix);
-          } else if (fx === 'normalize'){
-            var nowN = first.dataset.audioNormalize === 'true';
-            var targetN = nowN ? 'false' : 'true';
-            targets.forEach(function(c){ c.dataset.audioNormalize = targetN; });
-            toast('Normalize ' + (nowN ? 'off' : 'on') + suffix);
+          } else if (fx === 'denoise' || fx === 'normalize'){
+            // One-click: actually PROCESS the audio now (not just a
+            // flag for export). Uses /video-editor/process-audio-clip
+            // which runs afftdn / loudnorm and returns a new URL. Swap
+            // the clip's mediaUrl on success so the preview + export
+            // both pick up the processed file.
+            applyOneClickEnhancement(fx, targets, btn);
+            return;
           }
           if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
         }, true);
       });
+
+      // Voice Over + Music Upload handlers
+      Array.from(div.querySelectorAll('[data-v10-audio-tool]')).forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation();
+          var tool = btn.getAttribute('data-v10-audio-tool');
+          if (tool === 'voiceover'){
+            startVoiceOverRecording(btn);
+          } else if (tool === 'music-upload'){
+            openMusicUpload();
+          }
+        }, true);
+      });
+
       wireRPToast(div);
     }
     renderLayers();

@@ -9547,4 +9547,57 @@ router.post('/upload-blob', requireAuth, mediaUploadAny.single('file'), async (r
   }
 });
 
+// POST /video-editor/process-audio-clip
+// One-click audio enhancement for a single clip. Accepts a mediaUrl
+// + action ('denoise' | 'normalize') and returns a URL to the
+// processed file. Runs an FFmpeg filter chain matched to the action.
+router.post('/process-audio-clip', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath) return res.status(500).json({ error: 'FFmpeg not available' });
+    var body = req.body || {};
+    var mediaUrl = body.mediaUrl;
+    var action   = String(body.action || '').toLowerCase();
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({ error: 'Source not on server. Upload first.' });
+    }
+    var filter;
+    if (action === 'denoise'){
+      filter = 'afftdn=nf=-35:tn=1,highpass=f=60';
+    } else if (action === 'normalize'){
+      filter = 'loudnorm=I=-16:TP=-1.5:LRA=11';
+    } else {
+      return res.status(400).json({ error: 'Unknown action ' + action });
+    }
+    var outName = action + '_' + Date.now() + '_' + req.user.id + '.m4a';
+    var outPath = path.join(outputDir, outName);
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-y', '-i', srcPath,
+        '-vn',
+        '-af', filter,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        outPath
+      ]);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error(action + ' failed: ' + stderr.slice(-300)));
+      });
+      proc.on('error', reject);
+    });
+    res.json({
+      success: true,
+      filename: outName,
+      serveUrl: '/video-editor/download/' + outName,
+      action: action
+    });
+  } catch (err){
+    console.error('[process-audio-clip] error:', err);
+    res.status(500).json({ error: err.message || 'Processing failed' });
+  }
+});
+
 module.exports = router;

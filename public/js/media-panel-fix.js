@@ -2318,6 +2318,8 @@
   try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
   try { window.getActiveClips = getActiveClips; } catch(_){}
   try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
+  try { window.updateTimelineInfo = updateTimelineInfo; } catch(_){}
+  try { window.getActiveClip = getActiveClip; } catch(_){}
   try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
 
   // ── WYSIWYG capture helpers ──────────────────────────────────────
