@@ -3177,6 +3177,8 @@ function showToast(message, type = 'success') {
             fontSize:     c.dataset.fontSize     || '',
             textColor:    c.dataset.textColor    || '',
             position:     c.dataset.position     || '',
+            textOffsetX:  c.dataset.textOffsetX  || '',
+            textOffsetY:  c.dataset.textOffsetY  || '',
             // Audio
             volume:       c.dataset.volume       || '',
             muted:        c.dataset.muted        || '',
@@ -7013,24 +7015,29 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           var sz    = parseInt(tc.fontSize, 10) || 56;
           var col   = (tc.textColor || '#ffffff').replace('#','0x');
           var pos   = tc.position || 'center';
+          // Drag-positioned text carries fractional offsets (of canvas
+          // width / height) set by the PGM drag handler. Scale them by
+          // the output dimensions so the exported position matches the
+          // preview exactly.
+          var offFracX = parseFloat(tc.textOffsetX) || 0;
+          var offFracY = parseFloat(tc.textOffsetY) || 0;
           var y;
           if (pos === 'top')         y = 'h*0.15';
           else if (pos === 'bottom') y = 'h-h*0.15-text_h';
           else                       y = '(h-text_h)/2';
-          // Shadow offset scales with font size, matching PGM canvas
-          // which uses shadowOffsetY = size * 0.08.
+          var xExpr = '(w-text_w)/2';
+          if (offFracX){ xExpr += (offFracX > 0 ? '+' : '') + (offFracX * outW).toFixed(1); }
+          if (offFracY){ y     += (offFracY > 0 ? '+' : '') + (offFracY * outH).toFixed(1); }
           var shadowY = Math.max(1, Math.round(sz * 0.08));
           var parts = [
             'drawtext=text=\'' + txt + '\'',
             'fontsize=' + sz,
             'fontcolor=' + col,
-            // Drop shadow (matches PGM's ctx.shadowColor rgba(0,0,0,.65))
             'shadowx=0',
             'shadowy=' + shadowY,
             'shadowcolor=black@0.65',
-            // Thin dark outline for edge definition on any background
             'borderw=1', 'bordercolor=black@0.4',
-            'x=(w-text_w)/2',
+            'x=' + xExpr,
             'y=' + y,
             'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
           ];

@@ -938,6 +938,8 @@
             fontSize: c.dataset.fontSize || '',
             textColor: c.dataset.textColor || '',
             position: c.dataset.position || '',
+            textOffsetX: c.dataset.textOffsetX || '',
+            textOffsetY: c.dataset.textOffsetY || '',
             motionEffect: c.dataset.motionEffect || '',
             scale: c.dataset.scale || '',
             rotate: c.dataset.rotate || '',
@@ -1036,6 +1038,8 @@
           if (spec.fontSize)       c.dataset.fontSize = spec.fontSize;
           if (spec.textColor)      c.dataset.textColor = spec.textColor;
           if (spec.position)       c.dataset.position = spec.position;
+          if (spec.textOffsetX)    c.dataset.textOffsetX = spec.textOffsetX;
+          if (spec.textOffsetY)    c.dataset.textOffsetY = spec.textOffsetY;
           if (spec.motionEffect)   c.dataset.motionEffect = spec.motionEffect;
           if (spec.scale)          c.dataset.scale   = spec.scale;
           if (spec.rotate)         c.dataset.rotate  = spec.rotate;
@@ -1780,8 +1784,12 @@
     canvas.id = 'tlProgMonitor';
     canvas.width  = 1280;
     canvas.height = 720;
-    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:#000;z-index:7;display:none;pointer-events:none';
+    // Pointer events enabled so the text-drag handler can receive
+    // mouse events. The canvas covers the video element for display
+    // anyway, so we're not blocking anything the user could use.
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:#000;z-index:7;display:none;pointer-events:auto';
     try { container.appendChild(canvas); } catch(_){ return null; }
+    try { wirePgmTextDrag(canvas); } catch(_){}
     return canvas;
   }
   function ensureProgramToggleBtn(){
@@ -3508,8 +3516,16 @@
     return out;
   }
 
-  // Draw text overlays from T1 clips on top of the PGM canvas.
+  // Tracks the last-rendered bounding box of each text clip on the PGM
+  // canvas so the drag handler can hit-test pointer events against it.
+  // Rebuilt every frame by progDrawTextOverlays.
+  var _textHitBoxes = []; // [{ clip, x, y, w, h }]
+
+  // Draw text overlays from T1 clips on top of the PGM canvas. Respects
+  // per-clip textOffsetX / textOffsetY (in canvas pixels) set by the
+  // drag-to-position handler below.
   function progDrawTextOverlays(ctx, W, H, phX){
+    _textHitBoxes.length = 0;
     var clips = getTextClipsAtPlayheadX(phX);
     if (!clips.length) return;
     clips.forEach(function(clip){
@@ -3518,21 +3534,27 @@
       var size  = parseInt(clip.dataset.fontSize, 10) || Math.round(H * 0.08);
       var color = clip.dataset.textColor || '#ffffff';
       var pos   = clip.dataset.position || 'center';
+      // textOffsetX / textOffsetY are stored as FRACTIONS of the
+      // canvas width/height (so they translate cleanly between the
+      // preview's variable canvas size and the export's output size).
+      var offXFrac = parseFloat(clip.dataset.textOffsetX) || 0;
+      var offYFrac = parseFloat(clip.dataset.textOffsetY) || 0;
+      var offX = offXFrac * W;
+      var offY = offYFrac * H;
       ctx.save();
       ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = color;
-      // Soft drop shadow for readability over any background.
       ctx.shadowColor = 'rgba(0,0,0,.65)';
       ctx.shadowBlur = size * 0.4;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = Math.round(size * 0.08);
-      var x = W / 2;
+      var x = W / 2 + offX;
       var y;
       if (pos === 'top')         y = Math.round(H * 0.15) + size;
       else if (pos === 'bottom') y = H - Math.round(H * 0.12);
       else                        y = Math.round(H / 2 + size / 3);
-      // Wrap long text to ≤90% canvas width
+      y += offY;
       var maxW = W * 0.9;
       var words = String(text).split(/\s+/);
       var lines = [];
@@ -3544,15 +3566,97 @@
         } else { current = test; }
       });
       if (current) lines.push(current);
-      // Paint lines centered around y
       var lineH = Math.round(size * 1.15);
       var totalH = lineH * lines.length;
       var startY = y - totalH / 2 + lineH / 2;
+      // Measure the widest line so we can record a hit-box
+      var widest = 0;
+      lines.forEach(function(ln){
+        var w = ctx.measureText(ln).width;
+        if (w > widest) widest = w;
+      });
+      var boxX = x - widest / 2;
+      var boxY = y - totalH / 2;
+      var boxW = widest;
+      var boxH = totalH;
       lines.forEach(function(ln, i){
         ctx.fillText(ln, x, startY + i * lineH);
       });
       ctx.restore();
+      _textHitBoxes.push({ clip: clip, x: boxX, y: boxY, w: boxW, h: boxH });
     });
+  }
+
+  // ── Drag-to-position text on the Program Monitor ─────────────────
+  // Pointer down on a rendered text overlay starts a drag; move events
+  // update the clip's textOffsetX / textOffsetY (canvas-space px) and
+  // the RAF loop redraws the next frame at the new position. Pointer
+  // coords are converted from screen px to canvas px using the canvas
+  // element's internal width/height vs its rendered CSS size.
+  function wirePgmTextDrag(canvas){
+    if (!canvas || canvas.dataset.v10TextDragWired) return;
+    canvas.dataset.v10TextDragWired = '1';
+    var dragState = null;
+    function canvasCoords(ev){
+      var rect = canvas.getBoundingClientRect();
+      var sx = (canvas.width || rect.width) / rect.width;
+      var sy = (canvas.height || rect.height) / rect.height;
+      return {
+        x: (ev.clientX - rect.left) * sx,
+        y: (ev.clientY - rect.top)  * sy
+      };
+    }
+    function hitTest(pt){
+      // Last hit-box wins so clicks on stacked text hit the top one
+      for (var i = _textHitBoxes.length - 1; i >= 0; i--){
+        var b = _textHitBoxes[i];
+        if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h){
+          return b;
+        }
+      }
+      return null;
+    }
+    canvas.addEventListener('mousedown', function(e){
+      if (e.button !== 0) return;
+      var pt = canvasCoords(e);
+      var hit = hitTest(pt);
+      if (!hit) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragState = {
+        clip: hit.clip,
+        startX: pt.x,
+        startY: pt.y,
+        // Store fractional offset so drag math scales across canvas sizes
+        startOffFracX: parseFloat(hit.clip.dataset.textOffsetX) || 0,
+        startOffFracY: parseFloat(hit.clip.dataset.textOffsetY) || 0
+      };
+      canvas.style.cursor = 'grabbing';
+    });
+    // Hover cursor feedback + drag move
+    canvas.addEventListener('mousemove', function(e){
+      if (dragState){
+        var pt = canvasCoords(e);
+        var dx = pt.x - dragState.startX;
+        var dy = pt.y - dragState.startY;
+        // Convert the pixel delta to a canvas-size-invariant fraction
+        var cw = canvas.width  || 1;
+        var ch = canvas.height || 1;
+        dragState.clip.dataset.textOffsetX = (dragState.startOffFracX + dx / cw).toFixed(5);
+        dragState.clip.dataset.textOffsetY = (dragState.startOffFracY + dy / ch).toFixed(5);
+      } else {
+        var ptHover = canvasCoords(e);
+        canvas.style.cursor = hitTest(ptHover) ? 'grab' : '';
+      }
+    });
+    function endDrag(){
+      if (!dragState) return;
+      dragState = null;
+      canvas.style.cursor = '';
+      try { if (typeof pushTimelineHistory === 'function') pushTimelineHistory(); } catch(_){}
+    }
+    canvas.addEventListener('mouseup',    endDrag);
+    canvas.addEventListener('mouseleave', endDrag);
   }
 
   // Small modal for entering text + choosing size / color / duration / position.
