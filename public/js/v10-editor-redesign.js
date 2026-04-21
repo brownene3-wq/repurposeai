@@ -1214,22 +1214,53 @@
         '"><span class="v10-rp-ic">' + ic + '</span>' + label + '</button>';
     }
 
+    // Inline font-size slider + number input (replaces the prompt).
+    // Updates clip.dataset.fontSize on every drag/input, applies to
+    // all selected text clips via window.clipActionTextFontSizeApply.
+    var textControls =
+      '<div class="v10-rp-inline" style="padding:8px 6px;background:rgba(108,58,237,.05);border-radius:8px;margin-top:6px">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+          '<span style="font-size:10px;color:#8886a0;flex:1;letter-spacing:.3px">FONT SIZE</span>' +
+          '<input type="number" id="v10TextSizeNum" min="8" max="200" value="10" ' +
+            'style="width:52px;background:#0c0814;border:1px solid rgba(108,58,237,.35);color:#fff;font-size:11px;padding:3px 5px;border-radius:4px"/>' +
+          '<span style="font-size:10px;color:#8886a0">px</span>' +
+        '</div>' +
+        '<input type="range" id="v10TextSizeSlider" min="8" max="200" value="10" ' +
+          'style="width:100%;accent-color:#a78bfa"/>' +
+      '</div>' +
+      '<div class="v10-rp-inline" style="padding:8px 6px;background:rgba(108,58,237,.05);border-radius:8px;margin-top:6px">' +
+        '<div style="font-size:10px;color:#8886a0;letter-spacing:.3px;margin-bottom:6px">TEXT COLOR</div>' +
+        '<div id="v10TextColorGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px"></div>' +
+      '</div>';
+
+    // Inline speed slider — 0.25x to 4x
+    var speedControl =
+      '<div class="v10-rp-inline" style="padding:8px 6px;background:rgba(108,58,237,.05);border-radius:8px;margin-top:6px">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+          '<span style="font-size:10px;color:#8886a0;flex:1;letter-spacing:.3px">SPEED</span>' +
+          '<input type="number" id="v10SpeedNum" min="0.25" max="4" step="0.05" value="1" ' +
+            'style="width:52px;background:#0c0814;border:1px solid rgba(108,58,237,.35);color:#fff;font-size:11px;padding:3px 5px;border-radius:4px"/>' +
+          '<span style="font-size:10px;color:#8886a0">x</span>' +
+        '</div>' +
+        '<input type="range" id="v10SpeedSlider" min="25" max="400" step="5" value="100" ' +
+          'style="width:100%;accent-color:#a78bfa"/>' +
+      '</div>';
+
     div.innerHTML =
       '<div class="v10-rp-section-title">TEXT</div>'+
       '<div class="v10-rp-grid">'+
         '<button class="v10-rp-btn" data-v10-action="add-text"><span class="v10-rp-ic">\ud83c\udd97</span>Add Text</button>'+
         '<button class="v10-rp-btn" data-v10-action="add-title"><span class="v10-rp-ic">\ud83d\udcdd</span>Add Title</button>'+
-        rpBtn('\ud83d\udd24','Font Size','TextFontSize')+
-        rpBtn('\ud83c\udfa8','Text Color','TextColor')+
         rpBtn('\ud83d\udccd','Text Position','TextPosition')+
       '</div>'+
+      textControls +
       '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
       '<div class="v10-rp-grid">'+
         rpBtn('\u2702\ufe0f','Trim','Trim')+
         rpBtn('\ud83d\udd2a','Split','Split')+
-        rpBtn('\u26a1','Speed','Speed')+
         rpBtn('\u2b1c','Crop','Crop')+
       '</div>'+
+      speedControl +
       '<div class="v10-rp-section-title">TRANSFORM</div>'+
       '<div class="v10-rp-grid">'+
         rpBtn('\ud83d\udcd0','Resize','Resize')+
@@ -1257,6 +1288,114 @@
         else { toast(act + ' not wired'); }
       }, true); // capture phase so wireRPToast's bubble handler is pre-empted
     });
+
+    // ── Inline font-size slider + number ──────────────────────────
+    // Drag OR type to update the selected text clip(s). Falls back to
+    // all text clips on T1 when nothing specific is selected — same
+    // targeting rule as the old prompt-based clipActionTextFontSize.
+    var fsSlider = div.querySelector('#v10TextSizeSlider');
+    var fsNum    = div.querySelector('#v10TextSizeNum');
+    function getTargetTextClips(){
+      var selected = Array.from(document.querySelectorAll('.mt-clip.mt-clip-text.selected'));
+      if (selected.length) return selected;
+      return Array.from(document.querySelectorAll('.mt-track-text .mt-clip'));
+    }
+    function applyFontSize(v){
+      var clips = getTargetTextClips();
+      if (!clips.length) return;
+      clips.forEach(function(c){ c.dataset.fontSize = String(v); });
+      try { if (typeof window.syncPreviewToPlayhead === 'function') window.syncPreviewToPlayhead(); } catch(_){}
+      if (typeof window.pushTimelineHistory === 'function'){
+        try { window.pushTimelineHistory(); } catch(_){}
+      }
+    }
+    if (fsSlider && fsNum){
+      // Keep slider + number in lockstep
+      fsSlider.addEventListener('input', function(){
+        fsNum.value = fsSlider.value;
+        applyFontSize(parseInt(fsSlider.value, 10));
+      });
+      fsNum.addEventListener('input', function(){
+        var v = parseInt(fsNum.value, 10);
+        if (!isFinite(v)) return;
+        v = Math.max(8, Math.min(200, v));
+        fsSlider.value = String(v);
+        applyFontSize(v);
+      });
+      // Reflect the first selected text clip's current size on panel
+      // entry so the slider isn't lying about the state.
+      var tc = document.querySelector('.mt-clip.mt-clip-text.selected')
+            || document.querySelector('.mt-track-text .mt-clip');
+      if (tc && tc.dataset.fontSize){
+        var cur = parseInt(tc.dataset.fontSize, 10);
+        if (isFinite(cur)){ fsSlider.value = cur; fsNum.value = cur; }
+      }
+    }
+
+    // ── Inline text color grid ─────────────────────────────────────
+    var COLOR_SWATCHES = [
+      '#ffffff', '#000000', '#ef4444', '#f59e0b',
+      '#facc15', '#10b981', '#06b6d4', '#3b82f6',
+      '#8b5cf6', '#ec4899', '#f97316', '#14b8a6',
+      '#a855f7', '#64748b', '#78716c', '#92400e'
+    ];
+    var colorGrid = div.querySelector('#v10TextColorGrid');
+    if (colorGrid){
+      COLOR_SWATCHES.forEach(function(hex){
+        var sw = document.createElement('button');
+        sw.type = 'button';
+        sw.style.cssText =
+          'width:22px;height:22px;border-radius:4px;cursor:pointer;' +
+          'background:' + hex + ';' +
+          'border:1px solid rgba(255,255,255,0.15);padding:0';
+        sw.title = hex;
+        sw.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation();
+          var clips = getTargetTextClips();
+          if (!clips.length){ toast('Add a text clip first'); return; }
+          clips.forEach(function(c){ c.dataset.textColor = hex; });
+          try { window.syncPreviewToPlayhead && window.syncPreviewToPlayhead(); } catch(_){}
+          if (typeof window.pushTimelineHistory === 'function'){
+            try { window.pushTimelineHistory(); } catch(_){}
+          }
+          toast('Text color: ' + hex + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+        });
+        colorGrid.appendChild(sw);
+      });
+    }
+
+    // ── Inline speed slider + number ──────────────────────────────
+    // Applies to every active (selected or under-playhead) clip via
+    // the same multi-clip broadcast pattern as other edits.
+    var spSlider = div.querySelector('#v10SpeedSlider');
+    var spNum    = div.querySelector('#v10SpeedNum');
+    function applySpeed(v){
+      if (typeof window.getActiveClips !== 'function') return;
+      var clips = window.getActiveClips();
+      if (!clips || !clips.length) return;
+      clips.forEach(function(c){
+        if (c.classList.contains('mt-clip-text') || c.classList.contains('mt-clip-fx')) return;
+        c.dataset.speed = String(v);
+      });
+      try { window.syncPreviewToPlayhead && window.syncPreviewToPlayhead(); } catch(_){}
+      if (typeof window.pushTimelineHistory === 'function'){
+        try { window.pushTimelineHistory(); } catch(_){}
+      }
+    }
+    if (spSlider && spNum){
+      spSlider.addEventListener('input', function(){
+        var v = parseInt(spSlider.value, 10) / 100;
+        spNum.value = v.toFixed(2);
+        applySpeed(v);
+      });
+      spNum.addEventListener('input', function(){
+        var v = parseFloat(spNum.value);
+        if (!isFinite(v) || v <= 0) return;
+        v = Math.max(0.25, Math.min(4, v));
+        spSlider.value = String(Math.round(v * 100));
+        applySpeed(v);
+      });
+    }
 
     // Wire the Add Text / Add Title buttons (same as before).
     Array.from(div.querySelectorAll('[data-v10-action="add-text"],[data-v10-action="add-title"]'))

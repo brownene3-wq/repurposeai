@@ -490,7 +490,207 @@
 
     attachTrimHandles(clip);
     refreshKeyframeMarkers(clip);
+    attachFilmstripOrWaveform(clip);
   }
+
+  // ── Filmstrip + waveform rendering ────────────────────────────────
+  // V1 video clips get a strip of thumbnail frames extracted from the
+  // video at evenly-spaced timestamps within the clip's source range.
+  // A1 audio clips get a decoded-and-peaked waveform. Both are rendered
+  // ONCE per (URL, width) combo to a data URL cached on the clip, then
+  // set as the clip's backgroundImage. When trim handles resize the
+  // clip we re-render with the new bucket count.
+  var _filmstripCache = {}; // url@width → dataURL Promise
+  var _waveformCache  = {}; // url@width → dataURL Promise
+  var _decodedAudioCache = {}; // url → AudioBuffer Promise
+
+  function attachFilmstripOrWaveform(clip){
+    if (!clip) return;
+    var type = clip.dataset.clipType || '';
+    var url  = clip.dataset.mediaUrl || '';
+    if (!url) return;
+    if (type === 'vid'){
+      renderFilmstripOnClip(clip);
+    } else if (type === 'aud'){
+      renderWaveformOnClip(clip);
+    } else if (type === 'img' && url){
+      // Image clips: just use the image as the clip bg, stretched across
+      clip.style.backgroundImage = 'url(' + JSON.stringify(url).slice(1, -1) + ')';
+      clip.style.backgroundSize = 'cover';
+      clip.style.backgroundPosition = 'center';
+      clip.style.textShadow = '0 1px 3px rgba(0,0,0,0.8)';
+    }
+  }
+
+  // Dimensions of each thumbnail frame (rendering density trade-off)
+  var THUMB_W = 60;
+  var THUMB_H = 30;
+
+  function renderFilmstripOnClip(clip){
+    var url    = clip.dataset.mediaUrl;
+    var width  = Math.round(parseFloat(clip.style.width) || 100);
+    var srcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+    var clipDurSec = width / TIMELINE_PX_PER_SEC;
+    if (!url || width < 20) return;
+    var cacheKey = url + '@' + width;
+    if (_filmstripCache[cacheKey]){
+      _filmstripCache[cacheKey].then(function(dataURL){ applyClipBg(clip, dataURL); });
+      return;
+    }
+    var p = new Promise(function(resolve){
+      var vid = document.createElement('video');
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'auto';
+      vid.src = url;
+      var onErr = function(){ resolve(null); };
+      vid.addEventListener('error', onErr, { once: true });
+      vid.addEventListener('loadedmetadata', function(){
+        var vw = vid.videoWidth, vh = vid.videoHeight;
+        if (!vw || !vh){ resolve(null); return; }
+        var vDur = vid.duration || 0;
+        var maxSlotTime = Math.min(vDur, srcOff + clipDurSec);
+        var slotCount = Math.max(1, Math.floor(width / THUMB_W));
+        var canvas = document.createElement('canvas');
+        canvas.width  = slotCount * THUMB_W;
+        canvas.height = THUMB_H;
+        var ctx = canvas.getContext('2d');
+        // Fill each slot in sequence by seeking the video
+        var slotIdx = 0;
+        function drawNext(){
+          if (slotIdx >= slotCount){
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            return;
+          }
+          var t = srcOff + ((slotIdx + 0.5) / slotCount) * clipDurSec;
+          t = Math.min(Math.max(0, t), Math.max(0, maxSlotTime - 0.05));
+          var onSeeked = function(){
+            vid.removeEventListener('seeked', onSeeked);
+            try {
+              // Preserve aspect: fit video frame into THUMB_W x THUMB_H
+              var srcAR = vw / vh;
+              var dstAR = THUMB_W / THUMB_H;
+              var sx, sy, sw, sh;
+              if (srcAR > dstAR){
+                sh = vh;
+                sw = Math.round(sh * dstAR);
+                sx = Math.round((vw - sw) / 2);
+                sy = 0;
+              } else {
+                sw = vw;
+                sh = Math.round(sw / dstAR);
+                sx = 0;
+                sy = Math.round((vh - sh) / 2);
+              }
+              ctx.drawImage(vid, sx, sy, sw, sh, slotIdx * THUMB_W, 0, THUMB_W, THUMB_H);
+            } catch(_){}
+            slotIdx++;
+            drawNext();
+          };
+          vid.addEventListener('seeked', onSeeked);
+          try { vid.currentTime = t; } catch(_){
+            // If seek throws (zero-duration / malformed source), skip
+            slotIdx = slotCount;
+            drawNext();
+          }
+          // Safety timeout if 'seeked' never fires (some codecs stall)
+          setTimeout(function(){
+            if (slotIdx <= slotCount){
+              vid.removeEventListener('seeked', onSeeked);
+              slotIdx++;
+              drawNext();
+            }
+          }, 2500);
+        }
+        drawNext();
+      }, { once: true });
+      // If the video never loads metadata, bail after 6s
+      setTimeout(function(){ resolve(null); }, 6000);
+    });
+    _filmstripCache[cacheKey] = p;
+    p.then(function(dataURL){ if (dataURL) applyClipBg(clip, dataURL); });
+  }
+
+  function renderWaveformOnClip(clip){
+    var url   = clip.dataset.mediaUrl;
+    var width = Math.round(parseFloat(clip.style.width) || 100);
+    if (!url || width < 20) return;
+    var cacheKey = url + '@' + width;
+    if (_waveformCache[cacheKey]){
+      _waveformCache[cacheKey].then(function(dataURL){ applyClipBg(clip, dataURL); });
+      return;
+    }
+    var p = decodeAudioBuffer(url).then(function(buffer){
+      if (!buffer) return null;
+      var ch = buffer.getChannelData(0);
+      var samplesPerBucket = Math.max(1, Math.floor(ch.length / width));
+      var canvas = document.createElement('canvas');
+      canvas.width  = width;
+      canvas.height = THUMB_H;
+      var ctx = canvas.getContext('2d');
+      // Translucent gradient background
+      var grad = ctx.createLinearGradient(0, 0, 0, THUMB_H);
+      grad.addColorStop(0, 'rgba(5,150,105,0.95)');
+      grad.addColorStop(1, 'rgba(16,185,129,0.85)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, THUMB_H);
+      // Peaks
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      var mid = THUMB_H / 2;
+      for (var x = 0; x < width; x++){
+        var start = x * samplesPerBucket;
+        var end   = Math.min(ch.length, start + samplesPerBucket);
+        var peak = 0;
+        for (var i = start; i < end; i++){
+          var v = Math.abs(ch[i]);
+          if (v > peak) peak = v;
+        }
+        var h = Math.round(peak * (THUMB_H - 4));
+        ctx.moveTo(x + 0.5, mid - h / 2);
+        ctx.lineTo(x + 0.5, mid + h / 2);
+      }
+      ctx.stroke();
+      return canvas.toDataURL('image/png');
+    }).catch(function(err){
+      console.warn('[waveform] decode failed for', url, err);
+      return null;
+    });
+    _waveformCache[cacheKey] = p;
+    p.then(function(dataURL){ if (dataURL) applyClipBg(clip, dataURL); });
+  }
+
+  function decodeAudioBuffer(url){
+    if (_decodedAudioCache[url]) return _decodedAudioCache[url];
+    ensureAudioSystem();
+    if (!_audioCtx) return Promise.reject(new Error('no AudioContext'));
+    var p = fetch(url, { credentials: (url.indexOf('blob:') === 0) ? 'omit' : 'same-origin' })
+      .then(function(r){
+        if (!r.ok) throw new Error('fetch ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function(buf){
+        return new Promise(function(resolve, reject){
+          _audioCtx.decodeAudioData(buf, resolve, reject);
+        });
+      });
+    _decodedAudioCache[url] = p;
+    return p;
+  }
+
+  function applyClipBg(clip, dataURL){
+    if (!clip || !dataURL) return;
+    clip.style.backgroundImage = 'url(' + dataURL + ')';
+    clip.style.backgroundRepeat = 'no-repeat';
+    clip.style.backgroundSize = '100% 100%';
+    clip.style.backgroundPosition = 'left center';
+    // Ensure text (filename) stays readable on top of the filmstrip
+    clip.style.textShadow = '0 1px 2px rgba(0,0,0,0.85)';
+  }
+  try {
+    window.attachFilmstripOrWaveform = attachFilmstripOrWaveform;
+  } catch(_){}
 
   // ── Trim handles ────────────────────────────────────────────────
   // Left and right 8px grip zones inside each clip. Hidden at rest,
@@ -608,6 +808,8 @@
         // Keyframe markers are positioned as % of clip width; refresh
         // their placement now that the width may have changed.
         try { refreshKeyframeMarkers(clip); } catch(_){}
+        // Re-render filmstrip / waveform at the new width
+        try { attachFilmstripOrWaveform(clip); } catch(_){}
         pushTimelineHistory();
       }
 
@@ -2094,6 +2296,8 @@
   // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
   try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
+  try { window.getActiveClips = getActiveClips; } catch(_){}
+  try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
   try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
 
   // ── WYSIWYG capture helpers ──────────────────────────────────────
@@ -2145,6 +2349,7 @@
       c.style.left  = (l * ratio) + 'px';
       c.style.width = (w * ratio) + 'px';
       try { refreshKeyframeMarkers(c); } catch(_){}
+      try { attachFilmstripOrWaveform(c); } catch(_){}
     });
     // Rescale the playhead x-position
     var ph = document.getElementById('mtPlayhead');
