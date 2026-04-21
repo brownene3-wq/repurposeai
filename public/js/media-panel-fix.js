@@ -1007,23 +1007,76 @@
     return p;
   }
 
-  // Schedule every audio clip on every audio track, starting from
-  // startPlayheadSec. Each clip's source is decoded (or pulled from cache)
-  // and an AudioBufferSourceNode is created at the right time on the
-  // master bus.
+  // HTMLAudioElement pool for A1 clips. We play A1 through NATIVE audio
+  // elements (NOT routed through WebAudio's master bus) so A1 output
+  // reaches the OS audio device in parallel with the video's WebAudio
+  // output. Both mix together at the OS level and are audible
+  // simultaneously. The earlier createBufferSource approach was
+  // producing silence in some browsers even though timing was correct.
+  //
+  // Trade-off: the PGM audio meter (which taps the WebAudio master
+  // bus) doesn't reflect A1 levels. Audibility wins.
+  var _a1AudioEls = {};
+  var _a1Timers   = [];
+  var _a1Playing  = [];
+
+  function getOrCreateA1Audio(url){
+    if (!url) return null;
+    if (_a1AudioEls[url]) return _a1AudioEls[url];
+    var audio = document.createElement('audio');
+    audio.preload = 'auto';
+    audio.src = url;
+    audio.style.cssText = 'display:none';
+    audio.setAttribute('data-v10-a1', '1');
+    audio.addEventListener('error', function(){
+      var e = audio.error;
+      var codeTxt = e && e.code === 2 ? 'NETWORK'
+                 : e && e.code === 3 ? 'DECODE'
+                 : e && e.code === 4 ? 'NOT_SUPPORTED'
+                 : (e ? 'err' + e.code : 'unknown');
+      console.warn('[a1] audio element error for', url, codeTxt);
+    });
+    document.body.appendChild(audio);
+    _a1AudioEls[url] = audio;
+    return audio;
+  }
+
+  function stopAudioMixing(){
+    _a1Timers.forEach(function(id){ clearTimeout(id); });
+    _a1Timers = [];
+    // Await pending play() Promises before pausing to avoid Chrome's
+    // AbortError race where pause() before play() settles drops playback.
+    _a1Playing.forEach(function(entry){
+      var a = entry.audio;
+      var doPause = function(){ try { a.pause(); } catch(_){} };
+      if (entry.playPromise && typeof entry.playPromise.then === 'function'){
+        entry.playPromise.then(doPause, doPause);
+      } else {
+        doPause();
+      }
+    });
+    _a1Playing = [];
+    _audioActiveSources.forEach(function(src){
+      try { src.stop(); } catch(_){}
+      try { src.disconnect(); } catch(_){}
+    });
+    _audioActiveSources = [];
+  }
+
   function startAudioMixing(startPlayheadSec){
-    if (!ensureAudioSystem()) return;
-    stopAudioMixing(); // clear any prior schedule
+    // AudioContext still matters for video audio (MES routing) + meter.
+    ensureAudioSystem();
+    stopAudioMixing();
     var clips = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
-    var t0 = _audioCtx.currentTime;
     clips.forEach(function(clip){
       var url = clip.dataset.mediaUrl;
       if (!url) return;
+      if (clip.dataset.muted === 'true') return;
       var leftSec  = (parseFloat(clip.style.left)  || 0) / TIMELINE_PX_PER_SEC;
       var widthSec = (parseFloat(clip.style.width) || 0) / TIMELINE_PX_PER_SEC;
       var srcOff   = parseFloat(clip.dataset.sourceOffset) || 0;
       var clipEndSec = leftSec + widthSec;
-      if (clipEndSec <= startPlayheadSec) return; // already past this clip
+      if (clipEndSec <= startPlayheadSec) return;
       var scheduleDelay, offsetInSource, playDur;
       if (startPlayheadSec <= leftSec){
         scheduleDelay  = leftSec - startPlayheadSec;
@@ -1036,68 +1089,79 @@
         playDur        = widthSec - into;
       }
       if (playDur <= 0) return;
-      // Respect per-clip Mute + Volume from the AUDIO sidebar.
-      if (clip.dataset.muted === 'true') return;
+
       var volRaw = parseFloat(clip.dataset.volume);
       var vol = isFinite(volRaw) ? Math.max(0, volRaw / 100) : 1;
-      loadAudioBuffer(url).then(function(buffer){
+      var nativeVol = Math.min(1, vol);
+      var fadeIn  = Math.max(0, parseFloat(clip.dataset.fadeIn)  || 0);
+      var fadeOut = Math.max(0, parseFloat(clip.dataset.fadeOut) || 0);
+
+      var audio = getOrCreateA1Audio(url);
+      if (!audio) return;
+      var playingEntry = { audio: audio, playPromise: null };
+      _a1Playing.push(playingEntry);
+
+      var startTimer = setTimeout(function(){
         if (!_transport || !_transport.playing) return;
-        var src = _audioCtx.createBufferSource();
-        src.buffer = buffer;
-        // Per-clip GainNode so volume + mute are honoured at scheduling
-        // time. vol is capped at 2.0 in the UI (slider max 200%).
-        var gainNode = _audioCtx.createGain();
-        var targetVol = Math.min(2, vol);
-        // Fade-in / fade-out via gain automation. Fades are relative to
-        // the CLIP window (not the source), so when entering mid-clip we
-        // interpolate the starting gain to match where we'd be on the
-        // fade-in curve. For export, the same fades run via afade.
-        var fadeIn  = Math.max(0, parseFloat(clip.dataset.fadeIn)  || 0);
-        var fadeOut = Math.max(0, parseFloat(clip.dataset.fadeOut) || 0);
-        var playStart = t0 + scheduleDelay;
-        var playEnd   = playStart + playDur;
-        // Position in the clip where playback starts (0 when scheduleDelay>0,
-        // >0 when we entered mid-clip).
-        var clipEnter = (startPlayheadSec > leftSec) ? (startPlayheadSec - leftSec) : 0;
-
-        if (fadeIn > 0 && clipEnter < fadeIn){
-          // Still inside the fade-in region at playback start
-          var startGain    = targetVol * (clipEnter / fadeIn);
-          var fadeInRemain = Math.min(fadeIn - clipEnter, playDur);
-          gainNode.gain.setValueAtTime(startGain, playStart);
-          gainNode.gain.linearRampToValueAtTime(targetVol, playStart + fadeInRemain);
-        } else {
-          gainNode.gain.setValueAtTime(targetVol, playStart);
-        }
-        if (fadeOut > 0){
-          var fadeOutDur  = Math.min(fadeOut, playDur);
-          var fadeOutStart = playEnd - fadeOutDur;
-          if (fadeOutStart > playStart){
-            // Pin gain at targetVol right before fade-out so the ramp
-            // starts from the correct level.
-            gainNode.gain.setValueAtTime(targetVol, fadeOutStart);
+        try {
+          if (audio.readyState < 1){ try { audio.load(); } catch(_){} }
+          audio.currentTime = Math.max(0, offsetInSource);
+          audio.muted = false;
+          // Fade-in: linear ramp via setInterval
+          if (fadeIn > 0){
+            audio.volume = 0;
+            var fSteps = Math.max(1, Math.round(fadeIn * 30));
+            var fStep = 0;
+            var fadeInId = setInterval(function(){
+              fStep++;
+              audio.volume = Math.min(nativeVol, (fStep / fSteps) * nativeVol);
+              if (fStep >= fSteps){ clearInterval(fadeInId); audio.volume = nativeVol; }
+            }, (fadeIn / fSteps) * 1000);
+            _a1Timers.push(fadeInId);
+          } else {
+            audio.volume = nativeVol;
           }
-          gainNode.gain.linearRampToValueAtTime(0, playEnd);
+          if (fadeOut > 0){
+            var foDur = Math.min(fadeOut, playDur);
+            var foStartOffset = Math.max(0, (playDur - foDur) * 1000);
+            var foScheduleTimer = setTimeout(function(){
+              var oSteps = Math.max(1, Math.round(foDur * 30));
+              var oStep = 0;
+              var startVol = audio.volume;
+              var foId = setInterval(function(){
+                oStep++;
+                audio.volume = Math.max(0, startVol * (1 - oStep / oSteps));
+                if (oStep >= oSteps){ clearInterval(foId); audio.volume = 0; }
+              }, (foDur / oSteps) * 1000);
+              _a1Timers.push(foId);
+            }, foStartOffset);
+            _a1Timers.push(foScheduleTimer);
+          }
+          var p = audio.play();
+          if (p && typeof p.then === 'function'){
+            playingEntry.playPromise = p;
+            p.catch(function(err){
+              if (err && err.name !== 'AbortError'){
+                console.warn('[a1] play() failed for', url, err);
+              }
+            });
+          }
+        } catch(err){
+          console.warn('[a1] schedule error for', url, err);
         }
+      }, Math.max(0, scheduleDelay * 1000));
+      _a1Timers.push(startTimer);
 
-        src.connect(gainNode);
-        gainNode.connect(_audioMaster);
-        try { src.start(t0 + scheduleDelay, offsetInSource, playDur); } catch(_){}
-        _audioActiveSources.push(src);
-        src.addEventListener('ended', function(){
-          var idx = _audioActiveSources.indexOf(src);
-          if (idx >= 0) _audioActiveSources.splice(idx, 1);
-          try { gainNode.disconnect(); } catch(_){}
-        });
-      }).catch(function(){ /* quiet skip */ });
+      var stopTimer = setTimeout(function(){
+        var doPause = function(){ try { audio.pause(); } catch(_){} };
+        if (playingEntry.playPromise && typeof playingEntry.playPromise.then === 'function'){
+          playingEntry.playPromise.then(doPause, doPause);
+        } else {
+          doPause();
+        }
+      }, Math.max(0, (scheduleDelay + playDur) * 1000));
+      _a1Timers.push(stopTimer);
     });
-  }
-  function stopAudioMixing(){
-    _audioActiveSources.forEach(function(src){
-      try { src.stop(); } catch(_){}
-      try { src.disconnect(); } catch(_){}
-    });
-    _audioActiveSources = [];
   }
 
   // ── Transport (Play/Pause) ──
