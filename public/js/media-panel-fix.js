@@ -1140,9 +1140,17 @@
           var p = audio.play();
           if (p && typeof p.then === 'function'){
             playingEntry.playPromise = p;
-            p.catch(function(err){
+            p.then(function(){
+              // Visible confirmation the pipeline is running — if the
+              // user can't hear it, the problem is downstream (tab
+              // mute, output device, system volume, etc.)
+              var name = (clip.dataset.fileName || 'audio').slice(0, 28);
+              console.log('[a1] playing:', url);
+              try { showToast('\ud83d\udd0a A1 playing: ' + name); } catch(_){}
+            }).catch(function(err){
               if (err && err.name !== 'AbortError'){
                 console.warn('[a1] play() failed for', url, err);
+                try { showToast('A1 play failed: ' + (err.message || err.name)); } catch(_){}
               }
             });
           }
