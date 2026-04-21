@@ -598,18 +598,108 @@ router.get('/', requireAuth, (req, res) => {
       box-shadow: 0 0 0 3px rgba(108, 58, 237, 0.1);
     }
 
-    .video-preview {
+    .video-wrapper {
+      position: relative;
       background: #000000;
       border-radius: 12px;
       overflow: hidden;
       margin-bottom: 1rem;
       max-width: 100%;
-      height: auto;
+      line-height: 0;
     }
 
-    .video-preview video {
+    .video-wrapper video {
       width: 100%;
       height: auto;
+      display: block;
+    }
+
+    /* ===== Live caption preview overlay ===== */
+    .caption-overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      padding: 0 4%;
+      pointer-events: none;
+      text-align: center;
+      z-index: 2;
+      line-height: 1.2;
+      transition: top 0.25s ease, bottom 0.25s ease, transform 0.25s ease;
+    }
+
+    .caption-overlay.position-top    { top: 8%;  bottom: auto; transform: none; }
+    .caption-overlay.position-center { top: 50%; bottom: auto; transform: translateY(-50%); }
+    .caption-overlay.position-bottom { bottom: 10%; top: auto; transform: none; }
+
+    .caption-text {
+      display: inline-block;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      max-width: 94%;
+      word-wrap: break-word;
+    }
+
+    .caption-text .word {
+      display: inline-block;
+      margin: 0 0.08em;
+      transition: color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    /* Animation: fade — words gently pulse in/out */
+    .caption-overlay[data-animation="fade"] .caption-text .word {
+      animation: capFade 1.8s ease-in-out infinite;
+    }
+    .caption-overlay[data-animation="fade"] .caption-text .word:nth-child(2n)   { animation-delay: 0.15s; }
+    .caption-overlay[data-animation="fade"] .caption-text .word:nth-child(3n)   { animation-delay: 0.30s; }
+    .caption-overlay[data-animation="fade"] .caption-text .word:nth-child(4n+1) { animation-delay: 0.45s; }
+    @keyframes capFade {
+      0%, 100% { opacity: 0.45; }
+      50%      { opacity: 1; }
+    }
+
+    /* Animation: slide — whole line drifts up/down */
+    .caption-overlay[data-animation="slide"] .caption-text {
+      animation: capSlide 2.2s ease-in-out infinite;
+    }
+    @keyframes capSlide {
+      0%, 100% { transform: translateY(8px); opacity: 0.75; }
+      50%      { transform: translateY(0);   opacity: 1; }
+    }
+
+    /* Animation: pop — active word scales up */
+    .caption-overlay[data-animation="pop"] .caption-text .word.active {
+      transform: scale(1.18);
+    }
+
+    /* Animation: glow — halo pulse */
+    .caption-overlay[data-animation="glow"] .caption-text {
+      animation: capGlow 1.6s ease-in-out infinite;
+    }
+    @keyframes capGlow {
+      0%, 100% { filter: drop-shadow(0 0 4px var(--cap-highlight, #39FF14)); }
+      50%      { filter: drop-shadow(0 0 16px var(--cap-highlight, #39FF14)); }
+    }
+
+    /* Presets that highlight a rolling word (karaoke, hormozi) */
+    .caption-overlay[data-preset="karaoke"] .caption-text .word.active,
+    .caption-overlay[data-preset="hormozi"] .caption-text .word.active {
+      color: var(--cap-highlight, #FF00FF);
+    }
+    .caption-overlay[data-preset="hormozi"] .caption-text .word.active {
+      background: var(--cap-highlight, #FF00FF);
+      color: #000 !important;
+      padding: 0 0.12em;
+      border-radius: 0.08em;
+    }
+
+    .preview-note {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: -0.25rem;
+      margin-bottom: 0.75rem;
+      opacity: 0.8;
+      letter-spacing: 0.02em;
     }
 
     .tabs {
@@ -922,7 +1012,13 @@ router.get('/', requireAuth, (req, res) => {
               </div>
 
               <div id="videoPreview" class="hidden">
-                <video class="video-preview" id="videoPlayer" controls></video>
+                <div class="video-wrapper">
+                  <video id="videoPlayer" controls playsinline></video>
+                  <div class="caption-overlay position-bottom" id="captionOverlay" data-animation="none" data-preset="karaoke" aria-hidden="true">
+                    <span class="caption-text" id="captionText"></span>
+                  </div>
+                </div>
+                <div class="preview-note">Live style preview · placeholder text</div>
                 <div class="progress-bar hidden" id="progressBar">
                   <div class="progress-fill" id="progressFill"></div>
                 </div>
@@ -1058,6 +1154,19 @@ router.get('/', requireAuth, (req, res) => {
     let currentPreset = 'karaoke';
     let generatedVideoPath = null;
 
+    // ===== Live caption preview =====
+    const SAMPLE_CAPTION_WORDS = ['This', 'is', 'how', 'your', 'captions', 'will', 'look'];
+    const PRESET_DEFAULTS = {
+      'karaoke':   { fontFamily: 'Arial',       fontSize: 48, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 2, highlightColor: 'FF00FF', animation: 'none',   position: 'bottom' },
+      'bold-pop':  { fontFamily: 'Impact',      fontSize: 56, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FFD700', animation: 'pop',    position: 'bottom' },
+      'minimal':   { fontFamily: 'Helvetica',   fontSize: 40, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 0, highlightColor: 'FFFFFF', animation: 'fade',   position: 'bottom' },
+      'neon-glow': { fontFamily: 'Arial',       fontSize: 48, textColor: '39FF14', outlineColor: '00FF00', outlineWidth: 3, highlightColor: '39FF14', animation: 'glow',   position: 'bottom' },
+      'mrbeast':   { fontFamily: 'Impact',      fontSize: 54, textColor: 'D4A574', outlineColor: '000000', outlineWidth: 5, highlightColor: 'FFD700', animation: 'pop',    position: 'bottom' },
+      'hormozi':   { fontFamily: 'Arial',       fontSize: 50, textColor: 'FFFFFF', outlineColor: 'FF0000', outlineWidth: 3, highlightColor: 'FFFF00', animation: 'none',   position: 'bottom' }
+    };
+    let previewCycleInterval = null;
+    let previewActiveIdx = 0;
+
     // Initialize presets grid
     function initPresets() {
       const presetsData = [
@@ -1071,19 +1180,59 @@ router.get('/', requireAuth, (req, res) => {
 
       const grid = document.getElementById('presetsGrid');
       grid.innerHTML = presetsData.map(p => \`
-        <div class="preset-card \${p.id === 'karaoke' ? 'selected' : ''}" onclick="selectPreset('\${p.id}')">
+        <div class="preset-card \${p.id === 'karaoke' ? 'selected' : ''}" data-preset-id="\${p.id}">
           <div class="preset-preview">\${p.preview}</div>
           <div class="preset-name">\${p.name}</div>
         </div>
       \`).join('');
+
+      // Attach click handlers (avoid relying on inline onclick with event globals)
+      grid.querySelectorAll('.preset-card').forEach(card => {
+        card.addEventListener('click', () => selectPreset(card.dataset.presetId, card));
+      });
     }
 
-    function selectPreset(presetId) {
+    function selectPreset(presetId, clickedCard) {
       currentPreset = presetId;
-      document.querySelectorAll('.preset-card').forEach(card => {
-        card.classList.remove('selected');
-      });
-      event.currentTarget.classList.add('selected');
+      document.querySelectorAll('.preset-card').forEach(card => card.classList.remove('selected'));
+      if (clickedCard) clickedCard.classList.add('selected');
+
+      // Sync UI controls to the preset defaults so Font/Effects tabs reflect the choice
+      const p = PRESET_DEFAULTS[presetId];
+      if (p) {
+        setSelectValue('fontFamily', p.fontFamily);
+        setRangeValue('fontSize', p.fontSize, 'fontSizeValue');
+        setColorValue('textColor', 'textColorHex', p.textColor);
+        setColorValue('outlineColor', 'outlineColorHex', p.outlineColor);
+        setRangeValue('outlineWidth', p.outlineWidth, 'outlineWidthValue');
+        setColorValue('highlightColor', 'highlightColorHex', p.highlightColor);
+        setSelectValue('animation', p.animation);
+        setSelectValue('position', p.position);
+      }
+      updateCaptionPreview();
+    }
+
+    function setSelectValue(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      // Try exact match; fall back to lower-case; leave alone if not found
+      const opts = Array.from(el.options).map(o => o.value);
+      if (opts.includes(value)) el.value = value;
+      else if (opts.includes(String(value).toLowerCase())) el.value = String(value).toLowerCase();
+    }
+
+    function setRangeValue(id, value, labelId) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = value;
+      if (labelId) document.getElementById(labelId).textContent = value;
+    }
+
+    function setColorValue(colorId, hexId, hex) {
+      const colorEl = document.getElementById(colorId);
+      const hexEl = document.getElementById(hexId);
+      if (hexEl) hexEl.value = String(hex).toUpperCase();
+      if (colorEl) colorEl.value = '#' + String(hex).toLowerCase();
     }
 
     function switchTab(tabName) {
@@ -1096,26 +1245,133 @@ router.get('/', requireAuth, (req, res) => {
     function updateFontSize() {
       const value = document.getElementById('fontSize').value;
       document.getElementById('fontSizeValue').textContent = value;
+      updateCaptionPreview();
     }
 
     function updateTextColor() {
       const color = document.getElementById('textColor').value.slice(1);
       document.getElementById('textColorHex').value = color.toUpperCase();
+      updateCaptionPreview();
     }
 
     function updateOutlineColor() {
       const color = document.getElementById('outlineColor').value.slice(1);
       document.getElementById('outlineColorHex').value = color.toUpperCase();
+      updateCaptionPreview();
     }
 
     function updateOutlineWidth() {
       const value = document.getElementById('outlineWidth').value;
       document.getElementById('outlineWidthValue').textContent = value;
+      updateCaptionPreview();
     }
 
     function updateHighlightColor() {
       const color = document.getElementById('highlightColor').value.slice(1);
       document.getElementById('highlightColorHex').value = color.toUpperCase();
+      updateCaptionPreview();
+    }
+
+    // ===== Live preview renderer =====
+    function buildTextShadow(colorHex, width) {
+      const w = Math.max(0, Math.min(8, parseInt(width, 10) || 0));
+      if (!w) return 'none';
+      const color = '#' + colorHex;
+      const parts = [];
+      // 8-direction outline at each pixel from 1..w
+      for (let r = 1; r <= w; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+            parts.push(dx + 'px ' + dy + 'px 0 ' + color);
+          }
+        }
+      }
+      return parts.join(', ');
+    }
+
+    function readCurrentStyle() {
+      return {
+        preset: currentPreset,
+        fontFamily: document.getElementById('fontFamily').value,
+        fontSize: parseInt(document.getElementById('fontSize').value, 10) || 48,
+        textColor: (document.getElementById('textColorHex').value || 'FFFFFF').replace('#',''),
+        outlineColor: (document.getElementById('outlineColorHex').value || '000000').replace('#',''),
+        outlineWidth: parseInt(document.getElementById('outlineWidth').value, 10) || 0,
+        highlightColor: (document.getElementById('highlightColorHex').value || 'FF00FF').replace('#',''),
+        animation: document.getElementById('animation').value,
+        position: document.getElementById('position').value
+      };
+    }
+
+    function renderSampleWords(textEl) {
+      if (textEl.dataset.rendered === '1') return;
+      textEl.innerHTML = SAMPLE_CAPTION_WORDS
+        .map(w => '<span class="word">' + w + '</span>')
+        .join(' ');
+      textEl.dataset.rendered = '1';
+      previewActiveIdx = 0;
+      highlightWord(0);
+    }
+
+    function highlightWord(idx) {
+      const textEl = document.getElementById('captionText');
+      if (!textEl) return;
+      const words = textEl.querySelectorAll('.word');
+      if (!words.length) return;
+      words.forEach((w, i) => w.classList.toggle('active', i === (idx % words.length)));
+    }
+
+    function startPreviewCycle() {
+      if (previewCycleInterval) return;
+      previewCycleInterval = setInterval(() => {
+        previewActiveIdx = (previewActiveIdx + 1) % SAMPLE_CAPTION_WORDS.length;
+        highlightWord(previewActiveIdx);
+      }, 520);
+    }
+
+    function stopPreviewCycle() {
+      if (previewCycleInterval) {
+        clearInterval(previewCycleInterval);
+        previewCycleInterval = null;
+      }
+    }
+
+    function updateCaptionPreview() {
+      const overlay = document.getElementById('captionOverlay');
+      const textEl = document.getElementById('captionText');
+      const videoPlayer = document.getElementById('videoPlayer');
+      if (!overlay || !textEl || !videoPlayer) return;
+
+      renderSampleWords(textEl);
+
+      const style = readCurrentStyle();
+
+      // Scale ASS-style font size (reference ~1080p) to the on-screen preview height.
+      // videoH is the rendered player height; fall back to a reasonable default.
+      const videoH = videoPlayer.clientHeight || videoPlayer.offsetHeight || 360;
+      const previewPx = Math.max(14, Math.min(72, (style.fontSize / 48) * videoH * 0.07));
+
+      textEl.style.fontFamily = style.fontFamily + ', sans-serif';
+      textEl.style.fontSize = previewPx.toFixed(1) + 'px';
+      textEl.style.color = '#' + style.textColor;
+      textEl.style.textShadow = buildTextShadow(style.outlineColor, style.outlineWidth);
+
+      overlay.style.setProperty('--cap-highlight', '#' + style.highlightColor);
+      overlay.setAttribute('data-animation', style.animation || 'none');
+      overlay.setAttribute('data-preset', style.preset || 'karaoke');
+
+      overlay.classList.remove('position-top', 'position-center', 'position-bottom');
+      overlay.classList.add('position-' + (style.position || 'bottom'));
+
+      startPreviewCycle();
+    }
+
+    function showCaptionPreview() {
+      const overlay = document.getElementById('captionOverlay');
+      if (overlay) overlay.style.display = '';
+      // Defer so the video element has laid out and clientHeight is non-zero
+      requestAnimationFrame(() => updateCaptionPreview());
     }
 
     function showToast(message, type = 'success') {
@@ -1159,6 +1415,7 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('videoPreview').classList.remove('hidden');
         document.getElementById('uploadZone').classList.add('hidden');
         document.getElementById('generateBtn').disabled = false;
+        showCaptionPreview();
 
         showToast('Video uploaded successfully!', 'success');
         updateProgress(100, 'Ready');
@@ -1194,6 +1451,7 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('videoPreview').classList.remove('hidden');
         document.getElementById('uploadZone').classList.add('hidden');
         document.getElementById('generateBtn').disabled = false;
+        showCaptionPreview();
 
         showToast('Video downloaded successfully!', 'success');
         updateProgress(100, 'Ready');
@@ -1312,8 +1570,53 @@ router.get('/', requireAuth, (req, res) => {
       }
     }
 
+    // ===== Wire live-preview listeners =====
+    function bindPreviewListeners() {
+      // Selects
+      ['fontFamily', 'animation', 'position'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', updateCaptionPreview);
+      });
+
+      // Color pickers — fire on 'input' for smooth live dragging
+      [['textColor','textColorHex'], ['outlineColor','outlineColorHex'], ['highlightColor','highlightColorHex']].forEach(([colorId, hexId]) => {
+        const c = document.getElementById(colorId);
+        const h = document.getElementById(hexId);
+        if (c) c.addEventListener('input', () => {
+          document.getElementById(hexId).value = c.value.slice(1).toUpperCase();
+          updateCaptionPreview();
+        });
+        if (h) h.addEventListener('input', () => {
+          const v = h.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+          if (v.length === 6 && c) c.value = '#' + v.toLowerCase();
+          updateCaptionPreview();
+        });
+      });
+
+      // Sliders — live updates as the user drags
+      ['fontSize', 'outlineWidth'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', () => {
+          const labelId = id + 'Value';
+          const label = document.getElementById(labelId);
+          if (label) label.textContent = el.value;
+          updateCaptionPreview();
+        });
+      });
+
+      // Recompute when the video lays out or window resizes
+      const videoPlayer = document.getElementById('videoPlayer');
+      if (videoPlayer) {
+        videoPlayer.addEventListener('loadedmetadata', () => requestAnimationFrame(updateCaptionPreview));
+        videoPlayer.addEventListener('resize', () => requestAnimationFrame(updateCaptionPreview));
+      }
+      window.addEventListener('resize', () => requestAnimationFrame(updateCaptionPreview));
+    }
+
     // Initialize
     initPresets();
+    bindPreviewListeners();
   </script>
 </body>
 </html>`;
