@@ -3216,7 +3216,9 @@ function showToast(message, type = 'success') {
 
       var button = document.getElementById('exportButton');
       button.disabled = true;
-      button.innerHTML = '<span class="spinner"></span> Exporting...';
+      // Generic label; the WYSIWYG path overwrites this with a live
+      // countdown once recording starts.
+      button.innerHTML = '<span class="spinner"></span> Preparing\u2026';
 
       // Helper to kick off the download + housekeeping + UI reset
       function handleSuccess(data){
@@ -3249,22 +3251,138 @@ function showToast(message, type = 'success') {
       }
 
       try {
-        // Path 1: timeline has clips → render the sequence
+        // Path 1 (WYSIWYG): capture the Program Monitor canvas + master
+        // audio bus via MediaRecorder while the timeline plays end-to-
+        // end. Produces an exact "what you see is what you hear"
+        // recording, so effects extending across multiple clips (FX-
+        // track clips, keyframe animations, motion overlays) are
+        // flattened into the output verbatim.
         if (timelineClips.length > 0) {
-          var resp = await fetch('/video-editor/export-timeline', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              clips: timelineClips,
-              pxPerSec: 10,
-              width: 1280,
-              height: 720,
-              format: 'mp4'
-            })
+          var canvas = typeof window.getPgmCanvas === 'function' ? window.getPgmCanvas() : null;
+          if (!canvas || typeof canvas.captureStream !== 'function'){
+            // PGM not active yet — the user must have the Program
+            // Monitor running so there's a canvas to capture. Trigger
+            // it and bail back; the user can click Export again.
+            showToast('Enable the Program Monitor first so we can capture the preview', 'error');
+            button.disabled = false;
+            button.innerHTML = '\ud83c\udfac Export Video';
+            return;
+          }
+          if (typeof MediaRecorder === 'undefined'){
+            showToast('This browser doesn\'t support MediaRecorder. Try Chrome or Firefox.', 'error');
+            button.disabled = false;
+            button.innerHTML = '\ud83c\udfac Export Video';
+            return;
+          }
+
+          // Compute the total timeline duration (max left+width)
+          var totalMs = 0;
+          timelineClips.forEach(function(c){
+            var l = parseFloat(c.left)  || 0;
+            var w = parseFloat(c.width) || 0;
+            var endSec = (l + w) / 10; // pxPerSec = 10
+            if (endSec * 1000 > totalMs) totalMs = endSec * 1000;
           });
-          var dataTL = await resp.json();
-          if (!resp.ok) throw new Error(dataTL.error || 'Timeline export failed');
-          handleSuccess(dataTL);
+          if (totalMs < 500){
+            showToast('Timeline too short to export', 'error');
+            button.disabled = false;
+            button.innerHTML = '\ud83c\udfac Export Video';
+            return;
+          }
+
+          // Merge canvas video stream + master audio stream
+          var videoStream = canvas.captureStream(30);
+          var audioInfo = typeof window.getAudioMasterStream === 'function'
+            ? window.getAudioMasterStream() : null;
+          var tracks = Array.prototype.slice.call(videoStream.getVideoTracks());
+          if (audioInfo && audioInfo.stream){
+            audioInfo.stream.getAudioTracks().forEach(function(t){ tracks.push(t); });
+          }
+          var combined = new MediaStream(tracks);
+
+          // Pick the best supported recorder mime type
+          var mimeCandidates = [
+            'video/webm;codecs=vp9,opus',
+            'video/webm;codecs=vp8,opus',
+            'video/webm;codecs=h264,opus',
+            'video/webm'
+          ];
+          var recMime = '';
+          for (var mi = 0; mi < mimeCandidates.length; mi++){
+            if (MediaRecorder.isTypeSupported(mimeCandidates[mi])){
+              recMime = mimeCandidates[mi];
+              break;
+            }
+          }
+
+          var chunks = [];
+          var recorder;
+          try {
+            recorder = recMime
+              ? new MediaRecorder(combined, { mimeType: recMime, videoBitsPerSecond: 6_000_000 })
+              : new MediaRecorder(combined);
+          } catch (recErr){
+            showToast('Recorder init failed: ' + (recErr.message || recErr), 'error');
+            button.disabled = false;
+            button.innerHTML = '\ud83c\udfac Export Video';
+            return;
+          }
+          recorder.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+
+          // Rewind + play the timeline
+          var phEl = document.getElementById('mtPlayhead');
+          if (phEl) phEl.style.left = '0px';
+          try { window.tlPause && window.tlPause(); } catch(_){}
+
+          var stoppedByTimer = false;
+          var finished = false;
+          await new Promise(function(resolve){
+            recorder.onstop = function(){
+              if (finished) return;
+              finished = true;
+              try { if (audioInfo && audioInfo.destination) window.disconnectFromAudioMaster(audioInfo.destination); } catch(_){}
+              try { videoStream.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
+              var blob = new Blob(chunks, { type: recMime || 'video/webm' });
+              var url = URL.createObjectURL(blob);
+              var a = document.createElement('a');
+              var base = 'timeline_' + Date.now();
+              a.href = url;
+              a.download = base + '.webm';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+              handleSuccess({
+                renderedFromTimeline: true,
+                clipCount: timelineClips.length,
+                duration: totalMs / 1000,
+                filename: base + '.webm',
+                downloadUrl: url
+              });
+              resolve();
+            };
+            recorder.start(200);
+            // Kick off playback
+            try { window.tlPlay && window.tlPlay(); } catch(_){}
+            // Live countdown button label
+            var recStart = performance.now();
+            var totalSec = Math.ceil(totalMs / 1000);
+            var tickId = setInterval(function(){
+              if (finished){ clearInterval(tickId); return; }
+              var left = Math.max(0, totalSec - Math.floor((performance.now() - recStart) / 1000));
+              button.innerHTML = '\ud83d\udd34 Recording\u2026 ' + left + 's';
+            }, 250);
+            // Safety ceiling: stop slightly past the timeline duration
+            var safeStopMs = totalMs + 600;
+            setTimeout(function(){
+              clearInterval(tickId);
+              if (finished) return;
+              stoppedByTimer = true;
+              try { window.tlPause && window.tlPause(); } catch(_){}
+              try { recorder.stop(); } catch(_){}
+            }, safeStopMs);
+          });
+
           button.disabled = false;
           button.innerHTML = '\ud83c\udfac Export Video';
           return;

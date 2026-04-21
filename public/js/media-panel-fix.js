@@ -2102,6 +2102,31 @@
   try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
   try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
 
+  // ── WYSIWYG capture helpers ──────────────────────────────────────
+  // For the Export button's "capture the PGM canvas + master audio as
+  // a real-time recording" path. Exposes an audio MediaStream that
+  // mirrors exactly what the user hears (video's MES-routed audio +
+  // A1 MES-routed audio + any WebAudio-scheduled sources).
+  function getAudioMasterStream(){
+    if (!ensureAudioSystem()) return null;
+    if (!_audioMaster || !_audioCtx) return null;
+    var dest = _audioCtx.createMediaStreamDestination();
+    try { _audioMaster.connect(dest); } catch(_){ return null; }
+    return { stream: dest.stream, destination: dest };
+  }
+  function disconnectFromMaster(node){
+    if (!node || !_audioMaster) return;
+    try { _audioMaster.disconnect(node); } catch(_){}
+  }
+  function getPgmCanvas(){
+    return document.getElementById('tlProgMonitor') || null;
+  }
+  try {
+    window.getAudioMasterStream = getAudioMasterStream;
+    window.disconnectFromAudioMaster = disconnectFromMaster;
+    window.getPgmCanvas = getPgmCanvas;
+  } catch(_){}
+
   // ── Timeline zoom ──────────────────────────────────────────────
   // Rescales every clip's left/width and the playhead in pixels while
   // keeping all second-domain data (sourceOffset, keyframes, fades,
