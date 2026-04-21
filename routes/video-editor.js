@@ -540,7 +540,7 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .mt-playhead{position:absolute;top:0;left:80px;width:2px;height:100%;background:#7c3aed;z-index:10;pointer-events:none}
+    .mt-playhead{position:absolute;top:0;left:0;width:2px;height:100%;background:#7c3aed;z-index:10;pointer-events:none}
     .mt-playhead .mt-playhead-handle{position:absolute;top:0;left:-7px;width:16px;height:14px;background:#7c3aed;border-radius:0 0 4px 4px;cursor:ew-resize;pointer-events:auto;box-shadow:0 2px 4px rgba(0,0,0,.3)}
     .mt-playhead .mt-playhead-handle:hover{background:#a78bfa}
     .mt-playhead.mt-playhead-dragging .mt-playhead-handle{background:#a78bfa}
@@ -695,7 +695,7 @@ router.get('/', requireAuth, async (req, res) => {
                   <div class="mt-track mt-track-music" data-type="music"></div>
                   <div class="mt-track mt-track-text" data-type="text"></div>
                   <div class="mt-track mt-track-fx" data-type="fx"></div>
-                  <div class="mt-playhead" id="mtPlayhead"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>
+                  <div class="mt-playhead" id="mtPlayhead" style="left:0px"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>
                 </div>
               </div>
             </div>
