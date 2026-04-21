@@ -80,7 +80,10 @@ async function downloadYouTubeVideo(videoUrl) {
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
-          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          // Prefer a standalone high-res video stream (no audio merge needed — faster
+          // and avoids dropping to 720p when the audio merger fails). Fall back to
+          // progressive formats only if every video-only option is unavailable.
+          '-f', 'bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/bestvideo[ext=mp4]/bestvideo/best[height<=1080]/best',
           '--merge-output-format', 'mp4',
           '-o', outputPath,
           '--no-part',
@@ -149,33 +152,40 @@ async function fetchYouTubeThumbnails(videoUrl) {
   if (!videoId) throw new Error('Could not extract video ID');
 
   const https = require('https');
-  const thumbnailUrls = [
-    `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-    `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
-    `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-    `https://img.youtube.com/vi/${videoId}/0.jpg`,
-    `https://img.youtube.com/vi/${videoId}/1.jpg`,
-    `https://img.youtube.com/vi/${videoId}/2.jpg`,
-    `https://img.youtube.com/vi/${videoId}/3.jpg`,
+  // Only high-res sources. The numbered (0.jpg/1.jpg/2.jpg/3.jpg) variants
+  // are 120x90 tiny previews and would cause terrible output if a user
+  // picked them as a "frame", so they're excluded. WebP encodes the same
+  // resolution at noticeably higher quality than JPG.
+  const candidates = [
+    { url: `https://i.ytimg.com/vi_webp/${videoId}/maxresdefault.webp`, ext: 'webp' },
+    { url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, ext: 'jpg' },
+    { url: `https://i.ytimg.com/vi_webp/${videoId}/sddefault.webp`, ext: 'webp' },
+    { url: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`, ext: 'jpg' },
+    { url: `https://i.ytimg.com/vi_webp/${videoId}/hqdefault.webp`, ext: 'webp' },
+    { url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, ext: 'jpg' },
   ];
 
   const frames = [];
-  for (let i = 0; i < thumbnailUrls.length; i++) {
+  const seenSizes = new Set();
+  for (let i = 0; i < candidates.length; i++) {
     try {
-      const filename = `yt-frame-${videoId}-${i}.jpg`;
+      const { url, ext } = candidates[i];
+      const filename = `yt-frame-${videoId}-${i}.${ext === 'webp' ? 'jpg' : 'jpg'}`;
+      const rawPath = path.join(outputDir, `yt-raw-${videoId}-${i}.${ext}`);
       const filePath = path.join(outputDir, filename);
 
-      await new Promise((resolve, reject) => {
-        const request = https.get(thumbnailUrls[i], (response) => {
+      const downloaded = await new Promise((resolve) => {
+        const request = https.get(url, (response) => {
           if (response.statusCode === 200 && response.headers['content-type'] && response.headers['content-type'].includes('image')) {
-            const writeStream = fs.createWriteStream(filePath);
+            const writeStream = fs.createWriteStream(rawPath);
             response.pipe(writeStream);
             writeStream.on('finish', () => {
-              const stat = fs.statSync(filePath);
-              if (stat.size > 1000) {
+              const stat = fs.statSync(rawPath);
+              // 4000 bytes is a reasonable floor for a real thumbnail vs a 1x1 placeholder
+              if (stat.size > 4000) {
                 resolve(true);
               } else {
-                try { fs.unlinkSync(filePath); } catch(e) {}
+                try { fs.unlinkSync(rawPath); } catch (e) {}
                 resolve(false);
               }
             });
@@ -186,11 +196,35 @@ async function fetchYouTubeThumbnails(videoUrl) {
         });
         request.on('error', () => resolve(false));
         request.setTimeout(10000, () => { request.destroy(); resolve(false); });
-      }).then(ok => {
-        if (ok && fs.existsSync(filePath)) {
-          frames.push({ filename, url: '/ai-thumbnail/serve/' + filename });
-        }
       });
+
+      if (!downloaded) continue;
+
+      // Convert to a consistent JPG so downstream style filters are predictable,
+      // and dedupe by file size so we don't show the user the same image twice
+      // (maxresdefault.webp and .jpg often resolve to identical content).
+      const fileSize = fs.statSync(rawPath).size;
+      const sizeBucket = Math.round(fileSize / 2048); // rough dedupe bucket
+      if (seenSizes.has(sizeBucket)) {
+        try { fs.unlinkSync(rawPath); } catch (e) {}
+        continue;
+      }
+      seenSizes.add(sizeBucket);
+
+      if (ext === 'webp') {
+        // Re-encode webp to high-quality jpg so the style pipeline (ffmpeg) handles it uniformly
+        await new Promise((resolve) => {
+          const proc = spawn(ffmpegPath || 'ffmpeg', ['-i', rawPath, '-q:v', '2', '-y', filePath]);
+          proc.on('close', () => resolve());
+          proc.on('error', () => resolve());
+        });
+        try { fs.unlinkSync(rawPath); } catch (e) {}
+        if (!fs.existsSync(filePath) || fs.statSync(filePath).size < 2000) continue;
+      } else {
+        fs.renameSync(rawPath, filePath);
+      }
+
+      frames.push({ filename, url: '/ai-thumbnail/serve/' + filename });
     } catch (e) { /* skip this thumbnail */ }
   }
 
@@ -316,7 +350,7 @@ function applyGradientOverlay(inputFrame, outputPath, dims) {
     const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=${W}:${H},colorbalance=rs=0.35:gs=-0.1:bs=0.3:ms=0.25:mh=-0.05:mb=0.2,eq=contrast=1.1:saturation=1.2`,
+      '-vf', `scale=${W}:${H}:flags=lanczos,colorbalance=rs=0.35:gs=-0.1:bs=0.3:ms=0.25:mh=-0.05:mb=0.2,eq=contrast=1.1:saturation=1.2`,
       '-y', outputPath
     ];
 
@@ -345,7 +379,7 @@ function applyDarkCinematic(inputFrame, outputPath, dims) {
     const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=${W}:${H},vignette=PI/4,eq=brightness=-0.05:contrast=1.3:saturation=0.9`,
+      '-vf', `scale=${W}:${H}:flags=lanczos,vignette=PI/4,eq=brightness=-0.05:contrast=1.3:saturation=0.9`,
       '-y', outputPath
     ];
 
@@ -384,7 +418,7 @@ function applyBoldBorder(inputFrame, outputPath, dims) {
     const borderT = Math.max(3, Math.round(Math.min(W, H) * 0.006));
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=${innerW}:${innerH},pad=${W}:${H}:${marginX}:${marginY}:EC4899,drawbox=x=${boxX}:y=${boxY}:w=${boxW}:h=${boxH}:color=6C3AED:t=${borderT}`,
+      '-vf', `scale=${innerW}:${innerH}:flags=lanczos,pad=${W}:${H}:${marginX}:${marginY}:EC4899,drawbox=x=${boxX}:y=${boxY}:w=${boxW}:h=${boxH}:color=6C3AED:t=${borderT}`,
       '-y', outputPath
     ];
 
@@ -420,7 +454,7 @@ function applySplitDesign(inputFrame, outputPath, dims) {
     const overlayY = Math.round((H - innerH) / 2);
     const args = [
       '-i', inputFrame,
-      '-filter_complex', `[0:v]scale=${innerW}:${innerH}[img];color=c=0x1a1a2e:s=${halfW}x${H}:d=1[left];color=c=0x6C3AED:s=${halfW2}x${H}:d=1[right];[left][right]hstack[bg];[bg][img]overlay=${overlayX}:${overlayY}[out]`,
+      '-filter_complex', `[0:v]scale=${innerW}:${innerH}:flags=lanczos[img];color=c=0x1a1a2e:s=${halfW}x${H}:d=1[left];color=c=0x6C3AED:s=${halfW2}x${H}:d=1[right];[left][right]hstack[bg];[bg][img]overlay=${overlayX}:${overlayY}[out]`,
       '-map', '[out]',
       '-frames:v', '1',
       '-y', outputPath
@@ -454,7 +488,7 @@ function applyTextFocus(inputFrame, outputPath, dims) {
     const bannerY = Math.max(0, H - bannerH);
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=${W}:${H},drawbox=x=0:y=${bannerY}:w=${W}:h=${bannerH}:color=0x000000:t=fill,eq=brightness=0.05:contrast=1.1`,
+      '-vf', `scale=${W}:${H}:flags=lanczos,drawbox=x=0:y=${bannerY}:w=${W}:h=${bannerH}:color=0x000000:t=fill,eq=brightness=0.05:contrast=1.1`,
       '-y', outputPath
     ];
 
@@ -483,7 +517,7 @@ function applyCleanMinimal(inputFrame, outputPath, dims) {
     const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=${W}:${H},eq=brightness=0.08:contrast=1.1:saturation=1.05`,
+      '-vf', `scale=${W}:${H}:flags=lanczos,eq=brightness=0.08:contrast=1.1:saturation=1.05`,
       '-y', outputPath
     ];
 
