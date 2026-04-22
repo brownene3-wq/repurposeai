@@ -151,7 +151,8 @@ router.get('/', requireAuth, async (req, res) => {
     #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden}
     .editor-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0a0612;grid-column:2;grid-row:2}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
-    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center}
+    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center;align-items:center}
+    .upload-zone>*{max-width:100%}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
     .upload-zone.has-video{display:none}
     .upload-zone h3{font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:.5rem}
@@ -1029,7 +1030,7 @@ router.get('/', requireAuth, async (req, res) => {
             <div class="cat-content-new" id="cat-ai2">
               <div class="tool-sec"><div class="tool-sec-title">AI Generation</div>
                 <div class="tg2">
-                  <div class="tb3 ai-t on">\u2728 Enhance</div>
+                  <div class="tb3 ai-t on">\u2728 Enhance Audio</div>
                   <div class="tb3 ai-t">\ud83d\udcdd Captions</div>
                   <div class="tb3 ai-t">\ud83e\ude9d AI Hook</div>
                   <div class="tb3 ai-t">\ud83c\udfa8 Brand Kit</div>
