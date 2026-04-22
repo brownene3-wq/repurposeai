@@ -448,6 +448,494 @@ function processVideo(inputPath, outputPath, aspectRatio, cropMode, faceData) {
   return processVideoCenterCrop(inputPath, outputPath, aspectRatio);
 }
 
+// =====================================================================
+// MULTI-SUBJECT GRID RENDERER  (Deploy 2)
+// =====================================================================
+
+// Output dimensions for the grid (always 9:16 "short-form" canvas)
+const GRID_OUT_W = 1080;
+const GRID_OUT_H = 1920;
+
+// Defaults
+const BRAND_PURPLE_HEX = '0x6c3aed';
+const DEFAULT_BG_SOLID_HEX = '0x181426';
+
+// In-memory job cache: jobId -> { videoPath, detection, createdAt }
+// Keeps the already-downloaded/detected video around so /render-grid doesn't
+// need to re-download or re-detect. Jobs expire after 20 minutes.
+const gridJobs = new Map();
+const GRID_JOB_TTL_MS = 20 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of gridJobs.entries()) {
+    if (now - job.createdAt > GRID_JOB_TTL_MS) {
+      try { if (job.videoPath && fs.existsSync(job.videoPath)) fs.unlinkSync(job.videoPath); } catch (e) {}
+      gridJobs.delete(id);
+    }
+  }
+}, 60 * 1000).unref();
+
+// Normalize a "#rrggbb" / "rrggbb" / "0xrrggbb" color to "0xrrggbb" for FFmpeg.
+function normalizeHexColor(c, fallback) {
+  if (!c) return fallback;
+  const s = String(c).trim().toLowerCase();
+  const m1 = s.match(/^#?([0-9a-f]{6})$/);
+  if (m1) return '0x' + m1[1];
+  const m2 = s.match(/^0x([0-9a-f]{6})$/);
+  if (m2) return s;
+  return fallback;
+}
+
+// Compute grid cell rectangles (pixel coords in a 1080x1920 viewport).
+// Layouts match the spec:
+//   1: single centered cell (for symmetry / solo mode)
+//   2: vertical stack of 1:1 squares
+//   3: wide top + two squares bottom
+//   4: 2x2 matrix
+function computeGridCells(n, padding) {
+  const p = Math.max(0, Math.min(80, Math.round(padding)));
+  const W = GRID_OUT_W, H = GRID_OUT_H;
+
+  if (n === 1) {
+    return [{ x: p, y: p, w: W - 2 * p, h: H - 2 * p }];
+  }
+  if (n === 2) {
+    const cell = W - 2 * p;
+    const totalH = 2 * cell + p;
+    const top = Math.floor((H - totalH) / 2);
+    return [
+      { x: p, y: top,              w: cell, h: cell },
+      { x: p, y: top + cell + p,   w: cell, h: cell },
+    ];
+  }
+  if (n === 3) {
+    const bottom = Math.floor((W - 3 * p) / 2);    // square side length
+    const topW = W - 2 * p;
+    const topH = Math.max(200, H - 3 * p - bottom); // guard against tiny top on huge padding
+    return [
+      { x: p,               y: p,                w: topW,   h: topH },
+      { x: p,               y: p + topH + p,     w: bottom, h: bottom },
+      { x: p + bottom + p,  y: p + topH + p,     w: bottom, h: bottom },
+    ];
+  }
+  // n >= 4: 2x2
+  const cellW = Math.floor((W - 3 * p) / 2);
+  const cellH = Math.floor((H - 3 * p) / 2);
+  return [
+    { x: p,             y: p,             w: cellW, h: cellH },
+    { x: p * 2 + cellW, y: p,             w: cellW, h: cellH },
+    { x: p,             y: p * 2 + cellH, w: cellW, h: cellH },
+    { x: p * 2 + cellW, y: p * 2 + cellH, w: cellW, h: cellH },
+  ];
+}
+
+// Compute a per-subject time-varying crop expression.
+// Uses a fixed crop size based on the subject's max face width so the crop
+// dimensions stay constant (FFmpeg's crop filter requires constant w/h); only
+// the x/y positions interpolate. Aspect-matches the target cell.
+function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, tightness) {
+  tightness = tightness || 3.2;
+  const samples = (subject.samples || []).slice();
+  let maxFaceW = 0;
+  for (const s of samples) if (s.w > maxFaceW) maxFaceW = s.w;
+  if (maxFaceW <= 0) maxFaceW = 0.18;
+
+  const cellAspect = cellW / cellH;
+  let cropW = Math.round(maxFaceW * inputW * tightness);
+  let cropH = Math.round(cropW / cellAspect);
+  cropW = Math.max(120, Math.min(inputW, cropW));
+  cropH = Math.max(120, Math.min(inputH, cropH));
+  // Re-enforce aspect after clamping
+  if (cropW / cropH > cellAspect) cropW = Math.round(cropH * cellAspect);
+  else                            cropH = Math.round(cropW / cellAspect);
+
+  // Ensure even dimensions for yuv420p
+  if (cropW % 2 === 1) cropW -= 1;
+  if (cropH % 2 === 1) cropH -= 1;
+
+  // Per-sample target crop top-left positions, with a slight upward bias so
+  // the head sits in the upper third of the crop.
+  const positions = samples.map(s => {
+    const fx = s.cx * inputW;
+    const fy = s.cy * inputH - cropH * 0.12;
+    let x = Math.round(fx - cropW / 2);
+    let y = Math.round(fy - cropH / 2);
+    x = Math.max(0, Math.min(inputW - cropW, x));
+    y = Math.max(0, Math.min(inputH - cropH, y));
+    return { time: s.time, x, y };
+  });
+
+  if (positions.length === 0) {
+    const cx = Math.floor((inputW - cropW) / 2);
+    const cy = Math.floor((inputH - cropH) / 2);
+    return { cropW, cropH, xExpr: String(cx), yExpr: String(cy) };
+  }
+
+  // Moving average smoothing (window=5) to prevent jitter.
+  const smoothed = positions.map((pos, i) => {
+    const half = 2;
+    let sx = 0, sy = 0, c = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(positions.length - 1, i + half); j++) {
+      sx += positions[j].x; sy += positions[j].y; c++;
+    }
+    return { time: pos.time, x: Math.round(sx / c), y: Math.round(sy / c) };
+  });
+
+  // Piecewise-linear FFmpeg expression (same technique as single-subject tracking).
+  const xParts = [], yParts = [];
+  for (let i = 0; i < smoothed.length - 1; i++) {
+    const t0 = smoothed[i].time, t1 = smoothed[i + 1].time;
+    const x0 = smoothed[i].x,    x1 = smoothed[i + 1].x;
+    const y0 = smoothed[i].y,    y1 = smoothed[i + 1].y;
+    const dt = (t1 - t0) || 0.001;
+    xParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${x0}+(${x1}-${x0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
+    yParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${y0}+(${y1}-${y0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
+  }
+  const lastX = smoothed[smoothed.length - 1].x;
+  const lastY = smoothed[smoothed.length - 1].y;
+  let xExpr = String(lastX), yExpr = String(lastY);
+  if (xParts.length > 0) {
+    xExpr = xParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastX));
+    yExpr = yParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastY));
+  }
+  return { cropW, cropH, xExpr, yExpr };
+}
+
+// Build the FFmpeg filter_complex graph for an N-subject grid.
+// Per-subject pipeline: split source -> crop (following face) -> scale to cell
+// inner size -> pad for colored border -> overlay onto background layer.
+function buildGridFilterGraph(subjects, cells, inputDims, config) {
+  const { width: inputW, height: inputH } = inputDims;
+  const n = subjects.length;
+  const borderEnabled = !!(config.border && config.border.enabled);
+  const borderThickness = borderEnabled ? Math.max(1, Math.min(12, config.border.width || 3)) : 0;
+  const borderColor = normalizeHexColor(config.border && config.border.color, BRAND_PURPLE_HEX);
+  const bgMode = (config.background && config.background.mode) || 'solid';
+  const bgColor = normalizeHexColor(config.background && config.background.color, DEFAULT_BG_SOLID_HEX);
+
+  const parts = [];
+  const splitLabels = ['bg_src'];
+  for (let i = 0; i < n; i++) splitLabels.push(`s${i}`);
+  parts.push(`[0:v]split=${n + 1}[${splitLabels.join('][')}]`);
+
+  // Background layer
+  if (bgMode === 'blur') {
+    parts.push(
+      `[bg_src]scale=${GRID_OUT_W}:${GRID_OUT_H}:force_original_aspect_ratio=increase,` +
+      `crop=${GRID_OUT_W}:${GRID_OUT_H},boxblur=30:3,eq=brightness=-0.15:saturation=1.05[bg]`
+    );
+  } else {
+    parts.push(
+      `[bg_src]scale=${GRID_OUT_W}:${GRID_OUT_H}:force_original_aspect_ratio=increase,` +
+      `crop=${GRID_OUT_W}:${GRID_OUT_H},drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@1:t=fill[bg]`
+    );
+  }
+
+  // Per-subject cells
+  for (let i = 0; i < n; i++) {
+    const cell = cells[i];
+    const innerW = Math.max(20, cell.w - 2 * borderThickness);
+    const innerH = Math.max(20, cell.h - 2 * borderThickness);
+    // Ensure even
+    const innerWE = innerW - (innerW % 2);
+    const innerHE = innerH - (innerH % 2);
+    const { cropW, cropH, xExpr, yExpr } =
+      computeSubjectCropExpr(subjects[i], inputW, inputH, cell.w, cell.h);
+
+    let chain = `[s${i}]crop=${cropW}:${cropH}:${xExpr}:${yExpr},scale=${innerWE}:${innerHE}`;
+    if (borderThickness > 0) {
+      chain += `,pad=${cell.w}:${cell.h}:${borderThickness}:${borderThickness}:color=${borderColor}`;
+    }
+    chain += `[cell${i}]`;
+    parts.push(chain);
+  }
+
+  // Overlay cells onto background
+  let lastLabel = 'bg';
+  for (let i = 0; i < n; i++) {
+    const cell = cells[i];
+    const outLabel = (i === n - 1) ? 'vout' : `v${i}`;
+    parts.push(`[${lastLabel}][cell${i}]overlay=x=${cell.x}:y=${cell.y}[${outLabel}]`);
+    lastLabel = outLabel;
+  }
+
+  return parts.join(';');
+}
+
+// Render an N-subject grid MP4 from a source video + detection data + config.
+function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubjects, config) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const dims = await getVideoDimensions(inputPath);
+      const n = selectedSubjects.length;
+      if (n < 1 || n > 4) return reject(new Error('Grid requires 1-4 subjects'));
+
+      const padding = (typeof config.padding === 'number') ? config.padding : 16;
+      const cells = computeGridCells(n, padding);
+      const filterComplex = buildGridFilterGraph(selectedSubjects, cells, dims, config);
+
+      // Long crop expressions can exceed shell argv limits; write the graph
+      // to a temp script and use -/filter_complex_script for safety.
+      const scriptPath = outputPath + '.filtergraph.txt';
+      fs.writeFileSync(scriptPath, filterComplex, 'utf8');
+
+      const args = [
+        '-i', inputPath,
+        '-filter_complex_script', scriptPath,
+        '-map', '[vout]',
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y',
+        outputPath,
+      ];
+
+      const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
+      let errorOutput = '';
+      ffmpeg.stderr.on('data', d => { errorOutput += d.toString(); });
+      ffmpeg.on('close', code => {
+        try { fs.unlinkSync(scriptPath); } catch (e) {}
+        if (code === 0) resolve();
+        else reject(new Error(`Grid render failed (code ${code}): ${errorOutput.slice(-800)}`));
+      });
+      ffmpeg.on('error', (err) => {
+        try { fs.unlinkSync(scriptPath); } catch (e) {}
+        reject(err);
+      });
+      // 8-minute safety timeout
+      setTimeout(() => {
+        try { ffmpeg.kill('SIGKILL'); } catch (e) {}
+        reject(new Error('Grid render timed out'));
+      }, 8 * 60 * 1000);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// ---------- GRID ENDPOINTS ----------
+
+// POST /ai-reframe/detect-subjects
+// Accepts multipart (videoFile) OR form data with youtubeUrl+inputMode.
+// Runs detection, caches the video path + detection under a new jobId,
+// and responds with the trimmed subjects array for the UI to render.
+router.post('/detect-subjects', requireAuth, upload.single('videoFile'), async (req, res) => {
+  let downloadedPath = null;
+  try {
+    const youtubeUrl = req.body.youtubeUrl || '';
+    const inputMode  = req.body.inputMode  || 'upload';
+    let inputPath = null;
+
+    if (inputMode === 'url' && youtubeUrl) {
+      if (!isValidYouTubeUrl(youtubeUrl)) {
+        return res.status(400).json({ success: false, message: 'Invalid YouTube URL' });
+      }
+      try {
+        inputPath = await downloadYouTubeVideo(youtubeUrl);
+        downloadedPath = inputPath;
+      } catch (e) {
+        return res.status(400).json({ success: false, message: e.message });
+      }
+    } else if (req.file) {
+      inputPath = req.file.path;
+    }
+
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      return res.status(400).json({ success: false, message: 'No video input provided' });
+    }
+
+    console.log('[AI Reframe Grid] Running detection on', inputPath);
+    const detection = await detectFaces(inputPath);
+    const jobId = uuidv4();
+    gridJobs.set(jobId, { videoPath: inputPath, detection, createdAt: Date.now() });
+
+    const trimmed = {
+      width: detection.width,
+      height: detection.height,
+      fps: detection.fps,
+      duration: detection.duration,
+      detector: detection.detector,
+      subjects: detection.subjects || [],
+    };
+    res.json({ success: true, jobId, detection: trimmed });
+  } catch (e) {
+    if (downloadedPath) { try { fs.unlinkSync(downloadedPath); } catch (_) {} }
+    console.error('detect-subjects error:', e);
+    res.status(500).json({ success: false, message: e.message || 'Detection failed' });
+  }
+});
+
+// POST /ai-reframe/render-grid
+// Body: { jobId, selectedSubjectIds, padding, border, background }
+router.post('/render-grid', requireAuth, async (req, res) => {
+  try {
+    const { jobId, selectedSubjectIds, padding, border, background } = req.body || {};
+    if (!jobId) return res.status(400).json({ success: false, message: 'jobId required' });
+    const job = gridJobs.get(jobId);
+    if (!job) return res.status(404).json({ success: false, message: 'Job not found or expired' });
+    if (!Array.isArray(selectedSubjectIds) || selectedSubjectIds.length < 1 || selectedSubjectIds.length > 4) {
+      return res.status(400).json({ success: false, message: 'Select 1-4 subjects' });
+    }
+
+    const allSubjects = job.detection.subjects || [];
+    const selected = selectedSubjectIds
+      .map(id => allSubjects.find(s => s.id === id))
+      .filter(Boolean);
+    if (selected.length !== selectedSubjectIds.length) {
+      return res.status(400).json({ success: false, message: 'One or more selected subjects not found' });
+    }
+
+    const config = {
+      padding: (typeof padding === 'number') ? padding : 16,
+      border: border && typeof border === 'object' ? border : { enabled: false },
+      background: background && typeof background === 'object' ? background : { mode: 'solid' },
+    };
+
+    const filename = `${jobId}-grid-${selected.length}up-${Date.now()}.mp4`;
+    const outputPath = path.join(outputDir, filename);
+    console.log(`[AI Reframe Grid] Rendering ${selected.length}-up grid -> ${filename}`);
+    await processVideoMultiGrid(job.videoPath, outputPath, job.detection, selected, config);
+
+    res.json({
+      success: true,
+      filename,
+      dimensions: `${GRID_OUT_W}x${GRID_OUT_H}`,
+      subjects: selected.length,
+    });
+    featureUsageOps.log(req.user.id, 'ai_reframe_grid').catch(() => {});
+  } catch (e) {
+    console.error('render-grid error:', e);
+    res.status(500).json({ success: false, message: e.message || 'Grid render failed' });
+  }
+});
+
+// GET /ai-reframe/grid-test  — minimal internal QA page for Deploy 2.
+// Not linked from the main UI. Lets us verify detect + render end-to-end
+// without the full Multi-Subject mode UI (which lands in Deploy 3).
+router.get('/grid-test', requireAuth, (req, res) => {
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>AI Reframe Grid Test</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, sans-serif; background:#0f0b1a; color:#e8e6f0; padding:2rem; max-width:900px; margin:0 auto; }
+  h1 { color:#c4a9ff; }
+  button, input, select, textarea { font:inherit; }
+  input[type=text], input[type=number] { background:#1c1630; border:1px solid #3b2d5f; color:#e8e6f0; padding:.5rem; border-radius:6px; width:100%; box-sizing:border-box; }
+  button { background:#6c3aed; color:#fff; border:none; padding:.6rem 1rem; border-radius:6px; cursor:pointer; margin-top:.5rem; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { margin-bottom:1rem; }
+  .subjects { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:.75rem; margin-top:.5rem; }
+  .subject { background:#1c1630; border:2px solid #3b2d5f; border-radius:8px; padding:.75rem; cursor:pointer; }
+  .subject.sel { border-color:#6c3aed; background:#2a1f4e; }
+  pre { background:#0a0714; border:1px solid #3b2d5f; border-radius:6px; padding:.75rem; overflow:auto; font-size:.8rem; max-height:200px; }
+  label { display:block; font-weight:600; margin-bottom:.25rem; color:#b2a6d4; }
+</style></head><body>
+<h1>AI Reframe — Grid Renderer Test (Deploy 2 QA)</h1>
+<p>Internal test page. Upload a clip with multiple faces, run detection, pick subjects, render the grid.</p>
+
+<div class="row">
+  <label>Input</label>
+  <input type="file" id="file" accept="video/*">
+  <div style="margin-top:.5rem">or YouTube URL:</div>
+  <input type="text" id="url" placeholder="https://youtube.com/...">
+  <button id="detectBtn">Run Detection</button>
+</div>
+
+<div id="status"></div>
+<div id="subjectsWrap" style="display:none" class="row">
+  <label>Detected subjects (click to toggle, up to 4)</label>
+  <div class="subjects" id="subjects"></div>
+</div>
+<pre id="detectionJson" style="display:none"></pre>
+
+<div id="renderWrap" style="display:none">
+  <div class="row"><label>Padding (px)</label><input type="number" id="padding" value="16" min="0" max="60"></div>
+  <div class="row"><label>Border</label>
+    <select id="borderEnabled"><option value="false">Off</option><option value="true">On</option></select>
+    <input type="text" id="borderColor" placeholder="#6c3aed" value="#6c3aed">
+  </div>
+  <div class="row"><label>Background</label>
+    <select id="bgMode"><option value="solid">Solid color</option><option value="blur">Blurred source</option></select>
+    <input type="text" id="bgColor" placeholder="#181426" value="#181426">
+  </div>
+  <button id="renderBtn">Render Grid</button>
+  <div id="renderStatus"></div>
+</div>
+
+<script>
+let jobId = null; let subjects = []; let selected = new Set();
+const $ = (id) => document.getElementById(id);
+function setStatus(msg, color) { $('status').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+msg+'</div>'; }
+function rsStatus(msg, color) { $('renderStatus').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+msg+'</div>'; }
+
+$('detectBtn').addEventListener('click', async () => {
+  $('detectBtn').disabled = true;
+  setStatus('Detecting subjects…');
+  const f = $('file').files[0]; const url = $('url').value.trim();
+  const fd = new FormData();
+  if (f) { fd.set('inputMode','upload'); fd.set('videoFile', f); }
+  else if (url) { fd.set('inputMode','url'); fd.set('youtubeUrl', url); }
+  else { setStatus('Provide a file or URL', '#ff7a7a'); $('detectBtn').disabled = false; return; }
+  try {
+    const r = await fetch('/ai-reframe/detect-subjects', { method:'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok || !data.success) throw new Error(data.message || 'Detection failed');
+    jobId = data.jobId; subjects = data.detection.subjects || [];
+    $('detectionJson').style.display='block';
+    $('detectionJson').textContent = JSON.stringify({jobId, detection:data.detection}, null, 2);
+    renderSubjects();
+    setStatus('Detected '+subjects.length+' subject(s). Detector: '+data.detection.detector, '#7bd88f');
+    $('subjectsWrap').style.display='block'; $('renderWrap').style.display='block';
+  } catch (e) { setStatus('Error: '+e.message, '#ff7a7a'); }
+  finally { $('detectBtn').disabled = false; }
+});
+
+function renderSubjects() {
+  const wrap = $('subjects'); wrap.innerHTML = '';
+  subjects.forEach(s => {
+    const d = document.createElement('div');
+    d.className = 'subject' + (selected.has(s.id) ? ' sel' : '');
+    d.innerHTML = '<strong>ID '+s.id+'</strong><br>seen '+s.total_seen+' samples<br>'+
+                  'avg face w: '+(s.avg_size*100).toFixed(1)+'%<br>'+
+                  'first '+s.first_seen+'s · last '+s.last_seen+'s';
+    d.addEventListener('click', () => {
+      if (selected.has(s.id)) selected.delete(s.id);
+      else if (selected.size < 4) selected.add(s.id);
+      renderSubjects();
+    });
+    wrap.appendChild(d);
+  });
+}
+
+$('renderBtn').addEventListener('click', async () => {
+  if (!jobId || selected.size < 1) { rsStatus('Select at least 1 subject', '#ff7a7a'); return; }
+  $('renderBtn').disabled = true;
+  rsStatus('Rendering… (may take 30s–2min)');
+  const body = {
+    jobId,
+    selectedSubjectIds: [...selected],
+    padding: parseInt($('padding').value,10) || 16,
+    border: { enabled: $('borderEnabled').value === 'true', color: $('borderColor').value, width: 3 },
+    background: { mode: $('bgMode').value, color: $('bgColor').value },
+  };
+  try {
+    const r = await fetch('/ai-reframe/render-grid', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok || !data.success) throw new Error(data.message || 'Render failed');
+    rsStatus('Rendered: <a href="/ai-reframe/download/'+data.filename+'" style="color:#c4a9ff">'+data.filename+'</a> · '+data.dimensions, '#7bd88f');
+  } catch (e) { rsStatus('Error: '+e.message, '#ff7a7a'); }
+  finally { $('renderBtn').disabled = false; }
+});
+</script></body></html>`;
+  res.send(html);
+});
+
 // GET - Main page
 router.get('/', requireAuth, (req, res) => {
   const css = getBaseCSS();
