@@ -3954,18 +3954,6 @@
     canvas.addEventListener('mouseleave', endCropDrag, true);
   }
 
-  // Pick the best container to anchor the crop toolbar on. Preference:
-  //   1. .video-container (always visible — wraps both #uploadZone and
-  //      #videoPreviewArea, so the toolbar is visible even when the
-  //      preview area itself is collapsed)
-  //   2. #videoPlayer.parentElement (legacy fallback)
-  function _cropToolbarAnchor(){
-    var vc = document.querySelector('.video-container');
-    if (vc) return vc;
-    var player = document.getElementById('videoPlayer') || document.querySelector('video');
-    return (player && player.parentElement) || null;
-  }
-
   // Force the PGM preview region to be visible so the canvas (and the
   // crop UI overlaid on it) is actually rendered. The editor hides
   // #videoPreviewArea until video playback starts, but for visual crop
@@ -3989,29 +3977,44 @@
     }
   }
 
-  // Floating Apply / Cancel / Reset toolbar that lives on top of the PGM.
-  // Self-healing: the editor frequently re-renders the player container,
-  // which orphans the toolbar (and the PGM canvas). We re-anchor on the
-  // always-visible .video-container every call and re-attach an existing-
-  // but-detached toolbar instead of returning a dead reference.
+  // Position the toolbar on top of the PGM canvas using fixed
+  // positioning so re-renders of any intermediate ancestor can never
+  // orphan it. We recompute the screen rect of the canvas every frame.
+  function _positionCropToolbar(bar){
+    if (!bar) return;
+    var canvas = document.getElementById('tlProgMonitor');
+    var ref = canvas || document.querySelector('.video-container');
+    if (!ref){ bar.style.display = 'none'; return; }
+    var r = ref.getBoundingClientRect();
+    if (!r || r.width < 10 || r.height < 10){ bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    bar.style.position = 'fixed';
+    bar.style.left = (r.left + r.width / 2) + 'px';
+    bar.style.bottom = Math.max(8, window.innerHeight - r.bottom + 14) + 'px';
+    bar.style.transform = 'translateX(-50%)';
+    bar.style.top = '';
+    bar.style.right = '';
+  }
+
+  // Floating Apply / Cancel / Reset toolbar that lives ON TOP of the PGM.
+  // Anchored to document.body with position:fixed and repositioned every
+  // frame from the canvas rect — this survives any re-render of the
+  // editor's preview wrapper (which would otherwise orphan the toolbar).
   function ensureCropToolbar(){
-    var container = _cropToolbarAnchor();
-    if (!container) return null;
-    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
-    // Make sure the canvas is also attached — otherwise the toolbar
-    // would float above an empty preview region.
+    // Make sure the canvas is also attached so we have something to
+    // position relative to.
     try { ensureProgramMonitor(); } catch(_){}
     var existing = document.getElementById('tlCropToolbar');
     if (existing){
-      // Re-attach if the editor re-rendered the player container.
-      if (existing.parentElement !== container){
-        try { container.appendChild(existing); } catch(_){}
+      if (existing.parentElement !== document.body){
+        try { document.body.appendChild(existing); } catch(_){}
       }
+      _positionCropToolbar(existing);
       return existing;
     }
     var bar = document.createElement('div');
     bar.id = 'tlCropToolbar';
-    bar.style.cssText = 'position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:9;display:flex;gap:8px;background:rgba(15,10,30,.92);border:1px solid rgba(139,92,246,.55);border-radius:10px;padding:7px 9px;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.45)';
+    bar.style.cssText = 'position:fixed;z-index:99999;display:flex;gap:8px;background:rgba(15,10,30,.92);border:1px solid rgba(139,92,246,.55);border-radius:10px;padding:7px 9px;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.45);pointer-events:auto';
     var resetBtn = document.createElement('button');
     resetBtn.type = 'button';
     resetBtn.textContent = 'Reset';
@@ -4033,7 +4036,8 @@
     bar.appendChild(resetBtn);
     bar.appendChild(cancelBtn);
     bar.appendChild(applyBtn);
-    try { container.appendChild(bar); } catch(_){ return null; }
+    try { document.body.appendChild(bar); } catch(_){ return null; }
+    _positionCropToolbar(bar);
     return bar;
   }
   function removeCropToolbar(){
