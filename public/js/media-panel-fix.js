@@ -3419,76 +3419,165 @@
     });
   }
   function clipActionKeyframe(){
+    // Toggle-close if the popover is already open
+    var existing = document.getElementById('kfPopover');
+    if (existing && existing.isConnected){ existing.remove(); return; }
+    if (existing) { try { existing.remove(); } catch(_){} }
+
     var clip = getActiveClip();
     if (!clip){ showToast('Select a clip first'); return; }
     if (clip.classList.contains('mt-clip-audio')){ showToast('Keyframes not supported on audio'); return; }
-    // Determine current playhead time within the clip
+    // Current playhead time within the clip
     var ph = document.getElementById('mtPlayhead');
     var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
     var clipLeft = parseFloat(clip.style.left) || 0;
     var clipW    = parseFloat(clip.style.width) || 1;
     var tnowPx   = phX - clipLeft;
-    if (tnowPx < 0 || tnowPx > clipW){
-      showToast('Move playhead over this clip first');
-      return;
-    }
-    var tnow = tnowPx / TIMELINE_PX_PER_SEC;
-    // Capture current static values (Scale / Position) as a keyframe.
-    // User-driven values come from the Resize / Position prompts.
-    var scale  = parseFloat(clip.dataset.scale)   || 1;
-    var offX   = parseFloat(clip.dataset.offsetX) || 0;
-    var offY   = parseFloat(clip.dataset.offsetY) || 0;
-    var kfs = readClipKeyframes(clip);
-    var menu = prompt(
-      'Keyframes at t=' + tnow.toFixed(2) + 's on this clip.\n\n' +
-      'Existing keyframes: ' + (kfs.length === 0 ? '(none)' :
-        kfs.map(function(k){
-          var bits = [];
-          if (typeof k.scale   === 'number') bits.push('scale='  + k.scale.toFixed(2));
-          if (typeof k.offsetX === 'number') bits.push('x='      + k.offsetX.toFixed(0));
-          if (typeof k.offsetY === 'number') bits.push('y='      + k.offsetY.toFixed(0));
-          return 't=' + k.t.toFixed(2) + ' [' + bits.join(', ') + ']';
-        }).join('\n  ')
-      ) + '\n\n' +
-      'Actions:\n' +
-      '  add    — capture current Scale/Position at playhead\n' +
-      '  del    — remove keyframe at playhead (±0.2s)\n' +
-      '  clear  — remove ALL keyframes on this clip',
-      'add'
-    );
-    if (menu === null) return;
-    var action = menu.trim().toLowerCase();
-    if (action === 'add'){
-      // Replace any existing KF within 0.05s of tnow, else append
-      var replaced = false;
-      for (var i = 0; i < kfs.length; i++){
-        if (Math.abs(kfs[i].t - tnow) < 0.05){
-          kfs[i] = { t: tnow, scale: scale, offsetX: offX, offsetY: offY };
-          replaced = true;
-          break;
-        }
+    var tnow = Math.max(0, tnowPx / TIMELINE_PX_PER_SEC);
+    var overClip = (tnowPx >= 0 && tnowPx <= clipW);
+
+    function renderPop(){
+      var scale = parseFloat(clip.dataset.scale)   || 1;
+      var offX  = parseFloat(clip.dataset.offsetX) || 0;
+      var offY  = parseFloat(clip.dataset.offsetY) || 0;
+      var kfs   = readClipKeyframes(clip);
+
+      var pop = document.createElement('div');
+      pop.id = 'kfPopover';
+      pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:300px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+
+      var header =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+          '<div style="font-size:11px;color:#fde047;font-weight:700;letter-spacing:.5px">\ud83c\udfaf KEYFRAMES</div>' +
+          '<div style="font-size:10px;color:#8886a0">t = ' + tnow.toFixed(2) + 's</div>' +
+        '</div>' +
+        '<div style="font-size:10px;color:#8886a0;margin-bottom:10px;line-height:1.4">' +
+          (overClip
+            ? 'Drop a keyframe at the playhead capturing the clip\'s current values.'
+            : '<span style="color:#f59e0b">Move playhead over this clip to drop keyframes.</span>') +
+        '</div>';
+
+      var dropBtnStyle = 'flex:1;padding:8px 6px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.4);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:2px';
+      var disabledStyle = ';opacity:.4;cursor:not-allowed;pointer-events:none';
+      function dBtn(id, icon, label, sub){
+        return '<button id="' + id + '" style="' + dropBtnStyle + (overClip ? '' : disabledStyle) + '">' +
+          '<span style="font-size:14px">' + icon + '</span>' +
+          '<span style="font-weight:600">' + label + '</span>' +
+          '<span style="font-size:9px;color:#8886a0">' + sub + '</span>' +
+        '</button>';
       }
-      if (!replaced) kfs.push({ t: tnow, scale: scale, offsetX: offX, offsetY: offY });
-      kfs.sort(function(a,b){ return a.t - b.t; });
-      writeClipKeyframes(clip, kfs);
-      refreshKeyframeMarkers(clip);
-      pushTimelineHistory();
-      showToast('Keyframe ' + (replaced ? 'updated' : 'added') + ' at ' + tnow.toFixed(2) + 's');
-    } else if (action === 'del'){
-      var kept = kfs.filter(function(k){ return Math.abs(k.t - tnow) >= 0.2; });
-      if (kept.length === kfs.length){ showToast('No keyframe within 0.2s of playhead'); return; }
-      writeClipKeyframes(clip, kept);
-      refreshKeyframeMarkers(clip);
-      pushTimelineHistory();
-      showToast('Keyframe removed');
-    } else if (action === 'clear'){
-      writeClipKeyframes(clip, []);
-      refreshKeyframeMarkers(clip);
-      pushTimelineHistory();
-      showToast('All keyframes cleared');
-    } else {
-      showToast('Unknown action: ' + action);
+
+      var dropRow =
+        '<div style="display:flex;gap:6px;margin-bottom:12px">' +
+          dBtn('kfDropScale',    '\ud83d\udd0d', 'Scale',    scale.toFixed(2) + '\u00d7') +
+          dBtn('kfDropPosition', '\ud83d\udccd', 'Position', 'x=' + offX.toFixed(0) + ' y=' + offY.toFixed(0)) +
+          dBtn('kfDropBoth',     '\ud83c\udfaf', 'Both',     'Scale + Pos') +
+        '</div>';
+
+      var listHtml = '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:6px">EXISTING KEYFRAMES (' + kfs.length + ')</div>';
+      if (kfs.length === 0){
+        listHtml += '<div style="padding:10px;background:rgba(255,255,255,.02);border:1px dashed rgba(255,255,255,.1);border-radius:6px;font-size:11px;color:#5c5a70;text-align:center">No keyframes yet — drop one above.</div>';
+      } else {
+        listHtml += '<div style="max-height:160px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:6px">';
+        kfs.forEach(function(k, i){
+          var bits = [];
+          if (typeof k.scale   === 'number') bits.push('s=' + k.scale.toFixed(2));
+          if (typeof k.offsetX === 'number') bits.push('x=' + k.offsetX.toFixed(0));
+          if (typeof k.offsetY === 'number') bits.push('y=' + k.offsetY.toFixed(0));
+          listHtml +=
+            '<div data-kf-row="' + i + '" style="display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:11px;border-bottom:1px solid rgba(255,255,255,.05)">' +
+              '<span style="color:#fde047;font-weight:600;width:52px">t=' + k.t.toFixed(2) + 's</span>' +
+              '<span style="flex:1;color:#8886a0;font-size:10px">' + bits.join(' \u00b7 ') + '</span>' +
+              '<button data-kf-seek="' + i + '" title="Seek to this keyframe" style="padding:2px 6px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:4px;color:#a78bfa;font-size:10px;cursor:pointer">\u27a4</button>' +
+              '<button data-kf-del="' + i + '" title="Delete this keyframe" style="padding:2px 6px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:4px;color:#f87171;font-size:10px;cursor:pointer">\u00d7</button>' +
+            '</div>';
+        });
+        listHtml += '</div>';
+      }
+
+      var footer =
+        '<div style="display:flex;gap:6px;margin-top:10px">' +
+          '<button id="kfClear" style="flex:1;padding:6px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer"' + (kfs.length === 0 ? ' disabled style="opacity:.4;cursor:not-allowed"' : '') + '>Clear All</button>' +
+          '<button id="kfClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '</div>';
+
+      pop.innerHTML = header + dropRow + listHtml + footer;
+      document.body.appendChild(pop);
+
+      // Replace-at-near-time + resort helper, shared by all drops
+      function dropKF(props){
+        if (!overClip){ showToast('Move playhead over this clip first'); return; }
+        var cur = readClipKeyframes(clip);
+        var replaced = false;
+        for (var i = 0; i < cur.length; i++){
+          if (Math.abs(cur[i].t - tnow) < 0.05){
+            Object.assign(cur[i], { t: tnow }, props);
+            replaced = true;
+            break;
+          }
+        }
+        if (!replaced) cur.push(Object.assign({ t: tnow }, props));
+        cur.sort(function(a,b){ return a.t - b.t; });
+        writeClipKeyframes(clip, cur);
+        refreshKeyframeMarkers(clip);
+        pushTimelineHistory();
+        showToast('Keyframe ' + (replaced ? 'updated' : 'added') + ' at ' + tnow.toFixed(2) + 's');
+        pop.remove();
+        // Re-open to reflect the new list
+        clipActionKeyframe();
+      }
+
+      var dScale = pop.querySelector('#kfDropScale');
+      var dPos   = pop.querySelector('#kfDropPosition');
+      var dBoth  = pop.querySelector('#kfDropBoth');
+      if (dScale) dScale.addEventListener('click', function(){ dropKF({ scale: scale }); });
+      if (dPos)   dPos.addEventListener('click',   function(){ dropKF({ offsetX: offX, offsetY: offY }); });
+      if (dBoth)  dBoth.addEventListener('click',  function(){ dropKF({ scale: scale, offsetX: offX, offsetY: offY }); });
+
+      // Seek + delete per-row actions
+      Array.from(pop.querySelectorAll('[data-kf-seek]')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var idx = parseInt(btn.getAttribute('data-kf-seek'), 10);
+          var cur = readClipKeyframes(clip);
+          if (!cur[idx]) return;
+          var seekX = clipLeft + cur[idx].t * TIMELINE_PX_PER_SEC;
+          if (ph) ph.style.left = seekX + 'px';
+          // Scrub the live player too, so the PGM reflects the jump
+          var player = document.getElementById('videoPlayer') || document.querySelector('video');
+          var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+          if (player){ try { player.currentTime = sourceOffset + cur[idx].t; } catch(_){} }
+          showToast('Seek t=' + cur[idx].t.toFixed(2) + 's');
+        });
+      });
+      Array.from(pop.querySelectorAll('[data-kf-del]')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var idx = parseInt(btn.getAttribute('data-kf-del'), 10);
+          var cur = readClipKeyframes(clip);
+          if (!cur[idx]) return;
+          cur.splice(idx, 1);
+          writeClipKeyframes(clip, cur);
+          refreshKeyframeMarkers(clip);
+          pushTimelineHistory();
+          showToast('Keyframe removed');
+          pop.remove();
+          clipActionKeyframe();
+        });
+      });
+
+      pop.querySelector('#kfClose').addEventListener('click', function(){ pop.remove(); });
+      var clearBtn = pop.querySelector('#kfClear');
+      if (clearBtn) clearBtn.addEventListener('click', function(){
+        if (readClipKeyframes(clip).length === 0) return;
+        writeClipKeyframes(clip, []);
+        refreshKeyframeMarkers(clip);
+        pushTimelineHistory();
+        showToast('All keyframes cleared');
+        pop.remove();
+        clipActionKeyframe();
+      });
     }
+
+    renderPop();
   }
 
   // Solo this audio clip by muting every OTHER audio clip. Toggling solo

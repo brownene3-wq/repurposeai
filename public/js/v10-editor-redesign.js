@@ -1271,9 +1271,10 @@
         rpBtn('\ud83d\udccd','Position','Position')+
       '</div>'+
       '<div class="v10-rp-section-title">TIMING</div>'+
+      // Loop removed per product decision — created more confusion than
+      // value and Freeze + Trim cover the same use-cases.
       '<div class="v10-rp-grid">'+
         rpBtn('\u23ea','Reverse','Reverse')+
-        rpBtn('\ud83d\udd01','Loop','Loop')+
         rpBtn('\u2744\ufe0f','Freeze','Freeze')+
         rpBtn('\ud83c\udfaf','Keyframe','Keyframe')+
       '</div>';
