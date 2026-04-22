@@ -1760,6 +1760,46 @@ router.get('/serve/:filename', requireAuth, (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
+// QA-only: extract a single JPEG frame from a /tmp/repurpose-* file at ?t=<seconds>
+// Used by Live QA tooling to verify burned-in captions are rendering as expected.
+// Confined to uploadDir/outputDir + .mp4 only — no path traversal possible.
+router.get('/qa-frame/:filename', requireAuth, async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    if (!/^[A-Za-z0-9._-]+\.mp4$/.test(filename)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    let filePath = path.join(outputDir, filename);
+    if (!fs.existsSync(filePath)) filePath = path.join(uploadDir, filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+    const t = Math.max(0, parseFloat(req.query.t) || 1.0);
+    const outJpg = path.join(outputDir, `qa-frame-${uuidv4()}.jpg`);
+
+    await new Promise((resolve, reject) => {
+      const proc = spawn('ffmpeg', [
+        '-ss', String(t),
+        '-i', filePath,
+        '-frames:v', '1',
+        '-q:v', '3',
+        '-y', outJpg
+      ]);
+      let stderr = '';
+      proc.stderr.on('data', d => { stderr += d.toString(); });
+      proc.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg ' + code + ': ' + stderr.slice(-300))));
+      proc.on('error', reject);
+    });
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    const stream = fs.createReadStream(outJpg);
+    stream.pipe(res);
+    stream.on('close', () => { try { fs.unlinkSync(outJpg); } catch (e) {} });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/upload', requireAuth, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) {
