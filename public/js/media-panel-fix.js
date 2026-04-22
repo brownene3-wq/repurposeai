@@ -1802,6 +1802,7 @@
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:#000;z-index:7;display:none;pointer-events:auto';
     try { container.appendChild(canvas); } catch(_){ return null; }
     try { wirePgmTextDrag(canvas); } catch(_){}
+    try { wirePgmCropDrag(canvas); } catch(_){}
     return canvas;
   }
   function ensureProgramToggleBtn(){
@@ -1944,6 +1945,10 @@
 
     // Text overlays (from T1 clips) draw on top of the current visual.
     try { progDrawTextOverlays(ctx, W, H, phX); } catch(_){}
+
+    // Crop UI (if we're in visual crop mode) sits on top of the frame
+    // and text overlays so the user always sees their crop rect + handles.
+    try { progDrawCropOverlay(ctx, W, H); } catch(_){}
 
     // Watermark so the user knows this is a simulation — NOT the final export.
     ctx.fillStyle = 'rgba(139,92,246,.95)';
@@ -2769,6 +2774,16 @@
     );
   }
   function clipActionCrop(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (clip.dataset.clipType !== 'vid' && clip.dataset.clipType !== 'img'){
+      showToast('Crop is only supported on video / image clips');
+      return;
+    }
+    enterCropMode(clip);
+    return;
+    // Original prompt fallback (kept commented for reference)
+    /* eslint-disable no-unreachable */
     promptToActiveClips(
       function(c){
         var input = prompt('Crop as x,y,w,h percent (0-100) \u2014 blank to reset',
@@ -3535,6 +3550,14 @@
   // Rebuilt every frame by progDrawTextOverlays.
   var _textHitBoxes = []; // [{ clip, x, y, w, h }]
 
+  // Visual-crop mode state. When set, the PGM canvas renders the active
+  // clip's FULL source frame (with the clip's existing crop temporarily
+  // suspended), then overlays an interactive crop rectangle with 8 drag
+  // handles + interior pan + dim mask + rule-of-thirds guides. Apply
+  // commits the new crop into clip.dataset.crop; Cancel restores.
+  // Shape: { clip, rect: {x,y,w,h in % 0-100}, originalCrop: 'x,y,w,h' | null }
+  var _cropMode = null;
+
   // Draw text overlays from T1 clips on top of the PGM canvas. Respects
   // per-clip textOffsetX / textOffsetY (in canvas pixels) set by the
   // drag-to-position handler below.
@@ -3632,6 +3655,8 @@
     }
     canvas.addEventListener('mousedown', function(e){
       if (e.button !== 0) return;
+      // Crop mode owns the canvas while active — don't grab text drags.
+      if (_cropMode) return;
       var pt = canvasCoords(e);
       var hit = hitTest(pt);
       if (!hit) return;
@@ -3649,6 +3674,7 @@
     });
     // Hover cursor feedback + drag move
     canvas.addEventListener('mousemove', function(e){
+      if (_cropMode) return;
       if (dragState){
         var pt = canvasCoords(e);
         var dx = pt.x - dragState.startX;
@@ -3672,6 +3698,388 @@
     canvas.addEventListener('mouseup',    endDrag);
     canvas.addEventListener('mouseleave', endDrag);
   }
+
+  // ── Visual Crop on PGM ───────────────────────────────────────────
+  // Click Crop in the EDIT sidebar → enterCropMode(activeClip). The PGM
+  // canvas now renders the clip's untrimmed source, with an interactive
+  // crop rectangle layered on top. The user drags any of 8 handles
+  // (4 corners + 4 edge midpoints) to reshape the rect, or drags the
+  // interior to pan it. A floating Apply / Cancel / Reset toolbar sits
+  // at the bottom of the PGM. Apply commits clip.dataset.crop in the
+  // 'x,y,w,h' percent format already understood by progDrawWithMotion
+  // (preview) and the FFmpeg crop= filter (export). Cancel restores.
+  function _cropClamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+  function _cropHandlesAt(cx, cy, cw, ch){
+    return {
+      nw: { x: cx,         y: cy         },
+      n:  { x: cx + cw/2,  y: cy         },
+      ne: { x: cx + cw,    y: cy         },
+      e:  { x: cx + cw,    y: cy + ch/2  },
+      se: { x: cx + cw,    y: cy + ch    },
+      s:  { x: cx + cw/2,  y: cy + ch    },
+      sw: { x: cx,         y: cy + ch    },
+      w:  { x: cx,         y: cy + ch/2  }
+    };
+  }
+  var _cropCursor = {
+    nw: 'nwse-resize', se: 'nwse-resize',
+    ne: 'nesw-resize', sw: 'nesw-resize',
+    n:  'ns-resize',   s:  'ns-resize',
+    e:  'ew-resize',   w:  'ew-resize',
+    move: 'move'
+  };
+
+  // Compute the active clip's content rect (the letterboxed region where
+  // the source is drawn within the canvas) so crop coords can be mapped
+  // to / from canvas pixels. Falls back to the full canvas when source
+  // dimensions aren't loaded yet.
+  function _cropContentRect(canvas){
+    if (!_cropMode || !canvas) return null;
+    var clip = _cropMode.clip;
+    var url  = clip.dataset.mediaUrl;
+    var type = clip.dataset.clipType || 'vid';
+    var src  = url ? getOrCreateProgSource(url, (type === 'img') ? 'img' : 'vid') : null;
+    var sW = 0, sH = 0;
+    if (src){
+      sW = src.naturalWidth  || src.videoWidth  || 0;
+      sH = src.naturalHeight || src.videoHeight || 0;
+    }
+    if (!sW || !sH){
+      // Fall back to a 16:9 frame so the crop UI is still usable
+      sW = 1280; sH = 720;
+    }
+    return progContainRect(canvas.width, canvas.height, sW, sH);
+  }
+
+  // Draw the dim mask + crop rectangle + 8 handles + rule-of-thirds
+  // guides on top of the already-rendered video frame. Called from
+  // progLoop once per frame while _cropMode is set.
+  function progDrawCropOverlay(ctx, W, H){
+    if (!_cropMode) return;
+    var canvas = ctx && ctx.canvas;
+    var r = _cropContentRect(canvas);
+    if (!r) return;
+    var cr = _cropMode.rect;
+    var cx = r.dx + r.dw * cr.x / 100;
+    var cy = r.dy + r.dh * cr.y / 100;
+    var cw = r.dw * cr.w / 100;
+    var ch = r.dh * cr.h / 100;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    // Dim everything outside the crop rect (clipped to content area only —
+    // the letterbox gutters stay solid black from the base draw).
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    var top    = cy - r.dy;          if (top    > 0) ctx.fillRect(r.dx, r.dy, r.dw, top);
+    var bottom = (r.dy + r.dh) - (cy + ch); if (bottom > 0) ctx.fillRect(r.dx, cy + ch, r.dw, bottom);
+    var left   = cx - r.dx;          if (left   > 0) ctx.fillRect(r.dx, cy, left, ch);
+    var right  = (r.dx + r.dw) - (cx + cw); if (right  > 0) ctx.fillRect(cx + cw, cy, right, ch);
+    // Rule-of-thirds guides
+    ctx.strokeStyle = 'rgba(255,255,255,.28)';
+    ctx.lineWidth = 1;
+    for (var i = 1; i < 3; i++){
+      ctx.beginPath();
+      ctx.moveTo(cx + cw * i/3, cy);
+      ctx.lineTo(cx + cw * i/3, cy + ch);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + ch * i/3);
+      ctx.lineTo(cx + cw, cy + ch * i/3);
+      ctx.stroke();
+    }
+    // Crop border (purple)
+    ctx.strokeStyle = 'rgba(167,139,250,.95)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx + 0.5, cy + 0.5, Math.max(1, cw - 1), Math.max(1, ch - 1));
+    // 8 handles — filled purple squares with white outline
+    var hs = 7; // half-size in canvas px
+    var handles = _cropHandlesAt(cx, cy, cw, ch);
+    Object.keys(handles).forEach(function(k){
+      var hh = handles[k];
+      ctx.fillStyle = '#a78bfa';
+      ctx.fillRect(hh.x - hs, hh.y - hs, hs * 2, hs * 2);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(hh.x - hs + 0.5, hh.y - hs + 0.5, hs * 2 - 1, hs * 2 - 1);
+    });
+    // Dimension label
+    var label = Math.round(cr.w) + '% \u00D7 ' + Math.round(cr.h) + '%';
+    ctx.font = '700 12px -apple-system,system-ui,sans-serif';
+    var tw = ctx.measureText(label).width + 14;
+    var lx = cx + 6, ly = cy + 6;
+    if (lx + tw > r.dx + r.dw - 4) lx = r.dx + r.dw - tw - 4;
+    if (ly + 22 > r.dy + r.dh - 4) ly = r.dy + r.dh - 26;
+    ctx.fillStyle = 'rgba(15,10,30,.92)';
+    ctx.fillRect(lx, ly, tw, 22);
+    ctx.strokeStyle = 'rgba(167,139,250,.55)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(lx + 0.5, ly + 0.5, tw - 1, 21);
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, lx + 7, ly + 5);
+    ctx.restore();
+  }
+
+  // Pointer handler that owns the canvas while _cropMode is set. Uses
+  // the capture phase so it runs before wirePgmTextDrag. Hit-tests the
+  // 8 handles + interior of the crop rect; updates _cropMode.rect on
+  // drag; the next progLoop frame redraws the overlay at the new shape.
+  function wirePgmCropDrag(canvas){
+    if (!canvas || canvas.dataset.v10CropDragWired) return;
+    canvas.dataset.v10CropDragWired = '1';
+    var dragState = null;
+    function canvasCoords(ev){
+      var rect = canvas.getBoundingClientRect();
+      var sx = (canvas.width  || rect.width)  / rect.width;
+      var sy = (canvas.height || rect.height) / rect.height;
+      return { x: (ev.clientX - rect.left) * sx, y: (ev.clientY - rect.top) * sy };
+    }
+    function getCropPx(){
+      var r = _cropContentRect(canvas);
+      if (!r) return null;
+      var cr = _cropMode.rect;
+      return {
+        r: r,
+        x: r.dx + r.dw * cr.x / 100,
+        y: r.dy + r.dh * cr.y / 100,
+        w: r.dw * cr.w / 100,
+        h: r.dh * cr.h / 100
+      };
+    }
+    function hitHandle(pt){
+      var cp = getCropPx();
+      if (!cp) return null;
+      var handles = _cropHandlesAt(cp.x, cp.y, cp.w, cp.h);
+      var hs = 12; // generous hit radius
+      var keys = Object.keys(handles);
+      for (var i = 0; i < keys.length; i++){
+        var hh = handles[keys[i]];
+        if (pt.x >= hh.x - hs && pt.x <= hh.x + hs && pt.y >= hh.y - hs && pt.y <= hh.y + hs){
+          return keys[i];
+        }
+      }
+      if (pt.x > cp.x && pt.x < cp.x + cp.w && pt.y > cp.y && pt.y < cp.y + cp.h){
+        return 'move';
+      }
+      return null;
+    }
+    canvas.addEventListener('mousedown', function(e){
+      if (!_cropMode || e.button !== 0) return;
+      var pt = canvasCoords(e);
+      var h = hitHandle(pt);
+      if (!h) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var cp = getCropPx();
+      var cr = _cropMode.rect;
+      dragState = {
+        handle: h,
+        startPt: pt,
+        startRect: { x: cr.x, y: cr.y, w: cr.w, h: cr.h },
+        contentRect: cp.r
+      };
+      canvas.style.cursor = _cropCursor[h] || 'crosshair';
+    }, true);
+    canvas.addEventListener('mousemove', function(e){
+      if (!_cropMode) return;
+      if (dragState){
+        e.preventDefault();
+        e.stopPropagation();
+        var pt = canvasCoords(e);
+        var dx = pt.x - dragState.startPt.x;
+        var dy = pt.y - dragState.startPt.y;
+        var rRect = dragState.contentRect;
+        var dxPct = (dx / rRect.dw) * 100;
+        var dyPct = (dy / rRect.dh) * 100;
+        var s = dragState.startRect;
+        var nx = s.x, ny = s.y, nw = s.w, nh = s.h;
+        var minSize = 5; // 5% minimum so the rect is always grabbable
+        switch (dragState.handle){
+          case 'move':
+            nx = _cropClamp(s.x + dxPct, 0, 100 - s.w);
+            ny = _cropClamp(s.y + dyPct, 0, 100 - s.h);
+            break;
+          case 'nw':
+            nx = _cropClamp(s.x + dxPct, 0, s.x + s.w - minSize);
+            ny = _cropClamp(s.y + dyPct, 0, s.y + s.h - minSize);
+            nw = s.w - (nx - s.x);
+            nh = s.h - (ny - s.y);
+            break;
+          case 'n':
+            ny = _cropClamp(s.y + dyPct, 0, s.y + s.h - minSize);
+            nh = s.h - (ny - s.y);
+            break;
+          case 'ne':
+            ny = _cropClamp(s.y + dyPct, 0, s.y + s.h - minSize);
+            nw = _cropClamp(s.w + dxPct, minSize, 100 - s.x);
+            nh = s.h - (ny - s.y);
+            break;
+          case 'e':
+            nw = _cropClamp(s.w + dxPct, minSize, 100 - s.x);
+            break;
+          case 'se':
+            nw = _cropClamp(s.w + dxPct, minSize, 100 - s.x);
+            nh = _cropClamp(s.h + dyPct, minSize, 100 - s.y);
+            break;
+          case 's':
+            nh = _cropClamp(s.h + dyPct, minSize, 100 - s.y);
+            break;
+          case 'sw':
+            nx = _cropClamp(s.x + dxPct, 0, s.x + s.w - minSize);
+            nh = _cropClamp(s.h + dyPct, minSize, 100 - s.y);
+            nw = s.w - (nx - s.x);
+            break;
+          case 'w':
+            nx = _cropClamp(s.x + dxPct, 0, s.x + s.w - minSize);
+            nw = s.w - (nx - s.x);
+            break;
+        }
+        _cropMode.rect = { x: nx, y: ny, w: nw, h: nh };
+      } else {
+        var ptH = canvasCoords(e);
+        var hh = hitHandle(ptH);
+        canvas.style.cursor = hh ? (_cropCursor[hh] || 'crosshair') : 'crosshair';
+      }
+    }, true);
+    function endCropDrag(){
+      if (!dragState) return;
+      dragState = null;
+      canvas.style.cursor = _cropMode ? 'crosshair' : '';
+    }
+    canvas.addEventListener('mouseup',    endCropDrag, true);
+    canvas.addEventListener('mouseleave', endCropDrag, true);
+  }
+
+  // Floating Apply / Cancel / Reset toolbar that lives on top of the PGM.
+  function ensureCropToolbar(){
+    var canvas = document.getElementById('tlProgMonitor');
+    if (!canvas) return null;
+    var container = canvas.parentElement;
+    if (!container) return null;
+    var existing = document.getElementById('tlCropToolbar');
+    if (existing) return existing;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var bar = document.createElement('div');
+    bar.id = 'tlCropToolbar';
+    bar.style.cssText = 'position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:9;display:flex;gap:8px;background:rgba(15,10,30,.92);border:1px solid rgba(139,92,246,.55);border-radius:10px;padding:7px 9px;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.45)';
+    var resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.textContent = 'Reset';
+    resetBtn.style.cssText = 'padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;color:#e2e0f0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:7px;cursor:pointer';
+    resetBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      if (_cropMode) _cropMode.rect = { x: 0, y: 0, w: 100, h: 100 };
+    });
+    var cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;color:#e2e0f0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:7px;cursor:pointer';
+    cancelBtn.addEventListener('click', function(e){ e.preventDefault(); exitCropMode(false); });
+    var applyBtn = document.createElement('button');
+    applyBtn.type = 'button';
+    applyBtn.textContent = 'Apply Crop';
+    applyBtn.style.cssText = 'padding:7px 16px;font-size:11px;font-weight:800;letter-spacing:.5px;color:#fff;background:linear-gradient(135deg,#8b5cf6,#a78bfa);border:0;border-radius:7px;cursor:pointer;box-shadow:0 4px 12px rgba(139,92,246,.35)';
+    applyBtn.addEventListener('click', function(e){ e.preventDefault(); exitCropMode(true); });
+    bar.appendChild(resetBtn);
+    bar.appendChild(cancelBtn);
+    bar.appendChild(applyBtn);
+    try { container.appendChild(bar); } catch(_){ return null; }
+    return bar;
+  }
+  function removeCropToolbar(){
+    var bar = document.getElementById('tlCropToolbar');
+    if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+  }
+
+  // Move the playhead inside the clip if it's not already, so progLoop
+  // renders THIS clip while we crop it.
+  function _snapPlayheadIntoClip(clip){
+    if (!clip) return;
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var l = parseFloat(clip.style.left)  || 0;
+    var w = parseFloat(clip.style.width) || 0;
+    var phX = parseFloat(ph.style.left)  || 0;
+    if (phX < l + 4 || phX > l + w - 4){
+      ph.style.left = (l + w / 2) + 'px';
+      try { syncPreviewToPlayhead(); } catch(_){}
+    }
+  }
+
+  function enterCropMode(clip){
+    if (!clip){ showToast('Select a clip first'); return; }
+    if (_cropMode){
+      // Already cropping a different clip — cancel the previous session.
+      exitCropMode(false);
+    }
+    // Make sure PGM is on so the user can see what they're cropping.
+    if (!_progEnabled){
+      try { toggleProgramMonitor(); } catch(_){}
+    }
+    var orig = clip.dataset.crop || null;
+    var cur  = orig ? orig.split(',').map(function(s){ return parseFloat(s); }) : [0, 0, 100, 100];
+    if (cur.length !== 4 || cur.some(function(v){ return !isFinite(v); })) cur = [0, 0, 100, 100];
+    _cropMode = {
+      clip: clip,
+      rect: { x: cur[0], y: cur[1], w: cur[2], h: cur[3] },
+      originalCrop: orig
+    };
+    // Render the FULL source while editing — the overlay represents what
+    // will be kept. We re-apply on Apply / restore on Cancel.
+    if (orig) delete clip.dataset.crop;
+    _snapPlayheadIntoClip(clip);
+    ensureCropToolbar();
+    // Wire crop drag now that the canvas exists.
+    var canvas = document.getElementById('tlProgMonitor');
+    if (canvas) wirePgmCropDrag(canvas);
+    if (canvas) canvas.style.cursor = 'crosshair';
+    showToast('Drag the handles to crop \u00B7 Apply when done');
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+
+  function exitCropMode(commit){
+    if (!_cropMode) return;
+    var clip = _cropMode.clip;
+    var rect = _cropMode.rect;
+    if (commit){
+      var isFull = (rect.x <= 0.5 && rect.y <= 0.5 && rect.w >= 99.5 && rect.h >= 99.5);
+      if (isFull){
+        delete clip.dataset.crop;
+      } else {
+        clip.dataset.crop = (
+          rect.x.toFixed(2) + ',' +
+          rect.y.toFixed(2) + ',' +
+          rect.w.toFixed(2) + ',' +
+          rect.h.toFixed(2)
+        );
+      }
+      try { if (typeof pushTimelineHistory === 'function') pushTimelineHistory(); } catch(_){}
+      try { _lastPreviewUrl = null; } catch(_){}
+      showToast(isFull ? 'Crop cleared' : 'Crop applied \u00B7 ' + Math.round(rect.w) + '\u00D7' + Math.round(rect.h) + '%');
+    } else {
+      // Restore original crop (or leave uncropped)
+      if (_cropMode.originalCrop){
+        clip.dataset.crop = _cropMode.originalCrop;
+      }
+      showToast('Crop cancelled');
+    }
+    _cropMode = null;
+    removeCropToolbar();
+    var canvas = document.getElementById('tlProgMonitor');
+    if (canvas) canvas.style.cursor = '';
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+
+  // ESC to cancel crop, Enter to apply — convenience hotkeys.
+  document.addEventListener('keydown', function(e){
+    if (!_cropMode) return;
+    if (e.key === 'Escape'){ e.preventDefault(); exitCropMode(false); }
+    else if (e.key === 'Enter'){ e.preventDefault(); exitCropMode(true); }
+  }, true);
+
+  // Expose for the EDIT sidebar's data-v10-clip-action="Crop" route.
+  try { window.enterCropMode = enterCropMode; } catch(_){}
+  try { window.exitCropMode  = exitCropMode;  } catch(_){}
 
   // Small modal for entering text + choosing size / color / duration / position.
   // ── Slip editor modal ────────────────────────────────────────────
