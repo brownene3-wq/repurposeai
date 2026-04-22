@@ -2,8 +2,21 @@ FROM node:20-slim
 
 # Install ffmpeg, python3, and yt-dlp (for video clipping)
 # Force latest yt-dlp to keep up with YouTube API changes
+#
+# Font set: libass (the ASS subtitle renderer FFmpeg uses for caption burn-in)
+# resolves font families through fontconfig. If the requested family isn't
+# installed it silently falls back to a default sans, which made every Caption
+# Style preset look identical on export. The font set below covers the UI
+# choices via aliases mapped in routes/ai-captions.js (FONT_ALIAS):
+#   - fonts-liberation  -> Arial / Helvetica / Times New Roman / Courier New / Georgia
+#   - fonts-dejavu      -> Verdana / Impact (DejaVu Sans Bold is closest free Impact)
+#   - fonts-noto-core   -> broad Unicode coverage for non-Latin captions
+#   - fonts-freefont-ttf-> additional fallback families
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg python3 python3-pip curl fonts-liberation git libgl1-mesa-glx libglib2.0-0 && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg python3 python3-pip curl git libgl1-mesa-glx libglib2.0-0 \
+        fonts-liberation fonts-dejavu fonts-dejavu-extra fonts-noto-core fonts-freefont-ttf fontconfig && \
+    fc-cache -f -v && \
     pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provider opencv-python-headless && \
     pip3 install --break-system-packages "mediapipe==0.10.9" && \
     rm -rf /var/lib/apt/lists/*

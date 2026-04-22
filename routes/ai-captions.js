@@ -315,42 +315,105 @@ async function downloadYouTubeVideo(videoUrl) {
   throw new Error('Failed to download YouTube video');
 }
 
+// Helper: Sanitize hex color input. Accepts "RRGGBB", "#RRGGBB", or "0xRRGGBB" (any case).
+// Returns a canonical 6-char uppercase RRGGBB string, or null if invalid.
+function sanitizeHex(hex) {
+  if (!hex || typeof hex !== 'string') return null;
+  let s = hex.trim().replace(/^#/, '').replace(/^0x/i, '');
+  if (s.length === 3) s = s.split('').map(c => c + c).join(''); // expand shorthand
+  if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
+  return s.toUpperCase();
+}
+
 // Helper: Convert color to ASS hex format (BGR)
-function colorToASS(hexColor) {
-  // Input: RRGGBB, Output: &HBBGGRR&
-  if (!hexColor || hexColor.length !== 6) return '&H000000&';
-  const r = hexColor.slice(0, 2);
-  const g = hexColor.slice(2, 4);
-  const b = hexColor.slice(4, 6);
+function colorToASS(hexColor, fallback = '000000') {
+  // Input: RRGGBB (any case, with or without #), Output: &HBBGGRR&
+  const sanitized = sanitizeHex(hexColor) || sanitizeHex(fallback) || '000000';
+  const r = sanitized.slice(0, 2);
+  const g = sanitized.slice(2, 4);
+  const b = sanitized.slice(4, 6);
   return `&H${b}${g}${r}&`;
 }
 
-// Helper: Generate ASS subtitles file with captions
+// Map UI font names to fonts we know are available on the render server.
+// libass uses fontconfig under the hood — if it can't find the requested family
+// it silently falls back to a default sans, which is exactly the bug Albert hit.
+// Server has fonts-liberation + fonts-dejavu + fonts-noto-core + fonts-freefont-ttf
+// installed (see Dockerfile). We alias the user-facing names to those families.
+const FONT_ALIAS = {
+  'Arial':           'Liberation Sans',
+  'Arial Black':     'Liberation Sans',
+  'Helvetica':       'Liberation Sans',
+  'Helvetica Neue':  'Liberation Sans',
+  'Verdana':         'DejaVu Sans',
+  'Times New Roman': 'Liberation Serif',
+  'Georgia':         'Liberation Serif',
+  'Courier New':     'Liberation Mono',
+  // Impact has no perfect free equivalent. DejaVu Sans Bold reads close enough
+  // for short-burst captions; we also keep the name as a comma-fallback so a
+  // user who installs Impact locally still gets it.
+  'Impact':          'DejaVu Sans'
+};
+function resolveFontName(uiFont) {
+  if (!uiFont) return 'Liberation Sans';
+  const aliased = FONT_ALIAS[uiFont];
+  if (aliased) return aliased;
+  // Unknown font name — pass through but append a safe fallback so libass
+  // has somewhere to land.
+  return `${uiFont},Liberation Sans`;
+}
+
+// Helper: Generate ASS subtitles file with captions.
+// Reads the FULL StyleConfig from customSettings — every field the UI exposes
+// (fontFamily, fontSize, fontColor, outlineColor, outlineWidth, highlightColor,
+// animation, position) gets honored. Falls back to preset defaults only when
+// a field is missing.
 function generateASSFile(transcript, preset, customSettings = {}) {
   const style = captionPresets[preset] || captionPresets.karaoke;
+  const cs = customSettings || {};
 
-  // Apply custom overrides
-  const fontSize = customSettings.fontSize || style.fontSize;
-  const fontColor = customSettings.fontColor || style.fontColor;
-  const outlineColor = customSettings.outlineColor || style.outlineColor;
-  const position = customSettings.position || 'bottom';
-  const fontFamily = customSettings.fontFamily || style.fontName;
+  // ----- Resolve every style field with explicit user-override -> preset fallback -----
+  const fontSizeRaw   = parseInt(cs.fontSize, 10);
+  const fontSize      = Number.isFinite(fontSizeRaw) ? fontSizeRaw : style.fontSize;
+
+  const fontColor     = sanitizeHex(cs.fontColor)     || style.fontColor;
+  const outlineColor  = sanitizeHex(cs.outlineColor)  || style.outlineColor;
+  const highlightColor = sanitizeHex(cs.highlightColor) || style.wordHighlightColor || style.fontColor;
+
+  // outlineWidth: explicit 0 must NOT be replaced by preset default (this was
+  // one of the Style "Hardening" issues — `|| style.outlineWidth` ate the 0).
+  const outlineWidth  = (cs.outlineWidth !== undefined && cs.outlineWidth !== null && !isNaN(parseInt(cs.outlineWidth, 10)))
+    ? parseInt(cs.outlineWidth, 10)
+    : style.outlineWidth;
+
+  const position      = cs.position || 'bottom';
+  const fontFamily    = resolveFontName(cs.fontFamily || style.fontName);
+
+  // animation: if user explicitly picked one, that overrides the preset's
+  // built-in animation. "none" means strip the per-preset effect too.
+  const animation     = cs.animation || null; // null = use preset's built-in behavior
+
+  // shadow + bold still come from preset (no UI control yet).
+  const shadowDepth   = style.shadowDepth;
+  const boldFlag      = style.bold ? -1 : 0;
 
   // Map position to ASS alignment (numpad style: 1-9)
-  const alignmentMap = {
-    top: 8,
-    center: 5,
-    bottom: 2
-  };
+  const alignmentMap = { top: 8, center: 5, bottom: 2 };
   const alignment = alignmentMap[position] || 2;
+
+  // MarginV — pull caption away from edges, especially for bottom-anchored
+  // overlays so they sit clear of the player's controls bar.
+  const marginV = position === 'bottom' ? 60 : 30;
 
   let assContent = `[Script Info]
 Title: AI Captions
 ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},&H00FFFFFF&,${colorToASS(outlineColor)},&H00000000&,-1,0,0,0,100,100,0,0,1,${style.outlineWidth},${style.shadowDepth},${alignment},10,10,10,1
+Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},0,0,0,100,100,0,0,1,${outlineWidth},${shadowDepth},${alignment},10,10,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -360,6 +423,68 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   let currentTime = 0;
   const lines = [];
 
+  // Convert seconds to ASS time format (h:mm:ss.cc)
+  const formatTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const cents = Math.floor((seconds % 1) * 100);
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cents).padStart(2, '0')}`;
+  };
+
+  // Build a per-word effect tag block.
+  // Order of precedence:
+  //   1. If user picked an explicit animation, use that (overrides preset).
+  //   2. Otherwise use the preset's built-in word effect (karaoke, bold-pop,
+  //      mrbeast, etc.).
+  //   3. "none" wipes both — flat caption.
+  function buildWordEffect(word, startTime, endTime) {
+    const durCs = Math.max(1, Math.round((endTime - startTime) * 100));
+    const tagsForUserAnim = (anim) => {
+      switch (anim) {
+        case 'fade':
+          return `\\fad(150,150)`;
+        case 'slide':
+          // Slide in from below by 40px to current position over 200ms
+          return `\\move(0,40,0,0,0,200)`;
+        case 'pop':
+          return `\\fscx115\\fscy115\\t(0,150,\\fscx100\\fscy100)`;
+        case 'glow':
+          // Pulse outline color brightness via secondary outline animation
+          return `\\3c${colorToASS(highlightColor)}\\bord${outlineWidth + 2}\\t(0,${durCs * 10},\\bord${outlineWidth})`;
+        case 'none':
+          return '';
+        default:
+          return null;
+      }
+    };
+
+    // 1) Explicit user override (incl. "none")
+    if (animation) {
+      const userTags = tagsForUserAnim(animation);
+      if (userTags === '') return word;                // "none" -> flat
+      if (userTags !== null) return `{${userTags}}${word}`;
+    }
+
+    // 2) Preset built-ins (only when user didn't override)
+    if (preset === 'karaoke') {
+      return `{\\k${durCs}\\1c${colorToASS(highlightColor)}}${word}`;
+    } else if (preset === 'bold-pop') {
+      return `{\\fscx110\\fscy110\\t(0,150,\\fscx100\\fscy100)}${word}`;
+    } else if (preset === 'mrbeast') {
+      return `{\\fscx115\\fscy115\\t(0,150,\\fscx100\\fscy100)}${word.toUpperCase()}`;
+    } else if (preset === 'neon-glow') {
+      return `{\\3c${colorToASS(highlightColor)}\\bord${outlineWidth + 1}\\t(0,${durCs * 10},\\bord${outlineWidth})}${word}`;
+    } else if (preset === 'hormozi') {
+      // Yellow box highlight on active word — ASS doesn't do CSS-style boxes
+      // but we can simulate with primary-color flash + thicker outline
+      return `{\\1c${colorToASS(highlightColor)}\\bord${outlineWidth + 1}}${word}`;
+    } else if (preset === 'minimal') {
+      return `{\\fad(120,80)}${word}`;
+    }
+    return word;
+  }
+
   for (let i = 0; i < transcript.length; i++) {
     const item = transcript[i];
     const word = item.word || '';
@@ -367,32 +492,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     const endTime = item.end || (currentTime + 1);
     currentTime = endTime;
 
-    // Convert seconds to ASS time format (h:mm:ss.cc)
-    const formatTime = (seconds) => {
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      const secs = Math.floor(seconds % 60);
-      const cents = Math.floor((seconds % 1) * 100);
-      return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cents).padStart(2, '0')}`;
-    };
-
     const startASS = formatTime(startTime);
     const endASS = formatTime(endTime);
-
-    // Build text with effects based on preset
-    let textLine = word;
-
-    if (preset === 'karaoke') {
-      // Karaoke: highlight current word with gradient
-      const duration = Math.round((endTime - startTime) * 100);
-      textLine = `{\\k${duration}}${word}`;
-    } else if (preset === 'bold-pop') {
-      // Bold pop: scale effect
-      textLine = `{\\fscx110\\fscy110\\t(${Math.round((startTime + 0.1) * 100)},${Math.round(endTime * 100)},\\fscx100\\fscy100)}${word}`;
-    } else if (preset === 'mrbeast') {
-      // MrBeast: all caps with pop
-      textLine = `{\\fscx115\\fscy115\\t(${Math.round((startTime + 0.1) * 100)},${Math.round(endTime * 100)},\\fscx100\\fscy100)}${word.toUpperCase()}`;
-    }
+    const textLine = buildWordEffect(word, startTime, endTime);
 
     lines.push(`Dialogue: 0,${startASS},${endASS},Default,,0,0,0,,${textLine}`);
   }
@@ -1512,13 +1614,24 @@ router.get('/', requireAuth, (req, res) => {
 
       updateProgress(30, 'Applying captions...');
       try {
+        // SHARED StyleConfig — same values the live preview is currently rendering.
+        // This is the only place we should be sourcing export style from; never
+        // re-read individual DOM fields here or preview/export will drift.
+        const live = readCurrentStyle();
         const customSettings = {
-          fontSize: parseInt(document.getElementById('fontSize').value),
-          fontColor: document.getElementById('textColorHex').value,
-          outlineColor: document.getElementById('outlineColorHex').value,
-          position: document.getElementById('position').value,
-          fontFamily: document.getElementById('fontFamily').value
+          fontFamily: live.fontFamily,
+          fontSize: live.fontSize,
+          fontColor: live.textColor,        // backend uses "fontColor"; UI calls it "textColor"
+          outlineColor: live.outlineColor,
+          outlineWidth: live.outlineWidth,
+          highlightColor: live.highlightColor,
+          animation: live.animation,
+          position: live.position
         };
+
+        // Diagnostic: log the exact payload so a Console screenshot proves
+        // preview state == export payload.
+        console.log('[AI Captions] export StyleConfig =>', customSettings);
 
         const res = await fetch('/ai-captions/apply', {
           method: 'POST',
