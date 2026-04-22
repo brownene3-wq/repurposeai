@@ -1877,7 +1877,7 @@
     // in the app). 'route' = URL to open in a new tab. A few don't have
     // dedicated pages yet — those get a helpful toast.
     var aiTools = [
-      { g:'AI GENERATION', ic:'\u2728',        label:'Enhance',       route:'/enhance-speech' },
+      { g:'AI GENERATION', ic:'\u2728',        label:'Enhance Audio', route:'/enhance-speech' },
       { g:'AI GENERATION', ic:'\ud83d\udcac',  label:'Captions',      route:'/ai-captions' },
       { g:'AI GENERATION', ic:'\ud83c\udfa3',  label:'AI Hook',       route:'/ai-hook' },
       { g:'AI GENERATION', ic:'\ud83c\udfa8',  label:'Brand Kit',     route:'/brand-kits' },
@@ -1913,7 +1913,7 @@
     //                 phrase-chunked text clips onto T1 at matching times
     //   AI Hook / Brand Kit — still iframe-modal (those tools need a UI)
     //   AI ANALYSIS / AI CREATIVE — new tab if route, toast otherwise
-    var DIRECT_ACTIONS = { 'Enhance': 'enhance', 'Captions': 'captions' };
+    var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions' };
     var MODAL_LABELS   = { 'AI Hook': 1, 'Brand Kit': 1 };
     Array.from(div.querySelectorAll('[data-v10-ai-route]')).forEach(function(btn){
       btn.addEventListener('click', function(e){
