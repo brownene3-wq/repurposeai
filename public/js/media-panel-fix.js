@@ -2749,6 +2749,89 @@
       showToast('Trim ' + parts[0] + 's \u2192 ' + parts[1] + 's');
     });
   }
+  // Visual Slip Edit: shift the media WITHIN the clip's duration
+  // (i.e. trimIn and trimOut move together by the same amount), so the
+  // clip keeps its timeline length but shows a different portion of the
+  // source media. Useful when you've locked down clip duration for a
+  // beat-sync or caption cue but still want to nudge which frames play.
+  //
+  // Opens a slider popover: dragging left rewinds the visible window,
+  // right fast-forwards. Range is clamped by the source media's
+  // duration so you can't slip off either end.
+  function clipActionSlipEdit(){
+    var existing = document.getElementById('slipPopover');
+    if (existing && existing.isConnected){ existing.remove(); return; }
+    if (existing){ try { existing.remove(); } catch(_){} }
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+
+    var duration = parseFloat(clip.dataset.duration) || 0;   // clip's on-timeline length
+    var srcDur   = parseFloat(clip.dataset.srcDuration)
+                || parseFloat(clip.dataset.sourceDuration)
+                || duration;
+    var origIn   = parseFloat(clip.dataset.trimIn)  || 0;
+    var origOut  = parseFloat(clip.dataset.trimOut) || duration;
+    var span     = origOut - origIn;                         // stays constant across slips
+
+    // Slip range: how far we can push trimIn without overflowing source
+    var minIn = 0;
+    var maxIn = Math.max(0, srcDur - span);
+    if (maxIn <= 0){
+      showToast('Source media is too short to slip');
+      return;
+    }
+
+    var pop = document.createElement('div');
+    pop.id = 'slipPopover';
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
+      'border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:280px;' +
+      'box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+    pop.innerHTML =
+      '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:6px">SLIP EDIT</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Shift which part of the source plays without changing clip length.</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+        '<span style="font-size:10px;color:#8886a0;min-width:46px">In (s)</span>' +
+        '<input type="range" id="slipRange" min="' + minIn.toFixed(3) + '" max="' + maxIn.toFixed(3) +
+        '" step="0.01" value="' + origIn.toFixed(3) + '" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="slipValue" style="font-size:11px;font-weight:600;color:#fde047;min-width:46px;text-align:right">' + origIn.toFixed(2) + '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button id="slipReset" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Reset</button>' +
+        '<button id="slipClose" style="flex:1;padding:6px;background:rgba(139,92,246,.3);border:1px solid #a78bfa;border-radius:6px;color:#fff;font-size:11px;font-weight:600;cursor:pointer">Done</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+
+    var range  = pop.querySelector('#slipRange');
+    var value  = pop.querySelector('#slipValue');
+    var reset  = pop.querySelector('#slipReset');
+    var close  = pop.querySelector('#slipClose');
+
+    // Live-update trimIn/trimOut as user drags; preview rebakes on 'change'
+    // (not 'input') to avoid hammering the server with rebake requests
+    // during the drag.
+    range.addEventListener('input', function(){
+      var newIn = parseFloat(range.value);
+      var newOut = newIn + span;
+      clip.dataset.trimIn  = newIn.toFixed(3);
+      clip.dataset.trimOut = newOut.toFixed(3);
+      value.textContent = newIn.toFixed(2);
+    });
+    range.addEventListener('change', function(){
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+    });
+    reset.addEventListener('click', function(){
+      clip.dataset.trimIn  = origIn.toFixed(3);
+      clip.dataset.trimOut = origOut.toFixed(3);
+      range.value = origIn.toFixed(3);
+      value.textContent = origIn.toFixed(2);
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Slip reset');
+    });
+    close.addEventListener('click', function(){ pop.remove(); showToast('Slip applied'); });
+  }
   function clipActionSplit(){
     var clip = getActiveClip();
     if (!clip){ showToast('Select a clip first'); return; }
@@ -2846,25 +2929,125 @@
     try { syncPreviewToPlayhead(); } catch(_){}
     showToast('Flipped' + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
   }
+  // Direct Position: enters a "drag-to-position" mode on the Program
+  // Monitor. While active, the user can grab the preview frame and drag
+  // it anywhere inside the PGM — live CSS transform gives instant visual
+  // feedback, and on mouseup we bake the new offsetX/offsetY into the
+  // active clip's dataset (pixels in source-media coordinates) and
+  // request a server-side preview rebake so the change sticks.
+  //
+  // Click the Position button once to enter, again to exit. ESC also
+  // exits. We intentionally avoid the old prompt() flow because typing
+  // pixel coordinates by hand is a bad UX for creators.
   function clipActionPosition(){
-    promptToActiveClips(
-      function(c){
-        var cx = parseFloat(c.dataset.offsetX) || 0;
-        var cy = parseFloat(c.dataset.offsetY) || 0;
-        var input = prompt('X, Y offset in pixels (e.g. 50,-30)', cx + ',' + cy);
-        if (input === null) return null;
-        var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
-        if (parts.length !== 2 || !isFinite(parts[0]) || !isFinite(parts[1])){
-          showToast('Invalid position'); return null;
-        }
-        return parts;
-      },
-      function(c, parts){
-        c.dataset.offsetX = String(parts[0]);
-        c.dataset.offsetY = String(parts[1]);
-      },
-      'Offset set'
-    );
+    // Toggle off if we're already in drag-position mode
+    if (window.__posDragCleanup){
+      window.__posDragCleanup();
+      return;
+    }
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+
+    var container = document.querySelector('.video-container') || document.getElementById('videoPreviewArea');
+    var preview   = document.querySelector('#previewImage') ||
+                    document.querySelector('.video-container img') ||
+                    document.getElementById('videoPlayer');
+    if (!container || !preview){ showToast('Preview not ready'); return; }
+
+    // Overlay hint so the user knows they're in drag mode
+    var hint = document.createElement('div');
+    hint.id = 'posDragHint';
+    hint.textContent = '🤚 Drag to reposition — click Position again (or press Esc) to exit';
+    hint.style.cssText = 'position:absolute;top:6px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(108,58,237,.92);color:#fff;padding:6px 12px;border-radius:14px;' +
+      'font-size:11px;font-weight:600;letter-spacing:.3px;z-index:100;pointer-events:none;' +
+      'box-shadow:0 4px 14px rgba(0,0,0,.4)';
+    var origContainerPos = container.style.position || '';
+    if (!origContainerPos) container.style.position = 'relative';
+    container.appendChild(hint);
+
+    // Visual cue: grab cursor on the preview
+    var origCursor = preview.style.cursor || '';
+    preview.style.cursor = 'grab';
+
+    var startX, startY, origX, origY, dragging = false;
+    // Conversion factor: PGM pixels → source-media pixels
+    // We approximate by the ratio of the clip's source resolution
+    // (if known) to the on-screen preview size.
+    function conversionFactor(){
+      var pr = preview.getBoundingClientRect();
+      var srcW = clip.dataset.srcWidth  ? parseFloat(clip.dataset.srcWidth)  : (preview.naturalWidth  || pr.width);
+      var srcH = clip.dataset.srcHeight ? parseFloat(clip.dataset.srcHeight) : (preview.naturalHeight || pr.height);
+      return {
+        sx: (srcW && pr.width)  ? srcW / pr.width  : 1,
+        sy: (srcH && pr.height) ? srcH / pr.height : 1
+      };
+    }
+
+    function onDown(e){
+      if (e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      origX = parseFloat(clip.dataset.offsetX) || 0;
+      origY = parseFloat(clip.dataset.offsetY) || 0;
+      preview.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
+    function onMove(e){
+      if (!dragging) return;
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+      // Live CSS transform for instant visual feedback (the server
+      // doesn't need to know — we re-bake on mouseup)
+      preview.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    }
+    function onUp(e){
+      if (!dragging) return;
+      dragging = false;
+      preview.style.cursor = 'grab';
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+      // Convert PGM-pixel delta into source-media pixels and bake
+      var conv = conversionFactor();
+      var newX = origX + Math.round(dx * conv.sx);
+      var newY = origY + Math.round(dy * conv.sy);
+      clip.dataset.offsetX = String(newX);
+      clip.dataset.offsetY = String(newY);
+      // Clear the live transform now that the bake applies
+      preview.style.transform = '';
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Position: ' + newX + ', ' + newY);
+      if (typeof pushTimelineHistory === 'function'){
+        try { pushTimelineHistory(); } catch(_){}
+      }
+    }
+    function onKey(e){
+      if (e.key === 'Escape' && window.__posDragCleanup){ window.__posDragCleanup(); }
+    }
+
+    preview.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+    window.addEventListener('keydown',   onKey);
+
+    window.__posDragCleanup = function(){
+      try { hint.remove(); } catch(_){}
+      preview.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup',   onUp);
+      window.removeEventListener('keydown',   onKey);
+      preview.style.cursor = origCursor;
+      preview.style.transform = '';
+      if (!origContainerPos && container.style.position === 'relative'){
+        container.style.position = '';
+      }
+      window.__posDragCleanup = null;
+      showToast('Position mode off');
+    };
+
+    showToast('Drag to reposition the clip');
   }
   // ── Text clip editors ──
   // Target selection rules:
@@ -3483,6 +3666,7 @@
   // Expose so v10-editor-redesign.js EDIT-tab buttons can call them.
   try {
     window.clipActionTrim     = clipActionTrim;
+    window.clipActionSlipEdit = clipActionSlipEdit;
     window.clipActionSplit    = clipActionSplit;
     window.clipActionSpeed    = clipActionSpeed;
     window.clipActionCrop     = clipActionCrop;

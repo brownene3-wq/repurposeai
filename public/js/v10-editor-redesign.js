@@ -1257,6 +1257,7 @@
       '<div class="v10-rp-section-title">CLIP TOOLS <span id="v10ClipToolsHint" style="font-weight:400;color:#8886a0;font-size:10px;margin-left:8px">select a V1 clip</span></div>'+
       '<div class="v10-rp-grid" data-v10-clip-tools-group>'+
         rpBtn('\u2702\ufe0f','Trim','Trim')+
+        rpBtn('\u27a1\ufe0f','Slip','SlipEdit')+
         rpBtn('\ud83d\udd2a','Split','Split')+
         rpBtn('\u2b1c','Crop','Crop')+
       '</div>'+
