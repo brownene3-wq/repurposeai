@@ -1949,6 +1949,10 @@
     // Crop UI (if we're in visual crop mode) sits on top of the frame
     // and text overlays so the user always sees their crop rect + handles.
     try { progDrawCropOverlay(ctx, W, H); } catch(_){}
+    // Keep the Apply / Cancel / Reset toolbar attached every frame while
+    // cropping — the editor sometimes re-renders the player container,
+    // and without this the toolbar becomes an orphan no-op.
+    if (_cropMode){ try { ensureCropToolbar(); } catch(_){} }
 
     // Watermark so the user knows this is a simulation — NOT the final export.
     ctx.fillStyle = 'rgba(139,92,246,.95)';
@@ -3951,14 +3955,27 @@
   }
 
   // Floating Apply / Cancel / Reset toolbar that lives on top of the PGM.
+  // Self-healing: the editor frequently re-renders the player container,
+  // which orphans the toolbar (and the PGM canvas). We re-anchor on
+  // videoPlayer.parentElement every call and re-attach an existing-but-
+  // detached toolbar instead of returning a dead reference.
   function ensureCropToolbar(){
-    var canvas = document.getElementById('tlProgMonitor');
-    if (!canvas) return null;
-    var container = canvas.parentElement;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player) return null;
+    var container = player.parentElement;
     if (!container) return null;
-    var existing = document.getElementById('tlCropToolbar');
-    if (existing) return existing;
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    // Make sure the canvas is also attached — otherwise the toolbar
+    // would float above an empty preview region.
+    try { ensureProgramMonitor(); } catch(_){}
+    var existing = document.getElementById('tlCropToolbar');
+    if (existing){
+      // Re-attach if the editor re-rendered the player container.
+      if (existing.parentElement !== container){
+        try { container.appendChild(existing); } catch(_){}
+      }
+      return existing;
+    }
     var bar = document.createElement('div');
     bar.id = 'tlCropToolbar';
     bar.style.cssText = 'position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:9;display:flex;gap:8px;background:rgba(15,10,30,.92);border:1px solid rgba(139,92,246,.55);border-radius:10px;padding:7px 9px;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.45)';
@@ -4028,13 +4045,22 @@
     // will be kept. We re-apply on Apply / restore on Cancel.
     if (orig) delete clip.dataset.crop;
     _snapPlayheadIntoClip(clip);
+    // Make sure the PGM canvas is attached BEFORE we position the
+    // toolbar — ensureCropToolbar internally calls ensureProgramMonitor
+    // but we also want to make sure its RAF loop is spinning so the
+    // crop overlay actually draws.
+    try { ensureProgramMonitor(); } catch(_){}
     ensureCropToolbar();
     // Wire crop drag now that the canvas exists.
     var canvas = document.getElementById('tlProgMonitor');
     if (canvas) wirePgmCropDrag(canvas);
     if (canvas) canvas.style.cursor = 'crosshair';
+    // Debug hook — lets us inspect state from DevTools.
+    try { window._cropModeState = _cropMode; } catch(_){}
     showToast('Drag the handles to crop \u00B7 Apply when done');
     try { syncPreviewToPlayhead(); } catch(_){}
+    // Kick the RAF loop in case PGM was already on but idle.
+    if (_progEnabled && !_progRAF){ _progRAF = requestAnimationFrame(progLoop); }
   }
 
   function exitCropMode(commit){
@@ -4064,6 +4090,7 @@
       showToast('Crop cancelled');
     }
     _cropMode = null;
+    try { window._cropModeState = null; } catch(_){}
     removeCropToolbar();
     var canvas = document.getElementById('tlProgMonitor');
     if (canvas) canvas.style.cursor = '';
