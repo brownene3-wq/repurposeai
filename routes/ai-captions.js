@@ -514,6 +514,12 @@ function burnSubtitles(videoPath, assPath, outputPath) {
       '-vf', `ass=${assFilter}`,
       '-c:a', 'aac',
       '-q:a', '5',
+      // Move moov atom to the front so the file is streamable / scrub-friendly.
+      // Without this the browser's <video> element can't render the file from
+      // a blob URL until the entire payload is downloaded, and downstream
+      // tools that probe headers (cloud storage, social uploaders) see a
+      // zero-duration file.
+      '-movflags', '+faststart',
       '-y',
       outputPath
     ];
