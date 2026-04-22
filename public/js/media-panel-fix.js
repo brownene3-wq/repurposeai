@@ -3954,15 +3954,48 @@
     canvas.addEventListener('mouseleave', endCropDrag, true);
   }
 
+  // Pick the best container to anchor the crop toolbar on. Preference:
+  //   1. .video-container (always visible — wraps both #uploadZone and
+  //      #videoPreviewArea, so the toolbar is visible even when the
+  //      preview area itself is collapsed)
+  //   2. #videoPlayer.parentElement (legacy fallback)
+  function _cropToolbarAnchor(){
+    var vc = document.querySelector('.video-container');
+    if (vc) return vc;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    return (player && player.parentElement) || null;
+  }
+
+  // Force the PGM preview region to be visible so the canvas (and the
+  // crop UI overlaid on it) is actually rendered. The editor hides
+  // #videoPreviewArea until video playback starts, but for visual crop
+  // we need the canvas visible regardless.
+  function _showPreviewArea(){
+    var area = document.getElementById('videoPreviewArea');
+    if (area){
+      if (getComputedStyle(area).display === 'none') area.style.display = 'block';
+      if (getComputedStyle(area).visibility === 'hidden') area.style.visibility = 'visible';
+    }
+    // Hide the upload zone while we're cropping so it doesn't sit on
+    // top of the canvas with the same parent stacking context.
+    var uz = document.getElementById('uploadZone');
+    if (uz) uz.dataset._cropHidPrev = uz.style.display || '', uz.style.display = 'none';
+  }
+  function _restorePreviewArea(){
+    var uz = document.getElementById('uploadZone');
+    if (uz && '_cropHidPrev' in uz.dataset){
+      uz.style.display = uz.dataset._cropHidPrev || '';
+      delete uz.dataset._cropHidPrev;
+    }
+  }
+
   // Floating Apply / Cancel / Reset toolbar that lives on top of the PGM.
   // Self-healing: the editor frequently re-renders the player container,
-  // which orphans the toolbar (and the PGM canvas). We re-anchor on
-  // videoPlayer.parentElement every call and re-attach an existing-but-
-  // detached toolbar instead of returning a dead reference.
+  // which orphans the toolbar (and the PGM canvas). We re-anchor on the
+  // always-visible .video-container every call and re-attach an existing-
+  // but-detached toolbar instead of returning a dead reference.
   function ensureCropToolbar(){
-    var player = document.getElementById('videoPlayer') || document.querySelector('video');
-    if (!player) return null;
-    var container = player.parentElement;
+    var container = _cropToolbarAnchor();
     if (!container) return null;
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
     // Make sure the canvas is also attached — otherwise the toolbar
@@ -4045,6 +4078,9 @@
     // will be kept. We re-apply on Apply / restore on Cancel.
     if (orig) delete clip.dataset.crop;
     _snapPlayheadIntoClip(clip);
+    // Force the PGM preview region to be visible — by default the editor
+    // hides it until video plays, and we need the canvas visible to crop.
+    try { _showPreviewArea(); } catch(_){}
     // Make sure the PGM canvas is attached BEFORE we position the
     // toolbar — ensureCropToolbar internally calls ensureProgramMonitor
     // but we also want to make sure its RAF loop is spinning so the
@@ -4092,6 +4128,7 @@
     _cropMode = null;
     try { window._cropModeState = null; } catch(_){}
     removeCropToolbar();
+    try { _restorePreviewArea(); } catch(_){}
     var canvas = document.getElementById('tlProgMonitor');
     if (canvas) canvas.style.cursor = '';
     try { syncPreviewToPlayhead(); } catch(_){}
