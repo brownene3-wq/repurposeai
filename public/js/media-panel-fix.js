@@ -2970,8 +2970,12 @@
   //      fallback) and bakes a clip.dataset.crop that frames the face.
   function clipActionSmartResize(){
     // One popover at a time — toggle off if already open.
+    // Guard against orphaned/ghost references (rare: getElementById can
+    // return a detached node when the ID index hasn't been flushed). We
+    // only treat it as "open" when the element is actually in the tree.
     var existing = document.getElementById('srPopover');
-    if (existing){ existing.remove(); return; }
+    if (existing && existing.isConnected){ existing.remove(); return; }
+    if (existing) { try { existing.remove(); } catch(_){} }
 
     var cur = window.__exportAspect || '16:9';
     var pop = document.createElement('div');
