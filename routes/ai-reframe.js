@@ -537,38 +537,59 @@ function computeGridCells(n, padding) {
 // the x/y positions interpolate. Aspect-matches the target cell.
 function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, options) {
   // Back-compat: old callers passed a numeric tightness as the 6th arg.
-  if (typeof options === 'number') options = { tightness: options };
+  // It's now interpreted as heightMult (the equivalent sizing knob).
+  if (typeof options === 'number') options = { heightMult: options };
   options = options || {};
-  const tightness = typeof options.tightness === 'number' ? options.tightness : 2.0;
+  // Ratio of crop height to face height. ~3.0 = shoulder-up composition
+  // (face fills ~1/3 of crop height, shoulders + some breathing room).
+  const heightMult = typeof options.heightMult === 'number' ? options.heightMult : 3.0;
 
   const samples = (subject.samples || []).slice();
-  let maxFaceW = 0, sumCx = 0, sumCy = 0;
+  let maxFaceW = 0, maxFaceH = 0, sumCx = 0, sumCy = 0;
   for (const s of samples) {
     if (s.w > maxFaceW) maxFaceW = s.w;
+    if (s.h > maxFaceH) maxFaceH = s.h;
     sumCx += s.cx; sumCy += s.cy;
   }
   if (maxFaceW <= 0) maxFaceW = 0.18;
+  if (maxFaceH <= 0) maxFaceH = 0.22;
   const avgCx = samples.length ? sumCx / samples.length : 0.5;
   const avgCy = samples.length ? sumCy / samples.length : 0.5;
 
   const cellAspect = cellW / cellH;
-  let cropW = Math.round(maxFaceW * inputW * tightness);
 
-  // Multi-subject overlap guard: clamp cropW so this subject's crop doesn't
-  // reach into the nearest other subject's territory (which would cause
-  // both cells to show the same people).
+  // Height-driven sizing: compose for shoulder-up by making crop height a
+  // multiple of face height. Width is then derived from the cell aspect.
+  let cropH = Math.round(maxFaceH * inputH * heightMult);
+  let cropW = Math.round(cropH * cellAspect);
+
+  // Multi-subject overlap guard: cropW must be STRICTLY less than the gap
+  // to the nearest neighbor's center, or both cells will bleed into each
+  // other and end up showing the same middle-of-frame content.
   if (typeof options.neighborCx === 'number') {
-    const neighborPxDist = Math.abs(options.neighborCx - avgCx) * inputW;
-    if (neighborPxDist > 0) {
-      const maxByNeighbor = Math.max(220, Math.round(neighborPxDist * 0.9));
-      if (cropW > maxByNeighbor) cropW = maxByNeighbor;
+    const gapPx = Math.abs(options.neighborCx - avgCx) * inputW;
+    if (gapPx > 0) {
+      // Leave 60px buffer so each subject's crop ends well before the
+      // neighbor's center. Min 240 to avoid absurdly tiny crops when
+      // subjects are unavoidably close.
+      const maxByNeighbor = Math.max(240, Math.round(gapPx - 60));
+      if (cropW > maxByNeighbor) {
+        cropW = maxByNeighbor;
+        cropH = Math.round(cropW / cellAspect);
+      }
     }
   }
 
-  let cropH = Math.round(cropW / cellAspect);
-  cropW = Math.max(120, Math.min(inputW, cropW));
-  cropH = Math.max(120, Math.min(inputH, cropH));
-  // Re-enforce aspect after clamping
+  // Don't let the crop be so tiny that we'd have to scale it up >2.5x
+  // (visibly pixelated). This also rescues small-face wide-shot cases.
+  const minCropW = Math.round(cellW / 2.5);
+  const minCropH = Math.round(cellH / 2.5);
+  if (cropW < minCropW) { cropW = minCropW; cropH = Math.round(cropW / cellAspect); }
+  if (cropH < minCropH) { cropH = minCropH; cropW = Math.round(cropH * cellAspect); }
+
+  // Bound by source dims, then re-enforce aspect
+  cropW = Math.min(inputW, cropW);
+  cropH = Math.min(inputH, cropH);
   if (cropW / cropH > cellAspect) cropW = Math.round(cropH * cellAspect);
   else                            cropH = Math.round(cropW / cellAspect);
 
@@ -576,13 +597,16 @@ function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, options) 
   if (cropW % 2 === 1) cropW -= 1;
   if (cropH % 2 === 1) cropH -= 1;
 
-  // Per-sample target crop top-left positions, with a small upward bias so
-  // the head sits slightly above center (head + shoulders framing).
+  // Shoulder-up composition: place the face center at ~30% from the top of
+  // the crop. (Before: sign was inverted and face sat at ~62% from top,
+  // giving headroom-heavy framing that cut off shoulders.)
+  const FACE_TOP_FRACTION = 0.30;
   const positions = samples.map(s => {
     const fx = s.cx * inputW;
-    const fy = s.cy * inputH - cropH * 0.08;
+    // We want: face_center_y (in source) = y + FACE_TOP_FRACTION * cropH
+    //     so: y = s.cy * inputH - FACE_TOP_FRACTION * cropH
     let x = Math.round(fx - cropW / 2);
-    let y = Math.round(fy - cropH / 2);
+    let y = Math.round(s.cy * inputH - FACE_TOP_FRACTION * cropH);
     x = Math.max(0, Math.min(inputW - cropW, x));
     y = Math.max(0, Math.min(inputH - cropH, y));
     return { time: s.time, x, y };

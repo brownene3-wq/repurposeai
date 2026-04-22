@@ -109,9 +109,9 @@ t('subjectCrop: empty -> numeric xExpr', !isNaN(Number(subE.xExpr)));
 t('subjectCrop: empty -> numeric yExpr', !isNaN(Number(subE.yExpr)));
 
 // --- Multi-subject overlap guard (regression: both cells showed same person) ---
-// Two subjects 400px apart (cx=0.35 and cx=0.56 on a 1920px frame = ~400px gap),
-// each with a 0.15-width face. Without the neighbor clamp, cropW = 0.15*1920*2.0 = 576px,
-// so each crop centered on its face would straddle the other face too.
+// Two subjects ~400px apart (cx=0.35 and cx=0.56 on a 1920px frame).
+// The two crops must NOT overlap — if they do, both cells show the same
+// middle-of-frame content.
 const subjA = fakeSubject([
   { time: 0, cx: 0.35, cy: 0.5, w: 0.15, h: 0.2 },
   { time: 0.2, cx: 0.35, cy: 0.5, w: 0.15, h: 0.2 },
@@ -127,22 +127,57 @@ const clampedB = H.computeSubjectCropExpr(subjB, 1920, 1080, 540, 540, { neighbo
 t('neighbor-clamp: A cropW < gap to neighbor', clampedA.cropW < pxGap,
   `cropW=${clampedA.cropW} gap=${pxGap.toFixed(0)}`);
 t('neighbor-clamp: B cropW < gap to neighbor', clampedB.cropW < pxGap);
-// Each crop center should be roughly at subject's cx, and extents shouldn't cross
-// into the other's cx.
+
+// Hard non-overlap: the right edge of A's crop must be STRICTLY LEFT of
+// the left edge of B's crop (anything less and both cells show middle).
 const centerA = 0.35 * 1920;
 const centerB = 0.56 * 1920;
-t('neighbor-clamp: A crop does not cross into B',
-  centerA + clampedA.cropW / 2 < centerB);
-t('neighbor-clamp: B crop does not cross into A',
-  centerB - clampedB.cropW / 2 > centerA);
+const aRight = centerA + clampedA.cropW / 2;
+const bLeft  = centerB - clampedB.cropW / 2;
+t('neighbor-clamp: NO overlap between A and B crops',
+  aRight < bLeft,
+  `aRight=${aRight.toFixed(0)} bLeft=${bLeft.toFixed(0)} overlap=${(aRight-bLeft).toFixed(0)}px`);
 
-// Unclamped (solo) crop should still be allowed to be wider.
+// Solo crop should be allowed to be larger than neighbor-clamped crop.
 const solo = H.computeSubjectCropExpr(subjA, 1920, 1080, 540, 540);
-t('solo mode: cropW > clamped cropW', solo.cropW >= clampedA.cropW);
+t('solo mode: cropW >= clamped cropW', solo.cropW >= clampedA.cropW);
 
-// Back-compat: passing a numeric tightness (old signature) still works.
+// --- Shoulder-up composition (regression: face was at ~62% from top, now ~30%) ---
+// A single face at (0.5, 0.5), face size 0.15w/0.20h, cell is 1080x1920 (9:16).
+// The computed y-position for the crop should place the face center at ~30% from top.
+const soloTallCell = H.computeSubjectCropExpr(
+  fakeSubject([{ time: 0, cx: 0.5, cy: 0.5, w: 0.15, h: 0.20 }]),
+  1920, 1080, 1080, 1920
+);
+const yExprNum = Number(soloTallCell.yExpr);
+// Face center in source = 0.5 * 1080 = 540px. Face center in crop = 540 - y.
+// That should equal ~0.30 * cropH.
+const faceCenterInCrop = 540 - yExprNum;
+const faceFraction = faceCenterInCrop / soloTallCell.cropH;
+t('shoulder-up: face center at ~30% from top of crop',
+  faceFraction > 0.20 && faceFraction < 0.40,
+  `faceFraction=${faceFraction.toFixed(3)} (y=${yExprNum} cropH=${soloTallCell.cropH})`);
+
+// --- Shoulder-up actually sees shoulders: cropH should include space below face ---
+// Face at cy=0.5 occupies 20% of frame height. Below the face, the crop
+// should extend by at least ~0.7 * cropH (from the 30% face_top_fraction).
+// That "below face" span must be much larger than the face itself.
+t('shoulder-up: crop extends below face by more than the face itself',
+  (soloTallCell.cropH - faceCenterInCrop) > 0.20 * 1080 * 1.2,
+  `below=${soloTallCell.cropH - faceCenterInCrop} face=${(0.20*1080).toFixed(0)}`);
+
+// --- Min-size floor (regression: tiny faces in wide shots produced pixelated cells) ---
+const tinyFace = H.computeSubjectCropExpr(
+  fakeSubject([{ time: 0, cx: 0.3, cy: 0.5, w: 0.04, h: 0.05 }]),
+  1920, 1080, 540, 540
+);
+t('min-size: tiny face wide-shot crop not smaller than cell/2.5',
+  tinyFace.cropW >= Math.round(540/2.5) - 2 && tinyFace.cropH >= Math.round(540/2.5) - 2,
+  `cropW=${tinyFace.cropW} cropH=${tinyFace.cropH}`);
+
+// Back-compat: passing a numeric 6th arg (used to be tightness) still works.
 const legacy = H.computeSubjectCropExpr(subjA, 1920, 1080, 540, 540, 2.5);
-t('back-compat: numeric tightness still accepted', legacy.cropW > 0);
+t('back-compat: numeric 6th arg still accepted', legacy.cropW > 0);
 
 // ---------- buildGridFilterGraph ----------
 const subs = [subj, subj];
