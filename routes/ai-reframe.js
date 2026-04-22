@@ -535,15 +535,36 @@ function computeGridCells(n, padding) {
 // Uses a fixed crop size based on the subject's max face width so the crop
 // dimensions stay constant (FFmpeg's crop filter requires constant w/h); only
 // the x/y positions interpolate. Aspect-matches the target cell.
-function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, tightness) {
-  tightness = tightness || 3.2;
+function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, options) {
+  // Back-compat: old callers passed a numeric tightness as the 6th arg.
+  if (typeof options === 'number') options = { tightness: options };
+  options = options || {};
+  const tightness = typeof options.tightness === 'number' ? options.tightness : 2.0;
+
   const samples = (subject.samples || []).slice();
-  let maxFaceW = 0;
-  for (const s of samples) if (s.w > maxFaceW) maxFaceW = s.w;
+  let maxFaceW = 0, sumCx = 0, sumCy = 0;
+  for (const s of samples) {
+    if (s.w > maxFaceW) maxFaceW = s.w;
+    sumCx += s.cx; sumCy += s.cy;
+  }
   if (maxFaceW <= 0) maxFaceW = 0.18;
+  const avgCx = samples.length ? sumCx / samples.length : 0.5;
+  const avgCy = samples.length ? sumCy / samples.length : 0.5;
 
   const cellAspect = cellW / cellH;
   let cropW = Math.round(maxFaceW * inputW * tightness);
+
+  // Multi-subject overlap guard: clamp cropW so this subject's crop doesn't
+  // reach into the nearest other subject's territory (which would cause
+  // both cells to show the same people).
+  if (typeof options.neighborCx === 'number') {
+    const neighborPxDist = Math.abs(options.neighborCx - avgCx) * inputW;
+    if (neighborPxDist > 0) {
+      const maxByNeighbor = Math.max(220, Math.round(neighborPxDist * 0.9));
+      if (cropW > maxByNeighbor) cropW = maxByNeighbor;
+    }
+  }
+
   let cropH = Math.round(cropW / cellAspect);
   cropW = Math.max(120, Math.min(inputW, cropW));
   cropH = Math.max(120, Math.min(inputH, cropH));
@@ -555,11 +576,11 @@ function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, tightness
   if (cropW % 2 === 1) cropW -= 1;
   if (cropH % 2 === 1) cropH -= 1;
 
-  // Per-sample target crop top-left positions, with a slight upward bias so
-  // the head sits in the upper third of the crop.
+  // Per-sample target crop top-left positions, with a small upward bias so
+  // the head sits slightly above center (head + shoulders framing).
   const positions = samples.map(s => {
     const fx = s.cx * inputW;
-    const fy = s.cy * inputH - cropH * 0.12;
+    const fy = s.cy * inputH - cropH * 0.08;
     let x = Math.round(fx - cropW / 2);
     let y = Math.round(fy - cropH / 2);
     x = Math.max(0, Math.min(inputW - cropW, x));
@@ -570,7 +591,7 @@ function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, tightness
   if (positions.length === 0) {
     const cx = Math.floor((inputW - cropW) / 2);
     const cy = Math.floor((inputH - cropH) / 2);
-    return { cropW, cropH, xExpr: String(cx), yExpr: String(cy) };
+    return { cropW, cropH, xExpr: String(cx), yExpr: String(cy), avgCx, avgCy };
   }
 
   // Moving average smoothing (window=5) to prevent jitter.
@@ -600,7 +621,7 @@ function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, tightness
     xExpr = xParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastX));
     yExpr = yParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastY));
   }
-  return { cropW, cropH, xExpr, yExpr };
+  return { cropW, cropH, xExpr, yExpr, avgCx, avgCy };
 }
 
 // Build the FFmpeg filter_complex graph for an N-subject grid.
@@ -633,6 +654,17 @@ function buildGridFilterGraph(subjects, cells, inputDims, config) {
     );
   }
 
+  // Pre-compute each subject's average (cx, cy) so we can clamp crop widths
+  // by nearest-neighbor distance (prevents adjacent subjects from bleeding
+  // into each other's crops).
+  const subjAvg = subjects.map(s => {
+    const sam = s.samples || [];
+    if (!sam.length) return { cx: 0.5, cy: 0.5 };
+    let sx = 0, sy = 0;
+    for (const x of sam) { sx += x.cx; sy += x.cy; }
+    return { cx: sx / sam.length, cy: sy / sam.length };
+  });
+
   // Per-subject cells
   for (let i = 0; i < n; i++) {
     const cell = cells[i];
@@ -641,8 +673,19 @@ function buildGridFilterGraph(subjects, cells, inputDims, config) {
     // Ensure even
     const innerWE = innerW - (innerW % 2);
     const innerHE = innerH - (innerH % 2);
-    const { cropW, cropH, xExpr, yExpr } =
-      computeSubjectCropExpr(subjects[i], inputW, inputH, cell.w, cell.h);
+
+    // Nearest-neighbor cx across other selected subjects
+    let neighborCx;
+    let minDist = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const d = Math.abs(subjAvg[j].cx - subjAvg[i].cx);
+      if (d < minDist) { minDist = d; neighborCx = subjAvg[j].cx; }
+    }
+
+    const { cropW, cropH, xExpr, yExpr } = computeSubjectCropExpr(
+      subjects[i], inputW, inputH, cell.w, cell.h, { neighborCx }
+    );
 
     let chain = `[s${i}]crop=${cropW}:${cropH}:${xExpr}:${yExpr},scale=${innerWE}:${innerHE}`;
     if (borderThickness > 0) {
@@ -675,6 +718,27 @@ function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubject
       const padding = (typeof config.padding === 'number') ? config.padding : 16;
       const cells = computeGridCells(n, padding);
       const filterComplex = buildGridFilterGraph(selectedSubjects, cells, dims, config);
+
+      // Diagnostic: per-subject avg position + sample count, helps debug
+      // "both cells show the same person" style regressions.
+      try {
+        const diag = selectedSubjects.map(s => {
+          const sam = s.samples || [];
+          let sx = 0, sy = 0, mw = 0;
+          for (const x of sam) { sx += x.cx; sy += x.cy; if (x.w > mw) mw = x.w; }
+          return {
+            id: s.id,
+            samples: sam.length,
+            avg_cx: sam.length ? +(sx/sam.length).toFixed(3) : null,
+            avg_cy: sam.length ? +(sy/sam.length).toFixed(3) : null,
+            max_w: +mw.toFixed(3),
+            first: s.first_seen, last: s.last_seen,
+          };
+        });
+        console.log('[AI Reframe Grid] input', dims, 'cells', cells);
+        console.log('[AI Reframe Grid] subjects', JSON.stringify(diag));
+        console.log('[AI Reframe Grid] graph\n' + filterComplex);
+      } catch (_) {}
 
       // Long crop expressions can exceed shell argv limits; write the graph
       // to a temp script and use -/filter_complex_script for safety.

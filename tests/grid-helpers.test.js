@@ -108,6 +108,42 @@ const subE = H.computeSubjectCropExpr(subEmpty, 1920, 1080, 500, 500);
 t('subjectCrop: empty -> numeric xExpr', !isNaN(Number(subE.xExpr)));
 t('subjectCrop: empty -> numeric yExpr', !isNaN(Number(subE.yExpr)));
 
+// --- Multi-subject overlap guard (regression: both cells showed same person) ---
+// Two subjects 400px apart (cx=0.35 and cx=0.56 on a 1920px frame = ~400px gap),
+// each with a 0.15-width face. Without the neighbor clamp, cropW = 0.15*1920*2.0 = 576px,
+// so each crop centered on its face would straddle the other face too.
+const subjA = fakeSubject([
+  { time: 0, cx: 0.35, cy: 0.5, w: 0.15, h: 0.2 },
+  { time: 0.2, cx: 0.35, cy: 0.5, w: 0.15, h: 0.2 },
+]);
+const subjB = fakeSubject([
+  { time: 0, cx: 0.56, cy: 0.5, w: 0.15, h: 0.2 },
+  { time: 0.2, cx: 0.56, cy: 0.5, w: 0.15, h: 0.2 },
+]);
+const pxGap = Math.abs(0.56 - 0.35) * 1920; // ~403px
+
+const clampedA = H.computeSubjectCropExpr(subjA, 1920, 1080, 540, 540, { neighborCx: 0.56 });
+const clampedB = H.computeSubjectCropExpr(subjB, 1920, 1080, 540, 540, { neighborCx: 0.35 });
+t('neighbor-clamp: A cropW < gap to neighbor', clampedA.cropW < pxGap,
+  `cropW=${clampedA.cropW} gap=${pxGap.toFixed(0)}`);
+t('neighbor-clamp: B cropW < gap to neighbor', clampedB.cropW < pxGap);
+// Each crop center should be roughly at subject's cx, and extents shouldn't cross
+// into the other's cx.
+const centerA = 0.35 * 1920;
+const centerB = 0.56 * 1920;
+t('neighbor-clamp: A crop does not cross into B',
+  centerA + clampedA.cropW / 2 < centerB);
+t('neighbor-clamp: B crop does not cross into A',
+  centerB - clampedB.cropW / 2 > centerA);
+
+// Unclamped (solo) crop should still be allowed to be wider.
+const solo = H.computeSubjectCropExpr(subjA, 1920, 1080, 540, 540);
+t('solo mode: cropW > clamped cropW', solo.cropW >= clampedA.cropW);
+
+// Back-compat: passing a numeric tightness (old signature) still works.
+const legacy = H.computeSubjectCropExpr(subjA, 1920, 1080, 540, 540, 2.5);
+t('back-compat: numeric tightness still accepted', legacy.cropW > 0);
+
 // ---------- buildGridFilterGraph ----------
 const subs = [subj, subj];
 const cells2 = H.computeGridCells(2, 16);
