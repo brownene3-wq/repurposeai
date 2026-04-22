@@ -1676,6 +1676,7 @@
     }
     function renderLayers(){
       var clips = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
+      var vClips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
       var html = '<div class="v10-rp-section-title">AUDIO LAYERS</div>';
       if (!clips.length){
         html += '<div style="padding:12px 4px;color:#8886a0;font-size:12px;line-height:1.5">No audio clips on the timeline yet. Upload an audio file or click an audio item in the Media panel to add one.</div>';
@@ -1696,6 +1697,31 @@
                 // Solo and Fade hidden per product decision; Mute is the
                 // only per-clip toggle in the card.
                 '<button data-ac-action="mute"' + (muted ? ' style="background:rgba(239,68,68,.85);color:#fff"' : '') + '>' + (muted ? 'Unmute' : 'Mute') + '</button>'+
+              '</div>'+
+            '</div>';
+        });
+      }
+      // VIDEO AUDIO — embedded audio from V1 clips. Each V1 video clip has
+      // its own muxed audio track; the export pipeline already reads
+      // clip.dataset.volume / muted for every .mt-clip regardless of track,
+      // so we just expose the same controls here. Volume slider applies
+      // live to the <video> element when the clip is currently loaded.
+      if (vClips.length){
+        html += '<div class="v10-rp-section-title" style="margin-top:14px">VIDEO AUDIO <span style="color:#8886a0;font-weight:400;margin-left:6px">(V1 embedded)</span></div>';
+        vClips.forEach(function(clip, i){
+          var name  = clip.dataset.fileName || ('Video ' + (i + 1));
+          var vol   = parseFloat(clip.dataset.volume); if (!isFinite(vol)) vol = 100;
+          var muted = clip.dataset.muted === 'true';
+          var color = '#a78bfa'; // violet to distinguish from A1 cards
+          html +=
+            '<div class="v10-audio-card" data-video-idx="' + i + '">'+
+              '<div class="v10-ac-head"><div class="v10-ac-dot" style="background:' + color + '"></div><h5>\ud83c\udfac ' + escAudio(name) + '</h5></div>'+
+              '<div class="v10-ac-vol"><span>\ud83d\udd0a</span>'+
+                '<input type="range" min="0" max="200" value="' + vol + '" class="v10-vc-volrange" style="flex:1;margin:0 6px;accent-color:' + color + '"/>'+
+                '<span class="v10-vc-voltxt">' + Math.round(vol) + '%</span>'+
+              '</div>'+
+              '<div class="v10-ac-btns">'+
+                '<button data-vc-action="mute"' + (muted ? ' style="background:rgba(239,68,68,.85);color:#fff"' : '') + '>' + (muted ? 'Unmute' : 'Mute') + '</button>'+
               '</div>'+
             '</div>';
         });
@@ -1801,6 +1827,92 @@
           });
         });
       });
+
+      // VIDEO AUDIO cards — wire volume/mute for embedded V1 audio. The
+      // dataset writes are always authoritative for export; the live
+      // <video> element is updated only when the card's clip is the one
+      // currently loaded in the Program Monitor.
+      function getVideoPlayer(){
+        return document.getElementById('videoPlayer') || document.querySelector('video');
+      }
+      function normalizeUrlLocal(u){
+        if (!u) return '';
+        try { return new URL(u, window.location.href).href; } catch(_){ return String(u); }
+      }
+      function isClipLoaded(clip){
+        var p = getVideoPlayer();
+        if (!p || !clip) return false;
+        var src = p.currentSrc || p.src;
+        return !!src && normalizeUrlLocal(src) === normalizeUrlLocal(clip.dataset.mediaUrl || '');
+      }
+      Array.from(div.querySelectorAll('[data-video-idx]')).forEach(function(card){
+        var idx = parseInt(card.getAttribute('data-video-idx'), 10);
+        var clip = document.querySelectorAll('.mt-track-video .mt-clip')[idx];
+        if (!clip) return;
+        var range = card.querySelector('.v10-vc-volrange');
+        var label = card.querySelector('.v10-vc-voltxt');
+        if (range){
+          range.addEventListener('input', function(){
+            var v = parseInt(range.value, 10);
+            clip.dataset.volume = String(v);
+            if (label) label.textContent = v + '%';
+            if (isClipLoaded(clip)){
+              var p = getVideoPlayer();
+              if (p) p.volume = Math.min(1, Math.max(0, v / 100));
+            }
+          });
+          range.addEventListener('change', function(){
+            if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+          });
+        }
+        Array.from(card.querySelectorAll('[data-vc-action]')).forEach(function(btn){
+          btn.addEventListener('click', function(e){
+            e.preventDefault();
+            var act = btn.getAttribute('data-vc-action');
+            if (act === 'mute'){
+              var wasMuted = clip.dataset.muted === 'true';
+              var nowMuted = !wasMuted;
+              clip.dataset.muted = nowMuted ? 'true' : 'false';
+              btn.textContent = nowMuted ? 'Unmute' : 'Mute';
+              btn.style.background = nowMuted ? 'rgba(239,68,68,.85)' : '';
+              btn.style.color      = nowMuted ? '#fff' : '';
+              if (isClipLoaded(clip)){
+                var p = getVideoPlayer();
+                if (p) p.muted = nowMuted;
+              }
+              toast((nowMuted ? 'Muted' : 'Unmuted') + ': ' + (clip.dataset.fileName || 'clip'));
+              if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+            }
+          });
+        });
+      });
+
+      // Hook the <video> element so whenever it swaps to a new V1 clip's
+      // src (via loadAndPlayClipAt) it picks up that clip's saved
+      // dataset.volume / muted state. Installed once per page.
+      (function installV1AudioHydrator(){
+        var p = getVideoPlayer();
+        if (!p || p.__v1AudioHooked) return;
+        p.__v1AudioHooked = true;
+        function hydrate(){
+          var src = p.currentSrc || p.src;
+          if (!src) return;
+          var norm = normalizeUrlLocal(src);
+          var vcs = document.querySelectorAll('.mt-track-video .mt-clip');
+          for (var i = 0; i < vcs.length; i++){
+            var c = vcs[i];
+            if (normalizeUrlLocal(c.dataset.mediaUrl || '') === norm){
+              var vol = parseFloat(c.dataset.volume);
+              if (isFinite(vol)) p.volume = Math.min(1, Math.max(0, vol / 100));
+              p.muted = (c.dataset.muted === 'true');
+              return;
+            }
+          }
+        }
+        p.addEventListener('loadedmetadata', hydrate);
+        p.addEventListener('play', hydrate);
+      })();
+
       // AUDIO FX handlers — operate on the currently selected audio clip,
       // or fall back to the first audio clip on A1. Wired BEFORE wireRPToast
       // (capture phase) so the generic toast handler doesn't fire first.
