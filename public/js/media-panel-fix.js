@@ -4004,14 +4004,24 @@
     // Make sure the canvas is also attached so we have something to
     // position relative to.
     try { ensureProgramMonitor(); } catch(_){}
-    var existing = document.getElementById('tlCropToolbar');
-    if (existing){
-      if (existing.parentElement !== document.body){
-        try { document.body.appendChild(existing); } catch(_){}
+    // Look for an EXISTING attached toolbar via querySelectorAll — note
+    // that getElementById can return stale orphaned references in some
+    // browsers after a removeChild, so we explicitly check isConnected.
+    var attached = null;
+    var matches = document.querySelectorAll('#tlCropToolbar');
+    for (var i = 0; i < matches.length; i++){
+      if (matches[i].isConnected && matches[i].parentElement === document.body){
+        attached = matches[i]; break;
       }
-      _positionCropToolbar(existing);
-      return existing;
     }
+    if (attached){
+      _positionCropToolbar(attached);
+      return attached;
+    }
+    // No live toolbar — purge any stale fragments and create a fresh one.
+    Array.prototype.forEach.call(matches, function(el){
+      try { el.parentNode && el.parentNode.removeChild(el); } catch(_){}
+    });
     var bar = document.createElement('div');
     bar.id = 'tlCropToolbar';
     bar.style.cssText = 'position:fixed;z-index:99999;display:flex;gap:8px;background:rgba(15,10,30,.92);border:1px solid rgba(139,92,246,.55);border-radius:10px;padding:7px 9px;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.45);pointer-events:auto';
@@ -4041,8 +4051,10 @@
     return bar;
   }
   function removeCropToolbar(){
-    var bar = document.getElementById('tlCropToolbar');
-    if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+    var matches = document.querySelectorAll('#tlCropToolbar');
+    Array.prototype.forEach.call(matches, function(el){
+      try { el.parentNode && el.parentNode.removeChild(el); } catch(_){}
+    });
   }
 
   // Move the playhead inside the clip if it's not already, so progLoop
