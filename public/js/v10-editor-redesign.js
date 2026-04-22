@@ -1715,11 +1715,35 @@
           afxBtn('\ud83d\udcc8', 'Normalize', 'normalize')+
         '</div>'+
         '<div class="v10-rp-section-title">MIXING</div>'+
-        '<div class="v10-rp-grid">'+
-          afxBtn('\ud83c\udfda\ufe0f', 'Fade In',  'fadein')+
-          afxBtn('\ud83c\udf05',       'Fade Out', 'fadeout')+
-          '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udd17</span>Link Audio</button>'+
-          '<button class="v10-rp-btn"><span class="v10-rp-ic">\u2702\ufe0f</span>Split Audio</button>'+
+        // Inline fade sliders — replace the old prompt('Fade-in duration')
+        // flow with a drag-to-set range (0-5s, 0.1s step). Applies to the
+        // currently-targeted audio clip (selected > first on timeline).
+        // The numeric readout updates live and the value is baked into
+        // clip.dataset.fadeIn / fadeOut on 'input' so preview + export
+        // pick it up immediately.
+        (function(){
+          // Read current values from the target audio clip, if any
+          var tgt = document.querySelector('.mt-track-audio .mt-clip.selected') ||
+                    document.querySelector('.mt-track-audio .mt-clip');
+          var curIn  = tgt ? (parseFloat(tgt.dataset.fadeIn)  || 0) : 0;
+          var curOut = tgt ? (parseFloat(tgt.dataset.fadeOut) || 0) : 0;
+          function fadeRow(lbl, fx, val, icon){
+            return '<div style="padding:10px;background:rgba(255,255,255,.03);border:1px solid #2a2545;border-radius:8px;margin-bottom:6px">' +
+              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+                '<span>' + icon + '</span>' +
+                '<span style="font-size:11px;font-weight:500;flex:1">' + lbl + '</span>' +
+                '<span class="v10-fade-val" data-fx="' + fx + '" style="font-size:11px;font-weight:600;color:#fde047;min-width:36px;text-align:right">' + val.toFixed(1) + 's</span>' +
+              '</div>' +
+              '<input type="range" min="0" max="5" step="0.1" value="' + val.toFixed(1) +
+                '" data-audio-fx-slider="' + fx + '" style="width:100%;accent-color:#a78bfa"/>' +
+            '</div>';
+          }
+          return fadeRow('Fade In',  'fadein',  curIn,  '\ud83c\udfda\ufe0f') +
+                 fadeRow('Fade Out', 'fadeout', curOut, '\ud83c\udf05');
+        })() +
+        '<div class="v10-rp-grid" style="margin-top:4px">'+
+          '<button class="v10-rp-btn" data-audio-mix="link"><span class="v10-rp-ic">\ud83d\udd17</span>Link Audio</button>'+
+          '<button class="v10-rp-btn" data-audio-mix="split"><span class="v10-rp-ic">\u2702\ufe0f</span>Split Audio</button>'+
         '</div>';
       div.innerHTML = html;
 
@@ -1805,32 +1829,7 @@
             toast('No audio clip on timeline');
             return;
           }
-          var first = targets[0];
-          var suffix = targets.length > 1 ? ' \u00b7 ' + targets.length + ' clips' : '';
-
-          if (fx === 'fadein'){
-            var curIn = parseFloat(first.dataset.fadeIn) || 0;
-            var inp = prompt('Fade-in duration (seconds, 0 to remove)', curIn > 0 ? String(curIn) : '1');
-            if (inp === null) return;
-            var v = parseFloat(inp);
-            if (!isFinite(v) || v < 0){ toast('Invalid value'); return; }
-            targets.forEach(function(c){
-              if (v === 0) delete c.dataset.fadeIn;
-              else c.dataset.fadeIn = String(v);
-            });
-            toast('Fade-in: ' + v + 's' + suffix);
-          } else if (fx === 'fadeout'){
-            var curOut = parseFloat(first.dataset.fadeOut) || 0;
-            var inp2 = prompt('Fade-out duration (seconds, 0 to remove)', curOut > 0 ? String(curOut) : '1');
-            if (inp2 === null) return;
-            var v2 = parseFloat(inp2);
-            if (!isFinite(v2) || v2 < 0){ toast('Invalid value'); return; }
-            targets.forEach(function(c){
-              if (v2 === 0) delete c.dataset.fadeOut;
-              else c.dataset.fadeOut = String(v2);
-            });
-            toast('Fade-out: ' + v2 + 's' + suffix);
-          } else if (fx === 'denoise' || fx === 'normalize'){
+          if (fx === 'denoise' || fx === 'normalize'){
             // One-click: actually PROCESS the audio now (not just a
             // flag for export). Uses /video-editor/process-audio-clip
             // which runs afftdn / loudnorm and returns a new URL. Swap
@@ -1838,6 +1837,73 @@
             // both pick up the processed file.
             applyOneClickEnhancement(fx, targets, btn);
             return;
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        }, true);
+      });
+
+      // FADE SLIDERS — live drag sets clip.dataset.fadeIn / fadeOut on each
+      // 'input' event and updates the numeric readout. Multi-clip: broadcast
+      // the same value across all selected audio clips (or first-A1 fallback).
+      // 'change' at the end pushes a single history snapshot.
+      Array.from(div.querySelectorAll('[data-audio-fx-slider]')).forEach(function(slider){
+        var fx = slider.getAttribute('data-audio-fx-slider'); // fadein | fadeout
+        var readout = div.querySelector('.v10-fade-val[data-fx="' + fx + '"]');
+        function apply(live){
+          var v = parseFloat(slider.value);
+          if (!isFinite(v) || v < 0) v = 0;
+          var targets = getAudioFXTargets();
+          targets.forEach(function(c){
+            if (fx === 'fadein'){
+              if (v === 0) delete c.dataset.fadeIn;
+              else c.dataset.fadeIn = String(v);
+            } else {
+              if (v === 0) delete c.dataset.fadeOut;
+              else c.dataset.fadeOut = String(v);
+            }
+          });
+          if (readout) readout.textContent = v.toFixed(1) + 's';
+        }
+        slider.addEventListener('input', function(){ apply(true); });
+        slider.addEventListener('change', function(){
+          apply(false);
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        });
+      });
+
+      // LINK / SPLIT AUDIO — Link tags every selected audio clip with a shared
+      // audioGroup id so operations (fade, volume, mute) can broadcast across
+      // them in the future; Split clears the group tag. Visual marker is a
+      // cyan ring on grouped clips (added via CSS class below).
+      Array.from(div.querySelectorAll('[data-audio-mix]')).forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          var mode = btn.getAttribute('data-audio-mix');
+          var sel = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip.selected'));
+          if (mode === 'link'){
+            if (sel.length < 2){
+              toast('Select 2+ audio clips to link (Shift-click on timeline)');
+              return;
+            }
+            var gid = 'ag_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e4).toString(36);
+            sel.forEach(function(c){
+              c.dataset.audioGroup = gid;
+              c.classList.add('audio-linked');
+            });
+            toast('Linked ' + sel.length + ' audio clips');
+          } else if (mode === 'split'){
+            // Split: clear audioGroup on selected clips (or all if none selected)
+            var targets = sel.length ? sel : Array.from(document.querySelectorAll('.mt-track-audio .mt-clip[data-audio-group]'));
+            if (!targets.length){
+              toast('No linked audio clips to split');
+              return;
+            }
+            targets.forEach(function(c){
+              delete c.dataset.audioGroup;
+              c.classList.remove('audio-linked');
+            });
+            toast('Split ' + targets.length + ' audio clip' + (targets.length === 1 ? '' : 's'));
           }
           if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
         }, true);

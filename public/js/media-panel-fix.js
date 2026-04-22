@@ -1317,9 +1317,17 @@
       }
       if (playDur <= 0) return;
 
-      var volRaw = parseFloat(clip.dataset.volume);
-      var vol = isFinite(volRaw) ? Math.max(0, volRaw / 100) : 1;
-      var nativeVol = Math.min(1, vol);
+      // Volume is LIVE-READ on every tick so the user can drag the
+      // volume slider during playback and hear the change instantly.
+      // The old code captured `nativeVol` in closure at schedule time,
+      // which meant any slider drag after Play was clobbered by the
+      // next fade-in tick or the scheduled start setTimeout.
+      function getNativeVol(){
+        if (clip.dataset.muted === 'true') return 0;
+        var v = parseFloat(clip.dataset.volume);
+        var scaled = isFinite(v) ? Math.max(0, v / 100) : 1;
+        return Math.min(1, scaled);
+      }
       var fadeIn  = Math.max(0, parseFloat(clip.dataset.fadeIn)  || 0);
       var fadeOut = Math.max(0, parseFloat(clip.dataset.fadeOut) || 0);
 
@@ -1334,19 +1342,21 @@
           if (audio.readyState < 1){ try { audio.load(); } catch(_){} }
           audio.currentTime = Math.max(0, offsetInSource);
           audio.muted = false;
-          // Fade-in: linear ramp via setInterval
+          // Fade-in: linear ramp via setInterval — each tick re-reads
+          // the live volume so slider drags during a fade are honored.
           if (fadeIn > 0){
             audio.volume = 0;
             var fSteps = Math.max(1, Math.round(fadeIn * 30));
             var fStep = 0;
             var fadeInId = setInterval(function(){
               fStep++;
-              audio.volume = Math.min(nativeVol, (fStep / fSteps) * nativeVol);
-              if (fStep >= fSteps){ clearInterval(fadeInId); audio.volume = nativeVol; }
+              var liveVol = getNativeVol();
+              audio.volume = Math.min(liveVol, (fStep / fSteps) * liveVol);
+              if (fStep >= fSteps){ clearInterval(fadeInId); audio.volume = liveVol; }
             }, (fadeIn / fSteps) * 1000);
             _a1Timers.push(fadeInId);
           } else {
-            audio.volume = nativeVol;
+            audio.volume = getNativeVol();
           }
           if (fadeOut > 0){
             var foDur = Math.min(fadeOut, playDur);
@@ -1354,10 +1364,12 @@
             var foScheduleTimer = setTimeout(function(){
               var oSteps = Math.max(1, Math.round(foDur * 30));
               var oStep = 0;
-              var startVol = audio.volume;
               var foId = setInterval(function(){
                 oStep++;
-                audio.volume = Math.max(0, startVol * (1 - oStep / oSteps));
+                // Re-read live volume every tick so drags during fade-out
+                // don't get clobbered.
+                var liveVol = getNativeVol();
+                audio.volume = Math.max(0, liveVol * (1 - oStep / oSteps));
                 if (oStep >= oSteps){ clearInterval(foId); audio.volume = 0; }
               }, (foDur / oSteps) * 1000);
               _a1Timers.push(foId);

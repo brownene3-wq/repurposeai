@@ -527,6 +527,10 @@ router.get('/', requireAuth, async (req, res) => {
     /* Reverse-playback indicator — small ◀ badge pinned to the clip's
        right edge so users can see at a glance which clips are reversed. */
     .mt-clip.clip-reverse-on::after{content:'\u25C0';position:absolute;right:4px;top:50%;transform:translateY(-50%);color:#fde047;font-size:10px;pointer-events:none;text-shadow:0 0 3px rgba(0,0,0,.8)}
+    /* Linked-audio marker — cyan outline + chain icon so grouped audio clips
+       are visually associated on the timeline (set by Link Audio in MIXING). */
+    .mt-clip.audio-linked{box-shadow:inset 0 0 0 2px #22d3ee, 0 0 4px rgba(34,211,238,.4)}
+    .mt-clip.audio-linked::before{content:'\ud83d\udd17';position:absolute;left:4px;top:2px;color:#22d3ee;font-size:9px;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.8)}
     /* Marquee selection rectangle (drawn while dragging across tracks) */
     .mt-marquee{position:absolute;border:1px dashed #a78bfa;background:rgba(124,58,237,.15);pointer-events:none;z-index:9;border-radius:3px}
     /* Keyframe markers — yellow diamonds anchored along the top edge
