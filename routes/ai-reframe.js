@@ -500,12 +500,14 @@ function computeGridCells(n, padding) {
     return [{ x: p, y: p, w: W - 2 * p, h: H - 2 * p }];
   }
   if (n === 2) {
-    const cell = W - 2 * p;
+    // Two 1:1 squares stacked vertically. Size to whichever dimension limits.
+    const cell = Math.min(W - 2 * p, Math.floor((H - 3 * p) / 2));
     const totalH = 2 * cell + p;
-    const top = Math.floor((H - totalH) / 2);
+    const top = Math.max(p, Math.floor((H - totalH) / 2));
+    const left = Math.floor((W - cell) / 2);
     return [
-      { x: p, y: top,              w: cell, h: cell },
-      { x: p, y: top + cell + p,   w: cell, h: cell },
+      { x: left, y: top,              w: cell, h: cell },
+      { x: left, y: top + cell + p,   w: cell, h: cell },
     ];
   }
   if (n === 3) {
