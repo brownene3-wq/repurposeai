@@ -4059,67 +4059,168 @@
   // Draw text overlays from T1 clips on top of the PGM canvas. Respects
   // per-clip textOffsetX / textOffsetY (in canvas pixels) set by the
   // drag-to-position handler below.
+  //
+  // Typography rules (Category 5):
+  //   #14 Responsive scaling: fontSize is treated as a px-at-1280-wide
+  //       reference and scaled by (W / 1280), so captions look the same
+  //       size at every output resolution (9:16 Reels, 1080p, 4K, etc.).
+  //   #15 Safe-area padding: horizontal max-width is 85% of W (7.5%
+  //       padding on each side) and the text box is clamped to stay
+  //       inside that safe zone even when dragged near the edge.
+  //   #16 Overlap prevention: when multiple T1 clips share a position
+  //       zone at the playhead, they stack vertically with a gap instead
+  //       of piling on top of each other.
   function progDrawTextOverlays(ctx, W, H, phX){
     _textHitBoxes.length = 0;
     var clips = getTextClipsAtPlayheadX(phX);
     if (!clips.length) return;
-    clips.forEach(function(clip){
-      var text = clip.dataset.textContent || clip.dataset.fileName || '';
-      if (!text) return;
-      var size  = parseInt(clip.dataset.fontSize, 10) || Math.round(H * 0.08);
-      var color = clip.dataset.textColor || '#ffffff';
-      var pos   = clip.dataset.position || 'center';
-      // textOffsetX / textOffsetY are stored as FRACTIONS of the
-      // canvas width/height (so they translate cleanly between the
-      // preview's variable canvas size and the export's output size).
-      var offXFrac = parseFloat(clip.dataset.textOffsetX) || 0;
-      var offYFrac = parseFloat(clip.dataset.textOffsetY) || 0;
-      var offX = offXFrac * W;
-      var offY = offYFrac * H;
-      ctx.save();
-      ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = color;
-      ctx.shadowColor = 'rgba(0,0,0,.65)';
-      ctx.shadowBlur = size * 0.4;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = Math.round(size * 0.08);
-      var x = W / 2 + offX;
-      var y;
-      if (pos === 'top')         y = Math.round(H * 0.15) + size;
-      else if (pos === 'bottom') y = H - Math.round(H * 0.12);
-      else                        y = Math.round(H / 2 + size / 3);
-      y += offY;
-      var maxW = W * 0.9;
-      var words = String(text).split(/\s+/);
-      var lines = [];
-      var current = '';
-      words.forEach(function(w){
-        var test = current ? (current + ' ' + w) : w;
-        if (ctx.measureText(test).width > maxW && current){
-          lines.push(current); current = w;
-        } else { current = test; }
-      });
-      if (current) lines.push(current);
-      var lineH = Math.round(size * 1.15);
-      var totalH = lineH * lines.length;
-      var startY = y - totalH / 2 + lineH / 2;
-      // Measure the widest line so we can record a hit-box
-      var widest = 0;
-      lines.forEach(function(ln){
-        var w = ctx.measureText(ln).width;
-        if (w > widest) widest = w;
-      });
-      var boxX = x - widest / 2;
-      var boxY = y - totalH / 2;
-      var boxW = widest;
-      var boxH = totalH;
-      lines.forEach(function(ln, i){
-        ctx.fillText(ln, x, startY + i * lineH);
-      });
-      ctx.restore();
-      _textHitBoxes.push({ clip: clip, x: boxX, y: boxY, w: boxW, h: boxH });
+
+    // #15 Safe-area padding — 7.5% L/R, 8% top, 8% bottom baseline.
+    // These are fractions so they track with the canvas size.
+    var SAFE_L = W * 0.075;
+    var SAFE_R = W * 0.925;
+    var SAFE_W = SAFE_R - SAFE_L;
+    var SAFE_T = H * 0.08;
+    var SAFE_B = H * 0.92;
+
+    // #16 Stack-by-position-zone: bucket clips by their position zone so
+    // clips in the same zone can be stacked. Order within a zone follows
+    // clip timeline order (getTextClipsAtPlayheadX returns DOM order, which
+    // matches track order left-to-right).
+    var zones = { top: [], center: [], bottom: [] };
+    clips.forEach(function(c){
+      var pos = c.dataset.position || 'center';
+      if (!zones[pos]) pos = 'center';
+      zones[pos].push(c);
     });
+
+    function drawZone(zoneClips, pos){
+      // Pre-compute each clip's layout (lines + metrics) so we can stack
+      // them vertically before rendering.
+      var layouts = zoneClips.map(function(clip){
+        var text = clip.dataset.textContent || clip.dataset.fileName || '';
+        if (!text) return null;
+        // #14 Responsive scaling — fontSize is px-at-reference-width (1280).
+        // Fall back to ~6.5% of W if unset, which reads well at any aspect.
+        var REF_W = 1280;
+        var rawSize = parseInt(clip.dataset.fontSize, 10);
+        var size;
+        if (isFinite(rawSize) && rawSize > 0){
+          size = Math.round(rawSize * (W / REF_W));
+        } else {
+          size = Math.round(W * 0.065);
+        }
+        // Clamp to a sane range so extreme aspect ratios don't produce
+        // microscopic or hero-sized captions.
+        size = Math.max(14, Math.min(size, Math.round(H * 0.22)));
+        var color = clip.dataset.textColor || '#ffffff';
+        var offXFrac = parseFloat(clip.dataset.textOffsetX) || 0;
+        var offYFrac = parseFloat(clip.dataset.textOffsetY) || 0;
+        var offX = offXFrac * W;
+        var offY = offYFrac * H;
+
+        ctx.save();
+        ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
+        // Word-wrap inside the safe-area width
+        var maxW = SAFE_W;
+        var words = String(text).split(/\s+/);
+        var lines = [];
+        var current = '';
+        words.forEach(function(w){
+          var test = current ? (current + ' ' + w) : w;
+          if (ctx.measureText(test).width > maxW && current){
+            lines.push(current); current = w;
+          } else { current = test; }
+        });
+        if (current) lines.push(current);
+        var widest = 0;
+        lines.forEach(function(ln){
+          var w = ctx.measureText(ln).width;
+          if (w > widest) widest = w;
+        });
+        ctx.restore();
+        var lineH = Math.round(size * 1.15);
+        var totalH = lineH * lines.length;
+        return {
+          clip: clip, text: text, size: size, color: color,
+          offX: offX, offY: offY,
+          lines: lines, widest: widest, lineH: lineH, totalH: totalH
+        };
+      }).filter(Boolean);
+
+      if (!layouts.length) return;
+
+      // Stacking baseline for this zone:
+      //   top zone — stack downward from SAFE_T
+      //   bottom zone — stack upward from SAFE_B
+      //   center zone — center the whole stack vertically
+      var GAP = Math.round(H * 0.012); // 1.2% gap between stacked caps
+      var totalStackH = layouts.reduce(function(s, L){ return s + L.totalH; }, 0) + GAP * (layouts.length - 1);
+
+      var cursorY;
+      if (pos === 'top'){
+        cursorY = SAFE_T;
+      } else if (pos === 'bottom'){
+        cursorY = SAFE_B - totalStackH;
+      } else {
+        cursorY = Math.max(SAFE_T, (H - totalStackH) / 2);
+      }
+
+      layouts.forEach(function(L){
+        var size   = L.size;
+        var lines  = L.lines;
+        var lineH  = L.lineH;
+        var totalH = L.totalH;
+        var widest = L.widest;
+
+        // Zone baseline y (before per-clip offset). y is the box CENTER.
+        var y = cursorY + totalH / 2 + L.offY;
+        // #15 Clamp vertical so the text box stays in the safe zone
+        if (y - totalH / 2 < SAFE_T) y = SAFE_T + totalH / 2;
+        if (y + totalH / 2 > SAFE_B) y = SAFE_B - totalH / 2;
+
+        // Horizontal: center + user offset, clamped so the whole box
+        // stays within SAFE_L / SAFE_R.
+        var x = W / 2 + L.offX;
+        var halfW = widest / 2;
+        var minCenterX = SAFE_L + halfW;
+        var maxCenterX = SAFE_R - halfW;
+        if (widest <= SAFE_W){
+          if (x < minCenterX) x = minCenterX;
+          if (x > maxCenterX) x = maxCenterX;
+        } else {
+          x = W / 2; // oversized line — keep centered, wrap took care of width
+        }
+
+        ctx.save();
+        ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = L.color;
+        ctx.shadowColor = 'rgba(0,0,0,.65)';
+        ctx.shadowBlur = size * 0.4;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = Math.round(size * 0.08);
+        var startY = y - totalH / 2 + lineH / 2;
+        lines.forEach(function(ln, i){
+          ctx.fillText(ln, x, startY + i * lineH);
+        });
+        ctx.restore();
+
+        _textHitBoxes.push({
+          clip: L.clip,
+          x: x - widest / 2,
+          y: y - totalH / 2,
+          w: widest,
+          h: totalH
+        });
+
+        cursorY += totalH + GAP;
+      });
+    }
+
+    drawZone(zones.top,    'top');
+    drawZone(zones.center, 'center');
+    drawZone(zones.bottom, 'bottom');
   }
 
   // ── Drag-to-position text on the Program Monitor ─────────────────

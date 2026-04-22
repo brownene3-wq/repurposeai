@@ -7032,32 +7032,93 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       }
 
       // Chain C: drawtext overlays (final chain -> [vout])
+      // Typography rules (match PGM preview):
+      //   #14 Font size is px-at-1280-wide; scale by outW/1280 so captions
+      //       read at the same relative size on Reels (720x1280), 1080p,
+      //       4K, etc. Default font when unset is ~6.5% of output width.
+      //   #15 Safe-area: 7.5% L/R horizontal margin, 8% top/bottom margin.
+      //   #16 Overlap prevention: each text clip is assigned a "lane" in
+      //       its position zone (top/center/bottom) based on which other
+      //       clips in the same zone are actively playing at its start.
+      //       Lane 0 = baseline, each subsequent lane is stacked by one
+      //       approx-line-height in the zone's natural stack direction.
       var videoGraph;
       if (textClips.length){
+        // Pre-pass: assign overlap lane per text clip
+        var byZone = { top: [], center: [], bottom: [] };
+        textClips.forEach(function(tc){
+          var p = tc.position || 'center';
+          if (!byZone[p]) p = 'center';
+          byZone[p].push(tc);
+        });
+        Object.keys(byZone).forEach(function(zone){
+          var zClips = byZone[zone].slice();
+          zClips.sort(function(a,b){ return (parseFloat(a.left)||0) - (parseFloat(b.left)||0); });
+          var active = []; // [{ end, lane }]
+          zClips.forEach(function(tc){
+            var l = (parseFloat(tc.left)  || 0) / pxPerSec;
+            var d = (parseFloat(tc.width) || 0) / pxPerSec;
+            var r = l + d;
+            active = active.filter(function(a){ return a.end > l; });
+            var used = {};
+            active.forEach(function(a){ used[a.lane] = true; });
+            var lane = 0;
+            while (used[lane]) lane++;
+            tc.__tOverlapLane = lane;
+            active.push({ end: r, lane: lane });
+          });
+        });
+
         var parts = textClips.map(function(tc){
           var leftSec = (parseFloat(tc.left)  || 0) / pxPerSec;
           var durSec  = (parseFloat(tc.width) || 0) / pxPerSec;
           var startSec = leftSec;
           var endSec   = leftSec + durSec;
           var txt   = escDT(tc.textContent);
-          var sz    = parseInt(tc.fontSize, 10) || 56;
+          // #14 Scale user-set fontSize as px-at-1280-wide reference
+          var rawSize = parseInt(tc.fontSize, 10);
+          var REF_W   = 1280;
+          var sz;
+          if (isFinite(rawSize) && rawSize > 0){
+            sz = Math.round(rawSize * (outW / REF_W));
+          } else {
+            sz = Math.round(outW * 0.065);
+          }
+          // Clamp so extreme aspects don't produce tiny/hero captions
+          sz = Math.max(14, Math.min(sz, Math.round(outH * 0.22)));
           var col   = (tc.textColor || '#ffffff').replace('#','0x');
           var pos   = tc.position || 'center';
-          // Drag-positioned text carries fractional offsets (of canvas
-          // width / height) set by the PGM drag handler. Scale them by
-          // the output dimensions so the exported position matches the
-          // preview exactly.
           var offFracX = parseFloat(tc.textOffsetX) || 0;
           var offFracY = parseFloat(tc.textOffsetY) || 0;
+
+          // #16 Lane offset — approx line-height + 1.2% gap, in px
+          var lane    = tc.__tOverlapLane || 0;
+          var laneGap = Math.round(sz * 1.15) + Math.round(outH * 0.012);
+          var laneOff = lane * laneGap;
+
+          // #15 Safe-area anchors (y = TOP-of-text in drawtext)
           var y;
-          if (pos === 'top')         y = 'h*0.15';
-          else if (pos === 'bottom') y = 'h-h*0.15-text_h';
-          else                       y = '(h-text_h)/2';
-          var xExpr = '(w-text_w)/2';
-          if (offFracX){ xExpr += (offFracX > 0 ? '+' : '') + (offFracX * outW).toFixed(1); }
-          if (offFracY){ y     += (offFracY > 0 ? '+' : '') + (offFracY * outH).toFixed(1); }
+          if (pos === 'top')         y = 'h*0.08';                 // stack downward
+          else if (pos === 'bottom') y = 'h-h*0.08-text_h';         // stack upward
+          else                       y = '(h-text_h)/2';            // stack downward from center
+          if (laneOff){
+            if (pos === 'bottom')    y = y + '-' + laneOff;
+            else                      y = y + '+' + laneOff;
+          }
+
+          // x centered + user drag offset, clamped to 7.5%-92.5% safe zone
+          //   left  edge of text = (w-text_w)/2 + xOff  must be >= w*0.075
+          //   right edge of text = (w-text_w)/2 + xOff + text_w  must be <= w*0.925
+          // We build xExpr with min/max clamps so FFmpeg enforces it.
+          var xOff = offFracX * outW;
+          var xRaw = '(w-text_w)/2' + (xOff ? ((xOff > 0 ? '+' : '') + xOff.toFixed(1)) : '');
+          var xExpr =
+            'if(lt(' + xRaw + '\\,w*0.075)\\,w*0.075\\,' +
+              'if(gt(' + xRaw + '+text_w\\,w*0.925)\\,w*0.925-text_w\\,' + xRaw + '))';
+
+          if (offFracY){ y = y + (offFracY > 0 ? '+' : '') + (offFracY * outH).toFixed(1); }
           var shadowY = Math.max(1, Math.round(sz * 0.08));
-          var parts = [
+          var dtParts = [
             'drawtext=text=\'' + txt + '\'',
             'fontsize=' + sz,
             'fontcolor=' + col,
@@ -7070,9 +7131,9 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
             'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
           ];
           if (TEXT_FONTFILE){
-            parts.splice(3, 0, 'fontfile=' + TEXT_FONTFILE);
+            dtParts.splice(3, 0, 'fontfile=' + TEXT_FONTFILE);
           }
-          return parts.join(':');
+          return dtParts.join(':');
         });
         chains.push(currentLbl + parts.join(',') + '[vout]');
       } else if (chains.length === 0){
