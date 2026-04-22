@@ -5,6 +5,7 @@ FROM node:20-slim
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg python3 python3-pip curl fonts-liberation git libgl1-mesa-glx libglib2.0-0 && \
     pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provider opencv-python-headless && \
+    pip3 install --break-system-packages "mediapipe==0.10.9" && \
     rm -rf /var/lib/apt/lists/*
 
 # Configure yt-dlp defaults for YouTube anti-bot measures
