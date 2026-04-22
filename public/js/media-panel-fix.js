@@ -2933,10 +2933,22 @@
     });
   }
   // ── Timing ──
+  // Reverse: toggles clip.dataset.reverse. FFmpeg export pipeline reads
+  // this flag and applies `reverse` to video + `areverse` to audio at
+  // export time (routes/video-editor.js buildScalePad block, line ~6684).
+  // We also:
+  //   • invalidate the preview cache so the next preview render re-bakes
+  //     the clip (preview is server-side per-clip, so reverse DOES show
+  //     up in the PGM once the cache refreshes).
+  //   • stamp a CSS class on the timeline clip so users see a visible
+  //     indicator (◀ badge) when reverse is enabled.
   function clipActionReverse(){
     withActiveClip(null, function(clip){
       var now = boolDatasetToggle(clip, 'reverse');
-      showToast('Reverse ' + (now ? 'on' : 'off'));
+      clip.classList.toggle('clip-reverse-on', now);
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Reverse ' + (now ? 'on — plays backward at export' : 'off'));
     });
   }
   function clipActionLoop(){
@@ -2944,6 +2956,198 @@
       var now = boolDatasetToggle(clip, 'loop');
       showToast('Loop ' + (now ? 'on' : 'off'));
     });
+  }
+
+  // ── Smart Resize (output aspect-ratio presets + optional face track) ──
+  // Opens a small popover with social-media aspect ratio presets. Selecting
+  // a preset:
+  //   1. stores the aspect on window.__exportAspect so the export handler
+  //      swaps the hardcoded 16:9 calc for the chosen ratio;
+  //   2. paints a letterbox mask over the PGM preview so the creator can
+  //      see what their final crop window will look like;
+  //   3. if "AI Face Track" is on, runs face detection on the active V1
+  //      video clip (browser FaceDetector when available, else a center
+  //      fallback) and bakes a clip.dataset.crop that frames the face.
+  function clipActionSmartResize(){
+    // One popover at a time — toggle off if already open.
+    var existing = document.getElementById('srPopover');
+    if (existing){ existing.remove(); return; }
+
+    var cur = window.__exportAspect || '16:9';
+    var pop = document.createElement('div');
+    pop.id = 'srPopover';
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:250px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+    pop.innerHTML =
+      '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:8px">SMART RESIZE</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Sets the output aspect for your export.</div>' +
+      '<div id="srPresetRow" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>' +
+      '<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#e2e0f0;cursor:pointer;padding:8px;background:rgba(124,58,237,.08);border-radius:6px">' +
+        '<input type="checkbox" id="srFaceTrack" style="accent-color:#a78bfa"/>' +
+        '<span>\ud83c\udfaf AI Face Track <span style="color:#8886a0;font-size:9px">(centers on subject)</span></span>' +
+      '</label>' +
+      '<div style="display:flex;gap:6px;margin-top:10px">' +
+        '<button id="srClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+
+    var presets = [
+      { ratio:'16:9', label:'16:9 YouTube',  w:1280, h:720  },
+      { ratio:'9:16', label:'9:16 Reels',    w:720,  h:1280 },
+      { ratio:'1:1',  label:'1:1 Square',    w:1080, h:1080 },
+      { ratio:'4:5',  label:'4:5 Portrait',  w:1080, h:1350 }
+    ];
+    var row = pop.querySelector('#srPresetRow');
+    presets.forEach(function(p){
+      var b = document.createElement('button');
+      var on = (p.ratio === cur);
+      b.style.cssText = 'padding:8px 6px;background:' + (on ? 'rgba(139,92,246,.3)' : 'rgba(255,255,255,.04)') +
+        ';border:1px solid ' + (on ? '#a78bfa' : 'rgba(255,255,255,.1)') +
+        ';border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;text-align:left';
+      b.textContent = p.label;
+      b.addEventListener('click', function(){
+        window.__exportAspect = p.ratio;
+        window.__exportWidth  = p.w;
+        window.__exportHeight = p.h;
+        applySmartResizePreview(p.ratio);
+        var faceTrack = pop.querySelector('#srFaceTrack').checked;
+        if (faceTrack){
+          runFaceTrackCrop(p.ratio).then(function(msg){
+            showToast('Smart Resize ' + p.ratio + ' \u00b7 ' + msg);
+          }).catch(function(err){
+            showToast('Smart Resize ' + p.ratio + ' \u00b7 face track unavailable');
+          });
+        } else {
+          showToast('Smart Resize: ' + p.label);
+        }
+        // Redraw preset highlights
+        pop.remove();
+        clipActionSmartResize();
+      });
+      row.appendChild(b);
+    });
+
+    pop.querySelector('#srClose').addEventListener('click', function(){ pop.remove(); });
+  }
+
+  // Paint a letterbox/pillarbox mask over the PGM so the user can see
+  // the target crop window relative to the source aspect.
+  function applySmartResizePreview(ratio){
+    var container = document.querySelector('.video-container') || document.getElementById('videoPreviewArea');
+    if (!container) return;
+    var mask = document.getElementById('srAspectMask');
+    if (!mask){
+      mask = document.createElement('div');
+      mask.id = 'srAspectMask';
+      mask.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:50;box-shadow:inset 0 0 0 9999px rgba(0,0,0,0);transition:box-shadow .2s';
+      container.style.position = container.style.position || 'relative';
+      container.appendChild(mask);
+    }
+    var parts = ratio.split(':').map(Number);
+    var targetRatio = parts[0] / parts[1];
+    var cr = container.getBoundingClientRect();
+    var containerRatio = cr.width / cr.height;
+    var innerW, innerH;
+    if (targetRatio > containerRatio){
+      innerW = cr.width;
+      innerH = cr.width / targetRatio;
+    } else {
+      innerH = cr.height;
+      innerW = cr.height * targetRatio;
+    }
+    var padX = Math.max(0, (cr.width  - innerW) / 2);
+    var padY = Math.max(0, (cr.height - innerH) / 2);
+    // Use a box-shadow cutout to dim the outside-crop region
+    mask.style.left   = padX + 'px';
+    mask.style.top    = padY + 'px';
+    mask.style.right  = padX + 'px';
+    mask.style.bottom = padY + 'px';
+    mask.style.border = '2px solid rgba(167,139,250,.8)';
+    mask.style.boxShadow = '0 0 0 9999px rgba(0,0,0,.55)';
+  }
+
+  // Face-track crop: grabs a few frames from the active V1 clip's video,
+  // runs browser FaceDetector, computes an average face center, and bakes
+  // clip.dataset.crop so the export crops to frame the subject in the new
+  // aspect ratio. Fallback: graceful center crop if FaceDetector isn't
+  // available in this browser/platform.
+  async function runFaceTrackCrop(aspectStr){
+    var clip = getActiveClip();
+    if (!clip){ throw new Error('no active clip'); }
+    var vid = document.getElementById('videoPlayer');
+    if (!vid || !vid.videoWidth){ throw new Error('no video loaded'); }
+
+    var parts = aspectStr.split(':').map(Number);
+    var targetRatio = parts[0] / parts[1];
+    var srcW = vid.videoWidth, srcH = vid.videoHeight;
+    var srcRatio = srcW / srcH;
+
+    // Compute crop rect in source pixels framing the target aspect
+    var cropW, cropH;
+    if (targetRatio < srcRatio){
+      // Narrower target → pillarbox the source → crop horizontal
+      cropH = srcH;
+      cropW = srcH * targetRatio;
+    } else {
+      // Wider target → letterbox the source → crop vertical
+      cropW = srcW;
+      cropH = srcW / targetRatio;
+    }
+
+    // Default center crop
+    var centerX = srcW / 2, centerY = srcH / 2;
+    var usedFace = false;
+
+    if (typeof window.FaceDetector === 'function'){
+      try {
+        var detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
+        var canvas = document.createElement('canvas');
+        canvas.width = srcW; canvas.height = srcH;
+        var ctx = canvas.getContext('2d');
+        // Sample 3 frames: start, 1/3, 2/3 through the clip
+        var wasTime = vid.currentTime;
+        var samples = [];
+        var probes = [0.1, 0.4, 0.7].map(function(f){ return vid.duration * f; });
+        for (var i = 0; i < probes.length; i++){
+          await new Promise(function(res){
+            var onSeek = function(){ vid.removeEventListener('seeked', onSeek); res(); };
+            vid.addEventListener('seeked', onSeek);
+            vid.currentTime = probes[i];
+          });
+          ctx.drawImage(vid, 0, 0, srcW, srcH);
+          try {
+            var faces = await detector.detect(canvas);
+            if (faces && faces.length){
+              // Largest face only
+              faces.sort(function(a,b){ return b.boundingBox.width * b.boundingBox.height - a.boundingBox.width * a.boundingBox.height; });
+              var bb = faces[0].boundingBox;
+              samples.push({ x: bb.x + bb.width/2, y: bb.y + bb.height/2 });
+            }
+          } catch(e){}
+        }
+        vid.currentTime = wasTime;
+        if (samples.length){
+          centerX = samples.reduce(function(a,s){ return a + s.x; }, 0) / samples.length;
+          centerY = samples.reduce(function(a,s){ return a + s.y; }, 0) / samples.length;
+          usedFace = true;
+        }
+      } catch(e){}
+    }
+
+    // Snap crop to keep inside source bounds
+    var x = Math.max(0, Math.min(srcW - cropW, centerX - cropW/2));
+    var y = Math.max(0, Math.min(srcH - cropH, centerY - cropH/2));
+
+    // Export expects crop as x,y,w,h in %
+    var pct = [
+      (x / srcW * 100).toFixed(2),
+      (y / srcH * 100).toFixed(2),
+      (cropW / srcW * 100).toFixed(2),
+      (cropH / srcH * 100).toFixed(2)
+    ].join(',');
+    clip.dataset.crop = pct;
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    return usedFace ? 'face-centered crop set' : 'center crop set (FaceDetector unavailable)';
   }
   function clipActionFreeze(){
     withActiveClip(null, function(clip){
@@ -3279,6 +3483,7 @@
     window.clipActionSpeed    = clipActionSpeed;
     window.clipActionCrop     = clipActionCrop;
     window.clipActionResize   = clipActionResize;
+    window.clipActionSmartResize = clipActionSmartResize;
     window.clipActionRotate   = clipActionRotate;
     window.clipActionFlip     = clipActionFlip;
     window.clipActionPosition = clipActionPosition;

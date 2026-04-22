@@ -1264,6 +1264,7 @@
       '<div class="v10-rp-section-title">TRANSFORM</div>'+
       '<div class="v10-rp-grid">'+
         rpBtn('\ud83d\udcd0','Resize','Resize')+
+        rpBtn('\ud83d\udcf1','Smart Resize','SmartResize')+
         rpBtn('\ud83d\udd04','Rotate','Rotate')+
         rpBtn('\ud83e\ude9e','Flip','Flip')+
         rpBtn('\ud83d\udccd','Position','Position')+

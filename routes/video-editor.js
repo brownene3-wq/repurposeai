@@ -524,6 +524,9 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-clip-trim.mt-trim-l{left:0;border-radius:6px 0 0 6px}
     .mt-clip-trim.mt-trim-r{right:0;border-radius:0 6px 6px 0}
     .mt-clip.mt-trimming{outline:2px solid #f59e0b;outline-offset:-2px}
+    /* Reverse-playback indicator — small ◀ badge pinned to the clip's
+       right edge so users can see at a glance which clips are reversed. */
+    .mt-clip.clip-reverse-on::after{content:'\u25C0';position:absolute;right:4px;top:50%;transform:translateY(-50%);color:#fde047;font-size:10px;pointer-events:none;text-shadow:0 0 3px rgba(0,0,0,.8)}
     /* Marquee selection rectangle (drawn while dragging across tracks) */
     .mt-marquee{position:absolute;border:1px dashed #a78bfa;background:rgba(124,58,237,.15);pointer-events:none;z-index:9;border-radius:3px}
     /* Keyframe markers — yellow diamonds anchored along the top edge
@@ -3277,10 +3280,30 @@ function showToast(message, type = 'success') {
           var selQuality = (qSel && qSel.value) || '720p';
           var selFormat  = (fSel && fSel.value) || 'mp4';
 
-          // Quality → target height (we preserve the canvas aspect 16:9)
+          // Quality → target height, aspect from Smart Resize (9:16, 1:1,
+          // 4:5) when the user has picked one via the SmartResize popover;
+          // otherwise default to 16:9. window.__exportAspect is set by
+          // clipActionSmartResize in public/js/media-panel-fix.js.
           var heightMap = { '480p': 480, '720p': 720, '1080p': 1080, '4K': 2160, '4k': 2160 };
           var targetH = heightMap[selQuality] || 720;
-          var targetW = Math.round(targetH * 16 / 9);
+          var aspectStr = (window.__exportAspect || '16:9');
+          var aParts = String(aspectStr).split(':').map(Number);
+          var aspectNum = (aParts[0] && aParts[1]) ? (aParts[0] / aParts[1]) : (16/9);
+          // For portrait aspects at e.g. 720p users expect 720 to be the
+          // SHORT dimension (width), not height → keep targetH but use it
+          // as the dominant side. Use the smaller of W/H = target height
+          // for portrait, so 720p 9:16 ≈ 720×1280.
+          var targetW;
+          if (aspectNum < 1){
+            // Portrait: treat targetH as the width (short side), scale height up
+            targetW = targetH;
+            targetH = Math.round(targetW / aspectNum);
+          } else {
+            targetW = Math.round(targetH * aspectNum);
+          }
+          // Ensure even dimensions (required by H.264)
+          if (targetW % 2) targetW += 1;
+          if (targetH % 2) targetH += 1;
 
           // Audio clips on A1 often carry blob: URLs (created by the
           // sidebar's local file picker via URL.createObjectURL). The
