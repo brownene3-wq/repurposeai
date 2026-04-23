@@ -2950,8 +2950,14 @@
   // duration so you can't slip off either end.
   function clipActionSlipEdit(){
     var existing = document.getElementById('slipPopover');
-    if (existing && existing.isConnected){ existing.remove(); return; }
-    if (existing){ try { existing.remove(); } catch(_){} }
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    if (typeof closeOtherPopovers === 'function') closeOtherPopovers('slipPopover');
 
     var clip = getActiveClip();
     if (!clip){ showToast('Select a clip first'); return; }
@@ -3341,14 +3347,33 @@
   //   3. if "AI Face Track" is on, runs face detection on the active V1
   //      video clip (browser FaceDetector when available, else a center
   //      fallback) and bakes a clip.dataset.crop that frames the face.
+  // ── Popover manager (Task #25) ───────────────────────────────────
+  // Closes any competing floating popover before opening a new one, so
+  // users never see two right-anchored popovers stacked on top of each
+  // other. Also hardens against ghost-DOM references that pass a truthy
+  // check but aren't real Elements (a Chrome isolated-world artifact).
+  function closeOtherPopovers(keepId){
+    ['srPopover', 'kfPopover', 'fxSliderPopover', 'slipPopover'].forEach(function(id){
+      if (id === keepId) return;
+      var el = document.getElementById(id);
+      if (el && el instanceof Element){ try { el.remove(); } catch(_){} }
+    });
+  }
+
   function clipActionSmartResize(){
-    // One popover at a time — toggle off if already open.
-    // Guard against orphaned/ghost references (rare: getElementById can
-    // return a detached node when the ID index hasn't been flushed). We
-    // only treat it as "open" when the element is actually in the tree.
+    // Toggle off if already open — Element check guards against the
+    // Chrome isolated-world ghost-DOM where getElementById can return
+    // a truthy non-Element shim that breaks isConnected checks.
     var existing = document.getElementById('srPopover');
-    if (existing && existing.isConnected){ existing.remove(); return; }
-    if (existing) { try { existing.remove(); } catch(_){} }
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    // Close any competing right-anchored popovers so only one is visible
+    closeOtherPopovers('srPopover');
 
     var cur = window.__exportAspect || '16:9';
     var pop = document.createElement('div');
@@ -3597,10 +3622,16 @@
     });
   }
   function clipActionKeyframe(){
-    // Toggle-close if the popover is already open
+    // Toggle-close if the popover is already open (hardened against ghost-DOM)
     var existing = document.getElementById('kfPopover');
-    if (existing && existing.isConnected){ existing.remove(); return; }
-    if (existing) { try { existing.remove(); } catch(_){} }
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    closeOtherPopovers('kfPopover');
 
     var clip = getActiveClip();
     if (!clip){ showToast('Select a clip first'); return; }
@@ -3844,10 +3875,16 @@
   //   unit     : label suffix ('px', '×')
   //   icon     : emoji prefix for the indicator clip
   function openFxSliderPopover(key, label, min, max, step, neutral, unit, icon){
-    // Toggle-close if already open
+    // Toggle-close if already open (hardened against ghost-DOM)
     var existing = document.getElementById('fxSliderPopover');
-    if (existing && existing.isConnected){ existing.remove(); return; }
-    if (existing) { try { existing.remove(); } catch(_){} }
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    closeOtherPopovers('fxSliderPopover');
 
     var targets = Array.from(document.querySelectorAll('.mt-clip.selected'));
     if (!targets.length){

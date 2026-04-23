@@ -6729,6 +6729,27 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         var afParts = [];
         if (speed !== 1) afParts.push(atempoChain(speed));
         if (reverse) afParts.push('areverse');
+        // Task #24 — Per-V1-clip audio FX for embedded audio. Same filter
+        // set that A1 clips get in the final audioGraph (afftdn / loudnorm
+        // / afade / volume / mute), applied during the V1 segment encode
+        // so the concatenated intermediate already has the FX baked in.
+        if (clip.audioDenoise === 'true')   afParts.push('afftdn=nf=-25');
+        if (clip.audioNormalize === 'true') afParts.push('loudnorm=I=-16:TP=-1.5:LRA=11');
+        var v1FadeIn  = Math.max(0, parseFloat(clip.fadeIn)  || 0);
+        var v1FadeOut = Math.max(0, parseFloat(clip.fadeOut) || 0);
+        if (v1FadeIn > 0){
+          v1FadeIn = Math.min(v1FadeIn, durSec);
+          afParts.push('afade=t=in:st=0:d=' + v1FadeIn.toFixed(3));
+        }
+        if (v1FadeOut > 0){
+          v1FadeOut = Math.min(v1FadeOut, durSec);
+          var v1FoStart = Math.max(0, durSec - v1FadeOut);
+          afParts.push('afade=t=out:st=' + v1FoStart.toFixed(3) + ':d=' + v1FadeOut.toFixed(3));
+        }
+        var v1VolRaw = parseFloat(clip.volume);
+        var v1Vol    = isFinite(v1VolRaw) ? Math.max(0, Math.min(2, v1VolRaw / 100)) : 1;
+        if (clip.muted === 'true') v1Vol = 0;
+        if (Math.abs(v1Vol - 1) > 1e-3) afParts.push('volume=' + v1Vol.toFixed(3));
         afParts.push('apad');
         var afWithSpeed = afParts.join(',');
 
@@ -9459,15 +9480,24 @@ router.post('/ai-captions', requireAuth, async (req, res) => {
       });
     }
 
-    // Extract mono 16kHz MP3 (Whisper-friendly, <25MB for long videos)
+    // Extract mono 16kHz MP3 (Whisper-friendly, <25MB for long videos).
+    // Task #22 — Force timestamps to start at 0 so Whisper's word-level
+    // starts line up with the video's t=0. Without -avoid_negative_ts and
+    // -fflags +genpts, containers whose audio stream has a non-zero
+    // start_time (common when files are re-muxed by other editors) pass
+    // that offset through to the MP3, which then shifts every caption
+    // start by that offset — producing the "captions are 2s late" bug.
     var mp3Path = path.join(uploadDir, 'captions_' + Date.now() + '_' + req.user.id + '.mp3');
     await new Promise(function(resolve, reject){
       var proc = spawn(ffmpegPath, [
+        '-fflags', '+genpts',
         '-i', srcPath,
         '-vn',
         '-ac', '1',
         '-ar', '16000',
         '-b:a', '64k',
+        '-af', 'aresample=async=1:first_pts=0',
+        '-avoid_negative_ts', 'make_zero',
         '-y', mp3Path
       ]);
       var stderr = '';

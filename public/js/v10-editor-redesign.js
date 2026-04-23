@@ -1750,8 +1750,13 @@
         // pick it up immediately.
         (function(){
           // Read current values from the target audio clip, if any
-          var tgt = document.querySelector('.mt-track-audio .mt-clip.selected') ||
-                    document.querySelector('.mt-track-audio .mt-clip');
+          // #24 — Fade sliders read from any selected A1/V1 clip or the
+          // first A1 clip (fallback) or first V1 clip (final fallback).
+          var tgt =
+            document.querySelector('.mt-track-audio .mt-clip.selected') ||
+            document.querySelector('.mt-track-video .mt-clip.selected') ||
+            document.querySelector('.mt-track-audio .mt-clip') ||
+            document.querySelector('.mt-track-video .mt-clip');
           var curIn  = tgt ? (parseFloat(tgt.dataset.fadeIn)  || 0) : 0;
           var curOut = tgt ? (parseFloat(tgt.dataset.fadeOut) || 0) : 0;
           function fadeRow(lbl, fx, val, icon){
@@ -1917,18 +1922,27 @@
       // AUDIO FX handlers — operate on the currently selected audio clip,
       // or fall back to the first audio clip on A1. Wired BEFORE wireRPToast
       // (capture phase) so the generic toast handler doesn't fire first.
+      // Task #24 — Audio FX scope extends to V1 video clips too. Denoise,
+      // Normalize, Fade In, Fade Out, Link/Split all accept any .mt-clip
+      // that carries embedded audio (V1) or dedicated audio (A1). Priority
+      // for target resolution:
+      //   1. Any SELECTED audio-or-video clips on the timeline
+      //   2. If none selected: the first A1 clip (legacy default)
+      //   3. If no A1 clips at all: the first V1 clip
       function getTargetAudioClip(){
-        var sel = document.querySelector('.mt-track-audio .mt-clip.selected');
-        if (sel) return sel;
-        return document.querySelector('.mt-track-audio .mt-clip') || null;
+        var selAny = document.querySelector('.mt-track-audio .mt-clip.selected, .mt-track-video .mt-clip.selected');
+        if (selAny) return selAny;
+        var firstA1 = document.querySelector('.mt-track-audio .mt-clip');
+        if (firstA1) return firstA1;
+        return document.querySelector('.mt-track-video .mt-clip') || null;
       }
-      // Multi-clip target for audio FX: every SELECTED audio clip (from
-      // the timeline), or the primary target (selected-or-first-A1) as a
-      // single-clip fallback. Broadcast-style: prompts fire ONCE with the
-      // first clip's value and the result applies to all targets.
       function getAudioFXTargets(){
-        var selAudio = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip.selected'));
-        if (selAudio.length) return selAudio;
+        // Every selected clip on EITHER audio or video tracks counts as
+        // an audio FX target. Broadcast-style: one prompt, applies to all.
+        var selAny = Array.from(document.querySelectorAll(
+          '.mt-track-audio .mt-clip.selected, .mt-track-video .mt-clip.selected'
+        ));
+        if (selAny.length) return selAny;
         var one = getTargetAudioClip();
         return one ? [one] : [];
       }
@@ -2039,14 +2053,28 @@
     }
     renderLayers();
 
-    // Re-render when the timeline's audio clips change
+    // Re-render when the timeline's clips change, OR when selection
+    // flips (Task #23). Without the attribute watch, selecting an A1
+    // clip wouldn't retarget the MIXING fade sliders + Link/Split /
+    // V1 embedded-audio cards — they'd stay bound to whichever clip
+    // was first in DOM, making the controls feel unresponsive.
     var timer = null;
-    var mo = new MutationObserver(function(){
+    var mo = new MutationObserver(function(mutations){
+      // Ignore mutations caused by our own re-render of div.innerHTML
+      // (which the outer tracksArea observer doesn't see anyway), but
+      // also debounce bursty selection drags.
       if (timer) clearTimeout(timer);
-      timer = setTimeout(renderLayers, 300);
+      timer = setTimeout(renderLayers, 120);
     });
     var ta = document.getElementById('mtTracksArea');
-    if (ta) mo.observe(ta, { subtree: true, childList: true });
+    if (ta){
+      mo.observe(ta, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class', 'data-muted', 'data-volume']
+      });
+    }
     return div;
   }
 
@@ -2234,14 +2262,36 @@
           return;
         }
         // Anchor captions to the V1 clip's left edge on the timeline so
-        // the text's timeline-t matches the clip's playback time
+        // the text's timeline-t matches the clip's playback time.
+        //
+        // Task #22 — Proper sync math:
+        //   Whisper timestamps are seconds from the start of the AUDIO
+        //   the server extracted (full source file, not trimmed). If the
+        //   clip is trimmed (sourceOffset > 0), captions whose ch.start
+        //   lands before sourceOffset are out of view and those after
+        //   must be shifted left by sourceOffset.
+        //
+        //   Plus: window.__captionLeadSec is a developer-tunable lead
+        //   (in seconds) that nudges all captions earlier. Defaults to 0
+        //   since the server-side FFmpeg fix (-avoid_negative_ts make_zero
+        //   + aresample first_pts=0) should eliminate the systemic 2s lag
+        //   on most containers. Can be set live from the console.
         var clipLeftPx = parseFloat(clip.style.left) || 0;
         var PX_PER_SEC = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+        var leadSec = parseFloat(window.__captionLeadSec);
+        if (!isFinite(leadSec)) leadSec = 0;
         var added = 0;
         chunks.forEach(function(ch){
           if (!ch.text || !isFinite(ch.start) || !isFinite(ch.end)) return;
-          var leftPx  = clipLeftPx + Math.round(ch.start * PX_PER_SEC);
-          var widthPx = Math.max(20, Math.round((ch.end - ch.start) * PX_PER_SEC));
+          // Shift by sourceOffset and subtract the lead. Drop chunks that
+          // now land before the clip's left edge (pre-trim speech).
+          var adjStart = ch.start - sourceOffset - leadSec;
+          var adjEnd   = ch.end   - sourceOffset - leadSec;
+          if (adjEnd <= 0) return;
+          if (adjStart < 0) adjStart = 0;
+          var leftPx  = clipLeftPx + Math.round(adjStart * PX_PER_SEC);
+          var widthPx = Math.max(20, Math.round((adjEnd - adjStart) * PX_PER_SEC));
           if (typeof window.addTextClipToTimeline === 'function'){
             window.addTextClipToTimeline(ch.text, {
               left:  leftPx + 'px',
