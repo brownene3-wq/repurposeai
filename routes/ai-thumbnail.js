@@ -6,7 +6,13 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
-const Replicate = require('replicate');
+// Replicate is lazy-required so the server still boots if the package or
+// REPLICATE_API_TOKEN env var is missing. generateAIImage() surfaces a clean
+// error instead of taking the site down on boot.
+let Replicate;
+try { Replicate = require('replicate'); } catch (e) {
+  console.warn('[AI Thumbnail] replicate package unavailable:', e.message);
+}
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
@@ -15,10 +21,25 @@ const { featureUsageOps } = require('../db/database');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Replicate client for Flux Schnell image generation. ~$0.003/image vs
-// ~$0.04/image on GPT-image-1 medium — roughly 10-15× cheaper, and the
+// ~$0.04/image on GPT-image-1 medium â roughly 10-15Ã cheaper, and the
 // caption is overlaid separately in the UI so Flux's weaker text rendering
 // is not a concern here.
-const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
+// Lazy-initialized Replicate client. We don't construct this at module load
+// because new Replicate({ auth: undefined }) throws in v1.x of the SDK, which
+// would take down the entire server on any deploy where the token isn't set yet.
+let _replicate = null;
+function getReplicate() {
+  if (!Replicate) {
+    throw new Error('Replicate SDK not installed on server \u2014 redeploy so npm install picks up the dependency');
+  }
+  if (!process.env.REPLICATE_API_TOKEN) {
+    throw new Error('REPLICATE_API_TOKEN env var not configured on Railway');
+  }
+  if (!_replicate) {
+    _replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
+  }
+  return _replicate;
+}
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -91,7 +112,7 @@ async function downloadYouTubeVideo(videoUrl) {
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
-          // Prefer a standalone high-res video stream (no audio merge needed — faster
+          // Prefer a standalone high-res video stream (no audio merge needed â faster
           // and avoids dropping to 720p when the audio merger fails). Fall back to
           // progressive formats only if every video-only option is unavailable.
           '-f', 'bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/bestvideo[ext=mp4]/bestvideo/best[height<=1080]/best',
@@ -263,7 +284,7 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 }
 });
 
-// Get width/height of a frame using ffprobe — used to preserve the video's
+// Get width/height of a frame using ffprobe â used to preserve the video's
 // original aspect ratio in the generated thumbnail (fixes stretch bug on 9:16 inputs).
 function getFrameDimensions(framePath) {
   return new Promise((resolve) => {
@@ -282,7 +303,7 @@ function getFrameDimensions(framePath) {
       if (parts[0] > 0 && parts[1] > 0) {
         resolve({ width: parts[0], height: parts[1] });
       } else {
-        // Fallback — default to landscape YouTube-ish size
+        // Fallback â default to landscape YouTube-ish size
         resolve({ width: 1200, height: 630 });
       }
     });
@@ -361,7 +382,7 @@ function applyGradientOverlay(inputFrame, outputPath, dims) {
     const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      // Note: colorbalance midtone options are rm/gm/bm (not ms/mh/mb) —
+      // Note: colorbalance midtone options are rm/gm/bm (not ms/mh/mb) â
       // the old param names were invalid and caused every Gradient Overlay
       // render to fail with "Option 'ms' not found".
       '-vf', `scale=${W}:${H}:flags=lanczos,colorbalance=rs=0.35:gs=-0.1:bs=0.3:rm=0.25:gm=-0.05:bm=0.2,eq=contrast=1.1:saturation=1.2`,
@@ -420,7 +441,7 @@ function applyDarkCinematic(inputFrame, outputPath, dims) {
 function applyBoldBorder(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
     const W = dims.width, H = dims.height;
-    // 5% outer padding, 2.5% inner stroke offset — proportional so portrait and landscape both look balanced
+    // 5% outer padding, 2.5% inner stroke offset â proportional so portrait and landscape both look balanced
     const marginX = Math.max(2, Math.round(W * 0.05 / 2) * 2);
     const marginY = Math.max(2, Math.round(H * 0.05 / 2) * 2);
     const innerW = Math.max(2, W - marginX * 2);
@@ -661,7 +682,7 @@ function extractKeyFrames(videoPath, maxFrames = 12) {
 // ============================================================================
 // AI-Generated Thumbnails pipeline
 // ----------------------------------------------------------------------------
-// 1. Ingest video (upload or YouTube download — reuses existing helpers).
+// 1. Ingest video (upload or YouTube download â reuses existing helpers).
 // 2. Extract a short audio clip with ffmpeg and transcribe it with Whisper.
 // 3. Ask GPT-4o-mini to pick out the most interesting moments and produce
 //    N thumbnail concepts (title, caption, image prompt, referenced moment).
@@ -670,7 +691,7 @@ function extractKeyFrames(videoPath, maxFrames = 12) {
 // ============================================================================
 
 // Extract a Whisper-friendly MP3 from a video. Mono, 16kHz, 64kbps stays well
-// under Whisper's 25MB limit. We also cap to the first 10 minutes — enough to
+// under Whisper's 25MB limit. We also cap to the first 10 minutes â enough to
 // understand what a video is about without blowing up cost/latency for long clips.
 function extractAudioForAIThumbnail(videoPath) {
   return new Promise((resolve, reject) => {
@@ -722,7 +743,7 @@ async function generateThumbnailConcepts({ transcript, hint, videoTitle, aspectL
   const systemPrompt = `You are a senior YouTube thumbnail art director. Given a video transcript, you identify the most visually compelling, emotionally charged, or curiosity-provoking moments and turn them into thumbnail concepts that maximize click-through. Each concept must be visually distinct from the others. Captions must be 2-6 words, punchy, ALL CAPS. Image prompts should describe a single focal subject, dramatic lighting, bold composition, vibrant colors, and leave clear negative space for the caption overlay. Avoid copyrighted characters, logos, real celebrities, or text inside the generated image (the caption is overlaid separately).`;
   const userPrompt = `Video title: ${videoTitle || '(unknown)'}
 Target aspect ratio: ${aspectLabel}
-User style hint: ${hint || '(none — choose what best fits the content)'}
+User style hint: ${hint || '(none â choose what best fits the content)'}
 
 Transcript (may be truncated):
 """
@@ -736,7 +757,7 @@ Produce exactly ${count} thumbnail concepts. Return JSON shaped as:
       "title": "Short internal title for this concept",
       "moment": "Which part of the video this draws from (one sentence)",
       "caption": "2-6 WORD HOOK IN CAPS",
-      "imagePrompt": "Detailed visual prompt for an image model — focal subject, mood, lighting, composition, colors, style. Do NOT instruct the model to render any text."
+      "imagePrompt": "Detailed visual prompt for an image model â focal subject, mood, lighting, composition, colors, style. Do NOT instruct the model to render any text."
     }
   ]
 }`;
@@ -830,9 +851,7 @@ function aspectForFlux(aspect) {
 // replicate SDK versions (unlike replicate.run() which started returning
 // ReadableStream instances in v1.x). Schnell typically completes in 2-4s.
 async function generateAIImage({ prompt, aspect, jobId, index }) {
-  if (!process.env.REPLICATE_API_TOKEN) {
-    throw new Error('REPLICATE_API_TOKEN not configured');
-  }
+  const replicate = getReplicate();
 
   const prediction = await replicate.predictions.create({
     model: 'black-forest-labs/flux-schnell',
@@ -1568,9 +1587,9 @@ ${pageStyles}
 
           <div id="uploadTab" class="tab-content">
             <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-              <div class="upload-icon">🎬</div>
+              <div class="upload-icon">ð¬</div>
               <div class="upload-text">Drop your video file here</div>
-              <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
+              <div class="upload-subtext">Or click to select â¢ MP4, MOV, WebM supported</div>
               <input type="file" id="fileInput" name="videoFile" class="file-input" accept="video/*">
               <div id="fileName" class="file-name" style="display: none;"></div>
             </div>
@@ -1595,9 +1614,9 @@ ${pageStyles}
 
             <div class="ai-source-content" data-aisource-content="upload" style="display:none">
               <div class="upload-area" id="aiUploadArea" onclick="document.getElementById('aiFileInput').click()">
-                <div class="upload-icon">🎬</div>
+                <div class="upload-icon">ð¬</div>
                 <div class="upload-text">Drop your video file here</div>
-                <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
+                <div class="upload-subtext">Or click to select â¢ MP4, MOV, WebM supported</div>
                 <input type="file" id="aiFileInput" class="file-input" accept="video/*">
                 <div id="aiFileName" class="file-name" style="display: none;"></div>
               </div>
@@ -1689,7 +1708,7 @@ ${pageStyles}
       errorDiv.style.display = 'none';
     }
 
-    // Tab switching — also toggles visibility of the classic extract button
+    // Tab switching â also toggles visibility of the classic extract button
     // and AI-generated section depending on which top-level tab is active.
     document.querySelectorAll('.input-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
@@ -1726,7 +1745,7 @@ ${pageStyles}
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
         const name = e.target.files[0].name;
-        fileName.textContent = '🎬 ' + name;
+        fileName.textContent = 'ð¬ ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }
@@ -1750,7 +1769,7 @@ ${pageStyles}
       if (files.length > 0) {
         fileInput.files = files;
         const name = files[0].name;
-        fileName.textContent = '🎬 ' + name;
+        fileName.textContent = 'ð¬ ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }
@@ -1967,7 +1986,7 @@ ${pageStyles}
     }
 
     // ===========================================================
-    // AI Generated tab — separate flow (no frame extraction)
+    // AI Generated tab â separate flow (no frame extraction)
     // ===========================================================
     var aiActiveSource = 'url';
     var aiActiveAspect = '16:9';
@@ -2004,7 +2023,7 @@ ${pageStyles}
     if (aiFileInputEl) {
       aiFileInputEl.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-          aiFileNameEl.textContent = '🎬 ' + e.target.files[0].name;
+          aiFileNameEl.textContent = 'ð¬ ' + e.target.files[0].name;
           aiFileNameEl.style.display = 'block';
         }
         checkAIInputs();
@@ -2018,7 +2037,7 @@ ${pageStyles}
         aiUploadAreaEl.classList.remove('dragover');
         if (e.dataTransfer.files.length > 0) {
           aiFileInputEl.files = e.dataTransfer.files;
-          aiFileNameEl.textContent = '🎬 ' + e.dataTransfer.files[0].name;
+          aiFileNameEl.textContent = 'ð¬ ' + e.dataTransfer.files[0].name;
           aiFileNameEl.style.display = 'block';
           checkAIInputs();
         }
@@ -2035,13 +2054,13 @@ ${pageStyles}
     let aiProgressTimer = null;
     function startAIProgress() {
       const stages = [
-        'Downloading video…',
-        'Extracting audio…',
-        'Transcribing with Whisper (this usually takes the longest)…',
-        'Identifying the most interesting moments…',
-        'Designing thumbnail concepts…',
-        'Generating images with GPT-image-1 (this can take 20-40 seconds)…',
-        'Rendering final thumbnails…'
+        'Downloading videoâ¦',
+        'Extracting audioâ¦',
+        'Transcribing with Whisper (this usually takes the longest)â¦',
+        'Identifying the most interesting momentsâ¦',
+        'Designing thumbnail conceptsâ¦',
+        'Generating images with GPT-image-1 (this can take 20-40 seconds)â¦',
+        'Rendering final thumbnailsâ¦'
       ];
       let idx = 0;
       aiProgressMsgEl.textContent = stages[0];
@@ -2114,9 +2133,9 @@ ${pageStyles}
       if (data.videoTitle) bits.push('Based on: "' + data.videoTitle + '"');
       if (data.aspect) bits.push('Aspect ratio: ' + data.aspect);
       if (data.partialFailures && data.partialFailures.length) {
-        bits.push(data.partialFailures.length + ' of ' + (data.thumbnails.length + data.partialFailures.length) + ' image(s) failed to render — showing the ones that succeeded');
+        bits.push(data.partialFailures.length + ' of ' + (data.thumbnails.length + data.partialFailures.length) + ' image(s) failed to render â showing the ones that succeeded');
       }
-      caption.textContent = bits.join(' · ');
+      caption.textContent = bits.join(' Â· ');
 
       data.thumbnails.forEach(thumb => {
         const card = document.createElement('div');
@@ -2357,7 +2376,7 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
     }
 
     // If transcription yielded nothing AND we have no title, the model has
-    // nothing to work with — ask the user to add a hint.
+    // nothing to work with â ask the user to add a hint.
     if (!transcript && !videoTitle && !styleHint) {
       return res.status(400).json({
         success: false,
