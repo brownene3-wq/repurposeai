@@ -813,8 +813,12 @@ function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubject
       ffmpeg.stderr.on('data', d => { errorOutput += d.toString(); });
       ffmpeg.on('close', code => {
         try { fs.unlinkSync(scriptPath); } catch (e) {}
-        if (code === 0) resolve();
-        else reject(new Error(`Grid render failed (code ${code}): ${errorOutput.slice(-800)}`));
+        if (code === 0) return resolve();
+        // Log the full ffmpeg output server-side for debugging, but send a
+        // clean user-facing message so we never leak filter graphs into
+        // status text / alerts on the frontend.
+        console.error(`[AI Reframe Grid] ffmpeg exit ${code}\n${errorOutput.slice(-2000)}`);
+        reject(new Error('Grid render failed. Please try a different style or a shorter clip.'));
       });
       ffmpeg.on('error', (err) => {
         try { fs.unlinkSync(scriptPath); } catch (e) {}
@@ -1033,21 +1037,52 @@ router.get('/grid-test', requireAuth, (req, res) => {
   h1 { color:#c4a9ff; }
   button, input, select, textarea { font:inherit; }
   input[type=text], input[type=number] { background:#1c1630; border:1px solid #3b2d5f; color:#e8e6f0; padding:.5rem; border-radius:6px; width:100%; box-sizing:border-box; }
-  button { background:#6c3aed; color:#fff; border:none; padding:.6rem 1rem; border-radius:6px; cursor:pointer; margin-top:.5rem; }
+  button { background:#6c3aed; color:#fff; border:none; padding:.6rem 1rem; border-radius:6px; cursor:pointer; margin-top:.5rem; font-weight:600; transition: background .15s; }
+  button:hover:not(:disabled) { background:#7d4af5; }
   button:disabled { opacity:.5; cursor:not-allowed; }
   .row { margin-bottom:1rem; }
   .subjects { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:.75rem; margin-top:.5rem; }
-  .subject { background:#1c1630; border:2px solid #3b2d5f; border-radius:8px; padding:.75rem; cursor:pointer; }
+  .subject { background:#1c1630; border:2px solid #3b2d5f; border-radius:8px; padding:.75rem; cursor:pointer; text-align:center; }
   .subject.sel { border-color:#6c3aed; background:#2a1f4e; }
-  pre { background:#0a0714; border:1px solid #3b2d5f; border-radius:6px; padding:.75rem; overflow:auto; font-size:.8rem; max-height:200px; }
   label { display:block; font-weight:600; margin-bottom:.25rem; color:#b2a6d4; }
+
+  /* Themed file picker (replaces the browser-default "Choose File" look) */
+  .file-picker { display:flex; align-items:center; gap:.75rem; }
+  .file-picker input[type=file] { position:absolute; left:-9999px; opacity:0; pointer-events:none; }
+  .file-picker .file-btn {
+    display:inline-flex; align-items:center; gap:.5rem;
+    background:#1c1630; color:#e8e6f0;
+    border:1px solid #3b2d5f; border-radius:6px;
+    padding:.55rem 1rem; font-weight:600; cursor:pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .file-picker .file-btn:hover { border-color:#6c3aed; background:#231940; }
+  .file-picker .file-name { color:#b2a6d4; font-size:.9rem; flex:1; word-break:break-all; }
+
+  /* Themed select (replaces the browser-default dropdown chrome) */
+  select {
+    -webkit-appearance:none; -moz-appearance:none; appearance:none;
+    background:#1c1630; color:#e8e6f0;
+    border:1px solid #3b2d5f; border-radius:6px;
+    padding:.55rem 2.25rem .55rem .75rem;
+    width:100%; box-sizing:border-box; font-weight:500; cursor:pointer;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1.5L6 6.5L11 1.5' stroke='%23c4a9ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat; background-position:right .85rem center;
+    transition: border-color .15s;
+  }
+  select:hover, select:focus { border-color:#6c3aed; outline:none; }
+  select option { background:#1c1630; color:#e8e6f0; }
 </style></head><body>
 <h1>AI Reframe — Grid Renderer Test (Deploy 2 QA)</h1>
 <p>Internal test page. Upload a clip with multiple faces, run detection, pick subjects, render the grid.</p>
 
 <div class="row">
   <label>Input</label>
-  <input type="file" id="file" accept="video/*">
+  <div class="file-picker">
+    <label class="file-btn" for="file">📁 Choose file</label>
+    <input type="file" id="file" accept="video/*">
+    <span class="file-name" id="fileLabel">No file chosen</span>
+  </div>
   <div style="margin-top:.5rem">or YouTube URL:</div>
   <input type="text" id="url" placeholder="https://youtube.com/...">
   <button id="detectBtn">Run Detection</button>
@@ -1058,7 +1093,6 @@ router.get('/grid-test', requireAuth, (req, res) => {
   <label>Detected subjects (click to toggle, up to 4)</label>
   <div class="subjects" id="subjects"></div>
 </div>
-<pre id="detectionJson" style="display:none"></pre>
 
 <div id="renderWrap" style="display:none">
   <div class="row"><label>Style</label>
@@ -1075,8 +1109,30 @@ router.get('/grid-test', requireAuth, (req, res) => {
 <script>
 let jobId = null; let subjects = []; let selected = new Set();
 const $ = (id) => document.getElementById(id);
-function setStatus(msg, color) { $('status').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+msg+'</div>'; }
-function rsStatus(msg, color) { $('renderStatus').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+msg+'</div>'; }
+
+// Simple HTML escaper + error sanitizer. Backend errors sometimes contain
+// multi-kilobyte ffmpeg filter graphs — we must never dump those into the
+// DOM verbatim. Trim to a short, user-friendly message.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function friendlyError(msg) {
+  let s = String(msg || 'Something went wrong');
+  // Drop ffmpeg filter-graph spew: strip anything after the first "(code ...)"
+  s = s.replace(/\\(code \\d+\\):.*$/s, '(render failed)');
+  // Drop expressions/filter chains that sneak through
+  s = s.replace(/if\\(between[^]*$/, '...');
+  if (s.length > 180) s = s.slice(0, 180) + '…';
+  return s;
+}
+function setStatus(msg, color) { $('status').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+escapeHtml(msg)+'</div>'; }
+function rsStatus(html, color) { $('renderStatus').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+html+'</div>'; }
+
+// Keep the filename label in sync with the chosen file
+$('file').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  $('fileLabel').textContent = f ? f.name : 'No file chosen';
+});
 
 $('detectBtn').addEventListener('click', async () => {
   $('detectBtn').disabled = true;
@@ -1091,12 +1147,10 @@ $('detectBtn').addEventListener('click', async () => {
     const data = await r.json();
     if (!r.ok || !data.success) throw new Error(data.message || 'Detection failed');
     jobId = data.jobId; subjects = data.detection.subjects || [];
-    $('detectionJson').style.display='block';
-    $('detectionJson').textContent = JSON.stringify({jobId, detection:data.detection}, null, 2);
     renderSubjects();
-    setStatus('Detected '+subjects.length+' subject(s). Detector: '+data.detection.detector, '#7bd88f');
+    setStatus('Detected '+subjects.length+' subject(s). Pick up to 4 and choose a style.', '#7bd88f');
     $('subjectsWrap').style.display='block'; $('renderWrap').style.display='block';
-  } catch (e) { setStatus('Error: '+e.message, '#ff7a7a'); }
+  } catch (e) { setStatus(friendlyError(e.message), '#ff7a7a'); }
   finally { $('detectBtn').disabled = false; }
 });
 
@@ -1133,8 +1187,9 @@ $('renderBtn').addEventListener('click', async () => {
     });
     const data = await r.json();
     if (!r.ok || !data.success) throw new Error(data.message || 'Render failed');
-    rsStatus('Rendered: <a href="/ai-reframe/download/'+data.filename+'" style="color:#c4a9ff">'+data.filename+'</a> · '+data.dimensions, '#7bd88f');
-  } catch (e) { rsStatus('Error: '+e.message, '#ff7a7a'); }
+    const safeName = encodeURIComponent(data.filename);
+    rsStatus('Rendered: <a href="/ai-reframe/download/' + safeName + '" style="color:#c4a9ff">Download</a> · ' + escapeHtml(data.dimensions), '#7bd88f');
+  } catch (e) { rsStatus(escapeHtml(friendlyError(e.message)), '#ff7a7a'); }
   finally { $('renderBtn').disabled = false; }
 });
 </script></body></html>`;
@@ -1743,9 +1798,24 @@ ${pageStyles}
     const gridSelected = new Set();
     let gridRenderBtn = null; // lazily created when the user picks subjects
 
+    // Protect the UI from raw ffmpeg error spew. Server errors sometimes
+    // contain multi-KB filter graphs ("if(between(t,...))..." chains); we
+    // must never render those verbatim — escape HTML and trim aggressively.
+    function escapeHtmlGrid(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function friendlyGridError(msg) {
+      let s = String(msg || 'Something went wrong');
+      s = s.replace(/\\(code \\d+\\):.*$/s, '(render failed)');
+      s = s.replace(/if\\(between[^]*$/, '...');
+      if (s.length > 180) s = s.slice(0, 180) + '…';
+      return s;
+    }
+
     function setDetectStatus(msg, color) {
+      const col = color || 'var(--text-muted)';
       document.getElementById('detectStatus').innerHTML =
-        msg ? '<span style="color:'+(color||'var(--text-muted)')+'">'+msg+'</span>' : '';
+        msg ? '<span style="color:'+col+'">' + escapeHtmlGrid(msg) + '</span>' : '';
     }
 
     function resetGridFlow() {
@@ -1855,7 +1925,7 @@ ${pageStyles}
         ensureRenderBtn();
         updateRenderBtnState();
       } catch (e) {
-        setDetectStatus('Error: ' + e.message, '#ff7a7a');
+        setDetectStatus(friendlyGridError(e.message), '#ff7a7a');
       } finally {
         btn.disabled = false;
         btn.innerHTML = 'Detect People';
@@ -1889,7 +1959,7 @@ ${pageStyles}
         }]);
         showToast('Grid video ready!', 4000);
       } catch (e) {
-        status.innerHTML = '<span style="color:#ff7a7a">Error: ' + e.message + '</span>';
+        status.innerHTML = '<span style="color:#ff7a7a">' + escapeHtmlGrid(friendlyGridError(e.message)) + '</span>';
       } finally {
         updateRenderBtnState();
       }
