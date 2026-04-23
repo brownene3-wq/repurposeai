@@ -9528,6 +9528,55 @@ router.post('/ai-enhance', requireAuth, async (req, res) => {
       proc.on('error', reject);
     });
 
+    // If the source is a VIDEO (not already audio-only), produce a new
+    // MP4 with the enhanced audio re-muxed in place of the original
+    // audio track. Video stream is copied (no re-encode → fast) so the
+    // clip's visuals, duration, and sourceOffset/trimIn/trimOut stay
+    // valid against the new file. The client uses enhancedVideoUrl to
+    // SWAP the V1 clip's mediaUrl in place (no new A1 clip).
+    var enhancedVideoUrl = null;
+    var srcExt = path.extname(srcPath).toLowerCase();
+    var looksLikeVideo = (srcExt === '.mp4' || srcExt === '.mov' ||
+                          srcExt === '.webm' || srcExt === '.mkv' ||
+                          srcExt === '.m4v');
+    if (looksLikeVideo){
+      try {
+        var mp4Name = 'enhanced_video_' + Date.now() + '_' + req.user.id + '.mp4';
+        var mp4Path = path.join(outputDir, mp4Name);
+        await new Promise(function(resolve, reject){
+          var proc = spawn(ffmpegPath, [
+            '-i', srcPath,
+            '-i', outPath,
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-b:a', '160k',
+            '-movflags', '+faststart',
+            '-shortest',
+            '-y', mp4Path
+          ]);
+          var stderr = '';
+          proc.stderr.on('data', function(d){ stderr += d.toString(); });
+          proc.on('close', function(code){
+            if (code === 0) resolve();
+            else reject(new Error('Mux failed: ' + stderr.slice(-200)));
+          });
+          proc.on('error', reject);
+        });
+        // Copy to uploads so the download-serve route can find it via
+        // the same file-resolution path used for user-uploaded media.
+        try {
+          fs.copyFileSync(mp4Path, path.join(uploadDir, mp4Name));
+        } catch(_){}
+        enhancedVideoUrl = '/video-editor/download/' + mp4Name;
+      } catch (muxErr){
+        console.warn('[ai-enhance] re-mux failed, falling back to audio-only:', muxErr.message);
+        // enhancedVideoUrl stays null — client falls back to the
+        // legacy A1-clip path so the user still gets the cleaned audio.
+      }
+    }
+
     // Duration for the client (so it can build the A1 clip at the
     // correct width without loading the audio file first)
     var duration = 0;
@@ -9553,6 +9602,7 @@ router.post('/ai-enhance', requireAuth, async (req, res) => {
     res.json({
       success: true,
       enhancedUrl: '/video-editor/download/' + outName,
+      enhancedVideoUrl: enhancedVideoUrl,  // null if source was audio-only
       filename: outName,
       duration: duration,
       voiceBoost: voiceBoost,

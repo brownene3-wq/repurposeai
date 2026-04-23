@@ -2267,13 +2267,59 @@
         if (!resp.ok || !data.success){
           throw new Error(data.error || 'Enhance failed');
         }
-        // Drop the enhanced audio onto A1 as a new clip
-        if (typeof window.addClipToTimeline === 'function'){
-          window.addClipToTimeline(data.filename || 'Enhanced audio', 'aud', data.duration || 0, data.enhancedUrl);
+        // Preferred path: server re-muxed the enhanced audio back into
+        // the source video. Swap the V1 clip's mediaUrl in place so the
+        // same clip now plays with the cleaned audio. No new A1 clip.
+        if (data.enhancedVideoUrl){
+          var oldUrl = clip.dataset.mediaUrl;
+          clip.dataset.mediaUrl = data.enhancedVideoUrl;
+          clip.dataset.audioEnhanced = 'true';
+          clip.dataset.serverFilename = (data.enhancedVideoUrl.split('/').pop() || '');
+
+          // If this clip is currently loaded in the Program Monitor, swap
+          // the <video> element's src and resume at the same time offset.
+          var player = document.getElementById('videoPlayer') || document.querySelector('video');
+          if (player && oldUrl){
+            var curSrc = player.currentSrc || player.src || '';
+            if (curSrc.indexOf(oldUrl.split('?')[0].split('/').pop()) !== -1){
+              var t = player.currentTime;
+              var wasPlaying = !player.paused;
+              player.src = data.enhancedVideoUrl;
+              player.load();
+              player.addEventListener('loadedmetadata', function once(){
+                player.removeEventListener('loadedmetadata', once);
+                try { player.currentTime = t; } catch(_){}
+                if (wasPlaying){ try { player.play(); } catch(_){} }
+              }, { once: true });
+            }
+          }
+
+          // Refresh the filmstrip from the new URL (frames are visually
+          // identical but the URL-keyed cache needs re-seeding).
+          if (typeof window.buildClipFilmstrip === 'function'){
+            // Remove old filmstrip + label first
+            var oldFS = clip.querySelector('.v10-filmstrip');
+            var oldLb = clip.querySelector('.v10-fs-label');
+            if (oldFS) oldFS.remove();
+            if (oldLb) oldLb.remove();
+            try {
+              window.buildClipFilmstrip(clip, data.enhancedVideoUrl,
+                parseFloat(clip.dataset.duration) || parseFloat(clip.dataset.srcDuration) || 0);
+            } catch(_){}
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+          toast('\u2728 Audio enhanced \u2014 original clip updated');
         } else {
-          toast('Enhanced audio saved: ' + data.filename);
+          // Fallback: server couldn't re-mux (e.g., source is audio-only
+          // or ffmpeg copy failed). Drop the cleaned audio on A1 so the
+          // user still gets the enhancement.
+          if (typeof window.addClipToTimeline === 'function'){
+            window.addClipToTimeline(data.filename || 'Enhanced audio', 'aud', data.duration || 0, data.enhancedUrl);
+            toast('Enhanced audio added to A1 (couldn\u2019t re-mux into video)');
+          } else {
+            toast('Enhanced audio saved: ' + data.filename);
+          }
         }
-        toast('Enhanced audio added to A1');
       } catch (err){
         toast('Enhance error: ' + (err.message || err));
       } finally {
