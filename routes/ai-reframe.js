@@ -833,6 +833,71 @@ function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubject
 
 // ---------- GRID ENDPOINTS ----------
 
+// GET /ai-reframe/subject-thumb/:jobId/:subjectId.jpg
+// Extracts a head-and-shoulders thumbnail JPEG at the subject's strongest
+// detection moment. Cached for the life of the job so repeated requests
+// are instant.
+router.get('/subject-thumb/:jobId/:subjectId.jpg', requireAuth, async (req, res) => {
+  try {
+    const job = gridJobs.get(req.params.jobId);
+    if (!job) return res.status(404).send('job not found');
+    const subjId = parseInt(req.params.subjectId, 10);
+    const subject = (job.detection.subjects || []).find(s => s.id === subjId);
+    if (!subject) return res.status(404).send('subject not found');
+
+    if (!job.thumbCache) job.thumbCache = new Map();
+    if (job.thumbCache.has(subjId)) {
+      res.set('Content-Type', 'image/jpeg');
+      return res.send(job.thumbCache.get(subjId));
+    }
+
+    const dims = await getVideoDimensions(job.videoPath);
+    // Find sample closest to thumbnail_time for accurate crop position
+    const samples = subject.samples || [];
+    let bestSample = samples[0];
+    let bestDelta = Infinity;
+    for (const s of samples) {
+      const d = Math.abs(s.time - subject.thumbnail_time);
+      if (d < bestDelta) { bestDelta = d; bestSample = s; }
+    }
+    if (!bestSample) return res.status(404).send('no samples');
+
+    // Tight head-and-shoulders thumb: ~2.5 * face_h
+    const side = Math.round(Math.max(bestSample.h * dims.height, bestSample.w * dims.width) * 2.5);
+    const cx = bestSample.cx * dims.width;
+    const cy = bestSample.cy * dims.height;
+    let x = Math.round(cx - side / 2);
+    let y = Math.round(cy - side * 0.35); // face in upper portion
+    x = Math.max(0, Math.min(dims.width - side, x));
+    y = Math.max(0, Math.min(dims.height - side, y));
+    const evenSide = side - (side % 2);
+
+    const ff = spawn(ffmpegPath || 'ffmpeg', [
+      '-ss', String(subject.thumbnail_time),
+      '-i', job.videoPath,
+      '-vf', `crop=${evenSide}:${evenSide}:${x}:${y},scale=180:180`,
+      '-frames:v', '1', '-q:v', '4', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-',
+    ]);
+    const chunks = [];
+    ff.stdout.on('data', d => chunks.push(d));
+    let err = '';
+    ff.stderr.on('data', d => { err += d.toString(); });
+    ff.on('close', code => {
+      if (code !== 0 || !chunks.length) {
+        console.error('thumb extract failed:', err.slice(-300));
+        return res.status(500).send('thumb failed');
+      }
+      const buf = Buffer.concat(chunks);
+      job.thumbCache.set(subjId, buf);
+      res.set('Content-Type', 'image/jpeg');
+      res.set('Cache-Control', 'private, max-age=1200');
+      res.send(buf);
+    });
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
 // POST /ai-reframe/detect-subjects
 // Accepts multipart (videoFile) OR form data with youtubeUrl+inputMode.
 // Runs detection, caches the video path + detection under a new jobId,
@@ -883,16 +948,39 @@ router.post('/detect-subjects', requireAuth, upload.single('videoFile'), async (
   }
 });
 
+// Named style presets for the simplified UI. Users pick a style name;
+// the server translates to the underlying padding/border/background knobs.
+const GRID_STYLE_PRESETS = {
+  clean: {
+    label: 'Clean',
+    padding: 16,
+    border: { enabled: true, color: '#ffffff', width: 3 },
+    background: { mode: 'blur' },
+  },
+  bold: {
+    label: 'Bold',
+    padding: 16,
+    border: { enabled: true, color: '#6c3aed', width: 4 },
+    background: { mode: 'blur' },
+  },
+  minimal: {
+    label: 'Minimal',
+    padding: 12,
+    border: { enabled: false },
+    background: { mode: 'solid', color: '#181426' },
+  },
+};
+
 // POST /ai-reframe/render-grid
-// Body: { jobId, selectedSubjectIds, padding, border, background }
+// Body: { jobId, selectedSubjectIds, style? | padding?, border?, background? }
 router.post('/render-grid', requireAuth, async (req, res) => {
   try {
-    const { jobId, selectedSubjectIds, padding, border, background } = req.body || {};
+    const { jobId, selectedSubjectIds, style, padding, border, background } = req.body || {};
     if (!jobId) return res.status(400).json({ success: false, message: 'jobId required' });
     const job = gridJobs.get(jobId);
     if (!job) return res.status(404).json({ success: false, message: 'Job not found or expired' });
     if (!Array.isArray(selectedSubjectIds) || selectedSubjectIds.length < 1 || selectedSubjectIds.length > 4) {
-      return res.status(400).json({ success: false, message: 'Select 1-4 subjects' });
+      return res.status(400).json({ success: false, message: 'Select 1-4 people' });
     }
 
     const allSubjects = job.detection.subjects || [];
@@ -900,14 +988,21 @@ router.post('/render-grid', requireAuth, async (req, res) => {
       .map(id => allSubjects.find(s => s.id === id))
       .filter(Boolean);
     if (selected.length !== selectedSubjectIds.length) {
-      return res.status(400).json({ success: false, message: 'One or more selected subjects not found' });
+      return res.status(400).json({ success: false, message: 'One or more selections not found' });
     }
 
-    const config = {
-      padding: (typeof padding === 'number') ? padding : 16,
-      border: border && typeof border === 'object' ? border : { enabled: false },
-      background: background && typeof background === 'object' ? background : { mode: 'solid' },
-    };
+    // Prefer the style preset for simplified clients; fall back to explicit
+    // padding/border/background for back-compat with the internal QA page.
+    let config;
+    if (typeof style === 'string' && GRID_STYLE_PRESETS[style]) {
+      config = GRID_STYLE_PRESETS[style];
+    } else {
+      config = {
+        padding: (typeof padding === 'number') ? padding : 16,
+        border: border && typeof border === 'object' ? border : { enabled: false },
+        background: background && typeof background === 'object' ? background : { mode: 'solid' },
+      };
+    }
 
     const filename = `${jobId}-grid-${selected.length}up-${Date.now()}.mp4`;
     const outputPath = path.join(outputDir, filename);
@@ -966,14 +1061,12 @@ router.get('/grid-test', requireAuth, (req, res) => {
 <pre id="detectionJson" style="display:none"></pre>
 
 <div id="renderWrap" style="display:none">
-  <div class="row"><label>Padding (px)</label><input type="number" id="padding" value="16" min="0" max="60"></div>
-  <div class="row"><label>Border</label>
-    <select id="borderEnabled"><option value="false">Off</option><option value="true">On</option></select>
-    <input type="text" id="borderColor" placeholder="#6c3aed" value="#6c3aed">
-  </div>
-  <div class="row"><label>Background</label>
-    <select id="bgMode"><option value="solid">Solid color</option><option value="blur">Blurred source</option></select>
-    <input type="text" id="bgColor" placeholder="#181426" value="#181426">
+  <div class="row"><label>Style</label>
+    <select id="stylePreset">
+      <option value="clean">Clean — white border, blurred background</option>
+      <option value="bold">Bold — purple border, blurred background</option>
+      <option value="minimal">Minimal — no border, solid background</option>
+    </select>
   </div>
   <button id="renderBtn">Render Grid</button>
   <div id="renderStatus"></div>
@@ -1009,12 +1102,13 @@ $('detectBtn').addEventListener('click', async () => {
 
 function renderSubjects() {
   const wrap = $('subjects'); wrap.innerHTML = '';
-  subjects.forEach(s => {
+  subjects.forEach((s, idx) => {
     const d = document.createElement('div');
     d.className = 'subject' + (selected.has(s.id) ? ' sel' : '');
-    d.innerHTML = '<strong>ID '+s.id+'</strong><br>seen '+s.total_seen+' samples<br>'+
-                  'avg face w: '+(s.avg_size*100).toFixed(1)+'%<br>'+
-                  'first '+s.first_seen+'s · last '+s.last_seen+'s';
+    d.innerHTML = '<img src="/ai-reframe/subject-thumb/'+jobId+'/'+s.id+'.jpg" ' +
+                  'style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;margin-bottom:.5rem;background:#1c1630" ' +
+                  'onerror="this.style.display=\\'none\\'">' +
+                  '<strong>Person '+(idx+1)+'</strong>';
     d.addEventListener('click', () => {
       if (selected.has(s.id)) selected.delete(s.id);
       else if (selected.size < 4) selected.add(s.id);
@@ -1031,9 +1125,7 @@ $('renderBtn').addEventListener('click', async () => {
   const body = {
     jobId,
     selectedSubjectIds: [...selected],
-    padding: parseInt($('padding').value,10) || 16,
-    border: { enabled: $('borderEnabled').value === 'true', color: $('borderColor').value, width: 3 },
-    background: { mode: $('bgMode').value, color: $('bgColor').value },
+    style: $('stylePreset').value,
   };
   try {
     const r = await fetch('/ai-reframe/render-grid', {
@@ -1405,13 +1497,54 @@ ${pageStyles}
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeFaceLabel">
                 <input type="radio" name="cropMode" value="face-tracking" style="accent-color:var(--primary)"> 🧠 AI Face Tracking
               </label>
+              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
+                <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)"> 🎬 Multi-Person Grid
+              </label>
             </div>
             <div id="faceTrackingInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
               <strong>🧠 AI Face Tracking</strong> — The AI will detect faces in your video and dynamically adjust the crop window to keep people centered in every frame. Perfect for interviews, podcasts, and talking-head videos where subjects aren't always in the center.
             </div>
+            <div id="gridModeInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
+              <strong>🎬 Multi-Person Grid</strong> — Detect everyone in your clip, pick up to 4, and get a vertical video with each person in their own tile. Great for podcast highlights and panel reactions.
+            </div>
           </div>
 
-          <div class="aspect-ratio-section">
+          <!-- Multi-Person Grid flow (replaces the aspect-ratio grid when that mode is picked) -->
+          <div id="gridFlow" style="display:none">
+            <div class="aspect-ratio-section">
+              <label class="aspect-ratio-label">Step 1 — Find people in your video</label>
+              <button type="button" id="detectBtn" class="action-button" style="margin-top:0">Detect People</button>
+              <div id="detectStatus" style="margin-top:.75rem;font-size:.9rem;color:var(--text-muted);min-height:1.2em"></div>
+            </div>
+
+            <div id="subjectPickSection" class="aspect-ratio-section" style="display:none">
+              <label class="aspect-ratio-label">Step 2 — Pick who to include (up to 4)</label>
+              <div id="subjectGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem"></div>
+            </div>
+
+            <div id="styleSection" class="aspect-ratio-section" style="display:none">
+              <label class="aspect-ratio-label">Step 3 — Style</label>
+              <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+                <label class="grid-style" data-style="clean"   style="flex:1;min-width:140px;cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;color:var(--text);text-align:center">
+                  <input type="radio" name="gridStyle" value="clean" checked style="display:none">
+                  <div style="font-weight:700;margin-bottom:.25rem">Clean</div>
+                  <div style="font-size:.8rem;color:var(--text-muted)">White border · blurred bg</div>
+                </label>
+                <label class="grid-style" data-style="bold"    style="flex:1;min-width:140px;cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);text-align:center">
+                  <input type="radio" name="gridStyle" value="bold" style="display:none">
+                  <div style="font-weight:700;margin-bottom:.25rem">Bold</div>
+                  <div style="font-size:.8rem;color:var(--text-muted)">Purple border · blurred bg</div>
+                </label>
+                <label class="grid-style" data-style="minimal" style="flex:1;min-width:140px;cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);text-align:center">
+                  <input type="radio" name="gridStyle" value="minimal" style="display:none">
+                  <div style="font-weight:700;margin-bottom:.25rem">Minimal</div>
+                  <div style="font-size:.8rem;color:var(--text-muted)">No border · solid bg</div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="aspect-ratio-section" id="aspectRatioSection">
             <label class="aspect-ratio-label">Select Aspect Ratios to Generate</label>
             <div class="aspect-ratio-grid">
               <div class="aspect-ratio-card">
@@ -1584,14 +1717,183 @@ ${pageStyles}
       reframeBtn.disabled = !(hasUrl || hasFile) || !hasAspectRatio;
     }
 
-    // Crop mode toggle styling
+    // Crop mode toggle styling + show/hide mode-specific sections
     document.querySelectorAll('input[name="cropMode"]').forEach(radio => {
       radio.addEventListener('change', function() {
         document.getElementById('modeCenterLabel').style.borderColor = this.value === 'center' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
         document.getElementById('modeFaceLabel').style.borderColor = this.value === 'face-tracking' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('modeGridLabel').style.borderColor = this.value === 'grid' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
         document.getElementById('faceTrackingInfo').style.display = this.value === 'face-tracking' ? 'block' : 'none';
+        document.getElementById('gridModeInfo').style.display = this.value === 'grid' ? 'block' : 'none';
+
+        const inGrid = this.value === 'grid';
+        document.getElementById('aspectRatioSection').style.display = inGrid ? 'none' : 'block';
+        document.getElementById('gridFlow').style.display = inGrid ? 'block' : 'none';
+        // Main submit button disabled in grid mode — the grid flow has its own
+        // "Create Grid Video" action that fires after subjects are picked.
+        reframeBtn.style.display = inGrid ? 'none' : 'flex';
+        if (inGrid) resetGridFlow();
+        checkInputs();
       });
     });
+
+    // ---- Multi-Person Grid flow (simplified 3-step UX) ----
+    let gridJobId = null;
+    let gridSubjects = [];
+    const gridSelected = new Set();
+    let gridRenderBtn = null; // lazily created when the user picks subjects
+
+    function setDetectStatus(msg, color) {
+      document.getElementById('detectStatus').innerHTML =
+        msg ? '<span style="color:'+(color||'var(--text-muted)')+'">'+msg+'</span>' : '';
+    }
+
+    function resetGridFlow() {
+      gridJobId = null; gridSubjects = []; gridSelected.clear();
+      document.getElementById('subjectPickSection').style.display = 'none';
+      document.getElementById('styleSection').style.display = 'none';
+      document.getElementById('subjectGrid').innerHTML = '';
+      const old = document.getElementById('gridRenderBtnContainer');
+      if (old) old.remove();
+      setDetectStatus('');
+    }
+
+    function getCurrentInput() {
+      // Returns { kind: 'url'|'file', value, valid }
+      if (activeInputTab === 'url') {
+        const v = youtubeUrl.value.trim();
+        return { kind: 'url', value: v, valid: v.length > 0 };
+      }
+      return { kind: 'file', value: fileInput.files[0], valid: fileInput.files.length > 0 };
+    }
+
+    // Style preset cards
+    document.querySelectorAll('.grid-style').forEach(label => {
+      label.addEventListener('click', () => {
+        document.querySelectorAll('.grid-style').forEach(l => l.style.borderColor = 'rgba(255,255,255,0.1)');
+        label.style.borderColor = 'var(--primary)';
+        label.querySelector('input').checked = true;
+      });
+    });
+
+    function ensureRenderBtn() {
+      if (document.getElementById('gridRenderBtnContainer')) return;
+      const wrap = document.createElement('div');
+      wrap.id = 'gridRenderBtnContainer';
+      wrap.innerHTML = '<button type="button" id="gridRenderBtn" class="action-button" style="margin-top:1.5rem">Create Grid Video</button>' +
+                       '<div id="gridRenderStatus" style="margin-top:.75rem;font-size:.9rem;color:var(--text-muted);min-height:1.2em"></div>';
+      document.getElementById('gridFlow').appendChild(wrap);
+      gridRenderBtn = document.getElementById('gridRenderBtn');
+      gridRenderBtn.addEventListener('click', renderGridNow);
+    }
+
+    function updateRenderBtnState() {
+      if (!gridRenderBtn) return;
+      gridRenderBtn.disabled = gridSelected.size < 1;
+      gridRenderBtn.textContent = gridSelected.size
+        ? 'Create Grid Video (' + gridSelected.size + ' ' + (gridSelected.size === 1 ? 'person' : 'people') + ')'
+        : 'Pick at least 1 person';
+    }
+
+    function renderSubjectCards() {
+      const wrap = document.getElementById('subjectGrid');
+      wrap.innerHTML = '';
+      gridSubjects.forEach((s, idx) => {
+        const card = document.createElement('div');
+        const isSel = gridSelected.has(s.id);
+        card.style.cssText = 'position:relative;padding:.75rem;background:var(--dark-2);border:2px solid ' +
+          (isSel ? 'var(--primary)' : 'rgba(255,255,255,0.1)') +
+          ';border-radius:10px;cursor:pointer;text-align:center;transition:all .2s;' +
+          (isSel ? 'box-shadow:0 0 20px rgba(108,58,237,0.25)' : '');
+        card.innerHTML =
+          '<div style="width:120px;height:120px;margin:0 auto .5rem;border-radius:50%;overflow:hidden;background:#1c1630;position:relative;border:2px solid rgba(255,255,255,0.05)">' +
+            '<img src="/ai-reframe/subject-thumb/' + gridJobId + '/' + s.id + '.jpg" ' +
+                 'alt="Person ' + (idx+1) + '" style="width:100%;height:100%;object-fit:cover" ' +
+                 'onerror="this.style.display=\\'none\\';this.nextElementSibling.style.display=\\'flex\\'">' +
+            '<div style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:2.5rem;font-weight:700;color:var(--primary);background:#1c1630">' + (idx+1) + '</div>' +
+          '</div>' +
+          '<div style="font-weight:700;color:var(--text)">Person ' + (idx+1) + '</div>' +
+          (isSel ? '<div style="position:absolute;top:8px;right:8px;background:var(--primary);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem">✓</div>' : '');
+        card.addEventListener('click', () => {
+          if (gridSelected.has(s.id)) gridSelected.delete(s.id);
+          else if (gridSelected.size < 4) gridSelected.add(s.id);
+          renderSubjectCards();
+          updateRenderBtnState();
+        });
+        wrap.appendChild(card);
+      });
+    }
+
+    document.getElementById('detectBtn').addEventListener('click', async () => {
+      clearError();
+      const input = getCurrentInput();
+      if (!input.valid) { setDetectStatus(input.kind === 'url' ? 'Paste a YouTube URL first.' : 'Upload a video first.', '#ff7a7a'); return; }
+      const btn = document.getElementById('detectBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Detecting people…';
+      setDetectStatus('Analyzing video — this may take a minute.');
+      try {
+        const fd = new FormData();
+        if (input.kind === 'url') { fd.set('inputMode', 'url'); fd.set('youtubeUrl', input.value); }
+        else                      { fd.set('inputMode', 'upload'); fd.set('videoFile', input.value); }
+        const r = await fetch('/ai-reframe/detect-subjects', { method: 'POST', body: fd });
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.message || 'Detection failed');
+        gridJobId = data.jobId;
+        gridSubjects = (data.detection.subjects || []).slice(0, 4);
+        gridSelected.clear();
+        // Auto-select up to the top 2 subjects as a sensible default.
+        gridSubjects.slice(0, Math.min(2, gridSubjects.length)).forEach(s => gridSelected.add(s.id));
+        if (!gridSubjects.length) {
+          setDetectStatus('No people detected. Try a clip with clearly visible faces.', '#ff7a7a');
+          return;
+        }
+        setDetectStatus('Found ' + gridSubjects.length + ' ' + (gridSubjects.length === 1 ? 'person' : 'people') + '. Pick who to include below.', '#7bd88f');
+        document.getElementById('subjectPickSection').style.display = 'block';
+        document.getElementById('styleSection').style.display = 'block';
+        renderSubjectCards();
+        ensureRenderBtn();
+        updateRenderBtnState();
+      } catch (e) {
+        setDetectStatus('Error: ' + e.message, '#ff7a7a');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Detect People';
+      }
+    });
+
+    async function renderGridNow() {
+      if (!gridJobId || gridSelected.size < 1) return;
+      const btn = gridRenderBtn;
+      const status = document.getElementById('gridRenderStatus');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Creating your grid video…';
+      status.textContent = 'Rendering — 30s to 2min for most clips.';
+      const style = document.querySelector('input[name="gridStyle"]:checked').value;
+      try {
+        const r = await fetch('/ai-reframe/render-grid', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: gridJobId,
+            selectedSubjectIds: [...gridSelected],
+            style,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.message || 'Render failed');
+        status.innerHTML = '<span style="color:#7bd88f">Done.</span>';
+        displayResults([{
+          ratio: 'Multi-Person Grid (' + gridSelected.size + '-up)',
+          dimensions: data.dimensions,
+          filename: data.filename,
+        }]);
+        showToast('Grid video ready!', 4000);
+      } catch (e) {
+        status.innerHTML = '<span style="color:#ff7a7a">Error: ' + e.message + '</span>';
+      } finally {
+        updateRenderBtnState();
+      }
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
