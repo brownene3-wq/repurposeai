@@ -2125,7 +2125,7 @@
       { g:'AI GENERATION', ic:'\ud83d\udcac',  label:'Captions',      route:'/ai-captions' },
       { g:'AI GENERATION', ic:'\ud83c\udfa3',  label:'AI Hook',       route:'/ai-hook' },
       { g:'AI GENERATION', ic:'\ud83c\udfa8',  label:'Brand Kit',     route:'/brand-kits' },
-      { g:'AI ANALYSIS',   ic:'\ud83d\udcdd',  label:'Transcript',    route:'/ai-captions' }, // transcript = captions
+      // Transcript removed (Task #36) — redundant with Captions
       { g:'AI ANALYSIS',   ic:'\ud83c\udfac',  label:'B-Roll',        route:'/ai-broll' },
       { g:'AI ANALYSIS',   ic:'\u2702',        label:'Smart Cut',     route:null },
       { g:'AI ANALYSIS',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:null },
@@ -2163,12 +2163,83 @@
     // clips right by the hook's duration).
     var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions', 'AI Hook': 'aihook' };
     var MODAL_LABELS   = { 'Brand Kit': 1 };
+    // Actions that require a selected clip with a server-side mediaUrl.
+    // Used for button-disable and pre-click validation (Task #33).
+    var REQUIRES_CLIP = { 'Enhance Audio': 1, 'Captions': 1, 'AI Hook': 1, 'B-Roll': 1 };
+
+    // Task #33 — Gate clip-dependent AI buttons. Disables + dims them
+    // whenever there's no clip selected / on the timeline. Re-evaluates
+    // on every timeline mutation + selection change.
+    function updateAIButtonStates(){
+      var hasSelectedVideo = !!document.querySelector('.mt-track-video .mt-clip.selected');
+      var hasAnyVideo      = !!document.querySelector('.mt-track-video .mt-clip');
+      Array.from(div.querySelectorAll('[data-v10-ai-label]')).forEach(function(b){
+        var lbl = b.getAttribute('data-v10-ai-label');
+        if (!REQUIRES_CLIP[lbl]) return;
+        // AI Hook can run with an empty timeline (summary falls back).
+        // Enhance Audio, Captions, B-Roll all need a real clip.
+        var needsSelection = (lbl !== 'AI Hook');
+        var ok = needsSelection ? (hasSelectedVideo || hasAnyVideo) : true;
+        // Prefer SELECTED, but allow any V1 as long as something exists.
+        // If absolutely nothing on V1, keep it disabled.
+        if (!hasAnyVideo) ok = (lbl === 'AI Hook');
+        b.disabled = !ok;
+        b.style.opacity = ok ? '' : '0.45';
+        b.style.cursor  = ok ? '' : 'not-allowed';
+        b.title = ok ? '' : 'Select a V1 clip first';
+      });
+    }
+    // Kick off an initial pass + watch the tracks for changes
+    updateAIButtonStates();
+    try {
+      var ta = document.getElementById('mtTracksArea');
+      if (ta && !ta.__v10AIBtnObs){
+        ta.__v10AIBtnObs = new MutationObserver(function(){
+          updateAIButtonStates();
+        });
+        ta.__v10AIBtnObs.observe(ta, {
+          subtree: true, childList: true,
+          attributes: true, attributeFilter: ['class', 'data-media-url']
+        });
+      }
+    } catch(_){}
+
     Array.from(div.querySelectorAll('[data-v10-ai-route]')).forEach(function(btn){
       btn.addEventListener('click', function(e){
-        e.preventDefault(); e.stopPropagation();
+        // Task #33 — aggressive event containment so no downstream or
+        // same-target handler can trigger a navigation side-effect.
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function'){
+          try { e.stopImmediatePropagation(); } catch(_){}
+        }
+        if (btn.disabled){
+          toast('Select a V1 clip on the timeline first');
+          return;
+        }
         var route = btn.getAttribute('data-v10-ai-route');
         var label = btn.getAttribute('data-v10-ai-label');
         if (DIRECT_ACTIONS[label]){
+          // Pre-flight validation: require a real clip with a server-side
+          // mediaUrl (no blob:) for enhance / captions / aihook. This
+          // prevents the 400-from-server fallback path that Albert saw
+          // trigger a redirect on newly-added clips.
+          if (label !== 'AI Hook'){
+            var probe = pickSourceClipForAI(DIRECT_ACTIONS[label]);
+            if (!probe){
+              toast('Add a V1 video clip to the timeline first');
+              return;
+            }
+            var mu = probe.dataset.mediaUrl || '';
+            if (!mu){
+              toast('This clip has no server media yet \u2014 wait for upload to finish');
+              return;
+            }
+            if (mu.indexOf('blob:') === 0){
+              toast('Upload this file via the sidebar first, then try again');
+              return;
+            }
+          }
           runInlineAIAction(DIRECT_ACTIONS[label], btn);
           return;
         }
@@ -2178,6 +2249,10 @@
         }
         if (MODAL_LABELS[label]){
           openAIToolModal(label, route);
+        } else if (label === 'B-Roll'){
+          // Task #37 — B-Roll now opens an inline modal instead of a new tab
+          if (typeof openBRollModal === 'function'){ openBRollModal(btn); }
+          else { toast('B-Roll \u2014 loading\u2026'); }
         } else {
           try { window.open(route, '_blank'); } catch(_){ location.href = route; }
           toast('Opening ' + label + ' \u2026');
@@ -2362,11 +2437,13 @@
         //   + aresample first_pts=0) should eliminate the systemic 2s lag
         //   on most containers. Can be set live from the console.
         var clipLeftPx = parseFloat(clip.style.left) || 0;
+        var clipWidthPx= parseFloat(clip.style.width) || 0;
+        var clipRightPx= clipLeftPx + clipWidthPx;  // T1 must not extend past this (#34)
         var PX_PER_SEC = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
         var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
         var leadSec = parseFloat(window.__captionLeadSec);
         if (!isFinite(leadSec)) leadSec = 0;
-        var added = 0;
+        var added = 0, truncated = 0, droppedPastEnd = 0;
         chunks.forEach(function(ch){
           if (!ch.text || !isFinite(ch.start) || !isFinite(ch.end)) return;
           // Shift by sourceOffset and subtract the lead. Drop chunks that
@@ -2377,6 +2454,14 @@
           if (adjStart < 0) adjStart = 0;
           var leftPx  = clipLeftPx + Math.round(adjStart * PX_PER_SEC);
           var widthPx = Math.max(20, Math.round((adjEnd - adjStart) * PX_PER_SEC));
+          // Task #34 — T1 must never extend past V1's right edge. Drop
+          // captions that start past the clip, and truncate widths for
+          // captions that span the end boundary.
+          if (leftPx >= clipRightPx){ droppedPastEnd++; return; }
+          if (leftPx + widthPx > clipRightPx){
+            widthPx = Math.max(20, clipRightPx - leftPx);
+            truncated++;
+          }
           if (typeof window.addTextClipToTimeline === 'function'){
             window.addTextClipToTimeline(ch.text, {
               left:  leftPx + 'px',
@@ -2388,6 +2473,12 @@
             added++;
           }
         });
+        if (droppedPastEnd){
+          console.log('[ai-captions] ' + droppedPastEnd + ' caption(s) dropped (past V1 end)');
+        }
+        if (truncated){
+          console.log('[ai-captions] ' + truncated + ' caption(s) truncated at V1 end');
+        }
         toast('Captions added: ' + added + ' phrase' + (added === 1 ? '' : 's'));
       } catch (err){
         toast('Captions error: ' + (err.message || err));
@@ -2438,8 +2529,33 @@
 
         hookBusy.advance(2); // voiceover in progress on server (already included in /generate)
         hookBusy.advance(3);
-        var W = (window.__exportWidth  || 1280);
-        var H = (window.__exportHeight || 720);
+        // Task #35 — Match hook resolution to the FIRST V1 clip's native
+        // video dimensions so the hook composites cleanly with no
+        // letterbox / scale mismatch. Priority:
+        //   1) <video> element's videoWidth/Height (if first V1 clip
+        //      has been loaded in the Program Monitor at least once)
+        //   2) window.__exportWidth/__exportHeight (from Smart Resize)
+        //   3) 1280×720 fallback
+        var W, H;
+        var firstV1 = v1Clips[0];
+        var mainVid = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (mainVid && mainVid.videoWidth && mainVid.videoHeight){
+          W = mainVid.videoWidth;
+          H = mainVid.videoHeight;
+        } else if (firstV1 && firstV1.dataset.srcWidth && firstV1.dataset.srcHeight){
+          W = parseInt(firstV1.dataset.srcWidth,  10);
+          H = parseInt(firstV1.dataset.srcHeight, 10);
+        } else if (window.__exportWidth && window.__exportHeight){
+          W = window.__exportWidth;
+          H = window.__exportHeight;
+        } else {
+          W = 1280; H = 720;
+        }
+        // Clamp to something reasonable + keep even dims (H.264 requirement)
+        W = Math.max(320, Math.min(3840, W));
+        H = Math.max(240, Math.min(2160, H));
+        if (W % 2) W += 1;
+        if (H % 2) H += 1;
         var compR = await fetch('/ai-hook/compose-clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

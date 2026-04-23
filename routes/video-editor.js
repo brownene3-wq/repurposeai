@@ -9660,8 +9660,16 @@ router.post('/ai-captions', requireAuth, async (req, res) => {
         '-ac', '1',
         '-ar', '16000',
         '-b:a', '64k',
+        // Task #34 — Extra-aggressive PTS normalization so Whisper sees
+        // audio starting at t=0 regardless of the source's stream_start
+        // or any container-level offset. Combining -ss 0 on output with
+        // aresample async + avoid_negative_ts covers all the known cases
+        // where caption delays of 1-2s leak in.
+        '-ss', '0',
         '-af', 'aresample=async=1:first_pts=0',
         '-avoid_negative_ts', 'make_zero',
+        '-map_metadata', '-1',
+        '-reset_timestamps', '1',
         '-y', mp3Path
       ]);
       var stderr = '';
