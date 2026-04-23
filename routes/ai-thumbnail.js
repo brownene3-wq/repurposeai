@@ -5,9 +5,14 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
+const OpenAI = require('openai');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
+
+// OpenAI client for AI-generated thumbnails (Whisper transcription,
+// GPT-4o-mini concept synthesis, GPT-image-1 generation)
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -647,6 +652,190 @@ function extractKeyFrames(videoPath, maxFrames = 12) {
   });
 }
 
+// ============================================================================
+// AI-Generated Thumbnails pipeline
+// ----------------------------------------------------------------------------
+// 1. Ingest video (upload or YouTube download — reuses existing helpers).
+// 2. Extract a short audio clip with ffmpeg and transcribe it with Whisper.
+// 3. Ask GPT-4o-mini to pick out the most interesting moments and produce
+//    N thumbnail concepts (title, caption, image prompt, referenced moment).
+// 4. Generate one image per concept in parallel via GPT-image-1.
+// 5. Save PNGs to outputDir and return filenames + metadata to the client.
+// ============================================================================
+
+// Extract a Whisper-friendly MP3 from a video. Mono, 16kHz, 64kbps stays well
+// under Whisper's 25MB limit. We also cap to the first 10 minutes — enough to
+// understand what a video is about without blowing up cost/latency for long clips.
+function extractAudioForAIThumbnail(videoPath) {
+  return new Promise((resolve, reject) => {
+    const outputPath = path.join(uploadDir, `ai-thumb-audio-${uuidv4().slice(0, 8)}.mp3`);
+    const proc = spawn(ffmpegPath, [
+      '-i', videoPath,
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-b:a', '64k',
+      '-t', '600',
+      '-y',
+      outputPath
+    ]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outputPath)) {
+        resolve(outputPath);
+      } else {
+        reject(new Error('Audio extraction failed: ' + stderr.slice(-200)));
+      }
+    });
+    proc.on('error', reject);
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} }, 120000);
+  });
+}
+
+// Transcribe audio with Whisper. Returns the flat text transcript.
+async function transcribeForAIThumbnail(audioPath) {
+  const audioBuffer = fs.readFileSync(audioPath);
+  // eslint-disable-next-line no-undef
+  const file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+  const transcript = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: file,
+    response_format: 'text'
+  });
+  // When response_format is 'text', SDK returns the raw string.
+  if (typeof transcript === 'string') return transcript.trim();
+  if (transcript && transcript.text) return String(transcript.text).trim();
+  return '';
+}
+
+// Ask GPT-4o-mini to propose N distinct thumbnail concepts based on the
+// transcript + optional user hint. Returns an array of concept objects.
+async function generateThumbnailConcepts({ transcript, hint, videoTitle, aspectLabel, count }) {
+  const safeTranscript = (transcript || '').slice(0, 12000);
+  const systemPrompt = `You are a senior YouTube thumbnail art director. Given a video transcript, you identify the most visually compelling, emotionally charged, or curiosity-provoking moments and turn them into thumbnail concepts that maximize click-through. Each concept must be visually distinct from the others. Captions must be 2-6 words, punchy, ALL CAPS. Image prompts should describe a single focal subject, dramatic lighting, bold composition, vibrant colors, and leave clear negative space for the caption overlay. Avoid copyrighted characters, logos, real celebrities, or text inside the generated image (the caption is overlaid separately).`;
+  const userPrompt = `Video title: ${videoTitle || '(unknown)'}
+Target aspect ratio: ${aspectLabel}
+User style hint: ${hint || '(none — choose what best fits the content)'}
+
+Transcript (may be truncated):
+"""
+${safeTranscript || '(no transcript available)'}
+"""
+
+Produce exactly ${count} thumbnail concepts. Return JSON shaped as:
+{
+  "concepts": [
+    {
+      "title": "Short internal title for this concept",
+      "moment": "Which part of the video this draws from (one sentence)",
+      "caption": "2-6 WORD HOOK IN CAPS",
+      "imagePrompt": "Detailed visual prompt for an image model — focal subject, mood, lighting, composition, colors, style. Do NOT instruct the model to render any text."
+    }
+  ]
+}`;
+
+  const resp = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.8,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  });
+
+  const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
+  if (!raw) throw new Error('Concept generation returned empty response');
+
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { throw new Error('Concept JSON parse failed: ' + e.message); }
+
+  const concepts = Array.isArray(parsed.concepts) ? parsed.concepts : [];
+  if (concepts.length === 0) throw new Error('Model returned no concepts');
+  return concepts.slice(0, count).map((c, i) => ({
+    title: String(c.title || `Concept ${i + 1}`).slice(0, 80),
+    moment: String(c.moment || '').slice(0, 200),
+    caption: String(c.caption || '').slice(0, 60),
+    imagePrompt: String(c.imagePrompt || c.prompt || '').slice(0, 1800)
+  }));
+}
+
+// Map aspect ratio string to the GPT-image-1 size parameter.
+function aspectToImageSize(aspect) {
+  if (aspect === '9:16') return '1024x1536';
+  if (aspect === '1:1') return '1024x1024';
+  return '1536x1024'; // default 16:9
+}
+
+// Call GPT-image-1 via raw REST (bypasses any SDK version gaps for this model).
+// Returns { filename, bytes } — the image is decoded from the b64_json response
+// and saved to outputDir.
+async function generateAIImage({ prompt, aspect, jobId, index }) {
+  const size = aspectToImageSize(aspect);
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
+
+  const resp = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt: prompt,
+      size: size,
+      n: 1,
+      quality: 'medium'
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw new Error(`gpt-image-1 HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+  }
+
+  const data = await resp.json();
+  const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
+  if (!b64) throw new Error('gpt-image-1 returned no image data');
+
+  const filename = `ai-thumb-${jobId}-${index}.png`;
+  const outputPath = path.join(outputDir, filename);
+  fs.writeFileSync(outputPath, Buffer.from(b64, 'base64'));
+  return { filename };
+}
+
+// Pull the best-effort YouTube title when we have a URL. Falls back to empty
+// string if yt-dlp/ytdl-core aren't available or the call fails.
+async function getYouTubeTitle(videoUrl) {
+  if (ytdlpPath) {
+    try {
+      const title = await new Promise((resolve, reject) => {
+        const proc = spawn(ytdlpPath, [
+          '--get-title', '--no-playlist', '--no-warnings',
+          ...YTDLP_COMMON_ARGS,
+          videoUrl
+        ]);
+        let out = '';
+        proc.stdout.on('data', (d) => { out += d.toString(); });
+        proc.on('close', (code) => code === 0 ? resolve(out.trim()) : reject(new Error('yt-dlp title exit ' + code)));
+        proc.on('error', reject);
+        setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('title timeout')); }, 15000);
+      });
+      if (title) return title;
+    } catch (e) { /* fall through */ }
+  }
+  if (ytdl) {
+    try {
+      const info = await ytdl.getBasicInfo(videoUrl);
+      return (info && info.videoDetails && info.videoDetails.title) || '';
+    } catch (e) { /* fall through */ }
+  }
+  return '';
+}
+
 // GET - Main page
 router.get('/', requireAuth, (req, res) => {
   const css = getBaseCSS();
@@ -1057,6 +1246,171 @@ router.get('/', requireAuth, (req, res) => {
         box-shadow: 0 4px 12px rgba(108, 58, 237, 0.3);
       }
 
+      /* ===== AI Generated tab ===== */
+      .ai-intro {
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+        line-height: 1.55;
+      }
+
+      .ai-source-tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.25rem;
+        padding: 0.3rem;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 10px;
+        width: fit-content;
+      }
+
+      .ai-source-tab {
+        padding: 0.55rem 1.1rem;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-weight: 600;
+        font-size: 0.9rem;
+        border-radius: 7px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .ai-source-tab.active {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      .ai-controls {
+        margin-top: 1.5rem;
+      }
+
+      .ai-aspect-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+      }
+
+      .ai-aspect-btn {
+        padding: 0.65rem 1.2rem;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text-muted);
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+      }
+
+      .ai-aspect-btn.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+      }
+
+      .ai-aspect-btn:hover:not(.active) {
+        color: var(--text);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .ai-progress {
+        margin-top: 1.25rem;
+        padding: 1rem 1.25rem;
+        background: rgba(108, 58, 237, 0.1);
+        border: 1px solid rgba(108, 58, 237, 0.25);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: var(--text);
+      }
+
+      .ai-results-section {
+        margin-top: 2rem;
+      }
+
+      .ai-results-caption {
+        color: var(--text-muted);
+        margin-bottom: 1.25rem;
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+
+      .ai-results-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1.5rem;
+      }
+
+      .ai-thumb-card {
+        background: var(--surface);
+        border: var(--border-subtle);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: all 0.3s;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .ai-thumb-card:hover {
+        border-color: var(--primary);
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(108, 58, 237, 0.2);
+      }
+
+      .ai-thumb-image {
+        width: 100%;
+        height: auto;
+        display: block;
+        background: #000;
+      }
+
+      .ai-thumb-body {
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        flex: 1;
+      }
+
+      .ai-thumb-title {
+        color: var(--text);
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .ai-thumb-caption {
+        color: var(--primary);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .ai-thumb-moment {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+
+      .ai-thumb-download {
+        margin-top: auto;
+        display: block;
+        padding: 0.6rem;
+        text-align: center;
+        background: var(--primary);
+        color: #fff;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 0.88rem;
+        transition: all 0.2s;
+      }
+
+      .ai-thumb-download:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(108, 58, 237, 0.3);
+      }
+
       .toast {
         position: fixed;
         bottom: 2rem;
@@ -1135,6 +1489,7 @@ ${pageStyles}
         <div class="input-tabs">
           <button class="input-tab active" data-tab="url">YouTube URL</button>
           <button class="input-tab" data-tab="upload">Upload Video</button>
+          <button class="input-tab" data-tab="ai">AI Generated</button>
         </div>
 
         <form id="thumbnailForm">
@@ -1155,11 +1510,66 @@ ${pageStyles}
             </div>
           </div>
 
+          <div id="aiTab" class="tab-content">
+            <div class="ai-intro">
+              Let AI watch your video, pick the most interesting moments, and design 4 custom thumbnails for you.
+            </div>
+
+            <div class="ai-source-tabs" role="tablist">
+              <button type="button" class="ai-source-tab active" data-aisource="url">YouTube URL</button>
+              <button type="button" class="ai-source-tab" data-aisource="upload">Upload Video</button>
+            </div>
+
+            <div class="ai-source-content" data-aisource-content="url">
+              <div class="url-input-group">
+                <label class="url-input-label">YouTube URL</label>
+                <input type="text" id="aiYoutubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
+              </div>
+            </div>
+
+            <div class="ai-source-content" data-aisource-content="upload" style="display:none">
+              <div class="upload-area" id="aiUploadArea" onclick="document.getElementById('aiFileInput').click()">
+                <div class="upload-icon">🎬</div>
+                <div class="upload-text">Drop your video file here</div>
+                <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
+                <input type="file" id="aiFileInput" class="file-input" accept="video/*">
+                <div id="aiFileName" class="file-name" style="display: none;"></div>
+              </div>
+            </div>
+
+            <div class="ai-controls">
+              <label class="url-input-label">Aspect ratio</label>
+              <div class="ai-aspect-row">
+                <button type="button" class="ai-aspect-btn active" data-aspect="16:9">16:9 &bull; YouTube</button>
+                <button type="button" class="ai-aspect-btn" data-aspect="9:16">9:16 &bull; Shorts / TikTok</button>
+                <button type="button" class="ai-aspect-btn" data-aspect="1:1">1:1 &bull; Square</button>
+              </div>
+
+              <label class="url-input-label" style="margin-top: 1.25rem;">Style hint (optional)</label>
+              <input type="text" id="aiStyleHint" class="url-input" placeholder="e.g. bright and energetic, dark cinematic, bold minimal" maxlength="300" />
+            </div>
+
+            <button type="button" class="action-button" id="aiGenerateBtn" disabled>
+              Generate 4 AI Thumbnails
+            </button>
+
+            <div id="aiProgress" class="ai-progress" style="display: none;">
+              <span class="spinner"></span>
+              <span id="aiProgressMsg">Starting&hellip;</span>
+            </div>
+          </div>
+
           <button type="submit" class="action-button" id="extractBtn" disabled>
             Extract Frames from Video
           </button>
           <div id="errorMessage" style="display: none;"></div>
         </form>
+      </div>
+
+      <div class="ai-results-section" id="aiResultsSection" style="display: none;">
+        <h2 style="margin-bottom: 0.5rem; color: var(--text);">Your AI-Generated Thumbnails</h2>
+        <div class="ai-results-caption" id="aiResultsCaption"></div>
+        <div class="ai-results-grid" id="aiResultsGrid"></div>
       </div>
 
       <div class="frames-section" id="framesSection" style="display: none;">
@@ -1213,14 +1623,28 @@ ${pageStyles}
       errorDiv.style.display = 'none';
     }
 
-    // Tab switching
+    // Tab switching — also toggles visibility of the classic extract button
+    // and AI-generated section depending on which top-level tab is active.
     document.querySelectorAll('.input-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
         const tabName = e.target.dataset.tab;
         document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         e.target.classList.add('active');
-        document.getElementById(tabName + 'Tab').classList.add('active');
+        const targetTab = document.getElementById(tabName + 'Tab');
+        if (targetTab) targetTab.classList.add('active');
+
+        const isAiMode = (tabName === 'ai');
+        const extractBtnEl = document.getElementById('extractBtn');
+        const framesSection = document.getElementById('framesSection');
+        const previewSection = document.getElementById('previewSection');
+        const aiResultsSection = document.getElementById('aiResultsSection');
+
+        if (extractBtnEl) extractBtnEl.style.display = isAiMode ? 'none' : '';
+        if (framesSection) framesSection.style.display = isAiMode ? 'none' : (framesSection.dataset.hadFrames ? 'block' : 'none');
+        if (previewSection) previewSection.style.display = isAiMode ? 'none' : (previewSection.classList.contains('show') ? 'block' : '');
+        if (aiResultsSection) aiResultsSection.style.display = isAiMode ? (aiResultsSection.dataset.hasResults ? 'block' : 'none') : 'none';
+
         checkInputs();
       });
     });
@@ -1381,7 +1805,9 @@ ${pageStyles}
           throw new Error(data.message || 'Extraction failed');
         }
 
-        document.getElementById('framesSection').style.display = 'block';
+        const fs_ = document.getElementById('framesSection');
+        fs_.style.display = 'block';
+        fs_.dataset.hadFrames = '1';
         renderFrames(data.frames);
         renderStyles();
         showToast('Frames extracted successfully!', 4000);
@@ -1472,6 +1898,182 @@ ${pageStyles}
       });
 
       previewSection.classList.add('show');
+    }
+
+    // ===========================================================
+    // AI Generated tab — separate flow (no frame extraction)
+    // ===========================================================
+    var aiActiveSource = 'url';
+    var aiActiveAspect = '16:9';
+
+    document.querySelectorAll('.ai-source-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        aiActiveSource = btn.dataset.aisource;
+        document.querySelectorAll('.ai-source-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('[data-aisource-content]').forEach(el => {
+          el.style.display = (el.dataset.aisourceContent === aiActiveSource) ? '' : 'none';
+        });
+        checkAIInputs();
+      });
+    });
+
+    document.querySelectorAll('.ai-aspect-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        aiActiveAspect = btn.dataset.aspect;
+        document.querySelectorAll('.ai-aspect-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+
+    const aiYoutubeUrlEl = document.getElementById('aiYoutubeUrl');
+    const aiFileInputEl = document.getElementById('aiFileInput');
+    const aiUploadAreaEl = document.getElementById('aiUploadArea');
+    const aiFileNameEl = document.getElementById('aiFileName');
+    const aiGenerateBtn = document.getElementById('aiGenerateBtn');
+    const aiProgressEl = document.getElementById('aiProgress');
+    const aiProgressMsgEl = document.getElementById('aiProgressMsg');
+
+    if (aiYoutubeUrlEl) aiYoutubeUrlEl.addEventListener('input', checkAIInputs);
+    if (aiFileInputEl) {
+      aiFileInputEl.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          aiFileNameEl.textContent = '🎬 ' + e.target.files[0].name;
+          aiFileNameEl.style.display = 'block';
+        }
+        checkAIInputs();
+      });
+    }
+    if (aiUploadAreaEl) {
+      aiUploadAreaEl.addEventListener('dragover', (e) => { e.preventDefault(); aiUploadAreaEl.classList.add('dragover'); });
+      aiUploadAreaEl.addEventListener('dragleave', () => aiUploadAreaEl.classList.remove('dragover'));
+      aiUploadAreaEl.addEventListener('drop', (e) => {
+        e.preventDefault();
+        aiUploadAreaEl.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+          aiFileInputEl.files = e.dataTransfer.files;
+          aiFileNameEl.textContent = '🎬 ' + e.dataTransfer.files[0].name;
+          aiFileNameEl.style.display = 'block';
+          checkAIInputs();
+        }
+      });
+    }
+
+    function checkAIInputs() {
+      const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
+      const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
+      if (aiGenerateBtn) aiGenerateBtn.disabled = !(hasUrl || hasFile);
+    }
+
+    // Cycle progress messages while the backend is working.
+    let aiProgressTimer = null;
+    function startAIProgress() {
+      const stages = [
+        'Downloading video…',
+        'Extracting audio…',
+        'Transcribing with Whisper (this usually takes the longest)…',
+        'Identifying the most interesting moments…',
+        'Designing thumbnail concepts…',
+        'Generating images with GPT-image-1 (this can take 20-40 seconds)…',
+        'Rendering final thumbnails…'
+      ];
+      let idx = 0;
+      aiProgressMsgEl.textContent = stages[0];
+      aiProgressEl.style.display = 'flex';
+      clearInterval(aiProgressTimer);
+      aiProgressTimer = setInterval(() => {
+        idx = Math.min(idx + 1, stages.length - 1);
+        aiProgressMsgEl.textContent = stages[idx];
+      }, 7000);
+    }
+    function stopAIProgress() {
+      clearInterval(aiProgressTimer);
+      aiProgressTimer = null;
+      aiProgressEl.style.display = 'none';
+    }
+
+    if (aiGenerateBtn) {
+      aiGenerateBtn.addEventListener('click', async () => {
+        clearError();
+        const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl.value.trim().length > 0;
+        const hasFile = aiActiveSource === 'upload' && aiFileInputEl.files.length > 0;
+        if (!hasUrl && !hasFile) {
+          showError(aiActiveSource === 'url' ? 'Please paste a YouTube URL' : 'Please upload a video file');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.set('inputMode', aiActiveSource);
+        formData.set('aspect', aiActiveAspect);
+        formData.set('styleHint', document.getElementById('aiStyleHint').value.trim());
+        formData.set('count', '4');
+        if (hasUrl) formData.set('youtubeUrl', aiYoutubeUrlEl.value.trim());
+        if (hasFile) formData.set('videoFile', aiFileInputEl.files[0]);
+
+        aiGenerateBtn.disabled = true;
+        aiGenerateBtn.classList.add('loading');
+        aiGenerateBtn.innerHTML = '<span class="spinner"></span> Working&hellip;';
+        startAIProgress();
+
+        try {
+          const response = await fetch('/ai-thumbnail/ai-generate', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.message || 'AI thumbnail generation failed');
+          }
+          renderAIResults(data);
+          showToast('AI thumbnails generated', 4000);
+        } catch (err) {
+          showError('Error: ' + err.message);
+        } finally {
+          stopAIProgress();
+          aiGenerateBtn.classList.remove('loading');
+          aiGenerateBtn.innerHTML = 'Generate 4 AI Thumbnails';
+          checkAIInputs();
+        }
+      });
+    }
+
+    function renderAIResults(data) {
+      const section = document.getElementById('aiResultsSection');
+      const grid = document.getElementById('aiResultsGrid');
+      const caption = document.getElementById('aiResultsCaption');
+      if (!section || !grid) return;
+      grid.innerHTML = '';
+
+      const bits = [];
+      if (data.videoTitle) bits.push('Based on: "' + data.videoTitle + '"');
+      if (data.aspect) bits.push('Aspect ratio: ' + data.aspect);
+      if (data.partialFailures && data.partialFailures.length) {
+        bits.push(data.partialFailures.length + ' of ' + (data.thumbnails.length + data.partialFailures.length) + ' image(s) failed to render — showing the ones that succeeded');
+      }
+      caption.textContent = bits.join(' · ');
+
+      data.thumbnails.forEach(thumb => {
+        const card = document.createElement('div');
+        card.className = 'ai-thumb-card';
+        card.innerHTML = \`
+          <img src="/ai-thumbnail/serve/\${thumb.filename}" class="ai-thumb-image" alt="\${(thumb.title || 'AI Thumbnail').replace(/"/g, '&quot;')}">
+          <div class="ai-thumb-body">
+            <div class="ai-thumb-title">\${escapeHtml(thumb.title || 'AI Thumbnail')}</div>
+            \${thumb.caption ? '<div class="ai-thumb-caption">' + escapeHtml(thumb.caption) + '</div>' : ''}
+            \${thumb.moment ? '<div class="ai-thumb-moment">' + escapeHtml(thumb.moment) + '</div>' : ''}
+            <a href="/ai-thumbnail/download/\${thumb.filename}" class="ai-thumb-download" download>Download</a>
+          </div>
+        \`;
+        grid.appendChild(card);
+      });
+      section.dataset.hasResults = '1';
+      section.style.display = 'block';
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
     ${themeScript}
@@ -1629,6 +2231,140 @@ router.get('/download/:filename', requireAuth, (req, res) => {
     res.download(filePath);
   } catch (error) {
     res.status(500).json({ success: false, message: 'Download failed' });
+  }
+});
+
+// POST - AI-Generated Thumbnails
+// Accepts a video (uploaded file OR YouTube URL), transcribes the audio,
+// asks GPT-4o-mini to propose N thumbnail concepts rooted in the video's
+// most interesting moments, then renders each concept into an image via
+// GPT-image-1 in parallel. Returns the array of generated thumbnails.
+router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req, res) => {
+  let videoPath = null;
+  let downloadedYoutubeFile = null;
+  let audioPath = null;
+
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ success: false, message: 'OpenAI API key not configured on the server' });
+    }
+
+    const inputMode = (req.body.inputMode || 'upload').toString();
+    const youtubeUrl = (req.body.youtubeUrl || '').toString().trim();
+    const aspect = ['16:9', '9:16', '1:1'].includes(req.body.aspect) ? req.body.aspect : '16:9';
+    const styleHint = (req.body.styleHint || '').toString().slice(0, 300);
+    const requestedCount = Math.min(Math.max(parseInt(req.body.count, 10) || 4, 1), 6);
+    const videoFile = req.file;
+
+    // Resolve the source video path
+    let videoTitle = '';
+    if (inputMode === 'url' && youtubeUrl) {
+      if (!isValidYouTubeUrl(youtubeUrl)) {
+        return res.status(400).json({ success: false, message: 'Please enter a valid YouTube URL' });
+      }
+      try {
+        videoPath = await downloadYouTubeVideo(youtubeUrl);
+        downloadedYoutubeFile = videoPath;
+      } catch (dlErr) {
+        console.error('[AI Thumbnail AI-Gen] YouTube download failed:', dlErr.message);
+        return res.status(400).json({ success: false, message: 'Could not download that YouTube video. It may be private, age-restricted, or blocked from this server.' });
+      }
+      videoTitle = await getYouTubeTitle(youtubeUrl).catch(() => '');
+    } else if (videoFile) {
+      videoPath = videoFile.path;
+    } else {
+      return res.status(400).json({ success: false, message: 'Please provide a YouTube URL or upload a video' });
+    }
+
+    if (!videoPath || !fs.existsSync(videoPath)) {
+      return res.status(400).json({ success: false, message: 'Video file not found on server' });
+    }
+
+    // Extract audio + transcribe
+    let transcript = '';
+    try {
+      audioPath = await extractAudioForAIThumbnail(videoPath);
+      transcript = await transcribeForAIThumbnail(audioPath);
+    } catch (err) {
+      console.warn('[AI Thumbnail AI-Gen] Transcription step failed, continuing with empty transcript:', err.message);
+      transcript = '';
+    }
+
+    // If transcription yielded nothing AND we have no title, the model has
+    // nothing to work with — ask the user to add a hint.
+    if (!transcript && !videoTitle && !styleHint) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not extract any audio or title from the video. Add a style hint describing the video and try again.'
+      });
+    }
+
+    // Generate concepts via GPT-4o-mini
+    const aspectLabel = aspect === '16:9' ? 'Horizontal 16:9 (YouTube)'
+      : aspect === '9:16' ? 'Vertical 9:16 (Shorts / TikTok / Reels)'
+      : 'Square 1:1 (Instagram)';
+
+    let concepts;
+    try {
+      concepts = await generateThumbnailConcepts({
+        transcript,
+        hint: styleHint,
+        videoTitle,
+        aspectLabel,
+        count: requestedCount
+      });
+    } catch (err) {
+      console.error('[AI Thumbnail AI-Gen] Concept generation failed:', err.message);
+      return res.status(500).json({ success: false, message: 'Could not generate thumbnail concepts: ' + err.message });
+    }
+
+    // Generate images in parallel
+    const jobId = uuidv4().slice(0, 10);
+    const results = await Promise.allSettled(concepts.map((concept, index) =>
+      generateAIImage({ prompt: concept.imagePrompt, aspect, jobId, index })
+        .then((img) => ({ ...img, concept }))
+    ));
+
+    const thumbnails = [];
+    const failures = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        thumbnails.push({
+          filename: r.value.filename,
+          title: r.value.concept.title,
+          caption: r.value.concept.caption,
+          moment: r.value.concept.moment,
+          prompt: r.value.concept.imagePrompt
+        });
+      } else {
+        failures.push({ index: i, error: r.reason && r.reason.message ? r.reason.message : String(r.reason) });
+      }
+    });
+
+    if (thumbnails.length === 0) {
+      const msg = failures.length
+        ? 'All image generations failed. First error: ' + failures[0].error
+        : 'No thumbnails produced';
+      return res.status(500).json({ success: false, message: msg });
+    }
+
+    featureUsageOps.log(req.user.id, 'ai_thumbnails_ai').catch(() => {});
+    res.json({
+      success: true,
+      thumbnails,
+      partialFailures: failures,
+      aspect,
+      transcriptPreview: transcript ? transcript.slice(0, 400) : '',
+      videoTitle
+    });
+  } catch (error) {
+    console.error('[AI Thumbnail AI-Gen] Unhandled error:', error);
+    res.status(500).json({ success: false, message: error.message || 'AI thumbnail generation failed' });
+  } finally {
+    // Cleanup temp files
+    if (audioPath) { try { fs.unlinkSync(audioPath); } catch (e) {} }
+    if (downloadedYoutubeFile) { try { fs.unlinkSync(downloadedYoutubeFile); } catch (e) {} }
+    if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch (e) {} }
   }
 });
 
