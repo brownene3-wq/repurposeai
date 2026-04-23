@@ -354,10 +354,12 @@ const FONT_ALIAS = {
   'Times New Roman': 'Liberation Serif',
   'Georgia':         'Liberation Serif',
   'Courier New':     'Liberation Mono',
-  // Impact has no perfect free equivalent. DejaVu Sans Bold reads close enough
-  // for short-burst captions; we also keep the name as a comma-fallback so a
-  // user who installs Impact locally still gets it.
-  'Impact':          'DejaVu Sans'
+  // Anton is the standard Google Fonts pick for an Impact-equivalent condensed
+  // sans. The Dockerfile downloads Anton-Regular.ttf and runs fc-cache so libass
+  // can resolve this name. Browsers load the same font from Google Fonts via
+  // the @import in routes/ai-captions.js, so preview and export render Impact
+  // as the same condensed sans on both sides.
+  'Impact':          'Anton'
 };
 function resolveFontName(uiFont) {
   if (!uiFont) return 'Liberation Sans';
@@ -633,6 +635,12 @@ router.get('/', requireAuth, (req, res) => {
 
   const html = `${headHTML}
   <style>
+    /* Anton is the closest free equivalent to Microsofts Impact and is also
+       installed on the render server (see Dockerfile), so the live preview
+       and the burned-in export render Impact as the same condensed sans on
+       both Mac and Linux. */
+    @import url('https://fonts.googleapis.com/css2?family=Anton&display=swap');
+
     ${baseCSS}
 
     :root {
@@ -871,16 +879,43 @@ router.get('/', requireAuth, (req, res) => {
       50%      { filter: drop-shadow(0 0 16px var(--cap-highlight, #39FF14)); }
     }
 
-    /* Presets that highlight a rolling word (karaoke, hormozi) */
-    .caption-overlay[data-preset="karaoke"] .caption-text .word.active,
-    .caption-overlay[data-preset="hormozi"] .caption-text .word.active {
+    /* Per-preset active-word treatments — these MUST mirror the per-word
+       \\t() transitions emitted by generateASSFile() server-side, otherwise
+       the user sees one effect in the preview and a different one in the
+       exported video.
+
+       Mapping (preview rule -> export tag):
+         karaoke   -> color flip                      (\\1c<hi>)
+         bold-pop  -> color flip + 1.12x scale        (\\1c<hi>\\fscx112\\fscy112)
+         mrbeast   -> color flip + 1.12x scale        (same as bold-pop, plus uppercase)
+         hormozi   -> color flip + thicker outline    (\\1c<hi>\\bord+1)
+         neon-glow -> color flip on both fill+stroke  (\\1c<hi>\\3c<hi>)
+         minimal   -> no per-word change              (no \\t())
+    */
+    .caption-overlay[data-preset="karaoke"]   .caption-text .word.active,
+    .caption-overlay[data-preset="bold-pop"]  .caption-text .word.active,
+    .caption-overlay[data-preset="mrbeast"]   .caption-text .word.active,
+    .caption-overlay[data-preset="hormozi"]   .caption-text .word.active,
+    .caption-overlay[data-preset="neon-glow"] .caption-text .word.active {
       color: var(--cap-highlight, #FF00FF);
     }
+    .caption-overlay[data-preset="bold-pop"] .caption-text .word.active,
+    .caption-overlay[data-preset="mrbeast"]  .caption-text .word.active {
+      transform: scale(1.12);
+    }
     .caption-overlay[data-preset="hormozi"] .caption-text .word.active {
-      background: var(--cap-highlight, #FF00FF);
-      color: #000 !important;
-      padding: 0 0.12em;
-      border-radius: 0.08em;
+      /* Match the export: bumps -webkit-text-stroke-width by ~1px instead of
+         drawing a CSS background box (which the burn-in cant produce). */
+      -webkit-text-stroke-width: calc(var(--cap-stroke, 0px) + 1.5px);
+    }
+    .caption-overlay[data-preset="neon-glow"] .caption-text .word.active {
+      -webkit-text-stroke-color: var(--cap-highlight, #39FF14);
+    }
+
+    /* MrBeast preset uppercases every word — same as the export's
+       word.toUpperCase() transformation. */
+    .caption-overlay[data-preset="mrbeast"] .caption-text {
+      text-transform: uppercase;
     }
 
     .preview-note {
@@ -1495,7 +1530,11 @@ router.get('/', requireAuth, (req, res) => {
       'Courier New':     "'Courier New','Liberation Mono',monospace",
       'Georgia':         "'Georgia','Liberation Serif',serif",
       'Verdana':         "'Verdana','DejaVu Sans',sans-serif",
-      'Impact':          "'Impact','DejaVu Sans',sans-serif"
+      // Impact -> Anton (Google Fonts) is the closest free condensed sans we
+      // can get the server to install. Keep Impact first so Windows users
+      // (who actually have Impact) still see it; everyone else falls through
+      // to Anton, which the server also uses for libass output.
+      'Impact':          "'Impact','Anton','Liberation Sans Condensed','DejaVu Sans',sans-serif"
     };
     function previewFontStack(uiFont) {
       return PREVIEW_FONT_STACK_MAP[uiFont] || "'" + uiFont + "',sans-serif";
@@ -1610,6 +1649,10 @@ router.get('/', requireAuth, (req, res) => {
       // Wipe the legacy text-shadow path so a re-render that sets stroke=0 looks
       // genuinely strokeless instead of inheriting an old shadow.
       textEl.style.textShadow = 'none';
+      // Expose stroke width as a CSS var so per-preset active rules (hormozi)
+      // can use calc(var(--cap-stroke) + 1.5px) for the +1 outline bump on
+      // the active word, matching the exports bord+1 behaviour.
+      overlay.style.setProperty('--cap-stroke', strokePx + 'px');
 
       overlay.style.setProperty('--cap-highlight', '#' + style.highlightColor);
       overlay.setAttribute('data-animation', style.animation || 'none');

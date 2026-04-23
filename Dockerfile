@@ -9,14 +9,21 @@ FROM node:20-slim
 # Style preset look identical on export. The font set below covers the UI
 # choices via aliases mapped in routes/ai-captions.js (FONT_ALIAS):
 #   - fonts-liberation  -> Arial / Helvetica / Times New Roman / Courier New / Georgia
-#   - fonts-dejavu      -> Verdana / Impact (DejaVu Sans Bold is closest free Impact)
+#   - fonts-dejavu      -> Verdana
+#   - Anton (downloaded from Google Fonts) -> Impact (free condensed sans
+#     equivalent; the AI Captions page also @import-loads Anton in the browser
+#     so the live preview and the burned-in export match)
 #   - fonts-noto-core   -> broad Unicode coverage for non-Latin captions
 #   - fonts-freefont-ttf-> additional fallback families
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg python3 python3-pip curl git libgl1-mesa-glx libglib2.0-0 \
         fonts-liberation fonts-dejavu fonts-dejavu-extra fonts-noto-core fonts-freefont-ttf fontconfig && \
+    mkdir -p /usr/share/fonts/truetype/anton && \
+    curl -fsSL "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf" \
+         -o /usr/share/fonts/truetype/anton/Anton-Regular.ttf && \
     fc-cache -f -v && \
+    fc-list | grep -i anton || echo "WARN: Anton font not registered" && \
     pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provider opencv-python-headless && \
     pip3 install --break-system-packages "mediapipe==0.10.9" && \
     rm -rf /var/lib/apt/lists/*
