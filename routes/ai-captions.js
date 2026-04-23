@@ -511,19 +511,50 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const textC = colorToASS(fontColor);
   const hiC = colorToASS(highlightColor);
 
-  function userAnimTagsOnce() {
-    // Whole-line entry effects only fire once at the phrase start.
+  // Each user animation has both a per-word ACTIVE state delta and an
+  // INACTIVE resting state. The deltas are layered ON TOP of the preset's
+  // own active-word tags (bold-pop scale, hormozi outline bump, etc.) by
+  // appending — later ASS tags override earlier ones, so a per-word \\t()
+  // that includes the animation delta wins over the preset's own value.
+  //
+  // Mapping (export tag --> matching preview CSS in the page <style>):
+  //   pop    -> \\fscx118\\fscy118   --> .word.active { transform: scale(1.18) }
+  //   glow   -> \\3c<hi>\\bord<w+2>  --> .word.active { filter: drop-shadow(...) }
+  //   slide  -> \\fscy100 + initial \\fscy70 --> translateY(0) / translateY(6px)
+  //   fade   -> \\alpha&H00& + initial \\alpha&H99& --> opacity 1 / opacity 0.4
+  //
+  // Transition durations are picked so libass's \\t(start, start+200, ...)
+  // arc matches the 0.2s CSS transition on .caption-text .word in the
+  // preview, keeping easing perceptually identical.
+  const ANIM_TRANSITION_MS = 200;
+
+  function animActiveDelta() {
     switch (animation) {
-      case 'fade':  return `\\fad(150,150)`;
-      case 'slide': return `\\move(0,40,0,0,0,200)`;
-      case 'pop':   return `\\fscx115\\fscy115\\t(0,150,\\fscx100\\fscy100)`;
-      case 'glow':  return `\\3c${hiC}\\bord${outlineWidth + 2}\\t(0,300,\\bord${outlineWidth})`;
+      case 'pop':   return `\\fscx118\\fscy118`;
+      case 'glow':  return `\\3c${hiC}\\bord${outlineWidth + 2}`;
+      case 'slide': return `\\fscy100`;
+      case 'fade':  return `\\alpha&H00&`;
       default:      return '';
     }
   }
+  function animInactiveDelta() {
+    switch (animation) {
+      case 'slide': return `\\fscy70`;          // word sits "shorter" until it slides up
+      case 'fade':  return `\\alpha&H99&`;       // ~60% transparent until it fades in
+      // pop/glow: inactive == nothing extra (the base tags already reset scale/border)
+      default:      return '';
+    }
+  }
+  function animInitialTags() {
+    // Initial state of every word at phrase start, before any \\t() fires.
+    // For slide and fade this means starting words "off" so the first word
+    // can animate "on" at its activation time.
+    return animInactiveDelta();
+  }
 
   function activeWordTags(preset) {
-    // Style mods applied while a word is the active one (highlighted).
+    // Preset-specific active-word style mods. Animation mods are appended
+    // by the caller so later tags can override earlier ones.
     switch (preset) {
       case 'bold-pop':
       case 'mrbeast':
@@ -540,40 +571,61 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     }
   }
   function inactiveWordTags() {
-    // Style mods to revert TO when the word is no longer active.
-    return `\\1c${textC}\\fscx100\\fscy100\\bord${outlineWidth}`;
+    // Reset all the things active state can change (color, scale, border,
+    // outline color) so the word visually returns to its baseline.
+    return `\\1c${textC}\\fscx100\\fscy100\\bord${outlineWidth}\\3c${colorToASS(outlineColor)}`;
   }
 
-  // Build the text for one phrase, applying per-word highlight transitions.
+  // Build the text for one phrase, applying per-word highlight + animation
+  // transitions. The model is symmetric with the preview's CSS:
+  //   - Words start in the INITIAL state (animInitialTags)
+  //   - When a word activates: \\t() animates to ACTIVE state
+  //     (preset tags + animActiveDelta)
+  //   - When a word deactivates: \\t() animates back to INACTIVE state
+  //     (inactiveWordTags + animInactiveDelta)
   function renderPhrase(words) {
     const phraseStart = words[0].start || 0;
     const isMrBeast = preset === 'mrbeast';
     const userOverride = !!animation && animation !== 'none';
 
-    // Whole-line entry effect (fires once at phrase start).
-    const intro = userOverride ? `{${userAnimTagsOnce()}}` : '';
-
-    // For "minimal" with no per-word highlight, render as a static phrase.
+    // For "minimal" preset with no animation override, keep the existing
+    // flat phrase render (no per-word transitions at all).
     if (preset === 'minimal' && !userOverride) {
       const flat = words.map(w => isMrBeast ? String(w.word).toUpperCase() : w.word).join(' ');
       return `{\\fad(120,80)}${flat}`;
     }
+
+    const initial = animInitialTags();
+    const activeDelta = animActiveDelta();
+    const inactiveDelta = animInactiveDelta();
+    const presetActive = activeWordTags(preset);
+    const baseInactive = inactiveWordTags();
 
     const wordParts = words.map(w => {
       const wText = isMrBeast ? String(w.word).toUpperCase() : String(w.word).trim();
       const relStart = Math.max(0, Math.round(((w.start || 0) - phraseStart) * 1000));
       const relEnd = Math.max(relStart + 30, Math.round(((w.end || (w.start || 0) + 0.3) - phraseStart) * 1000));
 
-      const onTags = activeWordTags(preset);
-      // If this preset has no active-state tags, just show the word flat.
-      if (!onTags) return wText;
+      // Compose ON state = preset active tags + animation active delta
+      const onTags = presetActive + activeDelta;
+      const offTags = baseInactive + inactiveDelta;
 
-      const transIn = `\\t(${relStart},${relStart + 40},${onTags})`;
-      const transOut = `\\t(${relEnd},${relEnd + 40},${inactiveWordTags()})`;
-      return `{${transIn}${transOut}}${wText}`;
+      // If neither preset nor animation contribute anything, render flat.
+      if (!onTags && !initial) return wText;
+
+      // Per-word initial tags (e.g. start invisible/short for fade/slide)
+      // are emitted at relStart-1 so they apply right before the activation
+      // transition kicks in — this guarantees clean state for the first
+      // word of every phrase.
+      const initialBlock = initial ? initial : '';
+
+      const transIn = onTags ? `\\t(${relStart},${relStart + ANIM_TRANSITION_MS},${onTags})` : '';
+      const transOut = offTags ? `\\t(${relEnd},${relEnd + ANIM_TRANSITION_MS},${offTags})` : '';
+
+      return `{${initialBlock}${transIn}${transOut}}${wText}`;
     });
 
-    return `${intro}${wordParts.join(' ')}`;
+    return wordParts.join(' ');
   }
 
   const phrases = groupPhrases(transcript);
@@ -844,39 +896,44 @@ router.get('/', requireAuth, (req, res) => {
       transition: color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
     }
 
-    /* Animation: fade — words gently pulse in/out */
-    .caption-overlay[data-animation="fade"] .caption-text .word {
-      animation: capFade 1.8s ease-in-out infinite;
-    }
-    .caption-overlay[data-animation="fade"] .caption-text .word:nth-child(2n)   { animation-delay: 0.15s; }
-    .caption-overlay[data-animation="fade"] .caption-text .word:nth-child(3n)   { animation-delay: 0.30s; }
-    .caption-overlay[data-animation="fade"] .caption-text .word:nth-child(4n+1) { animation-delay: 0.45s; }
-    @keyframes capFade {
-      0%, 100% { opacity: 0.45; }
-      50%      { opacity: 1; }
-    }
+    /* User animations — these MUST match the per-word \\t() transitions
+       that generateASSFile emits server-side. The export model is:
+         inactive_state -> .word becomes active -> animate to active_state
+         active_state   -> .word becomes inactive -> animate back
+       and the .word base rule below provides the 0.2s easing that mirrors
+       libass's \\t(start, start+200, ...) animation duration. The previous
+       infinite-loop keyframe approach diverged from the export, which only
+       fires once on entry, so the preview lied about the final look. */
 
-    /* Animation: slide — whole line drifts up/down */
-    .caption-overlay[data-animation="slide"] .caption-text {
-      animation: capSlide 2.2s ease-in-out infinite;
-    }
-    @keyframes capSlide {
-      0%, 100% { transform: translateY(8px); opacity: 0.75; }
-      50%      { transform: translateY(0);   opacity: 1; }
-    }
-
-    /* Animation: pop — active word scales up */
+    /* Animation: pop — active word scales up on activation */
     .caption-overlay[data-animation="pop"] .caption-text .word.active {
       transform: scale(1.18);
     }
 
-    /* Animation: glow — halo pulse */
-    .caption-overlay[data-animation="glow"] .caption-text {
-      animation: capGlow 1.6s ease-in-out infinite;
+    /* Animation: glow — active word gets a coloured halo */
+    .caption-overlay[data-animation="glow"] .caption-text .word.active {
+      filter: drop-shadow(0 0 6px var(--cap-highlight, #39FF14))
+              drop-shadow(0 0 12px var(--cap-highlight, #39FF14));
     }
-    @keyframes capGlow {
-      0%, 100% { filter: drop-shadow(0 0 4px var(--cap-highlight, #39FF14)); }
-      50%      { filter: drop-shadow(0 0 16px var(--cap-highlight, #39FF14)); }
+
+    /* Animation: slide — non-active words sit 6px lower; the active word
+       slides up into position via the .word transition. Mirrors the
+       per-word ASS transition that animates \\fscy (vertical scale) on the
+       active word. */
+    .caption-overlay[data-animation="slide"] .caption-text .word {
+      transform: translateY(6px);
+    }
+    .caption-overlay[data-animation="slide"] .caption-text .word.active {
+      transform: translateY(0);
+    }
+
+    /* Animation: fade — non-active words sit at 40% alpha, the active word
+       fades up to fully opaque. Mirrors per-word \\alpha&H99&/&H00& tags. */
+    .caption-overlay[data-animation="fade"] .caption-text .word {
+      opacity: 0.4;
+    }
+    .caption-overlay[data-animation="fade"] .caption-text .word.active {
+      opacity: 1;
     }
 
     /* Per-preset active-word treatments — these MUST mirror the per-word
