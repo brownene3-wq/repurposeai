@@ -3238,7 +3238,7 @@ function showToast(message, type = 'success') {
           // Strip any extension the user typed (we add it back server-side)
           name = name.replace(/\.(mp4|mov|webm|mkv|gif)$/i, '');
           // Allowlist: letters, digits, hyphen, underscore, space, dot
-          name = name.replace(/[^A-Za-z0-9._\- ]+/g, '_');
+          name = name.replace(/[^A-Za-z0-9._ \-]+/g, '_');
           // Collapse consecutive underscores and trim leading/trailing dots
           name = name.replace(/_+/g, '_').replace(/^\.+|\.+$/g, '');
           return name;
@@ -6930,7 +6930,7 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     // any path separators, extension added server-side based on format).
     var customName = (body && body.customFilename) ? String(body.customFilename) : '';
     customName = customName.replace(/[\\\/]/g, '_').replace(/\.(mp4|mov|webm|mkv|gif)$/i, '');
-    customName = customName.replace(/[^A-Za-z0-9._\- ]+/g, '_').replace(/^\.+|\.+$/g, '').slice(0, 80);
+    customName = customName.replace(/[^A-Za-z0-9._ \-]+/g, '_').replace(/^\.+|\.+$/g, '').slice(0, 80);
     var extForFile = (body && body.format) === 'gif' ? 'gif' : 'mp4';
     var outputFilename;
     if (customName){
