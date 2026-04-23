@@ -840,6 +840,132 @@
     document.querySelectorAll('.mt-clip').forEach(attachTrimHandles);
   } catch(_){}
 
+  // ── Task #18: Real-frame filmstrip inside V1 video clips ─────────
+  // Builds a .v10-filmstrip child with N frames captured asynchronously
+  // from a hidden <video> element. Each frame is an <img> with
+  // object-fit:cover so the source aspect is preserved (no stretching).
+  // Frames beyond the number that fit are clipped by overflow:hidden.
+  // A per-URL memo cache prevents re-capturing the same source.
+  var _filmstripCache = {}; // url -> [dataUrl, dataUrl, ...]
+  function buildClipFilmstrip(clip, mediaUrl, secs){
+    if (!clip || !mediaUrl) return;
+    // Mount the filmstrip host immediately with gradient-palette placeholders
+    // so the clip never looks blank. Real frames overwrite them.
+    var PALETTE = [
+      ['#1e1b4b','#7c3aed'], ['#312e81','#8b5cf6'],
+      ['#4c1d95','#a78bfa'], ['#581c87','#a855f7']
+    ];
+    var NUM_FRAMES = 8;
+    var fs = document.createElement('div');
+    fs.className = 'v10-filmstrip';
+    fs.setAttribute('data-v10', 'clip-filmstrip');
+    fs.style.cssText = 'position:absolute;inset:2px;display:flex;gap:1px;' +
+      'border-radius:4px;overflow:hidden;pointer-events:none;z-index:1;' +
+      'background:#0a0815';
+    for (var i = 0; i < NUM_FRAMES; i++){
+      var pal = PALETTE[i % PALETTE.length];
+      var frame = document.createElement('div');
+      frame.className = 'v10-frame';
+      frame.setAttribute('data-frame-idx', String(i));
+      // Placeholder gradient; real frame replaces background on capture.
+      // object-fit semantics are emulated via background-size:cover so the
+      // source aspect is preserved inside each variable-width cell.
+      frame.style.cssText = 'flex:1;min-width:0;background:linear-gradient(' +
+        (i * 37) + 'deg,' + pal[0] + ',' + pal[1] +
+        ');background-size:cover;background-position:center;' +
+        'background-repeat:no-repeat;border-right:1px solid rgba(0,0,0,.35)';
+      fs.appendChild(frame);
+    }
+    // Filename label on top of the filmstrip so the user can still
+    // identify the clip. Small, text-shadow for legibility.
+    var label = document.createElement('span');
+    label.className = 'v10-fs-label';
+    label.textContent = '\ud83c\udfac ' + (clip.dataset.fileName || 'Video');
+    label.style.cssText = 'position:absolute;left:6px;top:50%;' +
+      'transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;' +
+      'text-shadow:0 1px 3px rgba(0,0,0,.8);z-index:4;pointer-events:none;' +
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+      'max-width:calc(100% - 12px)';
+    clip.appendChild(fs);
+    clip.appendChild(label);
+
+    // Cache hit — paint cached frames without any video seek work
+    if (_filmstripCache[mediaUrl]){
+      var cached = _filmstripCache[mediaUrl];
+      var els = fs.querySelectorAll('.v10-frame');
+      for (var k = 0; k < els.length && k < cached.length; k++){
+        if (cached[k]) els[k].style.background = 'url(' + cached[k] + ') center/cover no-repeat';
+      }
+      return;
+    }
+
+    // Capture real frames from a hidden <video>
+    var duration = parseFloat(secs) || 0;
+    var probe = document.createElement('video');
+    probe.crossOrigin = 'anonymous';
+    probe.preload = 'auto';
+    probe.muted = true;
+    probe.playsInline = true;
+    probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:120px;height:68px;pointer-events:none;opacity:0';
+    probe.src = mediaUrl;
+    document.body.appendChild(probe);
+
+    var cv = document.createElement('canvas');
+    var ctx = cv.getContext('2d');
+    var capturedUrls = new Array(NUM_FRAMES);
+    var idx = 0;
+    var started = false;
+    var cleaned = false;
+    function cleanup(){
+      if (cleaned) return; cleaned = true;
+      try { probe.removeEventListener('seeked', onSeeked); } catch(_){}
+      try { probe.removeEventListener('loadedmetadata', onMeta); } catch(_){}
+      try { probe.pause(); } catch(_){}
+      try { probe.src = ''; } catch(_){}
+      try { probe.remove(); } catch(_){}
+      _filmstripCache[mediaUrl] = capturedUrls;
+    }
+    var safety = setTimeout(cleanup, 20000);
+
+    function onSeeked(){
+      try {
+        var vw = probe.videoWidth || 120;
+        var vh = probe.videoHeight || 68;
+        // Fixed capture dims — cells are flex:1 so the DIV width varies,
+        // but the captured image uses background-size:cover to fill.
+        cv.width = 120;
+        cv.height = Math.max(36, Math.round(120 * vh / vw));
+        // Direct drawImage (source aspect preserved via canvas size)
+        ctx.drawImage(probe, 0, 0, vw, vh, 0, 0, cv.width, cv.height);
+        var dataUrl = cv.toDataURL('image/jpeg', 0.6);
+        capturedUrls[idx] = dataUrl;
+        var frameEls = fs.querySelectorAll('.v10-frame');
+        if (frameEls[idx]){
+          frameEls[idx].style.background = 'url(' + dataUrl + ') center/cover no-repeat';
+        }
+      } catch(e){ /* tainted / cross-origin — leave placeholder */ }
+      idx++;
+      if (idx >= NUM_FRAMES){
+        clearTimeout(safety);
+        cleanup();
+        return;
+      }
+      var d = probe.duration > 0 && isFinite(probe.duration) ? probe.duration : (duration > 0 ? duration : 10);
+      var t = ((idx + 0.5) / NUM_FRAMES) * d;
+      try { probe.currentTime = t; } catch(_){}
+    }
+    function onMeta(){
+      if (started) return;
+      started = true;
+      var d = probe.duration > 0 && isFinite(probe.duration) ? probe.duration : (duration > 0 ? duration : 10);
+      var t = (0.5 / NUM_FRAMES) * d;
+      try { probe.currentTime = t; } catch(_){}
+    }
+    probe.addEventListener('loadedmetadata', onMeta);
+    probe.addEventListener('seeked', onSeeked);
+    probe.addEventListener('error', function(){ clearTimeout(safety); cleanup(); });
+  }
+
   function addClipToTimeline(fileName, mediaType, duration, mediaUrl) {
     var track = findTargetTrack(mediaType);
     if (!track) { showToast('Timeline track not found'); return; }
@@ -854,7 +980,6 @@
 
     var clip = document.createElement('div');
     clip.className = 'mt-clip ' + (mediaType === 'aud' ? 'mt-clip-audio' : 'mt-clip-video');
-    clip.textContent = fileName;
     clip.dataset.fileName = fileName;
     clip.dataset.clipType = mediaType; // 'vid' | 'aud' | 'img'
     if (secs > 0)    clip.dataset.duration = String(secs);
@@ -862,26 +987,49 @@
     // position:absolute + top:3px + height:30px come from the base .mt-clip rule in CSS.
     clip.style.left = leftPos + 'px';
     clip.style.width = width + 'px';
-    clip.style.padding = '4px 8px';
-    clip.style.fontSize = '10px';
-    clip.style.overflow = 'hidden';
-    clip.style.textOverflow = 'ellipsis';
-    clip.style.whiteSpace = 'nowrap';
     clip.style.userSelect = 'none';
     if (mediaType === 'aud') {
       clip.style.background = 'linear-gradient(135deg, #059669, #10b981)';
       clip.style.color = '#fff';
+      clip.style.padding = '4px 8px';
+      clip.style.fontSize = '10px';
+      clip.style.overflow = 'hidden';
+      clip.style.textOverflow = 'ellipsis';
+      clip.style.whiteSpace = 'nowrap';
+      clip.textContent = fileName;
     } else if (mediaType === 'img') {
       // Distinct green/teal gradient so image clips are visually recognizable
       // against video clips on the same track.
       clip.style.background = 'linear-gradient(135deg, #22c55e, #06b6d4)';
       clip.style.color = '#fff';
+      clip.style.padding = '4px 8px';
+      clip.style.fontSize = '10px';
+      clip.style.overflow = 'hidden';
+      clip.style.textOverflow = 'ellipsis';
+      clip.style.whiteSpace = 'nowrap';
+      clip.textContent = fileName;
     } else {
+      // Video clip — build a filmstrip of real frames (Task #18).
+      // Clip keeps a purple fallback background for pre-load state; once
+      // frames are captured asynchronously, a .v10-filmstrip child is
+      // inserted with one .v10-frame per capture, each using background
+      // size:cover so aspect is preserved (no stretching).
       clip.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
       clip.style.color = '#fff';
+      clip.style.overflow = 'hidden';
+      // Build filmstrip lazily (after clip is in DOM so width/host measure
+      // correctly), passing the mediaUrl so a hidden video element can
+      // seek and capture frames without touching the Program Monitor.
+      clip.__v10FilmstripPending = true;
     }
 
     track.appendChild(clip);
+    if (mediaType === 'vid' || mediaType === '' || (!mediaType && mediaUrl)){
+      try { buildClipFilmstrip(clip, mediaUrl, secs); } catch(_){}
+    } else if (mediaType !== 'aud' && mediaType !== 'img'){
+      // Unknown type — attempt filmstrip if mediaUrl looks like a video
+      try { buildClipFilmstrip(clip, mediaUrl, secs); } catch(_){}
+    }
     makeClipInteractive(clip);
     updateTimelineInfo();
     // If Snap is on, enforce no-gap invariant for video clips.
@@ -2524,6 +2672,36 @@
     var leftPos = isFinite(explicitLeft) && explicitLeft >= 0
       ? explicitLeft
       : findRightmostClipEnd(track);
+
+    // ── Task #19: Auto-trim preceding captions to prevent overlap ──
+    // Any existing T1 clip whose right edge extends past the new clip's
+    // left boundary gets trimmed so it ends exactly at (or just before)
+    // the new clip's start. Minimum width floor: 40px (2 frames at 20fps
+    // default pxPerSec) — if trimming would leave less than that, we
+    // shift the new clip's left instead.
+    var MIN_CAP_WIDTH = 40;
+    Array.from(track.querySelectorAll('.mt-clip')).forEach(function(existing){
+      var eL = parseFloat(existing.style.left)  || 0;
+      var eW = parseFloat(existing.style.width) || 0;
+      var eR = eL + eW;
+      if (eR > leftPos && eL < leftPos){
+        // Existing caption's end extends into (or overlaps with the start of)
+        // the new caption. Trim its width.
+        var newW = leftPos - eL;
+        if (newW >= MIN_CAP_WIDTH){
+          existing.style.width = newW + 'px';
+          // Update duration dataset to reflect the trimmed width
+          if (existing.dataset.duration){
+            existing.dataset.duration = String(newW / TIMELINE_PX_PER_SEC);
+          }
+        } else {
+          // Trimming would leave it too short — keep existing intact and
+          // push the new caption to start after it instead.
+          leftPos = eR;
+        }
+      }
+    });
+
     var clip = document.createElement('div');
     clip.className = 'mt-clip mt-clip-text';
     clip.textContent = safeText.slice(0, 30);
@@ -3652,32 +3830,112 @@
     var suffix = clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : '';
     showToast(label + ' ' + (on ? 'on' : 'off') + suffix);
   }
-  function clipActionFxBlur(){
-    var wasJustEnabled = false;
-    var activeSnapshot = null;
-    promptToActiveClips(
-      function(c){
-        activeSnapshot = c;
-        var cur = parseFloat(c.dataset.fxBlur) || 0;
-        var input = prompt('Blur amount in px (0 = off)', String(cur || 5));
-        if (input === null) return null;
-        var v = parseFloat(input);
-        if (!isFinite(v) || v < 0){ showToast('Invalid value'); return null; }
-        wasJustEnabled = (v > 0);
-        return v;
-      },
-      function(c, v){
-        if (v === 0) delete c.dataset.fxBlur;
-        else c.dataset.fxBlur = String(v);
-      },
-      'Blur {val}px'
-    );
-    if (wasJustEnabled){
-      addFxIndicatorClip('Blur', '\ud83c\udf2b\ufe0f', {
-        active: activeSnapshot,
-        fxKey: 'fxBlur',
-        fxValue: activeSnapshot ? (activeSnapshot.dataset.fxBlur || '') : ''
+  // ── Task #21: FX Slider popover ───────────────────────────────────
+  // Shared opener used by Blur / Brightness / Contrast / Saturation.
+  // Writes clip.dataset[fxKey] on every 'input' event (live preview),
+  // with a "Reset" button that clears the key (restoring neutral).
+  // Broadcasts across every currently-selected .mt-clip target.
+  //
+  //   key      : dataset key to write (e.g. 'fxBlur', 'fxBrightness')
+  //   label    : popover title ('Blur', 'Brightness', ...)
+  //   min, max : slider range
+  //   step     : slider granularity
+  //   neutral  : value at which the key is DELETED (so export is clean)
+  //   unit     : label suffix ('px', '×')
+  //   icon     : emoji prefix for the indicator clip
+  function openFxSliderPopover(key, label, min, max, step, neutral, unit, icon){
+    // Toggle-close if already open
+    var existing = document.getElementById('fxSliderPopover');
+    if (existing && existing.isConnected){ existing.remove(); return; }
+    if (existing) { try { existing.remove(); } catch(_){} }
+
+    var targets = Array.from(document.querySelectorAll('.mt-clip.selected'));
+    if (!targets.length){
+      var active = (typeof getActiveClip === 'function') ? getActiveClip() : null;
+      if (active) targets = [active];
+    }
+    if (!targets.length){ showToast('Select a clip first'); return; }
+    var first = targets[0];
+    var initRaw = parseFloat(first.dataset[key]);
+    var initVal = isFinite(initRaw) ? initRaw : neutral;
+
+    var pop = document.createElement('div');
+    pop.id = 'fxSliderPopover';
+    pop.dataset.fxKey = key;
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;' +
+      'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;' +
+      'padding:14px;width:280px;box-shadow:0 10px 40px rgba(0,0,0,.6);' +
+      'color:#e2e0f0;font-family:system-ui,sans-serif';
+
+    var multiMsg = targets.length > 1 ? ('Applies to ' + targets.length + ' selected clips.') : '';
+    pop.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
+        '<div style="font-size:11px;color:#fde047;font-weight:700;letter-spacing:.5px">' + (icon || '') + ' ' + label.toUpperCase() + '</div>' +
+        '<div id="fxSlVal" style="font-size:11px;color:#a78bfa;font-weight:600">' + initVal.toFixed(step < 1 ? 2 : 0) + (unit || '') + '</div>' +
+      '</div>' +
+      (multiMsg ? '<div style="font-size:10px;color:#8886a0;margin-bottom:8px">' + multiMsg + '</div>' : '') +
+      '<input id="fxSlRange" type="range" min="' + min + '" max="' + max + '" step="' + step + '" value="' + initVal + '" ' +
+        'style="width:100%;accent-color:#a78bfa"/>' +
+      '<div style="display:flex;justify-content:space-between;font-size:9px;color:#5c5a70;margin-top:4px">' +
+        '<span>' + min + (unit || '') + '</span>' +
+        '<span style="color:#8886a0">neutral ' + neutral + (unit || '') + '</span>' +
+        '<span>' + max + (unit || '') + '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:12px">' +
+        '<button id="fxSlReset" style="flex:1;padding:6px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">Reset</button>' +
+        '<button id="fxSlDone"  style="flex:1;padding:6px;background:rgba(139,92,246,.2);border:1px solid rgba(139,92,246,.4);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Done</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+
+    var range = pop.querySelector('#fxSlRange');
+    var valEl = pop.querySelector('#fxSlVal');
+    function apply(){
+      var v = parseFloat(range.value);
+      if (!isFinite(v)) v = neutral;
+      if (valEl) valEl.textContent = v.toFixed(step < 1 ? 2 : 0) + (unit || '');
+      targets.forEach(function(c){
+        if (Math.abs(v - neutral) < 1e-6){
+          delete c.dataset[key];
+        } else {
+          c.dataset[key] = String(v);
+        }
       });
+      try { syncPreviewToPlayhead(); } catch(_){}
+    }
+    range.addEventListener('input', apply);
+    range.addEventListener('change', function(){
+      apply();
+      if (typeof pushTimelineHistory === 'function') pushTimelineHistory();
+    });
+    pop.querySelector('#fxSlReset').addEventListener('click', function(){
+      range.value = String(neutral);
+      apply();
+      if (typeof pushTimelineHistory === 'function') pushTimelineHistory();
+    });
+    pop.querySelector('#fxSlDone').addEventListener('click', function(){
+      pop.remove();
+    });
+  }
+
+  function clipActionFxBlur(){
+    var wasNeutral = (function(){
+      var c = (typeof getActiveClip === 'function') ? getActiveClip() : null;
+      return !c || !parseFloat(c.dataset.fxBlur);
+    })();
+    openFxSliderPopover('fxBlur', 'Blur', 0, 20, 0.5, 0, 'px', '\ud83c\udf2b\ufe0f');
+    // Drop the timeline indicator chip the first time blur is enabled on a clip
+    if (wasNeutral){
+      var active = (typeof getActiveClip === 'function') ? getActiveClip() : null;
+      // Defer to let the slider touch first
+      setTimeout(function(){
+        if (active && parseFloat(active.dataset.fxBlur) > 0){
+          addFxIndicatorClip('Blur', '\ud83c\udf2b\ufe0f', {
+            active: active,
+            fxKey: 'fxBlur',
+            fxValue: active.dataset.fxBlur || ''
+          });
+        }
+      }, 150);
     }
   }
   function clipActionFxGlow(){     toggleClipFlag('Glow',     'fxGlow');     }
@@ -3708,12 +3966,17 @@
       );
     };
   }
-  var clipActionFxBrightness = promptColorProp('fxBrightness', 'Brightness',
-    'Brightness multiplier (1.0 = neutral, 0.5 dim, 1.5 bright)');
-  var clipActionFxContrast = promptColorProp('fxContrast',   'Contrast',
-    'Contrast multiplier (1.0 = neutral)');
-  var clipActionFxSaturation = promptColorProp('fxSaturate', 'Saturation',
-    'Saturation (1.0 = neutral, 0 = B&W, 2 = vivid)');
+  // Task #21: Brightness / Contrast / Saturation now use the shared
+  // FX slider popover instead of prompt() text entry.
+  function clipActionFxBrightness(){
+    openFxSliderPopover('fxBrightness', 'Brightness', 0, 2, 0.05, 1, '\u00d7', '\u2600\ufe0f');
+  }
+  function clipActionFxContrast(){
+    openFxSliderPopover('fxContrast',   'Contrast',   0, 2, 0.05, 1, '\u00d7', '\u25d1');
+  }
+  function clipActionFxSaturation(){
+    openFxSliderPopover('fxSaturate',   'Saturation', 0, 2, 0.05, 1, '\u00d7', '\ud83c\udfa8');
+  }
   function clipActionFxColorGrade(){
     var gradeApplied = null;
     var activeSnapshot = null;
@@ -4070,18 +4333,43 @@
   //   #16 Overlap prevention: when multiple T1 clips share a position
   //       zone at the playhead, they stack vertically with a gap instead
   //       of piling on top of each other.
+  //   #20 Video-rect constraint: when the source video is letterboxed or
+  //       pillarboxed inside the canvas, the safe area is computed from
+  //       the VIDEO rect (not the canvas rect), so captions stay inside
+  //       the visible picture instead of bleeding onto black bars. Plus
+  //       if a wrapped line still exceeds SAFE_W (e.g. a single unbreakable
+  //       word), the font shrinks dynamically until it fits (14px floor).
+  function _computeVideoRectForText(W, H){
+    var mainVideo = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!mainVideo || !mainVideo.videoWidth || !mainVideo.videoHeight){
+      return { x: 0, y: 0, w: W, h: H };
+    }
+    var srcAspect = mainVideo.videoWidth / mainVideo.videoHeight;
+    var dstAspect = W / H;
+    if (Math.abs(srcAspect - dstAspect) < 0.001){
+      return { x: 0, y: 0, w: W, h: H };
+    }
+    if (srcAspect > dstAspect){
+      var visH = W / srcAspect;
+      return { x: 0, y: (H - visH) / 2, w: W, h: visH };
+    }
+    var visW = H * srcAspect;
+    return { x: (W - visW) / 2, y: 0, w: visW, h: H };
+  }
   function progDrawTextOverlays(ctx, W, H, phX){
     _textHitBoxes.length = 0;
     var clips = getTextClipsAtPlayheadX(phX);
     if (!clips.length) return;
 
-    // #15 Safe-area padding — 7.5% L/R, 8% top, 8% bottom baseline.
-    // These are fractions so they track with the canvas size.
-    var SAFE_L = W * 0.075;
-    var SAFE_R = W * 0.925;
+    // #15 + #20 Safe-area padding — computed from the VIDEO rect inside
+    // the canvas so letterboxed/pillarboxed content doesn't push text
+    // into the black bars. Falls back to canvas rect if no video loaded.
+    var VR = _computeVideoRectForText(W, H);
+    var SAFE_L = VR.x + VR.w * 0.075;
+    var SAFE_R = VR.x + VR.w * 0.925;
     var SAFE_W = SAFE_R - SAFE_L;
-    var SAFE_T = H * 0.08;
-    var SAFE_B = H * 0.92;
+    var SAFE_T = VR.y + VR.h * 0.08;
+    var SAFE_B = VR.y + VR.h * 0.92;
 
     // #16 Stack-by-position-zone: bucket clips by their position zone so
     // clips in the same zone can be stacked. Order within a zone follows
@@ -4120,24 +4408,34 @@
         var offY = offYFrac * H;
 
         ctx.save();
-        ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
-        // Word-wrap inside the safe-area width
         var maxW = SAFE_W;
-        var words = String(text).split(/\s+/);
+        // Word-wrap + dynamic font-shrink loop (#20). If any wrapped line's
+        // width exceeds maxW at the current font size, shrink the font and
+        // re-wrap. Bottoms out at the 14px floor.
         var lines = [];
-        var current = '';
-        words.forEach(function(w){
-          var test = current ? (current + ' ' + w) : w;
-          if (ctx.measureText(test).width > maxW && current){
-            lines.push(current); current = w;
-          } else { current = test; }
-        });
-        if (current) lines.push(current);
         var widest = 0;
-        lines.forEach(function(ln){
-          var w = ctx.measureText(ln).width;
-          if (w > widest) widest = w;
-        });
+        var MIN_SIZE = 14;
+        while (true){
+          ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
+          var words = String(text).split(/\s+/);
+          lines = [];
+          var current = '';
+          words.forEach(function(w){
+            var test = current ? (current + ' ' + w) : w;
+            if (ctx.measureText(test).width > maxW && current){
+              lines.push(current); current = w;
+            } else { current = test; }
+          });
+          if (current) lines.push(current);
+          widest = 0;
+          lines.forEach(function(ln){
+            var w = ctx.measureText(ln).width;
+            if (w > widest) widest = w;
+          });
+          if (widest <= maxW || size <= MIN_SIZE) break;
+          // Shrink and retry — one px at a time to stay close to the target.
+          size = Math.max(MIN_SIZE, size - 2);
+        }
         ctx.restore();
         var lineH = Math.round(size * 1.15);
         var totalH = lineH * lines.length;

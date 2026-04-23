@@ -356,6 +356,20 @@ router.get('/', requireAuth, async (req, res) => {
     .ml-tab{flex:1;padding:8px 4px;text-align:center;font-size:9.5px;font-weight:700;color:#4a3d65;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:.3px;background:none;border-top:none;border-left:none;border-right:none}
     .ml-tab:hover{color:#a78bfa;background:rgba(108,58,237,.03)}
     .ml-tab.active{color:#a78bfa;border-bottom-color:#7c3aed;background:rgba(108,58,237,.04)}
+    /* ═══ V10 CRITICAL HIDE RULES — INLINED TO PREVENT LEGACY-LAYOUT FLASH ═══
+       Without these, the legacy sidebar (search, upload, folders) renders
+       visible for ~500ms on load until v10-editor-redesign.js mounts its
+       CSS via JS. We apply the critical display:none rules pre-paint so
+       the user never sees the flash. The V10 script later re-asserts these
+       same rules; duplicates are a no-op. */
+    .media-library .ml-search{display:none!important}
+    .media-library .ml-body>.ml-upload{display:none!important}
+    .media-library .ml-body>.ml-section:not([data-v10]){display:none!important}
+    .media-library .ml-folder{display:none!important}
+    .media-library [data-v10-folder]{display:none!important}
+    .media-library .ml-body>.ml-fgrid:empty{display:none}
+    .filmstrip-wrap{display:none!important}
+    /* ═════════════════════════════════════════════════════════════════════ */
     .ml-search{padding:5px 8px}
     .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;outline:none}
     .ml-body{flex:1;overflow-y:auto;padding:5px 6px}
