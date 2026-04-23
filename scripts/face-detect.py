@@ -46,8 +46,14 @@ import os
 import cv2
 
 MAX_SUBJECTS = 4
-IOU_MATCH_THRESHOLD = 0.25
-MAX_MISSING_FRAMES = 6  # drop a track if not seen for this many consecutive samples
+# A detection matches an existing track if the distance between their
+# centroids is less than MATCH_DIST_FACE_MULT * average face size. This is
+# far more forgiving than IOU for fast-moving faces: someone leaning
+# forward or sliding in their seat can shift by a whole face-width in half
+# a second and IOU drops below 0.25, orphaning the track. Distance-based
+# matching with a face-sized radius keeps the track attached.
+MATCH_DIST_FACE_MULT = 1.5
+MAX_MISSING_FRAMES = 8  # drop a track if not seen for this many consecutive samples
 
 # Try mediapipe; fall back gracefully.
 try:
@@ -58,7 +64,7 @@ except Exception:
 
 
 def iou(a, b):
-    """IOU of two (x, y, w, h) boxes in pixel space."""
+    """IOU of two (x, y, w, h) boxes in pixel space (kept for scoring/tests)."""
     ax1, ay1, aw, ah = a
     bx1, by1, bw, bh = b
     ax2, ay2 = ax1 + aw, ay1 + ah
@@ -69,6 +75,24 @@ def iou(a, b):
     inter = iw * ih
     union = aw * ah + bw * bh - inter
     return inter / union if union > 0 else 0.0
+
+
+def centroid(bbox):
+    x, y, w, h = bbox
+    return (x + w / 2.0, y + h / 2.0)
+
+
+def center_dist(a, b):
+    """Euclidean distance between centroids of two (x, y, w, h) boxes."""
+    acx, acy = centroid(a)
+    bcx, bcy = centroid(b)
+    dx, dy = acx - bcx, acy - bcy
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def avg_face_size(a, b):
+    """Mean of face widths (proxy for face size since faces are ~square)."""
+    return (a[2] + b[2]) / 2.0
 
 
 class Track:
@@ -105,19 +129,32 @@ class Track:
 
 
 def match_tracks_to_detections(tracks, detections):
-    """Greedy IOU matching. Returns list of (track, detection) pairs and unmatched detections."""
+    """Greedy centroid-distance matching.
+
+    A candidate pair (track, detection) is accepted when the distance
+    between their centroids is less than MATCH_DIST_FACE_MULT * avg face
+    width. We rank candidates by distance ASC so the closest matches win,
+    which is the natural semantics: the detection nearest to where the
+    track was last seen IS that track.
+
+    IOU as a backstop (score > 0.1) lets near-identical overlapping boxes
+    match even if one of them is sized oddly.
+    """
     pairs = []
     unmatched_dets = list(range(len(detections)))
     unmatched_tracks = list(range(len(tracks)))
 
-    # Build all candidate (iou, track_idx, det_idx) above threshold, sort desc.
-    candidates = []
+    candidates = []  # (score, ti, di) where LOWER score = better match
     for ti, t in enumerate(tracks):
         for di, d in enumerate(detections):
-            score = iou(t.bbox, d["bbox"])
-            if score >= IOU_MATCH_THRESHOLD:
-                candidates.append((score, ti, di))
-    candidates.sort(reverse=True)
+            dist = center_dist(t.bbox, d["bbox"])
+            face_size = avg_face_size(t.bbox, d["bbox"])
+            if face_size <= 0:
+                continue
+            norm_dist = dist / face_size
+            if norm_dist <= MATCH_DIST_FACE_MULT or iou(t.bbox, d["bbox"]) > 0.1:
+                candidates.append((norm_dist, ti, di))
+    candidates.sort()  # ASC: smallest norm_dist first
 
     used_t, used_d = set(), set()
     for score, ti, di in candidates:
@@ -204,7 +241,9 @@ def detect_faces(video_path, sample_interval=0.2):
         detector_name = "opencv"
 
     legacy_samples = []
-    tracks = []
+    active_tracks = []  # tracks still considered live (being matched against)
+    all_tracks = []     # every track ever created, so dropped ones survive
+                        # to the subjects finalization step.
     next_track_id = 0
 
     frame_interval = max(1, int(fps * sample_interval))
@@ -222,27 +261,27 @@ def detect_faces(video_path, sample_interval=0.2):
             else:
                 detections = detect_frame_opencv(cascade_frontal, cascade_profile, frame, width, height)
 
-            # Keep only top-N by confidence (plus track-matched ones below).
-            # We still try to match all detections to existing tracks first, so
-            # a low-confidence detection that keeps an existing track alive
-            # beats a high-confidence spurious one.
-
-            # --- tracker update ---
-            pairs, unmatched_tracks, unmatched_dets = match_tracks_to_detections(tracks, detections)
+            # --- tracker update (centroid-distance matching) ---
+            pairs, unmatched_tracks, unmatched_dets = match_tracks_to_detections(active_tracks, detections)
             for track, det in pairs:
                 track.update(det["bbox"], timestamp, width, height)
             for ti in unmatched_tracks:
-                tracks[ti].missing += 1
-            # Drop stale tracks
-            tracks = [t for t in tracks if t.missing <= MAX_MISSING_FRAMES]
-            # Start new tracks for unmatched detections, capped at MAX_SUBJECTS active
+                active_tracks[ti].missing += 1
+            # Retire stale tracks from the active set. They REMAIN in
+            # all_tracks so they're still eligible for the final subjects
+            # output; this way a podcast guest who's on-screen for 20s
+            # and then cuts away doesn't vanish from the result.
+            active_tracks = [t for t in active_tracks if t.missing <= MAX_MISSING_FRAMES]
+            # Start new tracks for unmatched detections, capped at
+            # MAX_SUBJECTS currently active.
             for di in unmatched_dets:
-                active = sum(1 for t in tracks if t.missing == 0)
+                active = sum(1 for t in active_tracks if t.missing == 0)
                 if active >= MAX_SUBJECTS:
                     break
                 t = Track(next_track_id, detections[di]["bbox"], timestamp)
                 t.update(detections[di]["bbox"], timestamp, width, height)
-                tracks.append(t)
+                active_tracks.append(t)
+                all_tracks.append(t)
                 next_track_id += 1
 
             # --- legacy per-frame sample for backward compatibility ---
@@ -268,9 +307,10 @@ def detect_faces(video_path, sample_interval=0.2):
         try: mp_detector.close()
         except Exception: pass
 
-    # Finalize subjects: keep only the ones with meaningful presence,
-    # sort by total_seen DESC, cap at MAX_SUBJECTS.
-    finalized = sorted(tracks, key=lambda t: t.total_seen, reverse=True)
+    # Finalize subjects from the FULL history (not just currently-alive
+    # tracks). Keep only tracks with meaningful presence, sort by
+    # total_seen DESC, cap at MAX_SUBJECTS.
+    finalized = sorted(all_tracks, key=lambda t: t.total_seen, reverse=True)
     finalized = [t for t in finalized if t.total_seen >= 2][:MAX_SUBJECTS]
 
     subjects = []

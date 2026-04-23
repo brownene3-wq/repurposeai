@@ -219,7 +219,10 @@ function calculateCropDimensions(inputWidth, inputHeight, targetWidth, targetHei
 function detectFaces(videoPath) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, '..', 'scripts', 'face-detect.py');
-    const proc = spawn('python3', [scriptPath, videoPath, '0.5']);
+    // 0.25s sample interval: dense enough that a face moving a face-width
+    // (~100px) between samples is well under the centroid-distance match
+    // radius, keeping tracks attached through fast shifts.
+    const proc = spawn('python3', [scriptPath, videoPath, '0.25']);
     let stdout = '';
     let stderr = '';
 
