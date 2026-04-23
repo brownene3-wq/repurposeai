@@ -2127,8 +2127,8 @@
       { g:'AI GENERATION', ic:'\ud83c\udfa8',  label:'Brand Kit',     route:'/brand-kits' },
       // Transcript removed (Task #36) — redundant with Captions
       { g:'AI ANALYSIS',   ic:'\ud83c\udfac',  label:'B-Roll',        route:'/ai-broll' },
-      { g:'AI ANALYSIS',   ic:'\u2702',        label:'Smart Cut',     route:null },
-      { g:'AI ANALYSIS',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:null },
+      { g:'AI ANALYSIS',   ic:'\u2702',        label:'Smart Cut',     route:'#smart-cut' },
+      { g:'AI ANALYSIS',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:'#scene-detect' },
       { g:'AI CREATIVE',   ic:'\ud83e\ude84',  label:'Style Transfer',route:null },
       { g:'AI CREATIVE',   ic:'\ud83d\uddbc',  label:'BG Remove',     route:null },
       { g:'AI CREATIVE',   ic:'\ud83c\udfa4',  label:'AI Voice',      route:'/video-editor#voiceover' },
@@ -2163,9 +2163,12 @@
     // clips right by the hook's duration).
     var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions', 'AI Hook': 'aihook' };
     var MODAL_LABELS   = { 'Brand Kit': 1 };
+    // Labels that trigger inline modals built into v10-editor-redesign.js
+    // (no new tab, no iframe). B-Roll, Smart Cut, Scene Detect all fall here.
+    var INLINE_MODAL_LABELS = { 'B-Roll': 1, 'Smart Cut': 1, 'Scene Detect': 1 };
     // Actions that require a selected clip with a server-side mediaUrl.
     // Used for button-disable and pre-click validation (Task #33).
-    var REQUIRES_CLIP = { 'Enhance Audio': 1, 'Captions': 1, 'AI Hook': 1, 'B-Roll': 1 };
+    var REQUIRES_CLIP = { 'Enhance Audio': 1, 'Captions': 1, 'AI Hook': 1, 'B-Roll': 1, 'Smart Cut': 1, 'Scene Detect': 1 };
 
     // Task #33 — Gate clip-dependent AI buttons. Disables + dims them
     // whenever there's no clip selected / on the timeline. Re-evaluates
@@ -2249,10 +2252,20 @@
         }
         if (MODAL_LABELS[label]){
           openAIToolModal(label, route);
-        } else if (label === 'B-Roll'){
-          // Task #37 — B-Roll now opens an inline modal instead of a new tab
-          if (typeof openBRollModal === 'function'){ openBRollModal(btn); }
-          else { toast('B-Roll \u2014 loading\u2026'); }
+        } else if (INLINE_MODAL_LABELS[label]){
+          // Task #37/#38/#39 — inline modals (no new tab, no iframe)
+          if (label === 'B-Roll'){
+            if (typeof openBRollModal === 'function') openBRollModal(btn);
+          } else if (label === 'Smart Cut'){
+            if (typeof openSmartCutModal === 'function') openSmartCutModal();
+          } else if (label === 'Scene Detect'){
+            // Scene Detect = silence-based SPLIT (no deletion)
+            var tgt = pickSourceClipForAI('scene');
+            if (!tgt){ toast('Select a V1 clip first'); return; }
+            if (typeof runSmartCut === 'function'){
+              runSmartCut(tgt, 'silence', 1.0, /* splitOnly */ true);
+            }
+          }
         } else {
           try { window.open(route, '_blank'); } catch(_){ location.href = route; }
           toast('Opening ' + label + ' \u2026');
@@ -2617,6 +2630,459 @@
   // Task #31 — Blocking progress modal for long-running AI ops.
   // Renders a non-dismissible overlay with a step list + spinner.
   // advance(i) lights up step i, finish(msg)/fail(msg) close the modal.
+  // ═════════════════════════════════════════════════════════════════
+  // Task #37 — B-Roll inline modal (Stock search + AI-Generated).
+  // Opens a modal with two tabs:
+  //   • "Stock"     — user types a query, server searches Pixabay, grid
+  //                   of previewable clips shown. Click to insert.
+  //   • "AI Search" — server runs Whisper on the selected V1 clip, picks
+  //                   top keywords, auto-searches Pixabay with them.
+  // Selected clip gets downloaded server-side to the editor's upload dir,
+  // then added as a NEW V1 clip positioned after the currently-selected
+  // clip (shifting all following clips right to make room).
+  // ═════════════════════════════════════════════════════════════════
+  function openBRollModal(triggerBtn){
+    var existing = document.getElementById('v10BRollModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+
+    var target = pickSourceClipForAI('broll');
+    if (!target){
+      toast('Add a V1 video clip to the timeline first');
+      return;
+    }
+
+    var bk = document.createElement('div');
+    bk.id = 'v10BRollModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;' +
+      'background:rgba(8,6,18,.75);display:flex;align-items:center;' +
+      'justify-content:center;backdrop-filter:blur(4px)';
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#0c0814;border:1px solid rgba(124,58,237,.35);' +
+      'border-radius:14px;width:min(760px,95vw);height:min(640px,88vh);' +
+      'display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.6);' +
+      'overflow:hidden;color:#e2e0f0;font-family:system-ui,sans-serif';
+
+    panel.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;padding:14px 20px;' +
+        'background:linear-gradient(90deg,rgba(124,58,237,.18),rgba(236,72,153,.08));' +
+        'border-bottom:1px solid rgba(124,58,237,.28)">' +
+        '<span style="font-size:18px">\ud83c\udfac</span>' +
+        '<span style="font-weight:600;font-size:14px">B-Roll Library</span>' +
+        '<span style="flex:1"></span>' +
+        '<button id="broClose" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);' +
+          'border-radius:6px;color:#e2e0f0;padding:5px 10px;font-size:12px;cursor:pointer">Close</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:4px;padding:10px 16px 0">' +
+        '<button class="broTab on" data-bro-tab="stock" style="flex:none;padding:8px 16px;background:rgba(139,92,246,.25);border:1px solid rgba(139,92,246,.5);border-radius:6px 6px 0 0;color:#fff;font-size:12px;font-weight:600;cursor:pointer">\ud83d\udd0d Stock</button>' +
+        '<button class="broTab"    data-bro-tab="ai"    style="flex:none;padding:8px 16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px 6px 0 0;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer">\u2728 AI Search</button>' +
+      '</div>' +
+      '<div style="padding:0 16px 10px;border-bottom:1px solid rgba(124,58,237,.2);display:flex;gap:8px">' +
+        '<input id="broQuery" type="text" placeholder="Search stock footage\u2026" ' +
+          'style="flex:1;padding:8px 12px;background:#160f2a;border:1px solid rgba(124,58,237,.3);' +
+          'border-radius:6px;color:#e2e0f0;font-size:13px;outline:none"/>' +
+        '<button id="broGo" style="padding:8px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
+          'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Search</button>' +
+      '</div>' +
+      '<div id="broGrid" style="flex:1;overflow-y:auto;padding:14px 16px;' +
+        'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">' +
+        '<div style="grid-column:1/-1;color:#5c5a70;font-size:12px;text-align:center;padding:40px 0">' +
+          'Type a search term (e.g. \u201cocean sunset\u201d) and hit Search, or switch to AI Search to auto-pick from your clip.' +
+        '</div>' +
+      '</div>';
+
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#broClose').addEventListener('click', function(){ bk.remove(); });
+    var grid = panel.querySelector('#broGrid');
+    var query = panel.querySelector('#broQuery');
+    var goBtn = panel.querySelector('#broGo');
+
+    function renderLoading(msg){
+      grid.innerHTML = '<div style="grid-column:1/-1;color:#a78bfa;font-size:12px;text-align:center;padding:40px 0">' +
+        '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle"></span>' +
+        (msg || 'Searching\u2026') +
+      '</div>';
+    }
+    function renderError(msg){
+      grid.innerHTML = '<div style="grid-column:1/-1;color:#ef4444;font-size:12px;text-align:center;padding:40px 20px">' + msg + '</div>';
+    }
+    function renderResults(results){
+      if (!results.length){
+        renderError('No results. Try a different search term.');
+        return;
+      }
+      grid.innerHTML = results.map(function(r){
+        var thumb = r.thumbnailUrl || '';
+        var preview = r.previewUrl || '';
+        var dur = r.duration ? Math.round(r.duration) + 's' : '';
+        return '<div class="broCard" data-download="' + encodeURIComponent(r.downloadUrl) + '" ' +
+            'data-name="' + (r.name || 'broll').replace(/"/g, '') + '" ' +
+            'data-duration="' + (r.duration || 0) + '" ' +
+            'style="background:#160f2a;border:1px solid rgba(124,58,237,.2);border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s;position:relative">' +
+          '<div style="aspect-ratio:16/10;background:#0a0815;position:relative;overflow:hidden">' +
+            (preview
+              ? '<video src="' + preview + '" muted loop playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover" onmouseenter="this.play()" onmouseleave="this.pause()"></video>'
+              : ('<img src="' + thumb + '" style="width:100%;height:100%;object-fit:cover"/>')
+            ) +
+            (dur ? '<span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.7);color:#fff;font-size:10px;padding:2px 6px;border-radius:3px">' + dur + '</span>' : '') +
+          '</div>' +
+          '<div style="padding:6px 8px;font-size:11px;color:#e2e0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+            (r.name || 'B-Roll') +
+          '</div>' +
+        '</div>';
+      }).join('');
+      Array.from(grid.querySelectorAll('.broCard')).forEach(function(card){
+        card.addEventListener('click', function(){ pickBRoll(card, target, bk); });
+        card.addEventListener('mouseenter', function(){ card.style.borderColor = '#a78bfa'; card.style.transform = 'translateY(-2px)'; });
+        card.addEventListener('mouseleave', function(){ card.style.borderColor = ''; card.style.transform = ''; });
+      });
+    }
+
+    async function doSearch(q){
+      if (!q || !q.trim()){ toast('Enter a search term'); return; }
+      renderLoading('Searching Pixabay\u2026');
+      try {
+        var r = await fetch('/ai-broll/search-inline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q })
+        });
+        var d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Search failed');
+        renderResults(d.results || []);
+      } catch (err){ renderError(err.message || 'Search error'); }
+    }
+
+    goBtn.addEventListener('click', function(){ doSearch(query.value); });
+    query.addEventListener('keydown', function(e){ if (e.key === 'Enter') doSearch(query.value); });
+    setTimeout(function(){ query.focus(); }, 50);
+
+    // AI Search tab — runs Whisper on the selected clip to get keywords
+    Array.from(panel.querySelectorAll('.broTab')).forEach(function(t){
+      t.addEventListener('click', async function(){
+        Array.from(panel.querySelectorAll('.broTab')).forEach(function(o){
+          o.classList.remove('on');
+          o.style.background = 'rgba(255,255,255,.05)';
+          o.style.borderColor = 'rgba(255,255,255,.1)';
+          o.style.color = '#a78bfa';
+        });
+        t.classList.add('on');
+        t.style.background = 'rgba(139,92,246,.25)';
+        t.style.borderColor = 'rgba(139,92,246,.5)';
+        t.style.color = '#fff';
+        var kind = t.getAttribute('data-bro-tab');
+        if (kind === 'ai'){
+          renderLoading('Analyzing your clip\u2026');
+          try {
+            var cR = await fetch('/video-editor/ai-captions', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl })
+            });
+            var cD = await cR.json();
+            if (!cR.ok) throw new Error(cD.error || 'Analysis failed');
+            var text = (cD.chunks || []).map(function(c){ return c.text; }).join(' ');
+            // Trivial keyword extraction: unique words > 4 chars, drop stopwords
+            var STOP = /^(the|and|that|with|this|have|from|they|your|been|will|about|would|could|should|which|there|their)$/i;
+            var words = text.toLowerCase().match(/[a-z]{5,}/g) || [];
+            var uniq = [];
+            for (var w of words){
+              if (STOP.test(w)) continue;
+              if (uniq.indexOf(w) === -1) uniq.push(w);
+              if (uniq.length >= 3) break;
+            }
+            var q = uniq.join(' ') || 'abstract background';
+            query.value = q;
+            await doSearch(q);
+          } catch (err){ renderError('AI search: ' + err.message); }
+        }
+      });
+    });
+  }
+
+  async function pickBRoll(card, targetClip, modalEl){
+    var url = decodeURIComponent(card.getAttribute('data-download') || '');
+    var name = card.getAttribute('data-name') || 'broll';
+    var dur  = parseFloat(card.getAttribute('data-duration')) || 0;
+    if (!url){ toast('This clip has no downloadable URL'); return; }
+    card.style.opacity = '0.5';
+    card.style.pointerEvents = 'none';
+    var spinner = document.createElement('div');
+    spinner.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);font-size:11px;color:#fff';
+    spinner.textContent = 'Downloading\u2026';
+    card.appendChild(spinner);
+    try {
+      var r = await fetch('/ai-broll/download-inline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: url, name: name })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Download failed');
+      // Insert the b-roll clip into V1 AFTER the currently-selected target.
+      // Shift any V1 clips that follow, so we don't overlap.
+      var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+      var insertDur = parseFloat(d.duration) || dur || 5;
+      var insertWidthPx = Math.max(60, Math.round(insertDur * PPS));
+      var targetLeft = parseFloat(targetClip.style.left) || 0;
+      var targetWidth= parseFloat(targetClip.style.width) || 0;
+      var insertLeftPx = targetLeft + targetWidth;
+
+      // Shift any V1 clips at or after insertLeftPx rightward
+      Array.from(document.querySelectorAll('.mt-track-video .mt-clip')).forEach(function(c){
+        var l = parseFloat(c.style.left) || 0;
+        if (l >= insertLeftPx){ c.style.left = (l + insertWidthPx) + 'px'; }
+      });
+
+      // Build the new clip inline (matching addClipToTimeline's schema)
+      var v1Track = document.querySelector('.mt-track-video');
+      var nc = document.createElement('div');
+      nc.className = 'mt-clip mt-clip-video';
+      nc.style.position = 'absolute';
+      nc.style.left  = insertLeftPx + 'px';
+      nc.style.width = insertWidthPx + 'px';
+      nc.style.top   = '3px';
+      nc.dataset.fileName = '\ud83c\udfac ' + name;
+      nc.dataset.clipType = 'vid';
+      nc.dataset.mediaUrl = d.mediaUrl;
+      nc.dataset.duration = String(insertDur);
+      nc.dataset.sourceOffset = '0';
+      nc.dataset.srcDuration = String(insertDur);
+      nc.dataset.broll = '1';
+      nc.style.background = 'linear-gradient(135deg,#06b6d4,#0ea5e9)';
+      nc.style.color = '#fff';
+      nc.style.overflow = 'hidden';
+      v1Track.appendChild(nc);
+      if (typeof window.buildClipFilmstrip === 'function'){
+        try { window.buildClipFilmstrip(nc, d.mediaUrl, insertDur); } catch(_){}
+      }
+      if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+      toast('B-Roll added: ' + name + ' (' + insertDur.toFixed(1) + 's)');
+      if (modalEl && modalEl.isConnected) modalEl.remove();
+    } catch (err){
+      spinner.textContent = 'Error';
+      card.style.opacity = '';
+      card.style.pointerEvents = '';
+      setTimeout(function(){ spinner.remove(); }, 1800);
+      toast('B-Roll error: ' + err.message);
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #38 — Smart Cut (silence / filler / scene) + #39 Scene Detect
+  // Opens a small mode-picker modal, POSTs to /video-editor/smart-cut,
+  // then razors the selected V1 clip at the returned cut boundaries.
+  // • silence + filler modes — razor into pieces, delete the cut ranges
+  // • scene mode — razor only (keeps all pieces)
+  // • sceneDetectOnly=true — same as scene mode, no deletion
+  // ═════════════════════════════════════════════════════════════════
+  function openSmartCutModal(initialMode){
+    var existing = document.getElementById('v10SmartCutModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('enhance');
+    if (!target || !target.dataset.mediaUrl){
+      toast('Select a V1 clip first');
+      return;
+    }
+    if ((target.dataset.mediaUrl || '').indexOf('blob:') === 0){
+      toast('Upload this file via the sidebar first');
+      return;
+    }
+    var bk = document.createElement('div');
+    bk.id = 'v10SmartCutModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);' +
+      'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;' +
+      'padding:18px;width:min(460px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\u2702\ufe0f SMART CUT</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Choose a mode \u2014 Smart Cut will analyze and edit the selected V1 clip.</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:8px;cursor:pointer">' +
+          '<input type="radio" name="scMode" value="silence" ' + (initialMode === 'filler' ? '' : 'checked') + ' style="margin-top:3px;accent-color:#a78bfa"/>' +
+          '<span><b>Remove silences</b><br><span style="font-size:10px;color:#8886a0">Whisper finds pauses longer than the threshold, razors + deletes them.</span></span>' +
+        '</label>' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:8px;cursor:pointer">' +
+          '<input type="radio" name="scMode" value="filler" ' + (initialMode === 'filler' ? 'checked' : '') + ' style="margin-top:3px;accent-color:#a78bfa"/>' +
+          '<span><b>Remove filler words</b><br><span style="font-size:10px;color:#8886a0">Cuts out "uh, um, like, you know" and similar.</span></span>' +
+        '</label>' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:8px;cursor:pointer">' +
+          '<input type="radio" name="scMode" value="scene" style="margin-top:3px;accent-color:#a78bfa"/>' +
+          '<span><b>Split at scene changes</b><br><span style="font-size:10px;color:#8886a0">Uses perceptual diff to razor the clip at visual cuts (keeps all content).</span></span>' +
+        '</label>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px" id="scThreshRow">' +
+        '<span style="color:#8886a0;flex:none">Silence threshold</span>' +
+        '<input id="scThresh" type="range" min="0.5" max="3" step="0.1" value="1" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="scThreshVal" style="color:#fde047;font-weight:600;min-width:32px;text-align:right">1.0s</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button id="scCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="scRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Run \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+
+    var thresh = panel.querySelector('#scThresh');
+    var threshVal = panel.querySelector('#scThreshVal');
+    thresh.addEventListener('input', function(){ threshVal.textContent = parseFloat(thresh.value).toFixed(1) + 's'; });
+    panel.querySelector('#scCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#scRun').addEventListener('click', async function(){
+      var mode = panel.querySelector('input[name="scMode"]:checked').value;
+      bk.remove();
+      await runSmartCut(target, mode, parseFloat(thresh.value) || 1.0, false);
+    });
+  }
+
+  async function runSmartCut(clip, mode, thresholdSec, splitOnly){
+    var prog = showBlockingProgressModal(splitOnly ? 'Scene Detect' : 'Smart Cut', [
+      'Analyzing audio / video\u2026',
+      'Finding cut points\u2026',
+      'Applying edits\u2026'
+    ]);
+    var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+    window.addEventListener('beforeunload', beforeUnload);
+    try {
+      prog.advance(0);
+      var r = await fetch('/video-editor/smart-cut', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: clip.dataset.mediaUrl, mode: mode, thresholdSec: thresholdSec })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Smart cut failed');
+
+      prog.advance(1);
+      var cuts = (d.cuts || []).slice().sort(function(a,b){ return a.start - b.start; });
+      if (!cuts.length){
+        prog.finish('No ' + mode + ' moments found in this clip.');
+        return;
+      }
+
+      prog.advance(2);
+      // Convert each cut's seconds to px-within-clip, adjusting for the
+      // clip's sourceOffset. Discard cuts that fall outside the visible
+      // clip range.
+      var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+      var srcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+      var clipDur= parseFloat(clip.dataset.duration) || (parseFloat(clip.style.width) / PPS);
+      var srcDur = parseFloat(clip.dataset.srcDuration) || (clipDur + srcOff);
+
+      // Build a working list of (startPx, endPx) relative to the clip's left edge
+      var cutPx = cuts.map(function(c){
+        var s = Math.max(0, c.start - srcOff);
+        var e = Math.max(0, c.end   - srcOff);
+        // Clamp to the clip's visible duration
+        if (s > clipDur) return null;
+        if (e > clipDur) e = clipDur;
+        return { startPx: s * PPS, endPx: e * PPS, reason: c.reason };
+      }).filter(Boolean);
+      if (!cutPx.length){
+        prog.finish('No cut points fall within this clip.');
+        return;
+      }
+
+      if (mode === 'scene' || splitOnly){
+        // Razor-only mode — split at each start, keep all pieces.
+        // Walk in reverse so earlier cuts don't invalidate later offsets.
+        cutPx.slice().reverse().forEach(function(cp){
+          // After each reverse iteration, clip may have been split; the
+          // piece we care about is whichever one contains cp.startPx.
+          var curClip = clip;
+          var curLeft = parseFloat(curClip.style.left) || 0;
+          if (cp.startPx > 0 && cp.startPx < parseFloat(curClip.style.width)){
+            try { window.razorSplit(curClip, cp.startPx); } catch(_){}
+          }
+        });
+        prog.finish('Split at ' + cutPx.length + ' scene boundary' + (cutPx.length === 1 ? '' : 'ies'));
+        return;
+      }
+
+      // silence / filler — razor at each cut's start + end, then delete the
+      // middle segment. Iterate reverse order so pixel offsets remain valid.
+      var originalLeft = parseFloat(clip.style.left) || 0;
+      var totalRemovedPx = 0;
+      // Map cut ranges sorted ascending
+      var rangesAsc = cutPx.slice().sort(function(a,b){ return a.startPx - b.startPx; });
+
+      // For clean multi-cut handling, rebuild the clip as a sequence of
+      // KEEP segments (the inverse of the cut ranges). Then replace the
+      // clip with N new clips.
+      var keepRanges = [];
+      var cursor = 0;
+      rangesAsc.forEach(function(cp){
+        if (cp.startPx > cursor + 4) keepRanges.push([cursor, cp.startPx]);
+        cursor = Math.max(cursor, cp.endPx);
+      });
+      var clipEndPx = parseFloat(clip.style.width) || (clipDur * PPS);
+      if (cursor < clipEndPx - 4) keepRanges.push([cursor, clipEndPx]);
+
+      if (!keepRanges.length){
+        prog.fail('The entire clip would be removed. Widen the threshold.');
+        return;
+      }
+
+      // Replace the original clip with keep-range children
+      var parent = clip.parentNode;
+      var baseAttrs = {
+        fileName: clip.dataset.fileName,
+        mediaUrl: clip.dataset.mediaUrl,
+        clipType: clip.dataset.clipType || 'vid',
+        srcDuration: clip.dataset.srcDuration || ''
+      };
+      // Shift any clips that were to the RIGHT of the original clip LEFT
+      // by the total removed duration (so the timeline stays compact).
+      var totalRemovedSec = 0;
+      rangesAsc.forEach(function(cp){ totalRemovedSec += (cp.endPx - cp.startPx) / PPS; });
+      var origRight = originalLeft + clipEndPx;
+      Array.from(document.querySelectorAll('.mt-track-video .mt-clip')).forEach(function(c){
+        if (c === clip) return;
+        var l = parseFloat(c.style.left) || 0;
+        if (l >= origRight){ c.style.left = (l - totalRemovedSec * PPS) + 'px'; }
+      });
+
+      // Remove the original
+      clip.remove();
+      // Insert the keep-range clips at their compact positions
+      var writeCursor = originalLeft;
+      keepRanges.forEach(function(k){
+        var segStartPx = k[0], segEndPx = k[1];
+        var segW = segEndPx - segStartPx;
+        if (segW < 4) return;
+        var seg = document.createElement('div');
+        seg.className = 'mt-clip mt-clip-video';
+        seg.style.position = 'absolute';
+        seg.style.top = '3px';
+        seg.style.left = writeCursor + 'px';
+        seg.style.width = segW + 'px';
+        seg.style.overflow = 'hidden';
+        seg.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
+        seg.style.color = '#fff';
+        seg.dataset.fileName = baseAttrs.fileName;
+        seg.dataset.mediaUrl = baseAttrs.mediaUrl;
+        seg.dataset.clipType = baseAttrs.clipType;
+        seg.dataset.duration = String(segW / PPS);
+        seg.dataset.sourceOffset = String(srcOff + segStartPx / PPS);
+        if (baseAttrs.srcDuration) seg.dataset.srcDuration = baseAttrs.srcDuration;
+        parent.appendChild(seg);
+        if (typeof window.buildClipFilmstrip === 'function'){
+          try { window.buildClipFilmstrip(seg, baseAttrs.mediaUrl, segW / PPS); } catch(_){}
+        }
+        writeCursor += segW;
+      });
+
+      if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+      var removedLabel = mode === 'filler' ? 'filler word' : 'silence';
+      prog.finish('Removed ' + cutPx.length + ' ' + removedLabel + (cutPx.length === 1 ? '' : 's') +
+                  ' \u00b7 saved ' + totalRemovedSec.toFixed(1) + 's');
+    } catch (err){
+      prog.fail(err.message || String(err));
+    } finally {
+      window.removeEventListener('beforeunload', beforeUnload);
+    }
+  }
+
   function showBlockingProgressModal(title, steps){
     var old = document.getElementById('v10BlockingProgress');
     if (old instanceof Element) old.remove();

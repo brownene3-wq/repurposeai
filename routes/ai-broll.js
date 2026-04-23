@@ -959,4 +959,129 @@ router.post('/apply', requireAuth, async (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════
+// Task #37 — POST /ai-broll/search-inline
+// Lightweight Pixabay search that returns a list of previewable clips.
+// Used by the editor's in-place B-Roll modal (no new-window redirect).
+// Body: { query: string, max?: int (default 12) }
+// Returns: { success, results: [{id, name, thumbnailUrl, previewUrl,
+//   downloadUrl, duration}] }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/search-inline', requireAuth, async (req, res) => {
+  try {
+    const q = String((req.body || {}).query || '').trim().slice(0, 80);
+    const max = Math.max(1, Math.min(24, parseInt((req.body || {}).max, 10) || 12));
+    if (!q){
+      return res.status(400).json({ error: 'query required' });
+    }
+    const apiKey = process.env.PIXABAY_API_KEY;
+    if (!apiKey){
+      return res.status(500).json({
+        error: 'Stock library not configured. Set PIXABAY_API_KEY.'
+      });
+    }
+    const url = 'https://pixabay.com/api/videos/?key=' + apiKey +
+                '&q=' + encodeURIComponent(q) +
+                '&per_page=' + max +
+                '&safesearch=true';
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Pixabay error ' + r.status);
+    const data = await r.json();
+    const results = (data.hits || []).slice(0, max).map(function(hit){
+      const vids = hit.videos || {};
+      return {
+        id: 'pxb-' + hit.id,
+        name: hit.tags ? hit.tags.split(',')[0].trim() : 'B-Roll',
+        keywords: hit.tags ? hit.tags.split(',').slice(0, 3).map(s => s.trim()) : [],
+        duration: hit.duration || 0,
+        thumbnailUrl: hit.picture_id ? ('https://i.vimeocdn.com/video/' + hit.picture_id + '_295x166.jpg') : '',
+        previewUrl:   (vids.tiny   && vids.tiny.url)   || (vids.small && vids.small.url) || '',
+        downloadUrl:  (vids.medium && vids.medium.url) || (vids.small && vids.small.url) || (vids.tiny && vids.tiny.url) || '',
+        width:  ((vids.medium && vids.medium.width)   || (vids.small && vids.small.width)  || 0),
+        height: ((vids.medium && vids.medium.height)  || (vids.small && vids.small.height) || 0),
+        artist: hit.user || 'Pixabay'
+      };
+    });
+    res.json({ success: true, results: results });
+  } catch (err){
+    console.error('[ai-broll search-inline]', err);
+    res.status(500).json({ error: err.message || 'Search failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #37 — POST /ai-broll/download-inline
+// Given a Pixabay video URL from search-inline, downloads it server-side
+// to the video-editor uploads dir so the editor can insert it as a V1
+// clip via its normal /video-editor/download/<name> path.
+// Body: { videoUrl: string, name?: string }
+// Returns: { success, mediaUrl, filename, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/download-inline', requireAuth, async (req, res) => {
+  try {
+    const videoUrl = String((req.body || {}).videoUrl || '');
+    if (!videoUrl.startsWith('https://')){
+      return res.status(400).json({ error: 'videoUrl must be https://' });
+    }
+    const veUploadDir = path.join('/tmp', 'repurpose-uploads');
+    if (!fs.existsSync(veUploadDir)) fs.mkdirSync(veUploadDir, { recursive: true });
+    const safeName = ((req.body || {}).name || 'broll').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40);
+    const outName = 'broll_' + safeName + '_' + Date.now() + '_' + uuidv4().slice(0, 8) + '.mp4';
+    const outPath = path.join(veUploadDir, outName);
+
+    // Download via node https
+    await new Promise(function(resolve, reject){
+      const fetchUrl = (u) => new Promise((innerResolve, innerReject) => {
+        https.get(u, function(resp){
+          if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location){
+            resp.resume();
+            innerResolve(fetchUrl(resp.headers.location));
+            return;
+          }
+          if (resp.statusCode !== 200){
+            innerReject(new Error('HTTP ' + resp.statusCode));
+            return;
+          }
+          const ws = fs.createWriteStream(outPath);
+          resp.pipe(ws);
+          ws.on('finish', function(){ ws.close(); innerResolve(); });
+          ws.on('error', innerReject);
+        }).on('error', innerReject);
+      });
+      fetchUrl(videoUrl).then(resolve).catch(reject);
+    });
+
+    // Probe duration
+    var duration = 0;
+    if (ffmpegPath){
+      try {
+        const ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+        const probeOut = await new Promise(function(resolve){
+          let out = '';
+          const p = spawn(ffprobeLocal, [
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            outPath
+          ]);
+          p.stdout.on('data', d => out += d.toString());
+          p.on('close', () => resolve(out));
+          p.on('error', () => resolve(''));
+        });
+        duration = parseFloat(probeOut.trim()) || 0;
+      } catch(_){}
+    }
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration
+    });
+  } catch (err){
+    console.error('[ai-broll download-inline]', err);
+    res.status(500).json({ error: err.message || 'Download failed' });
+  }
+});
+
 module.exports = router;

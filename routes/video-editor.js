@@ -9618,6 +9618,155 @@ router.post('/ai-enhance', requireAuth, async (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════
+// Task #38 + #39 — POST /video-editor/smart-cut
+// Analyzes a media file and returns a list of time ranges to cut or
+// split. Three modes:
+//   • 'silence' — Whisper word timestamps; gaps > thresholdSec between
+//                 words are reported as { start, end, reason:'silence' }.
+//   • 'filler'  — Whisper words matching the filler vocab are reported
+//                 individually as { start, end, reason:'filler:<word>' }.
+//   • 'scene'   — FFmpeg scene-change filter (perceptual diff). Returns
+//                 split POINTS as { start, end:start, reason:'scene' }.
+// Body: { mediaUrl: string, mode: 'silence'|'filler'|'scene',
+//         thresholdSec?: number (silence only, default 1.0),
+//         sceneThreshold?: number (scene only, default 0.4, range 0-1) }
+// Returns: { success, mode, cuts: [...], totalDuration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/smart-cut', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    var mediaUrl = (req.body || {}).mediaUrl;
+    var mode     = String((req.body || {}).mode || 'silence').toLowerCase();
+    var threshSilence = Math.max(0.25, Math.min(5, parseFloat((req.body || {}).thresholdSec) || 1.0));
+    var threshScene   = Math.max(0.1,  Math.min(0.9, parseFloat((req.body || {}).sceneThreshold) || 0.4));
+
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({ error: 'Media not found on server' });
+    }
+
+    // Scene mode uses FFmpeg only (no Whisper needed)
+    if (mode === 'scene'){
+      var sceneCuts = await new Promise(function(resolve, reject){
+        var out = '';
+        var p = spawn(ffmpegPath, [
+          '-i', srcPath,
+          '-filter:v', "select='gt(scene," + threshScene.toFixed(3) + ")',showinfo",
+          '-f', 'null', '-'
+        ]);
+        p.stderr.on('data', function(d){ out += d.toString(); });
+        p.on('close', function(){
+          // Parse `pts_time:X.XXX` from showinfo output
+          var re = /pts_time:([0-9.]+)/g, m, times = [];
+          while ((m = re.exec(out)) !== null){ times.push(parseFloat(m[1])); }
+          resolve(times.filter(function(t){ return t > 0.1; }));
+        });
+        p.on('error', reject);
+      });
+      return res.json({
+        success: true,
+        mode: 'scene',
+        cuts: sceneCuts.map(function(t){ return { start: t, end: t, reason: 'scene' }; })
+      });
+    }
+
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY required for silence/filler modes' });
+    }
+
+    // Silence + filler modes share Whisper extraction
+    var mp3Path = path.join(uploadDir, 'smartcut_' + Date.now() + '_' + req.user.id + '.mp3');
+    await new Promise(function(resolve, reject){
+      var p = spawn(ffmpegPath, [
+        '-fflags', '+genpts',
+        '-i', srcPath,
+        '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k',
+        '-ss', '0',
+        '-af', 'aresample=async=1:first_pts=0',
+        '-avoid_negative_ts', 'make_zero',
+        '-map_metadata', '-1',
+        '-reset_timestamps', '1',
+        '-y', mp3Path
+      ]);
+      var err = '';
+      p.stderr.on('data', function(d){ err += d.toString(); });
+      p.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Audio extract failed: ' + err.slice(-200)));
+      });
+      p.on('error', reject);
+    });
+
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var audioBuffer = fs.readFileSync(mp3Path);
+    var file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+    var transcript = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: file,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word']
+    });
+    try { fs.unlinkSync(mp3Path); } catch(_){}
+
+    var words = (transcript.words || []).map(function(w){
+      return { word: w.word, start: w.start, end: w.end };
+    });
+    var duration = transcript.duration || (words.length ? words[words.length - 1].end : 0);
+
+    var cuts = [];
+    if (mode === 'silence'){
+      // Gaps > threshSilence between consecutive word ends & next word start
+      var prevEnd = 0;
+      for (var i = 0; i < words.length; i++){
+        var gap = words[i].start - prevEnd;
+        if (gap >= threshSilence){
+          cuts.push({ start: prevEnd, end: words[i].start, reason: 'silence' });
+        }
+        prevEnd = words[i].end;
+      }
+      // Trailing silence
+      if (duration - prevEnd >= threshSilence){
+        cuts.push({ start: prevEnd, end: duration, reason: 'silence' });
+      }
+    } else if (mode === 'filler'){
+      // Vocabulary of fillers (case-insensitive, strips trailing punctuation)
+      var FILLERS = /^(uh|uhh|uhhh|um|umm|ummm|er|erm|hmm|like|you\s+know|basically|literally|actually|so|well|right)$/i;
+      // For multi-word fillers we need a sliding window pass
+      for (var j = 0; j < words.length; j++){
+        var w1 = String(words[j].word || '').trim().replace(/[.,!?;:]+$/, '');
+        if (FILLERS.test(w1)){
+          cuts.push({ start: words[j].start, end: words[j].end, reason: 'filler:' + w1.toLowerCase() });
+          continue;
+        }
+        if (j + 1 < words.length){
+          var w2 = w1 + ' ' + String(words[j+1].word || '').trim().replace(/[.,!?;:]+$/, '');
+          if (FILLERS.test(w2)){
+            cuts.push({ start: words[j].start, end: words[j+1].end, reason: 'filler:' + w2.toLowerCase() });
+            j++; // skip the paired word
+          }
+        }
+      }
+    } else {
+      return res.status(400).json({ error: 'Unknown mode: ' + mode });
+    }
+
+    res.json({
+      success: true,
+      mode: mode,
+      cuts: cuts,
+      totalDuration: duration,
+      wordCount: words.length
+    });
+  } catch (err){
+    console.error('[smart-cut]', err);
+    res.status(500).json({ error: err.message || 'Smart cut failed' });
+  }
+});
+
 // POST /video-editor/ai-captions
 // body: { mediaUrl: string }
 // response: { success, words: [{word, start, end}, ...], chunks: [{text, start, end}, ...] }

@@ -409,6 +409,10 @@
     showToast('Clip split');
     return true;
   }
+  // Task #38/#39 — expose razor + compact helpers so the AI smart-cut
+  // and scene-detect handlers in v10-editor-redesign.js can split clips
+  // at returned timestamps without having to reimplement the trim math.
+  try { window.razorSplit = razorSplit; } catch(_){}
 
   function makeClipInteractive(clip){
     if (clip.dataset.interactive) return;
@@ -1368,6 +1372,7 @@
       cursor += (parseFloat(c.style.width) || 0);
     });
   }
+  try { window.compactVideoTrack = compactVideoTrack; } catch(_){}
 
   // ── Program Monitor simulation ──────────────────────────────────
   // A toggleable <canvas> overlay that COMPOSITES the timeline frame-by-frame.
