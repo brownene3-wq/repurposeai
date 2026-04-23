@@ -631,18 +631,38 @@ function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, options) 
     return { time: pos.time, x: Math.round(sx / c), y: Math.round(sy / c) };
   });
 
+  // Decimate the keyframes used for the piecewise expression. FFmpeg's
+  // expression evaluator chokes on very deep `if(between(...), a, if(...))`
+  // chains: the user's 48s clip with 0.25s sampling produced 192 nested
+  // if() calls per subject (~12KB expression), which triggered
+  // "Failed to configure input pad ... Error reinitializing filters!"
+  // at runtime. 60 keyframes is plenty — the moving average above already
+  // dampens sub-second jitter, and face tracking doesn't need finer
+  // interpolation than ~1Hz.
+  const MAX_KEYFRAMES = 60;
+  let keyframes = smoothed;
+  if (smoothed.length > MAX_KEYFRAMES) {
+    keyframes = [];
+    const step = smoothed.length / MAX_KEYFRAMES;
+    for (let i = 0; i < smoothed.length; i += step) {
+      keyframes.push(smoothed[Math.floor(i)]);
+    }
+    const last = smoothed[smoothed.length - 1];
+    if (keyframes[keyframes.length - 1] !== last) keyframes.push(last);
+  }
+
   // Piecewise-linear FFmpeg expression (same technique as single-subject tracking).
   const xParts = [], yParts = [];
-  for (let i = 0; i < smoothed.length - 1; i++) {
-    const t0 = smoothed[i].time, t1 = smoothed[i + 1].time;
-    const x0 = smoothed[i].x,    x1 = smoothed[i + 1].x;
-    const y0 = smoothed[i].y,    y1 = smoothed[i + 1].y;
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    const t0 = keyframes[i].time, t1 = keyframes[i + 1].time;
+    const x0 = keyframes[i].x,    x1 = keyframes[i + 1].x;
+    const y0 = keyframes[i].y,    y1 = keyframes[i + 1].y;
     const dt = (t1 - t0) || 0.001;
     xParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${x0}+(${x1}-${x0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
     yParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${y0}+(${y1}-${y0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
   }
-  const lastX = smoothed[smoothed.length - 1].x;
-  const lastY = smoothed[smoothed.length - 1].y;
+  const lastX = keyframes[keyframes.length - 1].x;
+  const lastY = keyframes[keyframes.length - 1].y;
   let xExpr = String(lastX), yExpr = String(lastY);
   if (xParts.length > 0) {
     xExpr = xParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastX));

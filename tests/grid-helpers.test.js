@@ -179,6 +179,25 @@ t('min-size: tiny face wide-shot crop not smaller than cell/2.5',
 const legacy = H.computeSubjectCropExpr(subjA, 1920, 1080, 540, 540, 2.5);
 t('back-compat: numeric 6th arg still accepted', legacy.cropW > 0);
 
+// --- Decimation (regression: 192-sample clip produced 12KB expressions,
+// ffmpeg failed with "Failed to configure input pad / Error reinitializing filters!") ---
+// Build a synthetic subject with 250 samples and verify the generated
+// expression stays under a sane length budget.
+const bigSamples = [];
+for (let i = 0; i < 250; i++) {
+  bigSamples.push({ time: i * 0.25, cx: 0.5 + 0.1 * Math.sin(i / 10), cy: 0.5, w: 0.12, h: 0.16 });
+}
+const bigSubj = fakeSubject(bigSamples);
+const bigRes = H.computeSubjectCropExpr(bigSubj, 1920, 1080, 540, 540);
+t('decimation: 250-sample expression stays under 20k chars',
+  bigRes.xExpr.length < 20000,
+  `xExpr length=${bigRes.xExpr.length}`);
+// Count nested if() as a proxy for keyframes
+const ifCount = (bigRes.xExpr.match(/if\(between/g) || []).length;
+t('decimation: at most 60 keyframes (nested if()s) in expression',
+  ifCount <= 60,
+  `ifCount=${ifCount}`);
+
 // ---------- buildGridFilterGraph ----------
 const subs = [subj, subj];
 const cells2 = H.computeGridCells(2, 16);
