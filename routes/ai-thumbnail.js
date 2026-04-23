@@ -762,51 +762,88 @@ Produce exactly ${count} thumbnail concepts. Return JSON shaped as:
   }));
 }
 
-// Map aspect ratio string to the GPT-image-1 size parameter.
-function aspectToImageSize(aspect) {
-  if (aspect === '9:16') return '1024x1536';
-  if (aspect === '1:1') return '1024x1024';
-  return '1536x1024'; // default 16:9
+// Normalize aspect ratio to a value Flux Schnell accepts directly as input.
+function aspectForFlux(aspect) {
+  if (aspect === '9:16') return '9:16';
+  if (aspect === '1:1') return '1:1';
+  return '16:9'; // default
 }
 
-// Call GPT-image-1 via raw REST (bypasses any SDK version gaps for this model).
-// Returns { filename, bytes } — the image is decoded from the b64_json response
-// and saved to outputDir.
+// Generate a thumbnail image via Replicate's Flux Schnell model.
+// Schnell is ~$0.003/image — roughly 10-15× cheaper than GPT-image-1 medium —
+// and the visual quality is strong for photographic/illustrative content. We
+// overlay the caption ourselves in the UI, so Flux's weaker text rendering
+// doesn't matter here.
+// Flow: POST a prediction with Prefer: wait=60 for synchronous behavior,
+// poll if still processing (Schnell usually completes in 2-4s), then fetch
+// the output URL and save the bytes to outputDir.
 async function generateAIImage({ prompt, aspect, jobId, index }) {
-  const size = aspectToImageSize(aspect);
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
+  const apiToken = process.env.REPLICATE_API_TOKEN;
+  if (!apiToken) throw new Error('REPLICATE_API_TOKEN not configured');
 
-  const resp = await fetch('https://api.openai.com/v1/images/generations', {
+  const body = {
+    input: {
+      prompt: prompt,
+      aspect_ratio: aspectForFlux(aspect),
+      num_outputs: 1,
+      output_format: 'png',
+      output_quality: 90,
+      megapixels: '1',
+      num_inference_steps: 4,
+      go_fast: true
+    }
+  };
+
+  const startResp = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
     method: 'POST',
     headers: {
-      'Authorization': 'Bearer ' + apiKey,
-      'Content-Type': 'application/json'
+      'Authorization': 'Bearer ' + apiToken,
+      'Content-Type': 'application/json',
+      'Prefer': 'wait=60'
     },
-    body: JSON.stringify({
-      model: 'gpt-image-1',
-      prompt: prompt,
-      size: size,
-      n: 1,
-      quality: 'medium'
-    })
+    body: JSON.stringify(body)
   });
 
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '');
-    throw new Error(`gpt-image-1 HTTP ${resp.status}: ${errText.slice(0, 300)}`);
+  if (!startResp.ok) {
+    const errText = await startResp.text().catch(() => '');
+    throw new Error(`Replicate HTTP ${startResp.status}: ${errText.slice(0, 300)}`);
   }
 
-  const data = await resp.json();
-  const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
-  if (!b64) throw new Error('gpt-image-1 returned no image data');
+  let data = await startResp.json();
+
+  // If the prediction didn't complete within the sync-wait window, poll.
+  const pollStart = Date.now();
+  while (data && (data.status === 'starting' || data.status === 'processing')) {
+    if (Date.now() - pollStart > 60000) {
+      throw new Error('Replicate prediction timed out after 60s');
+    }
+    await new Promise(r => setTimeout(r, 1500));
+    const pollUrl = data.urls && data.urls.get;
+    if (!pollUrl) throw new Error('Replicate response missing poll URL');
+    const pollResp = await fetch(pollUrl, {
+      headers: { 'Authorization': 'Bearer ' + apiToken }
+    });
+    if (!pollResp.ok) throw new Error(`Replicate poll HTTP ${pollResp.status}`);
+    data = await pollResp.json();
+  }
+
+  if (!data || data.status !== 'succeeded') {
+    const msg = data && data.error ? String(data.error).slice(0, 300) : 'no error detail';
+    throw new Error(`Replicate prediction ${data && data.status}: ${msg}`);
+  }
+
+  const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+  if (!imageUrl) throw new Error('Replicate returned no image URL');
+
+  const imgResp = await fetch(imageUrl);
+  if (!imgResp.ok) throw new Error(`Failed to download generated image: HTTP ${imgResp.status}`);
+  const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
 
   const filename = `ai-thumb-${jobId}-${index}.png`;
   const outputPath = path.join(outputDir, filename);
-  fs.writeFileSync(outputPath, Buffer.from(b64, 'base64'));
+  fs.writeFileSync(outputPath, imgBuffer);
   return { filename };
 }
-
 // Pull the best-effort YouTube title when we have a URL. Falls back to empty
 // string if yt-dlp/ytdl-core aren't available or the call fails.
 async function getYouTubeTitle(videoUrl) {
