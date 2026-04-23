@@ -1377,7 +1377,7 @@ router.get('/', requireAuth, (req, res) => {
             <div class="section-title">📥 Export</div>
             <!-- The class on these two buttons is set dynamically by setExportButtonState(). -->
             <button class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
-              Apply &amp; Export
+              Apply
             </button>
             <button class="btn-secondary" style="width: 100%;" id="downloadBtn" onclick="downloadVideo()" disabled>
               Download Video
@@ -1784,9 +1784,9 @@ router.get('/', requireAuth, (req, res) => {
 
         transcript = data.transcript;
         updateProgress(100, 'Transcript ready!');
-        showToast('Captions generated! Now click Apply & Export.', 'success');
+        showToast('Captions generated! Now click Apply.', 'success');
         // State B — captions are now ready, the next thing the user should do
-        // is hit Apply & Export, so it should be the prominent purple action.
+        // is hit Apply, so it should be the prominent purple action.
         setExportButtonState('B');
       } catch (err) {
         showToast('Caption generation failed: ' + err.message, 'error');
@@ -1862,7 +1862,7 @@ router.get('/', requireAuth, (req, res) => {
     // Download video
     async function downloadVideo() {
       if (!generatedVideoPath) {
-        showToast('Please apply & export captions first', 'error');
+        showToast('Please click Apply first to render your captions.', 'error');
         return;
       }
 
@@ -1929,11 +1929,11 @@ router.get('/', requireAuth, (req, res) => {
     }
 
     // ===== Export-section button state machine =====
-    // Three states drive the Apply & Export / Download Video pair so the user
-    // always knows what the next click should be:
+    // Three states drive the Apply / Download Video pair so the user always
+    // knows what the next click should be:
     //   A = pre-generation     -> both look like neutral secondary buttons
-    //   B = captions ready     -> Apply & Export becomes the primary purple CTA
-    //   C = post-processing    -> Apply & Export steps back, Download becomes purple
+    //   B = captions ready     -> Apply becomes the primary purple CTA
+    //   C = post-processing    -> Apply steps back (locked), Download becomes purple
     function setExportButtonState(state) {
       const exportBtn = document.getElementById('exportBtn');
       const downloadBtn = document.getElementById('downloadBtn');
