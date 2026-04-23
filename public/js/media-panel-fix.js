@@ -965,6 +965,94 @@
     probe.addEventListener('seeked', onSeeked);
     probe.addEventListener('error', function(){ clearTimeout(safety); cleanup(); });
   }
+  try { window.buildClipFilmstrip = buildClipFilmstrip; } catch(_){}
+
+  // ── Task #30: Fade In/Out volume-ramp visualization ──────────────
+  // Paints an SVG polyline on A1 and V1 clips showing the current
+  // volume envelope across the clip (rising during fadeIn, flat at
+  // the clip's native volume, falling during fadeOut). Exposed on
+  // window so the fade slider handler in v10-editor-redesign.js can
+  // call it after every slider move. Also called from addClipToTimeline
+  // at creation time, and re-run by an attribute observer whenever
+  // dataset fade/volume/width changes.
+  function refreshClipFadeOverlay(clip){
+    if (!clip || !clip.classList) return;
+    var isAudio = clip.classList.contains('mt-clip-audio');
+    var isVideo = clip.classList.contains('mt-clip-video');
+    if (!isAudio && !isVideo) return;
+    // Remove any prior overlay
+    var old = clip.querySelector(':scope > svg[data-v10-fade]');
+    if (old) old.remove();
+
+    var fadeIn  = Math.max(0, parseFloat(clip.dataset.fadeIn)  || 0);
+    var fadeOut = Math.max(0, parseFloat(clip.dataset.fadeOut) || 0);
+    if (fadeIn <= 0 && fadeOut <= 0) return; // nothing to draw
+
+    var widthPx = parseFloat(clip.style.width) || 0;
+    if (widthPx <= 0) return;
+    var HEIGHT = 30;
+    // Volume (0–1) — captures user-set level; visualization scales with it
+    var vol = parseFloat(clip.dataset.volume);
+    if (!isFinite(vol)) vol = 100;
+    if (clip.dataset.muted === 'true') vol = 0;
+    var volFrac = Math.max(0, Math.min(2, vol / 100)); // 0–2 maps to 0–1 of the y range
+    var topY = HEIGHT - Math.min(HEIGHT - 2, (HEIGHT - 2) * Math.min(1, volFrac)); // baseline y at "full volume"
+    // Convert fade seconds to pixels. When TIMELINE_PX_PER_SEC global
+    // isn't defined, fall back to 10 (matches the default elsewhere).
+    var PPS = (typeof TIMELINE_PX_PER_SEC === 'number') ? TIMELINE_PX_PER_SEC : 10;
+    var inPx  = Math.min(widthPx / 2, fadeIn  * PPS);
+    var outPx = Math.min(widthPx / 2, fadeOut * PPS);
+
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('data-v10-fade', '1');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('viewBox', '0 0 ' + widthPx + ' ' + HEIGHT);
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;' +
+      'pointer-events:none;z-index:3';
+
+    // Build the envelope polyline. Start at bottom-left (silent), climb
+    // to top at inPx, hold until (width - outPx), drop to bottom-right.
+    var points = [
+      [0, HEIGHT - 1],
+      [inPx, topY],
+      [widthPx - outPx, topY],
+      [widthPx, HEIGHT - 1]
+    ];
+    // Filled area UNDER the envelope (translucent yellow for A1, violet for V1)
+    var fillClr = isAudio ? 'rgba(253,224,71,.28)' : 'rgba(168,85,247,.22)';
+    var lineClr = isAudio ? '#fde047' : '#c084fc';
+    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points',
+      points.map(function(p){ return p.join(','); }).join(' ') +
+      ' ' + widthPx + ',' + HEIGHT + ' 0,' + HEIGHT
+    );
+    poly.setAttribute('fill', fillClr);
+    poly.setAttribute('stroke', 'none');
+    svg.appendChild(poly);
+
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    line.setAttribute('points', points.map(function(p){ return p.join(','); }).join(' '));
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', lineClr);
+    line.setAttribute('stroke-width', '1.5');
+    line.setAttribute('stroke-linejoin', 'round');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(line);
+
+    // Ensure clip is positioned relative so SVG absolute-positions correctly
+    if (clip.style.position !== 'absolute' && clip.style.position !== 'relative'){
+      clip.style.position = 'absolute';
+    }
+    clip.appendChild(svg);
+  }
+  try { window.refreshClipFadeOverlay = refreshClipFadeOverlay; } catch(_){}
+
+  // Redraw overlays for every clip on a track (call after a broadcast FX update)
+  function refreshAllFadeOverlays(){
+    document.querySelectorAll('.mt-track-audio .mt-clip, .mt-track-video .mt-clip')
+      .forEach(function(c){ try { refreshClipFadeOverlay(c); } catch(_){} });
+  }
+  try { window.refreshAllFadeOverlays = refreshAllFadeOverlays; } catch(_){}
 
   function addClipToTimeline(fileName, mediaType, duration, mediaUrl) {
     var track = findTargetTrack(mediaType);
@@ -1382,6 +1470,11 @@
   var _a1Routes   = {};     // url -> { mes, gain }
   var _a1Timers   = [];
   var _a1Playing  = [];
+
+  // Task #28 — expose the A1 audio cache so the sidebar's volume slider can
+  // look up the exact live <audio> element by URL (no flaky CSS attribute
+  // match against normalized/blob src). Per-URL ref is 100% reliable.
+  try { window.__v10GetA1Audio = function(url){ return (url && _a1AudioEls[url]) || null; }; } catch(_){}
 
   function getOrCreateA1Audio(url){
     if (!url) return null;

@@ -1787,11 +1787,29 @@
         var label = card.querySelector('.v10-ac-voltxt');
         // Reach into the live <audio> element for this URL so volume /
         // mute changes take effect IMMEDIATELY (not just on next play).
+        //
+        // Task #28 — Uploaded local audio files get stored in the
+        // _a1AudioEls URL-keyed cache in media-panel-fix.js. The cache
+        // lookup via window.__v10GetA1Audio() is 100% reliable because
+        // it uses the same URL string the caller stored. The old
+        // CSS.escape-based querySelector was unreliable for blob: URLs
+        // (browser normalizes them) and its `|| querySelector('[data-v10-a1]')`
+        // fallback returned an ARBITRARY audio element, silently applying
+        // volume changes to the wrong clip.
         function getLiveAudio(){
           var url = clip.dataset.mediaUrl;
           if (!url) return null;
-          return document.querySelector('audio[data-v10-a1][src="' + CSS.escape(url) + '"]')
-              || document.querySelector('audio[data-v10-a1]');
+          if (typeof window.__v10GetA1Audio === 'function'){
+            var hit = window.__v10GetA1Audio(url);
+            if (hit) return hit;
+          }
+          // Secondary: exact src match on audio elements (only as a safety
+          // net for clips created before the cache existed).
+          try {
+            var bySrc = document.querySelector('audio[data-v10-a1][src="' + CSS.escape(url) + '"]');
+            if (bySrc) return bySrc;
+          } catch(_){}
+          return null; // no ambiguous fallback — don't touch random clips
         }
         if (range){
           range.addEventListener('input', function(){
@@ -1801,6 +1819,10 @@
             // Apply to the currently-playing audio element (if any)
             var live = getLiveAudio();
             if (live){ live.volume = Math.min(1, Math.max(0, v / 100)); }
+            // Task #30 — envelope viz scales with volume
+            if (typeof window.refreshClipFadeOverlay === 'function'){
+              try { window.refreshClipFadeOverlay(clip); } catch(_){}
+            }
           });
         }
         Array.from(card.querySelectorAll('[data-ac-action]')).forEach(function(btn){
@@ -1821,6 +1843,9 @@
                 if (nowMuted){ try { live.pause(); } catch(_){} }
               }
               toast((nowMuted ? 'Muted' : 'Unmuted') + ': ' + (clip.dataset.fileName || 'clip'));
+              if (typeof window.refreshClipFadeOverlay === 'function'){
+                try { window.refreshClipFadeOverlay(clip); } catch(_){}
+              }
             } else if (act === 'solo'){
               // Select this clip so clipActionSolo operates on it
               document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
@@ -1988,6 +2013,11 @@
               if (v === 0) delete c.dataset.fadeOut;
               else c.dataset.fadeOut = String(v);
             }
+            // Task #30 — refresh the volume-envelope visualization on
+            // each target clip (A1 or V1) so the ramp line updates live.
+            if (typeof window.refreshClipFadeOverlay === 'function'){
+              try { window.refreshClipFadeOverlay(c); } catch(_){}
+            }
           });
           if (readout) readout.textContent = v.toFixed(1) + 's';
         }
@@ -2050,6 +2080,11 @@
       });
 
       wireRPToast(div);
+      // Task #30 — repaint the volume-envelope overlay on every A1/V1
+      // clip so existing fades are visible when the panel renders.
+      if (typeof window.refreshAllFadeOverlays === 'function'){
+        try { window.refreshAllFadeOverlays(); } catch(_){}
+      }
     }
     renderLayers();
 
@@ -2122,8 +2157,12 @@
     //                 phrase-chunked text clips onto T1 at matching times
     //   AI Hook / Brand Kit — still iframe-modal (those tools need a UI)
     //   AI ANALYSIS / AI CREATIVE — new tab if route, toast otherwise
-    var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions' };
-    var MODAL_LABELS   = { 'AI Hook': 1, 'Brand Kit': 1 };
+    // Task #31 — AI Hook runs inline (no new window). Timeline content is
+    // summarized, TTS + title-card video rendered server-side, and the
+    // resulting clip is inserted at the START of V1 (shifting existing
+    // clips right by the hook's duration).
+    var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions', 'AI Hook': 'aihook' };
+    var MODAL_LABELS   = { 'Brand Kit': 1 };
     Array.from(div.querySelectorAll('[data-v10-ai-route]')).forEach(function(btn){
       btn.addEventListener('click', function(e){
         e.preventDefault(); e.stopPropagation();
@@ -2311,6 +2350,185 @@
       }
       return;
     }
+
+    // ─── Task #31: AI Hook inline pipeline ──────────────────────────
+    // 1. Summarize timeline content (T1 captions + V1 filenames + duration)
+    // 2. Show BLOCKING progress modal (+ beforeunload guard)
+    // 3. POST /ai-hook/generate → returns {hookText, audioUrl}
+    // 4. POST /ai-hook/compose-clip → returns {mediaUrl, duration}
+    // 5. Shift all V1 clips right by hook duration (in px)
+    // 6. Insert hook clip at the start of V1
+    if (action === 'aihook'){
+      var hookBusy = showBlockingProgressModal('AI Hook', [
+        'Reading timeline\u2026',
+        'Writing hook text\u2026',
+        'Generating voiceover\u2026',
+        'Rendering clip\u2026',
+        'Inserting into V1\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        hookBusy.advance(0);
+        // Summarize timeline: concatenate T1 captions + V1 filenames
+        var t1Texts = Array.from(document.querySelectorAll('.mt-track-text .mt-clip'))
+          .map(function(c){ return (c.dataset.textContent || '').trim(); })
+          .filter(Boolean);
+        var v1Clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
+        var v1Names = v1Clips.map(function(c){ return c.dataset.fileName || ''; }).filter(Boolean);
+        var summary = (t1Texts.join(' ') || v1Names.join(', ') || 'video content')
+          .slice(0, 1000);
+
+        hookBusy.advance(1);
+        var gFd = new FormData();
+        gFd.append('inputType', 'text');
+        gFd.append('transcript', summary);
+        gFd.append('style', 'bold');
+        gFd.append('voice', 'free_alloy');
+        gFd.append('platform', 'youtube');
+        var genR = await fetch('/ai-hook/generate', { method: 'POST', body: gFd });
+        var genD = await genR.json();
+        if (!genR.ok) throw new Error(genD.error || 'Hook generation failed');
+
+        hookBusy.advance(2); // voiceover in progress on server (already included in /generate)
+        hookBusy.advance(3);
+        var W = (window.__exportWidth  || 1280);
+        var H = (window.__exportHeight || 720);
+        var compR = await fetch('/ai-hook/compose-clip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hookText: genD.hookText, audioUrl: genD.audioUrl, width: W, height: H })
+        });
+        var compD = await compR.json();
+        if (!compR.ok || !compD.success) throw new Error(compD.error || 'Hook compose failed');
+
+        hookBusy.advance(4);
+        // Shift existing V1 clips right by the new hook's duration (in px)
+        var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var shiftPx = Math.round(compD.duration * PPS);
+        v1Clips.forEach(function(c){
+          var l = parseFloat(c.style.left) || 0;
+          c.style.left = (l + shiftPx) + 'px';
+        });
+
+        // Insert the hook clip at V1 left=0. addClipToTimeline appends to
+        // the rightmost end — we need to force left=0 and re-add instead.
+        // Simplest: use a direct DOM create that matches addClipToTimeline's
+        // output schema, then call makeClipInteractive if exposed.
+        var track = document.querySelector('.mt-track-video');
+        if (track){
+          var hookClip = document.createElement('div');
+          hookClip.className = 'mt-clip mt-clip-video';
+          hookClip.style.position = 'absolute';
+          hookClip.style.left  = '0px';
+          hookClip.style.width = shiftPx + 'px';
+          hookClip.style.top   = '3px';
+          hookClip.dataset.fileName = 'AI Hook';
+          hookClip.dataset.clipType = 'vid';
+          hookClip.dataset.mediaUrl = compD.mediaUrl;
+          hookClip.dataset.duration = String(compD.duration);
+          hookClip.dataset.sourceOffset = '0';
+          hookClip.dataset.srcDuration = String(compD.duration);
+          hookClip.dataset.aiHook = '1';
+          hookClip.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
+          hookClip.style.color = '#fff';
+          hookClip.style.overflow = 'hidden';
+          track.appendChild(hookClip);
+          // Build a filmstrip for the hook clip
+          if (typeof window.buildClipFilmstrip === 'function'){
+            try { window.buildClipFilmstrip(hookClip, compD.mediaUrl, compD.duration); } catch(_){}
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        }
+
+        hookBusy.finish('Hook inserted \u2014 "' + (genD.hookText || '').slice(0, 48) + '\u2026"');
+      } catch (err){
+        hookBusy.fail(err.message || String(err));
+      } finally {
+        window.removeEventListener('beforeunload', beforeUnload);
+        setAIButtonLoading(btn, false);
+      }
+      return;
+    }
+  }
+
+  // Task #31 — Blocking progress modal for long-running AI ops.
+  // Renders a non-dismissible overlay with a step list + spinner.
+  // advance(i) lights up step i, finish(msg)/fail(msg) close the modal.
+  function showBlockingProgressModal(title, steps){
+    var old = document.getElementById('v10BlockingProgress');
+    if (old instanceof Element) old.remove();
+    var bk = document.createElement('div');
+    bk.id = 'v10BlockingProgress';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99999;' +
+      'background:rgba(8,6,18,.82);display:flex;align-items:center;' +
+      'justify-content:center;backdrop-filter:blur(6px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.45);' +
+      'border-radius:14px;padding:22px 26px;width:min(440px,92vw);color:#e2e0f0;' +
+      'font-family:system-ui,sans-serif;box-shadow:0 30px 80px rgba(0,0,0,.6)';
+    var stepsHtml = steps.map(function(s, i){
+      return '<div data-step="' + i + '" style="display:flex;align-items:center;gap:10px;' +
+        'padding:6px 0;color:#8886a0;font-size:12px">' +
+          '<span class="v10-bp-dot" style="width:10px;height:10px;border-radius:50%;' +
+            'background:#2a2545;flex:none"></span>' +
+          '<span class="v10-bp-txt">' + s + '</span>' +
+        '</div>';
+    }).join('');
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\u2728 ' + title + '</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:14px">Please wait — don\u2019t close this window.</div>' +
+      '<div>' + stepsHtml + '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    // Swallow clicks on the backdrop (non-dismissible)
+    bk.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); }, true);
+    // Swallow Escape key
+    function killKey(e){ if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); } }
+    document.addEventListener('keydown', killKey, true);
+
+    return {
+      advance: function(i){
+        Array.from(panel.querySelectorAll('[data-step]')).forEach(function(row){
+          var idx = parseInt(row.getAttribute('data-step'), 10);
+          var dot = row.querySelector('.v10-bp-dot');
+          var txt = row.querySelector('.v10-bp-txt');
+          if (idx < i){
+            dot.style.background = '#22c55e';
+            row.style.color = '#e2e0f0';
+          } else if (idx === i){
+            dot.style.background = '#a78bfa';
+            dot.style.boxShadow = '0 0 8px rgba(167,139,250,.8)';
+            row.style.color = '#fff';
+            row.style.fontWeight = '600';
+          } else {
+            dot.style.background = '#2a2545';
+            dot.style.boxShadow = '';
+            row.style.color = '#8886a0';
+            row.style.fontWeight = '';
+          }
+        });
+      },
+      finish: function(msg){
+        document.removeEventListener('keydown', killKey, true);
+        panel.innerHTML =
+          '<div style="font-size:13px;font-weight:700;color:#22c55e;margin-bottom:6px">\u2713 Done</div>' +
+          '<div style="font-size:11px;color:#c2e4d3;margin-bottom:14px">' + msg + '</div>' +
+          '<button id="v10BpClose" style="width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
+            'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Close</button>';
+        panel.querySelector('#v10BpClose').addEventListener('click', function(){ bk.remove(); });
+        setTimeout(function(){ if (bk.isConnected) bk.remove(); }, 3500);
+      },
+      fail: function(msg){
+        document.removeEventListener('keydown', killKey, true);
+        panel.innerHTML =
+          '<div style="font-size:13px;font-weight:700;color:#ef4444;margin-bottom:6px">\u26A0 Error</div>' +
+          '<div style="font-size:11px;color:#fca5a5;margin-bottom:14px;word-break:break-word">' + msg + '</div>' +
+          '<button id="v10BpClose" style="width:100%;padding:8px;background:rgba(255,255,255,.08);' +
+            'border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Close</button>';
+        panel.querySelector('#v10BpClose').addEventListener('click', function(){ bk.remove(); });
+      }
+    };
   }
 
   // ── AI Tool Modal ─────────────────────────────────────────────────

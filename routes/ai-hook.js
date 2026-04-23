@@ -901,6 +901,188 @@ router.get('/audio/:filename', (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════
+// Task #31 — POST /ai-hook/compose-clip
+// Given a hookText + audioUrl (generated earlier via /ai-hook/generate),
+// renders a ready-to-insert MP4 hook clip and returns its mediaUrl.
+// The clip is a simple gradient title-card with the hook text drawn
+// centered + the audio track mixed in. Caller inserts the returned URL
+// as a V1 clip at the start of the timeline.
+// Body: { hookText: string, audioUrl: string ('/ai-hook/audio/xxx.mp3'),
+//         width?: int (default 1280), height?: int (default 720) }
+// Returns: { success, mediaUrl, duration, downloadUrl }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/compose-clip', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    const { hookText, audioUrl } = req.body || {};
+    const W = parseInt((req.body || {}).width,  10) || 1280;
+    const H = parseInt((req.body || {}).height, 10) || 720;
+
+    if (!hookText || typeof hookText !== 'string'){
+      return res.status(400).json({ error: 'hookText is required' });
+    }
+
+    // Resolve the audio URL to a local file path. Accepts either
+    // /ai-hook/audio/xxx.mp3 or a cross-origin URL. When the TTS
+    // endpoint already wrote to outputDir, we just use that file.
+    let audioPath = null;
+    if (audioUrl){
+      const m = /\/ai-hook\/audio\/([^?#]+)/.exec(audioUrl);
+      if (m){
+        const candidate = path.join(outputDir, path.basename(decodeURIComponent(m[1])));
+        if (fs.existsSync(candidate)) audioPath = candidate;
+      }
+    }
+
+    // If we still don't have audio on disk, synthesize silence for the
+    // estimated speech duration so the hook clip is still insertable
+    // (text shows, no voiceover). Speech rate ~2.7 words/sec → rough
+    // duration estimate.
+    let dur;
+    const wordCount = (hookText.trim().match(/\S+/g) || []).length || 6;
+    if (audioPath){
+      // Probe the audio duration
+      try {
+        const ffprobe = require('fluent-ffmpeg').setFfmpegPath(ffmpegPath);
+      } catch(_){}
+      dur = await new Promise(function(resolve){
+        const p = spawn(ffmpegPath, ['-i', audioPath, '-hide_banner']);
+        let err = '';
+        p.stderr.on('data', d => err += d.toString());
+        p.on('close', function(){
+          const m = /Duration:\s*(\d+):(\d+):(\d+\.\d+)/.exec(err);
+          if (m){ resolve(+m[1] * 3600 + +m[2] * 60 + parseFloat(m[3])); }
+          else resolve(Math.min(8, Math.max(3, wordCount / 2.7)));
+        });
+        p.on('error', function(){ resolve(Math.min(8, Math.max(3, wordCount / 2.7))); });
+      });
+    } else {
+      dur = Math.min(8, Math.max(3, wordCount / 2.7));
+    }
+    dur = Math.max(1, Math.min(15, dur));
+
+    // Build the clip: gradient background + centered text + audio
+    const outputFilename = 'hook-clip-' + Date.now() + '-' + uuidv4().slice(0, 8) + '.mp4';
+    const outputPath = path.join(outputDir, outputFilename);
+
+    // Escape drawtext special chars in the hook text
+    const escDT = s => String(s).replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\u2019");
+    const safeText = escDT(hookText.slice(0, 180));
+
+    // Find a bold font (same fallback chain as /video-editor export)
+    let fontFile = '';
+    const FONT_CANDIDATES = [
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+      '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf',
+      '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf'
+    ];
+    for (const f of FONT_CANDIDATES){
+      if (fs.existsSync(f)){
+        fontFile = f.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
+        break;
+      }
+    }
+
+    // Responsive font ~5.5% of width
+    const fontSize = Math.round(W * 0.055);
+
+    // Build drawtext with word-wrap (FFmpeg's drawtext has no native wrap,
+    // so we do light client-side wrapping of long hooks into 2-3 lines).
+    function wrapByChars(t, maxCharsPerLine){
+      const words = t.split(/\s+/);
+      const lines = [];
+      let cur = '';
+      for (const w of words){
+        const test = cur ? cur + ' ' + w : w;
+        if (test.length > maxCharsPerLine && cur){ lines.push(cur); cur = w; }
+        else cur = test;
+      }
+      if (cur) lines.push(cur);
+      return lines;
+    }
+    const charCap = Math.max(20, Math.floor(W / (fontSize * 0.55)));
+    const lines = wrapByChars(hookText.slice(0, 180), charCap);
+    const escLines = lines.map(escDT);
+    const lineH = Math.round(fontSize * 1.25);
+    const totalH = lineH * escLines.length;
+
+    const drawtextFilters = escLines.map(function(ln, i){
+      const y = '(h-' + totalH + ')/2+' + (i * lineH);
+      const parts = [
+        'drawtext=text=\'' + ln + '\'',
+        'fontsize=' + fontSize,
+        'fontcolor=white',
+        'shadowx=0', 'shadowy=' + Math.max(1, Math.round(fontSize * 0.08)),
+        'shadowcolor=black@0.75',
+        'borderw=1', 'bordercolor=black@0.4',
+        'x=(w-text_w)/2',
+        'y=' + y
+      ];
+      if (fontFile) parts.splice(3, 0, 'fontfile=' + fontFile);
+      return parts.join(':');
+    }).join(',');
+
+    const bgFilter =
+      'color=c=0x1a1230:s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3) +
+      '[bg];[bg]format=yuv420p,' +
+      'drawbox=x=0:y=0:w=' + W + ':h=' + H +
+        ':color=0x7c3aed@0.25:t=fill,' +
+      drawtextFilters + '[v]';
+
+    const VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                    '-profile:v', 'high', '-level', '4.0'];
+    const ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+
+    let args;
+    if (audioPath){
+      args = [
+        '-f', 'lavfi', '-i', 'color=c=0x1a1230:s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3),
+        '-i', audioPath,
+        '-vf', 'format=yuv420p,drawbox=x=0:y=0:w=' + W + ':h=' + H +
+               ':color=0x7c3aed@0.25:t=fill,' + drawtextFilters,
+        '-map', '0:v', '-map', '1:a',
+        '-t', dur.toFixed(3), '-shortest'
+      ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]);
+    } else {
+      args = [
+        '-f', 'lavfi', '-i', 'color=c=0x1a1230:s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3),
+        '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+        '-vf', 'format=yuv420p,drawbox=x=0:y=0:w=' + W + ':h=' + H +
+               ':color=0x7c3aed@0.25:t=fill,' + drawtextFilters,
+        '-t', dur.toFixed(3), '-shortest'
+      ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]);
+    }
+
+    await runFFmpeg(args);
+
+    if (!fs.existsSync(outputPath)){
+      return res.status(500).json({ error: 'Failed to render hook clip' });
+    }
+    // Copy to the video-editor uploads dir so the editor's download
+    // route can serve it. (Different modules, different outputDirs.)
+    try {
+      const veUploadDir = path.join('/tmp', 'repurpose-uploads');
+      if (!fs.existsSync(veUploadDir)) fs.mkdirSync(veUploadDir, { recursive: true });
+      const veDest = path.join(veUploadDir, outputFilename);
+      fs.copyFileSync(outputPath, veDest);
+    } catch(e){ console.warn('[ai-hook compose] copy to uploads failed:', e.message); }
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outputFilename,
+      downloadUrl: '/video-editor/download/' + outputFilename,
+      duration: dur
+    });
+  } catch (err){
+    console.error('[ai-hook compose-clip] error:', err);
+    res.status(500).json({ error: err.message || 'Hook compose failed' });
+  }
+});
+
 // GET - Fetch user's ElevenLabs voices
 router.get('/voices', requireAuth, async (req, res) => {
   try {

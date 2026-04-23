@@ -3175,6 +3175,96 @@ function showToast(message, type = 'success') {
     });
 
     // Export handler
+    // Task #29 — Prompt the user for a custom output filename before any
+    // export work begins. Returns a Promise that resolves with a sanitized
+    // filename (no extension) or null if the user cancels. A default
+    // timestamped name is pre-filled so one-click works.
+    async function promptExportFilename(defaultExt){
+      return await new Promise(function(resolve){
+        // Toggle-close / double-click guard
+        var existing = document.getElementById('exportFilenameDialog');
+        if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+
+        var pad = function(n){ return n < 10 ? '0' + n : String(n); };
+        var d = new Date();
+        var defaultName = 'Splicora-' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate())
+                       + '-' + pad(d.getHours()) + pad(d.getMinutes());
+
+        var backdrop = document.createElement('div');
+        backdrop.id = 'exportFilenameDialog';
+        backdrop.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.6);' +
+          'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+
+        var modal = document.createElement('div');
+        modal.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);' +
+          'border-radius:14px;padding:22px;width:min(440px,92vw);' +
+          'box-shadow:0 30px 80px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+
+        modal.innerHTML =
+          '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83c\udfac EXPORT VIDEO</div>' +
+          '<div style="font-size:11px;color:#8886a0;margin-bottom:14px;line-height:1.4">' +
+            'Name your output file (the format extension will be added automatically).' +
+          '</div>' +
+          '<label style="display:block;font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px;letter-spacing:.3px">FILENAME</label>' +
+          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+            '<input id="exportFilenameInput" type="text" value="' + defaultName + '" ' +
+              'style="flex:1;padding:8px 10px;background:#0c0814;border:1px solid rgba(124,58,237,.25);' +
+              'border-radius:6px;color:#e2e0f0;font-size:13px;font-family:inherit;outline:none"/>' +
+            '<span style="color:#8886a0;font-size:12px">.' + (defaultExt || 'mp4') + '</span>' +
+          '</div>' +
+          '<div id="exportFilenameError" style="font-size:10px;color:#ef4444;min-height:14px;margin-bottom:10px"></div>' +
+          '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+            '<button id="exportFilenameCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);' +
+              'border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;' +
+              'cursor:pointer">Cancel</button>' +
+            '<button id="exportFilenameOK" style="padding:8px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
+              'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">' +
+              'Export \u2192</button>' +
+          '</div>';
+
+        backdrop.appendChild(modal);
+        document.body.appendChild(backdrop);
+
+        var input = modal.querySelector('#exportFilenameInput');
+        var err   = modal.querySelector('#exportFilenameError');
+        var ok    = modal.querySelector('#exportFilenameOK');
+        var cancel= modal.querySelector('#exportFilenameCancel');
+
+        // Auto-focus + select so user can immediately type a replacement
+        setTimeout(function(){ input.focus(); input.select(); }, 30);
+
+        function sanitize(name){
+          name = String(name || '').trim();
+          // Strip any extension the user typed (we add it back server-side)
+          name = name.replace(/\.(mp4|mov|webm|mkv|gif)$/i, '');
+          // Allowlist: letters, digits, hyphen, underscore, space, dot
+          name = name.replace(/[^A-Za-z0-9._\- ]+/g, '_');
+          // Collapse consecutive underscores and trim leading/trailing dots
+          name = name.replace(/_+/g, '_').replace(/^\.+|\.+$/g, '');
+          return name;
+        }
+        function close(val){
+          try { backdrop.remove(); } catch(_){}
+          document.removeEventListener('keydown', onKey, true);
+          resolve(val);
+        }
+        function accept(){
+          var v = sanitize(input.value);
+          if (!v){ err.textContent = 'Please enter a valid filename.'; input.focus(); return; }
+          if (v.length > 80){ err.textContent = 'Name is too long (max 80 characters).'; return; }
+          close(v);
+        }
+        function onKey(e){
+          if (e.key === 'Escape'){ e.preventDefault(); close(null); }
+          else if (e.key === 'Enter'){ e.preventDefault(); accept(); }
+        }
+        ok.addEventListener('click', accept);
+        cancel.addEventListener('click', function(){ close(null); });
+        backdrop.addEventListener('click', function(e){ if (e.target === backdrop) close(null); });
+        document.addEventListener('keydown', onKey, true);
+      });
+    }
+
     document.getElementById('exportButton')?.addEventListener('click', async () => {
       // Timeline-aware export: if the user has built a sequence on V1, render
       // the timeline (multiple clips + gaps + razor splits) via the new
@@ -3182,6 +3272,12 @@ function showToast(message, type = 'success') {
       // /video-editor/export (with filters) only when the timeline is empty.
       // Collect EVERY clip from every track — V1 drives the visual concat,
       // A1+ drive audio mixing in the export, T1 drives drawtext overlays.
+
+      // Task #29 — Ask for a custom filename first. Early-exit if cancelled.
+      var _fmtSelProbe = document.getElementById('exportFormatSel');
+      var _selFormatEarly = (_fmtSelProbe && _fmtSelProbe.value) || 'mp4';
+      var customFilename = await promptExportFilename(_selFormatEarly);
+      if (customFilename === null) return;  // user cancelled
       var timelineClips = Array.from(document.querySelectorAll('.mt-clip'))
         .map(function(c){
           var track = c.parentElement;
@@ -3383,7 +3479,8 @@ function showToast(message, type = 'success') {
               width: targetW,
               height: targetH,
               format: selFormat,
-              quality: selQuality
+              quality: selQuality,
+              customFilename: customFilename  // Task #29
             })
           });
           var dataTL = await resp.json();
@@ -6829,7 +6926,20 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     //        atrim to its source slice, adelay to its timeline position,
     //        volume scaled by its per-clip volume/100; amix with the
     //        video's own audio track.
-    var outputFilename = 'timeline_export_' + Date.now() + '_' + req.user.id + '.mp4';
+    // Task #29 — use the user-provided filename if supplied (stripped of
+    // any path separators, extension added server-side based on format).
+    var customName = (body && body.customFilename) ? String(body.customFilename) : '';
+    customName = customName.replace(/[\\\/]/g, '_').replace(/\.(mp4|mov|webm|mkv|gif)$/i, '');
+    customName = customName.replace(/[^A-Za-z0-9._\- ]+/g, '_').replace(/^\.+|\.+$/g, '').slice(0, 80);
+    var extForFile = (body && body.format) === 'gif' ? 'gif' : 'mp4';
+    var outputFilename;
+    if (customName){
+      // Append a short ID to avoid collisions if the user exports twice
+      // with the same name. Keeps the name readable in Downloads.
+      outputFilename = customName + '_' + Date.now().toString(36) + '.' + extForFile;
+    } else {
+      outputFilename = 'timeline_export_' + Date.now() + '_' + req.user.id + '.' + extForFile;
+    }
     var outputPath = path.join(outputDir, outputFilename);
 
     var textClips = clips.filter(function(c){
