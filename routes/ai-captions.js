@@ -85,6 +85,7 @@ const captionPresets = {
     shadowDepth: 2,
     bold: true,
     alignment: 2,
+    wordHighlightColor: 'FFD700', // gold pop on the active word
     animation: 'pop'
   },
   minimal: {
@@ -97,6 +98,7 @@ const captionPresets = {
     shadowDepth: 0,
     bold: false,
     alignment: 2,
+    wordHighlightColor: 'FFFFFF', // minimal stays flat — keep the same colour
     animation: 'fade'
   },
   'neon-glow': {
@@ -109,6 +111,7 @@ const captionPresets = {
     shadowDepth: 3,
     bold: true,
     alignment: 2,
+    wordHighlightColor: '39FF14',
     animation: 'glow'
   },
   mrbeast: {
@@ -121,6 +124,7 @@ const captionPresets = {
     shadowDepth: 2,
     bold: true,
     alignment: 2,
+    wordHighlightColor: 'FFD700',
     animation: 'pop'
   },
   hormozi: {
@@ -133,6 +137,7 @@ const captionPresets = {
     shadowDepth: 2,
     bold: true,
     alignment: 2,
+    wordHighlightColor: 'FFFF00', // yellow box-style highlight on active word
     animation: 'highlight'
   }
 };
@@ -405,9 +410,17 @@ function generateASSFile(transcript, preset, customSettings = {}) {
   // overlays so they sit clear of the player's controls bar.
   const marginV = position === 'bottom' ? 60 : 30;
 
+  // Horizontal margins inside the 1920-wide canvas. Slim margins let phrases
+  // span almost the full video width, which is what stops single-word lines
+  // and gives libass enough horizontal room before WrapStyle=0 has to wrap.
+  const marginH = 80;
+
   let assContent = `[Script Info]
 Title: AI Captions
 ScriptType: v4.00+
+; WrapStyle 0 = smart line break — libass will break at the last whitespace
+; that fits, so a phrase wider than the video automatically wraps to a new
+; line instead of overflowing past the edge.
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 ; Pin a known PlayRes so font-size and outline-width scale predictably no
@@ -418,15 +431,11 @@ PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},0,0,0,100,100,0,0,1,${outlineWidth},${shadowDepth},${alignment},10,10,${marginV},1
+Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},0,0,0,100,100,0,0,1,${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
-
-  // Build subtitle lines with word-by-word timing
-  let currentTime = 0;
-  const lines = [];
 
   // Convert seconds to ASS time format (h:mm:ss.cc)
   const formatTime = (seconds) => {
@@ -437,72 +446,141 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cents).padStart(2, '0')}`;
   };
 
-  // Build a per-word effect tag block.
-  // Order of precedence:
-  //   1. If user picked an explicit animation, use that (overrides preset).
-  //   2. Otherwise use the preset's built-in word effect (karaoke, bold-pop,
-  //      mrbeast, etc.).
-  //   3. "none" wipes both — flat caption.
-  function buildWordEffect(word, startTime, endTime) {
-    const durCs = Math.max(1, Math.round((endTime - startTime) * 100));
-    const tagsForUserAnim = (anim) => {
-      switch (anim) {
-        case 'fade':
-          return `\\fad(150,150)`;
-        case 'slide':
-          // Slide in from below by 40px to current position over 200ms
-          return `\\move(0,40,0,0,0,200)`;
-        case 'pop':
-          return `\\fscx115\\fscy115\\t(0,150,\\fscx100\\fscy100)`;
-        case 'glow':
-          // Pulse outline color brightness via secondary outline animation
-          return `\\3c${colorToASS(highlightColor)}\\bord${outlineWidth + 2}\\t(0,${durCs * 10},\\bord${outlineWidth})`;
-        case 'none':
-          return '';
-        default:
-          return null;
+  // ----- Phrase grouping --------------------------------------------------
+  // Albert's spec: captions should span the full video width — no
+  // single-word-per-line displays. Group consecutive transcript words into
+  // phrases, then emit each phrase as ONE Dialogue event spanning the first
+  // word's start to the last word's end. WrapStyle=0 in the header takes
+  // care of wrapping a phrase that's wider than the video.
+  //
+  // Break rules:
+  //   - Phrase exceeds the target character budget for one line
+  //   - Pause between consecutive words is too long (caption should clear)
+  //   - Previous word ended with sentence-ending punctuation
+  //
+  // Target line width is computed from font size so big fonts get fewer
+  // words per line and small fonts get more. The constant divisor is tuned
+  // for Liberation Sans / DejaVu Sans on the 1920-wide canvas; libass's own
+  // line wrapping picks up the slack on the rare miscount.
+  const charBudget = Math.max(14, Math.round(38 * (48 / fontSize)));
+  const gapThreshold = 0.55;          // seconds; longer pause -> new phrase
+  const maxPhraseDuration = 4.5;       // seconds; never hold a phrase longer
+  const sentenceEnd = /[.!?]["')\]]?$/;
+
+  function groupPhrases(items) {
+    const phrases = [];
+    let current = [];
+    let currentChars = 0;
+    for (let i = 0; i < items.length; i++) {
+      const w = items[i];
+      const wordText = String(w.word || '').trim();
+      if (!wordText) continue;
+      const len = wordText.length + 1; // +1 for trailing space
+
+      const prev = current[current.length - 1];
+      const gap = prev ? ((w.start || 0) - (prev.end || 0)) : 0;
+      const phraseDur = current.length ? ((w.end || w.start || 0) - current[0].start) : 0;
+      const lastEndsSentence = prev && sentenceEnd.test(String(prev.word || '').trim());
+
+      const shouldBreak = current.length > 0 && (
+        currentChars + len > charBudget ||
+        gap > gapThreshold ||
+        lastEndsSentence ||
+        phraseDur > maxPhraseDuration
+      );
+      if (shouldBreak) {
+        phrases.push(current);
+        current = [];
+        currentChars = 0;
       }
-    };
-
-    // 1) Explicit user override (incl. "none")
-    if (animation) {
-      const userTags = tagsForUserAnim(animation);
-      if (userTags === '') return word;                // "none" -> flat
-      if (userTags !== null) return `{${userTags}}${word}`;
+      current.push(w);
+      currentChars += len;
     }
-
-    // 2) Preset built-ins (only when user didn't override)
-    if (preset === 'karaoke') {
-      return `{\\k${durCs}\\1c${colorToASS(highlightColor)}}${word}`;
-    } else if (preset === 'bold-pop') {
-      return `{\\fscx110\\fscy110\\t(0,150,\\fscx100\\fscy100)}${word}`;
-    } else if (preset === 'mrbeast') {
-      return `{\\fscx115\\fscy115\\t(0,150,\\fscx100\\fscy100)}${word.toUpperCase()}`;
-    } else if (preset === 'neon-glow') {
-      return `{\\3c${colorToASS(highlightColor)}\\bord${outlineWidth + 1}\\t(0,${durCs * 10},\\bord${outlineWidth})}${word}`;
-    } else if (preset === 'hormozi') {
-      // Yellow box highlight on active word — ASS doesn't do CSS-style boxes
-      // but we can simulate with primary-color flash + thicker outline
-      return `{\\1c${colorToASS(highlightColor)}\\bord${outlineWidth + 1}}${word}`;
-    } else if (preset === 'minimal') {
-      return `{\\fad(120,80)}${word}`;
-    }
-    return word;
+    if (current.length) phrases.push(current);
+    return phrases;
   }
 
-  for (let i = 0; i < transcript.length; i++) {
-    const item = transcript[i];
-    const word = item.word || '';
-    const startTime = item.start || currentTime;
-    const endTime = item.end || (currentTime + 1);
-    currentTime = endTime;
+  // ----- Per-word effect tags inside a phrase -----------------------------
+  // The `\t(start,end,tags)` ASS tag animates style mods between the two
+  // millisecond marks (relative to the dialogue line start). We use it to
+  // briefly swap each word's primary colour to the highlight colour while
+  // it's the active word, then revert. This produces a clean active-word
+  // highlight that travels across the multi-word phrase.
+  const textC = colorToASS(fontColor);
+  const hiC = colorToASS(highlightColor);
 
-    const startASS = formatTime(startTime);
-    const endASS = formatTime(endTime);
-    const textLine = buildWordEffect(word, startTime, endTime);
-
-    lines.push(`Dialogue: 0,${startASS},${endASS},Default,,0,0,0,,${textLine}`);
+  function userAnimTagsOnce() {
+    // Whole-line entry effects only fire once at the phrase start.
+    switch (animation) {
+      case 'fade':  return `\\fad(150,150)`;
+      case 'slide': return `\\move(0,40,0,0,0,200)`;
+      case 'pop':   return `\\fscx115\\fscy115\\t(0,150,\\fscx100\\fscy100)`;
+      case 'glow':  return `\\3c${hiC}\\bord${outlineWidth + 2}\\t(0,300,\\bord${outlineWidth})`;
+      default:      return '';
+    }
   }
+
+  function activeWordTags(preset) {
+    // Style mods applied while a word is the active one (highlighted).
+    switch (preset) {
+      case 'bold-pop':
+      case 'mrbeast':
+        return `\\1c${hiC}\\fscx112\\fscy112`;
+      case 'hormozi':
+        return `\\1c${hiC}\\bord${outlineWidth + 1}`;
+      case 'neon-glow':
+        return `\\1c${hiC}\\3c${hiC}`;
+      case 'minimal':
+        return ``;                          // minimal stays flat
+      case 'karaoke':
+      default:
+        return `\\1c${hiC}`;
+    }
+  }
+  function inactiveWordTags() {
+    // Style mods to revert TO when the word is no longer active.
+    return `\\1c${textC}\\fscx100\\fscy100\\bord${outlineWidth}`;
+  }
+
+  // Build the text for one phrase, applying per-word highlight transitions.
+  function renderPhrase(words) {
+    const phraseStart = words[0].start || 0;
+    const isMrBeast = preset === 'mrbeast';
+    const userOverride = !!animation && animation !== 'none';
+
+    // Whole-line entry effect (fires once at phrase start).
+    const intro = userOverride ? `{${userAnimTagsOnce()}}` : '';
+
+    // For "minimal" with no per-word highlight, render as a static phrase.
+    if (preset === 'minimal' && !userOverride) {
+      const flat = words.map(w => isMrBeast ? String(w.word).toUpperCase() : w.word).join(' ');
+      return `{\\fad(120,80)}${flat}`;
+    }
+
+    const wordParts = words.map(w => {
+      const wText = isMrBeast ? String(w.word).toUpperCase() : String(w.word).trim();
+      const relStart = Math.max(0, Math.round(((w.start || 0) - phraseStart) * 1000));
+      const relEnd = Math.max(relStart + 30, Math.round(((w.end || (w.start || 0) + 0.3) - phraseStart) * 1000));
+
+      const onTags = activeWordTags(preset);
+      // If this preset has no active-state tags, just show the word flat.
+      if (!onTags) return wText;
+
+      const transIn = `\\t(${relStart},${relStart + 40},${onTags})`;
+      const transOut = `\\t(${relEnd},${relEnd + 40},${inactiveWordTags()})`;
+      return `{${transIn}${transOut}}${wText}`;
+    });
+
+    return `${intro}${wordParts.join(' ')}`;
+  }
+
+  const phrases = groupPhrases(transcript);
+  const lines = phrases.map(words => {
+    const start = formatTime(words[0].start || 0);
+    const end = formatTime(words[words.length - 1].end || (words[0].start || 0) + 1);
+    const text = renderPhrase(words);
+    return `Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`;
+  });
 
   assContent += lines.join('\n');
   return assContent;
@@ -1022,24 +1100,22 @@ router.get('/', requireAuth, (req, res) => {
       color: var(--primary);
     }
 
-    /* State C — once a download is ready the Apply button steps back so the eye
-       is pulled to Download. Looks dark/disabled but is still clickable in case
-       the user wants to re-export with new settings. */
+    /* State C — the rendered video is ready and the user's eye should go to
+       Download. Apply is fully disabled (not just visually) until a new
+       Generate Captions cycle reopens the loop, so it can't trigger a
+       duplicate export. */
     .btn-state-c {
       padding: 0.6rem 1.2rem;
       background: rgba(40, 40, 56, 0.6);
       color: var(--text-muted);
       border: 1px solid var(--border-subtle);
       border-radius: 8px;
-      cursor: pointer;
       font-weight: 600;
       font-size: 0.9rem;
+      cursor: not-allowed;
+      pointer-events: none;
+      opacity: 0.6;
       transition: all 0.2s;
-    }
-    .btn-state-c:hover {
-      background: rgba(60, 60, 80, 0.8);
-      color: var(--text);
-      border-color: var(--primary);
     }
 
     .toast {
@@ -1843,7 +1919,11 @@ router.get('/', requireAuth, (req, res) => {
         case 'C': // export complete, Download is the next action
           exportBtn.classList.add('btn-state-c');
           downloadBtn.classList.add('btn-primary');
-          exportBtn.disabled = false;   // re-export with new style is allowed
+          // Apply is fully locked until a new Generate Captions cycle reopens
+          // it (going back to State B). Both the disabled attribute and
+          // pointer-events (set in .btn-state-c CSS) are used so a stray
+          // click cant fire it.
+          exportBtn.disabled = true;
           downloadBtn.disabled = false;
           break;
       }
