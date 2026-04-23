@@ -981,9 +981,9 @@ router.get('/', requireAuth, async (req, res) => {
 
         <div class="editor-sidebar">
           <div class="cat-tabs-new">
-            <button class="cat-btn on" onclick="swCat2(this,'edit')"><span class="ci">\u2702\ufe0f</span>EDIT</button>
+            <button class="cat-btn on" onclick="swCat2(this,'ai')"><span class="ci">\u2728</span>AI</button>
+            <button class="cat-btn" onclick="swCat2(this,'edit')"><span class="ci">\u2702\ufe0f</span>EDIT</button>
             <button class="cat-btn" onclick="swCat2(this,'audio')"><span class="ci">\ud83d\udd0a</span>AUDIO</button>
-            <button class="cat-btn" onclick="swCat2(this,'ai')"><span class="ci">\u2728</span>AI</button>
             <button class="cat-btn" onclick="swCat2(this,'fx')"><span class="ci">\ud83c\udfa8</span>FX</button>
           </div>
           <div class="t-body">

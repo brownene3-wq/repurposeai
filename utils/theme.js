@@ -174,7 +174,7 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 15px;display:flex;align-items:center;justify-content:space-between;">
-        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Spli<span>cora</span></a>
+        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Splicora</a>
         <a href="/dashboard" class="logo-mini" style="padding:0;margin:0 auto;text-decoration:none;border-left:none;display:none;">S<span>c</span></a>
       </div>
       <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">&#x276E;</button>
