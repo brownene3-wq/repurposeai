@@ -410,6 +410,11 @@ Title: AI Captions
 ScriptType: v4.00+
 WrapStyle: 0
 ScaledBorderAndShadow: yes
+; Pin a known PlayRes so font-size and outline-width scale predictably no
+; matter what dimensions the source video is. The live preview formula uses
+; the same 1080 reference, which keeps preview and export visually in sync.
+PlayResX: 1920
+PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -1017,6 +1022,26 @@ router.get('/', requireAuth, (req, res) => {
       color: var(--primary);
     }
 
+    /* State C — once a download is ready the Apply button steps back so the eye
+       is pulled to Download. Looks dark/disabled but is still clickable in case
+       the user wants to re-export with new settings. */
+    .btn-state-c {
+      padding: 0.6rem 1.2rem;
+      background: rgba(40, 40, 56, 0.6);
+      color: var(--text-muted);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .btn-state-c:hover {
+      background: rgba(60, 60, 80, 0.8);
+      color: var(--text);
+      border-color: var(--primary);
+    }
+
     .toast {
       position: fixed;
       bottom: 20px;
@@ -1239,8 +1264,9 @@ router.get('/', requireAuth, (req, res) => {
 
           <div class="section" style="margin-top: 1rem;">
             <div class="section-title">📥 Export</div>
-            <button class="btn-primary" class="btn-primary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
-              Apply & Export
+            <!-- The class on these two buttons is set dynamically by setExportButtonState(). -->
+            <button class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
+              Apply &amp; Export
             </button>
             <button class="btn-secondary" style="width: 100%;" id="downloadBtn" onclick="downloadVideo()" disabled>
               Download Video
@@ -1381,6 +1407,38 @@ router.get('/', requireAuth, (req, res) => {
     }
 
     // ===== Live preview renderer =====
+    // Browser font stacks that mirror what libass actually picks up server-side
+    // (see FONT_ALIAS in routes/ai-captions.js). Without this, the user sees
+    // their OS's local font in the preview but the export uses Liberation Sans
+    // / DejaVu Sans, and the two diverge — especially for 'Impact' on Mac and
+    // 'Helvetica' on Linux.
+    const PREVIEW_FONT_STACK_MAP = {
+      'Arial':           "'Arial','Liberation Sans',sans-serif",
+      'Helvetica':       "'Helvetica','Liberation Sans','Arial',sans-serif",
+      'Times New Roman': "'Times New Roman','Liberation Serif',serif",
+      'Courier New':     "'Courier New','Liberation Mono',monospace",
+      'Georgia':         "'Georgia','Liberation Serif',serif",
+      'Verdana':         "'Verdana','DejaVu Sans',sans-serif",
+      'Impact':          "'Impact','DejaVu Sans',sans-serif"
+    };
+    function previewFontStack(uiFont) {
+      return PREVIEW_FONT_STACK_MAP[uiFont] || "'" + uiFont + "',sans-serif";
+    }
+
+    // Convert the user's outline-width slider value into pixels for
+    // -webkit-text-stroke. The slider value 0..8 corresponds to libass Outline
+    // units; libass scales them with the rendered font size, so the preview
+    // does the same: stroke is a fraction of the live font pixel size.
+    function previewStrokeWidth(outlineUnits, fontPx) {
+      const w = Math.max(0, Math.min(8, parseInt(outlineUnits, 10) || 0));
+      if (!w) return 0;
+      // Tuned so 1 ASS unit ~= 0.04 * fontSize, which matches libass output
+      // visually within ±1 px across the slider range we offer.
+      return +(fontPx * 0.04 * w).toFixed(2);
+    }
+
+    // Legacy text-shadow outline kept for any other caller; the live preview
+    // now uses previewStrokeWidth() above.
     function buildTextShadow(colorHex, width) {
       const w = Math.max(0, Math.min(8, parseInt(width, 10) || 0));
       if (!w) return 'none';
@@ -1455,15 +1513,27 @@ router.get('/', requireAuth, (req, res) => {
 
       const style = readCurrentStyle();
 
-      // Scale ASS-style font size (reference ~1080p) to the on-screen preview height.
-      // videoH is the rendered player height; fall back to a reasonable default.
+      // Match the export's ASS PlayResY=1080 reference so the preview text
+      // height tracks the burn-in size at the same proportion. ASS scales
+      // Fontsize relative to PlayResY when ScaledBorderAndShadow=yes, so
+      // previewPx = fontSize * (videoH / 1080) is the right mapping.
       const videoH = videoPlayer.clientHeight || videoPlayer.offsetHeight || 360;
-      const previewPx = Math.max(14, Math.min(72, (style.fontSize / 48) * videoH * 0.07));
+      const previewPx = Math.max(10, Math.min(96, style.fontSize * (videoH / 1080)));
 
-      textEl.style.fontFamily = style.fontFamily + ', sans-serif';
+      textEl.style.fontFamily = previewFontStack(style.fontFamily);
       textEl.style.fontSize = previewPx.toFixed(1) + 'px';
       textEl.style.color = '#' + style.textColor;
-      textEl.style.textShadow = buildTextShadow(style.outlineColor, style.outlineWidth);
+      // libass renders Outline as a true vector stroke around each glyph. Stacked
+      // text-shadows give a chunky pixelated approximation that drifts further
+      // from the real export the wider the outline gets, so we lean on
+      // -webkit-text-stroke + paint-order:stroke-fill, which is the closest
+      // browser primitive to libass's behaviour.
+      const strokePx = previewStrokeWidth(style.outlineWidth, previewPx);
+      textEl.style.webkitTextStroke = strokePx + 'px #' + style.outlineColor;
+      textEl.style.paintOrder = 'stroke fill';
+      // Wipe the legacy text-shadow path so a re-render that sets stroke=0 looks
+      // genuinely strokeless instead of inheriting an old shadow.
+      textEl.style.textShadow = 'none';
 
       overlay.style.setProperty('--cap-highlight', '#' + style.highlightColor);
       overlay.setAttribute('data-animation', style.animation || 'none');
@@ -1596,7 +1666,9 @@ router.get('/', requireAuth, (req, res) => {
         transcript = data.transcript;
         updateProgress(100, 'Transcript ready!');
         showToast('Captions generated! Now click Apply & Export.', 'success');
-        document.getElementById('exportBtn').disabled = false;
+        // State B — captions are now ready, the next thing the user should do
+        // is hit Apply & Export, so it should be the prominent purple action.
+        setExportButtonState('B');
       } catch (err) {
         showToast('Caption generation failed: ' + err.message, 'error');
         updateProgress(0, '');
@@ -1655,11 +1727,15 @@ router.get('/', requireAuth, (req, res) => {
         generatedVideoPath = data.outputPath;
         updateProgress(100, 'Complete!');
         showToast('Captions applied!', 'success');
-        document.getElementById('downloadBtn').disabled = false;
+        // State C — the rendered video is now ready. Pull the user's eye to
+        // Download (purple) and step the Apply button back to a dark/disabled
+        // look. The user can still re-apply with new settings if they want.
+        setExportButtonState('C');
       } catch (err) {
         showToast(err.message, 'error');
+        // Apply failed — return to State B so the user can retry.
+        setExportButtonState('B');
       } finally {
-        btn.disabled = false;
         setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1000);
       }
     }
@@ -1733,9 +1809,50 @@ router.get('/', requireAuth, (req, res) => {
       window.addEventListener('resize', () => requestAnimationFrame(updateCaptionPreview));
     }
 
+    // ===== Export-section button state machine =====
+    // Three states drive the Apply & Export / Download Video pair so the user
+    // always knows what the next click should be:
+    //   A = pre-generation     -> both look like neutral secondary buttons
+    //   B = captions ready     -> Apply & Export becomes the primary purple CTA
+    //   C = post-processing    -> Apply & Export steps back, Download becomes purple
+    function setExportButtonState(state) {
+      const exportBtn = document.getElementById('exportBtn');
+      const downloadBtn = document.getElementById('downloadBtn');
+      if (!exportBtn || !downloadBtn) return;
+
+      // Strip any state classes so the new state's class wins regardless of
+      // whatever was set previously.
+      ['btn-primary', 'btn-secondary', 'btn-state-c'].forEach(c => {
+        exportBtn.classList.remove(c);
+        downloadBtn.classList.remove(c);
+      });
+
+      switch (state) {
+        case 'A': // pre-generation
+          exportBtn.classList.add('btn-secondary');
+          downloadBtn.classList.add('btn-secondary');
+          exportBtn.disabled = true;
+          downloadBtn.disabled = true;
+          break;
+        case 'B': // captions ready, Apply is the next action
+          exportBtn.classList.add('btn-primary');
+          downloadBtn.classList.add('btn-secondary');
+          exportBtn.disabled = false;
+          downloadBtn.disabled = true;
+          break;
+        case 'C': // export complete, Download is the next action
+          exportBtn.classList.add('btn-state-c');
+          downloadBtn.classList.add('btn-primary');
+          exportBtn.disabled = false;   // re-export with new style is allowed
+          downloadBtn.disabled = false;
+          break;
+      }
+    }
+
     // Initialize
     initPresets();
     bindPreviewListeners();
+    setExportButtonState('A');
   </script>
 </body>
 </html>`;
