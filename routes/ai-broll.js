@@ -771,7 +771,7 @@ ${pageStyles}
       if (btn) { btn.disabled = true; btn.textContent = 'Staging…'; }
       try {
         var downloadUrl = currentSelectedItem.videoDownloadUrl || currentSelectedItem.videoPreviewUrl;
-        if (!downloadUrl || !/^https:\/\//i.test(downloadUrl)) {
+        if (!downloadUrl || !/^https:\\/\\//i.test(downloadUrl)) {
           showToast('This clip has no downloadable URL');
           return;
         }
