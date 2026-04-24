@@ -12,7 +12,10 @@ const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = 
 const { featureUsageOps } = require('../db/database');
 
 // OpenAI client for Whisper transcription + GPT-4o-mini concept synthesis.
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Boot guard — the OpenAI SDK throws at construction if apiKey is empty,
+// which would crash the entire server. Pass a placeholder when the env
+// var is missing; real auth check happens at request time.
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
 // Replicate client for Flux Schnell image generation. ~$0.003/image vs
 // ~$0.04/image on GPT-image-1 medium — roughly 10-15× cheaper, and the

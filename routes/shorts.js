@@ -22,7 +22,11 @@ const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require
 const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Guard boot — OpenAI SDK throws at construction if apiKey is empty,
+// which would crash the entire server at startup. Use a placeholder so
+// the module loads; a real check happens at request time when the API
+// call returns 401 from the bogus key.
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
 // Common yt-dlp args to handle YouTube's anti-bot measures
 // PO token provider runs on port 4416 (started in Dockerfile CMD)

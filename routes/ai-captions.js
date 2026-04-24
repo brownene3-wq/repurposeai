@@ -25,7 +25,8 @@ if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath
 let ytdlpPath = null;
 try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Boot guard — see shorts.js explanation
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
 // Common yt-dlp args
 const YTDLP_COMMON_ARGS = [

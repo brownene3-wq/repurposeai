@@ -10,7 +10,8 @@ const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Boot guard — see shorts.js explanation
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
 // FFmpeg setup
 let ffmpegPath = null;
