@@ -1021,6 +1021,25 @@ router.get('/', requireAuth, (req, res) => {
       display: block;
     }
 
+    /* Custom-state pill — shown above the presets grid the moment the user
+       deviates from the active preset's defaults via the Customize tab.
+       Selecting any preset card clears it. */
+    .custom-state-pill {
+      display: none;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.75rem;
+      background: rgba(108, 58, 237, 0.12);
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      font-size: 0.75rem;
+      color: var(--primary);
+      margin-bottom: 0.75rem;
+      width: fit-content;
+    }
+    .custom-state-pill.show { display: inline-flex; }
+    .custom-state-pill::before { content: '●'; font-size: 0.6rem; line-height: 1; }
+
     .presets-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -1032,38 +1051,218 @@ router.get('/', requireAuth, (req, res) => {
       background: var(--dark);
       border: 2px solid var(--border-subtle);
       border-radius: 10px;
-      padding: 1rem;
+      padding: 0;
       cursor: pointer;
       transition: all 0.2s;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .preset-card:hover {
       border-color: var(--primary);
+      transform: translateY(-2px);
     }
 
     .preset-card.selected {
       border-color: var(--primary);
-      background: rgba(108, 58, 237, 0.1);
+      box-shadow: 0 0 0 2px rgba(108, 58, 237, 0.3);
     }
 
     .preset-preview {
       width: 100%;
-      height: 50px;
+      height: 64px;
       background: #000000;
-      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 0.5rem;
-      color: white;
-      font-size: 0.9rem;
-      font-weight: 600;
+      padding: 0.5rem;
+      overflow: hidden;
+    }
+
+    .preset-preview .preview-text {
+      font-size: 0.95rem;
+      text-align: center;
+      white-space: nowrap;
+      max-width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      line-height: 1.1;
     }
 
     .preset-name {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: var(--text-muted);
       text-align: center;
+      padding: 0.45rem 0.4rem;
+      background: var(--dark);
+    }
+    .preset-card.selected .preset-name {
+      color: var(--text);
+    }
+
+    /* ----- Per-preset WYSIWYG preview styles -----
+       These mirror the styles on /caption-presets so every preset card shows
+       what the burned-in caption will actually look like (font, color, stroke,
+       glow). Keep size scales aware of the 64px preview container. */
+
+    .preset-card.karaoke .preview-text {
+      font-weight: 700; letter-spacing: 0.04em; color: #fff;
+    }
+    .preset-card.karaoke .word-current {
+      background: linear-gradient(90deg, #6C3AED, #FF00FF);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .preset-card.karaoke .word-next { color: #fff; opacity: 0.7; }
+
+    .preset-card.bold-pop .preview-text {
+      font-family: 'Impact','Anton','DejaVu Sans',sans-serif;
+      font-weight: 900; font-size: 1.25rem; color: #fff;
+      -webkit-text-stroke: 2px #000; paint-order: stroke fill;
+    }
+
+    .preset-card.minimal .preview-text {
+      font-family: 'Helvetica','Liberation Sans','Arial',sans-serif;
+      font-weight: 300; font-size: 0.95rem; letter-spacing: 0.1em;
+      color: #fff; text-transform: lowercase; opacity: 0.9;
+    }
+
+    .preset-card.neon-glow .preview-text {
+      font-weight: 600; font-size: 1.05rem;
+      color: #39FF14;
+      text-shadow:
+        0 0 6px #39FF14, 0 0 12px #39FF14,
+        0 0 18px #39FF14, 0 0 12px #25F4EE;
+      filter: brightness(1.1);
+    }
+
+    .preset-card.gradient-wave .preview-text {
+      background: linear-gradient(90deg, #FF6B6B, #FF00FF, #25F4EE);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 800; font-size: 1.2rem; letter-spacing: 0.02em;
+    }
+
+    .preset-card.typewriter .preview-text {
+      font-family: 'Courier New','Liberation Mono',monospace;
+      color: #00ff00; font-weight: 600; font-size: 1.05rem;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 6px rgba(0,255,0,0.5);
+    }
+
+    .preset-card.cinematic .preview-text {
+      font-family: 'Georgia','Liberation Serif',serif;
+      color: #D4A574; font-weight: 600; font-size: 1.15rem;
+      letter-spacing: 0.12em; font-style: italic;
+    }
+
+    .preset-card.street .preview-text {
+      font-weight: 900; color: #FFFF00;
+      font-size: 1.2rem; font-style: italic;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      text-shadow: 2px 2px 0 #FF6600, 4px 4px 0 #FF0000, -2px 2px 0 #FF0000;
+    }
+
+    .preset-card.hormozi .preview-text {
+      font-weight: 900; font-size: 1.2rem; color: #fff;
+      text-transform: uppercase; letter-spacing: 0.02em;
+    }
+    .preset-card.hormozi .word-highlight {
+      color: #FACC15; background: rgba(250,204,21,0.15);
+      padding: 0 4px; border-radius: 3px;
+    }
+
+    .preset-card.mrbeast .preview-text {
+      font-family: 'Impact','Anton','DejaVu Sans',sans-serif;
+      font-weight: 900; font-size: 1.3rem; color: #FFD700;
+      text-transform: uppercase; letter-spacing: 0.025em;
+      -webkit-text-stroke: 1.5px #000; paint-order: stroke fill;
+      text-shadow: 0 2px 0 #1a1a1a;
+    }
+
+    .preset-card.classic-sub .preview-preview { background: #111; }
+    .preset-card.classic-sub .preview-text {
+      background: rgba(0,0,0,0.78);
+      color: #fff; font-weight: 500; font-size: 0.95rem;
+      padding: 4px 12px; border-radius: 3px; letter-spacing: 0.02em;
+    }
+
+    .preset-card.outline-style .preview-text {
+      font-weight: 900; font-size: 1.25rem;
+      color: transparent;
+      -webkit-text-stroke: 1.5px #fff; paint-order: stroke fill;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+
+    .preset-card.soft-glow .preview-text {
+      color: #fff; font-weight: 600; font-size: 1.1rem;
+      text-shadow:
+        0 0 8px rgba(255,255,255,0.85),
+        0 0 16px rgba(255,255,255,0.4),
+        0 0 28px rgba(168,85,247,0.4);
+      letter-spacing: 0.04em;
+    }
+
+    .preset-card.retro-vhs .preview-text {
+      font-family: 'Courier New','Liberation Mono',monospace;
+      color: #FF3366; font-weight: 700; font-size: 1.1rem;
+      text-transform: uppercase; letter-spacing: 0.12em;
+      text-shadow:
+        2px 0 #00FFFF, -2px 0 #FF0066,
+        0 0 6px rgba(255,51,102,0.45);
+    }
+
+    .preset-card.comic .preview-text {
+      font-family: 'Comic Sans MS','Chalkboard SE',cursive;
+      font-weight: 700; font-size: 1.1rem;
+      background: linear-gradient(135deg, #FF6B6B, #FFE66D);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(2px 2px 0 #000);
+    }
+
+    .preset-card.fire .preview-text {
+      font-family: 'Impact','Anton','DejaVu Sans',sans-serif;
+      font-weight: 900; font-size: 1.2rem;
+      background: linear-gradient(180deg, #FFD700 0%, #FF6B00 45%, #FF0000 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-transform: uppercase; letter-spacing: 0.03em;
+      filter: drop-shadow(0 0 6px rgba(255,107,0,0.55));
+    }
+
+    .preset-card.clean-modern .preview-text {
+      font-weight: 500; font-size: 1.05rem;
+      color: #fff; letter-spacing: 0.07em;
+      border-bottom: 2px solid #6C3AED;
+      padding-bottom: 3px;
+    }
+
+    .preset-card.podcast .preview-text {
+      font-family: 'Georgia','Liberation Serif',serif;
+      color: #e2e8f0; font-weight: 400;
+      font-size: 1.05rem; font-style: italic;
+      letter-spacing: 0.02em;
+      border-left: 3px solid #6C3AED; padding-left: 10px;
+    }
+
+    .preset-card.tiktok-trend .preview-text {
+      font-weight: 800; font-size: 1.2rem;
+      background: linear-gradient(90deg, #25F4EE, #FE2C55);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-transform: uppercase; letter-spacing: 0.035em;
+    }
+
+    .preset-card.shadow-drop .preview-text {
+      font-weight: 800; font-size: 1.2rem; color: #fff;
+      text-shadow:
+        4px 4px 0 rgba(108,58,237,0.7),
+        7px 7px 0 rgba(108,58,237,0.3);
+      text-transform: uppercase; letter-spacing: 0.025em;
     }
 
     .color-picker-group {
@@ -1331,19 +1530,25 @@ router.get('/', requireAuth, (req, res) => {
             <div class="section">
               <div class="section-title">✨ Caption Styling</div>
 
+              <!-- Presets first, Customize second (single consolidated tab
+                   that holds everything from the old Font + Effects tabs). -->
               <div class="tabs">
                 <button class="tab-button active" onclick="switchTab('presets')">Presets</button>
-                <button class="tab-button" onclick="switchTab('font')">Font</button>
-                <button class="tab-button" onclick="switchTab('effects')">Effects</button>
+                <button class="tab-button" onclick="switchTab('customize')">Customize</button>
               </div>
 
               <!-- Presets Tab -->
               <div id="presetsTab" class="tab-content active">
+                <div class="custom-state-pill" id="customStatePill">
+                  Custom — based on <span id="customStateBaseName">Karaoke</span>
+                </div>
                 <div class="presets-grid" id="presetsGrid"></div>
               </div>
 
-              <!-- Font Tab -->
-              <div id="fontTab" class="tab-content">
+              <!-- Customize Tab — vertical scrolling pane combining Font +
+                   Effects controls. Manual changes here flip the Presets tab
+                   into a 'Custom' state (deselects the active card). -->
+              <div id="customizeTab" class="tab-content">
                 <div class="input-group">
                   <label class="input-label">Font Family</label>
                   <select class="select-field" id="fontFamily">
@@ -1388,10 +1593,7 @@ router.get('/', requireAuth, (req, res) => {
                   </div>
                   <input type="range" class="slider" id="outlineWidth" min="0" max="8" value="2" onchange="updateOutlineWidth()">
                 </div>
-              </div>
 
-              <!-- Effects Tab -->
-              <div id="effectsTab" class="tab-content">
                 <div class="input-group">
                   <label class="input-label">Animation</label>
                   <select class="select-field" id="animation">
@@ -1458,60 +1660,167 @@ router.get('/', requireAuth, (req, res) => {
 
     // ===== Live caption preview =====
     const SAMPLE_CAPTION_WORDS = ['This', 'is', 'how', 'your', 'captions', 'will', 'look'];
-    const PRESET_DEFAULTS = {
-      'karaoke':   { fontFamily: 'Arial',       fontSize: 48, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 2, highlightColor: 'FF00FF', animation: 'none',   position: 'bottom' },
-      'bold-pop':  { fontFamily: 'Impact',      fontSize: 56, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FFD700', animation: 'pop',    position: 'bottom' },
-      'minimal':   { fontFamily: 'Helvetica',   fontSize: 40, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 0, highlightColor: 'FFFFFF', animation: 'fade',   position: 'bottom' },
-      'neon-glow': { fontFamily: 'Arial',       fontSize: 48, textColor: '39FF14', outlineColor: '00FF00', outlineWidth: 3, highlightColor: '39FF14', animation: 'glow',   position: 'bottom' },
-      'mrbeast':   { fontFamily: 'Impact',      fontSize: 54, textColor: 'D4A574', outlineColor: '000000', outlineWidth: 5, highlightColor: 'FFD700', animation: 'pop',    position: 'bottom' },
-      'hormozi':   { fontFamily: 'Arial',       fontSize: 50, textColor: 'FFFFFF', outlineColor: 'FF0000', outlineWidth: 3, highlightColor: 'FFFF00', animation: 'none',   position: 'bottom' }
-    };
+
+    // 20-preset library — every entry has:
+    //   id        unique key
+    //   name      human-readable display name
+    //   behavior  which backend bucket drives the per-word \\t() animation
+    //             (one of: karaoke, bold-pop, minimal, neon-glow, mrbeast,
+    //             hormozi). The export pipeline reads the 'behavior' field
+    //             and emits the matching active-word transitions.
+    //   cs        full StyleConfig (fontFamily, fontSize, textColor,
+    //             outlineColor, outlineWidth, highlightColor, animation,
+    //             position) — same shape readCurrentStyle() returns.
+    //   sampleWords  optional override for the SAMPLE_CAPTION_WORDS shown
+    //             in the live preview (e.g. lowercase variants).
+    const PRESET_LIBRARY = [
+      { id: 'karaoke',       name: 'Karaoke',       behavior: 'karaoke',
+        cs: { fontFamily: 'Arial',           fontSize: 48, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 2, highlightColor: 'FF00FF', animation: 'none',  position: 'bottom' } },
+      { id: 'bold-pop',      name: 'Bold Pop',      behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 56, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FFD700', animation: 'pop',   position: 'bottom' } },
+      { id: 'minimal',       name: 'Minimal',       behavior: 'minimal',
+        cs: { fontFamily: 'Helvetica',       fontSize: 40, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 0, highlightColor: 'FFFFFF', animation: 'fade',  position: 'bottom' } },
+      { id: 'neon-glow',     name: 'Neon Glow',     behavior: 'neon-glow',
+        cs: { fontFamily: 'Arial',           fontSize: 48, textColor: '39FF14', outlineColor: '00FF00', outlineWidth: 3, highlightColor: '39FF14', animation: 'glow',  position: 'bottom' } },
+      { id: 'gradient-wave', name: 'Gradient Wave', behavior: 'karaoke',
+        cs: { fontFamily: 'Arial',           fontSize: 50, textColor: 'FF6B6B', outlineColor: '6C3AED', outlineWidth: 2, highlightColor: '25F4EE', animation: 'glow',  position: 'bottom' } },
+      { id: 'typewriter',    name: 'Typewriter',    behavior: 'minimal',
+        cs: { fontFamily: 'Courier New',     fontSize: 42, textColor: '00FF00', outlineColor: '003300', outlineWidth: 1, highlightColor: '00FF00', animation: 'none',  position: 'bottom' } },
+      { id: 'cinematic',     name: 'Cinematic',     behavior: 'minimal',
+        cs: { fontFamily: 'Georgia',         fontSize: 44, textColor: 'D4A574', outlineColor: '000000', outlineWidth: 1, highlightColor: 'F0E0C0', animation: 'fade',  position: 'bottom' } },
+      { id: 'street',        name: 'Street',        behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 50, textColor: 'FFFF00', outlineColor: 'FF0000', outlineWidth: 3, highlightColor: 'FF6600', animation: 'pop',   position: 'bottom' } },
+      { id: 'hormozi',       name: 'Hormozi',       behavior: 'hormozi',
+        cs: { fontFamily: 'Arial',           fontSize: 50, textColor: 'FFFFFF', outlineColor: 'FF0000', outlineWidth: 3, highlightColor: 'FFFF00', animation: 'none',  position: 'bottom' } },
+      { id: 'mrbeast',       name: 'MrBeast',       behavior: 'mrbeast',
+        cs: { fontFamily: 'Impact',          fontSize: 54, textColor: 'FFD700', outlineColor: '000000', outlineWidth: 5, highlightColor: 'FFFFFF', animation: 'pop',   position: 'bottom' } },
+      { id: 'classic-sub',   name: 'Classic',       behavior: 'minimal',
+        cs: { fontFamily: 'Arial',           fontSize: 38, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 2, highlightColor: 'FFFFFF', animation: 'none',  position: 'bottom' } },
+      { id: 'outline-style', name: 'Outline',       behavior: 'minimal',
+        cs: { fontFamily: 'Impact',          fontSize: 52, textColor: '000000', outlineColor: 'FFFFFF', outlineWidth: 4, highlightColor: 'FFFFFF', animation: 'none',  position: 'bottom' } },
+      { id: 'soft-glow',     name: 'Soft Glow',     behavior: 'karaoke',
+        cs: { fontFamily: 'Arial',           fontSize: 46, textColor: 'FFFFFF', outlineColor: 'A855F7', outlineWidth: 2, highlightColor: 'A855F7', animation: 'glow',  position: 'bottom' } },
+      { id: 'retro-vhs',     name: 'Retro VHS',     behavior: 'karaoke',
+        cs: { fontFamily: 'Courier New',     fontSize: 44, textColor: 'FF3366', outlineColor: '00FFFF', outlineWidth: 2, highlightColor: 'FF0066', animation: 'none',  position: 'bottom' } },
+      { id: 'comic',         name: 'Comic',         behavior: 'bold-pop',
+        cs: { fontFamily: 'Verdana',         fontSize: 46, textColor: 'FFE66D', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FF6B6B', animation: 'pop',   position: 'bottom' } },
+      { id: 'fire',          name: 'Fire',          behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 52, textColor: 'FF6B00', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FFD700', animation: 'glow',  position: 'bottom' } },
+      { id: 'clean-modern',  name: 'Clean Modern',  behavior: 'karaoke',
+        cs: { fontFamily: 'Helvetica',       fontSize: 44, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 1, highlightColor: '6C3AED', animation: 'none',  position: 'bottom' } },
+      { id: 'podcast',       name: 'Podcast',       behavior: 'minimal',
+        cs: { fontFamily: 'Georgia',         fontSize: 40, textColor: 'E2E8F0', outlineColor: '000000', outlineWidth: 1, highlightColor: '6C3AED', animation: 'fade',  position: 'bottom' } },
+      { id: 'tiktok-trend',  name: 'TikTok Trend',  behavior: 'mrbeast',
+        cs: { fontFamily: 'Impact',          fontSize: 52, textColor: '25F4EE', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FE2C55', animation: 'pop',   position: 'bottom' } },
+      { id: 'shadow-drop',   name: 'Shadow Drop',   behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 50, textColor: 'FFFFFF', outlineColor: '6C3AED', outlineWidth: 4, highlightColor: 'A855F7', animation: 'pop',   position: 'bottom' } }
+    ];
+
+    // Build a quick lookup so selectPreset and exportVideo can grab by id.
+    const PRESET_BY_ID = Object.fromEntries(PRESET_LIBRARY.map(p => [p.id, p]));
+
+    // PRESET_DEFAULTS retained as a thin compatibility shim — anything that
+    // still reads PRESET_DEFAULTS[id] gets the cs object directly.
+    const PRESET_DEFAULTS = Object.fromEntries(PRESET_LIBRARY.map(p => [p.id, p.cs]));
+
     let previewCycleInterval = null;
     let previewActiveIdx = 0;
+    // True the moment the user changes anything in Customize after picking
+    // a preset. Clears whenever a preset card is clicked. Drives the Custom
+    // pill in the Presets tab and signals exportVideo() to send raw
+    // customSettings without claiming a preset.
+    let isCustomized = false;
 
-    // Initialize presets grid
+    // Initialize presets grid — every card is a true WYSIWYG preview that
+    // uses the actual preset CSS class so the user sees how the captions
+    // will render before clicking. The card's preview text is the standard
+    // sample sentence styled per-preset.
     function initPresets() {
-      const presetsData = [
-        { id: 'karaoke', name: 'Karaoke', preview: 'HELLO' },
-        { id: 'bold-pop', name: 'Bold Pop', preview: 'HELLO' },
-        { id: 'minimal', name: 'Minimal', preview: 'hello' },
-        { id: 'neon-glow', name: 'Neon Glow', preview: 'HELLO' },
-        { id: 'mrbeast', name: 'MrBeast', preview: 'HELLO' },
-        { id: 'hormozi', name: 'Hormozi', preview: 'HELLO' }
-      ];
-
       const grid = document.getElementById('presetsGrid');
-      grid.innerHTML = presetsData.map(p => \`
-        <div class="preset-card \${p.id === 'karaoke' ? 'selected' : ''}" data-preset-id="\${p.id}">
-          <div class="preset-preview">\${p.preview}</div>
-          <div class="preset-name">\${p.name}</div>
-        </div>
-      \`).join('');
+      const sample = 'CAPTIONS';
+      const sampleLower = 'captions';
 
-      // Attach click handlers (avoid relying on inline onclick with event globals)
+      grid.innerHTML = PRESET_LIBRARY.map(p => {
+        const isStartSelected = p.id === 'karaoke';
+        // Each preset gets its own preview text variant matching what its
+        // burned output would look like (uppercase for shouty presets,
+        // lowercase for minimal / podcast).
+        const previewText = (() => {
+          switch (p.id) {
+            case 'minimal':
+            case 'typewriter':
+            case 'podcast':
+            case 'cinematic':
+              return sampleLower;
+            case 'karaoke':
+              // Two-word karaoke effect to show the gradient/highlight rolling
+              return '<span class="word-current">CAPTIONS</span>';
+            case 'hormozi':
+              return 'YOU <span class="word-highlight">WIN</span>';
+            default:
+              return sample;
+          }
+        })();
+        return '<div class="preset-card ' + p.id + (isStartSelected ? ' selected' : '') + '" data-preset-id="' + p.id + '" title="' + p.name + '">'
+          + '<div class="preset-preview"><div class="preview-text">' + previewText + '</div></div>'
+          + '<div class="preset-name">' + p.name + '</div>'
+          + '</div>';
+      }).join('');
+
+      // Click handlers
       grid.querySelectorAll('.preset-card').forEach(card => {
         card.addEventListener('click', () => selectPreset(card.dataset.presetId, card));
       });
     }
 
     function selectPreset(presetId, clickedCard) {
+      const p = PRESET_BY_ID[presetId];
+      if (!p) return;
       currentPreset = presetId;
-      document.querySelectorAll('.preset-card').forEach(card => card.classList.remove('selected'));
-      if (clickedCard) clickedCard.classList.add('selected');
+      isCustomized = false;
+      hideCustomPill();
 
-      // Sync UI controls to the preset defaults so Font/Effects tabs reflect the choice
-      const p = PRESET_DEFAULTS[presetId];
-      if (p) {
-        setSelectValue('fontFamily', p.fontFamily);
-        setRangeValue('fontSize', p.fontSize, 'fontSizeValue');
-        setColorValue('textColor', 'textColorHex', p.textColor);
-        setColorValue('outlineColor', 'outlineColorHex', p.outlineColor);
-        setRangeValue('outlineWidth', p.outlineWidth, 'outlineWidthValue');
-        setColorValue('highlightColor', 'highlightColorHex', p.highlightColor);
-        setSelectValue('animation', p.animation);
-        setSelectValue('position', p.position);
+      // Visually mark the selected card
+      document.querySelectorAll('.preset-card').forEach(card => card.classList.remove('selected'));
+      const card = clickedCard || document.querySelector('.preset-card[data-preset-id="' + presetId + '"]');
+      if (card) card.classList.add('selected');
+
+      // Sync the Customize controls to this preset's StyleConfig — the
+      // suppressCustomFlag flag stops the change events from immediately
+      // re-marking the state as 'Custom'.
+      window.__suppressCustomFlag = true;
+      try {
+        const cs = p.cs;
+        setSelectValue('fontFamily', cs.fontFamily);
+        setRangeValue('fontSize', cs.fontSize, 'fontSizeValue');
+        setColorValue('textColor', 'textColorHex', cs.textColor);
+        setColorValue('outlineColor', 'outlineColorHex', cs.outlineColor);
+        setRangeValue('outlineWidth', cs.outlineWidth, 'outlineWidthValue');
+        setColorValue('highlightColor', 'highlightColorHex', cs.highlightColor);
+        setSelectValue('animation', cs.animation);
+        setSelectValue('position', cs.position);
+      } finally {
+        window.__suppressCustomFlag = false;
       }
       updateCaptionPreview();
+    }
+
+    // Called whenever a Customize control changes. Marks the current state
+    // as 'Custom' (deselects the active preset card, shows the pill).
+    function markCustomIfManual() {
+      if (window.__suppressCustomFlag) return;
+      if (isCustomized) return;
+      isCustomized = true;
+      const baseName = (PRESET_BY_ID[currentPreset] || {}).name || 'Karaoke';
+      document.querySelectorAll('.preset-card').forEach(card => card.classList.remove('selected'));
+      const pill = document.getElementById('customStatePill');
+      const baseSpan = document.getElementById('customStateBaseName');
+      if (baseSpan) baseSpan.textContent = baseName;
+      if (pill) pill.classList.add('show');
+    }
+    function hideCustomPill() {
+      const pill = document.getElementById('customStatePill');
+      if (pill) pill.classList.remove('show');
     }
 
     function setSelectValue(id, value) {
@@ -1883,9 +2192,16 @@ router.get('/', requireAuth, (req, res) => {
           position: live.position
         };
 
-        // Diagnostic: log the exact payload so a Console screenshot proves
-        // preview state == export payload.
-        console.log('[AI Captions] export StyleConfig =>', customSettings);
+        // The backend understands a fixed set of "behavior buckets" that
+        // drive per-word \\t() animation patterns (karaoke / bold-pop /
+        // minimal / neon-glow / mrbeast / hormozi). New presets in the
+        // 20-preset library map to one of those via PRESET_BY_ID[id].behavior;
+        // we send THAT, not the raw preset id, so a card like 'gradient-wave'
+        // still gets a real per-word transition. Custom state defaults to
+        // karaoke since the active-word color flip is the safest baseline.
+        const presetMeta = PRESET_BY_ID[currentPreset];
+        const backendBehavior = (presetMeta && presetMeta.behavior) || 'karaoke';
+        console.log('[AI Captions] export StyleConfig =>', { presetId: currentPreset, backendBehavior, isCustomized, customSettings });
 
         const res = await fetch('/ai-captions/apply', {
           method: 'POST',
@@ -1893,7 +2209,7 @@ router.get('/', requireAuth, (req, res) => {
           body: JSON.stringify({
             videoPath: uploadedVideoPath,
             transcript: transcript,
-            preset: currentPreset,
+            preset: backendBehavior,
             customSettings: customSettings
           })
         });
@@ -1943,10 +2259,11 @@ router.get('/', requireAuth, (req, res) => {
 
     // ===== Wire live-preview listeners =====
     function bindPreviewListeners() {
-      // Selects
+      // Selects — every change in Customize also flips the Custom indicator
+      // unless suppressed (which selectPreset does while it syncs values).
       ['fontFamily', 'animation', 'position'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener('change', updateCaptionPreview);
+        if (el) el.addEventListener('change', () => { markCustomIfManual(); updateCaptionPreview(); });
       });
 
       // Color pickers — fire on 'input' for smooth live dragging
@@ -1955,11 +2272,13 @@ router.get('/', requireAuth, (req, res) => {
         const h = document.getElementById(hexId);
         if (c) c.addEventListener('input', () => {
           document.getElementById(hexId).value = c.value.slice(1).toUpperCase();
+          markCustomIfManual();
           updateCaptionPreview();
         });
         if (h) h.addEventListener('input', () => {
           const v = h.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
           if (v.length === 6 && c) c.value = '#' + v.toLowerCase();
+          markCustomIfManual();
           updateCaptionPreview();
         });
       });
@@ -1972,6 +2291,7 @@ router.get('/', requireAuth, (req, res) => {
           const labelId = id + 'Value';
           const label = document.getElementById(labelId);
           if (label) label.textContent = el.value;
+          markCustomIfManual();
           updateCaptionPreview();
         });
       });
