@@ -1155,9 +1155,9 @@ router.post('/compose-clip', requireAuth, async (req, res) => {
         '-i', audioPath,
         '-f', 'lavfi', '-i', sfxFilter,
         '-filter_complex',
-          'format=yuv420p,' + drawtextFilters + '[v];' +
-          '[1:a]volume=1.0,atrim=0:' + dur.toFixed(3) + '[vo];' +
-          '[2:a]volume=0.6[sfx];' +
+          '[0:v]format=yuv420p,' + drawtextFilters + '[v];' +
+          '[1:a]volume=1.0,atrim=0:' + dur.toFixed(3) + ',asetpts=PTS-STARTPTS[vo];' +
+          '[2:a]volume=0.6,atrim=0:' + dur.toFixed(3) + ',asetpts=PTS-STARTPTS[sfx];' +
           '[vo][sfx]amix=inputs=2:duration=longest:dropout_transition=0[a]',
         '-map', '[v]', '-map', '[a]',
         '-t', dur.toFixed(3), '-shortest'
@@ -1168,8 +1168,8 @@ router.post('/compose-clip', requireAuth, async (req, res) => {
         '-f', 'lavfi', '-i', 'color=c=' + style.bg + ':s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3),
         '-f', 'lavfi', '-i', sfxFilter,
         '-filter_complex',
-          'format=yuv420p,' + drawtextFilters + '[v];' +
-          '[1:a]volume=0.85,atrim=0:' + dur.toFixed(3) + '[a]',
+          '[0:v]format=yuv420p,' + drawtextFilters + '[v];' +
+          '[1:a]volume=0.85,atrim=0:' + dur.toFixed(3) + ',asetpts=PTS-STARTPTS[a]',
         '-map', '[v]', '-map', '[a]',
         '-t', dur.toFixed(3), '-shortest'
       ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]);
