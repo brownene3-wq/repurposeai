@@ -502,46 +502,28 @@
 
       function onMove(ev){
         var rawDx = ev.clientX - startX;
-        // First pass: compute each member's proposed target + check against
-        // overlaps WITH CLIPS OUTSIDE THE GROUP. Members of the group can
-        // still overlap each other since they move in lockstep.
-        //
-        // To preserve the group's relative ordering, we clamp the ENTIRE
-        // group to the maximum safe delta (the smallest absolute dx that
-        // avoids overlap for every member).
+        // Task #48 — V1 clips may now overlap freely. Only AUDIO clips
+        // still hop to a free sub-track on collision. Video clips just
+        // slide to wherever the user drags them.
         var minLeft = groupState.reduce(function(m, g){ return Math.min(m, g.startLeft); }, Infinity);
-        // Never let any member go negative
         var effectiveDx = rawDx;
         if (minLeft + effectiveDx < 0) effectiveDx = -minLeft;
 
-        // Clamp against non-group clips on each track
         groupState.forEach(function(g){
           var target = g.startLeft + effectiveDx;
           target = applySnap(target, g.width, g.clip);
           var track = g.track;
-          // Build an ignore-set = other group members on the same track +
-          // the clip itself. clipOverlaps has a 3rd arg "ignoreClip" for
-          // a single clip; we emulate by temporarily removing the class
-          // or by checking manually.
-          // Simpler: if clipOverlaps with any non-group clip on this track,
-          // roll effectiveDx back.
-          if (clipOverlapsExcludingGroup(track, target, g.width, g.clip, group)){
-            if (g.isAudio){
-              var freeTrack = findFreeAudioTrack(target, g.width, track, g.clip);
-              if (!freeTrack){
-                // Can't place — keep the member at its current position
-                target = g.startLeft;
-                effectiveDx = target - g.startLeft;
-              }
-            } else {
-              // Clamp the group so this member doesn't collide
+          if (g.isAudio && clipOverlapsExcludingGroup(track, target, g.width, g.clip, group)){
+            // Audio: try to hop to a free audio sub-track; if none, clamp
+            var freeTrack = findFreeAudioTrack(target, g.width, track, g.clip);
+            if (!freeTrack){
               var clamped = clampAwayFromOverlap(track, target, g.width, g.clip);
               effectiveDx = clamped - g.startLeft;
             }
           }
+          // Video (V1): overlap is allowed — no clamp.
         });
 
-        // Commit the (possibly-clamped) effectiveDx to every member
         groupState.forEach(function(g){
           var target = Math.max(0, g.startLeft + effectiveDx);
           g.clip.style.left = target + 'px';
