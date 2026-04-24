@@ -9842,16 +9842,74 @@ router.post('/ai-captions', requireAuth, async (req, res) => {
       timestamp_granularities: ['word']
     });
 
+    // ─── Task #40 — Waveform-based word alignment ─────────────────────
+    // Run FFmpeg silencedetect on the same extracted MP3 to find the
+    // ONSET boundaries (the moments where silence ENDS and audio resumes).
+    // Then for each Whisper word, snap its start to the nearest onset
+    // within ±400ms. Whisper's word timestamps are usually within ~200ms
+    // of correct, but can slip to 500ms+ on certain audio — snapping to
+    // a real energy-rise boundary fixes that automatically and gives
+    // the "captions line up with the first syllable" feel.
+    //
+    // silencedetect prints:
+    //   [silencedetect] silence_start: 1.234
+    //   [silencedetect] silence_end:   2.567 | silence_duration: 1.333
+    // We care about silence_end values (= onset of next spoken region).
+    var onsets = await new Promise(function(resolve){
+      var out = '';
+      var p = spawn(ffmpegPath, [
+        '-i', mp3Path,
+        '-af', 'silencedetect=noise=-30dB:d=0.12',
+        '-f', 'null', '-'
+      ]);
+      p.stderr.on('data', function(d){ out += d.toString(); });
+      p.on('close', function(){
+        var re = /silence_end:\s*([0-9.]+)/g, m, arr = [];
+        while ((m = re.exec(out)) !== null){ arr.push(parseFloat(m[1])); }
+        // First spoken region has no silence_end — add t=0 as an implicit
+        // onset if the file starts with speech (silencedetect wouldn't emit
+        // a silence_end for that case).
+        arr.unshift(0);
+        resolve(arr.sort(function(a,b){ return a - b; }));
+      });
+      p.on('error', function(){ resolve([0]); });
+    });
+    function snapToOnset(t){
+      // Binary-search the nearest onset within ±400ms of t. Returns t
+      // unchanged if no onset is within range.
+      if (!onsets.length) return t;
+      var lo = 0, hi = onsets.length - 1, best = -1, bestDiff = Infinity;
+      while (lo <= hi){
+        var mid = (lo + hi) >> 1;
+        var diff = onsets[mid] - t;
+        if (Math.abs(diff) < bestDiff){ best = mid; bestDiff = Math.abs(diff); }
+        if (diff < 0) lo = mid + 1;
+        else if (diff > 0) hi = mid - 1;
+        else { best = mid; bestDiff = 0; break; }
+      }
+      if (best < 0) return t;
+      // Prefer onsets that are slightly BEFORE Whisper's start (word begins
+      // at or just after the boundary). Window: [-0.5s, +0.2s].
+      var candidate = onsets[best];
+      if (candidate >= t - 0.5 && candidate <= t + 0.2) return candidate;
+      return t;
+    }
+
     // Clean up the extracted audio
     try { fs.unlinkSync(mp3Path); } catch(_){}
 
     var words = [];
     if (transcript.words && Array.isArray(transcript.words)){
       for (var i = 0; i < transcript.words.length; i++){
+        var rawStart = transcript.words[i].start;
+        var rawEnd   = transcript.words[i].end;
+        var snappedStart = snapToOnset(rawStart);
+        // Keep word duration constant so a snap doesn't eat the word
+        var wordDur = Math.max(0.05, rawEnd - rawStart);
         words.push({
           word: transcript.words[i].word,
-          start: transcript.words[i].start,
-          end: transcript.words[i].end
+          start: snappedStart,
+          end: snappedStart + wordDur
         });
       }
     } else {

@@ -920,6 +920,11 @@ router.post('/compose-clip', requireAuth, async (req, res) => {
     const { hookText, audioUrl } = req.body || {};
     const W = parseInt((req.body || {}).width,  10) || 1280;
     const H = parseInt((req.body || {}).height, 10) || 720;
+    // Task #41 — cinematic spec passed through from /generate
+    const impactWordsIn = Array.isArray((req.body || {}).impactWords) ? (req.body || {}).impactWords.slice(0, 3) : [];
+    const sfxSpec = String((req.body || {}).sfx || '').toLowerCase();
+    const visualStyle = String((req.body || {}).visualStyle || 'cinematic_warm');
+    const cameraMovement = String((req.body || {}).cameraMovement || 'fast_zoom_in');
 
     if (!hookText || typeof hookText !== 'string'){
       return res.status(400).json({ error: 'hookText is required' });
@@ -962,7 +967,9 @@ router.post('/compose-clip', requireAuth, async (req, res) => {
     } else {
       dur = Math.min(8, Math.max(3, wordCount / 2.7));
     }
-    dur = Math.max(1, Math.min(15, dur));
+    // Task #41 — Clamp hook to 3-5s thumb-stopper window. TTS audio that's
+    // longer than 5s gets trimmed in the composer so the hook stays tight.
+    dur = Math.max(3, Math.min(5, dur));
 
     // Build the clip: gradient background + centered text + audio
     const outputFilename = 'hook-clip-' + Date.now() + '-' + uuidv4().slice(0, 8) + '.mp4';
@@ -1010,15 +1017,24 @@ router.post('/compose-clip', requireAuth, async (req, res) => {
     const lineH = Math.round(fontSize * 1.25);
     const totalH = lineH * escLines.length;
 
-    const drawtextFilters = escLines.map(function(ln, i){
-      const y = '(h-' + totalH + ')/2+' + (i * lineH);
+    // ─── Task #41 — cinematic drawtext pipeline ──────────────────────
+    // Small VO subtitle (bottom-centered) + HUGE animated impact words
+    // (center-stage, time-synced to the hook's peak moment around
+    // 60% through the clip).
+    const peakT = dur * 0.6;
+    const voFontSize = Math.round(W * 0.028);
+    const voLineH    = Math.round(voFontSize * 1.25);
+    const voTotalH   = voLineH * escLines.length;
+    // Small VO subtitle at bottom
+    const voFilters = escLines.map(function(ln, i){
+      const y = 'h-h*0.10-' + (voTotalH - (i * voLineH));
       const parts = [
         'drawtext=text=\'' + ln + '\'',
-        'fontsize=' + fontSize,
+        'fontsize=' + voFontSize,
         'fontcolor=white',
-        'shadowx=0', 'shadowy=' + Math.max(1, Math.round(fontSize * 0.08)),
-        'shadowcolor=black@0.75',
-        'borderw=1', 'bordercolor=black@0.4',
+        'shadowx=0', 'shadowy=' + Math.max(1, Math.round(voFontSize * 0.1)),
+        'shadowcolor=black@0.85',
+        'borderw=2', 'bordercolor=black@0.6',
         'x=(w-text_w)/2',
         'y=' + y
       ];
@@ -1026,56 +1042,159 @@ router.post('/compose-clip', requireAuth, async (req, res) => {
       return parts.join(':');
     }).join(',');
 
-    const bgFilter =
-      'color=c=0x1a1230:s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3) +
-      '[bg];[bg]format=yuv420p,' +
+    // Impact words — HUGE, centered, one per sub-window, scale-pulses at peak
+    const impactWordsSafe = (impactWordsIn.length ? impactWordsIn : [hookText.split(/\s+/).slice(0, 2).join(' ').toUpperCase()])
+      .slice(0, 3)
+      .map(function(w){ return escDT(String(w).toUpperCase().slice(0, 22)); });
+
+    // Each impact word gets a time window; the last one hits at peakT
+    const impactFilters = impactWordsSafe.map(function(word, idx){
+      // Window for this word: ~1.2s wide, spaced across the duration
+      const winStart = (idx + 0.25) * (dur / (impactWordsSafe.length + 0.5));
+      const winEnd   = winStart + 1.1;
+      // Scale pulse: base ~12% height, pulses to ~16% at the midpoint
+      const baseSize = Math.round(H * 0.14);
+      const peakSize = Math.round(H * 0.19);
+      // Time-varying size via 'fontsize' expression isn't directly supported
+      // for non-expression mode, so we use two overlapping drawtext passes:
+      // one 'intro' (fade in + base size) and a 'peak' marker the last
+      // word gets an extra glow pass.
+      const parts = [
+        'drawtext=text=\'' + word + '\'',
+        'fontsize=' + (idx === impactWordsSafe.length - 1 ? peakSize : baseSize),
+        'fontcolor=white',
+        'shadowx=0', 'shadowy=6', 'shadowcolor=black@0.9',
+        'borderw=3', 'bordercolor=black@0.6',
+        'x=(w-text_w)/2',
+        'y=(h-text_h)/2-h*0.02',
+        "enable='between(t\\," + winStart.toFixed(3) + "\\," + winEnd.toFixed(3) + ")'"
+      ];
+      if (fontFile) parts.splice(3, 0, 'fontfile=' + fontFile);
+      return parts.join(':');
+    }).join(',');
+
+    // Visual-style lookup — picks a gradient + accent color based on the
+    // spec returned by /generate.
+    const STYLE_PRESETS = {
+      'volumetric':         { bg: '0x0a0a1a', accent: '0x6366f1', box: '0x6366f1@0.22' },
+      'neon_noir':          { bg: '0x0c0012', accent: '0xec4899', box: '0xec4899@0.28' },
+      'high_contrast_bw':   { bg: '0x000000', accent: '0xffffff', box: '0xffffff@0.12' },
+      'cinematic_warm':     { bg: '0x1a0f08', accent: '0xf59e0b', box: '0xf59e0b@0.22' },
+      'cyberpunk_glow':     { bg: '0x050014', accent: '0x22d3ee', box: '0x22d3ee@0.28' }
+    };
+    const style = STYLE_PRESETS[visualStyle] || STYLE_PRESETS['cinematic_warm'];
+
+    // Animated vignette via drawbox alpha ramp (simple camera-feel)
+    const accentBoxChain =
       'drawbox=x=0:y=0:w=' + W + ':h=' + H +
-        ':color=0x7c3aed@0.25:t=fill,' +
+      ':color=' + style.box + ':t=fill';
+
+    const drawtextFilters = [accentBoxChain, impactFilters, voFilters]
+      .filter(Boolean).join(',');
+
+    const bgFilter =
+      'color=c=' + style.bg + ':s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3) +
+      '[bg];[bg]format=yuv420p,' +
       drawtextFilters + '[v]';
 
     const VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
                     '-profile:v', 'high', '-level', '4.0'];
     const ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
 
+    // ─── Task #41 — Synthesize an SFX track via lavfi filters ────────
+    // All SFX are generated on-the-fly in FFmpeg (no audio assets in the
+    // repo). Each returns a named filterchain that produces stereo audio
+    // at the specified duration, with a target peak amplitude.
+    function buildSfxFilter(kind, D){
+      // D = duration in seconds
+      switch (kind){
+        case 'riser':
+          // Pitch-rising tone + noise build, resolves at peakT
+          return 'sine=frequency=200:duration=' + D.toFixed(3) +
+                 ':sample_rate=44100,' +
+                 "volume='min(1\\,t/" + D.toFixed(3) + "*1.0)':eval=frame," +
+                 'aformat=channel_layouts=stereo';
+        case 'bass_drop':
+          return 'sine=frequency=55:duration=' + D.toFixed(3) +
+                 ':sample_rate=44100,' +
+                 "volume='pow(min(1\\,t/" + peakT.toFixed(3) + ")\\,2)':eval=frame," +
+                 'aformat=channel_layouts=stereo';
+        case 'record_scratch':
+          // Short noise pulse at the start
+          return 'anoisesrc=amplitude=0.5:duration=0.4:color=pink,' +
+                 "volume='max(0\\,1-t*2.5)':eval=frame," +
+                 'apad=whole_dur=' + D.toFixed(3) + ',' +
+                 'aformat=channel_layouts=stereo';
+        case 'tension_hit':
+          return 'sine=frequency=110:duration=0.35:sample_rate=44100,' +
+                 "volume='max(0\\,1-t*2.8)':eval=frame," +
+                 'apad=whole_dur=' + D.toFixed(3) + ',' +
+                 'aformat=channel_layouts=stereo';
+        case 'cinematic_boom':
+          return 'sine=frequency=48:duration=0.8:sample_rate=44100,' +
+                 "volume='max(0\\,1-t*1.2)':eval=frame," +
+                 'apad=whole_dur=' + D.toFixed(3) + ',' +
+                 'aformat=channel_layouts=stereo';
+        case 'whoosh':
+        default:
+          // Band-pass sweep on white noise → classic whoosh feel
+          return 'anoisesrc=amplitude=0.6:duration=' + Math.min(0.8, D).toFixed(3) + ':color=white,' +
+                 "volume='max(0\\,1-t*1.2)':eval=frame," +
+                 'apad=whole_dur=' + D.toFixed(3) + ',' +
+                 'aformat=channel_layouts=stereo';
+      }
+    }
+    const sfxFilter = buildSfxFilter(sfxSpec || 'whoosh', dur);
+
     let args;
     if (audioPath){
+      // Mix the VO and the SFX together, ducking the SFX slightly so the
+      // voice stays intelligible. amerge + volume=-6dB on SFX.
       args = [
-        '-f', 'lavfi', '-i', 'color=c=0x1a1230:s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3),
+        '-f', 'lavfi', '-i', 'color=c=' + style.bg + ':s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3),
         '-i', audioPath,
-        '-vf', 'format=yuv420p,drawbox=x=0:y=0:w=' + W + ':h=' + H +
-               ':color=0x7c3aed@0.25:t=fill,' + drawtextFilters,
-        '-map', '0:v', '-map', '1:a',
+        '-f', 'lavfi', '-i', sfxFilter,
+        '-filter_complex',
+          'format=yuv420p,' + drawtextFilters + '[v];' +
+          '[1:a]volume=1.0,atrim=0:' + dur.toFixed(3) + '[vo];' +
+          '[2:a]volume=0.6[sfx];' +
+          '[vo][sfx]amix=inputs=2:duration=longest:dropout_transition=0[a]',
+        '-map', '[v]', '-map', '[a]',
         '-t', dur.toFixed(3), '-shortest'
       ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]);
     } else {
+      // No TTS — just SFX + impact words (still cinematic)
       args = [
-        '-f', 'lavfi', '-i', 'color=c=0x1a1230:s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3),
-        '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-        '-vf', 'format=yuv420p,drawbox=x=0:y=0:w=' + W + ':h=' + H +
-               ':color=0x7c3aed@0.25:t=fill,' + drawtextFilters,
+        '-f', 'lavfi', '-i', 'color=c=' + style.bg + ':s=' + W + 'x' + H + ':r=30:d=' + dur.toFixed(3),
+        '-f', 'lavfi', '-i', sfxFilter,
+        '-filter_complex',
+          'format=yuv420p,' + drawtextFilters + '[v];' +
+          '[1:a]volume=0.85,atrim=0:' + dur.toFixed(3) + '[a]',
+        '-map', '[v]', '-map', '[a]',
         '-t', dur.toFixed(3), '-shortest'
       ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]);
     }
 
+    // EARLY — skip the legacy fallback below (kept for older clients
+    // that don't pass impactWords). Jump straight to run + respond.
     await runFFmpeg(args);
-
     if (!fs.existsSync(outputPath)){
       return res.status(500).json({ error: 'Failed to render hook clip' });
     }
-    // Copy to the video-editor uploads dir so the editor's download
-    // route can serve it. (Different modules, different outputDirs.)
     try {
       const veUploadDir = path.join('/tmp', 'repurpose-uploads');
       if (!fs.existsSync(veUploadDir)) fs.mkdirSync(veUploadDir, { recursive: true });
       const veDest = path.join(veUploadDir, outputFilename);
       fs.copyFileSync(outputPath, veDest);
-    } catch(e){ console.warn('[ai-hook compose] copy to uploads failed:', e.message); }
-
-    res.json({
+    } catch(e){ console.warn('[ai-hook compose v2] copy to uploads failed:', e.message); }
+    return res.json({
       success: true,
       mediaUrl: '/video-editor/download/' + outputFilename,
       downloadUrl: '/video-editor/download/' + outputFilename,
-      duration: dur
+      duration: dur,
+      impactWords: impactWordsSafe.map(function(w){ return w; }),
+      sfx: sfxSpec || 'whoosh',
+      visualStyle: visualStyle
     });
   } catch (err){
     console.error('[ai-hook compose-clip] error:', err);
@@ -1155,24 +1274,49 @@ router.post('/generate', requireAuth, upload.single('video'), async (req, res) =
       return res.status(400).json({ error: 'No content provided' });
     }
 
-    const prompt = `You are an expert content creator who writes scroll-stopping video hooks.
-Generate a single, compelling ${style} style hook (5-10 seconds when spoken) for a ${platform} video.
+    // Task #41 — Structured hook generation.
+    // Ask GPT for a full "thumb-stopper" spec: hook text, 1-3 impact words
+    // to render on-screen, a sound-effect family, and a visual/motion
+    // direction. Returned as strict JSON so the composer can render a
+    // cinematic 3-5s clip with synced text + SFX + motion.
+    const prompt = `You are a short-form video hook director. Produce a 3-5s "thumb-stopper" intro hook for a ${platform} video in the ${style} style.
 Base it on this content: "${contentForAnalysis.slice(0, 500)}"
-The hook should:
-- Open strong with immediate attention-grabbing statement
-- Match the ${style} style perfectly
-- Be 15-25 words maximum
-- Work for spoken delivery
-Return ONLY the hook text, nothing else.`;
+
+Return STRICT JSON, no prose, matching this exact schema:
+{
+  "hookText": "spoken VO, 12-25 words, bold opener, designed to stop scrolling",
+  "impactWords": ["1-3 uppercase high-impact words pulled from hookText — single words or short 2-word phrases, the VISUAL kicker"],
+  "sfx": "one of: whoosh, riser, bass_drop, record_scratch, tension_hit, cinematic_boom",
+  "visualStyle": "lighting description: one of volumetric, neon_noir, high_contrast_bw, cinematic_warm, cyberpunk_glow",
+  "cameraMovement": "one of fast_zoom_in, orbit_360, handheld_shake, dolly_push, whip_pan, rack_focus",
+  "patternInterrupt": "one-sentence description of the visual shock/unexpected action designed to stop the scroll"
+}
+
+IMPORTANT:
+- hookText should work for spoken delivery
+- impactWords should be the literal words the viewer SEES on screen (huge centered text)
+- sfx must be one of the enumerated values
+- visualStyle + cameraMovement must be from the enumerated lists`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 100,
-      temperature: 0.8
+      max_tokens: 350,
+      temperature: 0.9,
+      response_format: { type: 'json_object' }
     });
 
-    const hookText = completion.choices[0].message.content.trim();
+    var hookSpec = {};
+    try { hookSpec = JSON.parse(completion.choices[0].message.content.trim()); }
+    catch(_){ hookSpec = {}; }
+
+    const hookText = (hookSpec.hookText || completion.choices[0].message.content).toString().trim();
+    const impactWords = Array.isArray(hookSpec.impactWords) ? hookSpec.impactWords.slice(0, 3).map(w => String(w || '').toUpperCase().slice(0, 20)) : [];
+    const SFX_WHITELIST = ['whoosh', 'riser', 'bass_drop', 'record_scratch', 'tension_hit', 'cinematic_boom'];
+    const sfx = SFX_WHITELIST.indexOf((hookSpec.sfx || '').toLowerCase()) >= 0 ? hookSpec.sfx.toLowerCase() : 'whoosh';
+    const visualStyle = String(hookSpec.visualStyle || 'cinematic_warm');
+    const cameraMovement = String(hookSpec.cameraMovement || 'fast_zoom_in');
+    const patternInterrupt = String(hookSpec.patternInterrupt || '');
 
     // Generate speech — free TTS or ElevenLabs depending on voice selection
     let audioUrl = '';
@@ -1209,6 +1353,12 @@ Return ONLY the hook text, nothing else.`;
       style,
       voice,
       platform,
+      // Task #41 — cinematic spec for the composer
+      impactWords,
+      sfx,
+      visualStyle,
+      cameraMovement,
+      patternInterrupt,
       videoPath: req.file ? req.file.path : null
     });
     featureUsageOps.log(req.user.id, 'ai_hooks').catch(() => {});

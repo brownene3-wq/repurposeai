@@ -2572,7 +2572,16 @@
         var compR = await fetch('/ai-hook/compose-clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ hookText: genD.hookText, audioUrl: genD.audioUrl, width: W, height: H })
+          body: JSON.stringify({
+            hookText: genD.hookText,
+            audioUrl: genD.audioUrl,
+            width: W, height: H,
+            // Task #41 — forward the cinematic spec
+            impactWords:    genD.impactWords    || [],
+            sfx:            genD.sfx            || 'whoosh',
+            visualStyle:    genD.visualStyle    || 'cinematic_warm',
+            cameraMovement: genD.cameraMovement || 'fast_zoom_in'
+          })
         });
         var compD = await compR.json();
         if (!compR.ok || !compD.success) throw new Error(compD.error || 'Hook compose failed');
