@@ -6,7 +6,14 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
-const Replicate = require('replicate');
+// Replicate is not guaranteed to be in package.json (its entry was reverted
+// during a Flux→GPT-image rollback and then the Flux code got re-added
+// separately). Require it defensively so a missing module doesn't crash
+// the whole server at startup — only the AI-Thumbnail Flux path fails.
+let Replicate = null;
+try { Replicate = require('replicate'); } catch(e){
+  console.warn('[ai-thumbnail] replicate SDK not installed — Flux image gen disabled:', e.message);
+}
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
@@ -17,11 +24,12 @@ const { featureUsageOps } = require('../db/database');
 // var is missing; real auth check happens at request time.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
-// Replicate client for Flux Schnell image generation. ~$0.003/image vs
-// ~$0.04/image on GPT-image-1 medium — roughly 10-15× cheaper, and the
-// caption is overlaid separately in the UI so Flux's weaker text rendering
-// is not a concern here.
-const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
+// Replicate client for Flux Schnell image generation. Lazy-constructed
+// only if the SDK loaded AND the auth token exists, so the server boots
+// cleanly even when the module / env var is absent.
+const replicate = (Replicate && process.env.REPLICATE_API_TOKEN)
+  ? new Replicate({ auth: process.env.REPLICATE_API_TOKEN })
+  : null;
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -950,6 +958,9 @@ async function compositeHookTitle(inputPath, titleText, outputPath) {
 // After the image comes back, the hook title is burned into the top-left
 // safe zone via compositeHookTitle().
 async function generateAIImage({ prompt, aspect, jobId, index, title }) {
+  if (!replicate){
+    throw new Error('Replicate SDK is not installed on this server. Run `npm install replicate` or set REPLICATE_API_TOKEN.');
+  }
   if (!process.env.REPLICATE_API_TOKEN) {
     throw new Error('REPLICATE_API_TOKEN not configured');
   }
