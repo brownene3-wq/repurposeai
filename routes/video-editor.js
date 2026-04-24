@@ -3340,6 +3340,8 @@ function showToast(message, type = 'success') {
             // Position offset
             offsetX:      c.dataset.offsetX      || '',
             offsetY:      c.dataset.offsetY      || '',
+            // Task #49 — creation-order stamp for overlap resolution
+            addedAt:      c.dataset.addedAt      || '',
             // FX-track clips (for the export server to merge into any
             // overlapping V1 segment — drag-to-broadcast support)
             fxKey:        c.dataset.fxKey        || '',
@@ -6549,6 +6551,64 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     v1.sort(function(a, b){
       return (parseFloat(a.left)||0) - (parseFloat(b.left)||0);
     });
+
+    // ─── Task #49 — Resolve V1 overlap: latest-added clip wins ──────────
+    // When multiple V1 clips overlap in timeline time, the one added most
+    // recently (highest clip.addedAt) should appear in the final output;
+    // older clips get their overlapping regions carved out (and possibly
+    // split into before/after slivers). This mirrors the client-side
+    // preview behavior where getClipAtPlayheadX returns the newest clip.
+    (function resolveV1Overlaps(){
+      if (v1.length < 2) return;
+      // Annotate each clip with timeline-seconds range + parsed fields
+      v1.forEach(function(c){
+        c._t0 = (parseFloat(c.left)  || 0) / pxPerSec;
+        c._t1 = c._t0 + ((parseFloat(c.width) || 0) / pxPerSec);
+        c._srcOff = parseFloat(c.sourceOffset) || 0;
+        c._intervals = [[c._t0, c._t1]];  // start with the full range
+      });
+      // Process newest-first so each "newer" clip carves its territory
+      // out of every older clip's remaining intervals.
+      var ordered = v1.slice().sort(function(a, b){
+        return (parseFloat(b.addedAt) || 0) - (parseFloat(a.addedAt) || 0);
+      });
+      function subtract(intervals, rt0, rt1){
+        var out = [];
+        intervals.forEach(function(iv){
+          var a = iv[0], b = iv[1];
+          if (rt1 <= a || rt0 >= b){ out.push(iv); return; }  // disjoint
+          if (rt0 > a) out.push([a, Math.min(rt0, b)]);
+          if (rt1 < b) out.push([Math.max(rt1, a), b]);
+        });
+        return out;
+      }
+      for (var i = 0; i < ordered.length; i++){
+        for (var j = 0; j < i; j++){
+          var newer = ordered[j];
+          ordered[i]._intervals = subtract(ordered[i]._intervals, newer._t0, newer._t1);
+        }
+      }
+      // Build the effective V1 list: each surviving interval becomes a clip
+      var effective = [];
+      ordered.forEach(function(c){
+        c._intervals.forEach(function(iv){
+          var dur = iv[1] - iv[0];
+          if (dur < 0.05) return;  // skip slivers <50ms
+          var offsetFromStart = iv[0] - c._t0;  // seconds into this clip
+          var eff = Object.assign({}, c);
+          eff.left = String(iv[0] * pxPerSec) + 'px';
+          eff.width = String(dur * pxPerSec) + 'px';
+          eff.duration = String(dur);
+          eff.sourceOffset = String(c._srcOff + offsetFromStart);
+          delete eff._t0; delete eff._t1; delete eff._srcOff; delete eff._intervals;
+          effective.push(eff);
+        });
+      });
+      // Replace v1 in place (sorted by left ascending)
+      effective.sort(function(a, b){ return (parseFloat(a.left)||0) - (parseFloat(b.left)||0); });
+      v1.length = 0;
+      effective.forEach(function(c){ v1.push(c); });
+    })();
 
     // FX-track clips broadcast their effect to every V1 clip they overlap
     // in time. We build a per-V1-clip "effective FX" view by merging the

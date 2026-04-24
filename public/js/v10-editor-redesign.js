@@ -2620,6 +2620,9 @@
           hookClip.dataset.sourceOffset = '0';
           hookClip.dataset.srcDuration = String(compD.duration);
           hookClip.dataset.aiHook = '1';
+          // Task #49 — creation-order stamp
+          hookClip.dataset.addedAt = String(Date.now() * 1000);
+          hookClip.style.zIndex = '950';
           hookClip.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
           hookClip.style.color = '#fff';
           hookClip.style.overflow = 'hidden';
@@ -2864,6 +2867,9 @@
       nc.dataset.sourceOffset = '0';
       nc.dataset.srcDuration = String(insertDur);
       nc.dataset.broll = '1';
+      // Task #49 — latest clip wins overlap, so b-rolls layer on top
+      nc.dataset.addedAt = String(Date.now() * 1000);
+      nc.style.zIndex = '900';
       nc.style.background = 'linear-gradient(135deg,#06b6d4,#0ea5e9)';
       nc.style.color = '#fff';
       nc.style.overflow = 'hidden';

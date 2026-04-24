@@ -386,6 +386,10 @@
     if (clip.dataset.serverFilename)  right.dataset.serverFilename = clip.dataset.serverFilename;
     right.dataset.duration = String(rightDur);
     right.dataset.sourceOffset = String(sourceOffset + cutSec);
+    // Task #49 — razor-split halves inherit the ORIGINAL addedAt so a
+    // split clip doesn't accidentally jump to "newest" in overlap layers
+    if (clip.dataset.addedAt) right.dataset.addedAt = clip.dataset.addedAt;
+    if (clip.style.zIndex)    right.style.zIndex    = clip.style.zIndex;
     // Position + style — match original
     right.style.left = (left + cutXInClip) + 'px';
     right.style.width = (width - cutXInClip) + 'px';
@@ -1127,6 +1131,11 @@
     clip.className = 'mt-clip ' + (mediaType === 'aud' ? 'mt-clip-audio' : 'mt-clip-video');
     clip.dataset.fileName = fileName;
     clip.dataset.clipType = mediaType; // 'vid' | 'aud' | 'img'
+    // Task #49 — stamp creation order so overlap layering can pick a winner.
+    // Multiplier ensures distinct values even when many clips are added in
+    // the same millisecond.
+    clip.dataset.addedAt = String(Date.now() * 1000 + (addClipToTimeline._seq = ((addClipToTimeline._seq || 0) + 1)));
+    clip.style.zIndex = String(100 + (addClipToTimeline._seq % 1000));
     if (secs > 0)    clip.dataset.duration = String(secs);
     if (mediaUrl)    clip.dataset.mediaUrl = mediaUrl;
     // position:absolute + top:3px + height:30px come from the base .mt-clip rule in CSS.
@@ -2860,6 +2869,9 @@
     clip.dataset.clipType    = 'text';
     clip.dataset.textContent = safeText;
     clip.dataset.duration    = String(dur);
+    // Task #49 — creation-order stamp (text clips stack by arrival too)
+    clip.dataset.addedAt = String(Date.now() * 1000 + (addTextClipToTimeline._seq = ((addTextClipToTimeline._seq || 0) + 1)));
+    clip.style.zIndex = String(100 + (addTextClipToTimeline._seq % 1000));
     if (opts.fontSize)  clip.dataset.fontSize  = String(opts.fontSize);
     if (opts.textColor) clip.dataset.textColor = opts.textColor;
     if (opts.position)  clip.dataset.position  = opts.position;
@@ -5558,14 +5570,26 @@
   // stuck on the first uploaded clip.
   var _lastPreviewUrl = null;
   function getClipAtPlayheadX(phX){
+    // Task #49 — when V1 clips overlap, prefer the most recently added
+    // one (highest dataset.addedAt). Falls back to DOM order for clips
+    // that predate the addedAt stamping.
     var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+    var best = null, bestRank = -Infinity;
     for (var i = 0; i < clips.length; i++){
       var c = clips[i];
       var l = parseFloat(c.style.left) || 0;
       var w = parseFloat(c.style.width) || 0;
-      if (phX >= l && phX <= l + w) return {clip: c, offsetPx: phX - l};
+      if (phX >= l && phX <= l + w){
+        // Rank = addedAt if present, else DOM index (later siblings beat earlier)
+        var rank = parseFloat(c.dataset.addedAt);
+        if (!isFinite(rank)) rank = i;
+        if (rank > bestRank){
+          best = { clip: c, offsetPx: phX - l };
+          bestRank = rank;
+        }
+      }
     }
-    return null;
+    return best;
   }
   function syncPreviewToPlayhead(){
     var ph = document.getElementById('mtPlayhead');
@@ -5629,22 +5653,32 @@
     var src = video.src;
     var clips = document.querySelectorAll('.mt-track-video .mt-clip');
     var ct = video.currentTime || 0;
-    // Prefer a clip whose source range [sourceOffset, sourceOffset+duration]
-    // contains the current video time — this matters for razor-split pieces
-    // that share the same mediaUrl but represent different slices.
+    // Task #49 — prefer the MOST RECENTLY ADDED matching clip so when
+    // clips overlap, the newer one is the canonical "current" clip.
+    var best = null, bestRank = -Infinity;
     for (var i = 0; i < clips.length; i++){
       var c = clips[i];
       if (!c.dataset.mediaUrl) continue;
       if (normalizeUrl(c.dataset.mediaUrl) !== src) continue;
       var srcOff = parseFloat(c.dataset.sourceOffset) || 0;
       var dur    = parseFloat(c.dataset.duration)    || 0;
-      if (ct >= srcOff - 0.01 && ct <= srcOff + dur + 0.01) return c;
+      if (ct >= srcOff - 0.01 && ct <= srcOff + dur + 0.01){
+        var rank = parseFloat(c.dataset.addedAt);
+        if (!isFinite(rank)) rank = i;
+        if (rank > bestRank){ best = c; bestRank = rank; }
+      }
     }
-    // Fallback: first clip with matching src.
+    if (best) return best;
+    // Fallback: latest clip with matching src (again by addedAt).
+    var bestFb = null, bestFbRank = -Infinity;
     for (var j = 0; j < clips.length; j++){
-      if (clips[j].dataset.mediaUrl && normalizeUrl(clips[j].dataset.mediaUrl) === src) return clips[j];
+      if (clips[j].dataset.mediaUrl && normalizeUrl(clips[j].dataset.mediaUrl) === src){
+        var r = parseFloat(clips[j].dataset.addedAt);
+        if (!isFinite(r)) r = j;
+        if (r > bestFbRank){ bestFb = clips[j]; bestFbRank = r; }
+      }
     }
-    return null;
+    return bestFb;
   }
   function syncPlayheadToVideo(){
     // Transport owns the playhead when it's playing — skip passive sync
