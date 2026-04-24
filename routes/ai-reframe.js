@@ -489,21 +489,59 @@ function normalizeHexColor(c, fallback) {
   return fallback;
 }
 
+// Catalog of layouts per person count. Each entry is { id, label, description }.
+// The `id` is what callers pass to computeGridCells(n, padding, layoutId) and
+// what the client sends as the `layout` field to /render-grid.
+// Order matters: the first entry per count is the default.
+const GRID_LAYOUTS = {
+  1: [
+    { id: 'full',        label: 'Full Frame',  description: 'Single centered cell' },
+  ],
+  2: [
+    { id: 'stacked',     label: 'Stacked',     description: 'Two equal squares, top & bottom' },
+    { id: 'hero',        label: 'Hero',        description: 'Big main cell, smaller cell below' },
+  ],
+  3: [
+    { id: 'spotlight',   label: 'Spotlight',   description: 'Wide top cell, two squares below' },
+    { id: 'strip',       label: 'Strip',       description: 'Three equal horizontal bands' },
+  ],
+  4: [
+    { id: 'grid',        label: 'Grid',        description: '2×2 squares' },
+    { id: 'feature',     label: 'Feature',     description: 'Big top cell, three smaller below' },
+  ],
+};
+
+function defaultLayoutFor(n) {
+  const list = GRID_LAYOUTS[n] || GRID_LAYOUTS[4];
+  return list[0].id;
+}
+
 // Compute grid cell rectangles (pixel coords in a 1080x1920 viewport).
-// Layouts match the spec:
-//   1: single centered cell (for symmetry / solo mode)
-//   2: vertical stack of 1:1 squares
-//   3: wide top + two squares bottom
-//   4: 2x2 matrix
-function computeGridCells(n, padding) {
+// `layout` selects a named layout from GRID_LAYOUTS; when unknown, falls back
+// to the default layout for the given count.
+function computeGridCells(n, padding, layout) {
   const p = Math.max(0, Math.min(80, Math.round(padding)));
   const W = GRID_OUT_W, H = GRID_OUT_H;
+  const valid = (GRID_LAYOUTS[n] || []).some(l => l.id === layout);
+  const lay = valid ? layout : defaultLayoutFor(n);
 
   if (n === 1) {
     return [{ x: p, y: p, w: W - 2 * p, h: H - 2 * p }];
   }
+
   if (n === 2) {
-    // Two 1:1 squares stacked vertically. Size to whichever dimension limits.
+    if (lay === 'hero') {
+      // Big top cell (fills width, fills ~70% height) + smaller square below
+      const smallSide = Math.min(Math.floor(W / 2), Math.floor(H / 4));
+      const topH = H - 3 * p - smallSide;
+      const topW = W - 2 * p;
+      const smallLeft = Math.floor((W - smallSide) / 2);
+      return [
+        { x: p,         y: p,                   w: topW,     h: topH },
+        { x: smallLeft, y: p + topH + p,        w: smallSide,h: smallSide },
+      ];
+    }
+    // 'stacked' — two 1:1 squares, size to whichever dimension limits
     const cell = Math.min(W - 2 * p, Math.floor((H - 3 * p) / 2));
     const totalH = 2 * cell + p;
     const top = Math.max(p, Math.floor((H - totalH) / 2));
@@ -513,17 +551,45 @@ function computeGridCells(n, padding) {
       { x: left, y: top + cell + p,   w: cell, h: cell },
     ];
   }
+
   if (n === 3) {
-    const bottom = Math.floor((W - 3 * p) / 2);    // square side length
+    if (lay === 'strip') {
+      // Three equal horizontal bands, each full-width landscape.
+      const bandH = Math.floor((H - 4 * p) / 3);
+      const bandW = W - 2 * p;
+      return [
+        { x: p, y: p,                     w: bandW, h: bandH },
+        { x: p, y: p + bandH + p,         w: bandW, h: bandH },
+        { x: p, y: p + 2 * (bandH + p),   w: bandW, h: bandH },
+      ];
+    }
+    // 'spotlight' — wide top + two squares below
+    const bottom = Math.floor((W - 3 * p) / 2);
     const topW = W - 2 * p;
-    const topH = Math.max(200, H - 3 * p - bottom); // guard against tiny top on huge padding
+    const topH = Math.max(200, H - 3 * p - bottom);
     return [
       { x: p,               y: p,                w: topW,   h: topH },
       { x: p,               y: p + topH + p,     w: bottom, h: bottom },
       { x: p + bottom + p,  y: p + topH + p,     w: bottom, h: bottom },
     ];
   }
-  // n >= 4: 2x2
+
+  // n >= 4
+  if (lay === 'feature') {
+    // Big hero cell on top + three equal smaller cells below.
+    const smallW = Math.floor((W - 4 * p) / 3);
+    const smallH = Math.floor(smallW * 1.3); // slightly portrait — nice for faces
+    const topH = H - 3 * p - smallH;
+    const topW = W - 2 * p;
+    const yBottom = p + topH + p;
+    return [
+      { x: p,                             y: p,       w: topW,   h: topH   },
+      { x: p,                             y: yBottom, w: smallW, h: smallH },
+      { x: p + smallW + p,                y: yBottom, w: smallW, h: smallH },
+      { x: p + 2 * (smallW + p),          y: yBottom, w: smallW, h: smallH },
+    ];
+  }
+  // 'grid' — default 2x2
   const cellW = Math.floor((W - 3 * p) / 2);
   const cellH = Math.floor((H - 3 * p) / 2);
   return [
@@ -763,7 +829,7 @@ function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubject
       if (n < 1 || n > 4) return reject(new Error('Grid requires 1-4 subjects'));
 
       const padding = (typeof config.padding === 'number') ? config.padding : 16;
-      const cells = computeGridCells(n, padding);
+      const cells = computeGridCells(n, padding, config.layout);
       const filterComplex = buildGridFilterGraph(selectedSubjects, cells, dims, config);
 
       // Diagnostic: per-subject avg position + sample count, helps debug
@@ -975,11 +1041,17 @@ const GRID_STYLE_PRESETS = {
   },
 };
 
+// GET /ai-reframe/grid-layouts
+// Returns the layout catalog for the UI. Grouped by person count.
+router.get('/grid-layouts', requireAuth, (req, res) => {
+  res.json({ layouts: GRID_LAYOUTS });
+});
+
 // POST /ai-reframe/render-grid
-// Body: { jobId, selectedSubjectIds, style? | padding?, border?, background? }
+// Body: { jobId, selectedSubjectIds, style?, layout? | padding?, border?, background? }
 router.post('/render-grid', requireAuth, async (req, res) => {
   try {
-    const { jobId, selectedSubjectIds, style, padding, border, background } = req.body || {};
+    const { jobId, selectedSubjectIds, style, layout, padding, border, background } = req.body || {};
     if (!jobId) return res.status(400).json({ success: false, message: 'jobId required' });
     const job = gridJobs.get(jobId);
     if (!job) return res.status(404).json({ success: false, message: 'Job not found or expired' });
@@ -999,7 +1071,7 @@ router.post('/render-grid', requireAuth, async (req, res) => {
     // padding/border/background for back-compat with the internal QA page.
     let config;
     if (typeof style === 'string' && GRID_STYLE_PRESETS[style]) {
-      config = GRID_STYLE_PRESETS[style];
+      config = { ...GRID_STYLE_PRESETS[style] };
     } else {
       config = {
         padding: (typeof padding === 'number') ? padding : 16,
@@ -1007,6 +1079,9 @@ router.post('/render-grid', requireAuth, async (req, res) => {
         background: background && typeof background === 'object' ? background : { mode: 'solid' },
       };
     }
+
+    // Attach chosen layout (validated downstream in computeGridCells).
+    if (typeof layout === 'string') config.layout = layout;
 
     const filename = `${jobId}-grid-${selected.length}up-${Date.now()}.mp4`;
     const outputPath = path.join(outputDir, filename);
@@ -1095,6 +1170,9 @@ router.get('/grid-test', requireAuth, (req, res) => {
 </div>
 
 <div id="renderWrap" style="display:none">
+  <div class="row"><label>Layout</label>
+    <select id="layoutPreset"></select>
+  </div>
   <div class="row"><label>Style</label>
     <select id="stylePreset">
       <option value="clean">Clean — white border, blurred background</option>
@@ -1154,6 +1232,22 @@ $('detectBtn').addEventListener('click', async () => {
   finally { $('detectBtn').disabled = false; }
 });
 
+let layoutCatalog = null;
+async function ensureLayoutCatalog() {
+  if (layoutCatalog) return layoutCatalog;
+  try { layoutCatalog = (await (await fetch('/ai-reframe/grid-layouts')).json()).layouts || {}; }
+  catch (_) { layoutCatalog = {}; }
+  return layoutCatalog;
+}
+function refreshLayoutOptions() {
+  const sel = $('layoutPreset'); if (!sel) return;
+  const n = selected.size;
+  const opts = (layoutCatalog || {})[n] || [];
+  sel.innerHTML = opts.length
+    ? opts.map(o => '<option value="'+o.id+'">'+o.label+' — '+o.description+'</option>').join('')
+    : '<option value="">(no layouts for this count)</option>';
+}
+
 function renderSubjects() {
   const wrap = $('subjects'); wrap.innerHTML = '';
   subjects.forEach((s, idx) => {
@@ -1167,10 +1261,13 @@ function renderSubjects() {
       if (selected.has(s.id)) selected.delete(s.id);
       else if (selected.size < 4) selected.add(s.id);
       renderSubjects();
+      refreshLayoutOptions();
     });
     wrap.appendChild(d);
   });
+  refreshLayoutOptions();
 }
+ensureLayoutCatalog();
 
 $('renderBtn').addEventListener('click', async () => {
   if (!jobId || selected.size < 1) { rsStatus('Select at least 1 subject', '#ff7a7a'); return; }
@@ -1180,6 +1277,7 @@ $('renderBtn').addEventListener('click', async () => {
     jobId,
     selectedSubjectIds: [...selected],
     style: $('stylePreset').value,
+    layout: $('layoutPreset') ? $('layoutPreset').value : null,
   };
   try {
     const r = await fetch('/ai-reframe/render-grid', {
@@ -1577,8 +1675,13 @@ ${pageStyles}
               <div id="subjectGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem"></div>
             </div>
 
+            <div id="layoutSection" class="aspect-ratio-section" style="display:none">
+              <label class="aspect-ratio-label">Step 3 — Layout</label>
+              <div id="layoutCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem"></div>
+            </div>
+
             <div id="styleSection" class="aspect-ratio-section" style="display:none">
-              <label class="aspect-ratio-label">Step 3 — Style</label>
+              <label class="aspect-ratio-label">Step 4 — Style</label>
               <div style="display:flex;gap:.75rem;flex-wrap:wrap">
                 <label class="grid-style" data-style="clean"   style="flex:1;min-width:140px;cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;color:var(--text);text-align:center">
                   <input type="radio" name="gridStyle" value="clean" checked style="display:none">
@@ -1792,11 +1895,13 @@ ${pageStyles}
       });
     });
 
-    // ---- Multi-Person Grid flow (simplified 3-step UX) ----
+    // ---- Multi-Person Grid flow (simplified UX) ----
     let gridJobId = null;
     let gridSubjects = [];
     const gridSelected = new Set();
     let gridRenderBtn = null; // lazily created when the user picks subjects
+    let gridLayouts = null;   // catalog fetched once from /ai-reframe/grid-layouts
+    let selectedLayout = null;
 
     // Protect the UI from raw ffmpeg error spew. Server errors sometimes
     // contain multi-KB filter graphs ("if(between(t,...))..." chains); we
@@ -1819,13 +1924,103 @@ ${pageStyles}
     }
 
     function resetGridFlow() {
-      gridJobId = null; gridSubjects = []; gridSelected.clear();
+      gridJobId = null; gridSubjects = []; gridSelected.clear(); selectedLayout = null;
       document.getElementById('subjectPickSection').style.display = 'none';
+      document.getElementById('layoutSection').style.display = 'none';
+      document.getElementById('layoutCards').innerHTML = '';
       document.getElementById('styleSection').style.display = 'none';
       document.getElementById('subjectGrid').innerHTML = '';
       const old = document.getElementById('gridRenderBtnContainer');
       if (old) old.remove();
       setDetectStatus('');
+    }
+
+    // Lazy-loaded layout catalog. Fetched once per page, then rendered as
+    // SVG mini previews whose set swaps based on the current selection count.
+    async function ensureLayouts() {
+      if (gridLayouts) return gridLayouts;
+      try {
+        const r = await fetch('/ai-reframe/grid-layouts');
+        const data = await r.json();
+        gridLayouts = data.layouts || {};
+      } catch (_) { gridLayouts = {}; }
+      return gridLayouts;
+    }
+
+    // Tiny SVG preview per layout — a 1080x1920 miniature with tiles drawn
+    // the same way the server will compose them. Keeps the UI honest: what
+    // users see in the picker is what they'll get in the render.
+    function layoutPreviewSvg(n, layoutId) {
+      const W = 60, H = 106, pad = 3;
+      let cells = [];
+      const cell = (x, y, w, h) => ({ x, y, w, h });
+      if (n === 1) cells = [cell(pad, pad, W - 2*pad, H - 2*pad)];
+      else if (n === 2 && layoutId === 'hero') {
+        const ss = Math.min(Math.floor(W/2), Math.floor(H/4));
+        const topH = H - 3*pad - ss;
+        cells = [cell(pad, pad, W - 2*pad, topH), cell(Math.floor((W-ss)/2), pad + topH + pad, ss, ss)];
+      } else if (n === 2) {
+        const c = Math.min(W - 2*pad, Math.floor((H - 3*pad)/2));
+        const top = Math.max(pad, Math.floor((H - (2*c + pad))/2));
+        const left = Math.floor((W - c)/2);
+        cells = [cell(left, top, c, c), cell(left, top + c + pad, c, c)];
+      } else if (n === 3 && layoutId === 'strip') {
+        const bh = Math.floor((H - 4*pad)/3), bw = W - 2*pad;
+        cells = [cell(pad, pad, bw, bh), cell(pad, pad + bh + pad, bw, bh), cell(pad, pad + 2*(bh + pad), bw, bh)];
+      } else if (n === 3) {
+        const b = Math.floor((W - 3*pad)/2), tw = W - 2*pad, th = Math.max(12, H - 3*pad - b);
+        cells = [cell(pad, pad, tw, th), cell(pad, pad + th + pad, b, b), cell(pad + b + pad, pad + th + pad, b, b)];
+      } else if (n === 4 && layoutId === 'feature') {
+        const sw = Math.floor((W - 4*pad)/3), sh = Math.floor(sw * 1.3), topH = H - 3*pad - sh;
+        const yb = pad + topH + pad;
+        cells = [cell(pad, pad, W - 2*pad, topH), cell(pad, yb, sw, sh), cell(pad + sw + pad, yb, sw, sh), cell(pad + 2*(sw + pad), yb, sw, sh)];
+      } else {
+        const cw = Math.floor((W - 3*pad)/2), ch = Math.floor((H - 3*pad)/2);
+        cells = [cell(pad, pad, cw, ch), cell(pad*2 + cw, pad, cw, ch), cell(pad, pad*2 + ch, cw, ch), cell(pad*2 + cw, pad*2 + ch, cw, ch)];
+      }
+      const rects = cells.map(c =>
+        '<rect x="' + c.x + '" y="' + c.y + '" width="' + c.w + '" height="' + c.h + '" rx="3" fill="var(--primary)" fill-opacity="0.55"/>').join('');
+      return '<svg width="60" height="106" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+             '<rect x="0" y="0" width="' + W + '" height="' + H + '" rx="4" fill="rgba(255,255,255,0.04)"/>' +
+             rects + '</svg>';
+    }
+
+    function renderLayoutCards() {
+      const n = gridSelected.size;
+      const wrap = document.getElementById('layoutCards');
+      const section = document.getElementById('layoutSection');
+      if (n < 1 || !gridLayouts) {
+        section.style.display = 'none';
+        wrap.innerHTML = '';
+        return;
+      }
+      const options = gridLayouts[n] || [];
+      if (options.length < 2) {
+        // Only one layout for this count — no picker needed; still set the default.
+        selectedLayout = options[0] ? options[0].id : null;
+        section.style.display = 'none';
+        wrap.innerHTML = '';
+        return;
+      }
+      // If the current selection doesn't apply to this count, reset to default.
+      if (!options.some(o => o.id === selectedLayout)) selectedLayout = options[0].id;
+      section.style.display = 'block';
+      wrap.innerHTML = '';
+      options.forEach(opt => {
+        const card = document.createElement('div');
+        const isSel = opt.id === selectedLayout;
+        card.style.cssText = 'cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid ' +
+          (isSel ? 'var(--primary)' : 'rgba(255,255,255,0.1)') +
+          ';border-radius:8px;color:var(--text);text-align:center;transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:.5rem';
+        card.innerHTML = layoutPreviewSvg(n, opt.id) +
+          '<div style="font-weight:700">' + escapeHtmlGrid(opt.label) + '</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted);line-height:1.3">' + escapeHtmlGrid(opt.description || '') + '</div>';
+        card.addEventListener('click', () => {
+          selectedLayout = opt.id;
+          renderLayoutCards();
+        });
+        wrap.appendChild(card);
+      });
     }
 
     function getCurrentInput() {
@@ -1888,6 +2083,7 @@ ${pageStyles}
           if (gridSelected.has(s.id)) gridSelected.delete(s.id);
           else if (gridSelected.size < 4) gridSelected.add(s.id);
           renderSubjectCards();
+          renderLayoutCards();
           updateRenderBtnState();
         });
         wrap.appendChild(card);
@@ -1922,6 +2118,8 @@ ${pageStyles}
         document.getElementById('subjectPickSection').style.display = 'block';
         document.getElementById('styleSection').style.display = 'block';
         renderSubjectCards();
+        await ensureLayouts();
+        renderLayoutCards();
         ensureRenderBtn();
         updateRenderBtnState();
       } catch (e) {
@@ -1947,6 +2145,7 @@ ${pageStyles}
             jobId: gridJobId,
             selectedSubjectIds: [...gridSelected],
             style,
+            layout: selectedLayout,
           }),
         });
         const data = await r.json();

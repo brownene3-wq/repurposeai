@@ -70,6 +70,60 @@ for (const pad of [0, 8, 16, 24]) {
   }
 }
 
+// --- Alternate layout variants (Step 4 dynamic layout selection) ---
+// For each layout variant across all supported counts:
+//   - cells fit inside the 1080x1920 viewport
+//   - no two cells overlap
+//   - cell count matches the requested n
+function assertLayout(n, lay) {
+  const cells = H.computeGridCells(n, 16, lay);
+  t(`layout ${n}-${lay}: count`,            cells.length === n);
+  t(`layout ${n}-${lay}: all inside viewport`, cells.every(inside));
+  t(`layout ${n}-${lay}: no overlap`,       noOverlap(cells));
+}
+assertLayout(2, 'stacked');
+assertLayout(2, 'hero');
+assertLayout(3, 'spotlight');
+assertLayout(3, 'strip');
+assertLayout(4, 'grid');
+assertLayout(4, 'feature');
+
+// Shape checks
+const hero2 = H.computeGridCells(2, 16, 'hero');
+t('hero-2: top cell is wider and taller than bottom',
+  hero2[0].w > hero2[1].w && hero2[0].h > hero2[1].h);
+t('hero-2: bottom cell is square',
+  Math.abs(hero2[1].w - hero2[1].h) <= 1);
+
+const strip3 = H.computeGridCells(3, 16, 'strip');
+t('strip-3: all three bands equal size',
+  strip3.every(c => c.w === strip3[0].w && c.h === strip3[0].h));
+t('strip-3: bands are landscape (w > h)',
+  strip3[0].w > strip3[0].h);
+t('strip-3: bands stacked vertically with same x',
+  strip3[0].x === strip3[1].x && strip3[1].x === strip3[2].x &&
+  strip3[0].y < strip3[1].y && strip3[1].y < strip3[2].y);
+
+const feature4 = H.computeGridCells(4, 16, 'feature');
+t('feature-4: top cell spans full width and is largest',
+  feature4[0].w > feature4[1].w && feature4[0].h > feature4[1].h);
+t('feature-4: bottom three cells equal size',
+  feature4[1].w === feature4[2].w && feature4[2].w === feature4[3].w &&
+  feature4[1].h === feature4[2].h && feature4[2].h === feature4[3].h);
+t('feature-4: bottom three cells on same row',
+  feature4[1].y === feature4[2].y && feature4[2].y === feature4[3].y);
+
+// Unknown layout falls back to default (which is the first entry per count)
+const unknown = H.computeGridCells(2, 16, 'not-a-layout');
+const defStacked = H.computeGridCells(2, 16, 'stacked');
+t('unknown layout falls back to default',
+  JSON.stringify(unknown) === JSON.stringify(defStacked));
+
+// Default still works with 2-arg signature (back-compat)
+const twoArg = H.computeGridCells(2, 16);
+t('back-compat: two-arg signature returns default layout',
+  JSON.stringify(twoArg) === JSON.stringify(defStacked));
+
 // Spec-specific layout checks
 const c2 = H.computeGridCells(2, 16);
 t('n=2: cells are 1:1 squares', Math.abs(c2[0].w - c2[0].h) <= 1 && Math.abs(c2[1].w - c2[1].h) <= 1);
@@ -235,6 +289,10 @@ try {
   ffmpegParses('n=3 solid bg + border',  [subj, subj, subj],            H.computeGridCells(3, 16), { padding: 16, border: { enabled: true, width: 3, color: '#6c3aed' }, background: { mode: 'solid', color: '#181426' } });
   ffmpegParses('n=4 blur bg + border',   [subj, subj, subj, subj],      H.computeGridCells(4, 16), { padding: 16, border: { enabled: true, width: 5, color: '#6c3aed' }, background: { mode: 'blur' } });
   ffmpegParses('n=1 solid bg no border', [subj],                        H.computeGridCells(1, 16), { padding: 16, border: { enabled: false },                           background: { mode: 'solid' } });
+  // Every new layout must produce a graph ffmpeg accepts
+  ffmpegParses('layout 2-hero',       [subj, subj],                  H.computeGridCells(2, 16, 'hero'),      { padding: 16, border: { enabled: true, width: 3, color: '#6c3aed' }, background: { mode: 'blur' } });
+  ffmpegParses('layout 3-strip',      [subj, subj, subj],            H.computeGridCells(3, 16, 'strip'),     { padding: 16, border: { enabled: true, width: 3, color: '#6c3aed' }, background: { mode: 'blur' } });
+  ffmpegParses('layout 4-feature',    [subj, subj, subj, subj],      H.computeGridCells(4, 16, 'feature'),   { padding: 16, border: { enabled: true, width: 3, color: '#6c3aed' }, background: { mode: 'blur' } });
 } catch {
   console.log('  skip ffmpeg graph parse (ffmpeg not installed)');
 }
