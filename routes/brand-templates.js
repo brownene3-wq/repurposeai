@@ -649,6 +649,62 @@ ${pageStyles}
   res.send(html);
 });
 
+// GET /brand-templates/list — return saved templates for the current user
+// (stored in the brandTemplate cookie today; future work can move these to
+// a DB table). Returns { success, templates: [...] } — shape is plural so
+// the editor can scale up later without client changes.
+router.get('/list', requireAuth, (req, res) => {
+  try {
+    var raw = (req.cookies && req.cookies.brandTemplate) || null;
+    var templates = [];
+    if (raw){
+      try {
+        var parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && typeof parsed === 'object'){
+          // Only return this user's template (single-cookie scheme)
+          if (!parsed.userId || parsed.userId === req.user.id){
+            // Attach a derived logoUrl the client can preview directly.
+            if (parsed.logoPath){
+              parsed.logoUrl = '/brand-templates/logo/' + encodeURIComponent(parsed.id || 'x');
+            }
+            templates.push(parsed);
+          }
+        }
+      } catch(_){ /* invalid cookie — ignore */ }
+    }
+    // Caption style palette, so the editor can render preview chips without
+    // re-defining colors client-side.
+    res.json({
+      success: true,
+      templates: templates,
+      captionStyles: captionStyles,
+      aspectRatios: aspectRatios
+    });
+  } catch (err){
+    console.error('[brand-templates list]', err);
+    res.status(500).json({ error: err.message || 'List failed' });
+  }
+});
+
+// GET /brand-templates/logo/:id — serve the saved logo file for a template.
+// Uses the path stashed in the brandTemplate cookie.
+router.get('/logo/:id', requireAuth, (req, res) => {
+  try {
+    var raw = (req.cookies && req.cookies.brandTemplate) || null;
+    if (!raw) return res.status(404).send('no template');
+    var t = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!t || !t.logoPath || (t.userId && t.userId !== req.user.id)){
+      return res.status(404).send('no logo');
+    }
+    if (!fs.existsSync(t.logoPath)){
+      return res.status(404).send('logo file missing');
+    }
+    res.sendFile(path.resolve(t.logoPath));
+  } catch (err){
+    res.status(500).send('error');
+  }
+});
+
 // POST - Save template
 router.post('/save', requireAuth, upload.single('logo'), async (req, res) => {
   try {

@@ -2163,13 +2163,15 @@
     // resulting clip is inserted at the START of V1 (shifting existing
     // clips right by the hook's duration).
     var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions', 'AI Hook': 'aihook' };
-    var MODAL_LABELS   = { 'Brand Kit': 1 };
+    var MODAL_LABELS   = {};  // Brand Kit moved to INLINE_MODAL_LABELS (Task #56)
     // Labels that trigger inline modals built into v10-editor-redesign.js
     // (no new tab, no iframe).
     var INLINE_MODAL_LABELS = {
       'B-Roll': 1, 'Smart Cut': 1, 'Scene Detect': 1,
       // Tasks #50-#53 — AI Creative tools
-      'AI Voice': 1, 'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1
+      'AI Voice': 1, 'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1,
+      // Task #56 — Brand Kit now uses an inline modal too
+      'Brand Kit': 1
     };
     // Actions that require a selected clip with a server-side mediaUrl.
     // AI Voice is the exception — user types text, no clip needed.
@@ -2281,6 +2283,8 @@
             if (typeof openBGRemoveModal === 'function') openBGRemoveModal();
           } else if (label === 'Style Transfer'){
             if (typeof openStyleTransferModal === 'function') openStyleTransferModal();
+          } else if (label === 'Brand Kit'){
+            if (typeof openBrandKitModal === 'function') openBrandKitModal();
           }
         } else {
           try { window.open(route, '_blank'); } catch(_){ location.href = route; }
@@ -2499,7 +2503,8 @@
               left:  leftPx + 'px',
               width: widthPx + 'px',
               fontSize: 48,
-              textColor: '#ffffff',
+              // Task #56 — pick up brand caption color when a Brand Template is applied
+              textColor: (window.__brandCaptionStyle && window.__brandCaptionStyle.color) || '#ffffff',
               position: 'bottom'
             });
             added++;
@@ -3111,7 +3116,9 @@
           if (typeof window.addTextClipToTimeline === 'function'){
             window.addTextClipToTimeline(ch.text, {
               left: leftPx + 'px', width: widthPx + 'px',
-              fontSize: 48, textColor: '#ffffff', position: 'bottom'
+              fontSize: 48,
+              textColor: (window.__brandCaptionStyle && window.__brandCaptionStyle.color) || '#ffffff',
+              position: 'bottom'
             });
             added++;
           }
@@ -3345,6 +3352,211 @@
       } catch (err){ prog.fail(err.message || String(err)); }
       finally { window.removeEventListener('beforeunload', beforeUnload); }
     });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #56 — Brand Kit: pick a saved Brand Template, apply its
+  // settings to the current project.
+  //
+  // Fetches GET /brand-templates/list (returns templates saved from
+  // the standalone /brand-templates wizard page). The modal shows one
+  // card per saved template with a colored caption-style swatch and
+  // the aspect-ratio label. Clicking Apply:
+  //   1. Sets window.__exportAspect/Width/Height so export + Smart
+  //      Resize preview pick up the template's output dims.
+  //   2. Sets window.__brandCaptionStyle = { color, styleName } so
+  //      future T1 captions inherit the brand color.
+  //   3. If the template has a logo, inserts a new V1 clip
+  //      (clipType='img') at left=0 spanning the current timeline with
+  //      the logo as its background; user can resize/reposition.
+  // ═════════════════════════════════════════════════════════════════
+  function openBrandKitModal(){
+    var existing = document.getElementById('v10BrandKitModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var bk = document.createElement('div');
+    bk.id = 'v10BrandKitModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(560px,92vw);max-height:82vh;overflow-y:auto;color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+        '<span style="font-size:18px">\ud83c\udfa8</span>' +
+        '<span style="font-weight:700;font-size:14px;color:#fde047">BRAND KIT</span>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:14px;line-height:1.5">' +
+        'Pick a saved Brand Template to apply its aspect ratio, caption style, and logo to this project.' +
+      '</div>' +
+      '<div id="bkList" style="min-height:100px"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px">' +
+        '<a href="/brand-templates" target="_blank" rel="noopener" ' +
+          'style="color:#a78bfa;font-size:11px;text-decoration:none">\u27a4 Create / edit templates</a>' +
+        '<button id="bkClose" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Close</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    panel.querySelector('#bkClose').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+
+    var list = panel.querySelector('#bkList');
+    list.innerHTML = '<div style="color:#a78bfa;font-size:12px;text-align:center;padding:24px 0">' +
+      '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle"></span>Loading templates\u2026</div>';
+
+    (async function(){
+      try {
+        var r = await fetch('/brand-templates/list');
+        var d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed to load');
+        renderTemplates(d.templates || [], d.captionStyles || {}, d.aspectRatios || {}, list);
+      } catch (err){
+        list.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
+          (err.message || 'Failed to load templates') + '</div>';
+      }
+    })();
+
+    function renderTemplates(templates, captionStyles, aspectRatios, listEl){
+      if (!templates.length){
+        listEl.innerHTML =
+          '<div style="padding:24px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.15);border-radius:8px;text-align:center;font-size:12px;color:#8886a0;line-height:1.5">' +
+            'No saved templates yet.<br>' +
+            '<a href="/brand-templates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Go to Brand Templates</a> to create one.' +
+          '</div>';
+        return;
+      }
+      listEl.innerHTML = '';
+      templates.forEach(function(t){
+        var capStyle = (captionStyles && captionStyles[t.captionStyle]) || {};
+        var aspect   = (aspectRatios   && aspectRatios[t.aspectRatio])  || {};
+        var capColor = capStyle.color || '#a78bfa';
+        var capName  = capStyle.name  || (t.captionStyle || 'Default');
+        var aspName  = (aspect.label ? (aspect.icon + ' ' + aspect.label) : (t.aspectRatio || ''));
+        var card = document.createElement('div');
+        card.style.cssText = 'background:rgba(255,255,255,.03);border:1px solid rgba(124,58,237,.25);' +
+          'border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px';
+        card.innerHTML =
+          // Color swatch (caption style preview)
+          '<div style="flex:none;width:72px;height:72px;border-radius:8px;background:linear-gradient(135deg,' +
+            capColor + ',' + capColor + '80);display:flex;align-items:center;justify-content:center;' +
+            'color:#fff;font-weight:800;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6)">Aa</div>' +
+          // Details
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:13px;font-weight:700;color:#e2e0f0;margin-bottom:4px">' + escAudio(capName) + '</div>' +
+            '<div style="font-size:11px;color:#8886a0">' + escAudio(aspName) + '</div>' +
+            (t.logoUrl
+              ? ('<div style="font-size:10px;color:#22c55e;margin-top:4px">\u2713 Logo attached</div>')
+              : ('<div style="font-size:10px;color:#5c5a70;margin-top:4px">No logo</div>')
+            ) +
+          '</div>' +
+          (t.logoUrl
+            ? ('<img src="' + t.logoUrl + '" style="flex:none;width:44px;height:44px;object-fit:contain;background:rgba(255,255,255,.06);border-radius:6px;padding:4px" onerror="this.remove()"/>')
+            : ''
+          ) +
+          // Apply button
+          '<button class="bkApply" data-template-id="' + (t.id || '') + '" ' +
+            'style="flex:none;padding:8px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">' +
+            'Apply \u2192</button>';
+        listEl.appendChild(card);
+      });
+      Array.from(listEl.querySelectorAll('.bkApply')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var tid = btn.getAttribute('data-template-id');
+          var tmpl = templates.find(function(t){ return (t.id || '') === tid; }) || templates[0];
+          applyBrandTemplate(tmpl, captionStyles, aspectRatios);
+          bk.remove();
+        });
+      });
+    }
+  }
+
+  function applyBrandTemplate(tmpl, captionStyles, aspectRatios){
+    if (!tmpl) return;
+    var summary = [];
+
+    // 1. Aspect ratio → export dims (same globals Smart Resize uses)
+    if (tmpl.aspectRatio && aspectRatios && aspectRatios[tmpl.aspectRatio]){
+      var a = aspectRatios[tmpl.aspectRatio];
+      window.__exportAspect = tmpl.aspectRatio;
+      window.__exportWidth  = a.width;
+      window.__exportHeight = a.height;
+      summary.push('Aspect ' + tmpl.aspectRatio);
+      // Repaint PGM aspect mask if Smart Resize left one up
+      if (typeof window.applySmartResizePreview === 'function'){
+        try { window.applySmartResizePreview(tmpl.aspectRatio); } catch(_){}
+      }
+    }
+
+    // 2. Caption style — set a global that T1 inserts will read as their
+    //    default color. (addTextClipToTimeline accepts opts.textColor,
+    //    opts.fontSize; we set the globals here and each add-caption call
+    //    can pick them up.)
+    if (tmpl.captionStyle && captionStyles && captionStyles[tmpl.captionStyle]){
+      var cs = captionStyles[tmpl.captionStyle];
+      window.__brandCaptionStyle = {
+        id: tmpl.captionStyle,
+        name: cs.name,
+        color: cs.color
+      };
+      summary.push('Caption style \u201c' + cs.name + '\u201d');
+
+      // Retroactively update any existing T1 clips on the timeline so the
+      // user sees an immediate effect.
+      Array.from(document.querySelectorAll('.mt-track-text .mt-clip')).forEach(function(t){
+        if (!t.dataset.textColorUserSet){  // respect per-clip overrides
+          t.dataset.textColor = cs.color;
+        }
+      });
+    }
+
+    // 3. Logo → insert as V1 image clip at left=0 spanning the timeline.
+    //    Full-frame image overlay; user can resize/reposition after.
+    if (tmpl.logoUrl){
+      var v1Track = document.querySelector('.mt-track-video');
+      if (v1Track){
+        // Measure current timeline length (rightmost clip end OR default 600px)
+        var maxRight = 0;
+        Array.from(v1Track.querySelectorAll('.mt-clip')).forEach(function(c){
+          var r = (parseFloat(c.style.left) || 0) + (parseFloat(c.style.width) || 0);
+          if (r > maxRight) maxRight = r;
+        });
+        if (maxRight <= 0) maxRight = 600;
+
+        var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var clip = document.createElement('div');
+        clip.className = 'mt-clip mt-clip-video';
+        clip.style.position = 'absolute';
+        clip.style.top = '3px';
+        clip.style.left = '0px';
+        clip.style.width = maxRight + 'px';
+        clip.style.overflow = 'hidden';
+        clip.style.backgroundImage = 'url("' + tmpl.logoUrl + '")';
+        clip.style.backgroundSize = 'contain';
+        clip.style.backgroundPosition = 'center';
+        clip.style.backgroundRepeat = 'no-repeat';
+        clip.style.backgroundColor = 'rgba(0,0,0,0.0)';
+        clip.dataset.fileName = '\ud83c\udfa8 Brand Logo';
+        clip.dataset.clipType = 'img';
+        clip.dataset.mediaUrl = tmpl.logoUrl;
+        clip.dataset.duration = String(maxRight / PPS);
+        clip.dataset.sourceOffset = '0';
+        clip.dataset.brandLogo = '1';
+        clip.dataset.logoPosition = tmpl.logoPosition || 'top-right';
+        clip.dataset.logoSize = String(tmpl.logoSize || 100);
+        clip.dataset.addedAt = String(Date.now() * 1000);
+        clip.style.zIndex = '920';
+        var lbl = document.createElement('span');
+        lbl.className = 'v10-fs-label';
+        lbl.textContent = '\ud83c\udfa8 LOGO (drag/resize to adjust)';
+        lbl.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px;pointer-events:none;z-index:4;white-space:nowrap';
+        clip.appendChild(lbl);
+        v1Track.appendChild(clip);
+        if (typeof window.makeClipInteractive === 'function'){
+          try { window.makeClipInteractive(clip); } catch(_){}
+        }
+        summary.push('Logo overlay');
+      }
+    }
+
+    if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+    toast('Brand template applied: ' + summary.join(' \u00b7 '));
   }
 
   // ═════════════════════════════════════════════════════════════════
