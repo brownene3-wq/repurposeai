@@ -541,6 +541,10 @@ async function renderEditor(req, res) {
     /* Reverse-playback indicator — small ◀ badge pinned to the clip's
        right edge so users can see at a glance which clips are reversed. */
     .mt-clip.clip-reverse-on::after{content:'\u25C0';position:absolute;right:4px;top:50%;transform:translateY(-50%);color:#fde047;font-size:10px;pointer-events:none;text-shadow:0 0 3px rgba(0,0,0,.8)}
+    /* Task #55 — Freeze-frame indicator: a small \u2744 snowflake on top-right
+       of any clip that carries data-freeze="1". Distinct color from
+       reverse (cyan) so users can tell the two apart at a glance. */
+    .mt-clip[data-freeze="1"]::after{content:'\u2744\ufe0f';position:absolute;right:4px;top:2px;color:#22d3ee;font-size:10px;pointer-events:none;text-shadow:0 0 3px rgba(0,0,0,.9);z-index:5}
     /* Linked-audio marker — cyan outline + chain icon so grouped audio clips
        are visually associated on the timeline (set by Link Audio in MIXING). */
     .mt-clip.audio-linked{box-shadow:inset 0 0 0 2px #22d3ee, 0 0 4px rgba(34,211,238,.4)}
@@ -9972,6 +9976,166 @@ router.post('/smart-cut', requireAuth, async (req, res) => {
   } catch (err){
     console.error('[smart-cut]', err);
     res.status(500).json({ error: err.message || 'Smart cut failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #55 — POST /video-editor/freeze-frame
+// Extracts a single PNG from the given media at the requested source
+// time (seconds). Returns a URL the client can insert as an image clip.
+// Body: { mediaUrl: string, sourceTime: number (seconds into source) }
+// Returns: { success, mediaUrl ('/video-editor/download/frame_*.png'),
+//           width, height }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/freeze-frame', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+    var t = Math.max(0, parseFloat(b.sourceTime) || 0);
+
+    var outName = 'frame_' + Date.now() + '_' + req.user.id + '.png';
+    var outPath = path.join(uploadDir, outName);
+
+    // -ss BEFORE -i for fast seek to the nearest keyframe, then -ss AFTER
+    // -i for precise seek into the GOP. Combined pattern gets us within
+    // 1 frame of the requested timestamp without re-decoding the whole file.
+    var preSeek = Math.max(0, t - 1.5);
+    var postSeek = t - preSeek;
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-ss', preSeek.toFixed(3),
+        '-i', srcPath,
+        '-ss', postSeek.toFixed(3),
+        '-frames:v', '1',
+        '-q:v', '2',  // high quality PNG
+        '-y', outPath
+      ]);
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0 && fs.existsSync(outPath)) resolve();
+        else reject(new Error('Frame extract failed: ' + err.slice(-200)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Probe width/height for the client so it can pick a sensible clip
+    // aspect without re-downloading the image.
+    var width = 0, height = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error',
+          '-select_streams', 'v:0',
+          '-show_entries', 'stream=width,height',
+          '-of', 'csv=p=0',
+          outPath
+        ]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      var parts = (probeOut || '').trim().split(',');
+      width  = parseInt(parts[0], 10) || 0;
+      height = parseInt(parts[1], 10) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      width: width, height: height
+    });
+  } catch (err){
+    console.error('[freeze-frame]', err);
+    res.status(500).json({ error: err.message || 'Freeze frame failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #55 — POST /video-editor/reverse-clip
+// Produces a reversed copy of the given media so the PGM preview can
+// play the clip backward via simple forward playback. The client swaps
+// the V1 clip's mediaUrl to the reversed file (and stashes the original
+// on dataset.originalMediaUrl so reverse-OFF can restore it).
+// Body: { mediaUrl: string }
+// Returns: { success, mediaUrl, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/reverse-clip', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var srcPath = resolveMediaUrlToPath((req.body || {}).mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+
+    var outName = 'reversed_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outPath = path.join(uploadDir, outName);
+
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vf', 'reverse',
+        '-af', 'areverse'
+      ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else {
+          // Retry without audio (some sources have no audio stream)
+          var p2 = spawn(ffmpegPath, [
+            '-i', srcPath,
+            '-vf', 'reverse',
+            '-an'
+          ].concat(VCODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+          var err2 = '';
+          p2.stderr.on('data', function(d){ err2 += d.toString(); });
+          p2.on('close', function(code2){
+            if (code2 === 0) resolve();
+            else reject(new Error('Reverse failed: ' + err.slice(-200)));
+          });
+          p2.on('error', reject);
+        }
+      });
+      proc.on('error', reject);
+    });
+
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var out = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error', '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1', outPath
+        ]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat((out || '').trim()) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration
+    });
+  } catch (err){
+    console.error('[reverse-clip]', err);
+    res.status(500).json({ error: err.message || 'Reverse failed' });
   }
 });
 

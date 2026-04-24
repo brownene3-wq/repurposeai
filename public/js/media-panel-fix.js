@@ -3477,14 +3477,79 @@
   //     up in the PGM once the cache refreshes).
   //   • stamp a CSS class on the timeline clip so users see a visible
   //     indicator (◀ badge) when reverse is enabled.
-  function clipActionReverse(){
-    withActiveClip(null, function(clip){
-      var now = boolDatasetToggle(clip, 'reverse');
-      clip.classList.toggle('clip-reverse-on', now);
+  // Task #55 — Toggle reverse playback.
+  // ON  → POST /reverse-clip to build a reversed MP4 + swap the clip's
+  //       mediaUrl to the reversed file so the <video> element plays it
+  //       forward (which LOOKS reversed). Stashes the original URL on
+  //       dataset.originalMediaUrl for the toggle-off path.
+  // OFF → restore dataset.originalMediaUrl.
+  // Export side already handles dataset.reverse via the `reverse` +
+  // `areverse` FFmpeg filters, so re-toggling ON at export time is idempotent.
+  async function clipActionReverse(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (!clip.classList.contains('mt-clip-video')){ showToast('Reverse is for video clips'); return; }
+    var wasOn = clip.dataset.reverse === 'true';
+    if (wasOn){
+      // Restore original mediaUrl if we previously swapped in a reversed copy
+      if (clip.dataset.originalMediaUrl){
+        clip.dataset.mediaUrl = clip.dataset.originalMediaUrl;
+        delete clip.dataset.originalMediaUrl;
+      }
+      delete clip.dataset.reverse;
+      clip.classList.remove('clip-reverse-on');
+      _lastPreviewUrl = null;
+      // Rebuild filmstrip from the restored source
+      try {
+        var oldFS = clip.querySelector('.v10-filmstrip');
+        var oldLb = clip.querySelector('.v10-fs-label');
+        if (oldFS) oldFS.remove();
+        if (oldLb) oldLb.remove();
+        if (typeof window.buildClipFilmstrip === 'function'){
+          window.buildClipFilmstrip(clip, clip.dataset.mediaUrl, parseFloat(clip.dataset.duration) || 0);
+        }
+      } catch(_){}
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Reverse off');
+      pushTimelineHistory();
+      return;
+    }
+    // Turning ON — render reversed copy server-side
+    var mediaUrl = clip.dataset.mediaUrl;
+    if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+      showToast('Upload this file via the sidebar first, then try again');
+      return;
+    }
+    showToast('Reversing clip\u2026 (this can take a moment)');
+    try {
+      var r = await fetch('/video-editor/reverse-clip', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: mediaUrl })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Reverse failed');
+      // Stash original + swap to reversed
+      clip.dataset.originalMediaUrl = mediaUrl;
+      clip.dataset.mediaUrl = d.mediaUrl;
+      clip.dataset.reverse = 'true';
+      clip.classList.add('clip-reverse-on');
+      // Rebuild filmstrip from the reversed source
+      try {
+        var oldFS2 = clip.querySelector('.v10-filmstrip');
+        var oldLb2 = clip.querySelector('.v10-fs-label');
+        if (oldFS2) oldFS2.remove();
+        if (oldLb2) oldLb2.remove();
+        if (typeof window.buildClipFilmstrip === 'function'){
+          window.buildClipFilmstrip(clip, d.mediaUrl, d.duration || parseFloat(clip.dataset.duration) || 0);
+        }
+      } catch(_){}
       _lastPreviewUrl = null;
       try { syncPreviewToPlayhead(); } catch(_){}
-      showToast('Reverse ' + (now ? 'on — plays backward at export' : 'off'));
-    });
+      showToast('Reverse on \u2014 preview plays backward');
+      pushTimelineHistory();
+    } catch (err){
+      showToast('Reverse error: ' + (err.message || err));
+    }
   }
   function clipActionLoop(){
     withActiveClip(null, function(clip){
@@ -3707,11 +3772,101 @@
     try { syncPreviewToPlayhead(); } catch(_){}
     return usedFace ? 'face-centered crop set' : 'center crop set (FaceDetector unavailable)';
   }
-  function clipActionFreeze(){
-    withActiveClip(null, function(clip){
-      var now = boolDatasetToggle(clip, 'freeze');
-      showToast('Freeze ' + (now ? 'on' : 'off'));
-    });
+  // Task #55 — Freeze Frame (spec): capture a PNG of the frame at the
+  // current playhead, split the active V1 clip at that timestamp, shift
+  // the second half + all subsequent V1 clips right by freezeDur (3s),
+  // and insert the captured still as an image clip into the resulting gap.
+  async function clipActionFreeze(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (!clip.classList.contains('mt-clip-video')){ showToast('Freeze is for video clips'); return; }
+    var mediaUrl = clip.dataset.mediaUrl;
+    if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+      showToast('Upload this file via the sidebar first, then try again');
+      return;
+    }
+    // Compute the playhead's clip-local time + source-time
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var clipLeft = parseFloat(clip.style.left) || 0;
+    var clipW    = parseFloat(clip.style.width) || 0;
+    var cutXInClip = phX - clipLeft;
+    if (cutXInClip < 6 || cutXInClip > clipW - 6){
+      showToast('Move the playhead over the clip first (not at the edges)');
+      return;
+    }
+    var PPS = (typeof TIMELINE_PX_PER_SEC === 'number') ? TIMELINE_PX_PER_SEC : 10;
+    var srcOff  = parseFloat(clip.dataset.sourceOffset) || 0;
+    var cutSec  = cutXInClip / PPS;
+    var sourceT = srcOff + cutSec;
+    var FREEZE_DUR_SEC = 3.0;  // default freeze hold duration
+
+    showToast('Capturing frame\u2026');
+    try {
+      var r = await fetch('/video-editor/freeze-frame', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: mediaUrl, sourceTime: sourceT })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Frame capture failed');
+
+      // Split the active clip at cutXInClip (creates left half + right half)
+      razorSplit(clip, cutXInClip);
+      // After razorSplit, `clip` is now the LEFT half and the right half
+      // is the next DOM sibling. Shift the right half + every V1 clip to
+      // its right by freezePx so a 3-second gap opens at the cut point.
+      var track = clip.parentNode;
+      var rightHalf = clip.nextSibling;
+      var freezePx = Math.round(FREEZE_DUR_SEC * PPS);
+      // Collect all V1 clips whose left >= original cut position
+      var cutTimelinePx = clipLeft + cutXInClip;
+      Array.from(track.querySelectorAll('.mt-clip')).forEach(function(c){
+        if (c === clip) return;  // don't shift the left half
+        var l = parseFloat(c.style.left) || 0;
+        if (l >= cutTimelinePx - 0.5){
+          c.style.left = (l + freezePx) + 'px';
+        }
+      });
+
+      // Insert the captured still as an image clip into the gap
+      var still = document.createElement('div');
+      still.className = 'mt-clip mt-clip-video clip-freeze-on';
+      still.style.position = 'absolute';
+      still.style.top = '3px';
+      still.style.left = cutTimelinePx + 'px';
+      still.style.width = freezePx + 'px';
+      still.style.overflow = 'hidden';
+      still.style.background = 'linear-gradient(135deg,#fde047,#f59e0b)';
+      still.style.color = '#0b0816';
+      still.dataset.fileName = '\u2744\ufe0f Freeze';
+      still.dataset.clipType = 'img';
+      still.dataset.mediaUrl = d.mediaUrl;
+      still.dataset.duration = String(FREEZE_DUR_SEC);
+      still.dataset.sourceOffset = '0';
+      still.dataset.srcDuration  = String(FREEZE_DUR_SEC);
+      still.dataset.freeze = '1';  // marker for the badge CSS + export
+      still.dataset.addedAt = String(Date.now() * 1000);
+      still.style.zIndex = '850';
+      // Thumbnail preview background
+      still.style.backgroundImage = 'url("' + d.mediaUrl + '")';
+      still.style.backgroundSize = 'cover';
+      still.style.backgroundPosition = 'center';
+      // Freeze badge label overlay
+      var label = document.createElement('span');
+      label.className = 'v10-fs-label';
+      label.textContent = '\u2744\ufe0f FREEZE';
+      label.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);' +
+        'font-size:10px;font-weight:700;color:#0b0816;background:rgba(255,255,255,.78);' +
+        'padding:2px 6px;border-radius:3px;pointer-events:none;z-index:4';
+      still.appendChild(label);
+      track.appendChild(still);
+      makeClipInteractive(still);
+      updateTimelineInfo();
+      pushTimelineHistory();
+      showToast('Freeze frame inserted (' + FREEZE_DUR_SEC + 's)');
+    } catch (err){
+      showToast('Freeze error: ' + (err.message || err));
+    }
   }
   // ── Keyframes ───────────────────────────────────────────────────
   // Per-clip animation of scale / offsetX / offsetY over clip-local time.
