@@ -3250,19 +3250,12 @@
     );
   }
   // ── Transform ──
+  // Task #54 — Resize uses the same slider popover as the FX sliders
+  // (Blur/Brightness/Contrast/Saturation). Live preview on drag, neutral
+  // of 1.0 clears the dataset key, multi-clip broadcast, Reset button,
+  // toggle-close. Range: 0.1× to 3.0× in 0.05 steps.
   function clipActionResize(){
-    promptToActiveClips(
-      function(c){
-        var cur = parseFloat(c.dataset.scale) || 1;
-        var input = prompt('Scale (1.0 = original)', String(cur));
-        if (input === null) return null;
-        var val = parseFloat(input);
-        if (!isFinite(val) || val <= 0){ showToast('Invalid scale'); return null; }
-        return val;
-      },
-      function(c, v){ c.dataset.scale = String(v); },
-      'Scale {val}x'
-    );
+    openFxSliderPopover('scale', 'Resize', 0.1, 3.0, 0.05, 1, '\u00d7', '\ud83d\udcd0');
   }
   function clipActionRotate(){
     // Relative 90\u00B0 step \u2014 each clip rotates by +90 from its own
