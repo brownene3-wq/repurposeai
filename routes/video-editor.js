@@ -9842,30 +9842,34 @@ router.post('/ai-captions', requireAuth, async (req, res) => {
       timestamp_granularities: ['word']
     });
 
-    // ─── Task #40 — Waveform-based word alignment ─────────────────────
-    // Run FFmpeg silencedetect on the same extracted MP3 to find the
-    // ONSET boundaries (the moments where silence ENDS and audio resumes).
-    // Then for each Whisper word, snap its start to the nearest onset
-    // within ±400ms. Whisper's word timestamps are usually within ~200ms
-    // of correct, but can slip to 500ms+ on certain audio — snapping to
-    // a real energy-rise boundary fixes that automatically and gives
-    // the "captions line up with the first syllable" feel.
+    // ─── Task #40/#42 — Waveform-based word alignment v2 ──────────────
+    // Runs FFmpeg silencedetect at a TIGHT threshold (noise=-35dB,
+    // d=0.06) so word-level boundaries register, not just long pauses.
+    // The resulting silence_end timestamps are the instants when audio
+    // energy rises above -35dB — but this detection has a small ~80ms
+    // lag vs. the true acoustic onset (the filter needs to observe the
+    // rise before reporting it). So we subtract ONSET_LAG_CORRECTION
+    // from each silence_end to land on the actual onset.
     //
-    // silencedetect prints:
-    //   [silencedetect] silence_start: 1.234
-    //   [silencedetect] silence_end:   2.567 | silence_duration: 1.333
-    // We care about silence_end values (= onset of next spoken region).
+    // Each Whisper word's start is then snapped to the nearest onset in
+    // a WIDE window [-0.8s, +0.15s] — we allow a big leftward pull to
+    // correct Whisper's systematic late bias, but very little rightward
+    // drift (a word shouldn't slide later than Whisper thinks).
+    var ONSET_LAG_CORRECTION = 0.08;
     var onsets = await new Promise(function(resolve){
       var out = '';
       var p = spawn(ffmpegPath, [
         '-i', mp3Path,
-        '-af', 'silencedetect=noise=-30dB:d=0.12',
+        '-af', 'silencedetect=noise=-35dB:d=0.06',
         '-f', 'null', '-'
       ]);
       p.stderr.on('data', function(d){ out += d.toString(); });
       p.on('close', function(){
         var re = /silence_end:\s*([0-9.]+)/g, m, arr = [];
-        while ((m = re.exec(out)) !== null){ arr.push(parseFloat(m[1])); }
+        while ((m = re.exec(out)) !== null){
+          var t = parseFloat(m[1]) - ONSET_LAG_CORRECTION;
+          if (t >= 0) arr.push(t);
+        }
         // First spoken region has no silence_end — add t=0 as an implicit
         // onset if the file starts with speech (silencedetect wouldn't emit
         // a silence_end for that case).
@@ -9874,9 +9878,12 @@ router.post('/ai-captions', requireAuth, async (req, res) => {
       });
       p.on('error', function(){ resolve([0]); });
     });
+    // Task #42 — wider leftward snap window since captions still felt
+    // delayed at ±500/200 ms. Allow up to 0.8s earlier but only 0.15s
+    // later (keeps words from drifting past Whisper's estimate).
+    var SNAP_LEFT  = 0.8;
+    var SNAP_RIGHT = 0.15;
     function snapToOnset(t){
-      // Binary-search the nearest onset within ±400ms of t. Returns t
-      // unchanged if no onset is within range.
       if (!onsets.length) return t;
       var lo = 0, hi = onsets.length - 1, best = -1, bestDiff = Infinity;
       while (lo <= hi){
@@ -9888,10 +9895,8 @@ router.post('/ai-captions', requireAuth, async (req, res) => {
         else { best = mid; bestDiff = 0; break; }
       }
       if (best < 0) return t;
-      // Prefer onsets that are slightly BEFORE Whisper's start (word begins
-      // at or just after the boundary). Window: [-0.5s, +0.2s].
       var candidate = onsets[best];
-      if (candidate >= t - 0.5 && candidate <= t + 0.2) return candidate;
+      if (candidate >= t - SNAP_LEFT && candidate <= t + SNAP_RIGHT) return candidate;
       return t;
     }
 

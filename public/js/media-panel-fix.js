@@ -456,45 +456,100 @@
     });
 
     // Drag to move — only when Select tool active.
+    // Task #45 — Supports multi-clip drag: if the clicked clip is already
+    // part of a multi-selection, ALL selected clips move together by the
+    // same delta. Shift+click adds/removes clips from the selection
+    // without starting a drag.
     clip.addEventListener('mousedown', function(e){
       if (_timelineState.tool !== 'select') return;
       if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
+
+      // Shift+click: toggle this clip in the selection, don't drag
+      if (e.shiftKey){
+        clip.classList.toggle('selected');
+        return;
+      }
+
+      // Determine the DRAG GROUP:
+      //   - If this clip is already selected AND other clips are also
+      //     selected → drag the whole group.
+      //   - Otherwise → make this the sole selection and drag it alone.
+      var allSelected = Array.from(document.querySelectorAll('.mt-clip.selected'));
+      var alreadyInMultiSel = clip.classList.contains('selected') && allSelected.length > 1;
+      var group;
+      if (alreadyInMultiSel){
+        group = allSelected;
+      } else {
+        document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+        clip.classList.add('selected');
+        group = [clip];
+      }
+
       var startX = e.clientX;
-      var startLeft = parseFloat(clip.style.left) || 0;
-      var width = parseFloat(clip.style.width) || clip.offsetWidth || 100;
-      document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
-      clip.classList.add('selected');
+      // Snapshot each group-member's starting position so we can restore
+      // or offset cleanly on each mousemove.
+      var groupState = group.map(function(c){
+        return {
+          clip: c,
+          startLeft: parseFloat(c.style.left) || 0,
+          width:     parseFloat(c.style.width) || c.offsetWidth || 100,
+          track:     c.parentElement,
+          isAudio:   c.classList.contains('mt-clip-audio')
+        };
+      });
+
       function onMove(ev){
-        var target = Math.max(0, startLeft + (ev.clientX - startX));
-        target = applySnap(target, width, clip);
-        var currentTrack = clip.parentElement;
-        var isAudio = clip.classList.contains('mt-clip-audio');
-        if (clipOverlaps(currentTrack, target, width, clip)){
-          if (isAudio){
-            // Audio: try to hop the clip to another audio track that has room.
-            // If no free track exists, fall back to clamping so clips still
-            // don't overlap.
-            var freeTrack = findFreeAudioTrack(target, width, currentTrack, clip);
-            if (freeTrack){
-              freeTrack.appendChild(clip);
-              currentTrack = freeTrack;
+        var rawDx = ev.clientX - startX;
+        // First pass: compute each member's proposed target + check against
+        // overlaps WITH CLIPS OUTSIDE THE GROUP. Members of the group can
+        // still overlap each other since they move in lockstep.
+        //
+        // To preserve the group's relative ordering, we clamp the ENTIRE
+        // group to the maximum safe delta (the smallest absolute dx that
+        // avoids overlap for every member).
+        var minLeft = groupState.reduce(function(m, g){ return Math.min(m, g.startLeft); }, Infinity);
+        // Never let any member go negative
+        var effectiveDx = rawDx;
+        if (minLeft + effectiveDx < 0) effectiveDx = -minLeft;
+
+        // Clamp against non-group clips on each track
+        groupState.forEach(function(g){
+          var target = g.startLeft + effectiveDx;
+          target = applySnap(target, g.width, g.clip);
+          var track = g.track;
+          // Build an ignore-set = other group members on the same track +
+          // the clip itself. clipOverlaps has a 3rd arg "ignoreClip" for
+          // a single clip; we emulate by temporarily removing the class
+          // or by checking manually.
+          // Simpler: if clipOverlaps with any non-group clip on this track,
+          // roll effectiveDx back.
+          if (clipOverlapsExcludingGroup(track, target, g.width, g.clip, group)){
+            if (g.isAudio){
+              var freeTrack = findFreeAudioTrack(target, g.width, track, g.clip);
+              if (!freeTrack){
+                // Can't place — keep the member at its current position
+                target = g.startLeft;
+                effectiveDx = target - g.startLeft;
+              }
             } else {
-              target = clampAwayFromOverlap(currentTrack, target, width, clip);
+              // Clamp the group so this member doesn't collide
+              var clamped = clampAwayFromOverlap(track, target, g.width, g.clip);
+              effectiveDx = clamped - g.startLeft;
             }
-          } else {
-            // Video: never allow overlap — clamp to the nearest edge.
-            target = clampAwayFromOverlap(currentTrack, target, width, clip);
           }
-        }
-        clip.style.left = target + 'px';
+        });
+
+        // Commit the (possibly-clamped) effectiveDx to every member
+        groupState.forEach(function(g){
+          var target = Math.max(0, g.startLeft + effectiveDx);
+          g.clip.style.left = target + 'px';
+        });
       }
       function onUp(){
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
-        // If Snap is on and this was a video clip, close any gap created
-        // by the drag (keeps V1 side-by-side per Albert's requirement).
         if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
         _lastPreviewUrl = null;
         try { syncPreviewToPlayhead(); } catch(_){}
@@ -503,6 +558,22 @@
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
+
+    // Helper — like clipOverlaps but ignores every clip in the group set.
+    function clipOverlapsExcludingGroup(track, left, width, self, group){
+      if (!track) return false;
+      var peers = Array.from(track.children);
+      for (var i = 0; i < peers.length; i++){
+        var p = peers[i];
+        if (!p.classList || !p.classList.contains('mt-clip')) continue;
+        if (p === self) continue;
+        if (group.indexOf(p) !== -1) continue;
+        var pl = parseFloat(p.style.left) || 0;
+        var pw = parseFloat(p.style.width) || 0;
+        if (left + width > pl && left < pl + pw) return true;
+      }
+      return false;
+    }
 
     attachTrimHandles(clip);
     refreshKeyframeMarkers(clip);

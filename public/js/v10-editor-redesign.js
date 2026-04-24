@@ -2454,8 +2454,11 @@
         var clipRightPx= clipLeftPx + clipWidthPx;  // T1 must not extend past this (#34)
         var PX_PER_SEC = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
         var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+        // Task #42 — Default captions 0.2s earlier than Whisper says to
+        // compensate for the remaining transcription drift. User can
+        // override via window.__captionLeadSec from the console.
         var leadSec = parseFloat(window.__captionLeadSec);
-        if (!isFinite(leadSec)) leadSec = 0;
+        if (!isFinite(leadSec)) leadSec = 0.2;
         var added = 0, truncated = 0, droppedPastEnd = 0;
         chunks.forEach(function(ch){
           if (!ch.text || !isFinite(ch.start) || !isFinite(ch.end)) return;
@@ -2587,10 +2590,13 @@
         if (!compR.ok || !compD.success) throw new Error(compD.error || 'Hook compose failed');
 
         hookBusy.advance(4);
-        // Shift existing V1 clips right by the new hook's duration (in px)
+        // Task #44 — Shift EVERY timeline clip right by the hook's
+        // duration so the user's V1 + A1 + T1 + M1 + FX assets all
+        // stay aligned with each other. The new hook clip gets left=0
+        // on V1 and nothing else is buried.
         var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
         var shiftPx = Math.round(compD.duration * PPS);
-        v1Clips.forEach(function(c){
+        Array.from(document.querySelectorAll('.mt-clip')).forEach(function(c){
           var l = parseFloat(c.style.left) || 0;
           c.style.left = (l + shiftPx) + 'px';
         });
@@ -3118,8 +3124,13 @@
       '<div>' + stepsHtml + '</div>';
     bk.appendChild(panel);
     document.body.appendChild(bk);
-    // Swallow clicks on the backdrop (non-dismissible)
-    bk.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); }, true);
+    // Task #43 — Swallow clicks on the BACKDROP only (not its children).
+    // The previous version captured every click on bk and its subtree,
+    // which meant the Close button (inside the panel) was never hearing
+    // its own click. e.target === bk isolates true backdrop clicks.
+    bk.addEventListener('click', function(e){
+      if (e.target === bk){ e.preventDefault(); e.stopPropagation(); }
+    }, true);
     // Swallow Escape key
     function killKey(e){ if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); } }
     document.addEventListener('keydown', killKey, true);

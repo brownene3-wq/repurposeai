@@ -1298,17 +1298,43 @@ IMPORTANT:
 - sfx must be one of the enumerated values
 - visualStyle + cameraMovement must be from the enumerated lists`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 350,
-      temperature: 0.9,
-      response_format: { type: 'json_object' }
-    });
+    // Task #43 — json_object response_format requires a model that
+    // supports JSON mode. Legacy 'gpt-4' does NOT; 'gpt-4o-mini' does.
+    // Also fall back cleanly if JSON parse fails (model returned prose).
+    let completion;
+    try {
+      completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 350,
+        temperature: 0.9,
+        response_format: { type: 'json_object' }
+      });
+    } catch (e){
+      // Some OpenAI orgs don't have gpt-4o-mini enabled — retry with plain
+      // gpt-4 and parse prose output. Keeps the endpoint functional.
+      console.warn('[ai-hook generate] gpt-4o-mini failed, retrying gpt-4:', e.message);
+      completion = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: prompt + '\n\nReturn ONLY the JSON object, no prose.' }],
+        max_tokens: 350,
+        temperature: 0.8
+      });
+    }
 
+    var rawOut = (completion.choices[0].message.content || '').trim();
     var hookSpec = {};
-    try { hookSpec = JSON.parse(completion.choices[0].message.content.trim()); }
-    catch(_){ hookSpec = {}; }
+    try { hookSpec = JSON.parse(rawOut); }
+    catch(_){
+      // Extract the first {...} block from prose wrap
+      var m = rawOut.match(/\{[\s\S]*\}/);
+      if (m){
+        try { hookSpec = JSON.parse(m[0]); }
+        catch(_){ hookSpec = { hookText: rawOut.slice(0, 180) }; }
+      } else {
+        hookSpec = { hookText: rawOut.slice(0, 180) };
+      }
+    }
 
     const hookText = (hookSpec.hookText || completion.choices[0].message.content).toString().trim();
     const impactWords = Array.isArray(hookSpec.impactWords) ? hookSpec.impactWords.slice(0, 3).map(w => String(w || '').toUpperCase().slice(0, 20)) : [];
@@ -1364,7 +1390,8 @@ IMPORTANT:
     featureUsageOps.log(req.user.id, 'ai_hooks').catch(() => {});
   } catch (error) {
     console.error('AI Hook error:', error);
-    res.status(500).json({ error: 'Failed to generate hook' });
+    // Task #43 — surface the actual error so the client knows what's wrong
+    res.status(500).json({ error: (error && error.message) || 'Failed to generate hook' });
   }
 });
 
