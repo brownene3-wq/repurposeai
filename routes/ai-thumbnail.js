@@ -6,13 +6,19 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
+const Replicate = require('replicate');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
-// OpenAI client for AI-generated thumbnails (Whisper transcription,
-// GPT-4o-mini concept synthesis, GPT-image-1 generation)
+// OpenAI client for Whisper transcription + GPT-4o-mini concept synthesis.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Replicate client for Flux Schnell image generation. ~$0.003/image vs
+// ~$0.04/image on GPT-image-1 medium — roughly 10-15× cheaper, and the
+// caption is overlaid separately in the UI so Flux's weaker text rendering
+// is not a concern here.
+const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -713,24 +719,49 @@ async function transcribeForAIThumbnail(audioPath) {
 // transcript + optional user hint. Returns an array of concept objects.
 async function generateThumbnailConcepts({ transcript, hint, videoTitle, aspectLabel, count }) {
   const safeTranscript = (transcript || '').slice(0, 12000);
-  const systemPrompt = `You are a senior YouTube thumbnail art director. Given a video transcript, you identify the most visually compelling, emotionally charged, or curiosity-provoking moments and turn them into thumbnail concepts that maximize click-through. Each concept must be visually distinct from the others. Captions must be 2-6 words, punchy, ALL CAPS. Image prompts should describe a single focal subject, dramatic lighting, bold composition, vibrant colors, and leave clear negative space for the caption overlay. Avoid copyrighted characters, logos, real celebrities, or text inside the generated image (the caption is overlaid separately).`;
+
+  // The three fixed creative angles. For count N, we take the first N of these.
+  // Each angle produces a visually distinct concept so outputs are not just
+  // variations of the same image.
+  const angleRotation = [
+    { key: 'character', label: 'CHARACTER FOCUS (High Emotion)', guide: 'A hyper-idealized human face or body expressing strong emotion tied to the topic — awe, shock, determination, triumph, grief. The subject embodies the topic. Close or medium shot, eye contact or strong gaze, dramatic rim lighting.' },
+    { key: 'action', label: 'ACTION/EVENT FOCUS (High Energy)', guide: 'A high-energy moment — the peak instant of the topic in motion. Motion blur, sparks, impact, crowds, kinetic composition. Camera angle: low, dutch, or wide dramatic perspective.' },
+    { key: 'object', label: 'OBJECT/RESULT FOCUS (The Outcome)', guide: 'The singular object, result, or artifact that represents the topic. Hero-shot lighting, glossy surfaces, dramatic shadow, clean background. The "what it looks like when it works" image.' }
+  ];
+  const anglesToUse = angleRotation.slice(0, Math.max(1, Math.min(count, 3)));
+  const anglesBlock = anglesToUse.map((a, i) => `  Concept ${i + 1} — ${a.label}: ${a.guide}`).join('\n');
+
+  const systemPrompt = `You are a senior YouTube thumbnail art director. You design thumbnails for maximum click-through on mobile.
+
+STEP 1 — Extract the HOOK TOPIC.
+Identify the single abstract idea the video is about (e.g., "AI replacing jobs", "beating procrastination", "the future of electric cars", "how to bake the perfect sourdough"). Ignore incidental visuals like the host's outfit or the studio — the topic is the IDEA, not the physical evidence.
+
+STEP 2 — Generate exactly ${count} concept${count > 1 ? 's' : ''}, each using a DIFFERENT creative angle (no overlap):
+${anglesBlock}
+
+STEP 3 — For each concept, write:
+• title: a 1-4 word punchy hook in ALL CAPS. Examples: "AI WILL REPLACE YOU", "IT ACTUALLY WORKS", "THE FUTURE IS HERE", "NEVER BAKE AGAIN". This gets rendered as a large text overlay on top of the image.
+• moment: one sentence describing what part of the video (or what claim from the transcript) this concept draws on.
+• imagePrompt: a detailed text-to-image prompt. Every prompt MUST include: hyper-idealized subject, cinematic/dramatic composition, high-impact lighting (rim, golden hour, neon, chiaroscuro — pick what fits), vibrant color palette, shallow depth of field when relevant, and clear negative space in the TOP-LEFT 25% of the frame for a text overlay. Do NOT instruct the image model to render any text, logos, watermarks, real celebrities, or copyrighted characters.`;
+
   const userPrompt = `Video title: ${videoTitle || '(unknown)'}
 Target aspect ratio: ${aspectLabel}
-User style hint: ${hint || '(none — choose what best fits the content)'}
+User style hint: ${hint || '(none — choose what best fits the topic)'}
 
 Transcript (may be truncated):
 """
 ${safeTranscript || '(no transcript available)'}
 """
 
-Produce exactly ${count} thumbnail concepts. Return JSON shaped as:
+Return JSON shaped as:
 {
+  "hookTopic": "One short phrase naming the abstract topic.",
   "concepts": [
     {
-      "title": "Short internal title for this concept",
-      "moment": "Which part of the video this draws from (one sentence)",
-      "caption": "2-6 WORD HOOK IN CAPS",
-      "imagePrompt": "Detailed visual prompt for an image model — focal subject, mood, lighting, composition, colors, style. Do NOT instruct the model to render any text."
+      "angle": "character" | "action" | "object",
+      "title": "1-4 WORD PUNCHY HOOK IN CAPS",
+      "moment": "One sentence tying this to the video.",
+      "imagePrompt": "Detailed visual prompt following the rules above."
     }
   ]
 }`;
@@ -754,13 +785,66 @@ Produce exactly ${count} thumbnail concepts. Return JSON shaped as:
 
   const concepts = Array.isArray(parsed.concepts) ? parsed.concepts : [];
   if (concepts.length === 0) throw new Error('Model returned no concepts');
+
+  const validAngles = new Set(['character', 'action', 'object']);
   return concepts.slice(0, count).map((c, i) => ({
-    title: String(c.title || `Concept ${i + 1}`).slice(0, 80),
+    angle: validAngles.has(String(c.angle)) ? String(c.angle) : (anglesToUse[i] && anglesToUse[i].key) || 'character',
+    title: String(c.title || `Concept ${i + 1}`).slice(0, 60),
     moment: String(c.moment || '').slice(0, 200),
-    caption: String(c.caption || '').slice(0, 60),
-    imagePrompt: String(c.imagePrompt || c.prompt || '').slice(0, 1800)
+    imagePrompt: String(c.imagePrompt || c.prompt || '').slice(0, 1800),
+    hookTopic: String(parsed.hookTopic || '').slice(0, 160)
   }));
 }
+
+// ============================================================================
+// ROLLBACK: Previous GPT-image-1 implementation (commented out for one-touch
+// rollback if Flux Schnell turns out to not meet the bar). To revert: delete
+// the Flux implementation below and uncomment this block.
+// ============================================================================
+/*
+// Map aspect ratio string to the GPT-image-1 size parameter.
+function aspectToImageSize(aspect) {
+  if (aspect === '9:16') return '1024x1536';
+  if (aspect === '1:1') return '1024x1024';
+  return '1536x1024'; // default 16:9
+}
+
+// Call GPT-image-1 via raw REST (bypasses any SDK version gaps for this model).
+async function generateAIImage({ prompt, aspect, jobId, index }) {
+  const size = aspectToImageSize(aspect);
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
+
+  const resp = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt: prompt,
+      size: size,
+      n: 1,
+      quality: 'medium'
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw new Error('gpt-image-1 HTTP ' + resp.status + ': ' + errText.slice(0, 300));
+  }
+
+  const data = await resp.json();
+  const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
+  if (!b64) throw new Error('gpt-image-1 returned no image data');
+
+  const filename = 'ai-thumb-' + jobId + '-' + index + '.png';
+  const outputPath = path.join(outputDir, filename);
+  fs.writeFileSync(outputPath, Buffer.from(b64, 'base64'));
+  return { filename };
+}
+*/
 
 // Normalize aspect ratio to a value Flux Schnell accepts directly as input.
 function aspectForFlux(aspect) {
@@ -769,19 +853,106 @@ function aspectForFlux(aspect) {
   return '16:9'; // default
 }
 
-// Generate a thumbnail image via Replicate's Flux Schnell model.
-// Schnell is ~$0.003/image — roughly 10-15× cheaper than GPT-image-1 medium —
-// and the visual quality is strong for photographic/illustrative content. We
-// overlay the caption ourselves in the UI, so Flux's weaker text rendering
-// doesn't matter here.
-// Flow: POST a prediction with Prefer: wait=60 for synchronous behavior,
-// poll if still processing (Schnell usually completes in 2-4s), then fetch
-// the output URL and save the bytes to outputDir.
-async function generateAIImage({ prompt, aspect, jobId, index }) {
-  const apiToken = process.env.REPLICATE_API_TOKEN;
-  if (!apiToken) throw new Error('REPLICATE_API_TOKEN not configured');
+// Locate a bold TrueType font on the host for the text overlay. Checked in
+// preference order — first match wins. Returns null if none are present, in
+// which case the overlay step is skipped (raw image is served instead).
+let _cachedFontPath;
+function findSystemFont() {
+  if (_cachedFontPath !== undefined) return _cachedFontPath;
+  const candidates = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/Library/Fonts/Arial Bold.ttf',
+    '/Library/Fonts/Arial.ttf',
+    '/System/Library/Fonts/Supplemental/Arial Bold.ttf'
+  ];
+  for (const f of candidates) {
+    try { if (fs.existsSync(f)) { _cachedFontPath = f; return f; } } catch (e) {}
+  }
+  _cachedFontPath = null;
+  return null;
+}
 
-  const body = {
+// Burn the 1-4 word hook title onto the image using ffmpeg drawtext.
+// Text goes in the TOP-LEFT safe zone (out of the way of YouTube's bottom
+// scrubber and right-side share/close buttons). Font scales with image height.
+// High-contrast dark box + shadow keeps it legible on any background.
+// Uses the textfile= form of drawtext so apostrophes/colons/etc in titles
+// don't require ffmpeg-filter escaping gymnastics.
+async function compositeHookTitle(inputPath, titleText, outputPath) {
+  const cleanTitle = String(titleText || '').trim().slice(0, 60);
+  if (!cleanTitle) {
+    // No title — just copy input to output
+    fs.copyFileSync(inputPath, outputPath);
+    return;
+  }
+  const font = findSystemFont();
+  if (!font) {
+    console.warn('[AI Thumbnail] No bold font found on host — skipping title overlay.');
+    fs.copyFileSync(inputPath, outputPath);
+    return;
+  }
+
+  const textfilePath = path.join(outputDir, `title-${uuidv4().slice(0, 8)}.txt`);
+  fs.writeFileSync(textfilePath, cleanTitle);
+
+  // Filter breakdown:
+  //   fontfile=...            explicit font path
+  //   textfile=...            read text from file (avoids escape issues)
+  //   fontsize=h*0.075        ~7.5% of image height — big and bold
+  //   fontcolor=white
+  //   x=w*0.05 y=h*0.05       top-left safe zone with 5% padding
+  //   box=1 boxcolor=black@0.45 boxborderw=22    dark rounded-ish backdrop
+  //   shadowcolor=black@0.9 shadowx=3 shadowy=3  extra legibility
+  const filter = [
+    'drawtext=',
+    `fontfile='${font}'`,
+    `:textfile='${textfilePath}'`,
+    ':fontsize=h*0.075',
+    ':fontcolor=white',
+    ':x=w*0.05:y=h*0.05',
+    ':box=1:boxcolor=black@0.45:boxborderw=22',
+    ':shadowcolor=black@0.9:shadowx=3:shadowy=3'
+  ].join('');
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath || 'ffmpeg', [
+      '-i', inputPath,
+      '-vf', filter,
+      '-y',
+      outputPath
+    ]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      if (code === 0) resolve();
+      else reject(new Error('compositeHookTitle ffmpeg exit ' + code + ': ' + stderr.slice(-220)));
+    });
+    proc.on('error', (err) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      reject(err);
+    });
+  });
+}
+
+// Generate a thumbnail image via Replicate's Flux Schnell model.
+// Uses predictions.create + wait so we get a stable URL output shape across
+// replicate SDK versions (unlike replicate.run() which started returning
+// ReadableStream instances in v1.x). Schnell typically completes in 2-4s.
+// After the image comes back, the hook title is burned into the top-left
+// safe zone via compositeHookTitle().
+async function generateAIImage({ prompt, aspect, jobId, index, title }) {
+  if (!process.env.REPLICATE_API_TOKEN) {
+    throw new Error('REPLICATE_API_TOKEN not configured');
+  }
+
+  const prediction = await replicate.predictions.create({
+    model: 'black-forest-labs/flux-schnell',
     input: {
       prompt: prompt,
       aspect_ratio: aspectForFlux(aspect),
@@ -792,58 +963,49 @@ async function generateAIImage({ prompt, aspect, jobId, index }) {
       num_inference_steps: 4,
       go_fast: true
     }
-  };
-
-  const startResp = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + apiToken,
-      'Content-Type': 'application/json',
-      'Prefer': 'wait=60'
-    },
-    body: JSON.stringify(body)
   });
 
-  if (!startResp.ok) {
-    const errText = await startResp.text().catch(() => '');
-    throw new Error(`Replicate HTTP ${startResp.status}: ${errText.slice(0, 300)}`);
+  const finalPrediction = await replicate.wait(prediction, { interval: 1500 });
+
+  if (finalPrediction.status !== 'succeeded') {
+    const err = finalPrediction.error ? String(finalPrediction.error).slice(0, 300) : 'no error detail';
+    throw new Error(`Replicate prediction ${finalPrediction.status}: ${err}`);
   }
 
-  let data = await startResp.json();
-
-  // If the prediction didn't complete within the sync-wait window, poll.
-  const pollStart = Date.now();
-  while (data && (data.status === 'starting' || data.status === 'processing')) {
-    if (Date.now() - pollStart > 60000) {
-      throw new Error('Replicate prediction timed out after 60s');
-    }
-    await new Promise(r => setTimeout(r, 1500));
-    const pollUrl = data.urls && data.urls.get;
-    if (!pollUrl) throw new Error('Replicate response missing poll URL');
-    const pollResp = await fetch(pollUrl, {
-      headers: { 'Authorization': 'Bearer ' + apiToken }
-    });
-    if (!pollResp.ok) throw new Error(`Replicate poll HTTP ${pollResp.status}`);
-    data = await pollResp.json();
+  const out = finalPrediction.output;
+  const imageUrl = Array.isArray(out) ? out[0] : out;
+  if (!imageUrl || typeof imageUrl !== 'string') {
+    throw new Error('Replicate returned no image URL');
   }
-
-  if (!data || data.status !== 'succeeded') {
-    const msg = data && data.error ? String(data.error).slice(0, 300) : 'no error detail';
-    throw new Error(`Replicate prediction ${data && data.status}: ${msg}`);
-  }
-
-  const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
-  if (!imageUrl) throw new Error('Replicate returned no image URL');
 
   const imgResp = await fetch(imageUrl);
-  if (!imgResp.ok) throw new Error(`Failed to download generated image: HTTP ${imgResp.status}`);
+  if (!imgResp.ok) {
+    throw new Error(`Failed to download generated image: HTTP ${imgResp.status}`);
+  }
   const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
 
-  const filename = `ai-thumb-${jobId}-${index}.png`;
-  const outputPath = path.join(outputDir, filename);
-  fs.writeFileSync(outputPath, imgBuffer);
-  return { filename };
+  const rawFilename = `ai-thumb-${jobId}-${index}-raw.png`;
+  const rawPath = path.join(outputDir, rawFilename);
+  fs.writeFileSync(rawPath, imgBuffer);
+
+  const finalFilename = `ai-thumb-${jobId}-${index}.png`;
+  const finalPath = path.join(outputDir, finalFilename);
+
+  try {
+    await compositeHookTitle(rawPath, title, finalPath);
+    try { fs.unlinkSync(rawPath); } catch (e) {}
+  } catch (overlayErr) {
+    // Fall back to the raw image if overlay fails (font missing, ffmpeg
+    // weirdness, etc.). User still gets a thumbnail.
+    console.warn('[AI Thumbnail] title overlay failed, serving raw Flux image:', overlayErr.message);
+    try { fs.renameSync(rawPath, finalPath); } catch (e) {
+      throw new Error('Both overlay and raw fallback failed: ' + overlayErr.message);
+    }
+  }
+
+  return { filename: finalFilename };
 }
+
 // Pull the best-effort YouTube title when we have a URL. Falls back to empty
 // string if yt-dlp/ytdl-core aren't available or the call fails.
 async function getYouTubeTitle(videoUrl) {
@@ -1410,6 +1572,14 @@ router.get('/', requireAuth, (req, res) => {
         flex: 1;
       }
 
+      .ai-thumb-kicker {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
       .ai-thumb-title {
         color: var(--text);
         font-weight: 600;
@@ -1582,12 +1752,19 @@ ${pageStyles}
                 <button type="button" class="ai-aspect-btn" data-aspect="1:1">1:1 &bull; Square</button>
               </div>
 
+              <label class="url-input-label" style="margin-top: 1.25rem;">Number of thumbnails</label>
+              <div class="ai-aspect-row">
+                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="1">1 &bull; Character</button>
+                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="2">2 &bull; + Action</button>
+                <button type="button" class="ai-aspect-btn ai-count-btn active" data-count="3">3 &bull; + Object</button>
+              </div>
+
               <label class="url-input-label" style="margin-top: 1.25rem;">Style hint (optional)</label>
               <input type="text" id="aiStyleHint" class="url-input" placeholder="e.g. bright and energetic, dark cinematic, bold minimal" maxlength="300" />
             </div>
 
             <button type="button" class="action-button" id="aiGenerateBtn" disabled>
-              Generate 4 AI Thumbnails
+              Generate 3 AI Thumbnails
             </button>
 
             <div id="aiProgress" class="ai-progress" style="display: none;">
@@ -1942,6 +2119,7 @@ ${pageStyles}
     // ===========================================================
     var aiActiveSource = 'url';
     var aiActiveAspect = '16:9';
+    var aiActiveCount = 3;
 
     document.querySelectorAll('.ai-source-tab').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1955,11 +2133,27 @@ ${pageStyles}
       });
     });
 
-    document.querySelectorAll('.ai-aspect-btn').forEach(btn => {
+    // Aspect-ratio buttons (only the ones with data-aspect, not count buttons)
+    document.querySelectorAll('.ai-aspect-btn[data-aspect]').forEach(btn => {
       btn.addEventListener('click', () => {
         aiActiveAspect = btn.dataset.aspect;
-        document.querySelectorAll('.ai-aspect-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.ai-aspect-btn[data-aspect]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+      });
+    });
+
+    // Count buttons — keep the generate button label in sync with selection
+    function updateGenerateBtnLabel() {
+      const btn = document.getElementById('aiGenerateBtn');
+      if (!btn || btn.classList.contains('loading')) return;
+      btn.innerHTML = 'Generate ' + aiActiveCount + ' AI Thumbnail' + (aiActiveCount === 1 ? '' : 's');
+    }
+    document.querySelectorAll('.ai-count-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        aiActiveCount = parseInt(btn.dataset.count, 10) || 3;
+        document.querySelectorAll('.ai-count-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        updateGenerateBtnLabel();
       });
     });
 
@@ -2043,7 +2237,7 @@ ${pageStyles}
         formData.set('inputMode', aiActiveSource);
         formData.set('aspect', aiActiveAspect);
         formData.set('styleHint', document.getElementById('aiStyleHint').value.trim());
-        formData.set('count', '4');
+        formData.set('count', String(aiActiveCount));
         if (hasUrl) formData.set('youtubeUrl', aiYoutubeUrlEl.value.trim());
         if (hasFile) formData.set('videoFile', aiFileInputEl.files[0]);
 
@@ -2068,7 +2262,7 @@ ${pageStyles}
         } finally {
           stopAIProgress();
           aiGenerateBtn.classList.remove('loading');
-          aiGenerateBtn.innerHTML = 'Generate 4 AI Thumbnails';
+          aiGenerateBtn.innerHTML = 'Generate ' + aiActiveCount + ' AI Thumbnail' + (aiActiveCount === 1 ? '' : 's');
           checkAIInputs();
         }
       });
@@ -2082,21 +2276,25 @@ ${pageStyles}
       grid.innerHTML = '';
 
       const bits = [];
-      if (data.videoTitle) bits.push('Based on: "' + data.videoTitle + '"');
-      if (data.aspect) bits.push('Aspect ratio: ' + data.aspect);
+      if (data.hookTopic) bits.push('Hook topic: ' + data.hookTopic);
+      if (data.videoTitle) bits.push('Source: "' + data.videoTitle + '"');
+      if (data.aspect) bits.push('Aspect: ' + data.aspect);
       if (data.partialFailures && data.partialFailures.length) {
         bits.push(data.partialFailures.length + ' of ' + (data.thumbnails.length + data.partialFailures.length) + ' image(s) failed to render — showing the ones that succeeded');
       }
       caption.textContent = bits.join(' · ');
 
+      const angleLabel = { character: 'Character Focus', action: 'Action Focus', object: 'Object Focus' };
       data.thumbnails.forEach(thumb => {
         const card = document.createElement('div');
         card.className = 'ai-thumb-card';
+        const typeLabel = thumb.outputType || 'Generated Thumbnail';
+        const angleText = thumb.angle && angleLabel[thumb.angle] ? angleLabel[thumb.angle] : '';
         card.innerHTML = \`
           <img src="/ai-thumbnail/serve/\${thumb.filename}" class="ai-thumb-image" alt="\${(thumb.title || 'AI Thumbnail').replace(/"/g, '&quot;')}">
           <div class="ai-thumb-body">
+            <div class="ai-thumb-kicker">\${escapeHtml(typeLabel)}\${angleText ? ' &middot; ' + escapeHtml(angleText) : ''}</div>
             <div class="ai-thumb-title">\${escapeHtml(thumb.title || 'AI Thumbnail')}</div>
-            \${thumb.caption ? '<div class="ai-thumb-caption">' + escapeHtml(thumb.caption) + '</div>' : ''}
             \${thumb.moment ? '<div class="ai-thumb-moment">' + escapeHtml(thumb.moment) + '</div>' : ''}
             <a href="/ai-thumbnail/download/\${thumb.filename}" class="ai-thumb-download" download>Download</a>
           </div>
@@ -2290,7 +2488,7 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
     const youtubeUrl = (req.body.youtubeUrl || '').toString().trim();
     const aspect = ['16:9', '9:16', '1:1'].includes(req.body.aspect) ? req.body.aspect : '16:9';
     const styleHint = (req.body.styleHint || '').toString().slice(0, 300);
-    const requestedCount = Math.min(Math.max(parseInt(req.body.count, 10) || 4, 1), 6);
+    const requestedCount = Math.min(Math.max(parseInt(req.body.count, 10) || 3, 1), 3);
     const videoFile = req.file;
 
     // Resolve the source video path
@@ -2358,21 +2556,24 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
     // Generate images in parallel
     const jobId = uuidv4().slice(0, 10);
     const results = await Promise.allSettled(concepts.map((concept, index) =>
-      generateAIImage({ prompt: concept.imagePrompt, aspect, jobId, index })
+      generateAIImage({ prompt: concept.imagePrompt, aspect, jobId, index, title: concept.title })
         .then((img) => ({ ...img, concept }))
     ));
 
     const thumbnails = [];
     const failures = [];
+    let hookTopic = '';
     results.forEach((r, i) => {
       if (r.status === 'fulfilled') {
         thumbnails.push({
           filename: r.value.filename,
+          outputType: 'Generated Thumbnail',
           title: r.value.concept.title,
-          caption: r.value.concept.caption,
+          angle: r.value.concept.angle,
           moment: r.value.concept.moment,
           prompt: r.value.concept.imagePrompt
         });
+        if (!hookTopic && r.value.concept.hookTopic) hookTopic = r.value.concept.hookTopic;
       } else {
         failures.push({ index: i, error: r.reason && r.reason.message ? r.reason.message : String(r.reason) });
       }
@@ -2391,6 +2592,7 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
       thumbnails,
       partialFailures: failures,
       aspect,
+      hookTopic,
       transcriptPreview: transcript ? transcript.slice(0, 400) : '',
       videoTitle
     });
