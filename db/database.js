@@ -455,6 +455,27 @@ const initDatabase = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_user ON feature_usage(user_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_feature ON feature_usage(feature)`);
 
+
+    // Projects table — used by AI B-Roll ingestion → Video Editor handoff
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT DEFAULT 'Untitled Project',
+        primary_filename TEXT,
+        primary_duration REAL DEFAULT 0,
+        primary_serve_url TEXT,
+        broll_clips TEXT DEFAULT '[]',
+        source_hint TEXT,
+        metadata TEXT DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at DESC)`);
+
 console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -1412,6 +1433,61 @@ const pageContentOps = {
   }
 };
 
+
+const projectOps = {
+  async create(userId, data) {
+    const id = 'p_' + uuidv4().replace(/-/g, '').slice(0, 16);
+    const brollJson = JSON.stringify(Array.isArray(data.broll) ? data.broll : []);
+    const metaJson = JSON.stringify(data.metadata || {});
+    const result = await pool.query(
+      `INSERT INTO projects (id, user_id, name, primary_filename, primary_duration, primary_serve_url, broll_clips, source_hint, metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [
+        id,
+        userId,
+        data.name || 'Untitled Project',
+        data.primaryFilename || null,
+        data.primaryDuration || 0,
+        data.primaryServeUrl || null,
+        brollJson,
+        data.sourceHint || null,
+        metaJson
+      ]
+    );
+    return result.rows[0];
+  },
+  async getById(id, userId) {
+    const params = userId ? [id, userId] : [id];
+    const where = userId ? 'id = $1 AND user_id = $2' : 'id = $1';
+    const result = await pool.query(`SELECT * FROM projects WHERE ${where}`, params);
+    const row = result.rows[0];
+    if (!row) return null;
+    try { row.broll = JSON.parse(row.broll_clips || '[]'); } catch (e) { row.broll = []; }
+    try { row.metadataObj = JSON.parse(row.metadata || '{}'); } catch (e) { row.metadataObj = {}; }
+    return row;
+  },
+  async listByUser(userId, limit = 50) {
+    const result = await pool.query(
+      `SELECT id, name, primary_filename, primary_duration, created_at, updated_at
+       FROM projects WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [userId, limit]
+    );
+    return result.rows;
+  },
+  async updateBroll(id, userId, broll) {
+    const result = await pool.query(
+      `UPDATE projects SET broll_clips = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND user_id = $3 RETURNING *`,
+      [JSON.stringify(broll || []), id, userId]
+    );
+    return result.rows[0];
+  },
+  async delete(id, userId) {
+    await pool.query(`DELETE FROM projects WHERE id = $1 AND user_id = $2`, [id, userId]);
+  }
+};
+
+
 module.exports = {
   initDatabase,
   getDb,
@@ -1429,6 +1505,7 @@ module.exports = {
   teamOps,
   adminOps,
   featureUsageOps,
+  projectOps,
   pageContentOps,
   connectedAccountOps: {
     async create(userId, data) {

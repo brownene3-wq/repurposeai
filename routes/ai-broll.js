@@ -449,22 +449,35 @@ ${pageStyles}
         </div>
       </div>
 
-      <!-- Link Input & Upload Options -->
-      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle)">
-        <div style="display:flex;gap:8px;margin-bottom:1rem;width:100%;max-width:600px;margin-left:auto;margin-right:auto">
+      <!-- Media Ingestion (UploadButton row, then URLInputField row; centered) -->
+      <div id="mediaIngestion" style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:1rem;border:1px solid var(--border-subtle);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+        <!-- Row 1: Upload buttons (now above URL input) -->
+        <div id="uploadButtonRow" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1rem;width:100%">
+          <button type="button" id="uploadPrimaryBtn" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
+          <button type="button" id="gdrivePrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
+          <button type="button" id="dropboxPrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
+          <input type="file" id="primaryFileInput" accept="video/*" style="display:none">
+        </div>
+        <!-- Row 2: URL input field -->
+        <div id="urlInputRow" style="display:flex;gap:8px;width:100%;max-width:600px;margin-left:auto;margin-right:auto">
           <div style="position:relative;flex:1">
             <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
-            <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" readonly style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem;cursor:text" onclick="this.removeAttribute('readonly');this.focus()">
+            <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
           </div>
-          <button type="button" onclick="document.getElementById('heroLinkInput').removeAttribute('readonly');document.getElementById('heroLinkInput').focus()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
+          <button type="button" id="heroImportBtn" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
         </div>
-        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <button type="button" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
-          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
-          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
-        </div>
-        <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem">You can upload videos up to 120 minutes long.</p>
+        <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem;margin-bottom:0">You can upload videos up to 120 minutes long. YouTube, Zoom, Twitch and Rumble links are supported.</p>
       </div>
+
+      <!-- Primary video status + B-roll selections + Create Project -->
+      <div id="projectStagingCard" style="background:var(--surface);border-radius:16px;padding:1.2rem 1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle);display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+          <div id="primaryStatusText" style="color:var(--text);font-size:0.95rem"></div>
+          <button type="button" id="createProjectBtn" style="padding:10px 22px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:700;font-size:0.95rem" disabled>🎬 Open in Video Editor</button>
+        </div>
+        <div id="selectedBrollList" style="margin-top:0.8rem;display:flex;flex-wrap:wrap;gap:8px"></div>
+      </div>
+
 
 
 
@@ -748,18 +761,355 @@ ${pageStyles}
       modal.classList.remove('active');
     }
 
-    function useSelectedClip() {
+    async function useSelectedClip() {
       if (!currentSelectedItem) {
         showToast('No clip selected');
         return;
       }
-      showToast('Clip selected: ' + currentSelectedItem.name + '. Ready to add to project!');
-      closeVideoModal();
-      // In production, this would trigger the next step of adding to the project
+      var btn = document.querySelector('.btn-use-clip');
+      var origText = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Staging…'; }
+      try {
+        var downloadUrl = currentSelectedItem.videoDownloadUrl || currentSelectedItem.videoPreviewUrl;
+        if (!downloadUrl || !/^https:\/\//i.test(downloadUrl)) {
+          showToast('This clip has no downloadable URL');
+          return;
+        }
+        var r = await fetch('/ai-broll/download-inline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoUrl: downloadUrl, name: currentSelectedItem.name })
+        });
+        var data = await r.json();
+        if (!r.ok || !data.filename) throw new Error(data.error || 'Download failed');
+        if (window.__aiBrollStageClip) {
+          window.__aiBrollStageClip({
+            filename: data.filename,
+            name: currentSelectedItem.name,
+            duration: data.duration || currentSelectedItem.duration || 0,
+            serveUrl: data.mediaUrl
+          });
+        } else {
+          showToast('Clip ready: ' + currentSelectedItem.name);
+        }
+        closeVideoModal();
+      } catch (err) {
+        showToast('Could not stage clip: ' + (err.message || err));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = origText || 'Use This Clip'; }
+      }
     }
 
     ${themeScript}
   
+// ═══ AI B-Roll media ingestion + project handoff (client) ═══
+(function () {
+  var state = { primary: null, broll: [] };
+  window.__aiBrollState = state;
+
+  function toastMsg(msg) {
+    try { if (typeof showToast === 'function') return showToast(msg); } catch (_) {}
+    alert(msg);
+  }
+
+  function updateStagingCard() {
+    var card = document.getElementById('projectStagingCard');
+    var txt = document.getElementById('primaryStatusText');
+    var list = document.getElementById('selectedBrollList');
+    var btn = document.getElementById('createProjectBtn');
+    if (!card || !txt || !list || !btn) return;
+    if (!state.primary) {
+      card.style.display = 'none';
+      btn.disabled = true;
+      return;
+    }
+    card.style.display = 'block';
+    btn.disabled = false;
+    var dur = state.primary.duration ? (Math.round(state.primary.duration) + 's') : 'unknown duration';
+    var label = (state.primary.originalName || state.primary.filename || 'Primary video');
+    var srcTag = state.primary.source ? (' · ' + state.primary.source) : '';
+    txt.innerHTML = '<strong>Primary:</strong> ' + label + ' <span style="color:var(--text-muted);font-size:.85rem">(' + dur + srcTag + ')</span>';
+    list.innerHTML = '';
+    if (state.broll.length === 0) {
+      list.innerHTML = '<span style="color:var(--text-muted);font-size:.85rem">No B-roll selected yet. Generate + click "Use This Clip" to add clips.</span>';
+    } else {
+      state.broll.forEach(function (b, i) {
+        var chip = document.createElement('span');
+        chip.style.cssText = 'background:var(--dark-2);padding:6px 10px;border-radius:8px;font-size:.8rem;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border-subtle)';
+        chip.innerHTML = '🎞️ ' + (b.name || b.filename) + ' <button type="button" aria-label="Remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem;line-height:1">×</button>';
+        chip.querySelector('button').onclick = function () {
+          state.broll.splice(i, 1);
+          updateStagingCard();
+        };
+        list.appendChild(chip);
+      });
+    }
+  }
+  window.__aiBrollUpdateCard = updateStagingCard;
+
+  function setPrimary(p) {
+    state.primary = p;
+    updateStagingCard();
+    toastMsg('Primary video ready: ' + (p.originalName || p.filename));
+  }
+
+  // ---- Upload (local file) ----
+  function wireUpload() {
+    var btn = document.getElementById('uploadPrimaryBtn');
+    var input = document.getElementById('primaryFileInput');
+    if (!btn || !input) return;
+    btn.addEventListener('click', function () { input.click(); });
+    input.addEventListener('change', async function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Uploading…';
+      try {
+        var fd = new FormData(); fd.append('video', file);
+        var r = await fetch('/ai-broll/upload-primary', { method: 'POST', body: fd });
+        if (!r.ok) { var e2 = await r.json().catch(function(){return{};}); throw new Error(e2.error || ('Upload failed (' + r.status + ')')); }
+        var data = await r.json();
+        setPrimary(data);
+      } catch (err) {
+        toastMsg('Upload failed: ' + err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+        input.value = '';
+      }
+    });
+  }
+
+  // ---- URL Import ----
+  function wireURLImport() {
+    var btn = document.getElementById('heroImportBtn');
+    var input = document.getElementById('heroLinkInput');
+    if (!btn || !input) return;
+    async function run() {
+      var url = (input.value || '').trim();
+      if (!url) { toastMsg('Paste a link first'); return; }
+      if (!/^https?:\\/\\//i.test(url)) { toastMsg('URL must start with http(s)://'); return; }
+      if (!/(youtube\\.com|youtu\\.be|zoom\\.us|twitch\\.tv|rumble\\.com)/i.test(url)) {
+        toastMsg('Only YouTube, Zoom, Twitch, and Rumble links are supported.'); return;
+      }
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Importing…';
+      try {
+        var r = await fetch('/ai-broll/import-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || ('Import failed (' + r.status + ')'));
+        setPrimary(data);
+      } catch (err) {
+        toastMsg('URL import failed: ' + err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+    btn.addEventListener('click', run);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+  }
+
+  // ---- Picker config (cached) ----
+  var _pickerCfgPromise = null;
+  function getPickerConfig() {
+    if (_pickerCfgPromise) return _pickerCfgPromise;
+    _pickerCfgPromise = fetch('/ai-broll/picker-config').then(function (r) { return r.json(); });
+    return _pickerCfgPromise;
+  }
+
+  // ---- Google Drive (Google Picker API) ----
+  var _gapiReady = false;
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      if (document.querySelector('script[data-src="' + src + '"]')) return resolve();
+      var s = document.createElement('script');
+      s.src = src; s.async = true; s.defer = true; s.dataset.src = src;
+      s.onload = function () { resolve(); };
+      s.onerror = function () { reject(new Error('Failed to load ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  async function initGoogle() {
+    if (_gapiReady) return;
+    await loadScript('https://apis.google.com/js/api.js');
+    await loadScript('https://accounts.google.com/gsi/client');
+    await new Promise(function (resolve) { gapi.load('picker', { callback: resolve }); });
+    _gapiReady = true;
+  }
+  function pickFromGoogleDrive() {
+    return new Promise(async function (resolve, reject) {
+      try {
+        var cfg = await getPickerConfig();
+        var gd = cfg.googleDrive || {};
+        if (!gd.clientId) return reject(new Error('Google Drive client ID not configured (GOOGLE_DRIVE_CLIENT_ID)'));
+        if (!gd.apiKey) return reject(new Error('Google Picker API key not configured (GOOGLE_PICKER_API_KEY)'));
+        await initGoogle();
+        var tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: gd.clientId,
+          scope: 'https://www.googleapis.com/auth/drive.readonly',
+          callback: function (tokenResp) {
+            if (tokenResp.error) return reject(new Error(tokenResp.error));
+            var accessToken = tokenResp.access_token;
+            var view = new google.picker.View(google.picker.ViewId.DOCS_VIDEOS);
+            var picker = new google.picker.PickerBuilder()
+              .enableFeature(google.picker.Feature.NAV_HIDDEN)
+              .setOAuthToken(accessToken)
+              .setDeveloperKey(gd.apiKey)
+              .addView(view)
+              .setAppId(gd.appId || '')
+              .setCallback(function (data) {
+                if (data.action === google.picker.Action.PICKED) {
+                  var doc = data.docs && data.docs[0];
+                  if (!doc) return reject(new Error('No file returned from Picker'));
+                  resolve({ fileId: doc.id, name: doc.name, accessToken: accessToken, sizeBytes: doc.sizeBytes });
+                } else if (data.action === google.picker.Action.CANCEL) {
+                  reject(new Error('cancelled'));
+                }
+              })
+              .build();
+            picker.setVisible(true);
+          }
+        });
+        tokenClient.requestAccessToken();
+      } catch (err) { reject(err); }
+    });
+  }
+  function wireGoogleDrive() {
+    var btn = document.getElementById('gdrivePrimaryBtn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Opening Drive…';
+      try {
+        var pick = await pickFromGoogleDrive();
+        btn.textContent = 'Importing…';
+        var r = await fetch('/ai-broll/googledrive-import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(pick)
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || ('Drive import failed (' + r.status + ')'));
+        setPrimary(data);
+      } catch (err) {
+        if (err && err.message === 'cancelled') { /* user cancelled */ }
+        else toastMsg('Google Drive: ' + (err.message || err));
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+  }
+
+  // ---- Dropbox Chooser ----
+  function loadDropboxChooser(appKey) {
+    return new Promise(function (resolve, reject) {
+      if (window.Dropbox && window.Dropbox.choose) return resolve();
+      var s = document.createElement('script');
+      s.src = 'https://www.dropbox.com/static/api/2/dropins.js';
+      s.id = 'dropboxjs';
+      s.setAttribute('data-app-key', appKey);
+      s.onload = function () { resolve(); };
+      s.onerror = function () { reject(new Error('Dropbox Dropins failed to load')); };
+      document.head.appendChild(s);
+    });
+  }
+  function wireDropbox() {
+    var btn = document.getElementById('dropboxPrimaryBtn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Opening Dropbox…';
+      try {
+        var cfg = await getPickerConfig();
+        var key = cfg.dropbox && cfg.dropbox.appKey;
+        if (!key) throw new Error('Dropbox app key not configured (DROPBOX_CLIENT_ID)');
+        await loadDropboxChooser(key);
+        await new Promise(function (resolve, reject) {
+          window.Dropbox.choose({
+            linkType: 'direct',
+            multiselect: false,
+            extensions: ['video'],
+            success: async function (files) {
+              var f = files && files[0];
+              if (!f) return reject(new Error('No file picked'));
+              btn.textContent = 'Importing…';
+              try {
+                var r = await fetch('/ai-broll/dropbox-import', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: f.link, name: f.name })
+                });
+                var data = await r.json();
+                if (!r.ok) throw new Error(data.error || ('Dropbox import failed (' + r.status + ')'));
+                setPrimary(data);
+                resolve();
+              } catch (err) { reject(err); }
+            },
+            cancel: function () { resolve(); }
+          });
+        });
+      } catch (err) {
+        toastMsg('Dropbox: ' + (err.message || err));
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+  }
+
+  // ---- Create Project + redirect ----
+  function wireCreateProject() {
+    var btn = document.getElementById('createProjectBtn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      if (!state.primary) { toastMsg('Pick a primary video first'); return; }
+      var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Creating project…';
+      try {
+        var r = await fetch('/ai-broll/create-project', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ primary: state.primary, broll: state.broll })
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || ('create-project failed (' + r.status + ')'));
+        window.location.href = data.redirectTo || ('/video-editor/' + data.projectId);
+      } catch (err) {
+        toastMsg('Could not create project: ' + err.message);
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+  }
+
+  // ---- Hook: stage selected B-roll clips for the project ----
+  // The existing "Use This Clip" modal already calls /ai-broll/download-inline
+  // via other code paths. We expose a helper the existing code can call.
+  window.__aiBrollStageClip = function (clip) {
+    if (!clip || !clip.filename) return;
+    // Dedup by filename.
+    if (state.broll.some(function (b) { return b.filename === clip.filename; })) return;
+    state.broll.push({
+      filename: clip.filename,
+      name: clip.name || clip.filename,
+      duration: clip.duration || 0,
+      serveUrl: clip.serveUrl || ('/video-editor/download/' + clip.filename)
+    });
+    updateStagingCard();
+    toastMsg('Added B-roll: ' + (clip.name || clip.filename));
+  };
+
+  function init() {
+    wireUpload();
+    wireURLImport();
+    wireGoogleDrive();
+    wireDropbox();
+    wireCreateProject();
+    updateStagingCard();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
       // Rotating placeholder for hero link input
       (function(){
         var heroInput = document.getElementById('heroLinkInput');
@@ -1085,5 +1435,262 @@ router.post('/download-inline', requireAuth, async (req, res) => {
     res.status(500).json({ error: err.message || 'Download failed' });
   }
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Media Ingestion Endpoints — added for AI B-Roll → Video Editor handoff
+// These accept a "primary video" from any of 4 sources (local upload, URL
+// import, Google Drive picker, Dropbox chooser) and stage it in the shared
+// upload dir so the video-editor can serve it via /video-editor/download/*.
+// They also expose a picker-config endpoint and a create-project endpoint
+// that writes to the projects table and returns a project_id.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Shared upload dir (same as video-editor) so the /video-editor/download/:filename
+// handler can serve files regardless of which route ingested them.
+const sharedUploadDir = path.join('/tmp', 'repurpose-uploads');
+if (!fs.existsSync(sharedUploadDir)) fs.mkdirSync(sharedUploadDir, { recursive: true });
+
+// Helper: get duration of a file on disk using ffprobe / ffmpeg stderr.
+async function getMediaDuration(filePath) {
+  if (!fs.existsSync(filePath)) return 0;
+  // Try ffprobe
+  try {
+    const probeOut = execSync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
+      { timeout: 8000 }
+    ).toString().trim();
+    const d = parseFloat(probeOut);
+    if (isFinite(d) && d > 0) return d;
+  } catch (_) {}
+  // Fallback: parse ffmpeg stderr
+  if (!ffmpegPath) return 0;
+  try {
+    const out = await new Promise(resolve => {
+      const p = spawn(ffmpegPath, ['-i', filePath, '-f', 'null', '-t', '0', '-']);
+      let stderr = '';
+      p.stderr.on('data', d => stderr += d.toString());
+      p.on('close', () => resolve(stderr));
+      p.on('error', () => resolve(''));
+    });
+    const m = out.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/);
+    if (m) {
+      return parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]) + parseInt(m[4]) / 100;
+    }
+  } catch (_) {}
+  return 0;
+}
+
+// Helper: download a remote URL to the shared upload dir.
+// Follows a limited number of redirects. Returns the resolved file path.
+function downloadToShared(urlStr, suggestedExt, extraHeaders = {}) {
+  return new Promise((resolve, reject) => {
+    const outName = 'ing_' + Date.now() + '_' + uuidv4().slice(0, 8) + (suggestedExt || '.mp4');
+    const outPath = path.join(sharedUploadDir, outName);
+    const http = require('http');
+    let redirectsLeft = 5;
+    function hit(targetUrl) {
+      let parsed;
+      try { parsed = new URL(targetUrl); } catch (e) { return reject(new Error('Invalid URL')); }
+      const mod = parsed.protocol === 'https:' ? https : http;
+      const req = mod.get(targetUrl, { headers: extraHeaders }, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+          if (--redirectsLeft <= 0) return reject(new Error('Too many redirects'));
+          const next = new URL(res.headers.location, targetUrl).toString();
+          res.resume();
+          return hit(next);
+        }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume();
+          return reject(new Error('Upstream returned ' + res.statusCode));
+        }
+        const file = fs.createWriteStream(outPath);
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve({ outPath, outName })));
+        file.on('error', reject);
+      });
+      req.on('error', reject);
+      req.setTimeout(60000, () => req.destroy(new Error('Download timed out')));
+    }
+    hit(urlStr);
+  });
+}
+
+// GET /ai-broll/picker-config — public-ish (requires auth) config for the
+// Google Picker and Dropbox Chooser SDKs. Only returns the public-safe keys.
+router.get('/picker-config', requireAuth, (req, res) => {
+  res.json({
+    googleDrive: {
+      clientId: process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || '',
+      apiKey: process.env.GOOGLE_PICKER_API_KEY || process.env.GOOGLE_DRIVE_API_KEY || '',
+      appId: process.env.GOOGLE_PICKER_APP_ID || ''
+    },
+    dropbox: {
+      appKey: process.env.DROPBOX_APP_KEY || process.env.DROPBOX_CLIENT_ID || ''
+    }
+  });
+});
+
+// POST /ai-broll/upload-primary — receives a local file upload and stages it
+// in the shared upload dir. Returns { filename, duration, serveUrl }.
+router.post('/upload-primary', requireAuth, upload.single('video'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    // Move from multer's tmp dir to the shared dir with a clean name.
+    const ext = path.extname(req.file.originalname || '.mp4') || '.mp4';
+    const outName = 'prim_' + Date.now() + '_' + uuidv4().slice(0, 8) + ext;
+    const outPath = path.join(sharedUploadDir, outName);
+    fs.renameSync(req.file.path, outPath);
+    const duration = await getMediaDuration(outPath);
+    res.json({
+      filename: outName,
+      originalName: req.file.originalname,
+      duration,
+      serveUrl: '/video-editor/download/' + outName,
+      source: 'upload'
+    });
+  } catch (err) {
+    console.error('[ai-broll upload-primary]', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
+  }
+});
+
+// POST /ai-broll/import-url — validates a YouTube/Zoom/Twitch/Rumble URL and
+// downloads it via yt-dlp to the shared upload dir. Mirrors video-editor's
+// /youtube-import logic so the two ingestion paths share behaviour.
+router.post('/import-url', requireAuth, async (req, res) => {
+  try {
+    const url = String((req.body || {}).url || '').trim();
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+    const valid = [/youtube\.com/i, /youtu\.be/i, /zoom\.us/i, /twitch\.tv/i, /rumble\.com/i].some(p => p.test(url));
+    if (!valid) return res.status(400).json({ error: 'Unsupported URL. Supported: YouTube, Zoom, Twitch, Rumble.' });
+
+    let ytdlpPath = 'yt-dlp';
+    try { execSync('which yt-dlp', { stdio: 'pipe' }); } catch (_) {
+      try { execSync('pip install --break-system-packages yt-dlp', { stdio: 'pipe' }); } catch (_) {
+        try { execSync('pip install yt-dlp', { stdio: 'pipe' }); } catch (_) {
+          return res.status(500).json({ error: 'yt-dlp not available on this server' });
+        }
+      }
+    }
+
+    const outName = 'url_' + Date.now() + '_' + uuidv4().slice(0, 8) + '.mp4';
+    const outPath = path.join(sharedUploadDir, outName);
+
+    await new Promise((resolve, reject) => {
+      const p = spawn(ytdlpPath, [
+        '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        '--merge-output-format', 'mp4',
+        '-o', outPath,
+        '--max-filesize', '500m',
+        '--no-playlist',
+        '--no-warnings',
+        '--no-check-certificates',
+        '--geo-bypass',
+        '--retries', '3',
+        url
+      ]);
+      let stderr = '';
+      p.stderr.on('data', d => stderr += d.toString());
+      p.on('close', code => code === 0 ? resolve() : reject(new Error(stderr || ('yt-dlp exit ' + code))));
+      p.on('error', reject);
+    });
+
+    const duration = await getMediaDuration(outPath);
+    res.json({
+      filename: outName,
+      duration,
+      serveUrl: '/video-editor/download/' + outName,
+      source: 'url',
+      sourceUrl: url
+    });
+  } catch (err) {
+    console.error('[ai-broll import-url]', err);
+    res.status(500).json({ error: err.message || 'URL import failed' });
+  }
+});
+
+// POST /ai-broll/googledrive-import — downloads a file the user picked with
+// Google Picker. Body: { fileId, name, accessToken }. We trust the token the
+// Picker returned client-side rather than looking up stored OAuth, because
+// Picker flows run with a just-minted token.
+router.post('/googledrive-import', requireAuth, async (req, res) => {
+  try {
+    const { fileId, name, accessToken } = req.body || {};
+    if (!fileId) return res.status(400).json({ error: 'fileId is required' });
+    if (!accessToken) return res.status(400).json({ error: 'accessToken is required (Google Picker must return one)' });
+    const safeName = String(name || 'gdrive').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 60);
+    const ext = path.extname(safeName) || '.mp4';
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+    const { outName, outPath } = await downloadToShared(url, ext, {
+      Authorization: 'Bearer ' + accessToken
+    });
+    const duration = await getMediaDuration(outPath);
+    res.json({
+      filename: outName,
+      originalName: safeName,
+      duration,
+      serveUrl: '/video-editor/download/' + outName,
+      source: 'googledrive'
+    });
+  } catch (err) {
+    console.error('[ai-broll googledrive-import]', err);
+    res.status(500).json({ error: err.message || 'Google Drive import failed' });
+  }
+});
+
+// POST /ai-broll/dropbox-import — accepts a Dropbox direct link (returned by
+// Dropbox Chooser with linkType:"direct") and downloads it server-side.
+router.post('/dropbox-import', requireAuth, async (req, res) => {
+  try {
+    const { url, name } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'Dropbox URL is required' });
+    const safeName = String(name || 'dropbox').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 60);
+    const ext = path.extname(safeName) || '.mp4';
+    const { outName, outPath } = await downloadToShared(url, ext);
+    const duration = await getMediaDuration(outPath);
+    res.json({
+      filename: outName,
+      originalName: safeName,
+      duration,
+      serveUrl: '/video-editor/download/' + outName,
+      source: 'dropbox'
+    });
+  } catch (err) {
+    console.error('[ai-broll dropbox-import]', err);
+    res.status(500).json({ error: err.message || 'Dropbox import failed' });
+  }
+});
+
+// POST /ai-broll/create-project — persists primary + broll selections and
+// returns the new project_id. Client redirects to /video-editor/<id>.
+router.post('/create-project', requireAuth, async (req, res) => {
+  try {
+    const { projectOps } = require('../db/database');
+    const body = req.body || {};
+    const primary = body.primary || {};
+    if (!primary.filename) {
+      return res.status(400).json({ error: 'A primary video is required to create a project' });
+    }
+    const broll = Array.isArray(body.broll) ? body.broll.filter(b => b && b.filename) : [];
+    const project = await projectOps.create(req.user.id, {
+      name: body.name || 'AI B-Roll Project',
+      primaryFilename: primary.filename,
+      primaryDuration: primary.duration || 0,
+      primaryServeUrl: primary.serveUrl || ('/video-editor/download/' + primary.filename),
+      broll,
+      sourceHint: primary.source || null,
+      metadata: { createdFrom: 'ai-broll', primaryOriginalName: primary.originalName || null }
+    });
+    res.json({
+      projectId: project.id,
+      redirectTo: '/video-editor/' + project.id
+    });
+  } catch (err) {
+    console.error('[ai-broll create-project]', err);
+    res.status(500).json({ error: err.message || 'Failed to create project' });
+  }
+});
+
 
 module.exports = router;

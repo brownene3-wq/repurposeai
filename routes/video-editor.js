@@ -138,9 +138,9 @@ function runFFmpeg(args) {
   });
 }
 
-// GET: Render video editor page
-router.get('/', requireAuth, async (req, res) => {
-  const html = `${getHeadHTML('Video Editor')}
+// GET: Render video editor page (also used by /:projectId handler)
+async function renderEditor(req, res) {
+  let html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
     .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:38px 1fr 260px;height:100vh;gap:0;padding:0;overflow:hidden}
@@ -6303,12 +6303,160 @@ setTimeout(function sidebarLayoutFix(){
 }, 2000);
 
 
+    // ═══ INITIAL PROJECT BOOT ═══
+    // If the user was redirected here from the AI B-Roll ingestion flow,
+    // window.__INITIAL_PROJECT__ is injected by the /:projectId route and
+    // contains { primary: {filename, duration, serveUrl}, broll: [...] }.
+    // We replay what uploadVideo() does for the primary, then append every
+    // B-roll clip to V1 via the same addClipToTimeline path the media
+    // library uses — so it naturally stacks after the primary.
+    (function bootFromProject() {
+      function run() {
+        try {
+          var proj = window.__INITIAL_PROJECT__;
+          if (!proj || !proj.primary || !proj.primary.filename) return;
+          var prim = proj.primary;
+
+          // ——— 1. Set the primary as the currentVideoFile ———
+          var primaryData = {
+            filename: prim.filename,
+            duration: Number(prim.duration) || 0,
+            serveUrl: prim.serveUrl || ('/video-editor/download/' + prim.filename)
+          };
+          try {
+            currentVideoFile = primaryData;
+            originalVideoFile = Object.assign({}, primaryData);
+            videoDuration = primaryData.duration || 0;
+          } catch (_) {
+            // currentVideoFile may be in a closure; fall back to window.
+            window.currentVideoFile = primaryData;
+            window.originalVideoFile = Object.assign({}, primaryData);
+            window.videoDuration = primaryData.duration || 0;
+          }
+
+          // ——— 2. Wire the preview player ———
+          var videoPlayer = document.getElementById('videoPlayer');
+          if (videoPlayer) {
+            videoPlayer.src = primaryData.serveUrl;
+            videoPlayer.addEventListener('loadedmetadata', function () {
+              if (typeof showFilmstrip === 'function') showFilmstrip(this.duration);
+              if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
+                try { videoDuration = videoPlayer.duration; } catch (_) { window.videoDuration = videoPlayer.duration; }
+              }
+            });
+          }
+          var uploadZone = document.querySelector('.upload-zone');
+          if (uploadZone) uploadZone.classList.add('has-video');
+          var videoPreviewArea = document.querySelector('.video-preview-area');
+          if (videoPreviewArea) videoPreviewArea.classList.add('has-video');
+
+          // ——— 3. Init the timeline (primary fills V1 initially) ———
+          if (typeof initTimeline === 'function') {
+            try { initTimeline(); } catch (_) {}
+          }
+
+          // ——— 4. Enable the toolbar buttons normally gated on a video ———
+          ['trimButton','exportButton','splitButton','filterButton','speedButton',
+           'audioButton','previewVoiceButton','voiceoverButton','vtPreviewBtn',
+           'vtApplyBtn','textButton','speedSelect','addMusicButton',
+           'removeFillerWordsBtn','removePausesBtn']
+          .forEach(function (id) {
+            var e = document.getElementById(id);
+            if (e) e.disabled = false;
+          });
+
+          // ——— 5. Drop the primary into the Media library ———
+          if (typeof window.addUploadedMediaItem === 'function') {
+            window.addUploadedMediaItem({
+              serveUrl: primaryData.serveUrl,
+              filename: primaryData.filename,
+              name: primaryData.filename,
+              duration: primaryData.duration,
+              mediaType: 'vid'
+            });
+          }
+
+          // ——— 6. Append B-roll clips to the V1 track, sequenced after ———
+          var broll = Array.isArray(proj.broll) ? proj.broll : [];
+          broll.forEach(function (clip) {
+            if (!clip || !clip.filename) return;
+            var srv = clip.serveUrl || ('/video-editor/download/' + clip.filename);
+            if (typeof window.addUploadedMediaItem === 'function') {
+              window.addUploadedMediaItem({
+                serveUrl: srv,
+                filename: clip.filename,
+                name: clip.name || clip.filename,
+                duration: clip.duration,
+                mediaType: 'vid'
+              });
+            }
+            if (typeof addClipToTimeline === 'function') {
+              try {
+                addClipToTimeline(clip.name || clip.filename, 'vid', clip.duration, srv);
+              } catch (err) {
+                console.warn('[initial-project] could not append broll', clip.filename, err);
+              }
+            }
+          });
+
+          try {
+            if (typeof showToast === 'function') {
+              showToast('Loaded project: ' + (proj.name || proj.id) + ' (' + broll.length + ' B-roll clip' + (broll.length === 1 ? '' : 's') + ')');
+            }
+          } catch (_) {}
+        } catch (err) {
+          console.error('[initial-project] boot failed:', err);
+        }
+      }
+
+      // Wait for everything (including media-panel-fix.js) to finish wiring.
+      if (document.readyState === 'complete') {
+        setTimeout(run, 50);
+      } else {
+        window.addEventListener('load', function () { setTimeout(run, 50); });
+      }
+    })();
+
+
 </script>
 <script src="/public/js/media-panel-fix.js?v=${Date.now()}"></script>
 <script src="/public/js/v10-editor-redesign.js?v=${Date.now()}"></script>
 </body>
 </html>`;
+  if (res.locals && res.locals.initialProject) {
+    const payload = JSON.stringify(res.locals.initialProject).replace(/</g, '\\u003c');
+    const inj = '<script>window.__INITIAL_PROJECT__ = ' + payload + ';<\/script>';
+    html = html.replace('</body>', inj + '\n</body>');
+  }
   res.send(html);
+}
+router.get('/', requireAuth, renderEditor);
+
+// GET /video-editor/:projectId — boot the editor from a saved project created
+// by the AI B-Roll ingestion flow. Only matches IDs like p_<hex> so we don't
+// collide with the other sub-routes (upload, trim, export, etc.).
+router.get('/:projectId(p_[a-f0-9]+)', requireAuth, async (req, res, next) => {
+  try {
+    const { projectOps } = require('../db/database');
+    const project = await projectOps.getById(req.params.projectId, req.user.id);
+    if (!project) return res.redirect('/video-editor/');
+    res.locals.initialProject = {
+      id: project.id,
+      name: project.name,
+      primary: {
+        filename: project.primary_filename,
+        duration: Number(project.primary_duration) || 0,
+        serveUrl: project.primary_serve_url || ('/video-editor/download/' + project.primary_filename)
+      },
+      broll: (project.broll || []).map(b => ({
+        filename: b.filename,
+        name: b.name || b.filename,
+        duration: Number(b.duration) || 0,
+        serveUrl: b.serveUrl || ('/video-editor/download/' + b.filename)
+      }))
+    };
+    return renderEditor(req, res);
+  } catch (err) { next(err); }
 });
 
 // POST: Upload video
