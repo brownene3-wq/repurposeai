@@ -9827,6 +9827,407 @@ router.post('/smart-cut', requireAuth, async (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════
+// Task #50 — POST /video-editor/ai-voice
+// Generates a voiceover from user text via OpenAI TTS (tts-1 model).
+// Returns the downloaded MP3 URL; client inserts it as an A1 audio clip.
+// Body: { text: string (required, max 4000 chars),
+//         voice: 'alloy'|'echo'|'fable'|'onyx'|'nova'|'shimmer' (default 'alloy'),
+//         speed: number 0.5-2.0 (default 1.0) }
+// Returns: { success, mediaUrl, filename, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/ai-voice', requireAuth, async (req, res) => {
+  try {
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
+    var text  = String((req.body || {}).text  || '').trim().slice(0, 4000);
+    var voice = String((req.body || {}).voice || 'alloy').toLowerCase();
+    var speed = parseFloat((req.body || {}).speed);
+    if (!isFinite(speed)) speed = 1.0;
+    speed = Math.max(0.5, Math.min(2.0, speed));
+
+    if (!text){
+      return res.status(400).json({ error: 'text is required' });
+    }
+    var VOICES = ['alloy','echo','fable','onyx','nova','shimmer'];
+    if (VOICES.indexOf(voice) < 0) voice = 'alloy';
+
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var mp3Resp = await openai.audio.speech.create({
+      model: 'tts-1',
+      voice: voice,
+      input: text,
+      speed: speed,
+      response_format: 'mp3'
+    });
+    var buf = Buffer.from(await mp3Resp.arrayBuffer());
+    var outName = 'voice_' + voice + '_' + Date.now() + '_' + req.user.id + '.mp3';
+    var outPath = path.join(uploadDir, outName);
+    fs.writeFileSync(outPath, buf);
+
+    // Duration probe
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var out = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error',
+          '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1',
+          outPath
+        ]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat((out || '').trim()) || 0;
+    } catch(_){}
+
+    try { featureUsageOps.log(req.user.id, 'ai_voice_inline').catch(function(){}); } catch(_){}
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration,
+      voice: voice
+    });
+  } catch (err){
+    console.error('[ai-voice]', err);
+    res.status(500).json({ error: err.message || 'AI Voice failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #51 — POST /video-editor/translate-captions
+// Whispers the selected clip, then translates each caption chunk via
+// GPT-4o-mini into the target language. Returns chunks ready for T1.
+// Body: { mediaUrl: string, targetLang: string (e.g. 'es', 'fr', 'ja') }
+// Returns: { success, chunks: [{ text, start, end }], targetLang }
+// ═════════════════════════════════════════════════════════════════════
+var LANGUAGE_NAMES = {
+  'es': 'Spanish', 'fr': 'French', 'de': 'German', 'pt': 'Portuguese',
+  'ja': 'Japanese', 'zh': 'Simplified Chinese', 'ko': 'Korean',
+  'ar': 'Arabic', 'hi': 'Hindi', 'it': 'Italian', 'ru': 'Russian',
+  'nl': 'Dutch', 'pl': 'Polish', 'tr': 'Turkish', 'vi': 'Vietnamese',
+  'id': 'Indonesian', 'en': 'English'
+};
+router.post('/translate-captions', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
+    var mediaUrl = (req.body || {}).mediaUrl;
+    var targetLang = String((req.body || {}).targetLang || 'es').toLowerCase();
+    var langName = LANGUAGE_NAMES[targetLang];
+    if (!langName){
+      return res.status(400).json({ error: 'Unsupported language: ' + targetLang });
+    }
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({ error: 'Media not found on server' });
+    }
+    // Extract audio (same pipeline as ai-captions)
+    var mp3Path = path.join(uploadDir, 'translate_' + Date.now() + '_' + req.user.id + '.mp3');
+    await new Promise(function(resolve, reject){
+      var p = spawn(ffmpegPath, [
+        '-fflags', '+genpts', '-i', srcPath,
+        '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k',
+        '-ss', '0', '-af', 'aresample=async=1:first_pts=0',
+        '-avoid_negative_ts', 'make_zero',
+        '-map_metadata', '-1', '-reset_timestamps', '1',
+        '-y', mp3Path
+      ]);
+      var err = '';
+      p.stderr.on('data', function(d){ err += d.toString(); });
+      p.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Audio extract failed: ' + err.slice(-200)));
+      });
+      p.on('error', reject);
+    });
+
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var buf = fs.readFileSync(mp3Path);
+    var file = new File([buf], 'audio.mp3', { type: 'audio/mpeg' });
+    var transcript = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: file,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word']
+    });
+    try { fs.unlinkSync(mp3Path); } catch(_){}
+
+    // Group into phrase chunks (same logic as ai-captions)
+    var words = (transcript.words || []).map(function(w){
+      return { word: w.word, start: w.start, end: w.end };
+    });
+    var chunks = [];
+    var buf2 = [];
+    function flush(){
+      if (!buf2.length) return;
+      chunks.push({
+        text: buf2.map(function(w){ return w.word; }).join(' ').trim(),
+        start: buf2[0].start,
+        end: buf2[buf2.length - 1].end
+      });
+      buf2 = [];
+    }
+    var CHUNK_SIZE = 4, GAP_BREAK = 0.6;
+    for (var i = 0; i < words.length; i++){
+      var w = words[i];
+      if (buf2.length){
+        var prev = buf2[buf2.length - 1];
+        if ((w.start - prev.end) > GAP_BREAK) flush();
+      }
+      buf2.push(w);
+      if (buf2.length >= CHUNK_SIZE) flush();
+    }
+    flush();
+
+    if (!chunks.length){
+      return res.json({ success: true, chunks: [], targetLang: targetLang });
+    }
+
+    // Batch-translate all chunks in a single GPT call to save tokens
+    var joined = chunks.map(function(c, i){ return (i + 1) + ') ' + c.text; }).join('\n');
+    var translatePrompt = 'Translate the following numbered phrases into ' + langName +
+      '. Preserve the numbering. Each line on a new line. Return only the translations, no prose.\n\n' + joined;
+    var completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: translatePrompt }],
+      max_tokens: 2000,
+      temperature: 0.3
+    });
+    var output = (completion.choices[0].message.content || '').trim();
+    // Parse "1) foo\n2) bar\n..."
+    var lines = output.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+    var parsed = {};
+    lines.forEach(function(line){
+      var m = /^\s*(\d+)\s*[)\.\:]\s*(.+)$/.exec(line);
+      if (m) parsed[parseInt(m[1], 10)] = m[2].trim();
+    });
+    // Map back into chunks with their original timestamps
+    var outChunks = chunks.map(function(c, i){
+      return {
+        text:  parsed[i + 1] || c.text,  // fallback to original if parse failed
+        start: c.start,
+        end:   c.end
+      };
+    });
+
+    try { featureUsageOps.log(req.user.id, 'translate_captions').catch(function(){}); } catch(_){}
+    res.json({ success: true, chunks: outChunks, targetLang: targetLang, languageName: langName });
+  } catch (err){
+    console.error('[translate-captions]', err);
+    res.status(500).json({ error: err.message || 'Translate failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #52 — POST /video-editor/bg-remove
+// Runs FFmpeg colorkey over the given V1 clip's source video to replace
+// a color-range background with a solid fill. Not neural, but works for
+// green-screen / blue-screen / dark / light footage without any API key.
+// Body: { mediaUrl: string,
+//         preset: 'green'|'blue'|'dark'|'light'|'custom',
+//         keyColor: '0xRRGGBB' (custom only),
+//         similarity: number 0.01-0.5 (default 0.25),
+//         blend: number 0-0.3 (default 0.1),
+//         replaceColor: '0xRRGGBB' (default 0x000000) }
+// Returns: { success, mediaUrl, filename, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/bg-remove', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+
+    var preset = String(b.preset || 'green').toLowerCase();
+    var PRESETS = {
+      'green': '0x00ff00',
+      'blue':  '0x0000ff',
+      'dark':  '0x101010',
+      'light': '0xf0f0f0'
+    };
+    var keyColor = preset === 'custom'
+      ? String(b.keyColor || '0x00ff00')
+      : (PRESETS[preset] || '0x00ff00');
+    // Accept #rrggbb as well
+    if (keyColor[0] === '#') keyColor = '0x' + keyColor.slice(1);
+    var replaceColor = String(b.replaceColor || '0x000000');
+    if (replaceColor[0] === '#') replaceColor = '0x' + replaceColor.slice(1);
+    var similarity = Math.max(0.01, Math.min(0.5, parseFloat(b.similarity) || 0.25));
+    var blend      = Math.max(0,    Math.min(0.3, parseFloat(b.blend)      || 0.10));
+
+    var outName = 'bgremoved_' + preset + '_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outPath = path.join(outputDir, outName);
+
+    // filter_complex: background = solid color layer; foreground = source
+    // with chroma-key making keyColor transparent; overlay fg on bg.
+    var filterComplex =
+      'color=c=' + replaceColor + ':s=1280x720:r=30[bg];' +
+      '[0:v]colorkey=color=' + keyColor +
+        ':similarity=' + similarity.toFixed(3) +
+        ':blend=' + blend.toFixed(3) + '[fg];' +
+      '[bg][fg]overlay=shortest=1:format=auto[v]';
+
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-filter_complex', filterComplex,
+        '-map', '[v]', '-map', '0:a?',
+      ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('BG remove failed: ' + err.slice(-300)));
+      });
+      proc.on('error', reject);
+    });
+    // Copy to uploads so the download route can serve it
+    try {
+      fs.copyFileSync(outPath, path.join(uploadDir, outName));
+    } catch(_){}
+
+    // Probe duration
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, ['-v', 'error', '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1', outPath]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat(probeOut.trim()) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration,
+      preset: preset
+    });
+  } catch (err){
+    console.error('[bg-remove]', err);
+    res.status(500).json({ error: err.message || 'BG Remove failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #53 — POST /video-editor/style-transfer
+// Applies a preset visual style to the V1 clip via a baked FFmpeg filter
+// chain. Each style combines EQ/curves/vignette/grain to evoke a look.
+// Body: { mediaUrl: string, style: preset id }
+// Returns: { success, mediaUrl, filename, duration, style }
+// ═════════════════════════════════════════════════════════════════════
+var STYLE_PRESETS_FX = {
+  'cyberpunk':   'hue=h=180:s=2.0,eq=contrast=1.2:brightness=-0.04:saturation=1.8,curves=preset=color_negative',
+  'film_noir':   'hue=s=0,eq=contrast=1.45:brightness=-0.04,curves=preset=darker',
+  'oil_painting':'edgedetect=mode=colormix:high=0.3,eq=saturation=1.3:contrast=1.1',
+  'watercolor':  'gblur=sigma=2:steps=2,eq=saturation=1.4:brightness=0.06,hue=s=1.3',
+  'comic':       'eq=contrast=1.6:saturation=1.8,curves=preset=strong_contrast,unsharp=5:5:1.5',
+  'neon':        'hue=h=200:s=3.0,eq=contrast=1.3:brightness=-0.02:saturation=2.5,gblur=sigma=1',
+  'vintage_film':'eq=contrast=1.1:saturation=0.75:brightness=-0.02,curves=preset=vintage,noise=alls=8:allf=t+u',
+  'sepia':       'colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:0,eq=saturation=0.7:brightness=-0.02'
+};
+router.post('/style-transfer', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+    var style = String(b.style || 'cyberpunk').toLowerCase();
+    var chain = STYLE_PRESETS_FX[style];
+    if (!chain){ return res.status(400).json({ error: 'Unknown style: ' + style }); }
+
+    var outName = 'styled_' + style + '_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outPath = path.join(outputDir, outName);
+
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vf', chain + ',format=yuv420p',
+        '-c:a', 'copy'
+      ].concat(VCODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else {
+          // Fallback — some filters (edgedetect) require specific pix_fmt.
+          // Retry with a preliminary pixel-format conversion.
+          var proc2 = spawn(ffmpegPath, [
+            '-i', srcPath,
+            '-vf', 'format=rgb24,' + chain + ',format=yuv420p',
+          ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+          var err2 = '';
+          proc2.stderr.on('data', function(d){ err2 += d.toString(); });
+          proc2.on('close', function(code2){
+            if (code2 === 0) resolve();
+            else reject(new Error('Style transfer failed: ' + err.slice(-300)));
+          });
+          proc2.on('error', reject);
+        }
+      });
+      proc.on('error', reject);
+    });
+    try {
+      fs.copyFileSync(outPath, path.join(uploadDir, outName));
+    } catch(_){}
+
+    // Duration probe
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, ['-v', 'error', '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1', outPath]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat(probeOut.trim()) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration,
+      style: style
+    });
+  } catch (err){
+    console.error('[style-transfer]', err);
+    res.status(500).json({ error: err.message || 'Style transfer failed' });
+  }
+});
+
 // POST /video-editor/ai-captions
 // body: { mediaUrl: string }
 // response: { success, words: [{word, start, end}, ...], chunks: [{text, start, end}, ...] }

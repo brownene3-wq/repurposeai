@@ -2129,10 +2129,11 @@
       { g:'AI ANALYSIS',   ic:'\ud83c\udfac',  label:'B-Roll',        route:'/ai-broll' },
       { g:'AI ANALYSIS',   ic:'\u2702',        label:'Smart Cut',     route:'#smart-cut' },
       { g:'AI ANALYSIS',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:'#scene-detect' },
-      { g:'AI CREATIVE',   ic:'\ud83e\ude84',  label:'Style Transfer',route:null },
-      { g:'AI CREATIVE',   ic:'\ud83d\uddbc',  label:'BG Remove',     route:null },
-      { g:'AI CREATIVE',   ic:'\ud83c\udfa4',  label:'AI Voice',      route:'/video-editor#voiceover' },
-      { g:'AI CREATIVE',   ic:'\ud83c\udf10',  label:'Translate',     route:null }
+      // Tasks #50-#53 — AI Creative tools wired to real inline modals
+      { g:'AI CREATIVE',   ic:'\ud83e\ude84',  label:'Style Transfer',route:'#style-transfer' },
+      { g:'AI CREATIVE',   ic:'\ud83d\uddbc',  label:'BG Remove',     route:'#bg-remove' },
+      { g:'AI CREATIVE',   ic:'\ud83c\udfa4',  label:'AI Voice',      route:'#ai-voice' },
+      { g:'AI CREATIVE',   ic:'\ud83c\udf10',  label:'Translate',     route:'#translate' }
     ];
     var html = '';
     var lastGroup = '';
@@ -2164,11 +2165,19 @@
     var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions', 'AI Hook': 'aihook' };
     var MODAL_LABELS   = { 'Brand Kit': 1 };
     // Labels that trigger inline modals built into v10-editor-redesign.js
-    // (no new tab, no iframe). B-Roll, Smart Cut, Scene Detect all fall here.
-    var INLINE_MODAL_LABELS = { 'B-Roll': 1, 'Smart Cut': 1, 'Scene Detect': 1 };
+    // (no new tab, no iframe).
+    var INLINE_MODAL_LABELS = {
+      'B-Roll': 1, 'Smart Cut': 1, 'Scene Detect': 1,
+      // Tasks #50-#53 — AI Creative tools
+      'AI Voice': 1, 'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1
+    };
     // Actions that require a selected clip with a server-side mediaUrl.
-    // Used for button-disable and pre-click validation (Task #33).
-    var REQUIRES_CLIP = { 'Enhance Audio': 1, 'Captions': 1, 'AI Hook': 1, 'B-Roll': 1, 'Smart Cut': 1, 'Scene Detect': 1 };
+    // AI Voice is the exception — user types text, no clip needed.
+    var REQUIRES_CLIP = {
+      'Enhance Audio': 1, 'Captions': 1, 'AI Hook': 1, 'B-Roll': 1,
+      'Smart Cut': 1, 'Scene Detect': 1,
+      'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1
+    };
 
     // Task #33 — Gate clip-dependent AI buttons. Disables + dims them
     // whenever there's no clip selected / on the timeline. Re-evaluates
@@ -2253,18 +2262,25 @@
         if (MODAL_LABELS[label]){
           openAIToolModal(label, route);
         } else if (INLINE_MODAL_LABELS[label]){
-          // Task #37/#38/#39 — inline modals (no new tab, no iframe)
+          // Tasks #37-#39, #50-#53 — inline modals (no new tab, no iframe)
           if (label === 'B-Roll'){
             if (typeof openBRollModal === 'function') openBRollModal(btn);
           } else if (label === 'Smart Cut'){
             if (typeof openSmartCutModal === 'function') openSmartCutModal();
           } else if (label === 'Scene Detect'){
-            // Scene Detect = silence-based SPLIT (no deletion)
             var tgt = pickSourceClipForAI('scene');
             if (!tgt){ toast('Select a V1 clip first'); return; }
             if (typeof runSmartCut === 'function'){
               runSmartCut(tgt, 'silence', 1.0, /* splitOnly */ true);
             }
+          } else if (label === 'AI Voice'){
+            if (typeof openAIVoiceModal === 'function') openAIVoiceModal();
+          } else if (label === 'Translate'){
+            if (typeof openTranslateModal === 'function') openTranslateModal();
+          } else if (label === 'BG Remove'){
+            if (typeof openBGRemoveModal === 'function') openBGRemoveModal();
+          } else if (label === 'Style Transfer'){
+            if (typeof openStyleTransferModal === 'function') openStyleTransferModal();
           }
         } else {
           try { window.open(route, '_blank'); } catch(_){ location.href = route; }
@@ -2887,6 +2903,448 @@
       setTimeout(function(){ spinner.remove(); }, 1800);
       toast('B-Roll error: ' + err.message);
     }
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #50 — AI Voice inline modal
+  // User types text, picks a voice, adjusts speed, server synthesizes
+  // the voiceover via OpenAI TTS and the resulting MP3 is dropped on A1
+  // at the playhead (or appended after the current A1 end if playhead
+  // is past the current A1 content).
+  // ═════════════════════════════════════════════════════════════════
+  function openAIVoiceModal(){
+    var existing = document.getElementById('v10AiVoiceModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+
+    var bk = document.createElement('div');
+    bk.id = 'v10AiVoiceModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);' +
+      'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;' +
+      'padding:18px;width:min(480px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83c\udfa4 AI VOICE</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Type text \u2014 OpenAI TTS synthesizes a natural voiceover and drops it on A1.</div>' +
+      '<textarea id="avText" rows="5" placeholder="Enter text for the voiceover\u2026" ' +
+        'style="width:100%;padding:10px;background:#0c0814;border:1px solid rgba(124,58,237,.3);' +
+        'border-radius:6px;color:#e2e0f0;font-size:13px;font-family:inherit;outline:none;resize:vertical;box-sizing:border-box"></textarea>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin:10px 0 4px">VOICE</div>' +
+      '<div id="avVoices" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11px">' +
+        '<span style="color:#8886a0;flex:none">Speed</span>' +
+        '<input id="avSpeed" type="range" min="0.5" max="2" step="0.05" value="1" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="avSpeedVal" style="color:#fde047;font-weight:600;min-width:40px;text-align:right">1.00x</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="avCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="avRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Generate \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+
+    var VOICES = [
+      { id:'alloy',   label:'Alloy',   desc:'Balanced, neutral' },
+      { id:'echo',    label:'Echo',    desc:'Warm, friendly' },
+      { id:'fable',   label:'Fable',   desc:'British, narrative' },
+      { id:'onyx',    label:'Onyx',    desc:'Deep, authoritative' },
+      { id:'nova',    label:'Nova',    desc:'Bright, expressive' },
+      { id:'shimmer', label:'Shimmer', desc:'Soft, gentle' }
+    ];
+    var selectedVoice = 'alloy';
+    var voiceGrid = panel.querySelector('#avVoices');
+    VOICES.forEach(function(v){
+      var b = document.createElement('button');
+      b.dataset.voice = v.id;
+      b.style.cssText = 'padding:8px 6px;background:' + (v.id === selectedVoice ? 'rgba(139,92,246,.25)' : 'rgba(255,255,255,.04)') +
+        ';border:1px solid ' + (v.id === selectedVoice ? '#a78bfa' : 'rgba(255,255,255,.1)') +
+        ';border-radius:6px;color:#e2e0f0;font-size:10px;cursor:pointer;text-align:center';
+      b.innerHTML = '<b style="font-size:11px">' + v.label + '</b><br><span style="color:#8886a0;font-size:9px">' + v.desc + '</span>';
+      b.addEventListener('click', function(){
+        selectedVoice = v.id;
+        Array.from(voiceGrid.querySelectorAll('button')).forEach(function(o){
+          var on = o.dataset.voice === selectedVoice;
+          o.style.background  = on ? 'rgba(139,92,246,.25)' : 'rgba(255,255,255,.04)';
+          o.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
+        });
+      });
+      voiceGrid.appendChild(b);
+    });
+
+    var speed = panel.querySelector('#avSpeed');
+    var speedVal = panel.querySelector('#avSpeedVal');
+    speed.addEventListener('input', function(){ speedVal.textContent = parseFloat(speed.value).toFixed(2) + 'x'; });
+    panel.querySelector('#avCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    setTimeout(function(){ panel.querySelector('#avText').focus(); }, 50);
+
+    panel.querySelector('#avRun').addEventListener('click', async function(){
+      var text = panel.querySelector('#avText').value.trim();
+      if (!text){ toast('Enter some text first'); return; }
+      var sp = parseFloat(speed.value) || 1;
+      bk.remove();
+      var prog = showBlockingProgressModal('AI Voice', ['Synthesizing voice\u2026', 'Adding to A1\u2026']);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/ai-voice', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text, voice: selectedVoice, speed: sp })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'TTS failed');
+        prog.advance(1);
+        if (typeof window.addClipToTimeline === 'function'){
+          window.addClipToTimeline('AI Voice (' + selectedVoice + ')', 'aud', d.duration, d.mediaUrl);
+        }
+        prog.finish('Voiceover added (' + d.duration.toFixed(1) + 's)');
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #51 — Translate modal
+  // Whispers the selected V1 clip, translates each caption phrase into
+  // the target language, drops the translated phrases onto T1 at the
+  // matching timestamps (same positioning logic as Captions).
+  // ═════════════════════════════════════════════════════════════════
+  function openTranslateModal(){
+    var existing = document.getElementById('v10TranslateModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('translate');
+    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Select a V1 clip with a server-uploaded source first');
+      return;
+    }
+
+    var bk = document.createElement('div');
+    bk.id = 'v10TranslateModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(480px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+
+    var LANGS = [
+      ['es','\ud83c\uddea\ud83c\uddf8 Spanish'], ['fr','\ud83c\uddeb\ud83c\uddf7 French'],
+      ['de','\ud83c\udde9\ud83c\uddea German'],  ['pt','\ud83c\uddf5\ud83c\uddf9 Portuguese'],
+      ['it','\ud83c\uddee\ud83c\uddf9 Italian'], ['nl','\ud83c\uddf3\ud83c\uddf1 Dutch'],
+      ['pl','\ud83c\uddf5\ud83c\uddf1 Polish'],  ['ru','\ud83c\uddf7\ud83c\uddfa Russian'],
+      ['tr','\ud83c\uddf9\ud83c\uddf7 Turkish'], ['ar','\ud83c\uddf8\ud83c\udde6 Arabic'],
+      ['hi','\ud83c\uddee\ud83c\uddf3 Hindi'],   ['vi','\ud83c\uddfb\ud83c\uddf3 Vietnamese'],
+      ['id','\ud83c\uddee\ud83c\udde9 Indonesian'], ['ja','\ud83c\uddef\ud83c\uddf5 Japanese'],
+      ['ko','\ud83c\uddf0\ud83c\uddf7 Korean'],  ['zh','\ud83c\udde8\ud83c\uddf3 Chinese (Simplified)']
+    ];
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83c\udf10 TRANSLATE CAPTIONS</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Transcribes the selected V1 clip, translates each phrase, drops translated captions onto T1.</div>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px">TARGET LANGUAGE</div>' +
+      '<div id="trLangs" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;max-height:220px;overflow-y:auto"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="trCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="trRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer" disabled>Translate \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    var selectedLang = null;
+    var grid = panel.querySelector('#trLangs');
+    LANGS.forEach(function(pair){
+      var code = pair[0], label = pair[1];
+      var b = document.createElement('button');
+      b.dataset.code = code;
+      b.style.cssText = 'padding:8px 10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;text-align:left;cursor:pointer';
+      b.textContent = label;
+      b.addEventListener('click', function(){
+        selectedLang = code;
+        Array.from(grid.querySelectorAll('button')).forEach(function(o){
+          var on = o.dataset.code === code;
+          o.style.background  = on ? 'rgba(139,92,246,.25)' : 'rgba(255,255,255,.04)';
+          o.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
+        });
+        panel.querySelector('#trRun').disabled = false;
+        panel.querySelector('#trRun').style.opacity = '1';
+      });
+      grid.appendChild(b);
+    });
+    panel.querySelector('#trCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+
+    panel.querySelector('#trRun').addEventListener('click', async function(){
+      if (!selectedLang){ toast('Pick a language first'); return; }
+      bk.remove();
+      var prog = showBlockingProgressModal('Translate', [
+        'Transcribing audio\u2026', 'Translating phrases\u2026', 'Placing T1 captions\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/translate-captions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl, targetLang: selectedLang })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Translate failed');
+        prog.advance(1);
+        prog.advance(2);
+        if (!d.chunks || !d.chunks.length){
+          prog.finish('No speech detected in this clip.');
+          return;
+        }
+        var clipLeftPx = parseFloat(target.style.left) || 0;
+        var clipWidthPx= parseFloat(target.style.width) || 0;
+        var clipRightPx= clipLeftPx + clipWidthPx;
+        var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var srcOff = parseFloat(target.dataset.sourceOffset) || 0;
+        var leadSec = parseFloat(window.__captionLeadSec); if (!isFinite(leadSec)) leadSec = 0.2;
+        var added = 0;
+        d.chunks.forEach(function(ch){
+          if (!ch.text || !isFinite(ch.start) || !isFinite(ch.end)) return;
+          var adjS = ch.start - srcOff - leadSec;
+          var adjE = ch.end   - srcOff - leadSec;
+          if (adjE <= 0) return;
+          if (adjS < 0) adjS = 0;
+          var leftPx = clipLeftPx + Math.round(adjS * PPS);
+          var widthPx = Math.max(20, Math.round((adjE - adjS) * PPS));
+          if (leftPx >= clipRightPx) return;
+          if (leftPx + widthPx > clipRightPx) widthPx = Math.max(20, clipRightPx - leftPx);
+          if (typeof window.addTextClipToTimeline === 'function'){
+            window.addTextClipToTimeline(ch.text, {
+              left: leftPx + 'px', width: widthPx + 'px',
+              fontSize: 48, textColor: '#ffffff', position: 'bottom'
+            });
+            added++;
+          }
+        });
+        prog.finish('Added ' + added + ' ' + (d.languageName || selectedLang) + ' caption' + (added === 1 ? '' : 's'));
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #52 — BG Remove modal
+  // Chroma-key via FFmpeg colorkey. Server swaps the V1 clip's mediaUrl
+  // in place (same pattern as Enhance Audio).
+  // ═════════════════════════════════════════════════════════════════
+  function openBGRemoveModal(){
+    var existing = document.getElementById('v10BGRemoveModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('bgremove');
+    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Select a V1 clip with a server-uploaded source first');
+      return;
+    }
+    var bk = document.createElement('div');
+    bk.id = 'v10BGRemoveModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(480px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83d\uddbc\ufe0f BACKGROUND REMOVAL</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Chroma-key your footage \u2014 picks a background color and replaces it with a solid fill. Best for green/blue-screen or uniform backgrounds.</div>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px">BACKGROUND COLOR</div>' +
+      '<div id="bgPresets" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:10px"></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px">' +
+        '<span style="color:#8886a0;flex:none;min-width:82px">Similarity</span>' +
+        '<input id="bgSim" type="range" min="0.05" max="0.5" step="0.01" value="0.25" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="bgSimVal" style="color:#fde047;font-weight:600;min-width:48px;text-align:right">0.25</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px">' +
+        '<span style="color:#8886a0;flex:none;min-width:82px">Edge blend</span>' +
+        '<input id="bgBlend" type="range" min="0" max="0.3" step="0.01" value="0.10" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="bgBlendVal" style="color:#fde047;font-weight:600;min-width:48px;text-align:right">0.10</span>' +
+      '</div>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px">REPLACE WITH</div>' +
+      '<div id="bgReplace" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:4px"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="bgCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="bgRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Remove \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    var keyPreset = 'green';
+    var replaceColor = '0x000000';
+    var PRESETS = [
+      { id:'green', label:'\ud83d\udfe9 Green',  bg:'#2fa644' },
+      { id:'blue',  label:'\ud83d\udfe6 Blue',   bg:'#3478d3' },
+      { id:'dark',  label:'\u26ab Dark',         bg:'#151515' },
+      { id:'light', label:'\u26aa Light',        bg:'#f0f0f0' }
+    ];
+    var REPLACE_OPTIONS = [
+      { hex:'0x000000', label:'Black', bg:'#000' },
+      { hex:'0xffffff', label:'White', bg:'#fff' },
+      { hex:'0x7c3aed', label:'Brand', bg:'#7c3aed' },
+      { hex:'0x22c55e', label:'Green screen', bg:'#22c55e' }
+    ];
+    var pRow = panel.querySelector('#bgPresets');
+    PRESETS.forEach(function(p){
+      var b = document.createElement('button');
+      b.dataset.id = p.id;
+      b.style.cssText = 'padding:10px 6px;background:' + p.bg + ';border:2px solid ' + (p.id === keyPreset ? '#a78bfa' : 'transparent') +
+        ';border-radius:6px;color:#fff;font-size:10px;font-weight:600;cursor:pointer;text-shadow:0 1px 2px rgba(0,0,0,.6)';
+      b.textContent = p.label;
+      b.addEventListener('click', function(){
+        keyPreset = p.id;
+        Array.from(pRow.querySelectorAll('button')).forEach(function(o){
+          o.style.borderColor = o.dataset.id === keyPreset ? '#a78bfa' : 'transparent';
+        });
+      });
+      pRow.appendChild(b);
+    });
+    var rRow = panel.querySelector('#bgReplace');
+    REPLACE_OPTIONS.forEach(function(r){
+      var b = document.createElement('button');
+      b.dataset.hex = r.hex;
+      b.style.cssText = 'padding:8px 6px;background:' + r.bg + ';border:2px solid ' + (r.hex === replaceColor ? '#a78bfa' : 'transparent') +
+        ';border-radius:6px;color:' + (r.bg === '#fff' ? '#000' : '#fff') + ';font-size:10px;font-weight:600;cursor:pointer';
+      b.textContent = r.label;
+      b.addEventListener('click', function(){
+        replaceColor = r.hex;
+        Array.from(rRow.querySelectorAll('button')).forEach(function(o){
+          o.style.borderColor = o.dataset.hex === replaceColor ? '#a78bfa' : 'transparent';
+        });
+      });
+      rRow.appendChild(b);
+    });
+    var sim = panel.querySelector('#bgSim'), simV = panel.querySelector('#bgSimVal');
+    var blend = panel.querySelector('#bgBlend'), blendV = panel.querySelector('#bgBlendVal');
+    sim.addEventListener('input',   function(){ simV.textContent   = parseFloat(sim.value).toFixed(2); });
+    blend.addEventListener('input', function(){ blendV.textContent = parseFloat(blend.value).toFixed(2); });
+    panel.querySelector('#bgCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#bgRun').addEventListener('click', async function(){
+      bk.remove();
+      var prog = showBlockingProgressModal('Remove Background', [
+        'Processing footage\u2026', 'Swapping into V1\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/bg-remove', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mediaUrl: target.dataset.mediaUrl,
+            preset: keyPreset,
+            replaceColor: replaceColor,
+            similarity: parseFloat(sim.value),
+            blend: parseFloat(blend.value)
+          })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'BG remove failed');
+        prog.advance(1);
+        // Swap in place (like Enhance Audio does)
+        target.dataset.mediaUrl = d.mediaUrl;
+        target.dataset.bgRemoved = '1';
+        var player = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (player){ try { player.src = d.mediaUrl; player.load(); } catch(_){} }
+        if (typeof window.buildClipFilmstrip === 'function'){
+          var oldFS = target.querySelector('.v10-filmstrip');
+          var oldLb = target.querySelector('.v10-fs-label');
+          if (oldFS) oldFS.remove();
+          if (oldLb) oldLb.remove();
+          try { window.buildClipFilmstrip(target, d.mediaUrl, d.duration); } catch(_){}
+        }
+        if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        prog.finish('Background removed \u2014 V1 clip updated');
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #53 — Style Transfer modal
+  // Picks a preset look; server bakes an FFmpeg filter chain that
+  // approximates it (EQ + curves + noise + hue/saturation combos).
+  // Output replaces the V1 clip's mediaUrl in place.
+  // ═════════════════════════════════════════════════════════════════
+  function openStyleTransferModal(){
+    var existing = document.getElementById('v10StyleModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('style');
+    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Select a V1 clip with a server-uploaded source first');
+      return;
+    }
+    var bk = document.createElement('div');
+    bk.id = 'v10StyleModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(520px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    var STYLES = [
+      { id:'cyberpunk',    label:'Cyberpunk',    bg:'linear-gradient(135deg,#ec4899,#7c3aed,#22d3ee)' },
+      { id:'film_noir',    label:'Film Noir',    bg:'linear-gradient(135deg,#1f2937,#111827)' },
+      { id:'oil_painting', label:'Oil Painting', bg:'linear-gradient(135deg,#92400e,#f59e0b,#b91c1c)' },
+      { id:'watercolor',   label:'Watercolor',   bg:'linear-gradient(135deg,#dbeafe,#93c5fd,#ddd6fe)' },
+      { id:'comic',        label:'Comic Book',   bg:'linear-gradient(135deg,#fbbf24,#ef4444,#3b82f6)' },
+      { id:'neon',         label:'Neon',         bg:'linear-gradient(135deg,#06b6d4,#7c3aed,#ec4899)' },
+      { id:'vintage_film', label:'Vintage Film', bg:'linear-gradient(135deg,#a16207,#b45309,#78350f)' },
+      { id:'sepia',        label:'Sepia',        bg:'linear-gradient(135deg,#a16207,#d97706,#fbbf24)' }
+    ];
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83e\ude84 STYLE TRANSFER</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Bakes a cinematic look into the selected V1 clip via a preset FFmpeg filter chain. Not neural style transfer, but works in seconds and no API key needed.</div>' +
+      '<div id="styleGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="stCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="stRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer" disabled>Apply \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    var selectedStyle = null;
+    var grid = panel.querySelector('#styleGrid');
+    STYLES.forEach(function(s){
+      var b = document.createElement('button');
+      b.dataset.id = s.id;
+      b.style.cssText = 'padding:14px 6px;background:' + s.bg + ';border:2px solid transparent' +
+        ';border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;text-shadow:0 1px 3px rgba(0,0,0,.8);min-height:60px';
+      b.textContent = s.label;
+      b.addEventListener('click', function(){
+        selectedStyle = s.id;
+        Array.from(grid.querySelectorAll('button')).forEach(function(o){
+          o.style.borderColor = o.dataset.id === selectedStyle ? '#fde047' : 'transparent';
+        });
+        panel.querySelector('#stRun').disabled = false;
+      });
+      grid.appendChild(b);
+    });
+    panel.querySelector('#stCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#stRun').addEventListener('click', async function(){
+      if (!selectedStyle){ toast('Pick a style first'); return; }
+      bk.remove();
+      var prog = showBlockingProgressModal('Style Transfer', [
+        'Rendering style\u2026', 'Updating V1 clip\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/style-transfer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl, style: selectedStyle })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Style transfer failed');
+        prog.advance(1);
+        target.dataset.mediaUrl = d.mediaUrl;
+        target.dataset.styleTransfer = selectedStyle;
+        var player = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (player){ try { player.src = d.mediaUrl; player.load(); } catch(_){} }
+        if (typeof window.buildClipFilmstrip === 'function'){
+          var oldFS = target.querySelector('.v10-filmstrip');
+          var oldLb = target.querySelector('.v10-fs-label');
+          if (oldFS) oldFS.remove();
+          if (oldLb) oldLb.remove();
+          try { window.buildClipFilmstrip(target, d.mediaUrl, d.duration); } catch(_){}
+        }
+        if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        prog.finish('Style applied \u2014 ' + selectedStyle.replace(/_/g, ' '));
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
   }
 
   // ═════════════════════════════════════════════════════════════════
