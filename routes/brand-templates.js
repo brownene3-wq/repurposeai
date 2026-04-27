@@ -223,7 +223,6 @@ router.get('/', requireAuth, (req, res) => {
         border-radius: 8px;
         color: var(--text);
         font-size: 0.9rem;
-        display: flex;
         justify-content: space-between;
         align-items: center;
       }
