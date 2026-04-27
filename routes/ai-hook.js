@@ -30,13 +30,17 @@ if (!ffmpegPath) {
 let ytdlpPath = null;
 try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
 
-// Common yt-dlp args (mirrors ai-captions.js / shorts.js to stay compatible
-// with our YouTube extractor setup)
+// Common yt-dlp args — must mirror ai-captions.js / shorts.js exactly.
+// The bgutil-pot extractor + js-runtimes flags are required on Railway
+// to bypass YouTube's bot check; without them captions fetch returns empty.
 const YTDLP_COMMON_ARGS = [
   '--no-warnings',
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+  '--js-runtimes', 'node',
+  '--remote-components', 'ejs:github',
   '--retries', '3',
   '--extractor-retries', '3',
 ];
