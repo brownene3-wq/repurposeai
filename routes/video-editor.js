@@ -6961,13 +6961,37 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       if (isFinite(rot) && rot !== 0){
         chain.push('rotate=' + (rot * Math.PI / 180).toFixed(4) + ':ow=iw:oh=ih:c=black');
       }
-      // Transforms: scale (resize) — multiplicatively rescale the content
-      // before SCALE_PAD aspect-fits it into the output canvas.
-      var scl = parseFloat(c.scale);
-      if (isFinite(scl) && scl > 0 && scl !== 1){
-        chain.push('scale=trunc(iw*' + scl.toFixed(3) + '/2)*2:trunc(ih*' + scl.toFixed(3) + '/2)*2');
-      }
+      // Task #61 — Resize is now applied AFTER buildScalePad in
+      // buildResizePostFit() below so the user's scale doesn't get
+      // canceled by the output-canvas fit step. Don't add scale here.
       return chain;
+    }
+
+    // Task #61 — Resize / scale step that runs AFTER buildScalePad.
+    // buildScalePad fits the source into outW×outH with letterbox/pillarbox.
+    // This helper then takes that fitted frame and applies the user's
+    // scale multiplier:
+    //   • scl > 1  → enlarge then center-crop back to outW×outH (zoom in)
+    //   • scl < 1  → shrink then center-pad with black to outW×outH
+    //                (zoom out / picture-shrunk effect)
+    //   • scl == 1 → no-op
+    // Returns a comma-prefixed filter string ready to append to vfChain,
+    // or '' when no scaling is needed.
+    function buildResizePostFit(c){
+      var scl = parseFloat(c && c.scale);
+      if (!isFinite(scl) || scl <= 0 || Math.abs(scl - 1) < 1e-3) return '';
+      var sw = 'trunc(' + outW + '*' + scl.toFixed(4) + '/2)*2';
+      var sh = 'trunc(' + outH + '*' + scl.toFixed(4) + '/2)*2';
+      if (scl > 1){
+        // Zoom in: scale the canvas-fitted frame up, then crop the center
+        // back to outW×outH so the output stays the right size.
+        return ',scale=' + sw + ':' + sh +
+               ',crop=' + outW + ':' + outH + ':(iw-' + outW + ')/2:(ih-' + outH + ')/2';
+      } else {
+        // Zoom out: shrink, then pad black to outW×outH centered.
+        return ',scale=' + sw + ':' + sh +
+               ',pad=' + outW + ':' + outH + ':(ow-iw)/2:(oh-ih)/2:color=black';
+      }
     }
 
     var segments = [];
@@ -7013,7 +7037,9 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       // dragged across multiple V1 clips applies to all of them.
       var fxMerged = mergeFxTrackIntoV1(clip);
       var clipChain = buildClipVFChain(fxMerged);
-      var vfChain = clipChain.concat([buildScalePad(fxMerged)]).join(',');
+      // Task #61 — append the post-fit resize step (no-op if scale == 1)
+      var vfChain = clipChain.concat([buildScalePad(fxMerged)]).join(',') +
+                    buildResizePostFit(fxMerged);
 
       // Timing: per-clip speed. Valid range is >0; we clamp to 0.1..10 to
       // avoid extreme atempo chains. For non-1.0 speed we scale video PTS
@@ -7056,8 +7082,10 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         // with silent audio. loop filter (size=1) caches ONE frame then
         // emits it forever; setpts=N/FRAME_RATE/TB rebases PTS so the
         // output is a well-formed 30fps stream.
+        // Task #61 — append post-fit resize so freeze frames also honor scale
         var freezeVfChain = ['loop=loop=-1:size=1:start=0', 'setpts=N/FRAME_RATE/TB']
-          .concat(clipChain).concat([buildScalePad(clip)]).join(',');
+          .concat(clipChain).concat([buildScalePad(clip)]).join(',') +
+          buildResizePostFit(clip);
         await runFFmpeg([
           '-ss', srcOff.toFixed(3), '-i', srcPath,
           '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
@@ -7080,7 +7108,8 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         vfParts = vfParts.concat(clipChain);
         if (reverse) vfParts.push('reverse');
         vfParts.push(buildScalePad(clip));
-        var vfWithSpeed = vfParts.join(',');
+        // Task #61 — post-fit resize step (no-op if scale == 1)
+        var vfWithSpeed = vfParts.join(',') + buildResizePostFit(clip);
 
         var afParts = [];
         if (speed !== 1) afParts.push(atempoChain(speed));
