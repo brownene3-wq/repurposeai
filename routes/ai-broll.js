@@ -78,6 +78,20 @@ async function transcribeAudioFile(audioPath) {
   }
 }
 
+// Railway-compatible yt-dlp args (mirrors ai-hook.js / ai-captions.js / shorts.js).
+// Without bgutil-pot + js-runtimes + a real UA, YouTube returns empty captions.
+const BROLL_YTDLP_ARGS = [
+  '--no-warnings',
+  '--no-check-certificates',
+  '--geo-bypass',
+  '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+  '--js-runtimes', 'node',
+  '--remote-components', 'ejs:github',
+  '--retries', '3',
+  '--extractor-retries', '3',
+];
+
 function ensureYtdlp() {
   let ytdlpBin = 'yt-dlp';
   try { execSync('which yt-dlp', { stdio: 'pipe' }); return ytdlpBin; }
@@ -90,53 +104,148 @@ function ensureYtdlp() {
   }
 }
 
-function fetchYoutubeMeta(url) {
+function extractYoutubeVideoId(url) {
+  if (!url) return null;
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/|youtube\.com\/live\/|youtube\.com\/v\/|youtube-nocookie\.com\/(?:embed|v)\/)([a-zA-Z0-9_-]{11})/,
+    /^([a-zA-Z0-9_-]{11})$/
+  ];
+  for (const p of patterns) { const m = url.match(p); if (m) return m[1]; }
+  return null;
+}
+
+// Run yt-dlp with given args and a 20s timeout, return whichever subtitle file
+// landed in tmpDir (vtt/json3/srt) or null.
+function tryYtdlpSubsBroll(videoId, args, tmpDir) {
   return new Promise((resolve) => {
     const ytdlpBin = ensureYtdlp();
-    if (!ytdlpBin) return resolve({ title: '', description: '', captionsUrl: '' });
-    let buf = '';
-    let err = '';
-    const p = spawn(ytdlpBin, ['--skip-download', '--dump-single-json', '--write-auto-sub', '--sub-lang', 'en', '--no-warnings', url]);
-    p.stdout.on('data', d => { buf += d.toString(); });
-    p.stderr.on('data', d => { err += d.toString(); });
-    p.on('close', () => {
+    if (!ytdlpBin) return resolve(null);
+    let stderrTail = '';
+    const proc = spawn(ytdlpBin, args);
+    proc.stdout.on('data', () => {});
+    proc.stderr.on('data', (d) => { stderrTail = (stderrTail + d.toString()).slice(-400); });
+    proc.on('close', (code) => {
       try {
-        const meta = JSON.parse(buf);
-        const title = meta.title || '';
-        const description = (meta.description || '').slice(0, 1500);
-        let captionsUrl = '';
-        const candidates = [meta.requested_subtitles, meta.subtitles, meta.automatic_captions];
-        for (const subs of candidates) {
-          if (!subs) continue;
-          const en = subs.en || subs['en-US'] || subs['en-GB'] || subs['en-orig'];
-          if (Array.isArray(en) && en.length > 0 && en[0].url) { captionsUrl = en[0].url; break; }
-          if (en && en.url) { captionsUrl = en.url; break; }
-        }
-        resolve({ title, description, captionsUrl });
-      } catch (_) {
-        resolve({ title: '', description: '', captionsUrl: '' });
-      }
+        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && /\.(vtt|json3|srt)$/.test(f));
+        if (files.length > 0) resolve(path.join(tmpDir, files[0]));
+        else { if (code !== 0) console.warn('[ai-broll] yt-dlp exit ' + code + ', stderr: ' + stderrTail); resolve(null); }
+      } catch (_) { resolve(null); }
     });
-    p.on('error', () => resolve({ title: '', description: '', captionsUrl: '' }));
+    proc.on('error', (err) => { console.warn('[ai-broll] yt-dlp spawn error: ' + err.message); resolve(null); });
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} resolve(null); }, 20000);
   });
 }
 
-async function fetchCaptionsText(captionsUrl) {
-  if (!captionsUrl) return '';
+// Parse a VTT/JSON3/SRT subtitle file into plain text. Mirrors ai-hook.js.
+function parseSubsToTextBroll(filePath) {
   try {
-    const r = await fetch(captionsUrl);
-    if (!r.ok) return '';
-    const raw = await r.text();
-    return raw
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/^WEBVTT.*$/gm, '')
-      .replace(/^\d{2}:\d{2}:\d{2}.*$/gm, '')
-      .replace(/^\d+$/gm, '')
-      .replace(/\&amp;/g, '&').replace(/\&lt;/g, '<').replace(/\&gt;/g, '>').replace(/\&quot;/g, '"').replace(/\&#39;/g, "'")
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 4000);
-  } catch (_) { return ''; }
+    const content = fs.readFileSync(filePath, 'utf8');
+    let lines = [];
+    if (filePath.endsWith('.json3')) {
+      const json = JSON.parse(content);
+      const events = json.events || [];
+      for (const ev of events) {
+        if (ev.segs) {
+          const text = ev.segs.map(s => s.utf8 || '').join('').replace(/\n/g, ' ').trim();
+          if (text) lines.push(text);
+        }
+      }
+    } else {
+      const raw = content.split('\n');
+      for (const line of raw) {
+        if (!line.trim()) continue;
+        if (line.includes('-->')) continue;
+        if (/^\d+$/.test(line.trim())) continue;
+        if (line.startsWith('WEBVTT') || line.startsWith('Kind:') || line.startsWith('Language:')) continue;
+        const clean = line.replace(/<[^>]*>/g, '').trim();
+        if (clean) lines.push(clean);
+      }
+    }
+    const deduped = [];
+    for (const l of lines) {
+      if (deduped.length === 0 || deduped[deduped.length - 1] !== l) deduped.push(l);
+    }
+    return deduped.join(' ').replace(/\s+/g, ' ').trim();
+  } finally {
+    try { fs.unlinkSync(filePath); } catch (_) {}
+  }
+}
+
+// Fetch title (via --dump-single-json) AND transcript (via 4-strategy subtitle
+// fallback chain). Hard 30s wall-clock cap so we never block the request long.
+async function fetchYoutubeMeta(url) {
+  const videoId = extractYoutubeVideoId(url);
+  if (!videoId) return { title: '', description: '', transcript: '' };
+  const ytdlpBin = ensureYtdlp();
+  if (!ytdlpBin) return { title: '', description: '', transcript: '' };
+
+  const tmpDir = path.join('/tmp', 'ai-broll-subs');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  const outTemplate = path.join(tmpDir, videoId);
+  // Clean previous artifacts
+  try {
+    fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId)).forEach(f => {
+      try { fs.unlinkSync(path.join(tmpDir, f)); } catch (_) {}
+    });
+  } catch (_) {}
+
+  const videoUrl = 'https://www.youtube.com/watch?v=' + videoId;
+
+  // Title + description via dump-single-json (5s budget)
+  let title = '', description = '';
+  await new Promise((resolve) => {
+    let buf = '';
+    const p = spawn(ytdlpBin, [
+      '--skip-download', '--dump-single-json',
+      ...BROLL_YTDLP_ARGS,
+      videoUrl
+    ]);
+    p.stdout.on('data', d => { buf += d.toString(); });
+    p.on('close', () => {
+      try {
+        const meta = JSON.parse(buf);
+        title = meta.title || '';
+        description = (meta.description || '').slice(0, 1500);
+      } catch (_) {}
+      resolve();
+    });
+    p.on('error', () => resolve());
+    setTimeout(() => { try { p.kill('SIGKILL'); } catch (_) {} resolve(); }, 8000);
+  });
+
+  // 4-strategy subtitle fallback chain (mirrors ai-hook.js)
+  let subFile = await tryYtdlpSubsBroll(videoId, [
+    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en',
+    '--sub-format', 'json3',
+    '-o', outTemplate, videoUrl
+  ], tmpDir);
+  if (!subFile) subFile = await tryYtdlpSubsBroll(videoId, [
+    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en',
+    '--sub-format', 'vtt',
+    '-o', outTemplate, videoUrl
+  ], tmpDir);
+  if (!subFile) subFile = await tryYtdlpSubsBroll(videoId, [
+    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--write-auto-subs', '--sub-langs', 'all',
+    '--sub-format', 'json3',
+    '-o', outTemplate, videoUrl
+  ], tmpDir);
+  if (!subFile) subFile = await tryYtdlpSubsBroll(videoId, [
+    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--write-subs', '--sub-langs', 'all',
+    '--sub-format', 'json3',
+    '-o', outTemplate, videoUrl
+  ], tmpDir);
+
+  let transcript = '';
+  if (subFile) {
+    transcript = parseSubsToTextBroll(subFile).slice(0, 4000);
+  }
+  if (!transcript && description) transcript = description;
+
+  return { title, description, transcript };
 }
 
 // Resolve a "file already on disk" reference (from new ingestion flow) to an absolute path.
@@ -159,11 +268,10 @@ async function buildBrollContext({ filePath, youtubeUrl, originalName }) {
   if (youtubeUrl) {
     try {
       const meta = await fetchYoutubeMeta(youtubeUrl);
-      let transcript = await fetchCaptionsText(meta.captionsUrl);
-      if (!transcript) transcript = meta.description || '';
+      const transcript = meta.transcript || meta.description || '';
       return {
         title: meta.title || originalName || '',
-        transcript: transcript || '',
+        transcript,
         source: 'youtube'
       };
     } catch (_) {
