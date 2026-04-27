@@ -1632,6 +1632,305 @@ router.get('/', requireAuth, (req, res) => {
         box-shadow: 0 4px 12px rgba(108, 58, 237, 0.3);
       }
 
+      /* ===== Classic-flow card actions (Add Text + Download buttons) ===== */
+      .thumbnail-actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .thumbnail-add-text-btn {
+        flex: 1;
+        padding: 0.7rem;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .thumbnail-add-text-btn:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .thumbnail-actions .thumbnail-download {
+        flex: 1;
+      }
+
+      /* ===== Text Overlay Modal ===== */
+      .tom-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+
+      .tom-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+      }
+
+      .tom-dialog {
+        position: relative;
+        z-index: 1;
+        background: var(--surface, #1a1a2e);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        max-width: 1100px;
+        width: 100%;
+        max-height: 92vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+
+      .tom-header {
+        padding: 1rem 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .tom-title {
+        color: var(--text);
+        font-weight: 600;
+        font-size: 1.05rem;
+      }
+
+      .tom-close-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 1.6rem;
+        line-height: 1;
+        cursor: pointer;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+
+      .tom-close-btn:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+      }
+
+      .tom-toolbar {
+        padding: 0.85rem 1.25rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+
+      .tom-text-input {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        padding: 0.6rem 0.8rem;
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        resize: vertical;
+        min-height: 2.5rem;
+      }
+
+      .tom-text-input:focus {
+        outline: none;
+        border-color: var(--primary);
+      }
+
+      .tom-toolbar-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+      }
+
+      .tom-toolbar-row > * {
+        flex-shrink: 0;
+      }
+
+      .tom-font-select {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        padding: 0.45rem 0.7rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        min-width: 8rem;
+      }
+
+      .tom-size-wrap, .tom-color-wrap, .tom-stroke-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+      }
+
+      .tom-size-input {
+        width: 4rem;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        padding: 0.4rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+      }
+
+      .tom-size-unit {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-left: -0.3rem;
+      }
+
+      .tom-color-wrap input[type=color] {
+        width: 2.4rem;
+        height: 1.9rem;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: transparent;
+        border-radius: 5px;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .tom-fmt-btn, .tom-align-btn {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text-muted);
+        width: 2.2rem;
+        height: 2.05rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.95rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .tom-fmt-btn:hover, .tom-align-btn:hover {
+        color: var(--text);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .tom-fmt-btn.active, .tom-align-btn.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+      }
+
+      .tom-align-group {
+        display: inline-flex;
+        gap: 0.25rem;
+        padding: 0 0.25rem;
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .tom-canvas-wrapper {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        background: #0a0a14;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        overflow: auto;
+      }
+
+      .tom-canvas-wrapper canvas {
+        max-width: 100%;
+        max-height: 65vh;
+        height: auto;
+        cursor: grab;
+        background: #000;
+        border-radius: 6px;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+        display: block;
+      }
+
+      .tom-canvas-wrapper canvas:active {
+        cursor: grabbing;
+      }
+
+      .tom-canvas-hint {
+        position: absolute;
+        bottom: 0.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        pointer-events: none;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+      }
+
+      .tom-canvas-loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        display: none;
+      }
+
+      .tom-canvas-loading.show {
+        display: block;
+      }
+
+      .tom-footer {
+        padding: 1rem 1.25rem;
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .tom-btn-secondary, .tom-btn-primary {
+        padding: 0.6rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        border: none;
+      }
+
+      .tom-btn-secondary {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .tom-btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .tom-btn-primary {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      .tom-btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(108, 58, 237, 0.35);
+      }
+
       .toast {
         position: fixed;
         bottom: 2rem;
@@ -1693,6 +1992,9 @@ router.get('/', requireAuth, (req, res) => {
   `;
 
   const html = `${headHTML}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Oswald:wght@700&family=Montserrat:wght@900&display=swap" rel="stylesheet">
 ${pageStyles}
 </head>
 <body>
@@ -1827,6 +2129,55 @@ ${pageStyles}
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- Canvas-based text overlay editor — opened from each generated thumbnail card -->
+  <div id="textOverlayModal" class="tom-modal" style="display:none">
+    <div class="tom-backdrop" id="tomBackdrop"></div>
+    <div class="tom-dialog">
+      <div class="tom-header">
+        <span class="tom-title">Add Text Overlay</span>
+        <button type="button" class="tom-close-btn" id="tomCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="tom-toolbar">
+        <textarea id="tomText" class="tom-text-input" placeholder="YOUR TEXT HERE&#10;(Enter for new line)" rows="2"></textarea>
+        <div class="tom-toolbar-row">
+          <select id="tomFont" class="tom-font-select" title="Font">
+            <option value="Anton, Impact, sans-serif">Anton (YT classic)</option>
+            <option value="'Bebas Neue', Impact, sans-serif">Bebas Neue</option>
+            <option value="Oswald, Impact, sans-serif">Oswald</option>
+            <option value="Montserrat, Helvetica, sans-serif">Montserrat Black</option>
+            <option value="Impact, sans-serif">Impact</option>
+            <option value="'Arial Black', Helvetica, sans-serif">Arial Black</option>
+            <option value="Helvetica, Arial, sans-serif">Helvetica</option>
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+            <option value="Verdana, sans-serif">Verdana</option>
+            <option value="'Courier New', monospace">Courier New</option>
+          </select>
+          <label class="tom-size-wrap">Size <input type="number" id="tomSize" class="tom-size-input" min="2" max="40" step="0.5" value="9"><span class="tom-size-unit">%</span></label>
+          <button type="button" id="tomBold" class="tom-fmt-btn active" title="Bold"><b>B</b></button>
+          <button type="button" id="tomItalic" class="tom-fmt-btn" title="Italic"><i>I</i></button>
+          <div class="tom-align-group" role="radiogroup" aria-label="Alignment">
+            <button type="button" data-align="left" class="tom-align-btn" title="Align left">&#8676;</button>
+            <button type="button" data-align="center" class="tom-align-btn active" title="Align center">&#8644;</button>
+            <button type="button" data-align="right" class="tom-align-btn" title="Align right">&#8677;</button>
+          </div>
+          <label class="tom-color-wrap">Color <input type="color" id="tomColor" value="#ffffff"></label>
+          <label class="tom-stroke-wrap"><input type="checkbox" id="tomStroke" checked> Outline</label>
+        </div>
+      </div>
+      <div class="tom-canvas-wrapper">
+        <canvas id="tomCanvas"></canvas>
+        <div class="tom-canvas-hint">Click and drag the text to reposition</div>
+        <div class="tom-canvas-loading" id="tomCanvasLoading">Loading thumbnail&hellip;</div>
+      </div>
+      <div class="tom-footer">
+        <button type="button" id="tomCancelBtn" class="tom-btn-secondary">Cancel</button>
+        <button type="button" id="tomDownloadBtn" class="tom-btn-primary">Download with Text</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     function showToast(message, duration = 3000, isError = false) {
@@ -2117,12 +2468,22 @@ ${pageStyles}
           <div class="thumbnail-info">
             <div class="thumbnail-style-name">\${thumb.styleName}</div>
             <div class="thumbnail-style-desc">\${thumb.description}</div>
-            <a href="/ai-thumbnail/download/\${thumb.filename}" class="thumbnail-download" download>
-              Download
-            </a>
+            <div class="thumbnail-actions">
+              <button type="button" class="thumbnail-add-text-btn" data-filename="\${thumb.filename}">Add Text</button>
+              <a href="/ai-thumbnail/download/\${thumb.filename}" class="thumbnail-download" download>Download</a>
+            </div>
           </div>
         \`;
         previewGrid.appendChild(container);
+      });
+
+      // Wire up the "Add Text" buttons
+      previewGrid.querySelectorAll('.thumbnail-add-text-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (window.openTextOverlayEditor) {
+            window.openTextOverlayEditor(btn.dataset.filename);
+          }
+        });
       });
 
       previewSection.classList.add('show');
@@ -2324,6 +2685,221 @@ ${pageStyles}
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
+
+    // ===========================================================
+    // Canvas-based Text Overlay Editor
+    // -----------------------------------------------------------
+    // Opens from any thumbnail card on the YouTube URL / Upload Video
+    // flows (window.openTextOverlayEditor(filename)). The image is drawn
+    // to a canvas at its natural resolution; text properties live in JS
+    // state and re-render on every change. Drag the text on the canvas
+    // to reposition. "Download with Text" exports the composited PNG
+    // via canvas.toBlob — image quality is preserved at full resolution.
+    // ===========================================================
+    (function setupTextOverlayEditor() {
+      const modal = document.getElementById('textOverlayModal');
+      if (!modal) return;
+      const canvas = document.getElementById('tomCanvas');
+      const ctx = canvas.getContext('2d');
+      const txtIn = document.getElementById('tomText');
+      const fontSel = document.getElementById('tomFont');
+      const sizeIn = document.getElementById('tomSize');
+      const colorIn = document.getElementById('tomColor');
+      const boldBtn = document.getElementById('tomBold');
+      const italicBtn = document.getElementById('tomItalic');
+      const strokeIn = document.getElementById('tomStroke');
+      const downloadBtn = document.getElementById('tomDownloadBtn');
+      const cancelBtn = document.getElementById('tomCancelBtn');
+      const closeBtn = document.getElementById('tomCloseBtn');
+      const backdrop = document.getElementById('tomBackdrop');
+      const loadingEl = document.getElementById('tomCanvasLoading');
+
+      const state = {
+        img: null,
+        text: 'YOUR TEXT HERE',
+        font: 'Anton, Impact, sans-serif',
+        // size is a percentage of image height — keeps the look consistent
+        // whether the source thumb is 1080x1920 or 1280x720
+        sizePct: 9,
+        bold: true,
+        italic: false,
+        align: 'center',
+        color: '#ffffff',
+        stroke: true,
+        x: 0.5, // fraction of image width (text anchor point)
+        y: 0.5, // fraction of image height
+        sourceFilename: ''
+      };
+
+      let dragging = false;
+
+      function renderCanvas() {
+        if (!state.img) return;
+        const W = canvas.width;
+        const H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(state.img, 0, 0, W, H);
+
+        const lines = (state.text || '').split('\\n');
+        if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) return;
+
+        const weight = state.bold ? '900' : '700';
+        const fontStyle = state.italic ? 'italic' : 'normal';
+        const fontSizePx = Math.max(8, (state.sizePct / 100) * H);
+        ctx.font = fontStyle + ' ' + weight + ' ' + fontSizePx + 'px ' + state.font;
+        ctx.textAlign = state.align;
+        ctx.textBaseline = 'middle';
+
+        const x = state.x * W;
+        const y = state.y * H;
+        const lineHeight = fontSizePx * 1.1;
+        const totalH = lineHeight * lines.length;
+        const startY = y - totalH / 2 + lineHeight / 2;
+
+        if (state.stroke) {
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = fontSizePx * 0.09;
+          ctx.lineJoin = 'round';
+          ctx.miterLimit = 2;
+          for (let i = 0; i < lines.length; i++) {
+            ctx.strokeText(lines[i], x, startY + i * lineHeight);
+          }
+        }
+        ctx.fillStyle = state.color;
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], x, startY + i * lineHeight);
+        }
+      }
+
+      function openWith(filename) {
+        if (!filename) return;
+        state.sourceFilename = filename;
+        state.text = 'YOUR TEXT HERE';
+        state.x = 0.5;
+        state.y = 0.5;
+        txtIn.value = state.text;
+        loadingEl.classList.add('show');
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          state.img = img;
+          canvas.width = img.naturalWidth || img.width || 1280;
+          canvas.height = img.naturalHeight || img.height || 720;
+          loadingEl.classList.remove('show');
+          renderCanvas();
+        };
+        img.onerror = () => {
+          loadingEl.textContent = 'Failed to load thumbnail';
+        };
+        img.src = '/ai-thumbnail/serve/' + encodeURIComponent(filename);
+
+        modal.style.display = 'flex';
+        // Focus text input on next tick
+        setTimeout(() => txtIn.focus(), 50);
+      }
+
+      function close() {
+        modal.style.display = 'none';
+        state.img = null;
+        loadingEl.classList.remove('show');
+        loadingEl.textContent = 'Loading thumbnail\\u2026';
+      }
+
+      // Wire up toolbar
+      txtIn.addEventListener('input', (e) => { state.text = e.target.value; renderCanvas(); });
+      fontSel.addEventListener('change', (e) => { state.font = e.target.value; renderCanvas(); });
+      sizeIn.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0) { state.sizePct = v; renderCanvas(); }
+      });
+      colorIn.addEventListener('input', (e) => { state.color = e.target.value; renderCanvas(); });
+      boldBtn.addEventListener('click', () => {
+        state.bold = !state.bold;
+        boldBtn.classList.toggle('active', state.bold);
+        renderCanvas();
+      });
+      italicBtn.addEventListener('click', () => {
+        state.italic = !state.italic;
+        italicBtn.classList.toggle('active', state.italic);
+        renderCanvas();
+      });
+      strokeIn.addEventListener('change', (e) => { state.stroke = e.target.checked; renderCanvas(); });
+
+      document.querySelectorAll('.tom-align-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.align = btn.dataset.align;
+          document.querySelectorAll('.tom-align-btn').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          // Snap horizontal anchor to alignment
+          if (state.align === 'left') state.x = 0.05;
+          else if (state.align === 'right') state.x = 0.95;
+          else state.x = 0.5;
+          renderCanvas();
+        });
+      });
+
+      // Drag-to-reposition
+      function getCanvasCoords(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          cx: (clientX - rect.left) / rect.width,
+          cy: (clientY - rect.top) / rect.height
+        };
+      }
+      canvas.addEventListener('mousedown', () => { dragging = true; });
+      window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const { cx, cy } = getCanvasCoords(e.clientX, e.clientY);
+        state.x = Math.max(0, Math.min(1, cx));
+        state.y = Math.max(0, Math.min(1, cy));
+        renderCanvas();
+      });
+      window.addEventListener('mouseup', () => { dragging = false; });
+      // Touch support
+      canvas.addEventListener('touchstart', (e) => { dragging = true; }, { passive: true });
+      canvas.addEventListener('touchmove', (e) => {
+        if (!dragging || !e.touches[0]) return;
+        const t = e.touches[0];
+        const { cx, cy } = getCanvasCoords(t.clientX, t.clientY);
+        state.x = Math.max(0, Math.min(1, cx));
+        state.y = Math.max(0, Math.min(1, cy));
+        renderCanvas();
+        e.preventDefault();
+      }, { passive: false });
+      canvas.addEventListener('touchend', () => { dragging = false; });
+
+      // Close interactions
+      closeBtn.addEventListener('click', close);
+      cancelBtn.addEventListener('click', close);
+      backdrop.addEventListener('click', close);
+      window.addEventListener('keydown', (e) => {
+        if (modal.style.display !== 'none' && e.key === 'Escape') close();
+      });
+
+      // Download — bake the canvas as a PNG and trigger save
+      downloadBtn.addEventListener('click', () => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            showToast('Could not export image — try again', 4000, true);
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          const baseName = (state.sourceFilename || 'thumbnail').replace(/\\.(png|jpg|jpeg)$/i, '');
+          a.download = baseName + '-with-text.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+          showToast('Downloaded', 2500);
+        }, 'image/png');
+      });
+
+      // Expose globally so the displayResults card buttons can open it
+      window.openTextOverlayEditor = openWith;
+    })();
 
     ${themeScript}
   </script>
