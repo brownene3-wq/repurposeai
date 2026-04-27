@@ -894,7 +894,9 @@ ${pageStyles}
         lines.push('overlay the impact words on-screen during the spoken VO, and pair');
         lines.push('with the recommended SFX/visual treatment for maximum scroll-stop.');
 
-        const textBlob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+        // NOTE: this entire script block lives inside a Node template
+        // literal, so escape sequences need an extra backslash to survive.
+        const textBlob = new Blob([lines.join('\\n')], { type: 'text/plain;charset=utf-8' });
         // Stagger the second download by a tick so browsers don't drop it
         // as a duplicate user gesture.
         setTimeout(function() {
