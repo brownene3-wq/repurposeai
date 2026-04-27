@@ -9420,16 +9420,18 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
     try { execSync('pip install --upgrade yt-dlp', { stdio: 'pipe', timeout: 30000 }); } catch (e) { console.log('yt-dlp update skipped:', e.message); }
 
     // Task #60 — YouTube anti-bot bypass.
-    // The default `web` player client now triggers "Sign in to confirm
-    // you're not a bot". The fix is to fall back to clients that don't
-    // require bot-check / po-token: iOS first (most stable), then
-    // tv_embedded, then mweb, then web as a last resort. yt-dlp tries
-    // them in order and uses the first one that returns a real stream.
-    //
-    // Cleaned up two non-standard flags (--js-runtimes, --remote-components)
-    // that aren't valid yt-dlp arguments — keeping them would just
-    // produce unrecognized-option warnings.
-    var BASE_ARGS = [
+    // YouTube is increasingly flagging cloud-provider IPs and refusing
+    // unauthenticated requests with "Sign in to confirm you're not a bot".
+    // Strategy:
+    //   1. Try multiple player_client variants — each uses a different
+    //      YouTube API path with different auth requirements. iOS, tv,
+    //      android variants frequently slip past the wall when web fails.
+    //   2. If a cookies file is mounted at YT_COOKIES_PATH (env var),
+    //      use it as a final fallback. This is the most reliable bypass
+    //      but requires the operator to provide cookies (export from a
+    //      logged-in browser). See yt-dlp wiki for the format.
+    //   3. Surface the LAST stderr to the user with a concrete fix path.
+    var COMMON_ARGS = [
       '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '-o', outputPath,
@@ -9440,9 +9442,6 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
       '--geo-bypass',
       '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       '--add-header', 'Accept-Language:en-US,en;q=0.9',
-      // Multi-client fallback — order matters
-      '--extractor-args', 'youtube:player_client=ios,tv_embedded,mweb,web',
-      // Po-token provider (still useful for the web fallback)
       '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
       '--retries', '5',
       '--extractor-retries', '5',
@@ -9451,40 +9450,72 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
       '--max-sleep-interval', '3'
     ];
 
-    function runYtdlp(extraArgs){
+    // Optional cookies file (if the operator provides one)
+    var cookiesArgs = [];
+    var cookiesPath = process.env.YT_COOKIES_PATH;
+    if (cookiesPath && fs.existsSync(cookiesPath)){
+      cookiesArgs = ['--cookies', cookiesPath];
+    }
+
+    // Player-client fallback chain. Each entry is one attempt.
+    // Order: iOS variants (most reliable), then TV, Android, then web variants.
+    var CLIENT_ATTEMPTS = [
+      'ios',
+      'ios_music',
+      'tv',
+      'tv_embedded',
+      'android',
+      'android_vr',
+      'mweb',
+      'web_safari',
+      'web_creator',
+      'web'
+    ];
+
+    function runYtdlp(client){
+      var clientArgs = ['--extractor-args', 'youtube:player_client=' + client];
+      var args = COMMON_ARGS.concat(clientArgs).concat(cookiesArgs).concat([url]);
       return new Promise((resolve, reject) => {
-        const proc = spawn(ytdlpPath, BASE_ARGS.concat(extraArgs).concat([url]));
+        const proc = spawn(ytdlpPath, args);
         let stderr = '';
         proc.stderr.on('data', d => stderr += d.toString());
         proc.on('close', code => {
-          if (code === 0) resolve();
+          if (code === 0 && fs.existsSync(outputPath)) resolve();
           else reject(new Error(stderr.slice(-1500) || 'yt-dlp exit code ' + code));
         });
         proc.on('error', reject);
       });
     }
 
-    try {
-      await runYtdlp([]);
-    } catch (e1){
-      // Fallback 1: explicit single-client retry with iOS only — sometimes
-      // the multi-client merge confuses yt-dlp on certain age-gated videos.
+    var lastErr = null;
+    var triedList = [];
+    var success = false;
+    for (var i = 0; i < CLIENT_ATTEMPTS.length; i++){
+      var client = CLIENT_ATTEMPTS[i];
       try {
-        await runYtdlp(['--extractor-args', 'youtube:player_client=ios']);
-      } catch (e2){
-        // Fallback 2: tv_embedded (the YouTube TV client uses anonymous
-        // requests, often slips past the bot wall when iOS is blocked too)
-        try {
-          await runYtdlp(['--extractor-args', 'youtube:player_client=tv_embedded']);
-        } catch (e3){
-          throw new Error(
-            'YouTube refused all client fallbacks (web/ios/tv_embedded). ' +
-            'This usually means YouTube has rate-limited this server\u2019s IP. ' +
-            'Try again later, or paste the file via Upload instead. ' +
-            'Last error: ' + (e3.message || '').slice(-400)
-          );
-        }
+        await runYtdlp(client);
+        triedList.push(client + ' \u2713');
+        success = true;
+        break;
+      } catch (e){
+        lastErr = e;
+        triedList.push(client + ' \u2717');
+        // Clear any partial output before the next attempt
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch(_){}
       }
+    }
+    if (!success){
+      var msg = 'YouTube blocked every player client (' + triedList.join(', ') + ').';
+      if (!cookiesPath){
+        msg += ' This server\'s IP appears to be rate-limited by YouTube. ' +
+               'Set the YT_COOKIES_PATH environment variable to a Netscape-format cookies.txt ' +
+               'exported from a logged-in browser (see yt-dlp wiki: "How do I pass cookies to yt-dlp?") ' +
+               'and redeploy. As a workaround, download the video locally and use the Upload button.';
+      } else {
+        msg += ' Cookies file at ' + cookiesPath + ' may have expired \u2014 re-export from a logged-in browser. ';
+      }
+      if (lastErr) msg += ' Last yt-dlp error: ' + (lastErr.message || '').slice(-300);
+      throw new Error(msg);
     }
 
     const metadata = await getVideoMetadata(outputPath);
