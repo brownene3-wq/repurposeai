@@ -504,7 +504,7 @@ ${pageStyles}
           </div>
         </div>
         <div class="preview-actions">
-          <button type="button" class="btn-apply" id="applyBtn" onclick="applyHook()">Apply to Video</button>
+          <button type="button" class="btn-apply" id="applyBtn" onclick="downloadHookAssets()">⬇ Download Hook Assets</button>
         </div>
       </div>
 
@@ -799,9 +799,112 @@ ${pageStyles}
       }
     });
 
-    async function applyHook() {
-      if (!hookData) return;
-      showToast('Hook applied successfully!');
+    // Trigger a browser download for an in-memory Blob with the given filename.
+    function triggerBlobDownload(blob, filename) {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke after a tick so the download has time to register.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    }
+
+    // Build a short, filesystem-friendly slug from arbitrary text so users
+    // get descriptive filenames rather than UUIDs.
+    function slugify(s, maxLen) {
+      maxLen = maxLen || 40;
+      return (s || 'hook')
+        .toString()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, maxLen) || 'hook';
+    }
+
+    async function downloadHookAssets() {
+      if (!hookData) {
+        showToast('Generate a hook first');
+        return;
+      }
+      const btn = document.getElementById('applyBtn');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Preparing download...';
+
+      try {
+        const slug = slugify(hookData.hookText, 40);
+
+        // 1) Fetch the audio file as a Blob and force-download it. This
+        //    bypasses the audio player's inline-playback behavior so the
+        //    user actually gets a saved file in their Downloads folder.
+        if (hookData.audioUrl) {
+          try {
+            const audioResp = await fetch(hookData.audioUrl);
+            if (!audioResp.ok) throw new Error('audio fetch ' + audioResp.status);
+            const audioBlob = await audioResp.blob();
+            triggerBlobDownload(audioBlob, 'hook-' + slug + '.mp3');
+          } catch (e) {
+            console.warn('Audio download failed:', e);
+            showToast('Audio could not be downloaded — text file will still be saved.');
+          }
+        } else {
+          showToast('No audio was generated for this hook — saving text file only.');
+        }
+
+        // 2) Build a small text document with the hook spec the user can
+        //    drop into their editor of choice.
+        const lines = [];
+        lines.push('# Hook Assets — Splicora AI Hook Generator');
+        lines.push('');
+        lines.push('Generated for: ' + (hookData.platform || '—') + ' (' + (hookData.style || '—') + ' style)');
+        lines.push('');
+        lines.push('## Hook Text (spoken VO)');
+        lines.push(hookData.hookText || '');
+        lines.push('');
+        if (Array.isArray(hookData.impactWords) && hookData.impactWords.length > 0) {
+          lines.push('## Impact Words (on-screen visual kicker)');
+          hookData.impactWords.forEach(function(w, i) { lines.push((i + 1) + '. ' + w); });
+          lines.push('');
+        }
+        if (hookData.sfx) {
+          lines.push('## Recommended SFX');
+          lines.push(hookData.sfx);
+          lines.push('');
+        }
+        if (hookData.visualStyle) {
+          lines.push('## Visual Style');
+          lines.push(hookData.visualStyle);
+          lines.push('');
+        }
+        if (hookData.cameraMovement) {
+          lines.push('## Camera Movement');
+          lines.push(hookData.cameraMovement);
+          lines.push('');
+        }
+        if (hookData.patternInterrupt) {
+          lines.push('## Pattern Interrupt (visual shock)');
+          lines.push(hookData.patternInterrupt);
+          lines.push('');
+        }
+        lines.push('---');
+        lines.push('Drop hook-' + slug + '.mp3 into your editor as the first audio clip,');
+        lines.push('overlay the impact words on-screen during the spoken VO, and pair');
+        lines.push('with the recommended SFX/visual treatment for maximum scroll-stop.');
+
+        const textBlob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+        // Stagger the second download by a tick so browsers don't drop it
+        // as a duplicate user gesture.
+        setTimeout(function() {
+          triggerBlobDownload(textBlob, 'hook-' + slug + '.txt');
+          showToast('Hook assets downloaded — check your Downloads folder.');
+        }, 250);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
 
     function copyHook(btn, text) {
