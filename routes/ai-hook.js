@@ -934,7 +934,7 @@ function tryYtdlpSubs(videoId, args, tmpDir) {
       } catch (e) { resolve(null); }
     });
     proc.on('error', (err) => { console.warn(`[ai-hook] yt-dlp spawn error: ${err.message}`); resolve(null); });
-    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} resolve(null); }, 60000);
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} resolve(null); }, 20000);
   });
 }
 
@@ -1656,8 +1656,15 @@ router.post('/generate', requireAuth, upload.single('video'), async (req, res) =
       }
     } else if (inputType === 'youtube' && url) {
       sourceLabel = url;
+      // Hard wall-clock cap so we never hang the request behind a slow
+      // yt-dlp call; if we can't get a transcript in 30s, fall through to
+      // the no-transcript hook path (the user will see a toast).
+      const TRANSCRIPT_TIMEOUT_MS = 30000;
       try {
-        sourceTranscript = await fetchYoutubeTranscriptText(url);
+        sourceTranscript = await Promise.race([
+          fetchYoutubeTranscriptText(url),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Transcript fetch timed out')), TRANSCRIPT_TIMEOUT_MS))
+        ]);
       } catch (err) {
         console.warn('[ai-hook] YouTube transcript fetch failed:', err.message);
         transcriptWarning = 'NO_YT_CAPTIONS';
