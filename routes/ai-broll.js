@@ -1930,24 +1930,79 @@ router.post('/import-url', requireAuth, async (req, res) => {
     const outName = 'url_' + Date.now() + '_' + uuidv4().slice(0, 8) + '.mp4';
     const outPath = path.join(sharedUploadDir, outName);
 
-    await new Promise((resolve, reject) => {
-      const p = spawn(ytdlpPath, [
-        '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '--merge-output-format', 'mp4',
-        '-o', outPath,
-        '--max-filesize', '500m',
-        '--no-playlist',
-        '--no-warnings',
-        '--no-check-certificates',
-        '--geo-bypass',
-        '--retries', '3',
-        url
-      ]);
-      let stderr = '';
-      p.stderr.on('data', d => stderr += d.toString());
-      p.on('close', code => code === 0 ? resolve() : reject(new Error(stderr || ('yt-dlp exit ' + code))));
-      p.on('error', reject);
-    });
+    const isYoutube = /youtube\.com|youtu\.be/i.test(url);
+
+    // ─── YouTube: use the same 10-client fallback chain that /video-editor/youtube-import
+    //     uses, with bgutil-pot extractor args + browser UA. Without these YouTube
+    //     bot-blocks Railway IPs and demands cookies. ─────────────────────────
+    const COMMON_ARGS = [
+      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '--merge-output-format', 'mp4',
+      '-o', outPath,
+      '--max-filesize', '500m',
+      '--no-playlist',
+      '--no-warnings',
+      '--no-check-certificates',
+      '--geo-bypass',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      '--add-header', 'Accept-Language:en-US,en;q=0.9',
+      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+      '--retries', '5',
+      '--extractor-retries', '5',
+      '--fragment-retries', '5',
+      '--sleep-interval', '1',
+      '--max-sleep-interval', '3'
+    ];
+
+    let cookiesArgs = [];
+    const cookiesPath = process.env.YT_COOKIES_PATH;
+    if (cookiesPath && fs.existsSync(cookiesPath)) cookiesArgs = ['--cookies', cookiesPath];
+
+    function runYtdlpOnce(extraArgs) {
+      const args = COMMON_ARGS.concat(extraArgs || []).concat(cookiesArgs).concat([url]);
+      return new Promise((resolve, reject) => {
+        const proc = spawn(ytdlpPath, args);
+        let stderr = '';
+        proc.stderr.on('data', d => stderr += d.toString());
+        proc.on('close', code => {
+          if (code === 0 && fs.existsSync(outPath)) resolve();
+          else reject(new Error(stderr.slice(-1500) || 'yt-dlp exit code ' + code));
+        });
+        proc.on('error', reject);
+      });
+    }
+
+    if (isYoutube) {
+      // 10-client fallback chain (matches /video-editor/youtube-import).
+      const CLIENT_ATTEMPTS = ['ios', 'ios_music', 'tv', 'tv_embedded', 'android', 'android_vr', 'mweb', 'web_safari', 'web_creator', 'web'];
+      let lastErr = null;
+      const tried = [];
+      let success = false;
+      for (const client of CLIENT_ATTEMPTS) {
+        try {
+          await runYtdlpOnce(['--extractor-args', 'youtube:player_client=' + client]);
+          tried.push(client + ' OK');
+          success = true;
+          break;
+        } catch (e) {
+          lastErr = e;
+          tried.push(client + ' fail');
+          try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
+        }
+      }
+      if (!success) {
+        let msg = 'YouTube blocked every player client (' + tried.join(', ') + ').';
+        if (!cookiesPath) {
+          msg += ' This server\'s IP appears to be bot-rate-limited by YouTube. ' +
+                 'Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in browser to bypass.';
+        }
+        if (lastErr && lastErr.message) msg += ' Last error: ' + lastErr.message.slice(0, 400);
+        throw new Error(msg);
+      }
+    } else {
+      // Zoom / Twitch / Rumble — these don't bot-block Railway, simple call works.
+      await runYtdlpOnce([]);
+    }
 
     const duration = await getMediaDuration(outPath);
     res.json({
