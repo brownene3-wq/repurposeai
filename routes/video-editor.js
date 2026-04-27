@@ -9419,32 +9419,73 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
     // Always update yt-dlp to latest version (YouTube changes frequently)
     try { execSync('pip install --upgrade yt-dlp', { stdio: 'pipe', timeout: 30000 }); } catch (e) { console.log('yt-dlp update skipped:', e.message); }
 
-    await new Promise((resolve, reject) => {
-      const proc = spawn(ytdlpPath, [
-        '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '--merge-output-format', 'mp4',
-        '-o', outputPath,
-        '--max-filesize', '500m',
-        '--no-playlist',
-        '--no-warnings',
-        '--no-check-certificates',
-        '--geo-bypass',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-        '--js-runtimes', 'node',
-        '--remote-components', 'ejs:github',
-        '--retries', '3',
-        '--extractor-retries', '3',
-        url
-      ]);
-      let stderr = '';
-      proc.stderr.on('data', d => stderr += d.toString());
-      proc.on('close', code => {
-        if (code === 0) resolve();
-        else reject(new Error(stderr || 'Download failed with code ' + code));
+    // Task #60 — YouTube anti-bot bypass.
+    // The default `web` player client now triggers "Sign in to confirm
+    // you're not a bot". The fix is to fall back to clients that don't
+    // require bot-check / po-token: iOS first (most stable), then
+    // tv_embedded, then mweb, then web as a last resort. yt-dlp tries
+    // them in order and uses the first one that returns a real stream.
+    //
+    // Cleaned up two non-standard flags (--js-runtimes, --remote-components)
+    // that aren't valid yt-dlp arguments — keeping them would just
+    // produce unrecognized-option warnings.
+    var BASE_ARGS = [
+      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '--merge-output-format', 'mp4',
+      '-o', outputPath,
+      '--max-filesize', '500m',
+      '--no-playlist',
+      '--no-warnings',
+      '--no-check-certificates',
+      '--geo-bypass',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      '--add-header', 'Accept-Language:en-US,en;q=0.9',
+      // Multi-client fallback — order matters
+      '--extractor-args', 'youtube:player_client=ios,tv_embedded,mweb,web',
+      // Po-token provider (still useful for the web fallback)
+      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+      '--retries', '5',
+      '--extractor-retries', '5',
+      '--fragment-retries', '5',
+      '--sleep-interval', '1',
+      '--max-sleep-interval', '3'
+    ];
+
+    function runYtdlp(extraArgs){
+      return new Promise((resolve, reject) => {
+        const proc = spawn(ytdlpPath, BASE_ARGS.concat(extraArgs).concat([url]));
+        let stderr = '';
+        proc.stderr.on('data', d => stderr += d.toString());
+        proc.on('close', code => {
+          if (code === 0) resolve();
+          else reject(new Error(stderr.slice(-1500) || 'yt-dlp exit code ' + code));
+        });
+        proc.on('error', reject);
       });
-      proc.on('error', reject);
-    });
+    }
+
+    try {
+      await runYtdlp([]);
+    } catch (e1){
+      // Fallback 1: explicit single-client retry with iOS only — sometimes
+      // the multi-client merge confuses yt-dlp on certain age-gated videos.
+      try {
+        await runYtdlp(['--extractor-args', 'youtube:player_client=ios']);
+      } catch (e2){
+        // Fallback 2: tv_embedded (the YouTube TV client uses anonymous
+        // requests, often slips past the bot wall when iOS is blocked too)
+        try {
+          await runYtdlp(['--extractor-args', 'youtube:player_client=tv_embedded']);
+        } catch (e3){
+          throw new Error(
+            'YouTube refused all client fallbacks (web/ios/tv_embedded). ' +
+            'This usually means YouTube has rate-limited this server\u2019s IP. ' +
+            'Try again later, or paste the file via Upload instead. ' +
+            'Last error: ' + (e3.message || '').slice(-400)
+          );
+        }
+      }
+    }
 
     const metadata = await getVideoMetadata(outputPath);
 
