@@ -3745,6 +3745,27 @@ function showToast(message, type = 'success') {
           uploadZone.classList.add('has-video');
           videoPreviewArea.classList.add('has-video');
           document.getElementById('exportButton').disabled = false;
+          // Task #58 — URL imports now follow the same lifecycle as local
+          // uploads: drop the imported clip into the Media library AND
+          // append it to V1 (matches the file-upload flow at line ~1655).
+          try {
+            if (typeof window.addUploadedMediaItem === 'function') {
+              window.addUploadedMediaItem({
+                name: data.title || data.filename || 'YouTube import',
+                filename: data.filename,
+                serveUrl: data.serveUrl,
+                duration: videoDuration
+              });
+            }
+          } catch (_){}
+          try {
+            if (typeof window.addClipToTimeline === 'function') {
+              window.addClipToTimeline(
+                data.title || data.filename || 'YouTube import',
+                'vid', videoDuration, data.serveUrl
+              );
+            }
+          } catch (_){}
         } catch (err) {
           showToast(err.message, 'error');
         } finally {
@@ -3786,6 +3807,25 @@ function showToast(message, type = 'success') {
                 uploadZone.classList.add('has-video');
                 videoPreviewArea.classList.add('has-video');
                 document.getElementById('exportButton').disabled = false;
+                // Task #58 — same lifecycle as local uploads
+                try {
+                  if (typeof window.addUploadedMediaItem === 'function') {
+                    window.addUploadedMediaItem({
+                      name: file.name || data.filename,
+                      filename: data.filename,
+                      serveUrl: data.serveUrl,
+                      duration: videoDuration
+                    });
+                  }
+                } catch (_){}
+                try {
+                  if (typeof window.addClipToTimeline === 'function') {
+                    window.addClipToTimeline(
+                      file.name || data.filename,
+                      'vid', videoDuration, data.serveUrl
+                    );
+                  }
+                } catch (_){}
               } catch (err) {
                 showToast(err.message, 'error');
               } finally {
