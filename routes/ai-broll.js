@@ -41,6 +41,205 @@ const upload = multer({
   }
 });
 
+
+// ═══ Smart B-Roll context extraction (transcript-driven) ═══
+function runFFmpegBroll(args) {
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) return reject(new Error('ffmpeg unavailable'));
+    const p = spawn(ffmpegPath, args);
+    let err = '';
+    p.stderr.on('data', d => { err += d.toString(); });
+    p.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg exit ' + code + ': ' + err.slice(0, 400))));
+    p.on('error', reject);
+  });
+}
+
+async function extractFirstNSecondsAudio(srcPath, seconds, destPath) {
+  await runFFmpegBroll([
+    '-i', srcPath,
+    '-vn', '-acodec', 'mp3', '-ar', '16000', '-ac', '1',
+    '-t', String(seconds),
+    '-y', destPath
+  ]);
+}
+
+async function transcribeAudioFile(audioPath) {
+  if (!process.env.OPENAI_API_KEY) return '';
+  try {
+    const r = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(audioPath),
+      model: 'whisper-1',
+      response_format: 'text'
+    });
+    return (typeof r === 'string' ? r : (r && r.text) || '').trim();
+  } catch (err) {
+    console.error('[ai-broll] Whisper failed:', err.message);
+    return '';
+  }
+}
+
+function ensureYtdlp() {
+  let ytdlpBin = 'yt-dlp';
+  try { execSync('which yt-dlp', { stdio: 'pipe' }); return ytdlpBin; }
+  catch (_) {
+    try { execSync('pip install --break-system-packages yt-dlp', { stdio: 'pipe' }); return ytdlpBin; }
+    catch (_) {
+      try { execSync('pip install yt-dlp', { stdio: 'pipe' }); return ytdlpBin; }
+      catch (_) { return null; }
+    }
+  }
+}
+
+function fetchYoutubeMeta(url) {
+  return new Promise((resolve) => {
+    const ytdlpBin = ensureYtdlp();
+    if (!ytdlpBin) return resolve({ title: '', description: '', captionsUrl: '' });
+    let buf = '';
+    let err = '';
+    const p = spawn(ytdlpBin, ['--skip-download', '--dump-single-json', '--write-auto-sub', '--sub-lang', 'en', '--no-warnings', url]);
+    p.stdout.on('data', d => { buf += d.toString(); });
+    p.stderr.on('data', d => { err += d.toString(); });
+    p.on('close', () => {
+      try {
+        const meta = JSON.parse(buf);
+        const title = meta.title || '';
+        const description = (meta.description || '').slice(0, 1500);
+        let captionsUrl = '';
+        const candidates = [meta.requested_subtitles, meta.subtitles, meta.automatic_captions];
+        for (const subs of candidates) {
+          if (!subs) continue;
+          const en = subs.en || subs['en-US'] || subs['en-GB'] || subs['en-orig'];
+          if (Array.isArray(en) && en.length > 0 && en[0].url) { captionsUrl = en[0].url; break; }
+          if (en && en.url) { captionsUrl = en.url; break; }
+        }
+        resolve({ title, description, captionsUrl });
+      } catch (_) {
+        resolve({ title: '', description: '', captionsUrl: '' });
+      }
+    });
+    p.on('error', () => resolve({ title: '', description: '', captionsUrl: '' }));
+  });
+}
+
+async function fetchCaptionsText(captionsUrl) {
+  if (!captionsUrl) return '';
+  try {
+    const r = await fetch(captionsUrl);
+    if (!r.ok) return '';
+    const raw = await r.text();
+    return raw
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/^WEBVTT.*$/gm, '')
+      .replace(/^\d{2}:\d{2}:\d{2}.*$/gm, '')
+      .replace(/^\d+$/gm, '')
+      .replace(/\&amp;/g, '&').replace(/\&lt;/g, '<').replace(/\&gt;/g, '>').replace(/\&quot;/g, '"').replace(/\&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 4000);
+  } catch (_) { return ''; }
+}
+
+// Resolve a "file already on disk" reference (from new ingestion flow) to an absolute path.
+function resolveStagedFile(filename) {
+  if (!filename) return null;
+  const safe = String(filename).replace(/[^\w.\-]/g, '_').slice(0, 200);
+  const candidates = [
+    path.join(uploadDir, safe),
+    path.join(uploadDir, filename),
+    path.join(outputDir, filename)
+  ];
+  for (const p of candidates) {
+    try { if (fs.existsSync(p)) return p; } catch (_) {}
+  }
+  return null;
+}
+
+async function buildBrollContext({ filePath, youtubeUrl, originalName }) {
+  // Returns { title, transcript } fed into the smart prompt.
+  if (youtubeUrl) {
+    try {
+      const meta = await fetchYoutubeMeta(youtubeUrl);
+      let transcript = await fetchCaptionsText(meta.captionsUrl);
+      if (!transcript) transcript = meta.description || '';
+      return {
+        title: meta.title || originalName || '',
+        transcript: transcript || '',
+        source: 'youtube'
+      };
+    } catch (_) {
+      return { title: originalName || '', transcript: '', source: 'youtube' };
+    }
+  }
+  if (filePath && fs.existsSync(filePath)) {
+    const tmpAudio = path.join('/tmp', 'broll-ctx-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.mp3');
+    try {
+      await extractFirstNSecondsAudio(filePath, 90, tmpAudio);
+      if (fs.existsSync(tmpAudio) && fs.statSync(tmpAudio).size > 1000) {
+        const transcript = await transcribeAudioFile(tmpAudio);
+        return { title: originalName || path.basename(filePath), transcript, source: 'whisper' };
+      }
+    } catch (err) {
+      console.error('[ai-broll] context extract failed:', err.message);
+    } finally {
+      try { fs.unlinkSync(tmpAudio); } catch (_) {}
+    }
+    return { title: originalName || path.basename(filePath), transcript: '', source: 'whisper-failed' };
+  }
+  return { title: originalName || '', transcript: '', source: 'none' };
+}
+
+// Build smart Pixabay queries from {title, transcript} via GPT-4o-mini.
+// Mirrors Smart Shorts' prompt rules (concrete nouns, no abstract terms).
+async function generateSmartBrollQueries({ title, transcript }) {
+  if (!process.env.OPENAI_API_KEY) return [];
+  const text = (transcript || '').slice(0, 3000);
+  const SYSTEM_PROMPT = [
+    'You are a professional video editor selecting B-roll for an existing video.',
+    'Given the video TITLE and a partial TRANSCRIPT (first ~90 seconds), suggest exactly 5',
+    'specific B-roll scenes that would visually enhance the content.',
+    '',
+    'For EACH scene return:',
+    '- "moment": short label of which part of the video this fits (e.g. "intro", "discussing X", "call to action")',
+    '- "scene_description": what the viewer should see (1 short sentence)',
+    '- "search_query": the BEST 2-4 word Pixabay search query to find this exact footage. Be VERY specific',
+    '   \u2014 use concrete nouns and actions, NOT abstract concepts. For example: "person typing laptop"',
+    '   not "productivity", "cash register payment" not "business", "doctor stethoscope" not "health".',
+    '   Pixabay works best with literal visual descriptions.',
+    '- "duration": integer seconds (3-8 typical)',
+    '',
+    'IMPORTANT RULES:',
+    '- Pick visuals that DIRECTLY relate to topics actually discussed in the transcript.',
+    '- Use CONCRETE, LITERAL search terms \u2014 describe what the camera would see.',
+    '- AVOID abstract / generic terms like "success", "motivation", "growth", "business", "innovation", "technology" alone.',
+    '- Prefer close-up and medium shots over wide/aerial.',
+    '- Think about what a human video editor would actually cut to.',
+    '- If the transcript is empty or too generic, infer from the title but stay literal.',
+    '',
+    'Return ONLY a JSON array with the 5 scenes. No prose.'
+  ].join('\n');
+
+  const USER = 'TITLE: ' + (title || '(unknown)') + '\n\nTRANSCRIPT (first 90s):\n' + (text || '(transcript not available)');
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: USER }
+      ],
+      temperature: 0.6,
+      max_tokens: 700
+    });
+    const out = completion.choices[0].message.content || '';
+    const m = out.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    const arr = JSON.parse(m[0]);
+    return Array.isArray(arr) ? arr.filter(x => x && x.search_query) : [];
+  } catch (err) {
+    console.error('[ai-broll] smart-queries GPT failed:', err.message);
+    return [];
+  }
+}
+
 // GET - Render AI B-Roll page
 router.get('/', requireAuth, (req, res) => {
   const css = getBaseCSS();
@@ -643,13 +842,27 @@ ${pageStyles}
 
       const btn = document.getElementById('generateBrollBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span class="loading-spinner"></span> Generating B-Roll...';
+      btn.innerHTML = '<span class="loading-spinner"></span> Analyzing video & finding B-Roll...';
       const progressBar = document.getElementById('progressBar');
       progressBar.classList.add('active');
 
       try {
         let response;
-        if (content.type === 'upload') {
+        // ── Prefer the staged primary from the new ingestion flow (Upload/URL/Drive/Dropbox).
+        var stagedPrimary = (window.__aiBrollState && window.__aiBrollState.primary) || null;
+        if (stagedPrimary && stagedPrimary.filename && mode === 'ai-generated') {
+          response = await fetch('/ai-broll/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              inputType: stagedPrimary.source === 'youtube' ? 'youtube' : 'upload',
+              url: stagedPrimary.source === 'youtube' ? stagedPrimary.sourceUrl : undefined,
+              mode,
+              prompt: (document.getElementById('aiPrompt') || {}).value || (document.getElementById('searchTerms') || {}).value || '',
+              primary: { filename: stagedPrimary.filename, originalName: stagedPrimary.originalName, source: stagedPrimary.source }
+            })
+          });
+        } else if (content.type === 'upload') {
           const formData = new FormData();
           formData.append('video', content.file);
           formData.append('inputType', 'upload');
@@ -899,6 +1112,8 @@ ${pageStyles}
         });
         var data = await r.json();
         if (!r.ok) throw new Error(data.error || ('Import failed (' + r.status + ')'));
+        if (!data.source) data.source = 'youtube';
+        if (!data.sourceUrl) data.sourceUrl = url;
         setPrimary(data);
       } catch (err) {
         toastMsg('URL import failed: ' + err.message);
@@ -1208,47 +1423,74 @@ router.post('/generate', requireAuth, upload.single('video'), async (req, res) =
     const pixabayApiKey = process.env.PIXABAY_API_KEY;
 
     if (mode === 'ai-generated') {
-      // AI Generated mode: use GPT to analyze and suggest keywords, then search Pixabay
-      const analysisPrompt = `Analyze this video content and identify key moments that need B-roll enhancement: "${contentDescription}"
-Generate a JSON array of B-roll suggestions with this structure:
-[{"moment": "description", "keywords": ["keyword1", "keyword2"], "duration": 5}]
-Focus on visual elements that would enhance the content.
-Return ONLY the JSON array.`;
-
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: analysisPrompt }],
-        max_tokens: 500,
-        temperature: 0.7
-      });
-
-      let moments = [];
-      try {
-        moments = JSON.parse(completion.choices[0].message.content);
-      } catch (e) {
-        moments = [{ moment: 'Video enhancement', keywords: [prompt || 'video'], duration: 5 }];
+      // ─── Smart pipeline: build context (transcript or YouTube meta), then ask GPT-4o-mini
+      //     for concrete Pixabay queries (Smart-Shorts-style prompt). ─────────────────────
+      let stagedFilePath = null;
+      if (req.file && req.file.path) {
+        stagedFilePath = req.file.path;
+      } else if (req.body && req.body.primary && req.body.primary.filename) {
+        stagedFilePath = resolveStagedFile(req.body.primary.filename);
       }
 
-      // For each moment, search Pixabay for videos
-      if (pixabayApiKey) {
-        for (const moment of moments.slice(0, 5)) {
-          const searchTerm = moment.keywords ? moment.keywords.join(' ') : moment.moment;
-          const videos = await fetchPixabayVideos(searchTerm);
+      const youtubeUrl = (inputType === 'youtube' && url) ? url : null;
+      const originalName = (req.file && req.file.originalname)
+        || (req.body && req.body.primary && (req.body.primary.originalName || req.body.primary.filename))
+        || '';
 
+      const ctx = await buildBrollContext({
+        filePath: stagedFilePath,
+        youtubeUrl,
+        originalName
+      });
+
+      // If user typed a hint in the prompt box, append it (helps when transcript is sparse).
+      const ctxForPrompt = {
+        title: ctx.title || (prompt || ''),
+        transcript: (ctx.transcript || '') + (prompt ? ('\n\nUSER HINT: ' + prompt) : '')
+      };
+      const debugCtx = {
+        contextSource: ctx.source,
+        title: ctxForPrompt.title,
+        transcriptChars: (ctx.transcript || '').length
+      };
+
+      const scenes = await generateSmartBrollQueries(ctxForPrompt);
+
+      // Build response items: one Pixabay match per scene.
+      const useScenes = scenes.length > 0
+        ? scenes.slice(0, 5)
+        : [{ moment: 'Video enhancement', search_query: prompt || ctxForPrompt.title || 'video', duration: 5 }];
+
+      if (pixabayApiKey) {
+        for (const scene of useScenes) {
+          const q = (scene.search_query || scene.scene_description || scene.moment || 'video').toString();
+          const videos = await fetchPixabayVideos(q);
           if (videos && videos.length > 0) {
-            const formattedVideos = formatPixabayVideos(videos);
-            brollItems.push(formattedVideos[0]); // Take the top result for each moment
+            const formatted = formatPixabayVideos(videos);
+            const item = formatted[0];
+            // Decorate with the AI-generated context so the modal can show why.
+            item.searchQueryUsed = q;
+            item.sceneDescription = scene.scene_description || '';
+            item.moment = scene.moment || '';
+            brollItems.push(item);
           } else {
-            // Fallback if no videos found
-            const fallback = generateFallbackItems([searchTerm], 1);
-            brollItems.push(fallback[0]);
+            const fb = generateFallbackItems([q], 1)[0];
+            fb.searchQueryUsed = q;
+            fb.sceneDescription = scene.scene_description || '';
+            fb.moment = scene.moment || '';
+            brollItems.push(fb);
           }
         }
       } else {
-        // No Pixabay API key - use fallback with all keywords from GPT
-        const allKeywords = moments.flatMap(m => m.keywords || []);
-        brollItems = generateFallbackItems(allKeywords);
+        const all = useScenes.map(s => s.search_query || s.moment).filter(Boolean);
+        brollItems = generateFallbackItems(all);
         pixabayWarning = 'Pixabay API key not configured. Showing placeholder suggestions. Set PIXABAY_API_KEY environment variable to fetch real videos.';
+      }
+
+      // Surface debug info so we can verify on dev that transcript actually came through.
+      if (process.env.NODE_ENV !== 'production' || req.query.debug === '1') {
+        res.locals = res.locals || {};
+        res.locals.brollDebug = debugCtx;
       }
     } else if (mode === 'stock') {
       // Stock mode: use user's search terms directly
@@ -1272,6 +1514,9 @@ Return ONLY the JSON array.`;
     const response = { brollItems };
     if (pixabayWarning) {
       response.pixabayWarning = pixabayWarning;
+    }
+    if (res.locals && res.locals.brollDebug) {
+      response._debug = res.locals.brollDebug;
     }
 
     res.json(response);
