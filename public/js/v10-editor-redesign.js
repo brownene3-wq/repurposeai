@@ -2652,6 +2652,10 @@
           if (typeof window.buildClipFilmstrip === 'function'){
             try { window.buildClipFilmstrip(hookClip, compD.mediaUrl, compD.duration); } catch(_){}
           }
+          // Task #57 — make the hook clip drag/trim/deletable
+          if (typeof window.makeClipInteractive === 'function'){
+            try { window.makeClipInteractive(hookClip); } catch(_){}
+          }
           if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
         }
 
@@ -2858,20 +2862,29 @@
       });
       var d = await r.json();
       if (!r.ok || !d.success) throw new Error(d.error || 'Download failed');
-      // Insert the b-roll clip into V1 AFTER the currently-selected target.
-      // Shift any V1 clips that follow, so we don't overlap.
+      // Task #57 — Insert b-roll OVERLAID on the existing V1 clip so it
+      // plays on top of the original footage during the overlap (cut-away
+      // style). Position priority:
+      //   1. Playhead position, IF the playhead is currently inside the
+      //      target clip (most natural — drop b-roll where the user is
+      //      looking).
+      //   2. Otherwise, the target clip's start.
+      // No clips get shifted right — overlap is allowed (Task #48) and
+      // "latest added wins" (Task #49) makes the new b-roll show during
+      // the overlap region in preview AND export.
       var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
       var insertDur = parseFloat(d.duration) || dur || 5;
       var insertWidthPx = Math.max(60, Math.round(insertDur * PPS));
       var targetLeft = parseFloat(targetClip.style.left) || 0;
       var targetWidth= parseFloat(targetClip.style.width) || 0;
-      var insertLeftPx = targetLeft + targetWidth;
-
-      // Shift any V1 clips at or after insertLeftPx rightward
-      Array.from(document.querySelectorAll('.mt-track-video .mt-clip')).forEach(function(c){
-        var l = parseFloat(c.style.left) || 0;
-        if (l >= insertLeftPx){ c.style.left = (l + insertWidthPx) + 'px'; }
-      });
+      var ph = document.getElementById('mtPlayhead');
+      var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
+      var insertLeftPx;
+      if (phPx >= targetLeft && phPx <= targetLeft + targetWidth){
+        insertLeftPx = phPx;
+      } else {
+        insertLeftPx = targetLeft;
+      }
 
       // Build the new clip inline (matching addClipToTimeline's schema)
       var v1Track = document.querySelector('.mt-track-video');
@@ -2897,6 +2910,10 @@
       v1Track.appendChild(nc);
       if (typeof window.buildClipFilmstrip === 'function'){
         try { window.buildClipFilmstrip(nc, d.mediaUrl, insertDur); } catch(_){}
+      }
+      // Task #57 — wire drag/trim/delete handlers like upload-flow clips have
+      if (typeof window.makeClipInteractive === 'function'){
+        try { window.makeClipInteractive(nc); } catch(_){}
       }
       if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
       toast('B-Roll added: ' + name + ' (' + insertDur.toFixed(1) + 's)');
@@ -3413,6 +3430,12 @@
       }
     })();
 
+    // Local HTML escape (escAudio is scoped inside buildAudioContent)
+    function bkEsc(s){
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
     function renderTemplates(templates, captionStyles, aspectRatios, listEl){
       if (!templates.length){
         listEl.innerHTML =
@@ -3439,8 +3462,8 @@
             'color:#fff;font-weight:800;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6)">Aa</div>' +
           // Details
           '<div style="flex:1;min-width:0">' +
-            '<div style="font-size:13px;font-weight:700;color:#e2e0f0;margin-bottom:4px">' + escAudio(capName) + '</div>' +
-            '<div style="font-size:11px;color:#8886a0">' + escAudio(aspName) + '</div>' +
+            '<div style="font-size:13px;font-weight:700;color:#e2e0f0;margin-bottom:4px">' + bkEsc(capName) + '</div>' +
+            '<div style="font-size:11px;color:#8886a0">' + bkEsc(aspName) + '</div>' +
             (t.logoUrl
               ? ('<div style="font-size:10px;color:#22c55e;margin-top:4px">\u2713 Logo attached</div>')
               : ('<div style="font-size:10px;color:#5c5a70;margin-top:4px">No logo</div>')
@@ -3548,6 +3571,8 @@
         lbl.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px;pointer-events:none;z-index:4;white-space:nowrap';
         clip.appendChild(lbl);
         v1Track.appendChild(clip);
+        // Task #57 — already calling makeClipInteractive here, but the
+        // function wasn't exposed on window before this commit. Now it is.
         if (typeof window.makeClipInteractive === 'function'){
           try { window.makeClipInteractive(clip); } catch(_){}
         }

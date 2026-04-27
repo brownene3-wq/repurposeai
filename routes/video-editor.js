@@ -3258,7 +3258,10 @@ function showToast(message, type = 'success') {
         }
         function accept(){
           var v = sanitize(input.value);
-          if (!v){ err.textContent = 'Please enter a valid filename.'; input.focus(); return; }
+          // If user cleared the field or typed only special chars that
+          // got fully stripped, fall back to the default name silently
+          // instead of blocking the export with an error.
+          if (!v){ v = sanitize(defaultName) || 'Splicora-export'; }
           if (v.length > 80){ err.textContent = 'Name is too long (max 80 characters).'; return; }
           close(v);
         }

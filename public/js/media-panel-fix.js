@@ -577,6 +577,13 @@
   var _waveformCache  = {}; // url@width → dataURL Promise
   var _decodedAudioCache = {}; // url → AudioBuffer Promise
 
+  // Task #57 — expose makeClipInteractive on window so the AI-added
+  // clips (B-Roll, AI Hook, Freeze Frame, Brand Logo) get the same
+  // drag/trim/delete handlers the upload-flow clips have. Without this,
+  // AI-inserted clips couldn't be deleted via the Delete key or the
+  // selection-context menu.
+  try { window.makeClipInteractive = makeClipInteractive; } catch(_){}
+
   function attachFilmstripOrWaveform(clip){
     if (!clip) return;
     var type = clip.dataset.clipType || '';
