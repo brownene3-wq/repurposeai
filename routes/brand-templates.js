@@ -7,6 +7,7 @@ const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const db = require('../db/database');
 
 // FFmpeg setup
 let ffmpegPath = null;
@@ -25,15 +26,67 @@ const outputDir = path.join('/tmp', 'repurpose-outputs');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-// Multer
+// Multer — use memory storage so we can write the bytes straight to Postgres.
+// Logos must persist across Railway redeploys and be readable from any replica,
+// so /tmp won't do.
 const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    const allowedMimes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
     cb(allowedMimes.includes(file.mimetype) ? null : new Error('Invalid file type'), allowedMimes.includes(file.mimetype));
   }
 });
+
+// ----- Logo storage (Postgres) -----
+// One row per uploaded logo. Templates reference it by id (= logoFilename in
+// the cookie). DB rows survive Railway redeploys and are readable from every
+// replica, so logo previews don't break across page refreshes.
+let logoTableReady = false;
+async function ensureLogoTable() {
+  if (logoTableReady) return;
+  try {
+    await db.pool.query(`
+      CREATE TABLE IF NOT EXISTS brand_template_logos (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        mime_type TEXT NOT NULL,
+        data BYTEA NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.pool.query(`CREATE INDEX IF NOT EXISTS idx_btl_user ON brand_template_logos(user_id)`);
+    logoTableReady = true;
+  } catch (e) {
+    console.error('[brand-templates] ensureLogoTable failed:', e && e.message);
+  }
+}
+
+async function storeLogo(buffer, mimeType, userId) {
+  await ensureLogoTable();
+  const id = uuidv4();
+  await db.pool.query(
+    `INSERT INTO brand_template_logos (id, user_id, mime_type, data) VALUES ($1, $2, $3, $4)`,
+    [id, userId || null, mimeType || 'image/png', buffer]
+  );
+  return id;
+}
+
+async function fetchLogo(id) {
+  await ensureLogoTable();
+  const r = await db.pool.query(
+    `SELECT mime_type, data FROM brand_template_logos WHERE id = $1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
+async function deleteLogo(id) {
+  try {
+    await ensureLogoTable();
+    await db.pool.query(`DELETE FROM brand_template_logos WHERE id = $1`, [id]);
+  } catch (e) { /* non-fatal */ }
+}
 
 // Caption style presets
 const captionStyles = {
@@ -795,13 +848,18 @@ router.post('/save', requireAuth, upload.single('logo'), async (req, res) => {
     const templates = readTemplates(req);
     if (templates.length >= 20) return res.status(400).json({ error: 'Template limit reached (20 max). Delete one to add more.' });
 
+    let logoFilename = null;
+    if (req.file && req.file.buffer) {
+      logoFilename = await storeLogo(req.file.buffer, req.file.mimetype, req.user && req.user.id);
+    }
+
     const now = new Date().toISOString();
     const newTemplate = {
       id: uuidv4(),
       name,
       aspectRatio,
       captionStyle,
-      logoFilename: req.file ? path.basename(req.file.path) : null,
+      logoFilename,
       logoPosition: logoPosition || 'top-right',
       logoSize: parseInt(logoSize) || 100,
       createdAt: now,
@@ -828,19 +886,16 @@ router.put('/:id', requireAuth, upload.single('logo'), async (req, res) => {
     const { aspectRatio, captionStyle, logoPosition, logoSize } = req.body;
     const name = sanitizeName(req.body.name) || existing.name;
 
-    // Logo handling: new upload, existing reference, or none
+    // Logo handling: new upload, existing reference, or none.
     let logoFilename = existing.logoFilename;
-    if (req.file) {
-      // New logo uploaded — delete old file to avoid /tmp bloat
-      if (existing.logoFilename) {
-        const oldPath = path.join(uploadDir, existing.logoFilename);
-        if (fs.existsSync(oldPath) && safeFilename(existing.logoFilename)) {
-          try { fs.unlinkSync(oldPath); } catch (e) {}
-        }
+    if (req.file && req.file.buffer) {
+      // New logo: store fresh row, drop old DB row if no other template references it
+      if (existing.logoFilename && safeFilename(existing.logoFilename)) {
+        const stillReferenced = templates.some((t, i) => i !== idx && t.logoFilename === existing.logoFilename);
+        if (!stillReferenced) await deleteLogo(existing.logoFilename);
       }
-      logoFilename = path.basename(req.file.path);
+      logoFilename = await storeLogo(req.file.buffer, req.file.mimetype, req.user && req.user.id);
     } else if (req.body.logoFilename && safeFilename(req.body.logoFilename)) {
-      // Keep existing
       logoFilename = req.body.logoFilename;
     }
 
@@ -918,13 +973,10 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (idx === -1) return res.status(404).json({ error: 'Template not found' });
     const removed = templates.splice(idx, 1)[0];
 
-    // Only delete the underlying logo file if no remaining template references it
+    // Only delete the underlying logo if no remaining template references it
     if (removed.logoFilename && safeFilename(removed.logoFilename)) {
       const stillReferenced = templates.some(t => t.logoFilename === removed.logoFilename);
-      if (!stillReferenced) {
-        const p = path.join(uploadDir, removed.logoFilename);
-        if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) {} }
-      }
+      if (!stillReferenced) await deleteLogo(removed.logoFilename);
     }
 
     writeTemplates(res, templates);
@@ -935,18 +987,21 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// GET /logo/:filename - Serve a stored logo, but only if the current user's
-// cookie references that filename. This prevents enumeration of /tmp files.
-router.get('/logo/:filename', requireAuth, (req, res) => {
+// GET /logo/:filename - Serve a stored logo from Postgres, but only if the
+// current user's cookie references that id. The cookie list is the auth check
+// here (a logo is only readable if the user has a template pointing to it).
+router.get('/logo/:filename', requireAuth, async (req, res) => {
   try {
     const { filename } = req.params;
     if (!safeFilename(filename)) return res.status(400).send('Bad filename');
     const templates = readTemplates(req);
     const ok = templates.some(t => t.logoFilename === filename);
     if (!ok) return res.status(404).send('Not found');
-    const p = path.join(uploadDir, filename);
-    if (!fs.existsSync(p)) return res.status(404).send('Not found');
-    res.sendFile(p);
+    const row = await fetchLogo(filename);
+    if (!row) return res.status(404).send('Not found');
+    res.set('Content-Type', row.mime_type || 'application/octet-stream');
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(row.data);
   } catch (error) {
     console.error('Serve logo error:', error);
     res.status(500).send('Error');
