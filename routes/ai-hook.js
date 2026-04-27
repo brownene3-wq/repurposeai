@@ -914,18 +914,27 @@ function extractYoutubeVideoId(url) {
 // Helper: Run yt-dlp once for a given subtitle strategy, return path to subtitle file
 function tryYtdlpSubs(videoId, args, tmpDir) {
   return new Promise((resolve) => {
-    if (!ytdlpPath) return resolve(null);
+    if (!ytdlpPath) {
+      console.warn('[ai-hook] yt-dlp not found in PATH');
+      return resolve(null);
+    }
+    let stderrTail = '';
     const proc = spawn(ytdlpPath, args);
     proc.stdout.on('data', () => {});
-    proc.stderr.on('data', () => {});
-    proc.on('close', () => {
+    proc.stderr.on('data', (d) => { stderrTail = (stderrTail + d.toString()).slice(-400); });
+    proc.on('close', (code) => {
       try {
         const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && /\.(vtt|json3|srt)$/.test(f));
-        resolve(files.length > 0 ? path.join(tmpDir, files[0]) : null);
+        if (files.length > 0) {
+          resolve(path.join(tmpDir, files[0]));
+        } else {
+          if (code !== 0) console.warn(`[ai-hook] yt-dlp exit ${code}, stderr tail: ${stderrTail}`);
+          resolve(null);
+        }
       } catch (e) { resolve(null); }
     });
-    proc.on('error', () => resolve(null));
-    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} resolve(null); }, 30000);
+    proc.on('error', (err) => { console.warn(`[ai-hook] yt-dlp spawn error: ${err.message}`); resolve(null); });
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} resolve(null); }, 60000);
   });
 }
 
@@ -987,20 +996,44 @@ async function fetchYoutubeTranscriptText(url) {
 
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-  // Strategy 1: English manual + auto subs in vtt
+  // Strategy 1: English manual + auto subs in json3 (most accurate parser path)
+  console.log(`[ai-hook] Fetching YouTube transcript for ${videoId} — strategy 1 (en json3)`);
   let subFile = await tryYtdlpSubs(videoId, [
     '--skip-download', ...YTDLP_COMMON_ARGS,
     '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en',
-    '--sub-format', 'vtt',
+    '--sub-format', 'json3',
     '-o', outTemplate, videoUrl
   ], tmpDir);
 
-  // Strategy 2: any-language auto subs in vtt
+  // Strategy 2: English subs in vtt
   if (!subFile) {
+    console.log(`[ai-hook] strategy 2 (en vtt)`);
+    subFile = await tryYtdlpSubs(videoId, [
+      '--skip-download', ...YTDLP_COMMON_ARGS,
+      '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en',
+      '--sub-format', 'vtt',
+      '-o', outTemplate, videoUrl
+    ], tmpDir);
+  }
+
+  // Strategy 3: any-language auto subs in json3
+  if (!subFile) {
+    console.log(`[ai-hook] strategy 3 (any json3)`);
     subFile = await tryYtdlpSubs(videoId, [
       '--skip-download', ...YTDLP_COMMON_ARGS,
       '--write-auto-subs', '--sub-langs', 'all',
-      '--sub-format', 'vtt',
+      '--sub-format', 'json3',
+      '-o', outTemplate, videoUrl
+    ], tmpDir);
+  }
+
+  // Strategy 4: any manual subs in json3
+  if (!subFile) {
+    console.log(`[ai-hook] strategy 4 (any manual json3)`);
+    subFile = await tryYtdlpSubs(videoId, [
+      '--skip-download', ...YTDLP_COMMON_ARGS,
+      '--write-subs', '--sub-langs', 'all',
+      '--sub-format', 'json3',
       '-o', outTemplate, videoUrl
     ], tmpDir);
   }
@@ -1009,6 +1042,7 @@ async function fetchYoutubeTranscriptText(url) {
     throw new Error('No transcript / captions available for this video');
   }
 
+  console.log(`[ai-hook] Got subtitle file: ${path.basename(subFile)}`);
   const text = parseSubsToText(subFile);
   if (!text) throw new Error('Transcript parsed empty');
   return text;
