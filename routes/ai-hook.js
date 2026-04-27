@@ -26,6 +26,21 @@ if (!ffmpegPath) {
   try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {}
 }
 
+// yt-dlp detection (used for fetching YouTube transcripts)
+let ytdlpPath = null;
+try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
+
+// Common yt-dlp args (mirrors ai-captions.js / shorts.js to stay compatible
+// with our YouTube extractor setup)
+const YTDLP_COMMON_ARGS = [
+  '--no-warnings',
+  '--no-check-certificates',
+  '--geo-bypass',
+  '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--retries', '3',
+  '--extractor-retries', '3',
+];
+
 // Directories
 const uploadDir = path.join('/tmp', 'repurpose-uploads');
 const outputDir = path.join('/tmp', 'repurpose-outputs');
@@ -757,7 +772,16 @@ ${pageStyles}
             }
           }
           document.getElementById('previewSection').classList.add('active');
-          if (!data.voiceError) showToast('Hook generated successfully!');
+          // If transcription couldn't be completed, let the user know the
+          // hook was generated from limited context so they aren't surprised
+          // by a generic-sounding result.
+          if (data.transcriptWarning === 'NO_YT_CAPTIONS') {
+            showToast('No captions found on this YouTube video — hook was generated from limited context.', 5000);
+          } else if (data.transcriptWarning === 'TRANSCRIBE_FAILED') {
+            showToast('Could not transcribe the uploaded video — hook was generated from limited context.', 5000);
+          } else if (!data.voiceError) {
+            showToast('Hook generated successfully!');
+          }
         } else {
           showToast(data.error || 'Failed to generate hook');
         }
@@ -813,19 +837,298 @@ ${pageStyles}
   res.send(html);
 });
 
-// Helper: Extract transcript from video
-async function extractVideoTranscript(filePath) {
-  return new Promise((resolve) => {
-    if (!ffmpegPath) return resolve('');
-    const args = ['-i', filePath, '-f', 'null', '-'];
-    const ffmpeg = spawn(ffmpegPath, args);
-    let output = '';
-    ffmpeg.stderr.on('data', (data) => { output += data.toString(); });
-    ffmpeg.on('close', () => {
-      resolve(output.slice(0, 500));
+// ---------------------------------------------------------------------------
+// Transcript pipeline
+// ---------------------------------------------------------------------------
+// Three input modes ultimately converge on a single string `sourceTranscript`,
+// which is then fed through a two-pass LLM (gold-nugget extraction → hook
+// composition). This replaces the old approach where Upload/YouTube modes
+// sent only the filename/URL to GPT and Text mode was truncated to 500 chars.
+
+// Helper: Extract audio from video as low-bitrate mono MP3 (Whisper's 25MB cap)
+function extractAudioFromVideo(videoPath) {
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) return reject(new Error('ffmpeg not available'));
+    const audioPath = path.join(uploadDir, `hook-audio-${uuidv4()}.mp3`);
+    const proc = spawn(ffmpegPath, [
+      '-i', videoPath,
+      '-vn',          // strip video
+      '-ac', '1',     // mono
+      '-ar', '16000', // 16kHz — Whisper's recommended sample rate
+      '-b:a', '64k',  // 64kbps speech-quality mp3
+      '-y',
+      audioPath
+    ]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0) resolve(audioPath);
+      else reject(new Error('Audio extraction failed: ' + stderr.slice(-200)));
     });
-    ffmpeg.on('error', () => resolve(''));
+    proc.on('error', reject);
   });
+}
+
+// Helper: Transcribe an audio file with OpenAI Whisper
+async function transcribeAudioFile(audioPath) {
+  const audioBuffer = fs.readFileSync(audioPath);
+  const file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+  const result = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: file,
+    response_format: 'text'
+  });
+  // SDK returns plain string when response_format is 'text'
+  return (typeof result === 'string' ? result : (result && result.text) || '').trim();
+}
+
+// Helper: full Upload-mode transcription (audio extract → Whisper → cleanup)
+async function transcribeUploadedVideo(videoPath) {
+  const audioPath = await extractAudioFromVideo(videoPath);
+  try {
+    const text = await transcribeAudioFile(audioPath);
+    return text;
+  } finally {
+    try { fs.unlinkSync(audioPath); } catch (e) {}
+  }
+}
+
+// Helper: Extract YouTube videoId from any of the supported URL shapes
+function extractYoutubeVideoId(url) {
+  if (!url) return null;
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/|youtube\.com\/live\/|youtube\.com\/v\/|youtube-nocookie\.com\/(?:embed|v)\/)([a-zA-Z0-9_-]{11})/,
+    /^([a-zA-Z0-9_-]{11})$/
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// Helper: Run yt-dlp once for a given subtitle strategy, return path to subtitle file
+function tryYtdlpSubs(videoId, args, tmpDir) {
+  return new Promise((resolve) => {
+    if (!ytdlpPath) return resolve(null);
+    const proc = spawn(ytdlpPath, args);
+    proc.stdout.on('data', () => {});
+    proc.stderr.on('data', () => {});
+    proc.on('close', () => {
+      try {
+        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && /\.(vtt|json3|srt)$/.test(f));
+        resolve(files.length > 0 ? path.join(tmpDir, files[0]) : null);
+      } catch (e) { resolve(null); }
+    });
+    proc.on('error', () => resolve(null));
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} resolve(null); }, 30000);
+  });
+}
+
+// Helper: Parse a VTT/JSON3/SRT subtitle file into plain text
+function parseSubsToText(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    let lines = [];
+
+    if (filePath.endsWith('.json3')) {
+      const json = JSON.parse(content);
+      const events = json.events || [];
+      for (const ev of events) {
+        if (ev.segs) {
+          const text = ev.segs.map(s => s.utf8 || '').join('').replace(/\n/g, ' ').trim();
+          if (text) lines.push(text);
+        }
+      }
+    } else {
+      // VTT / SRT
+      const raw = content.split('\n');
+      for (const line of raw) {
+        if (!line.trim()) continue;
+        if (line.includes('-->')) continue;
+        if (/^\d+$/.test(line.trim())) continue;
+        if (line.startsWith('WEBVTT') || line.startsWith('Kind:') || line.startsWith('Language:')) continue;
+        const clean = line.replace(/<[^>]*>/g, '').trim();
+        if (clean) lines.push(clean);
+      }
+    }
+
+    // De-duplicate consecutive identical lines (common in YouTube auto-subs)
+    const deduped = [];
+    for (const l of lines) {
+      if (deduped.length === 0 || deduped[deduped.length - 1] !== l) deduped.push(l);
+    }
+    return deduped.join(' ').replace(/\s+/g, ' ').trim();
+  } finally {
+    try { fs.unlinkSync(filePath); } catch (e) {}
+  }
+}
+
+// Helper: full YouTube transcript fetch with multiple subtitle-format fallbacks
+async function fetchYoutubeTranscriptText(url) {
+  const videoId = extractYoutubeVideoId(url);
+  if (!videoId) throw new Error('Could not extract YouTube video ID from URL');
+  if (!ytdlpPath) throw new Error('yt-dlp not available on this server');
+
+  const tmpDir = path.join('/tmp', 'ai-hook-subs');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  const outTemplate = path.join(tmpDir, videoId);
+
+  // Clean previous artifacts for this videoId
+  try {
+    fs.readdirSync(tmpDir)
+      .filter(f => f.startsWith(videoId))
+      .forEach(f => { try { fs.unlinkSync(path.join(tmpDir, f)); } catch (e) {} });
+  } catch (e) {}
+
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Strategy 1: English manual + auto subs in vtt
+  let subFile = await tryYtdlpSubs(videoId, [
+    '--skip-download', ...YTDLP_COMMON_ARGS,
+    '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en',
+    '--sub-format', 'vtt',
+    '-o', outTemplate, videoUrl
+  ], tmpDir);
+
+  // Strategy 2: any-language auto subs in vtt
+  if (!subFile) {
+    subFile = await tryYtdlpSubs(videoId, [
+      '--skip-download', ...YTDLP_COMMON_ARGS,
+      '--write-auto-subs', '--sub-langs', 'all',
+      '--sub-format', 'vtt',
+      '-o', outTemplate, videoUrl
+    ], tmpDir);
+  }
+
+  if (!subFile) {
+    throw new Error('No transcript / captions available for this video');
+  }
+
+  const text = parseSubsToText(subFile);
+  if (!text) throw new Error('Transcript parsed empty');
+  return text;
+}
+
+// Helper: Cap the transcript at a generous size while preserving beginning,
+// middle, and end — videos often hide the best nugget in the second half.
+function smartCapTranscript(text, maxChars) {
+  if (!text || text.length <= maxChars) return text;
+  const third = Math.floor(maxChars / 3);
+  const head = text.slice(0, third);
+  const midStart = Math.floor(text.length / 2 - third / 2);
+  const mid = text.slice(midStart, midStart + third);
+  const tail = text.slice(-third);
+  return head + '\n\n[...transcript trimmed for length...]\n\n' + mid + '\n\n[...transcript trimmed for length...]\n\n' + tail;
+}
+
+// Helper: First-pass LLM call — pull the highest-leverage moments from the
+// transcript so the second pass has something to write a real hook around.
+async function extractGoldNuggets(transcript, style, platform) {
+  const prompt = `You are a viral short-form video editor analyzing a transcript to find the SINGLE most hook-worthy moments.
+
+Read the transcript and identify 3-5 "gold nuggets" — specific moments that would make a viewer stop scrolling. Prioritize:
+- Specific numbers, stats, or unexpected facts
+- Contrarian claims or strong opinions
+- Vulnerable admissions or personal stakes
+- Surprising before/after transformations
+- Counterintuitive results
+- Concrete examples (not abstract advice)
+
+For a ${platform} video in ${style} style, return STRICT JSON with this schema:
+{
+  "topic": "one-sentence summary of what the video is actually about",
+  "nuggets": [
+    {"text": "the specific quote, claim, or moment from the transcript", "why": "why this would stop a scroll"}
+  ]
+}
+
+Transcript:
+"""
+${transcript}
+"""`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 700,
+    temperature: 0.4,
+    response_format: { type: 'json_object' }
+  });
+
+  const raw = (completion.choices[0].message.content || '').trim();
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed;
+  } catch (e) {
+    return { topic: '', nuggets: [] };
+  }
+}
+
+// Helper: Second-pass LLM call — compose the actual hook spec using the
+// nuggets (or the raw transcript when nugget extraction was skipped/failed).
+async function composeHookSpec({ transcript, nuggets, sourceLabel, style, platform, hasTranscript }) {
+  let contentBlock;
+  if (nuggets && nuggets.nuggets && nuggets.nuggets.length > 0) {
+    const nuggetLines = nuggets.nuggets.map((n, i) => `${i + 1}. "${n.text}" — ${n.why || ''}`).join('\n');
+    contentBlock = `Topic: ${nuggets.topic || 'Unknown'}\n\nThe video's gold-nugget moments (lift specifics from these — don't paraphrase generically):\n${nuggetLines}\n\nFull transcript for additional context:\n"""\n${transcript}\n"""`;
+  } else if (hasTranscript && transcript) {
+    contentBlock = `Transcript of the video:\n"""\n${transcript}\n"""`;
+  } else {
+    contentBlock = `Source: ${sourceLabel || 'unknown'} (no transcript was available — write a generic ${style} hook for the platform)`;
+  }
+
+  const prompt = `You are a short-form video hook director. Produce a 3-5s "thumb-stopper" intro hook for a ${platform} video in the ${style} style.
+
+${contentBlock}
+
+Return STRICT JSON, no prose, matching this exact schema:
+{
+  "hookText": "spoken VO, 12-25 words, bold opener, designed to stop scrolling. PULL specific words/numbers/claims from the gold nuggets when available — do NOT write generic openers.",
+  "impactWords": ["1-3 uppercase high-impact words pulled from hookText — single words or short 2-word phrases, the VISUAL kicker"],
+  "sfx": "one of: whoosh, riser, bass_drop, record_scratch, tension_hit, cinematic_boom",
+  "visualStyle": "lighting description: one of volumetric, neon_noir, high_contrast_bw, cinematic_warm, cyberpunk_glow",
+  "cameraMovement": "one of fast_zoom_in, orbit_360, handheld_shake, dolly_push, whip_pan, rack_focus",
+  "patternInterrupt": "one-sentence description of the visual shock/unexpected action designed to stop the scroll"
+}
+
+IMPORTANT:
+- hookText should work for spoken delivery
+- impactWords should be the literal words the viewer SEES on screen (huge centered text)
+- sfx must be one of the enumerated values
+- visualStyle + cameraMovement must be from the enumerated lists`;
+
+  let completion;
+  try {
+    completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 400,
+      temperature: 0.9,
+      response_format: { type: 'json_object' }
+    });
+  } catch (e) {
+    console.warn('[ai-hook compose] gpt-4o-mini failed, retrying gpt-4:', e.message);
+    completion = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: prompt + '\n\nReturn ONLY the JSON object, no prose.' }],
+      max_tokens: 400,
+      temperature: 0.8
+    });
+  }
+
+  const raw = (completion.choices[0].message.content || '').trim();
+  let spec = {};
+  try { spec = JSON.parse(raw); }
+  catch (_) {
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) {
+      try { spec = JSON.parse(m[0]); } catch (_) { spec = { hookText: raw.slice(0, 180) }; }
+    } else {
+      spec = { hookText: raw.slice(0, 180) };
+    }
+  }
+  return spec;
 }
 
 // Helper: Get user's ElevenLabs API key from brand_kits
@@ -1297,81 +1600,63 @@ router.post('/generate', requireAuth, upload.single('video'), async (req, res) =
       return res.status(400).json({ error: 'Missing required fields (style and platform are required)' });
     }
 
-    let contentForAnalysis = '';
+    // Resolve the source transcript for each input mode. Upload runs Whisper,
+    // YouTube runs yt-dlp subtitle fetch, Text uses what the user pasted.
+    // If the upstream transcription fails we still continue with an empty
+    // transcript so the user gets *some* hook back — better than a hard fail.
+    let sourceTranscript = '';
+    let sourceLabel = '';
+    let transcriptWarning = null;
 
     if (inputType === 'upload' && req.file) {
-      contentForAnalysis = `Video file: ${req.file.originalname}. Analyze and generate a ${style} hook.`;
+      sourceLabel = req.file.originalname || 'uploaded video';
+      try {
+        sourceTranscript = await transcribeUploadedVideo(req.file.path);
+      } catch (err) {
+        console.warn('[ai-hook] Whisper transcription failed:', err.message);
+        transcriptWarning = 'TRANSCRIBE_FAILED';
+      }
     } else if (inputType === 'youtube' && url) {
-      contentForAnalysis = `YouTube video: ${url}. Generate a ${style} hook.`;
+      sourceLabel = url;
+      try {
+        sourceTranscript = await fetchYoutubeTranscriptText(url);
+      } catch (err) {
+        console.warn('[ai-hook] YouTube transcript fetch failed:', err.message);
+        transcriptWarning = 'NO_YT_CAPTIONS';
+      }
     } else if (inputType === 'text' && transcript) {
-      contentForAnalysis = transcript;
+      sourceLabel = 'Pasted transcript';
+      sourceTranscript = transcript;
     } else {
       return res.status(400).json({ error: 'No content provided' });
     }
 
-    // Task #41 — Structured hook generation.
-    // Ask GPT for a full "thumb-stopper" spec: hook text, 1-3 impact words
-    // to render on-screen, a sound-effect family, and a visual/motion
-    // direction. Returned as strict JSON so the composer can render a
-    // cinematic 3-5s clip with synced text + SFX + motion.
-    const prompt = `You are a short-form video hook director. Produce a 3-5s "thumb-stopper" intro hook for a ${platform} video in the ${style} style.
-Base it on this content: "${contentForAnalysis.slice(0, 500)}"
+    // Cap transcript to stay well within gpt-4o-mini's context window.
+    // 20K chars ≈ 5K tokens — leaves plenty of room for prompt + completion.
+    sourceTranscript = smartCapTranscript(sourceTranscript, 20000);
 
-Return STRICT JSON, no prose, matching this exact schema:
-{
-  "hookText": "spoken VO, 12-25 words, bold opener, designed to stop scrolling",
-  "impactWords": ["1-3 uppercase high-impact words pulled from hookText — single words or short 2-word phrases, the VISUAL kicker"],
-  "sfx": "one of: whoosh, riser, bass_drop, record_scratch, tension_hit, cinematic_boom",
-  "visualStyle": "lighting description: one of volumetric, neon_noir, high_contrast_bw, cinematic_warm, cyberpunk_glow",
-  "cameraMovement": "one of fast_zoom_in, orbit_360, handheld_shake, dolly_push, whip_pan, rack_focus",
-  "patternInterrupt": "one-sentence description of the visual shock/unexpected action designed to stop the scroll"
-}
-
-IMPORTANT:
-- hookText should work for spoken delivery
-- impactWords should be the literal words the viewer SEES on screen (huge centered text)
-- sfx must be one of the enumerated values
-- visualStyle + cameraMovement must be from the enumerated lists`;
-
-    // Task #43 — json_object response_format requires a model that
-    // supports JSON mode. Legacy 'gpt-4' does NOT; 'gpt-4o-mini' does.
-    // Also fall back cleanly if JSON parse fails (model returned prose).
-    let completion;
-    try {
-      completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 350,
-        temperature: 0.9,
-        response_format: { type: 'json_object' }
-      });
-    } catch (e){
-      // Some OpenAI orgs don't have gpt-4o-mini enabled — retry with plain
-      // gpt-4 and parse prose output. Keeps the endpoint functional.
-      console.warn('[ai-hook generate] gpt-4o-mini failed, retrying gpt-4:', e.message);
-      completion = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt + '\n\nReturn ONLY the JSON object, no prose.' }],
-        max_tokens: 350,
-        temperature: 0.8
-      });
-    }
-
-    var rawOut = (completion.choices[0].message.content || '').trim();
-    var hookSpec = {};
-    try { hookSpec = JSON.parse(rawOut); }
-    catch(_){
-      // Extract the first {...} block from prose wrap
-      var m = rawOut.match(/\{[\s\S]*\}/);
-      if (m){
-        try { hookSpec = JSON.parse(m[0]); }
-        catch(_){ hookSpec = { hookText: rawOut.slice(0, 180) }; }
-      } else {
-        hookSpec = { hookText: rawOut.slice(0, 180) };
+    // Two-pass generation: extract gold nuggets, then compose the hook.
+    // Skip the nugget extraction for very short transcripts — there isn't
+    // enough material to mine, so single-pass composition is fine.
+    let nuggets = null;
+    if (sourceTranscript.trim().length >= 200) {
+      try {
+        nuggets = await extractGoldNuggets(sourceTranscript, style, platform);
+      } catch (err) {
+        console.warn('[ai-hook] Nugget extraction failed:', err.message);
       }
     }
 
-    const hookText = (hookSpec.hookText || completion.choices[0].message.content).toString().trim();
+    const hookSpec = await composeHookSpec({
+      transcript: sourceTranscript,
+      nuggets,
+      sourceLabel,
+      style,
+      platform,
+      hasTranscript: sourceTranscript.trim().length > 0
+    });
+
+    const hookText = (hookSpec.hookText || '').toString().trim();
     const impactWords = Array.isArray(hookSpec.impactWords) ? hookSpec.impactWords.slice(0, 3).map(w => String(w || '').toUpperCase().slice(0, 20)) : [];
     const SFX_WHITELIST = ['whoosh', 'riser', 'bass_drop', 'record_scratch', 'tension_hit', 'cinematic_boom'];
     const sfx = SFX_WHITELIST.indexOf((hookSpec.sfx || '').toLowerCase()) >= 0 ? hookSpec.sfx.toLowerCase() : 'whoosh';
@@ -1411,6 +1696,9 @@ IMPORTANT:
       hookText,
       audioUrl,
       voiceError,
+      transcriptWarning,
+      transcriptLength: sourceTranscript.length,
+      usedNuggets: !!(nuggets && nuggets.nuggets && nuggets.nuggets.length > 0),
       style,
       voice,
       platform,
