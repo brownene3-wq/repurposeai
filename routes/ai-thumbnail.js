@@ -2733,6 +2733,47 @@ ${pageStyles}
 
       let dragging = false;
 
+      // Greedy word-wrap that respects manual newlines and an explicit
+      // max width (in pixels). A "paragraph" is a chunk of text between two
+      // \\n characters; each paragraph is wrapped independently using
+      // ctx.measureText. Single words longer than maxWidth are broken
+      // character-by-character so the line never overflows the canvas.
+      function wrapTextToLines(rawText, maxWidthPx) {
+        const out = [];
+        const paragraphs = String(rawText || '').split('\\n');
+        for (const para of paragraphs) {
+          if (para === '') { out.push(''); continue; }
+          const words = para.split(/\\s+/).filter(Boolean);
+          if (words.length === 0) { out.push(''); continue; }
+          let current = '';
+          for (const word of words) {
+            const test = current ? current + ' ' + word : word;
+            if (ctx.measureText(test).width <= maxWidthPx || current === '') {
+              // Single word longer than max — fall back to char-by-char break
+              if (!current && ctx.measureText(word).width > maxWidthPx) {
+                let buf = '';
+                for (const ch of word) {
+                  if (ctx.measureText(buf + ch).width <= maxWidthPx || buf === '') {
+                    buf += ch;
+                  } else {
+                    out.push(buf);
+                    buf = ch;
+                  }
+                }
+                current = buf;
+              } else {
+                current = test;
+              }
+            } else {
+              out.push(current);
+              current = word;
+            }
+          }
+          if (current) out.push(current);
+        }
+        return out;
+      }
+
       function renderCanvas() {
         if (!state.img) return;
         const W = canvas.width;
@@ -2740,8 +2781,7 @@ ${pageStyles}
         ctx.clearRect(0, 0, W, H);
         ctx.drawImage(state.img, 0, 0, W, H);
 
-        const lines = (state.text || '').split('\\n');
-        if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) return;
+        if (!state.text || state.text === '') return;
 
         const weight = state.bold ? '900' : '700';
         const fontStyle = state.italic ? 'italic' : 'normal';
@@ -2749,6 +2789,12 @@ ${pageStyles}
         ctx.font = fontStyle + ' ' + weight + ' ' + fontSizePx + 'px ' + state.font;
         ctx.textAlign = state.align;
         ctx.textBaseline = 'middle';
+
+        // Wrap to 90% of canvas width — leaves a comfortable side margin
+        // and matches the safe zone YouTube's player UI hovers within.
+        const maxWidthPx = W * 0.9;
+        const lines = wrapTextToLines(state.text, maxWidthPx);
+        if (lines.length === 0) return;
 
         const x = state.x * W;
         const y = state.y * H;
