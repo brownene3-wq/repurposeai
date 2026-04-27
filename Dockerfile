@@ -49,11 +49,15 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY . .
 
 # Start PO token provider in background, verify plugin, then start the app
-CMD pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provider 2>/dev/null; \
+# yt-dlp upgrade output is now visible in Railway logs (was 2>/dev/null which
+# silently hid failed pip upgrades — and a stale yt-dlp is the #1 cause of
+# YouTube downloads breaking).
+CMD echo "=== Upgrading yt-dlp at boot ===" ; \
+    pip3 install --break-system-packages --upgrade yt-dlp bgutil-ytdlp-pot-provider 2>&1 | tail -8 || echo "yt-dlp upgrade failed — continuing with bundled version" ; \
+    yt-dlp --version 2>&1 | head -1 ; \
     node /opt/pot-provider/server/build/main.js & \
     sleep 2 && \
     echo "=== yt-dlp plugin check ===" && \
     yt-dlp --list-extractors 2>&1 | grep -i "pot\|bgutil" || echo "No POT plugin found in extractors" && \
-    yt-dlp -v --skip-download --js-runtimes node --remote-components ejs:github --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" "https://www.youtube.com/watch?v=jNQXAC9IVRw" 2>&1 | tail -30 || echo "Plugin test done" && \
     echo "=== Starting server ===" && \
     node server.js

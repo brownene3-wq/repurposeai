@@ -41,11 +41,27 @@ const YTDLP_COMMON_ARGS = [
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-  '--js-runtimes', 'node',
-  '--remote-components', 'ejs:github',
   '--retries', '3',
   '--extractor-retries', '3',
+];
+
+// YouTube ships frequent anti-bot updates; no single yt-dlp strategy stays
+// reliable for long. We cycle through several player_client backends and
+// keep the first one that produces a real file. Order is fastest/most-
+// reliable first. The bgutil POT provider plugin is the historical default
+// but breaks the moment its localhost server goes down — keep it as a last
+// resort, not the first choice.
+const YTDLP_CLIENT_STRATEGIES = [
+  { name: 'ios',                args: ['--extractor-args', 'youtube:player_client=ios'] },
+  { name: 'mweb',               args: ['--extractor-args', 'youtube:player_client=mweb'] },
+  { name: 'tv',                 args: ['--extractor-args', 'youtube:player_client=tv'] },
+  { name: 'android',            args: ['--extractor-args', 'youtube:player_client=android'] },
+  { name: 'web_safari',         args: ['--extractor-args', 'youtube:player_client=web_safari'] },
+  { name: 'bgutil-pot-provider', args: [
+      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+    ] },
 ];
 
 // Validate YouTube URL
@@ -66,6 +82,33 @@ function extractVideoId(url) {
 }
 
 // Download YouTube video using yt-dlp with ytdl-core fallback
+function tryYtDlpStrategy(strategy, videoUrl, outputPath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--no-playlist',
+      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+      '--merge-output-format', 'mp4',
+      '-o', outputPath,
+      '--no-part',
+      '--force-overwrites',
+      ...YTDLP_COMMON_ARGS,
+      ...strategy.args,
+      videoUrl,
+    ];
+    const proc = spawn(ytdlpPath, args);
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', reject);
+    proc.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error('exit ' + code + ': ' + stderr.slice(-500).trim()));
+    });
+    // 90s per strategy — six strategies × 90s = 9min worst case, but most
+    // either succeed in <20s or fail fast.
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('strategy timed out')); }, 90000);
+  });
+}
+
 async function downloadYouTubeVideo(videoUrl) {
   const videoId = extractVideoId(videoUrl) || uuidv4().slice(0, 8);
   const outputPath = path.join(uploadDir, `yt-reframe-${videoId}.mp4`);
@@ -73,56 +116,49 @@ async function downloadYouTubeVideo(videoUrl) {
   // Clean up any existing file
   try { fs.unlinkSync(outputPath); } catch (e) {}
 
-  // Strategy 1: yt-dlp
-  if (ytdlpPath) {
-    try {
-      console.log(`[AI Reframe] Downloading ${videoUrl} via yt-dlp...`);
-      await new Promise((resolve, reject) => {
-        const proc = spawn(ytdlpPath, [
-          '--no-playlist',
-          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-          '--merge-output-format', 'mp4',
-          '-o', outputPath,
-          '--no-part',
-          '--force-overwrites',
-          ...YTDLP_COMMON_ARGS,
-          videoUrl
-        ]);
-        let stderr = '';
-        proc.stderr.on('data', (d) => { stderr += d.toString(); });
-        proc.on('error', reject);
-        proc.on('close', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error('yt-dlp exit ' + code + ': ' + stderr.slice(-300)));
-        });
-        // Timeout after 3 minutes
-        setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} reject(new Error('Download timed out')); }, 180000);
-      });
-
-      // yt-dlp may change extension
-      if (!fs.existsSync(outputPath)) {
-        const base = path.join(uploadDir, `yt-reframe-${videoId}`);
-        for (const ext of ['.mp4', '.mkv', '.webm']) {
-          if (fs.existsSync(base + ext)) {
-            fs.renameSync(base + ext, outputPath);
-            break;
-          }
-        }
-      }
-
-      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
-        console.log(`[AI Reframe] yt-dlp download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+  function findOutputFile() {
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) return outputPath;
+    // yt-dlp may have written a different extension
+    const base = path.join(uploadDir, `yt-reframe-${videoId}`);
+    for (const ext of ['.mp4', '.mkv', '.webm', '.m4a']) {
+      const p = base + ext;
+      if (fs.existsSync(p) && fs.statSync(p).size > 10000) {
+        if (p !== outputPath) try { fs.renameSync(p, outputPath); } catch (_) {}
         return outputPath;
       }
-    } catch (err) {
-      console.log(`[AI Reframe] yt-dlp failed: ${err.message.slice(0, 200)}`);
+    }
+    return null;
+  }
+
+  const failures = [];
+
+  // Strategy 1: yt-dlp, cycling through player_client backends
+  if (ytdlpPath) {
+    for (const strat of YTDLP_CLIENT_STRATEGIES) {
+      try {
+        console.log(`[AI Reframe] yt-dlp ${strat.name} → ${videoUrl}`);
+        await tryYtDlpStrategy(strat, videoUrl, outputPath);
+        const got = findOutputFile();
+        if (got) {
+          console.log(`[AI Reframe] yt-dlp ${strat.name} succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
+          return got;
+        }
+        failures.push(`${strat.name}: no file produced`);
+      } catch (err) {
+        const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
+        console.log(`[AI Reframe] yt-dlp ${strat.name} failed: ${msg}`);
+        failures.push(`${strat.name}: ${msg}`);
+        // Keep going — try the next strategy
+      }
+      // Clean up partials between strategies
+      try { fs.unlinkSync(outputPath); } catch (e) {}
     }
   }
 
-  // Strategy 2: @distube/ytdl-core fallback
+  // Strategy 2: @distube/ytdl-core fallback (different extraction code path)
   if (ytdl) {
     try {
-      console.log(`[AI Reframe] Trying ytdl-core fallback for ${videoUrl}...`);
+      console.log(`[AI Reframe] ytdl-core fallback → ${videoUrl}`);
       await new Promise((resolve, reject) => {
         const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
         const writeStream = fs.createWriteStream(outputPath);
@@ -130,19 +166,25 @@ async function downloadYouTubeVideo(videoUrl) {
         stream.on('error', reject);
         writeStream.on('finish', resolve);
         writeStream.on('error', reject);
-        setTimeout(() => { stream.destroy(); reject(new Error('ytdl-core download timed out')); }, 180000);
+        setTimeout(() => { stream.destroy(); reject(new Error('ytdl-core timed out')); }, 180000);
       });
-
-      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
-        console.log(`[AI Reframe] ytdl-core download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
-        return outputPath;
+      const got = findOutputFile();
+      if (got) {
+        console.log(`[AI Reframe] ytdl-core succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
+        return got;
       }
+      failures.push('ytdl-core: no file produced');
     } catch (err) {
-      console.log(`[AI Reframe] ytdl-core fallback failed: ${err.message.slice(0, 200)}`);
+      const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
+      console.log(`[AI Reframe] ytdl-core failed: ${msg}`);
+      failures.push(`ytdl-core: ${msg}`);
     }
   }
 
-  throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or unavailable.');
+  // All strategies exhausted. Log the full failure trail server-side so we
+  // can diagnose from Railway logs without leaking it to the user.
+  console.error(`[AI Reframe] ALL download strategies failed for ${videoUrl}:\n  - ` + failures.join('\n  - '));
+  throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or YouTube may be blocking automated downloads. Try uploading the file directly.');
 }
 
 // Setup directories
