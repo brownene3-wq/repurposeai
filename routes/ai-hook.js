@@ -362,59 +362,54 @@ ${pageStyles}
         </style>
       </div>
 
-      <!-- Link Input & Upload Options -->
+      <!-- Quick Import Bar (input mode selector + active panel) -->
       <div style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle)">
-        <div style="display:flex;gap:8px;margin-bottom:1rem;width:100%;max-width:600px;margin-left:auto;margin-right:auto">
-          <div style="position:relative;flex:1">
-            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
-            <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" readonly style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem;cursor:text" onclick="this.removeAttribute('readonly');this.focus()">
-          </div>
-          <button type="button" onclick="document.getElementById('heroLinkInput').removeAttribute('readonly');document.getElementById('heroLinkInput').focus()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1.25rem">
+          <button type="button" id="modeUrlBtn" onclick="setInputMode('youtube')" style="padding:12px 24px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">🔗 URL Input</button>
+          <button type="button" id="modeUploadBtn" onclick="setInputMode('upload')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">⬆ Upload</button>
+          <button type="button" id="modeTextBtn" onclick="setInputMode('text')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">📝 Text/Transcript</button>
         </div>
-        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <button type="button" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
-          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
-          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
-        </div>
-        <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem">You can upload videos up to 120 minutes long.</p>
-      </div>
 
-
-
-      <div class="input-section">
-        <form id="hookForm">
-          <div class="form-group">
-            <label for="inputType">Input Type</label>
-            <select id="inputType" name="inputType" required onchange="toggleInputType()">
-              <option value="">Select input type</option>
-              <option value="upload">Upload Video</option>
-              <option value="youtube">YouTube URL</option>
-              <option value="text">Text/Transcript</option>
-            </select>
+        <!-- URL Input panel -->
+        <div id="qibUrlPanel" style="display:block">
+          <div style="display:flex;gap:8px;width:100%;max-width:600px;margin:0 auto">
+            <div style="position:relative;flex:1">
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
+              <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
+            </div>
+            <button type="button" id="heroImportBtn" onclick="document.getElementById('youtubeUrl').focus()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
           </div>
+        </div>
 
-          <div id="uploadContainer" style="display: none;" class="upload-zone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+        <!-- Upload panel -->
+        <div id="qibUploadPanel" style="display:none">
+          <div class="upload-zone" id="uploadContainer" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
             <h3>📹 Drop your video here</h3>
             <p>Or click to browse</p>
             <button type="button" class="upload-button" onclick="document.getElementById('videoFile').click()">Select Video</button>
             <input type="file" id="videoFile" style="display:none" accept="video/*" onchange="handleFileSelect(event)">
             <p id="fileName" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;"></p>
           </div>
-
-          <div id="youtubeContainer" style="display: none;">
-            <div class="form-group">
-              <label for="youtubeUrl">YouTube URL</label>
-              <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="https://www.youtube.com/watch?v=..." style="width: 100%; padding: 0.75rem; background: var(--dark-2); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: var(--text); font-family: inherit; font-size: 0.9rem;">
-            </div>
+          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:1rem">
+            <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
+            <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
           </div>
+          <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem">You can upload videos up to 120 minutes long.</p>
+        </div>
 
-          <div id="textContainer" style="display: none;">
-            <div class="form-group">
-              <label for="transcript">Video Transcript or Description</label>
-              <textarea id="transcript" name="transcript" rows="4" placeholder="Paste your video transcript or describe the video content..."></textarea>
-            </div>
+        <!-- Text/Transcript panel -->
+        <div id="qibTextPanel" style="display:none">
+          <div class="form-group" style="margin-bottom:0;max-width:800px;margin-left:auto;margin-right:auto">
+            <label for="transcript" style="display:block;margin-bottom:0.5rem;font-weight:600;color:var(--text);font-size:0.95rem">Video Transcript or Description</label>
+            <textarea id="transcript" name="transcript" rows="5" placeholder="Paste your video transcript or describe the video content..." style="width:100%;padding:0.75rem;background:var(--dark-2);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.9rem;resize:vertical"></textarea>
           </div>
+        </div>
+      </div>
 
+
+
+      <div class="input-section">
+        <form id="hookForm">
           <div class="form-row-3">
             <div class="form-group">
               <label for="style">Hook Style</label>
@@ -510,8 +505,51 @@ ${pageStyles}
     let currentVideoFile = null;
     let hookData = null;
 
+    // Quick Import Bar mode state — single source of truth for input type
+    var selectedInputMode = 'youtube'; // 'youtube' | 'upload' | 'text'
+
     // Voice provider state
     var activeVoiceProvider = 'free';
+
+    function setInputMode(mode) {
+      selectedInputMode = mode;
+      var urlPanel = document.getElementById('qibUrlPanel');
+      var uploadPanel = document.getElementById('qibUploadPanel');
+      var textPanel = document.getElementById('qibTextPanel');
+      var urlBtn = document.getElementById('modeUrlBtn');
+      var uploadBtn = document.getElementById('modeUploadBtn');
+      var textBtn = document.getElementById('modeTextBtn');
+
+      // Hide all panels
+      urlPanel.style.display = 'none';
+      uploadPanel.style.display = 'none';
+      textPanel.style.display = 'none';
+
+      // Reset all buttons to inactive
+      [urlBtn, uploadBtn, textBtn].forEach(function(btn) {
+        btn.style.background = 'var(--dark-2)';
+        btn.style.color = 'var(--text-muted)';
+        btn.style.borderColor = 'rgba(255,255,255,0.1)';
+      });
+
+      // Show active panel and highlight active button
+      var activeBtn;
+      if (mode === 'youtube') {
+        urlPanel.style.display = 'block';
+        activeBtn = urlBtn;
+      } else if (mode === 'upload') {
+        uploadPanel.style.display = 'block';
+        activeBtn = uploadBtn;
+      } else if (mode === 'text') {
+        textPanel.style.display = 'block';
+        activeBtn = textBtn;
+      }
+      if (activeBtn) {
+        activeBtn.style.background = 'var(--primary)';
+        activeBtn.style.color = '#fff';
+        activeBtn.style.borderColor = 'var(--primary)';
+      }
+    }
 
     function switchVoiceProvider(provider) {
       activeVoiceProvider = provider;
@@ -600,13 +638,6 @@ ${pageStyles}
       }, duration);
     }
 
-    function toggleInputType() {
-      const type = document.getElementById('inputType').value;
-      document.getElementById('uploadContainer').style.display = type === 'upload' ? 'block' : 'none';
-      document.getElementById('youtubeContainer').style.display = type === 'youtube' ? 'block' : 'none';
-      document.getElementById('textContainer').style.display = type === 'text' ? 'block' : 'none';
-    }
-
     function handleDragOver(e) {
       e.preventDefault();
       document.getElementById('uploadContainer').classList.add('dragover');
@@ -637,7 +668,7 @@ ${pageStyles}
     document.getElementById('hookForm').addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      const inputType = document.getElementById('inputType').value;
+      const inputType = selectedInputMode;
       const style = document.getElementById('style').value;
       const voice = getSelectedVoice();
       const platform = document.getElementById('platform').value;
@@ -761,15 +792,18 @@ ${pageStyles}
 
     ${themeScript}
   
-      // Rotating placeholder for hero link input
+      // Rotating placeholder for the URL input in the Quick Import Bar
       (function(){
-        var heroInput = document.getElementById('heroLinkInput');
-        if(!heroInput) return;
+        var urlInput = document.getElementById('youtubeUrl');
+        if(!urlInput) return;
         var placeholders = ['Drop a YouTube link','Drop a Rumble link','Drop a Zoom link','Drop a Twitch link'];
         var idx = 0;
         setInterval(function(){
+          // Only rotate when the field is empty and not focused, so we never overwrite user typing
+          if (document.activeElement === urlInput) return;
+          if (urlInput.value && urlInput.value.length > 0) return;
           idx = (idx + 1) % placeholders.length;
-          heroInput.placeholder = placeholders[idx];
+          urlInput.placeholder = placeholders[idx];
         }, 2500);
       })();
 </script>
