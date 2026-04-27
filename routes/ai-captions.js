@@ -144,20 +144,58 @@ const captionPresets = {
 };
 
 // Helper: Validate YouTube URL
+//
+// Accepts every shape of YouTube link a user is likely to paste, with
+// particular care taken for Shorts, which are most commonly shared from the
+// mobile app as `https://m.youtube.com/shorts/<id>?...`. Earlier versions
+// of this validator only allowed `(www.)?youtube.com`, so mobile Shorts
+// links plus music.youtube.com Shorts and youtube-nocookie embeds all
+// failed silently with "Invalid YouTube URL" before yt-dlp ever ran.
+//
+// Patterns covered:
+//   <subdomain>.youtube.com/watch?v=ID
+//   <subdomain>.youtube.com/shorts/ID
+//   <subdomain>.youtube.com/embed/ID
+//   <subdomain>.youtube.com/live/ID
+//   <subdomain>.youtube.com/v/ID
+//   <subdomain>.youtu.be/ID
+//   <subdomain>.youtube-nocookie.com/(embed|v)/ID
+// where <subdomain> can be www, m, music, gaming, kids, etc. (any host
+// label) or absent.
 function isValidYouTubeUrl(url) {
+  const s = String(url || '').trim();
+  if (!s) return false;
   const patterns = [
-    /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]+/,
-    /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]+/,
-    /^(https?:\/\/)?youtu\.be\/[\w-]+/,
-    /^(https?:\/\/)?(www\.)?youtube\.com\/embed\/[\w-]+/,
+    /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)?youtube\.com\/(?:watch\?[^#]*\bv=|shorts\/|embed\/|live\/|v\/|e\/)[A-Za-z0-9_-]{6,}/i,
+    /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)?youtu\.be\/[A-Za-z0-9_-]{6,}/i,
+    /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)?youtube-nocookie\.com\/(?:embed\/|v\/)[A-Za-z0-9_-]{6,}/i
   ];
-  return patterns.some(p => p.test(url.trim()));
+  return patterns.some(p => p.test(s));
 }
 
 // Helper: Extract YouTube video ID
+//
+// Pulls the 11-ish character video ID from any of the link shapes the
+// validator accepts. Tries the more specific Shorts/live/embed/v patterns
+// first so a URL like `youtube.com/shorts/ABC?v=XYZ` returns ABC (the
+// actual Shorts video) instead of the unrelated `v=` query value.
 function extractVideoId(url) {
-  const match = url.match(/(?:v=|\/shorts\/|youtu\.be\/|\/embed\/)([\w-]+)/);
-  return match ? match[1] : null;
+  if (!url) return null;
+  const s = String(url).trim();
+  const patterns = [
+    /\/shorts\/([A-Za-z0-9_-]{6,})/i,
+    /\/live\/([A-Za-z0-9_-]{6,})/i,
+    /\/embed\/([A-Za-z0-9_-]{6,})/i,
+    /\/v\/([A-Za-z0-9_-]{6,})/i,
+    /\/e\/([A-Za-z0-9_-]{6,})/i,
+    /[?&]v=([A-Za-z0-9_-]{6,})/i,
+    /youtu\.be\/([A-Za-z0-9_-]{6,})/i
+  ];
+  for (const p of patterns) {
+    const m = s.match(p);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 // Helper: Get video duration
@@ -269,7 +307,13 @@ async function downloadYouTubeVideo(videoUrl) {
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
-          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          // Cap the longer dimension at 1920 instead of capping height alone.
+          // YouTube Shorts are vertical 1080x1920 — `height<=1080` was
+          // silently downgrading them to a lower-resolution fallback (or
+          // failing on Shorts that have no <=1080 ladder). The 1920 cap
+          // works for both landscape 1080p (1920x1080) and portrait
+          // Shorts (1080x1920).
+          '-f', 'bestvideo[height<=1920][width<=1920]+bestaudio/best[height<=1920][width<=1920]/best',
           '--merge-output-format', 'mp4',
           '-o', outputPath,
           '--no-part',
@@ -1508,7 +1552,7 @@ router.get('/', requireAuth, (req, res) => {
 
               <div class="input-group">
                 <label class="input-label">YouTube URL</label>
-                <input type="text" class="input-field" id="youtubeUrl" placeholder="https://youtube.com/watch?v=...">
+                <input type="text" class="input-field" id="youtubeUrl" placeholder="youtube.com/watch?v=… or youtube.com/shorts/…">
                 <button class="btn-primary" style="width: 100%; margin-top: 0.5rem;" onclick="downloadFromYouTube()">Load Video</button>
               </div>
 
