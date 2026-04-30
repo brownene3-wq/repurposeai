@@ -1031,7 +1031,6 @@ ${pageStyles}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(reqBody)
         });
-        }
 
         const data = await response.json();
 
