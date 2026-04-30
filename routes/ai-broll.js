@@ -882,7 +882,7 @@ ${pageStyles}
       <div class="video-modal-actions" style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
         <span id="brollSelectionCount" style="color:var(--text-muted);font-size:0.85rem;margin-right:auto"></span>
         <button type="button" class="btn-cancel" onclick="closeBrollSelectionModal()">Cancel</button>
-        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">✓ Confirm Selection</button>
+        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">Done</button>
       </div>
     </div>
   </div>
@@ -1170,101 +1170,185 @@ ${pageStyles}
 
     ${themeScript}
   
-// ═══ B-Roll Selection Modal (multi-select) ═══
+// ═══ B-Roll Selection Modal (v2: visual feedback + inline preview + selection order) ═══
+window.__selectedClipIds = []; // tracks selection ORDER (push on select, splice on deselect)
+
+function _brollSelected(id) { return window.__selectedClipIds.indexOf(id) >= 0; }
+
+function _brollApplyCardStyle(card, selected) {
+  if (!card) return;
+  if (selected) {
+    card.style.borderColor = 'var(--primary)';
+    card.style.boxShadow = '0 0 0 2px var(--primary), 0 4px 18px rgba(108,58,237,0.35)';
+    card.style.transform = 'translateY(-2px)';
+  } else {
+    card.style.borderColor = 'var(--border-subtle)';
+    card.style.boxShadow = 'none';
+    card.style.transform = 'none';
+  }
+  var indicator = card.querySelector('.broll-select-indicator');
+  if (indicator) {
+    if (selected) {
+      indicator.style.background = 'var(--primary)';
+      indicator.style.borderColor = 'var(--primary)';
+      indicator.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 8.5L6.5 12L13 4.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    } else {
+      indicator.style.background = 'rgba(0,0,0,0.55)';
+      indicator.style.borderColor = 'rgba(255,255,255,0.6)';
+      indicator.innerHTML = '';
+    }
+  }
+}
+
+function _brollToggleSelect(id, card) {
+  var idx = window.__selectedClipIds.indexOf(id);
+  if (idx >= 0) {
+    window.__selectedClipIds.splice(idx, 1);
+  } else {
+    window.__selectedClipIds.push(id);
+  }
+  _brollApplyCardStyle(card, _brollSelected(id));
+  updateBrollSelectionCount();
+}
+
+function _brollTogglePreview(card, item) {
+  var thumbDiv = card.querySelector('.broll-thumb-area');
+  if (!thumbDiv) return;
+  var existing = thumbDiv.querySelector('video');
+  if (existing) {
+    try { existing.pause(); } catch (_) {}
+    existing.remove();
+    var btn = thumbDiv.querySelector('.broll-preview-btn');
+    if (btn) btn.textContent = '▶ Preview';
+    return;
+  }
+  var v = document.createElement('video');
+  v.controls = true;
+  v.autoplay = true;
+  v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:#000;z-index:1';
+  v.src = item.videoPreviewUrl || item.videoDownloadUrl || '';
+  v.addEventListener('ended', function () { try { v.remove(); } catch (_) {} var b = thumbDiv.querySelector('.broll-preview-btn'); if (b) b.textContent = '▶ Preview'; });
+  v.addEventListener('error', function () { showToast('Could not load preview'); try { v.remove(); } catch (_) {} });
+  thumbDiv.appendChild(v);
+  var btn = thumbDiv.querySelector('.broll-preview-btn');
+  if (btn) btn.textContent = '⏹ Stop';
+}
+
 function openBrollSelectionModal(items) {
   var modal = document.getElementById('brollSelectionModal');
   var grid = document.getElementById('brollSelectionGrid');
   var subtitle = document.getElementById('brollSelectionSubtitle');
   if (!modal || !grid) return;
+  window.__selectedClipIds = []; // reset selection order on each open
   grid.innerHTML = '';
-  if (subtitle) subtitle.textContent = items.length + ' clips suggested by AI based on your video transcript. Check the ones you want, then Confirm.';
+  if (subtitle) subtitle.textContent = items.length + ' clips suggested by AI based on your video transcript. Tap a card to select. Tap Preview to play it inline.';
+
   items.forEach(function (item, i) {
     var card = document.createElement('div');
-    card.style.cssText = 'background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:border-color 0.15s,transform 0.15s';
+    card.style.cssText = 'background:var(--dark-2);border:2px solid var(--border-subtle);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:all 0.15s';
     card.dataset.itemId = item.id;
     var why = item.sceneDescription || item.searchQueryUsed || '';
     var thumb = (item.thumbnailUrl || '').replace(/'/g, '%27');
     var name = item.name || ('Clip ' + (i+1));
+
     var thumbDiv = document.createElement('div');
+    thumbDiv.className = 'broll-thumb-area';
     thumbDiv.style.cssText = 'position:relative;aspect-ratio:16/9;background:#000 center/cover no-repeat;background-image:url("' + thumb + '")';
+
+    // Upper-right selection indicator (circular check)
+    var indicator = document.createElement('div');
+    indicator.className = 'broll-select-indicator';
+    indicator.style.cssText = 'position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.55);border:2px solid rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;z-index:2;transition:all 0.15s;pointer-events:none';
+    thumbDiv.appendChild(indicator);
+
+    // Duration badge in upper-LEFT (moved out of upper-right where indicator now lives)
     var dur = document.createElement('div');
-    dur.style.cssText = 'position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 8px;border-radius:6px;font-size:0.75rem';
+    dur.style.cssText = 'position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 8px;border-radius:6px;font-size:0.75rem;z-index:2';
     dur.textContent = (item.duration || 0) + 's';
     thumbDiv.appendChild(dur);
+
+    // Preview button (bottom-left)
     var prevBtn = document.createElement('button');
     prevBtn.type = 'button';
-    prevBtn.style.cssText = 'position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,0.65);color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer';
+    prevBtn.className = 'broll-preview-btn';
+    prevBtn.style.cssText = 'position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,0.75);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;z-index:2';
     prevBtn.textContent = '▶ Preview';
     prevBtn.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (typeof selectBroll === 'function') selectBroll(item.id);
+      _brollTogglePreview(card, item);
     });
     thumbDiv.appendChild(prevBtn);
+
     card.appendChild(thumbDiv);
+
+    // Info area below thumbnail
     var info = document.createElement('div');
-    info.style.cssText = 'padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:6px';
-    var lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;align-items:flex-start;gap:8px;cursor:pointer;user-select:none';
-    var cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.className = 'broll-card-checkbox';
-    cb.dataset.itemId = item.id;
-    cb.checked = true;
-    cb.style.cssText = 'margin-top:3px;cursor:pointer;accent-color:var(--primary)';
-    cb.addEventListener('change', updateBrollSelectionCount);
-    lbl.appendChild(cb);
-    var span = document.createElement('span');
-    span.style.flex = '1';
-    var ttl = document.createElement('span');
-    ttl.style.cssText = 'font-weight:600;color:var(--text);font-size:0.9rem;display:block;line-height:1.3';
+    info.style.cssText = 'padding:10px 12px;flex:1';
+    var ttl = document.createElement('div');
+    ttl.style.cssText = 'font-weight:600;color:var(--text);font-size:0.9rem;line-height:1.3;margin-bottom:4px';
     ttl.textContent = name;
-    span.appendChild(ttl);
+    info.appendChild(ttl);
     if (why) {
-      var w = document.createElement('span');
-      w.style.cssText = 'color:var(--text-muted);font-size:0.75rem;display:block;margin-top:4px;line-height:1.4';
+      var w = document.createElement('div');
+      w.style.cssText = 'color:var(--text-muted);font-size:0.75rem;line-height:1.4';
       w.textContent = '— ' + why;
-      span.appendChild(w);
+      info.appendChild(w);
     }
-    lbl.appendChild(span);
-    info.appendChild(lbl);
     card.appendChild(info);
+
+    // Click anywhere on card (except preview button) → toggle selection
+    card.addEventListener('click', function (e) {
+      // Don't toggle when interacting with controls/video
+      if (e.target.closest('.broll-preview-btn') || e.target.closest('video')) return;
+      _brollToggleSelect(item.id, card);
+    });
+
     grid.appendChild(card);
   });
+
   modal.style.display = 'flex';
   updateBrollSelectionCount();
 }
+
 function updateBrollSelectionCount() {
-  var checked = document.querySelectorAll('#brollSelectionGrid .broll-card-checkbox:checked').length;
-  var total = document.querySelectorAll('#brollSelectionGrid .broll-card-checkbox').length;
+  var checked = window.__selectedClipIds.length;
+  var total = document.querySelectorAll('#brollSelectionGrid > div').length;
   var countEl = document.getElementById('brollSelectionCount');
   var btn = document.getElementById('brollConfirmBtn');
   if (countEl) countEl.textContent = checked + ' of ' + total + ' selected';
   if (btn) {
-    btn.textContent = '✓ Confirm Selection (' + checked + ')';
+    btn.textContent = checked > 0 ? ('Done (' + checked + ')') : 'Done';
     btn.disabled = checked === 0;
     btn.style.opacity = checked === 0 ? '0.5' : '1';
     btn.style.cursor = checked === 0 ? 'not-allowed' : 'pointer';
   }
 }
+
 function closeBrollSelectionModal() {
   var modal = document.getElementById('brollSelectionModal');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    // Stop any inline previews still playing.
+    modal.querySelectorAll('video').forEach(function (v) { try { v.pause(); v.remove(); } catch (_) {} });
+    modal.style.display = 'none';
+  }
 }
+
 async function confirmBrollSelection() {
-  var checked = Array.from(document.querySelectorAll('#brollSelectionGrid .broll-card-checkbox:checked'));
-  if (checked.length === 0) {
+  var ids = (window.__selectedClipIds || []).slice();
+  if (ids.length === 0) {
     showToast('Pick at least one clip first');
     return;
   }
   var btn = document.getElementById('brollConfirmBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Staging…'; }
   var staged = 0, failed = 0;
-  for (var i = 0; i < checked.length; i++) {
-    var id = checked[i].dataset.itemId;
+  // Iterate IN SELECTION ORDER so the editor V1 timeline matches the user\'s selection sequence.
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i];
     var item = (window.brollItemsData || []).find(function (x) { return x.id === id; });
     if (!item) { failed++; continue; }
     var dl = item.videoDownloadUrl || item.videoPreviewUrl;
-    if (!dl || !/^https:\\/\\//i.test(dl)) { failed++; continue; }
+    if (!dl || !/^https:\/\//i.test(dl)) { failed++; continue; }
     try {
       var r = await fetch('/ai-broll/download-inline', {
         method: 'POST',
@@ -1286,23 +1370,16 @@ async function confirmBrollSelection() {
   }
   if (btn) { btn.disabled = false; }
   closeBrollSelectionModal();
+
   if (staged > 0) {
-    // If a primary video is already staged, auto-open the editor — single-click
-    // path from "Add B-Roll in 1 Click" all the way to a populated timeline.
-    if (window.__aiBrollHasPrimary && window.__aiBrollHasPrimary()) {
-      var msg = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + ', opening editor…';
-      if (failed > 0) msg += ' (' + failed + ' failed to download)';
-      showToast(msg);
-      // Tiny delay so the toast renders before the redirect.
-      setTimeout(function () {
-        if (window.__aiBrollOpenInEditor) window.__aiBrollOpenInEditor();
-      }, 400);
-    } else {
-      var msg2 = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + '. ';
-      msg2 += 'Now upload or import a primary video, then click "Open in Video Editor" to add these to the timeline.';
-      if (failed > 0) msg2 += ' (' + failed + ' failed.)';
-      showToast(msg2);
-    }
+    var msg = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + ', opening editor…';
+    if (failed > 0) msg += ' (' + failed + ' failed to download)';
+    showToast(msg);
+    // Always open editor — server now allows projects without a primary, so a
+    // selection-only project still produces a populated V1 timeline.
+    setTimeout(function () {
+      if (window.__aiBrollOpenInEditor) window.__aiBrollOpenInEditor();
+    }, 400);
   } else {
     showToast('Could not stage any clips. Try again.');
   }
@@ -2495,10 +2572,10 @@ router.post('/create-project', requireAuth, async (req, res) => {
     const { projectOps } = require('../db/database');
     const body = req.body || {};
     const primary = body.primary || {};
-    if (!primary.filename) {
-      return res.status(400).json({ error: 'A primary video is required to create a project' });
-    }
     const broll = Array.isArray(body.broll) ? body.broll.filter(b => b && b.filename) : [];
+    if (!primary.filename && broll.length === 0) {
+      return res.status(400).json({ error: 'A primary video or at least one B-roll clip is required to create a project' });
+    }
     const project = await projectOps.create(req.user.id, {
       name: body.name || 'AI B-Roll Project',
       primaryFilename: primary.filename,

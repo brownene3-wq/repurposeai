@@ -6424,8 +6424,26 @@ setTimeout(function sidebarLayoutFix(){
       function run() {
         try {
           var proj = window.__INITIAL_PROJECT__;
-          if (!proj || !proj.primary || !proj.primary.filename) return;
+          if (!proj) return;
           var prim = proj.primary;
+          var brollList = Array.isArray(proj.broll) ? proj.broll : [];
+          // If neither a primary nor any broll, nothing to do.
+          if ((!prim || !prim.filename) && brollList.length === 0) return;
+
+          // If no primary but we have broll, promote the first broll clip to be the
+          // "active" video for the player + duration calculations. This is what
+          // makes B-roll-only projects (created from the AI B-Roll selection modal
+          // without an imported primary) populate the editor correctly.
+          if ((!prim || !prim.filename) && brollList.length > 0) {
+            var first = brollList[0];
+            prim = {
+              filename: first.filename,
+              duration: first.duration,
+              serveUrl: first.serveUrl || ('/video-editor/download/' + first.filename)
+            };
+            // Remove the promoted clip from brollList so it's not added twice.
+            brollList = brollList.slice(1);
+          }
 
           // ——— 1. Set the primary as the currentVideoFile ———
           var primaryData = {
@@ -6487,7 +6505,7 @@ setTimeout(function sidebarLayoutFix(){
           }
 
           // ——— 6. Append B-roll clips to the V1 track, sequenced after ———
-          var broll = Array.isArray(proj.broll) ? proj.broll : [];
+          var broll = brollList;
           broll.forEach(function (clip) {
             if (!clip || !clip.filename) return;
             var srv = clip.serveUrl || ('/video-editor/download/' + clip.filename);
@@ -6553,11 +6571,11 @@ router.get('/:projectId(p_[a-f0-9]+)', requireAuth, async (req, res, next) => {
     res.locals.initialProject = {
       id: project.id,
       name: project.name,
-      primary: {
+      primary: project.primary_filename ? {
         filename: project.primary_filename,
         duration: Number(project.primary_duration) || 0,
         serveUrl: project.primary_serve_url || ('/video-editor/download/' + project.primary_filename)
-      },
+      } : null,
       broll: (project.broll || []).map(b => ({
         filename: b.filename,
         name: b.name || b.filename,
