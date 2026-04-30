@@ -3080,15 +3080,69 @@
       });
     });
 
-    // ── Task #74 — AI flow: Analyze, highlight, hover-pick ──
+    // ── Task #74/#75 — AI flow: Analyze, highlight, hover-pick ──
+    // The selected V1 clip is the analysis source. Re-resolve at click
+    // time so the user can change selection while the modal is open.
     var analyzeBtn = panel.querySelector('#broAnalyzeBtn');
     var aiBody     = panel.querySelector('#broAiBody');
     var aiStatus   = panel.querySelector('#broAiStatus');
+
+    function getSelectedV1Clip(){
+      // Strictly: the user-selected V1 clip with a server-resolvable mediaUrl.
+      var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+      if (sel && sel.dataset.mediaUrl &&
+          sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+          sel.dataset.clipType !== 'text' &&
+          sel.dataset.clipType !== 'motion'){
+        return sel;
+      }
+      return null;
+    }
+    function clipDisplayName(c){
+      if (!c) return '';
+      return c.dataset.fileName || c.dataset.serverFilename || 'clip';
+    }
+    function refreshSourceLabel(){
+      var sel = getSelectedV1Clip();
+      if (sel){
+        target = sel;
+        aiStatus.style.color = '#8886a0';
+        aiStatus.textContent = 'Source: ' + clipDisplayName(sel);
+      } else {
+        aiStatus.style.color = '#fb923c';
+        aiStatus.textContent = 'Select a V1 video clip on the timeline to analyze';
+      }
+    }
+    refreshSourceLabel();
+    // Keep the source-label in sync if the user clicks a different
+    // clip (or deselects) while the modal is open.
+    var _broSelPoll = setInterval(refreshSourceLabel, 600);
+    bk.addEventListener('remove', function(){ clearInterval(_broSelPoll); });
+    // Also clear the poller when the modal node is detached.
+    var _broCleanupObs = new MutationObserver(function(){
+      if (!document.body.contains(bk)){
+        clearInterval(_broSelPoll);
+        try { _broCleanupObs.disconnect(); } catch(_){}
+      }
+    });
+    try { _broCleanupObs.observe(document.body, { childList: true }); } catch(_){}
+
     analyzeBtn.addEventListener('click', async function(){
       if (analyzeBtn.disabled) return;
+      // Re-pick the source clip RIGHT NOW so changing selection while
+      // the modal is open is reflected in the analysis.
+      var src = getSelectedV1Clip();
+      if (!src){
+        aiStatus.style.color = '#fb923c';
+        aiStatus.textContent = 'Select a V1 video clip on the timeline first, then click Analyze';
+        toast('Select a V1 clip on the timeline to analyze');
+        return;
+      }
+      target = src;
       analyzeBtn.disabled = true;
       analyzeBtn.style.opacity = '0.6';
-      aiStatus.textContent = 'Transcribing + analyzing…';
+      aiStatus.style.color = '#a78bfa';
+      aiStatus.textContent = 'Transcribing + analyzing ' + clipDisplayName(src) + '…';
       aiBody.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px;color:#a78bfa;font-size:12px;padding:30px 0;justify-content:center">' +
           '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></span>' +
@@ -3103,6 +3157,7 @@
         if (!rA.ok || !dA.success) throw new Error(dA.error || 'Analysis failed');
         renderTranscriptWithHighlights(dA.chunks || [], dA.suggestions || []);
         var nSug = (dA.suggestions || []).length;
+        aiStatus.style.color = '#8886a0';
         aiStatus.textContent = nSug
           ? (nSug + ' B-Roll suggestion' + (nSug === 1 ? '' : 's') + ' — click any highlight to preview')
           : 'No B-Roll suggestions found for this clip';
@@ -3111,6 +3166,7 @@
           '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
             'Analysis failed: ' + escBHtmlSafe(errA.message || String(errA)) +
           '</div>';
+        aiStatus.style.color = '#ef4444';
         aiStatus.textContent = '';
       } finally {
         analyzeBtn.disabled = false;
