@@ -756,27 +756,53 @@ ${pageStyles}
         </div>
       </div>
 
-      <!-- Media Ingestion (UploadButton row, then URLInputField row; centered) -->
-      <div id="mediaIngestion" style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:1rem;border:1px solid var(--border-subtle);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
-        <!-- Row 1: Upload buttons (now above URL input) -->
-        <div id="uploadButtonRow" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1rem;width:100%">
-          <button type="button" id="uploadPrimaryBtn" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
-          <button type="button" id="gdrivePrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
-          <button type="button" id="dropboxPrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
-          <input type="file" id="primaryFileInput" accept="video/*" style="display:none">
+      <!-- Quick Import Bar (mirrors /ai-hook layout: input mode selector + active panel) -->
+      <div id="quickImportBar" style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:1rem;border:1px solid var(--border-subtle)">
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1.25rem">
+          <button type="button" id="modeUrlBtn" onclick="setBrollInputMode('youtube')" style="padding:12px 24px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">🔗 URL Input</button>
+          <button type="button" id="modeUploadBtn" onclick="setBrollInputMode('upload')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">⬆ Upload</button>
+          <button type="button" id="modeTextBtn" onclick="setBrollInputMode('text')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">📝 Text/Transcript</button>
         </div>
-        <!-- Row 2: URL input field -->
-        <div id="urlInputRow" style="display:flex;gap:8px;width:100%;max-width:600px;margin-left:auto;margin-right:auto">
-          <div style="position:relative;flex:1">
-            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
-            <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
+
+        <!-- URL Input panel (default visible) -->
+        <div id="qibUrlPanel" style="display:block">
+          <div style="display:flex;gap:8px;width:100%;max-width:600px;margin:0 auto">
+            <div style="position:relative;flex:1">
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
+              <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
+            </div>
+            <button type="button" id="heroImportBtn" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
           </div>
-          <button type="button" id="heroImportBtn" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
         </div>
-        <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem;margin-bottom:0">You can upload videos up to 120 minutes long. YouTube, Zoom, Twitch and Rumble links are supported.</p>
+
+        <!-- Upload panel -->
+        <div id="qibUploadPanel" style="display:none">
+          <div class="upload-zone" id="uploadContainer" ondrop="handleBrollDrop(event)" ondragover="handleBrollDragOver(event)" ondragleave="handleBrollDragLeave(event)">
+            <h3>📹 Drop your video here</h3>
+            <p>Or click to browse</p>
+            <button type="button" class="upload-button" onclick="document.getElementById('primaryFileInput').click()">Select Video</button>
+            <p id="fileName" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;"></p>
+          </div>
+          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:1rem">
+            <button type="button" id="gdrivePrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
+            <button type="button" id="dropboxPrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
+          </div>
+          <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem;margin-bottom:0">You can upload videos up to 120 minutes long.</p>
+          <input type="file" id="primaryFileInput" accept="video/*" style="display:none">
+          <button type="button" id="uploadPrimaryBtn" style="display:none"></button>
+        </div>
+
+        <!-- Text/Transcript panel -->
+        <div id="qibTextPanel" style="display:none">
+          <div class="form-group" style="margin-bottom:0;max-width:800px;margin-left:auto;margin-right:auto">
+            <label for="brollTranscript" style="display:block;margin-bottom:0.5rem;font-weight:600;color:var(--text);font-size:0.95rem">Paste a transcript or describe your video</label>
+            <textarea id="brollTranscript" rows="5" placeholder="e.g. This video is about preparing carbonara pasta from scratch — cracking eggs, chopping pancetta, boiling spaghetti, plating with pepper." style="width:100%;padding:0.75rem;background:var(--dark-2);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.9rem;resize:vertical"></textarea>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem">Use this if you don’t want to upload anything — we’ll find B-roll that matches the topics in your text.</p>
+          </div>
+        </div>
       </div>
 
-      <!-- Primary video status + B-roll selections + Create Project -->
+            <!-- Primary video status + B-roll selections + Create Project -->
       <div id="projectStagingCard" style="background:var(--surface);border-radius:16px;padding:1.2rem 1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle);display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
           <div id="primaryStatusText" style="color:var(--text);font-size:0.95rem"></div>
@@ -790,30 +816,6 @@ ${pageStyles}
 
       <div class="input-section broll-container">
         <form id="brollForm">
-          <div class="form-group">
-            <label for="inputType">Input Type</label>
-            <select id="inputType" name="inputType" required onchange="toggleBrollInputType()">
-              <option value="">Select input type</option>
-              <option value="upload">Upload Video</option>
-              <option value="youtube">YouTube URL</option>
-            </select>
-          </div>
-
-          <div id="uploadContainer" style="display: none;" class="upload-zone" ondrop="handleBrollDrop(event)" ondragover="handleBrollDragOver(event)" ondragleave="handleBrollDragLeave(event)">
-            <h3>📹 Drop your video here</h3>
-            <p>Or click to browse</p>
-            <button type="button" class="upload-button" onclick="document.getElementById('brollVideoFile').click()">Select Video</button>
-            <input type="file" id="brollVideoFile" style="display:none" accept="video/*" onchange="handleBrollFileSelect(event)">
-            <p id="brollFileName" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;"></p>
-          </div>
-
-          <div id="youtubeContainer" style="display: none;">
-            <div class="form-group">
-              <label for="youtubeUrl">YouTube URL</label>
-              <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="https://www.youtube.com/watch?v=...">
-            </div>
-          </div>
-
           <div class="tabs">
             <button type="button" class="tab-btn active" data-tab="ai-generated" onclick="switchTab('ai-generated', event)">AI Generated B-Roll</button>
             <button type="button" class="tab-btn" data-tab="stock" onclick="switchTab('stock', event)">Stock B-Roll (Copyright Free)</button>
@@ -821,14 +823,14 @@ ${pageStyles}
 
           <div class="tab-content active" id="ai-generated">
             <div class="form-group">
-              <label for="aiPrompt">Describe the B-Roll you want (optional)</label>
+              <label for="aiPrompt">Theme hint (optional)</label>
               <input type="text" id="aiPrompt" placeholder="e.g., 'nature scenes, flowing water, mountains'">
             </div>
           </div>
 
           <div class="tab-content" id="stock">
             <div class="form-group">
-              <label for="searchTerms">Search Terms for Stock B-Roll</label>
+              <label for="searchTerms">Search terms</label>
               <input type="text" id="searchTerms" placeholder="e.g., 'office, technology, business'">
             </div>
           </div>
@@ -880,36 +882,67 @@ ${pageStyles}
       }, duration);
     }
 
-    function toggleBrollInputType() {
-      const type = document.getElementById('inputType').value;
-      document.getElementById('uploadContainer').style.display = type === 'upload' ? 'block' : 'none';
-      document.getElementById('youtubeContainer').style.display = type === 'youtube' ? 'block' : 'none';
+    // ─── Input mode selector (mirrors /ai-hook) ───────────────────────────
+    function setBrollInputMode(mode) {
+      var panels = {
+        youtube: document.getElementById('qibUrlPanel'),
+        upload:  document.getElementById('qibUploadPanel'),
+        text:    document.getElementById('qibTextPanel')
+      };
+      var btns = {
+        youtube: document.getElementById('modeUrlBtn'),
+        upload:  document.getElementById('modeUploadBtn'),
+        text:    document.getElementById('modeTextBtn')
+      };
+      Object.keys(panels).forEach(function(k){ if (panels[k]) panels[k].style.display = (k === mode) ? 'block' : 'none'; });
+      Object.keys(btns).forEach(function(k){
+        var b = btns[k]; if (!b) return;
+        if (k === mode) {
+          b.style.background = 'var(--primary)';
+          b.style.color = '#fff';
+          b.style.borderColor = 'var(--primary)';
+        } else {
+          b.style.background = 'var(--dark-2)';
+          b.style.color = 'var(--text-muted)';
+          b.style.borderColor = 'rgba(255,255,255,0.1)';
+        }
+      });
+      window.__aiBrollInputMode = mode;
     }
+    window.__aiBrollInputMode = 'youtube';
+    window.setBrollInputMode = setBrollInputMode;
 
+    // Drop-zone handlers (Upload mode). Bridge into the IIFE upload pipeline
+    // by populating primaryFileInput with the dropped file and dispatching
+    // the change event the IIFE already listens for.
     function handleBrollDragOver(e) {
       e.preventDefault();
-      document.getElementById('uploadContainer').classList.add('dragover');
+      var c = document.getElementById('uploadContainer');
+      if (c) c.classList.add('dragover');
     }
-
     function handleBrollDragLeave(e) {
       e.preventDefault();
-      document.getElementById('uploadContainer').classList.remove('dragover');
+      var c = document.getElementById('uploadContainer');
+      if (c) c.classList.remove('dragover');
     }
-
     function handleBrollDrop(e) {
       e.preventDefault();
-      document.getElementById('uploadContainer').classList.remove('dragover');
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        currentBrollVideo = files[0];
-        document.getElementById('brollFileName').textContent = 'Selected: ' + files[0].name;
-      }
-    }
-
-    function handleBrollFileSelect(e) {
-      if (e.target.files.length > 0) {
-        currentBrollVideo = e.target.files[0];
-        document.getElementById('brollFileName').textContent = 'Selected: ' + e.target.files[0].name;
+      var c = document.getElementById('uploadContainer');
+      if (c) c.classList.remove('dragover');
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length > 0) {
+        var input = document.getElementById('primaryFileInput');
+        if (input) {
+          try {
+            var dt = new DataTransfer();
+            dt.items.add(files[0]);
+            input.files = dt.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (_) {
+            var fn = document.getElementById('fileName');
+            if (fn) fn.textContent = 'Selected: ' + files[0].name;
+          }
+        }
       }
     }
 
@@ -924,25 +957,29 @@ ${pageStyles}
     document.getElementById('brollForm').addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      const inputType = document.getElementById('inputType').value;
+      // Source of truth: the staged primary from the new ingestion flow,
+      // OR the active input mode if no primary has been staged yet.
+      const stagedPrimary = (window.__aiBrollState && window.__aiBrollState.primary) || null;
+      const inputMode = window.__aiBrollInputMode || 'youtube';
       const mode = document.querySelector('.tab-btn.active').dataset.tab;
 
-      if (!inputType) {
-        showToast('Please select an input type');
-        return;
-      }
-
       let content = null;
-      if (inputType === 'upload') {
-        if (!currentBrollVideo) {
-          showToast('Please select a video file');
+      if (stagedPrimary && stagedPrimary.filename) {
+        content = { type: stagedPrimary.source === 'youtube' ? 'youtube' : 'upload' };
+      } else if (inputMode === 'text') {
+        const txt = (document.getElementById('brollTranscript') || {}).value || '';
+        if (!txt.trim()) {
+          showToast('Paste a transcript or describe your video first');
           return;
         }
-        content = { type: 'upload', file: currentBrollVideo };
-      } else if (inputType === 'youtube') {
-        const url = document.getElementById('youtubeUrl').value.trim();
+        content = { type: 'text', text: txt.trim() };
+      } else if (inputMode === 'upload') {
+        showToast('Click \u2018Upload\u2019 to pick a file first');
+        return;
+      } else {
+        const url = ((document.getElementById('heroLinkInput') || {}).value || '').trim();
         if (!url) {
-          showToast('Please enter a YouTube URL');
+          showToast('Paste a YouTube link first (then click Import)');
           return;
         }
         content = { type: 'youtube', url };
