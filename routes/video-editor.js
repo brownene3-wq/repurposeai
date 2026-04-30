@@ -582,6 +582,11 @@ async function renderEditor(req, res) {
     .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:1px solid rgba(124,58,237,.4)}
     .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:1px solid rgba(56,189,248,.35)}
     .mt-clip.selected{outline:2px solid #a78bfa;outline-offset:-2px;box-shadow:0 0 16px rgba(139,92,246,.55)}
+    /* Task #72 — Snap feedback while dragging. Border glows cyan when the
+       active clip's edge is locked to a neighbour or playhead. */
+    .mt-clip.snap-active{outline:2px solid #22d3ee !important;outline-offset:-2px;box-shadow:0 0 12px rgba(34,211,238,.7) !important}
+    .mt-snap-guide{position:absolute;top:0;width:2px;height:100%;background:#22d3ee;box-shadow:0 0 8px rgba(34,211,238,.85);z-index:9998;pointer-events:none;opacity:0;transition:opacity .08s ease-out}
+    .mt-snap-guide.show{opacity:1}
     body[data-timeline-tool="select"] .mt-clip{cursor:grab}
     body[data-timeline-tool="select"] .mt-clip:active{cursor:grabbing}
     body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}

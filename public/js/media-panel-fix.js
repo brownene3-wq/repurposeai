@@ -336,27 +336,107 @@
     return null;
   }
 
-  function applySnap(candidateLeft, clipWidth, ignoreClip){
-    if (!_timelineState.snap) return candidateLeft;
+  // Task #72 — Returns full snap detail so the drag handler can show
+  // visual feedback (border glow + snap guide line + toast) when an
+  // edge magnetises onto a neighbour or the playhead. applySnap stays
+  // a thin wrapper for legacy callers that only need the number.
+  function findSnapResult(candidateLeft, clipWidth, ignoreClip){
+    if (!_timelineState.snap){
+      return { left: candidateLeft, snapped: false };
+    }
     // 20px feels magnetic without being sticky — user can still place a clip
     // freely by dragging it far from any neighbor.
     var threshold = 20;
     var targets = collectSnapTargets(ignoreClip);
     var edges = [
-      {val: candidateLeft},
-      {val: candidateLeft + clipWidth}
+      { val: candidateLeft,             name: 'left'  },
+      { val: candidateLeft + clipWidth, name: 'right' }
     ];
     var best = null;
     targets.forEach(function(t){
       edges.forEach(function(e){
         var d = Math.abs(t - e.val);
         if (d < threshold && (best === null || d < best.dist)){
-          best = {dist: d, shift: t - e.val};
+          best = { dist: d, shift: t - e.val, target: t, edge: e.name };
         }
       });
     });
-    return best !== null ? candidateLeft + best.shift : candidateLeft;
+    if (best === null) return { left: candidateLeft, snapped: false };
+    return {
+      left:    candidateLeft + best.shift,
+      snapped: true,
+      target:  best.target,    // the timeline-x the clip-edge locked to
+      edge:    best.edge,      // 'left' or 'right' (which edge of the clip)
+      dist:    best.dist
+    };
   }
+
+  function applySnap(candidateLeft, clipWidth, ignoreClip){
+    return findSnapResult(candidateLeft, clipWidth, ignoreClip).left;
+  }
+  // Expose for the drag handler.
+  try { window.findSnapResult = findSnapResult; } catch(_){}
+
+  // ── Snap visual feedback helpers ─────────────────────────────────────
+  // Maintains a single absolutely-positioned guide-line under the tracks
+  // area. show() positions it at a timeline-x and reveals it; hide()
+  // makes it invisible without deleting it. clearSnapDecor() resets the
+  // dragged clip's border + hides the guide.
+  function getOrCreateSnapGuide(){
+    var area = document.querySelector('.mt-tracks-area');
+    if (!area) return null;
+    if (window.getComputedStyle && window.getComputedStyle(area).position === 'static'){
+      area.style.position = 'relative';
+    }
+    var g = area.querySelector('.mt-snap-guide');
+    if (!g){
+      g = document.createElement('div');
+      g.className = 'mt-snap-guide';
+      area.appendChild(g);
+    }
+    return g;
+  }
+  function showSnapGuide(timelineX){
+    var g = getOrCreateSnapGuide();
+    if (!g) return;
+    g.style.left = (timelineX - 1) + 'px';   // center the 2px line on the target
+    g.classList.add('show');
+  }
+  function hideSnapGuide(){
+    var area = document.querySelector('.mt-tracks-area');
+    if (!area) return;
+    var g = area.querySelector('.mt-snap-guide');
+    if (g) g.classList.remove('show');
+  }
+  function clearSnapDecor(clips){
+    if (clips){
+      (Array.isArray(clips) ? clips : [clips]).forEach(function(c){
+        if (c && c.classList) c.classList.remove('snap-active');
+      });
+    }
+    hideSnapGuide();
+    // Allow the next drag to announce again immediately.
+    announceSnap._fired = false;
+  }
+  // Lightweight "snap toast" — fires once per drag when the first snap
+  // happens. Uses the existing showToast if available, otherwise a small
+  // floating pill positioned over the timeline.
+  function announceSnap(message){
+    if (announceSnap._fired) return;
+    announceSnap._fired = true;
+    if (typeof showToast === 'function'){
+      try { showToast(message, 'info'); } catch(_){}
+    }
+    // Reset the once-flag after the drag ends so each new drag can announce.
+    setTimeout(function(){ announceSnap._fired = false; }, 1200);
+  }
+  // Expose so other drag paths (group, trim) can clear decor on mouseup.
+  try {
+    window.clearSnapDecor = clearSnapDecor;
+    window.showSnapGuide  = showSnapGuide;
+    window.hideSnapGuide  = hideSnapGuide;
+    window.announceSnap   = announceSnap;
+  } catch(_){}
 
   // Split a clip at cutXInClip (in clip-local pixels) into two clips.
   // The right half inherits mediaUrl and stores sourceOffset so when played
@@ -513,9 +593,24 @@
         var effectiveDx = rawDx;
         if (minLeft + effectiveDx < 0) effectiveDx = -minLeft;
 
+        // Task #72 — track if any group-member snapped this frame so we
+        // can paint feedback. We use the leader (clip) as the visual
+        // anchor for the snap-active class + guide-line.
+        var anySnap = false;
+        var snapTargetX = null;
+
         groupState.forEach(function(g){
-          var target = g.startLeft + effectiveDx;
-          target = applySnap(target, g.width, g.clip);
+          var rawTarget = g.startLeft + effectiveDx;
+          var snap = findSnapResult(rawTarget, g.width, g.clip);
+          var target = snap.left;
+          if (snap.snapped){
+            anySnap = true;
+            // Prefer the leader-clip's snap target for the guide line,
+            // otherwise fall back to whichever member snapped first.
+            if (g.clip === clip || snapTargetX === null){
+              snapTargetX = snap.target;
+            }
+          }
           var track = g.track;
           if (g.isAudio && clipOverlapsExcludingGroup(track, target, g.width, g.clip, group)){
             // Audio: try to hop to a free audio sub-track; if none, clamp
@@ -532,10 +627,22 @@
           var target = Math.max(0, g.startLeft + effectiveDx);
           g.clip.style.left = target + 'px';
         });
+
+        // Paint / clear snap feedback on the leader clip.
+        if (anySnap){
+          clip.classList.add('snap-active');
+          if (snapTargetX !== null) showSnapGuide(snapTargetX);
+          announceSnap('Snapped to clip edge');
+        } else {
+          clip.classList.remove('snap-active');
+          hideSnapGuide();
+        }
       }
       function onUp(){
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        // Task #72 — clear the snap glow + guide on every group-member.
+        clearSnapDecor(group);
         if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
         _lastPreviewUrl = null;
         try { syncPreviewToPlayhead(); } catch(_){}
@@ -843,14 +950,20 @@
             newWidth = startWidth - boundaryDx;
             newSrcOff = startSrcOff + boundaryDx / TIMELINE_PX_PER_SEC;
           }
-          // Snap left edge (if snap is on)
-          var snappedLeft = applySnap(newLeft, newWidth, clip);
-          if (snappedLeft !== newLeft){
-            var snapDx = snappedLeft - startLeft;
-            newLeft   = snappedLeft;
+          // Snap left edge (if snap is on) — Task #72: visual feedback.
+          var leftSnap = findSnapResult(newLeft, newWidth, clip);
+          if (leftSnap.snapped){
+            var snapDx = leftSnap.left - startLeft;
+            newLeft   = leftSnap.left;
             newWidth  = startWidth - snapDx;
             newSrcOff = startSrcOff + snapDx / TIMELINE_PX_PER_SEC;
             if (newWidth < MIN_W){ newLeft = startLeft + (startWidth - MIN_W); newWidth = MIN_W; }
+            clip.classList.add('snap-active');
+            showSnapGuide(leftSnap.target);
+            announceSnap('Snapped to clip edge');
+          } else {
+            clip.classList.remove('snap-active');
+            hideSnapGuide();
           }
           // Overlap with neighbors
           if (clipOverlaps(track, newLeft, newWidth, clip)) return;
@@ -882,6 +995,8 @@
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         clip.classList.remove('mt-trimming');
+        // Task #72 — clear snap feedback on edge release.
+        clearSnapDecor(clip);
         _lastPreviewUrl = null;
         try { syncPreviewToPlayhead(); } catch(_){}
         if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
