@@ -1972,18 +1972,136 @@
         if (!p || p.__v1AudioHooked) return;
         p.__v1AudioHooked = true;
         var _activeClip = null;
+
+        // Task #73 — B-Roll preserves primary audio (V1 underlay).
+        // When the active clip is a B-Roll, a hidden <audio> element
+        // plays the underlying older V1 clip's audio at full volume,
+        // and the visible video's own audio is ducked to ~0.2× so the
+        // primary dialogue remains the focus. Mirrors the FFmpeg amix
+        // the export pipeline runs, so preview matches export.
+        var BROLL_DUCK = 0.20;
+        var _underlayAudio = null;
+        function ensureUnderlayAudio(){
+          if (_underlayAudio) return _underlayAudio;
+          _underlayAudio = document.createElement('audio');
+          _underlayAudio.id = 'brollUnderlayAudio';
+          _underlayAudio.preload = 'auto';
+          _underlayAudio.style.display = 'none';
+          document.body.appendChild(_underlayAudio);
+          return _underlayAudio;
+        }
+        function findUnderlayForBroll(brollClip){
+          if (!brollClip) return null;
+          var bL = parseFloat(brollClip.style.left)  || 0;
+          var bW = parseFloat(brollClip.style.width) || 0;
+          var bAdded = parseFloat(brollClip.dataset.addedAt) || 0;
+          var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+          var midPx = bL + bW / 2;
+          var best = null, bestAdded = -Infinity;
+          var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+          for (var i = 0; i < clips.length; i++){
+            var c = clips[i];
+            if (c === brollClip) continue;
+            if (c.dataset.broll === '1') continue;
+            var cAdded = parseFloat(c.dataset.addedAt) || 0;
+            if (cAdded >= bAdded) continue;
+            var cL = parseFloat(c.style.left)  || 0;
+            var cW = parseFloat(c.style.width) || 0;
+            if (midPx < cL || midPx > cL + cW) continue;
+            if (cAdded > bestAdded){ best = c; bestAdded = cAdded; }
+          }
+          if (!best) return null;
+          var bSrcOff = parseFloat(best.dataset.sourceOffset) || 0;
+          var bMediaUrl = best.dataset.mediaUrl || '';
+          var brollSrcOff = parseFloat(brollClip.dataset.sourceOffset) || 0;
+          var pps = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+          // Compute the underlay's source-time offset that lines up with
+          // the b-roll's start in timeline terms.
+          var underTimelineStart = bL / pps;        // seconds
+          var bestTimelineStart  = (parseFloat(best.style.left) || 0) / pps;
+          var underBaseSrc       = bSrcOff + (underTimelineStart - bestTimelineStart);
+          return {
+            clip:      best,
+            mediaUrl:  bMediaUrl,
+            baseSrc:   underBaseSrc,   // underlay source-time at b-roll t=0
+            brollSrcOff: brollSrcOff
+          };
+        }
+        function syncUnderlayPlayback(){
+          if (!_underlayAudio) return;
+          if (!_activeClip || _activeClip.dataset.broll !== '1'){
+            try { _underlayAudio.pause(); } catch(_){}
+            return;
+          }
+          if (p.paused){ try { _underlayAudio.pause(); } catch(_){} }
+          else { try { _underlayAudio.play(); } catch(_){} }
+        }
+        function configureUnderlayForActive(){
+          var c = _activeClip;
+          if (!c || c.dataset.broll !== '1'){
+            // Not a b-roll — clear any existing underlay playback.
+            if (_underlayAudio){
+              try { _underlayAudio.pause(); _underlayAudio.removeAttribute('src'); _underlayAudio.load(); } catch(_){}
+            }
+            return;
+          }
+          var u = findUnderlayForBroll(c);
+          if (!u || !u.mediaUrl){
+            if (_underlayAudio){
+              try { _underlayAudio.pause(); _underlayAudio.removeAttribute('src'); _underlayAudio.load(); } catch(_){}
+            }
+            return;
+          }
+          var ua = ensureUnderlayAudio();
+          // Stash so applyVolume / time sync can read it without relooking.
+          c.__underlay = u;
+          if (ua.dataset.url !== u.mediaUrl){
+            ua.dataset.url = u.mediaUrl;
+            try { ua.src = u.mediaUrl; ua.load(); } catch(_){}
+          }
+          // Per-underlay base volume (respect older clip's volume + mute).
+          var rawV = parseFloat(u.clip.dataset.volume);
+          var baseV = isFinite(rawV) ? Math.min(1, Math.max(0, rawV / 100)) : 1;
+          if (u.clip.dataset.muted === 'true') baseV = 0;
+          ua.volume = baseV;
+          // Seek + play/pause to match main player.
+          var brollClipT = Math.max(0, (p.currentTime || 0) - u.brollSrcOff);
+          var targetSrc  = u.baseSrc + brollClipT;
+          try { ua.currentTime = Math.max(0, targetSrc); } catch(_){}
+          syncUnderlayPlayback();
+        }
+
         function findActiveClip(){
           var src = p.currentSrc || p.src;
           if (!src) return null;
           var norm = normalizeUrlLocal(src);
           var vcs = document.querySelectorAll('.mt-track-video .mt-clip');
-          for (var i = 0; i < vcs.length; i++){
-            if (normalizeUrlLocal(vcs[i].dataset.mediaUrl || '') === norm) return vcs[i];
+          // When several clips share a mediaUrl, prefer the one the
+          // playhead is actually on so the b-roll branch resolves to
+          // the b-roll instance, not the underlay below it.
+          var ph = document.getElementById('mtPlayhead');
+          var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
+          if (phPx >= 0){
+            var best = null, bestAdded = -Infinity;
+            for (var i = 0; i < vcs.length; i++){
+              var c = vcs[i];
+              if (normalizeUrlLocal(c.dataset.mediaUrl || '') !== norm) continue;
+              var cL = parseFloat(c.style.left)  || 0;
+              var cW = parseFloat(c.style.width) || 0;
+              if (phPx < cL || phPx > cL + cW) continue;
+              var ad = parseFloat(c.dataset.addedAt) || 0;
+              if (ad > bestAdded){ best = c; bestAdded = ad; }
+            }
+            if (best) return best;
+          }
+          for (var j = 0; j < vcs.length; j++){
+            if (normalizeUrlLocal(vcs[j].dataset.mediaUrl || '') === norm) return vcs[j];
           }
           return null;
         }
         function hydrate(){
           _activeClip = findActiveClip();
+          configureUnderlayForActive();
           applyVolume();
         }
         function applyVolume(){
@@ -1994,10 +2112,12 @@
           var base = isFinite(rawVol) ? Math.min(1, Math.max(0, rawVol / 100)) : 1;
           var fadeIn  = Math.max(0, parseFloat(c.dataset.fadeIn)  || 0);
           var fadeOut = Math.max(0, parseFloat(c.dataset.fadeOut) || 0);
-          if (fadeIn === 0 && fadeOut === 0){ p.volume = base; return; }
+          // Task #73 — duck B-Roll's own audio when an underlay is in play.
+          var duck = (c.dataset.broll === '1' && c.__underlay) ? BROLL_DUCK : 1;
+          if (fadeIn === 0 && fadeOut === 0){ p.volume = base * duck; return; }
           var srcOff  = parseFloat(c.dataset.sourceOffset) || 0;
           var clipDur = parseFloat(c.dataset.duration) || (p.duration || 0);
-          if (clipDur <= 0){ p.volume = base; return; }
+          if (clipDur <= 0){ p.volume = base * duck; return; }
           var clipT = Math.max(0, (p.currentTime || 0) - srcOff);
           var ramp = 1;
           if (fadeIn > 0 && clipT < fadeIn){
@@ -2005,26 +2125,46 @@
           } else if (fadeOut > 0 && clipT > clipDur - fadeOut){
             ramp = Math.max(0, (clipDur - clipT) / fadeOut);
           }
-          p.volume = Math.max(0, Math.min(1, base * ramp));
+          p.volume = Math.max(0, Math.min(1, base * ramp * duck));
+        }
+        // Keep underlay <audio> aligned with main player's currentTime
+        // so seeks land in the right place.
+        function reSyncUnderlayTime(){
+          if (!_activeClip || _activeClip.dataset.broll !== '1' || !_activeClip.__underlay) return;
+          if (!_underlayAudio) return;
+          var u = _activeClip.__underlay;
+          var brollClipT = Math.max(0, (p.currentTime || 0) - u.brollSrcOff);
+          var target = u.baseSrc + brollClipT;
+          // Tolerate small drift; only seek when off by >0.15s.
+          if (Math.abs((_underlayAudio.currentTime || 0) - target) > 0.15){
+            try { _underlayAudio.currentTime = Math.max(0, target); } catch(_){}
+          }
         }
         p.addEventListener('loadedmetadata', hydrate);
         p.addEventListener('play', hydrate);
+        p.addEventListener('seeking', reSyncUnderlayTime);
+        p.addEventListener('seeked',  reSyncUnderlayTime);
         // Drive the ramp during playback. timeupdate fires ~4×/sec which
         // is rough; we also kick off a rAF loop for smoother fade audio.
-        p.addEventListener('timeupdate', applyVolume);
+        p.addEventListener('timeupdate', function(){ applyVolume(); reSyncUnderlayTime(); });
         var rafId = null;
         function rampLoop(){
           if (p.paused){ rafId = null; return; }
           applyVolume();
           rafId = requestAnimationFrame(rampLoop);
         }
-        p.addEventListener('play', function(){ if (!rafId) rampLoop(); });
+        p.addEventListener('play', function(){
+          if (!rafId) rampLoop();
+          syncUnderlayPlayback();
+        });
         p.addEventListener('pause', function(){
           if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
           // After pause, restore base volume so a manual seek doesn't leave
           // the player at a faded value.
           applyVolume();
+          syncUnderlayPlayback();
         });
+        // Volume rampLoop also re-syncs underlay so it tracks at frame rate.
       })();
 
       // AUDIO FX handlers — operate on the currently selected audio clip,

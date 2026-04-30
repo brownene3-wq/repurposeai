@@ -3387,7 +3387,10 @@ function showToast(message, type = 'success') {
             fxValue:      c.dataset.fxValue      || '',
             // Task #69 — flag legacy brand-logo V1 clips so the server can
             // skip them (logos now ride on the post-pass overlay= filter).
-            brandLogo:    c.dataset.brandLogo    || ''
+            brandLogo:    c.dataset.brandLogo    || '',
+            // Task #73 — flag B-Roll clips so the export pipeline keeps
+            // the underlying primary audio audible and ducks B-Roll audio.
+            broll:        c.dataset.broll        || ''
           };
         });
 
@@ -6858,6 +6861,22 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         c._srcOff = parseFloat(c.sourceOffset) || 0;
         c._intervals = [[c._t0, c._t1]];  // start with the full range
       });
+      // Task #73 — snapshot every clip's ORIGINAL range + media so a
+      // B-Roll's effective segment can later look up the older clip
+      // it's overlaying and pull its audio in.
+      var v1Snapshot = v1.map(function(c){
+        return {
+          mediaUrl: c.mediaUrl,
+          addedAt:  parseFloat(c.addedAt) || 0,
+          isBroll:  (c.broll === '1' || c.broll === 1 || c.broll === true),
+          t0:       c._t0,
+          t1:       c._t1,
+          srcOff:   c._srcOff,
+          // Per-clip volume / mute carry over so a muted underlay stays muted.
+          volume:   c.volume,
+          muted:    c.muted
+        };
+      });
       // Process newest-first so each "newer" clip carves its territory
       // out of every older clip's remaining intervals.
       var ordered = v1.slice().sort(function(a, b){
@@ -6891,6 +6910,32 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           eff.width = String(dur * pxPerSec) + 'px';
           eff.duration = String(dur);
           eff.sourceOffset = String(c._srcOff + offsetFromStart);
+          // Task #73 — for B-Roll segments, find the older non-B-Roll
+          // V1 clip whose ORIGINAL range covers this segment, and stash
+          // its mediaUrl + sourceOffset so the segment encoder can mix
+          // the primary dialogue audio under the (ducked) B-Roll audio.
+          if (eff.broll === '1' || eff.broll === 1 || eff.broll === true){
+            var brollAdded = parseFloat(c.addedAt) || 0;
+            var segMid = (iv[0] + iv[1]) / 2;
+            // Pick the most recently-added underlay that is still older
+            // than the b-roll itself, so stacked underlays resolve to the
+            // currently-visible primary footage rather than something below it.
+            var bestUnderlay = null;
+            v1Snapshot.forEach(function(s){
+              if (s.isBroll) return;
+              if (s.addedAt >= brollAdded) return;
+              if (segMid < s.t0 || segMid > s.t1) return;
+              if (!bestUnderlay || s.addedAt > bestUnderlay.addedAt){
+                bestUnderlay = s;
+              }
+            });
+            if (bestUnderlay && bestUnderlay.mediaUrl){
+              eff.underlayMediaUrl     = bestUnderlay.mediaUrl;
+              eff.underlaySourceOffset = bestUnderlay.srcOff + (iv[0] - bestUnderlay.t0);
+              eff.underlayVolume       = bestUnderlay.volume;
+              eff.underlayMuted        = bestUnderlay.muted;
+            }
+          }
           delete eff._t0; delete eff._t1; delete eff._srcOff; delete eff._intervals;
           effective.push(eff);
         });
@@ -7238,6 +7283,86 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         var inputOpts = [];
         if (loopOn) inputOpts.push('-stream_loop', '-1');
         inputOpts.push('-ss', srcOff.toFixed(3), '-i', srcPath);
+
+        // ── Task #73 — B-Roll w/ underlying primary audio ─────────────
+        // When this segment is a B-Roll layered over an older V1 clip,
+        // the underlay's mediaUrl + sourceOffset were attached during
+        // resolveV1Overlaps. Encode the segment as a 2-input ffmpeg call
+        // that pulls video from the B-Roll while mixing primary dialogue
+        // (the underlay) at full volume with the B-Roll's own audio
+        // ducked, so the dialogue stays focal during cut-aways.
+        var underlayPath = null;
+        if (clip.underlayMediaUrl){
+          underlayPath = urlToFilePath(clip.underlayMediaUrl);
+        }
+        if (underlayPath){
+          var BROLL_DUCK = 0.20;  // ~14 dB attenuation — keeps B-Roll audible but well below dialogue
+          var underVolRaw = parseFloat(clip.underlayVolume);
+          var underVol    = isFinite(underVolRaw) ? Math.max(0, Math.min(2, underVolRaw / 100)) : 1;
+          if (clip.underlayMuted === 'true') underVol = 0;
+          var underSrcOff = parseFloat(clip.underlaySourceOffset) || 0;
+
+          // B-Roll audio chain = the per-clip audio FX (afParts) + duck.
+          // afParts already includes speed/atempo/reverse/denoise/normalize/
+          // fade/volume; tagging on a final volume= multiplies it.
+          var brollAfChain   = afParts.concat(['volume=' + BROLL_DUCK.toFixed(3)]).join(',');
+          var underlayAfChain = [
+            'volume=' + underVol.toFixed(3),
+            'apad'
+          ].join(',');
+          var afilterComplex =
+            '[0:a]' + brollAfChain + '[brollA];' +
+            '[1:a]' + underlayAfChain + '[underA];' +
+            '[brollA][underA]amix=inputs=2:duration=longest:normalize=0[outA]';
+
+          // Build args: B-Roll input first (idx 0 — provides video + own audio),
+          // underlay input second (idx 1 — provides primary dialogue audio).
+          var blArgs = inputOpts.slice();   // already includes B-Roll -ss + -i
+          blArgs.push('-ss', underSrcOff.toFixed(3), '-i', underlayPath);
+          if (loopOn){
+            blArgs.push('-t', durSec.toFixed(3));
+          } else {
+            blArgs.push('-t', readDurSec.toFixed(3));
+          }
+          blArgs.push(
+            '-vf', vfWithSpeed,
+            '-filter_complex', afilterComplex,
+            '-map', '0:v',
+            '-map', '[outA]',
+            '-r', '30', '-shortest'
+          );
+          blArgs = blArgs.concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
+          try {
+            await runFFmpeg(blArgs);
+            segments.push(segPath);
+            cursor = startSec + durSec;
+            continue;
+          } catch (eBL){
+            // Fallback: B-Roll might lack an audio track. Replace
+            // [0:a] with a silent stream so the underlay still mixes.
+            console.warn('[export-timeline] B-Roll mix failed, retrying with silent B-Roll audio:', eBL.message);
+            try {
+              var fbBL = ['-ss', srcOff.toFixed(3), '-i', srcPath,
+                          '-ss', underSrcOff.toFixed(3), '-i', underlayPath,
+                          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+                          '-t', (loopOn ? durSec : readDurSec).toFixed(3),
+                          '-vf', vfWithSpeed,
+                          '-filter_complex',
+                            '[1:a]' + underlayAfChain + '[underA];' +
+                            '[2:a][underA]amix=inputs=2:duration=longest:normalize=0[outA]',
+                          '-map', '0:v', '-map', '[outA]',
+                          '-r', '30', '-shortest']
+                          .concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
+              await runFFmpeg(fbBL);
+              segments.push(segPath);
+              cursor = startSec + durSec;
+              continue;
+            } catch (eBL2){
+              console.warn('[export-timeline] B-Roll silent-fallback also failed; falling through to single-input encode:', eBL2.message);
+              // Fall through to the regular single-input branch below.
+            }
+          }
+        }
 
         // Duration control: for loop, cap output at durSec; otherwise
         // read exactly readDurSec of source (reverse needs the whole
