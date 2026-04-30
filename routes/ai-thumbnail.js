@@ -70,6 +70,15 @@ const YTDLP_COMMON_ARGS = [
   '--extractor-retries', '3',
 ];
 
+// YouTube cookies — same env var as /ai-broll and /video-editor. When set to a
+// readable Netscape-format cookies.txt, yt-dlp authenticates as that account
+// and bypasses the bot-detection challenge that hits Railway IPs.
+function getYoutubeCookiesArgs() {
+  var p = process.env.YT_COOKIES_PATH;
+  if (p && fs.existsSync(p)) return ['--cookies', p];
+  return [];
+}
+
 // Validate YouTube URL
 function isValidYouTubeUrl(url) {
   const patterns = [
@@ -111,6 +120,7 @@ async function downloadYouTubeVideo(videoUrl) {
           '--no-part',
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
+          ...getYoutubeCookiesArgs(),
           videoUrl
         ]);
         let stderr = '';
