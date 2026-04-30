@@ -578,7 +578,12 @@ async function renderEditor(req, res) {
     .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .mt-playhead{position:absolute;top:0;left:0;width:2px;height:100%;background:#7c3aed;z-index:10;pointer-events:none}
+    /* Task #63 — playhead must always render above clips. AI-inserted
+       clips (Hook=950, Brand Logo=920, B-Roll=900, Freeze=850) and
+       creation-stamped clips (addedAt-based, up to ~1100) stack above
+       the old z-index:10, leaving the playhead obscured. Bumped to
+       9999 so it sits above every clip layer regardless of order. */
+    .mt-playhead{position:absolute;top:0;left:0;width:2px;height:100%;background:#7c3aed;z-index:9999;pointer-events:none;box-shadow:0 0 4px rgba(124,58,237,.5)}
     .mt-playhead .mt-playhead-handle{position:absolute;top:0;left:-7px;width:16px;height:14px;background:#7c3aed;border-radius:0 0 4px 4px;cursor:ew-resize;pointer-events:auto;box-shadow:0 2px 4px rgba(0,0,0,.3)}
     .mt-playhead .mt-playhead-handle:hover{background:#a78bfa}
     .mt-playhead.mt-playhead-dragging .mt-playhead-handle{background:#a78bfa}
@@ -7528,7 +7533,18 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           // Clamp so extreme aspects don't produce tiny/hero captions
           sz = Math.max(14, Math.min(sz, Math.round(outH * 0.22)));
           var col   = (tc.textColor || '#ffffff').replace('#','0x');
-          var pos   = tc.position || 'center';
+          // Task #64 — parse compound position (vertical-horizontal)
+          var rawPos = String(tc.position || 'center').toLowerCase();
+          var vPos, hPos;
+          if (rawPos === 'top' || rawPos === 'center' || rawPos === 'bottom'){
+            vPos = rawPos; hPos = 'center';
+          } else if (rawPos === 'left' || rawPos === 'right'){
+            vPos = 'center'; hPos = rawPos;
+          } else {
+            var rp = rawPos.split('-');
+            vPos = (rp[0] === 'top' || rp[0] === 'center' || rp[0] === 'bottom') ? rp[0] : 'bottom';
+            hPos = (rp[1] === 'left' || rp[1] === 'center' || rp[1] === 'right') ? rp[1] : 'center';
+          }
           var offFracX = parseFloat(tc.textOffsetX) || 0;
           var offFracY = parseFloat(tc.textOffsetY) || 0;
 
@@ -7539,20 +7555,22 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
 
           // #15 Safe-area anchors (y = TOP-of-text in drawtext)
           var y;
-          if (pos === 'top')         y = 'h*0.08';                 // stack downward
-          else if (pos === 'bottom') y = 'h-h*0.08-text_h';         // stack upward
-          else                       y = '(h-text_h)/2';            // stack downward from center
+          if (vPos === 'top')         y = 'h*0.08';                 // stack downward
+          else if (vPos === 'bottom') y = 'h-h*0.08-text_h';         // stack upward
+          else                        y = '(h-text_h)/2';            // stack downward from center
           if (laneOff){
-            if (pos === 'bottom')    y = y + '-' + laneOff;
+            if (vPos === 'bottom')    y = y + '-' + laneOff;
             else                      y = y + '+' + laneOff;
           }
 
-          // x centered + user drag offset, clamped to 7.5%-92.5% safe zone
-          //   left  edge of text = (w-text_w)/2 + xOff  must be >= w*0.075
-          //   right edge of text = (w-text_w)/2 + xOff + text_w  must be <= w*0.925
-          // We build xExpr with min/max clamps so FFmpeg enforces it.
+          // Task #64 — horizontal anchor based on hPos. Safe zone is
+          // 7.5%–92.5% of width. drawtext expects x = LEFT edge of text.
           var xOff = offFracX * outW;
-          var xRaw = '(w-text_w)/2' + (xOff ? ((xOff > 0 ? '+' : '') + xOff.toFixed(1)) : '');
+          var anchorX;
+          if (hPos === 'left')       anchorX = 'w*0.075';                       // left-anchored
+          else if (hPos === 'right') anchorX = 'w*0.925-text_w';                // right-anchored
+          else                       anchorX = '(w-text_w)/2';                  // centered
+          var xRaw = anchorX + (xOff ? ((xOff > 0 ? '+' : '') + xOff.toFixed(1)) : '');
           var xExpr =
             'if(lt(' + xRaw + '\\,w*0.075)\\,w*0.075\\,' +
               'if(gt(' + xRaw + '+text_w\\,w*0.925)\\,w*0.925-text_w\\,' + xRaw + '))';

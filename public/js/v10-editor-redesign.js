@@ -1921,27 +1921,77 @@
       // Hook the <video> element so whenever it swaps to a new V1 clip's
       // src (via loadAndPlayClipAt) it picks up that clip's saved
       // dataset.volume / muted state. Installed once per page.
+      //
+      // Task #65 — Also drives a real-time fade envelope during playback.
+      // On every timeupdate, compute where currentTime sits inside the
+      // active clip and apply fadeIn / fadeOut ramps to video.volume so
+      // the user can HEAR the fade in the preview, not just see it on
+      // the export. Math:
+      //   • clipT = currentTime − sourceOffset  (seconds into the clip)
+      //   • clipDur                                 (seconds the clip plays)
+      //   • base = dataset.volume/100 (or 1 if unset, 0 if muted)
+      //   • fadeIn  > 0  AND  clipT < fadeIn   → volume = base * (clipT / fadeIn)
+      //   • fadeOut > 0  AND  clipT > clipDur - fadeOut
+      //                                        → volume = base * ((clipDur - clipT) / fadeOut)
+      //   • else → volume = base
       (function installV1AudioHydrator(){
         var p = getVideoPlayer();
         if (!p || p.__v1AudioHooked) return;
         p.__v1AudioHooked = true;
-        function hydrate(){
+        var _activeClip = null;
+        function findActiveClip(){
           var src = p.currentSrc || p.src;
-          if (!src) return;
+          if (!src) return null;
           var norm = normalizeUrlLocal(src);
           var vcs = document.querySelectorAll('.mt-track-video .mt-clip');
           for (var i = 0; i < vcs.length; i++){
-            var c = vcs[i];
-            if (normalizeUrlLocal(c.dataset.mediaUrl || '') === norm){
-              var vol = parseFloat(c.dataset.volume);
-              if (isFinite(vol)) p.volume = Math.min(1, Math.max(0, vol / 100));
-              p.muted = (c.dataset.muted === 'true');
-              return;
-            }
+            if (normalizeUrlLocal(vcs[i].dataset.mediaUrl || '') === norm) return vcs[i];
           }
+          return null;
+        }
+        function hydrate(){
+          _activeClip = findActiveClip();
+          applyVolume();
+        }
+        function applyVolume(){
+          if (!_activeClip) return;
+          var c = _activeClip;
+          if (c.dataset.muted === 'true'){ p.volume = 0; return; }
+          var rawVol = parseFloat(c.dataset.volume);
+          var base = isFinite(rawVol) ? Math.min(1, Math.max(0, rawVol / 100)) : 1;
+          var fadeIn  = Math.max(0, parseFloat(c.dataset.fadeIn)  || 0);
+          var fadeOut = Math.max(0, parseFloat(c.dataset.fadeOut) || 0);
+          if (fadeIn === 0 && fadeOut === 0){ p.volume = base; return; }
+          var srcOff  = parseFloat(c.dataset.sourceOffset) || 0;
+          var clipDur = parseFloat(c.dataset.duration) || (p.duration || 0);
+          if (clipDur <= 0){ p.volume = base; return; }
+          var clipT = Math.max(0, (p.currentTime || 0) - srcOff);
+          var ramp = 1;
+          if (fadeIn > 0 && clipT < fadeIn){
+            ramp = clipT / fadeIn;
+          } else if (fadeOut > 0 && clipT > clipDur - fadeOut){
+            ramp = Math.max(0, (clipDur - clipT) / fadeOut);
+          }
+          p.volume = Math.max(0, Math.min(1, base * ramp));
         }
         p.addEventListener('loadedmetadata', hydrate);
         p.addEventListener('play', hydrate);
+        // Drive the ramp during playback. timeupdate fires ~4×/sec which
+        // is rough; we also kick off a rAF loop for smoother fade audio.
+        p.addEventListener('timeupdate', applyVolume);
+        var rafId = null;
+        function rampLoop(){
+          if (p.paused){ rafId = null; return; }
+          applyVolume();
+          rafId = requestAnimationFrame(rampLoop);
+        }
+        p.addEventListener('play', function(){ if (!rafId) rampLoop(); });
+        p.addEventListener('pause', function(){
+          if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
+          // After pause, restore base volume so a manual seek doesn't leave
+          // the player at a faded value.
+          applyVolume();
+        });
       })();
 
       // AUDIO FX handlers — operate on the currently selected audio clip,

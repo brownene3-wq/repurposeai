@@ -3457,21 +3457,85 @@
       showToast('Text color: ' + v + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
     });
   }
+  // Task #64 \u2014 Text Position 3\u00d73 grid popover.
+  // Replaces the prompt() with a visual 9-cell grid. Each cell maps to
+  // a `vertical-horizontal` position string (e.g. 'top-left', 'center',
+  // 'bottom-right'). Click instantly applies + previews.
+  // Schema: dataset.position is one of:
+  //   top-left | top | top-right
+  //   left     | center | right
+  //   bottom-left | bottom | bottom-right
+  // Legacy values 'top'/'center'/'bottom' continue to work (horizontal
+  // defaults to center).
   function clipActionTextPosition(){
+    var existing = document.getElementById('textPositionPopover');
+    if (existing instanceof Element && existing.isConnected){ existing.remove(); return; }
+    if (existing){ try { existing.remove(); } catch(_){} }
+    if (typeof closeOtherPopovers === 'function') closeOtherPopovers('textPositionPopover');
+
     withTextClipsTarget(function(clips){
       var first = clips[0];
-      var cur = first.dataset.position || 'bottom';
-      var input = prompt('Text position (top / center / bottom)', cur);
-      if (input === null) return;
-      var v = String(input).trim().toLowerCase();
-      if (['top','center','bottom'].indexOf(v) === -1){
-        showToast('Use top, center, or bottom');
-        return;
-      }
-      clips.forEach(function(c){ c.dataset.position = v; });
-      try { syncPreviewToPlayhead(); } catch(_){}
-      pushTimelineHistory();
-      showToast('Text position: ' + v + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+      var cur = String(first.dataset.position || 'bottom').toLowerCase();
+      // Normalize legacy single-word values
+      if (cur === 'top')    cur = 'top';
+      else if (cur === 'center') cur = 'center';
+      else if (cur === 'bottom') cur = 'bottom';
+
+      var pop = document.createElement('div');
+      pop.id = 'textPositionPopover';
+      pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
+        'border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:240px;' +
+        'box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+      // 9 cells: [v,h,id,label,iconChar]
+      var CELLS = [
+        ['top','left','top-left','\u2196','Top Left'],
+        ['top','center','top','\u2191','Top'],
+        ['top','right','top-right','\u2197','Top Right'],
+        ['center','left','left','\u2190','Left'],
+        ['center','center','center','\u25cf','Center'],
+        ['center','right','right','\u2192','Right'],
+        ['bottom','left','bottom-left','\u2199','Bottom Left'],
+        ['bottom','center','bottom','\u2193','Bottom'],
+        ['bottom','right','bottom-right','\u2198','Bottom Right']
+      ];
+      var html = '<div style="font-size:11px;color:#fde047;font-weight:700;letter-spacing:.5px;margin-bottom:8px">' +
+        '\ud83d\udccd TEXT POSITION</div>' +
+        '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Pick where the caption sits inside the video frame.</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:rgba(0,0,0,.25);padding:8px;border-radius:8px">';
+      CELLS.forEach(function(cell){
+        var on = (cell[2] === cur);
+        html += '<button data-tpos="' + cell[2] + '" title="' + cell[4] + '" ' +
+          'style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;' +
+          'background:' + (on ? 'rgba(139,92,246,.35)' : 'rgba(255,255,255,.04)') + ';' +
+          'border:1px solid ' + (on ? '#a78bfa' : 'rgba(255,255,255,.1)') + ';' +
+          'border-radius:6px;color:' + (on ? '#fff' : '#a78bfa') + ';font-size:18px;cursor:pointer;' +
+          'transition:all .15s">' + cell[3] + '</button>';
+      });
+      html += '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:10px">' +
+          '<button id="tpClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '</div>';
+      pop.innerHTML = html;
+      document.body.appendChild(pop);
+
+      Array.from(pop.querySelectorAll('[data-tpos]')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var pos = btn.getAttribute('data-tpos');
+          clips.forEach(function(c){ c.dataset.position = pos; });
+          try { syncPreviewToPlayhead(); } catch(_){}
+          pushTimelineHistory();
+          // Update visual selection state
+          Array.from(pop.querySelectorAll('[data-tpos]')).forEach(function(o){
+            var sel = o.getAttribute('data-tpos') === pos;
+            o.style.background  = sel ? 'rgba(139,92,246,.35)' : 'rgba(255,255,255,.04)';
+            o.style.borderColor = sel ? '#a78bfa' : 'rgba(255,255,255,.1)';
+            o.style.color       = sel ? '#fff' : '#a78bfa';
+          });
+          var label = pos.replace(/-/g, ' ');
+          showToast('Text position: ' + label + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+        });
+      });
+      pop.querySelector('#tpClose').addEventListener('click', function(){ pop.remove(); });
     });
   }
   // ── Timing ──
@@ -4730,11 +4794,28 @@
     // clips in the same zone can be stacked. Order within a zone follows
     // clip timeline order (getTextClipsAtPlayheadX returns DOM order, which
     // matches track order left-to-right).
+    //
+    // Task #64 — position now supports a vertical-horizontal compound
+    // (top-left, top, top-right, left, center, right, bottom-left,
+    // bottom, bottom-right). Legacy 'top'/'center'/'bottom' kept as
+    // shorthand for the corresponding center column.
+    function _parseTextPosition(p){
+      p = String(p || 'bottom').toLowerCase();
+      if (p === 'top')    return { v: 'top',    h: 'center' };
+      if (p === 'center') return { v: 'center', h: 'center' };
+      if (p === 'bottom') return { v: 'bottom', h: 'center' };
+      if (p === 'left')   return { v: 'center', h: 'left' };
+      if (p === 'right')  return { v: 'center', h: 'right' };
+      var parts = p.split('-');
+      var v = (parts[0] === 'top' || parts[0] === 'center' || parts[0] === 'bottom') ? parts[0] : 'bottom';
+      var h = (parts[1] === 'left' || parts[1] === 'center' || parts[1] === 'right') ? parts[1] : 'center';
+      return { v: v, h: h };
+    }
     var zones = { top: [], center: [], bottom: [] };
     clips.forEach(function(c){
-      var pos = c.dataset.position || 'center';
-      if (!zones[pos]) pos = 'center';
-      zones[pos].push(c);
+      var pp = _parseTextPosition(c.dataset.position);
+      c._hAlign = pp.h;
+      zones[pp.v].push(c);
     });
 
     function drawZone(zoneClips, pos){
@@ -4797,6 +4878,8 @@
         return {
           clip: clip, text: text, size: size, color: color,
           offX: offX, offY: offY,
+          // Task #64 — preserve horizontal alignment from parsed position
+          hAlign: clip._hAlign || 'center',
           lines: lines, widest: widest, lineH: lineH, totalH: totalH
         };
       }).filter(Boolean);
@@ -4832,10 +4915,15 @@
         if (y - totalH / 2 < SAFE_T) y = SAFE_T + totalH / 2;
         if (y + totalH / 2 > SAFE_B) y = SAFE_B - totalH / 2;
 
-        // Horizontal: center + user offset, clamped so the whole box
-        // stays within SAFE_L / SAFE_R.
-        var x = W / 2 + L.offX;
+        // Horizontal: anchor based on the parsed hAlign (Task #64), then
+        // add user drag offset, then clamp inside SAFE_L / SAFE_R.
+        // ctx.textAlign = 'center' so x is the CENTER of the text box.
         var halfW = widest / 2;
+        var anchorX;
+        if (L.hAlign === 'left')       anchorX = SAFE_L + halfW;
+        else if (L.hAlign === 'right') anchorX = SAFE_R - halfW;
+        else                            anchorX = (SAFE_L + SAFE_R) / 2;
+        var x = anchorX + L.offX;
         var minCenterX = SAFE_L + halfW;
         var maxCenterX = SAFE_R - halfW;
         if (widest <= SAFE_W){
