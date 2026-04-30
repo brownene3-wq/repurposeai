@@ -3612,59 +3612,121 @@
       });
     }
 
-    // 3. Logo → insert as V1 image clip at left=0 spanning the timeline.
-    //    Full-frame image overlay; user can resize/reposition after.
+    // 3. Logo → render as a TRANSPARENT CSS overlay on the preview area
+    //    (NOT a V1 clip — that would obscure the underlying footage).
+    //    Stored in window.__brandLogo so the export pipeline can apply
+    //    an FFmpeg `overlay=` filter on each V1 segment.
+    // Evict any legacy V1 brand-logo clips left over from previous versions
+    // of this code so re-applying templates doesn't accumulate stale clips.
+    Array.from(document.querySelectorAll('.mt-clip[data-brand-logo="1"]')).forEach(function(stale){
+      try { stale.remove(); } catch(_){}
+    });
     if (tmpl.logoUrl){
-      var v1Track = document.querySelector('.mt-track-video');
-      if (v1Track){
-        // Measure current timeline length (rightmost clip end OR default 600px)
-        var maxRight = 0;
-        Array.from(v1Track.querySelectorAll('.mt-clip')).forEach(function(c){
-          var r = (parseFloat(c.style.left) || 0) + (parseFloat(c.style.width) || 0);
-          if (r > maxRight) maxRight = r;
-        });
-        if (maxRight <= 0) maxRight = 600;
-
-        var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
-        var clip = document.createElement('div');
-        clip.className = 'mt-clip mt-clip-video';
-        clip.style.position = 'absolute';
-        clip.style.top = '3px';
-        clip.style.left = '0px';
-        clip.style.width = maxRight + 'px';
-        clip.style.overflow = 'hidden';
-        clip.style.backgroundImage = 'url("' + tmpl.logoUrl + '")';
-        clip.style.backgroundSize = 'contain';
-        clip.style.backgroundPosition = 'center';
-        clip.style.backgroundRepeat = 'no-repeat';
-        clip.style.backgroundColor = 'rgba(0,0,0,0.0)';
-        clip.dataset.fileName = '\ud83c\udfa8 Brand Logo';
-        clip.dataset.clipType = 'img';
-        clip.dataset.mediaUrl = tmpl.logoUrl;
-        clip.dataset.duration = String(maxRight / PPS);
-        clip.dataset.sourceOffset = '0';
-        clip.dataset.brandLogo = '1';
-        clip.dataset.logoPosition = tmpl.logoPosition || 'top-right';
-        clip.dataset.logoSize = String(tmpl.logoSize || 100);
-        clip.dataset.addedAt = String(Date.now() * 1000);
-        clip.style.zIndex = '920';
-        var lbl = document.createElement('span');
-        lbl.className = 'v10-fs-label';
-        lbl.textContent = '\ud83c\udfa8 LOGO (drag/resize to adjust)';
-        lbl.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px;pointer-events:none;z-index:4;white-space:nowrap';
-        clip.appendChild(lbl);
-        v1Track.appendChild(clip);
-        // Task #57 — already calling makeClipInteractive here, but the
-        // function wasn't exposed on window before this commit. Now it is.
-        if (typeof window.makeClipInteractive === 'function'){
-          try { window.makeClipInteractive(clip); } catch(_){}
-        }
-        summary.push('Logo overlay');
+      window.__brandLogo = {
+        url:      tmpl.logoUrl,
+        position: tmpl.logoPosition || 'top-right',
+        size:     parseFloat(tmpl.logoSize) || 100
+      };
+      if (typeof window.applyBrandLogoOverlay === 'function'){
+        try { window.applyBrandLogoOverlay(); } catch(_){}
+      }
+      summary.push('Logo overlay');
+    } else {
+      // Template explicitly has no logo — clear any prior overlay.
+      window.__brandLogo = null;
+      if (typeof window.applyBrandLogoOverlay === 'function'){
+        try { window.applyBrandLogoOverlay(); } catch(_){}
       }
     }
 
     if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
     toast('Brand template applied: ' + summary.join(' \u00b7 '));
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #69 — Brand Kit logo as TRANSPARENT preview overlay.
+  // Reads window.__brandLogo = { url, position, size } and renders
+  // a positioned <img> over the preview area. The export pipeline
+  // applies the equivalent FFmpeg overlay= filter so the rendered
+  // file matches what the user sees.
+  // ═════════════════════════════════════════════════════════════════
+  function applyBrandLogoOverlay(){
+    // Anchor on the video preview area first so the logo sits over the
+    // actual <video> element rather than the wider container that also
+    // includes the filmstrip/timeline rows.
+    var previewWrap =
+      document.getElementById('videoPreviewArea') ||
+      document.querySelector('.video-preview-area') ||
+      document.querySelector('.video-container') ||
+      document.querySelector('.preview-wrap') ||
+      document.querySelector('#previewWrap') ||
+      document.querySelector('.video-preview-wrap');
+    if (!previewWrap) return;
+
+    // Make sure the host can position the absolute overlay child.
+    var cs = window.getComputedStyle ? window.getComputedStyle(previewWrap) : null;
+    if (cs && cs.position === 'static'){
+      previewWrap.style.position = 'relative';
+    }
+
+    // Tear down any previous overlay so the next apply replaces it.
+    var prev = previewWrap.querySelector('[data-brand-logo-overlay="1"]');
+    if (prev) { try { prev.remove(); } catch(_){} }
+
+    var bl = window.__brandLogo;
+    if (!bl || !bl.url) return;
+
+    var img = document.createElement('img');
+    img.src = bl.url;
+    img.setAttribute('data-brand-logo-overlay', '1');
+    img.setAttribute('alt', '');
+    img.setAttribute('draggable', 'false');
+
+    // Size in px relative to a 720-wide design canvas; scale to the
+    // preview container's actual width so on-screen size tracks the
+    // export size proportionally.
+    var sizePx = parseFloat(bl.size) || 100;
+    var hostW = previewWrap.clientWidth || 720;
+    var scaledW = Math.round(sizePx * (hostW / 720));
+    if (scaledW < 24) scaledW = 24;
+
+    var pos = String(bl.position || 'top-right');
+    // Default safe-area inset: 4% of preview width.
+    var pad = Math.max(8, Math.round(hostW * 0.04));
+
+    var style = 'position:absolute;width:' + scaledW + 'px;height:auto;' +
+      'pointer-events:none;user-select:none;z-index:50;' +
+      'filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));';
+    if (pos === 'top-left'){
+      style += 'top:' + pad + 'px;left:' + pad + 'px;';
+    } else if (pos === 'bottom-left'){
+      style += 'bottom:' + pad + 'px;left:' + pad + 'px;';
+    } else if (pos === 'bottom-right'){
+      style += 'bottom:' + pad + 'px;right:' + pad + 'px;';
+    } else if (pos === 'center'){
+      style += 'top:50%;left:50%;transform:translate(-50%,-50%);';
+    } else {
+      // default: top-right
+      style += 'top:' + pad + 'px;right:' + pad + 'px;';
+    }
+    img.style.cssText = style;
+    img.addEventListener('error', function(){ try { img.remove(); } catch(_){} });
+    previewWrap.appendChild(img);
+  }
+  window.applyBrandLogoOverlay = applyBrandLogoOverlay;
+
+  // Re-apply the overlay when the preview resizes so the logo stays
+  // proportional to the container width.
+  if (typeof window !== 'undefined'){
+    var _blResizeT = null;
+    window.addEventListener('resize', function(){
+      if (_blResizeT) clearTimeout(_blResizeT);
+      _blResizeT = setTimeout(function(){
+        if (window.__brandLogo) {
+          try { applyBrandLogoOverlay(); } catch(_){}
+        }
+      }, 150);
+    });
   }
 
   // ═════════════════════════════════════════════════════════════════

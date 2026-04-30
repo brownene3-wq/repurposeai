@@ -8,6 +8,14 @@ const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
+// Task #69 — Brand Kit logo overlay during export. The brand-templates
+// module exposes fetchLogo(filename) which reads the BLOB out of the
+// brand_template_logos Postgres table; we use that to materialise the
+// logo to a temp file and pass it to FFmpeg as an extra input.
+let brandTemplatesMod = null;
+try { brandTemplatesMod = require('./brand-templates'); }
+catch (_brErr){ brandTemplatesMod = null; }
+
 // FFmpeg detection and setup
 let ffmpegPath = null;
 const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
@@ -3370,7 +3378,10 @@ function showToast(message, type = 'success') {
             // FX-track clips (for the export server to merge into any
             // overlapping V1 segment — drag-to-broadcast support)
             fxKey:        c.dataset.fxKey        || '',
-            fxValue:      c.dataset.fxValue      || ''
+            fxValue:      c.dataset.fxValue      || '',
+            // Task #69 — flag legacy brand-logo V1 clips so the server can
+            // skip them (logos now ride on the post-pass overlay= filter).
+            brandLogo:    c.dataset.brandLogo    || ''
           };
         });
 
@@ -3511,7 +3522,14 @@ function showToast(message, type = 'success') {
               height: targetH,
               format: selFormat,
               quality: selQuality,
-              customFilename: customFilename  // Task #29
+              customFilename: customFilename, // Task #29
+              brandLogo: (window.__brandLogo && window.__brandLogo.url)
+                ? {
+                    url:      window.__brandLogo.url,
+                    position: window.__brandLogo.position || 'top-right',
+                    size:     window.__brandLogo.size || 100
+                  }
+                : null  // Task #69 — server applies overlay= filter on V1 segments
             })
           });
           var dataTL = await resp.json();
@@ -6750,8 +6768,13 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     }
 
     // Only render the video track in v1 (audio-track mixing = follow-up).
+    // Task #69 — drop any legacy "brand logo" V1 clips left over from the
+    // previous (opaque) implementation; logos now ride on the post-pass
+    // overlay= filter, so a full-frame V1 image clip would just hide the
+    // footage underneath.
     const v1 = clips.filter(function(c){
       var t = (c.track || '').toLowerCase();
+      if (c.brandLogo === '1' || c.brandLogo === 1 || c.brandLogo === true) return false;
       return (t === 'video' || t === 'vid' || t === '') && c.mediaUrl;
     });
     if (v1.length === 0) {
@@ -7302,7 +7325,45 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       return !!(INLINE_MOTION[eff] || OVERLAY_MOTION[eff]);
     });
 
-    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0;
+    // ─── Task #69 — Brand-logo overlay (transparent layer over V1) ──────
+    // The client passes brandLogo: { url, position, size } when the user
+    // applied a Brand Template that includes a logo. The URL points to
+    // /brand-templates/logo/<filename>; we resolve it via fetchLogo() to
+    // a temp file and feed it as an extra ffmpeg input in the post-pass.
+    var brandLogoFile = null;     // temp file path (deleted in finally)
+    var brandLogoMeta = null;     // { position, size }
+    if (body && body.brandLogo && body.brandLogo.url && brandTemplatesMod && brandTemplatesMod.fetchLogo){
+      try {
+        var bUrl = String(body.brandLogo.url);
+        var bm = /\/brand-templates\/logo\/([^?#]+)/.exec(bUrl);
+        var bFname = bm ? decodeURIComponent(bm[1]) : null;
+        if (bFname && (!brandTemplatesMod.safeFilename || brandTemplatesMod.safeFilename(bFname))){
+          var bRow = await brandTemplatesMod.fetchLogo(bFname);
+          if (bRow && bRow.data){
+            // Pick an extension matching the BLOB's MIME so FFmpeg's
+            // demuxer auto-detection picks the right decoder.
+            var bExt = '.png';
+            var bMime = (bRow.mime_type || '').toLowerCase();
+            if (bMime.indexOf('jpeg') >= 0 || bMime.indexOf('jpg') >= 0) bExt = '.jpg';
+            else if (bMime.indexOf('webp') >= 0) bExt = '.webp';
+            else if (bMime.indexOf('gif') >= 0) bExt = '.gif';
+            else if (bMime.indexOf('svg') >= 0) bExt = '.svg';
+            brandLogoFile = path.join(workDir, 'brand_logo' + bExt);
+            fs.writeFileSync(brandLogoFile, bRow.data);
+            brandLogoMeta = {
+              position: String(body.brandLogo.position || 'top-right'),
+              size:     parseFloat(body.brandLogo.size) || 100
+            };
+          }
+        }
+      } catch (eBL){
+        console.warn('[export-timeline] brand-logo resolve failed:', eBL && eBL.message);
+        brandLogoFile = null;
+        brandLogoMeta = null;
+      }
+    }
+
+    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0 || !!brandLogoFile;
 
     if (!hasPostPass){
       // Nothing to bake — just rename the intermediate to the final path.
@@ -7314,6 +7375,13 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         var p = urlToFilePath(c.mediaUrl);
         if (p) ffArgs.push('-i', p);
       });
+      // Brand-logo input goes AFTER all audio inputs so its index is stable
+      // and predictable (1 + audioClips.length).
+      var brandLogoInputIdx = -1;
+      if (brandLogoFile){
+        brandLogoInputIdx = 1 + audioClips.length;
+        ffArgs.push('-i', brandLogoFile);
+      }
 
       // Video filter chain: drawtext per text clip. Escape special chars.
       function escDT(s){
@@ -7608,14 +7676,41 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
           }
           return dtParts.join(':');
         });
-        chains.push(currentLbl + parts.join(',') + '[vout]');
+        chains.push(currentLbl + parts.join(',') + '[vbase]');
       } else if (chains.length === 0){
         // No filters whatsoever for the video stream
-        chains.push('[0:v]null[vout]');
+        chains.push('[0:v]null[vbase]');
       } else {
-        // Motion filters ran but no text — rename the last label to [vout]
+        // Motion filters ran but no text — rename the last label to [vbase]
         // by adding a terminal null chain.
-        chains.push(currentLbl + 'null[vout]');
+        chains.push(currentLbl + 'null[vbase]');
+      }
+
+      // Task #69 — Brand-logo overlay step. Scales the logo input to the
+      // export-relative size (logoSize is px-at-720-wide) and overlays it
+      // at the configured corner with a 4% inset. Result becomes [vout].
+      if (brandLogoInputIdx >= 0 && brandLogoMeta){
+        var blPos = String(brandLogoMeta.position || 'top-right').toLowerCase();
+        var blSizePx = parseFloat(brandLogoMeta.size) || 100;
+        var blExportW = Math.max(24, Math.round(blSizePx * (outW / 720)));
+        // 4% inset — same as the on-screen preview (.video-container).
+        var blPadX = Math.max(8, Math.round(outW * 0.04));
+        var blPadY = Math.max(8, Math.round(outH * 0.04));
+        var blX, blY;
+        if (blPos === 'top-left')         { blX = String(blPadX);          blY = String(blPadY); }
+        else if (blPos === 'bottom-left') { blX = String(blPadX);          blY = '(H-h)-' + blPadY; }
+        else if (blPos === 'bottom-right'){ blX = '(W-w)-' + blPadX;       blY = '(H-h)-' + blPadY; }
+        else if (blPos === 'center')      { blX = '(W-w)/2';               blY = '(H-h)/2'; }
+        else /* top-right (default) */    { blX = '(W-w)-' + blPadX;       blY = String(blPadY); }
+        // Scale the logo input. Use w=NN:h=-1 so the image keeps its
+        // aspect ratio (transparent PNGs survive — overlay= preserves
+        // alpha when the source has it).
+        // Force RGBA on the logo so transparent PNGs blend correctly.
+        chains.push('[' + brandLogoInputIdx + ':v]format=rgba,scale=' + blExportW + ':-1[blogoSc]');
+        chains.push('[vbase][blogoSc]overlay=x=' + blX + ':y=' + blY + '[vout]');
+      } else {
+        // No brand logo — pass [vbase] through to [vout] unchanged.
+        chains.push('[vbase]null[vout]');
       }
 
       videoGraph = chains.join(';');
@@ -7690,6 +7785,8 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       segments.forEach(function(p){ try { fs.unlinkSync(p); } catch(_){} });
       try { fs.unlinkSync(listPath); } catch(_){}
       try { if (fs.existsSync(intermediatePath)) fs.unlinkSync(intermediatePath); } catch(_){}
+      // Task #69 — drop the temp brand-logo file (if we materialised one).
+      try { if (brandLogoFile && fs.existsSync(brandLogoFile)) fs.unlinkSync(brandLogoFile); } catch(_){}
       try { fs.rmdirSync(workDir); } catch(_){}
     } catch(_){}
 

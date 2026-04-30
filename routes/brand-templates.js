@@ -1040,4 +1040,9 @@ router.post('/apply', requireAuth, async (req, res) => {
   }
 });
 
+// Task #69 — expose fetchLogo + safeFilename so the video-editor export
+// pipeline can resolve a brand-logo URL to its underlying BLOB and bake
+// it into the rendered MP4 via FFmpeg overlay= filter.
 module.exports = router;
+module.exports.fetchLogo = fetchLogo;
+module.exports.safeFilename = safeFilename;
