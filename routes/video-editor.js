@@ -353,10 +353,15 @@ async function renderEditor(req, res) {
     
     /* ═══ MEDIA LIBRARY (Left Panel) ═══ */
     .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow:hidden;grid-column:1;grid-row:2}
-    .ml-head{padding:8px 10px;border-bottom:1px solid rgba(108,58,237,.06);display:flex;align-items:center;gap:6px}
-    .ml-head h3{font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.7px;flex:1}
+    /* Task #68 — Media library text bumped to dashboard-scale sizing.
+       Was 8-11px; rest of the app uses 12-14px. This block keeps the
+       same visual hierarchy (header > tabs > items > section labels)
+       but at sizes that don't look like debug output next to the
+       editor sidebar's normal 13px UI. */
+    .ml-head{padding:12px 14px;border-bottom:1px solid rgba(108,58,237,.06);display:flex;align-items:center;gap:8px}
+    .ml-head h3{font-size:14px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.7px;flex:1}
     .ml-tabs{display:flex;border-bottom:1px solid rgba(108,58,237,.06)}
-    .ml-tab{flex:1;padding:8px 4px;text-align:center;font-size:9.5px;font-weight:700;color:#4a3d65;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:.3px;background:none;border-top:none;border-left:none;border-right:none}
+    .ml-tab{flex:1;padding:10px 6px;text-align:center;font-size:12px;font-weight:700;color:#4a3d65;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:.3px;background:none;border-top:none;border-left:none;border-right:none}
     .ml-tab:hover{color:#a78bfa;background:rgba(108,58,237,.03)}
     .ml-tab.active{color:#a78bfa;border-bottom-color:#7c3aed;background:rgba(108,58,237,.04)}
     /* ═══ V10 CRITICAL HIDE RULES — INLINED TO PREVENT LEGACY-LAYOUT FLASH ═══
@@ -374,11 +379,11 @@ async function renderEditor(req, res) {
     .filmstrip-wrap{display:none!important}
     /* ═════════════════════════════════════════════════════════════════════ */
     .ml-search{padding:5px 8px}
-    .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;outline:none}
+    .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:8px 10px;color:#ccc;font-size:13px;outline:none}
     .ml-body{flex:1;overflow-y:auto;padding:5px 6px}
     .ml-upload{border:2px dashed rgba(108,58,237,.2);border-radius:9px;padding:12px;text-align:center;margin-bottom:7px;cursor:pointer;transition:all .25s;background:rgba(108,58,237,.02)}
     .ml-upload:hover{border-color:#7c3aed;background:rgba(108,58,237,.06)}
-    .ml-section{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:6px 2px 3px;display:flex;align-items:center;gap:4px}
+    .ml-section{font-size:11px;font-weight:700;color:#7a6d9c;text-transform:uppercase;letter-spacing:.8px;padding:10px 4px 6px;display:flex;align-items:center;gap:6px}
     .ml-section::after{content:'';flex:1;height:1px;background:rgba(108,58,237,.05)}
     .ml-folder{display:flex;align-items:center;gap:6px;padding:5px 7px;background:#16112a;border-radius:6px;border:1px solid rgba(108,58,237,.04);cursor:pointer;margin-bottom:2px;transition:all .2s}
     .ml-folder:hover{border-color:rgba(108,58,237,.15);background:rgba(108,58,237,.04)}
@@ -392,9 +397,9 @@ async function renderEditor(req, res) {
     .ml-fth .ml-dur{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.75);color:#bbb;font-size:7px;padding:0 3px;border-radius:2px;font-weight:600}
     .ml-fth .ml-add{position:absolute;bottom:2px;left:2px;background:rgba(108,58,237,.8);color:#fff;font-size:7px;padding:1px 4px;border-radius:2px;font-weight:700;opacity:0;transition:opacity .2s}
     .ml-fitem:hover .ml-add{opacity:1}
-    .ml-fnm{padding:3px 5px;font-size:8px;color:#5a4d78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .ml-foot{padding:5px 6px;border-top:1px solid rgba(108,58,237,.05);display:flex;gap:3px}
-    .ml-fb{flex:1;padding:5px;background:rgba(108,58,237,.05);border:1px solid rgba(108,58,237,.06);border-radius:5px;color:#5a4d78;font-size:8px;font-weight:700;cursor:pointer;text-align:center;transition:all .2s}.ml-fitem.selected{border:2px solid #6c3aed;background:rgba(108,58,237,.15)}.ml-fitem:hover{background:rgba(108,58,237,.08);transform:translateY(-1px)}.ml-folder{cursor:pointer;transition:background .2s}.ml-folder:hover{background:rgba(108,58,237,.1);border-radius:6px}.ml-folder.open{background:rgba(108,58,237,.08)}.ml-fb:hover{background:rgba(108,58,237,.15)!important;transform:translateY(-1px)}.tb3{cursor:pointer;transition:all .15s ease}.tb3:hover{background:rgba(108,58,237,.15)!important;transform:scale(1.02)}.tb3.on{background:rgba(108,58,237,.2)!important;border-color:rgba(108,58,237,.5)!important}.mt-tool-btn{cursor:pointer;transition:all .15s}.mt-tool-btn:hover{background:rgba(108,58,237,.2)}.annotation-tool-btn{cursor:pointer;transition:all .15s}.annotation-tool-btn:hover{background:rgba(108,58,237,.15)}.annotation-tool-btn.active{background:rgba(108,58,237,.25);border-color:#6c3aed}@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+    .ml-fnm{padding:6px 8px;font-size:12px;color:#a18ed0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ml-foot{padding:8px 10px;border-top:1px solid rgba(108,58,237,.05);display:flex;gap:6px}
+    .ml-fb{flex:1;padding:9px 10px;background:rgba(108,58,237,.05);border:1px solid rgba(108,58,237,.12);border-radius:7px;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer;text-align:center;transition:all .2s}.ml-fitem.selected{border:2px solid #6c3aed;background:rgba(108,58,237,.15)}.ml-fitem:hover{background:rgba(108,58,237,.08);transform:translateY(-1px)}.ml-folder{cursor:pointer;transition:background .2s}.ml-folder:hover{background:rgba(108,58,237,.1);border-radius:6px}.ml-folder.open{background:rgba(108,58,237,.08)}.ml-fb:hover{background:rgba(108,58,237,.15)!important;transform:translateY(-1px)}.tb3{cursor:pointer;transition:all .15s ease}.tb3:hover{background:rgba(108,58,237,.15)!important;transform:scale(1.02)}.tb3.on{background:rgba(108,58,237,.2)!important;border-color:rgba(108,58,237,.5)!important}.mt-tool-btn{cursor:pointer;transition:all .15s}.mt-tool-btn:hover{background:rgba(108,58,237,.2)}.annotation-tool-btn{cursor:pointer;transition:all .15s}.annotation-tool-btn:hover{background:rgba(108,58,237,.15)}.annotation-tool-btn.active{background:rgba(108,58,237,.25);border-color:#6c3aed}@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
     .ml-fb:hover{background:rgba(108,58,237,.12);color:#a78bfa}
     .ml-fb.ai{background:linear-gradient(135deg,rgba(108,58,237,.08),rgba(236,72,153,.04));border-color:rgba(108,58,237,.1);color:#a78bfa}
 
