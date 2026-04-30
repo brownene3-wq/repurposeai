@@ -771,9 +771,9 @@ ${pageStyles}
           <div style="display:flex;gap:8px;width:100%;max-width:600px;margin:0 auto">
             <div style="position:relative;flex:1">
               <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
-              <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
+              <input type="text" id="heroLinkInput" placeholder="Paste a YouTube, Zoom, Twitch, or Rumble link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
             </div>
-            <button type="button" id="heroImportBtn" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
+<button type="button" id="heroImportBtn" style="display:none">Import</button>
           </div>
         </div>
 
@@ -837,7 +837,7 @@ ${pageStyles}
             </div>
           </div>
 
-          <button type="submit" class="btn-generate" id="generateBrollBtn">Add B-Roll in 1 Click</button>
+          <button type="submit" class="btn-generate" id="generateBrollBtn">Analyze and Generate B-Roll</button>
           <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
         </form>
       </div>
@@ -1006,7 +1006,7 @@ ${pageStyles}
 
       const btn = document.getElementById('generateBrollBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span class="loading-spinner"></span> Analyzing video & finding B-Roll...';
+      btn.innerHTML = '<span class="loading-spinner"></span> Analyzing & generating B-Roll...';
       const progressBar = document.getElementById('progressBar');
       progressBar.classList.add('active');
 
