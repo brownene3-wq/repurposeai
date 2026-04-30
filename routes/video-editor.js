@@ -443,14 +443,19 @@ async function renderEditor(req, res) {
 .exit-fullscreen-btn:hover{background:rgba(124,58,237,1)}
 
     /* ═══ TOP BAR ═══ */
-    .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 12px;gap:5px;height:38px;z-index:100}
-    .e-logo{font-size:13px;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:8px;cursor:pointer}
+    /* Task #62 — Editor topbar sized to match the standard dashboard
+       header: 56px tall (was 38px), 24px horizontal padding (was 12px),
+       1.4rem logo (was 13px), proportional button sizing. The grid
+       still allocates a single 'auto' row for it so the editor body
+       below resizes to fill the remaining viewport height. */
+    .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px;gap:12px;height:56px;z-index:100}
+    .e-logo{font-size:1.4rem;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-right:14px;cursor:pointer;letter-spacing:.2px}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
-    .e-tb{padding:4px 9px;font-size:10px;font-weight:600;color:#5a4d78;background:transparent;border:1px solid rgba(108,58,237,.08);border-radius:5px;cursor:pointer;transition:all .2s}
-    .e-tb:hover{color:#a78bfa;border-color:#7c3aed}
-    .e-tb.on{background:rgba(108,58,237,.1);color:#a78bfa}
+    .e-tb{padding:8px 16px;font-size:13px;font-weight:600;color:#a78bfa;background:transparent;border:1px solid rgba(108,58,237,.25);border-radius:8px;cursor:pointer;transition:all .2s}
+    .e-tb:hover{color:#fff;border-color:#7c3aed;background:rgba(108,58,237,.12)}
+    .e-tb.on{background:rgba(108,58,237,.18);color:#fff}
     .e-sp{flex:1}
-    .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-weight:700;padding:5px 16px}
+    .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-weight:700;padding:9px 22px;font-size:13px}
 
     /* ═══ RIGHT PANEL: ORGANIZED SECTIONS ═══ */
     .editor-sidebar .cat-tabs-new{display:flex;gap:1px;padding:3px;background:#0c0814;border-bottom:1px solid rgba(108,58,237,.06)}
