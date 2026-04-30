@@ -2911,11 +2911,42 @@
     var existing = document.getElementById('v10BRollModal');
     if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
 
-    var target = pickSourceClipForAI('broll');
-    if (!target){
-      toast('Add a V1 video clip to the timeline first');
+    // Two precondition checks before the modal opens.
+    //   1. V1 must contain at least one server-resolvable video clip.
+    //   2. The user must have a V1 clip SELECTED (so we know which clip
+    //      to analyse). Selection is set by clicking on a clip in the
+    //      timeline — adds the .selected CSS class.
+    function hasResolvableV1(){
+      var v1 = document.querySelectorAll('.mt-track-video .mt-clip');
+      for (var i = 0; i < v1.length; i++){
+        var u = v1[i].dataset.mediaUrl || '';
+        if (u && u.indexOf('blob:') !== 0 &&
+            v1[i].dataset.clipType !== 'text' &&
+            v1[i].dataset.clipType !== 'motion'){
+          return true;
+        }
+      }
+      return false;
+    }
+    if (!hasResolvableV1()){
+      toast('Add a video to the V1 track first');
       return;
     }
+    var selectedV1 = (function(){
+      var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+      if (sel && sel.dataset.mediaUrl &&
+          sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+          sel.dataset.clipType !== 'text' &&
+          sel.dataset.clipType !== 'motion'){
+        return sel;
+      }
+      return null;
+    })();
+    if (!selectedV1){
+      toast('Select a V1 clip on the timeline, then click AI B-Roll');
+      return;
+    }
+    var target = selectedV1;
 
     var bk = document.createElement('div');
     bk.id = 'v10BRollModal';
@@ -3088,34 +3119,15 @@
     var aiStatus   = panel.querySelector('#broAiStatus');
 
     function getSelectedV1Clip(){
-      // Source priority — what "selected video clip" means here:
-      //   1. A V1 .mt-clip with the .selected CSS class (user clicked it)
-      //   2. The V1 clip currently under the playhead
-      //   3. The first V1 clip on the track (fallback so the modal still
-      //      works when nothing is explicitly selected)
-      // Skips text/motion clips and any clip whose mediaUrl is a blob:
-      // (those exist only in the browser; the server can't resolve them).
-      function ok(c){
-        return !!(c && c.dataset.mediaUrl &&
-          c.dataset.mediaUrl.indexOf('blob:') !== 0 &&
-          c.dataset.clipType !== 'text' &&
-          c.dataset.clipType !== 'motion');
-      }
+      // Strict: only the .selected V1 clip qualifies, with a server-
+      // resolvable mediaUrl. The B-Roll modal explicitly requires the
+      // user to pick a clip — no playhead / first-clip fallbacks.
       var sel = document.querySelector('.mt-track-video .mt-clip.selected');
-      if (ok(sel)) return sel;
-      var ph = document.getElementById('mtPlayhead');
-      var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
-      var v1Clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
-      if (phPx >= 0){
-        for (var i = 0; i < v1Clips.length; i++){
-          var c = v1Clips[i];
-          var l = parseFloat(c.style.left)  || 0;
-          var w = parseFloat(c.style.width) || 0;
-          if (phPx >= l && phPx <= l + w && ok(c)) return c;
-        }
-      }
-      for (var j = 0; j < v1Clips.length; j++){
-        if (ok(v1Clips[j])) return v1Clips[j];
+      if (sel && sel.dataset.mediaUrl &&
+          sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+          sel.dataset.clipType !== 'text' &&
+          sel.dataset.clipType !== 'motion'){
+        return sel;
       }
       return null;
     }
@@ -3129,9 +3141,19 @@
         target = sel;
         aiStatus.style.color = '#8886a0';
         aiStatus.textContent = 'Source: ' + clipDisplayName(sel);
+        if (analyzeBtn && !analyzeBtn.dataset.broAnalyzing){
+          analyzeBtn.disabled = false;
+          analyzeBtn.style.opacity = '';
+          analyzeBtn.style.cursor = 'pointer';
+        }
       } else {
         aiStatus.style.color = '#fb923c';
         aiStatus.textContent = 'Select a V1 video clip on the timeline to analyze';
+        if (analyzeBtn && !analyzeBtn.dataset.broAnalyzing){
+          analyzeBtn.disabled = true;
+          analyzeBtn.style.opacity = '0.5';
+          analyzeBtn.style.cursor = 'not-allowed';
+        }
       }
     }
     try { refreshSourceLabel(); } catch(_){}
@@ -3156,7 +3178,6 @@
       console.warn('[broll] analyze button not found — modal HTML mismatch');
     }
     analyzeBtn && analyzeBtn.addEventListener('click', async function(){
-      console.log('[broll] Analyze clicked');
       if (analyzeBtn.disabled) return;
       // Re-pick the source clip RIGHT NOW so changing selection while
       // the modal is open is reflected in the analysis.
@@ -3168,6 +3189,7 @@
         return;
       }
       target = src;
+      analyzeBtn.dataset.broAnalyzing = '1';
       analyzeBtn.disabled = true;
       analyzeBtn.style.opacity = '0.6';
       aiStatus.style.color = '#a78bfa';
@@ -3198,8 +3220,10 @@
         aiStatus.style.color = '#ef4444';
         aiStatus.textContent = '';
       } finally {
-        analyzeBtn.disabled = false;
-        analyzeBtn.style.opacity = '';
+        delete analyzeBtn.dataset.broAnalyzing;
+        // Defer to refreshSourceLabel for re-enable so we don't enable
+        // the button when selection has been cleared mid-analysis.
+        try { refreshSourceLabel(); } catch(_){}
       }
     });
 
