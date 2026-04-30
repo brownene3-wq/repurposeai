@@ -1946,7 +1946,13 @@ router.post('/apply', requireAuth, async (req, res) => {
 router.post('/search-inline', requireAuth, async (req, res) => {
   try {
     const q = String((req.body || {}).query || '').trim().slice(0, 80);
+    // The display cap (max) is what we hand back to the client. Pixabay's
+    // own per_page param has a hard minimum of 3 — passing 1 or 2 returns
+    // a 400 — so we always request at least 3 from the API and slice
+    // down to `max` afterwards. This keeps the transcript-tooltip flow
+    // (which asks for 2) working without a server-side error.
     const max = Math.max(1, Math.min(24, parseInt((req.body || {}).max, 10) || 12));
+    const perPage = Math.max(3, Math.min(200, max));
     if (!q){
       return res.status(400).json({ error: 'query required' });
     }
@@ -1958,10 +1964,16 @@ router.post('/search-inline', requireAuth, async (req, res) => {
     }
     const url = 'https://pixabay.com/api/videos/?key=' + apiKey +
                 '&q=' + encodeURIComponent(q) +
-                '&per_page=' + max +
+                '&per_page=' + perPage +
                 '&safesearch=true';
     const r = await fetch(url);
-    if (!r.ok) throw new Error('Pixabay error ' + r.status);
+    if (!r.ok){
+      // Surface a useful error body when Pixabay rejects (typically a
+      // bad/expired key, malformed query, or per_page out of range).
+      let body = '';
+      try { body = await r.text(); } catch(_){}
+      throw new Error('Pixabay error ' + r.status + (body ? (': ' + body.slice(0, 200)) : ''));
+    }
     const data = await r.json();
     const results = (data.hits || []).slice(0, max).map(function(hit){
       const vids = hit.videos || {};
