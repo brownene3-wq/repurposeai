@@ -6444,12 +6444,11 @@
       }, true);
     }
 
-    if (text.indexOf('B-Roll') !== -1) {
-      btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        showAIBRollPanel();
-      }, true);
-    }
+    // Task #76 — AI B-Roll: legacy "AI B-Roll Generator" mockup retired.
+    // The bottom-of-Media button now opens the transcript-driven
+    // openBRollModal defined in v10-editor-redesign.js. The handler
+    // wired by routes/video-editor.js already calls window.openBRollModal,
+    // so we deliberately do NOT register a competing handler here.
   });
 
   // ââ 6b. Custom folder name dialog (replaces prompt()) ââ
@@ -6516,63 +6515,22 @@
   }
 
   // ââ 8. AI B-Roll panel ââ
-  function showAIBRollPanel() {
-    var existing = document.getElementById('aiBrollOverlay');
-    if (existing && existing.parentElement && existing.style.display !== '') {
-      // Already visible — toggle off
-      existing.style.display = 'none'; return;
+  // Task #76 — Old "AI B-Roll Generator" mockup retired. The function
+  // is kept as a thin shim that delegates to the transcript-driven
+  // openBRollModal in v10-editor-redesign.js so any other caller still
+  // referencing showAIBRollPanel() lands on the real flow. Also evicts
+  // any stale aiBrollOverlay node left in the DOM by the previous build.
+  function showAIBRollPanel(triggerBtn) {
+    var stale = document.getElementById('aiBrollOverlay');
+    if (stale) { try { stale.remove(); } catch(_){} }
+    if (typeof window.openBRollModal === 'function'){
+      try { window.openBRollModal(triggerBtn || null); }
+      catch (e){
+        if (typeof showToast === 'function') showToast('Could not open B-Roll modal: ' + e.message, 'error');
+      }
+    } else if (typeof showToast === 'function'){
+      showToast('Editor still loading — try again in a moment');
     }
-    if (existing) existing.remove(); // Remove stale/hidden overlay and recreate fresh
-
-    // Create overlay backdrop for guaranteed visibility
-    var overlay = document.createElement('div');
-    overlay.id = 'aiBrollOverlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;';
-
-    var panel = document.createElement('div');
-    panel.id = 'aiBrollPanel';
-    panel.style.cssText = 'background:#1a1028;border:2px solid #7c3aed;border-radius:16px;padding:24px;width:400px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.6);';
-    panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'
-      + '<h3 style="color:#fff;margin:0;font-size:16px">\u2728 AI B-Roll Generator</h3>'
-      + '<span id="closeBroll" style="color:#999;cursor:pointer;font-size:20px">&times;</span>'
-      + '</div>'
-      + '<p style="color:#a78bfa;font-size:12px;margin-bottom:12px">AI will analyze your video content and suggest relevant B-Roll footage to enhance your edit.</p>'
-      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83C\uDFD9 Urban</button>'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83C\uDF3F Nature</button>'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83D\uDCBB Tech</button>'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83D\uDC65 People</button>'
-      + '</div>'
-      + '<button id="analyzeBroll" style="width:100%;padding:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">\uD83D\uDD0D Analyze Video for B-Roll</button>'
-      + '<div id="brollResults" style="margin-top:12px"></div>';
-
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-
-    document.getElementById('closeBroll').addEventListener('click', function() { overlay.style.display = 'none'; });
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.style.display = 'none'; });
-
-    document.getElementById('analyzeBroll').addEventListener('click', function() {
-      var results = document.getElementById('brollResults');
-      results.innerHTML = '<div style="text-align:center;padding:16px;color:#a78bfa"><div style="font-size:24px;margin-bottom:8px">\u23F3</div>Analyzing video content...</div>';
-
-      setTimeout(function() {
-        results.innerHTML = '<div style="font-size:11px;font-weight:600;color:#fff;margin-bottom:8px">Suggested B-Roll:</div>'
-          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: City Skyline\')"><div style="font-size:20px">\uD83C\uDFD9</div><div style="font-size:9px;color:#c4bfda">City Skyline</div></div>'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: Team Meeting\')"><div style="font-size:20px">\uD83D\uDC65</div><div style="font-size:9px;color:#c4bfda">Team Meeting</div></div>'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: Data Visuals\')"><div style="font-size:20px">\uD83D\uDCCA</div><div style="font-size:9px;color:#c4bfda">Data Visuals</div></div>'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: Abstract Tech\')"><div style="font-size:20px">\u2728</div><div style="font-size:9px;color:#c4bfda">Abstract Tech</div></div>'
-          + '</div>';
-      }, 1500);
-    });
-
-    panel.querySelectorAll('.broll-cat').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        panel.querySelectorAll('.broll-cat').forEach(function(b) { b.style.background = '#7c3aed22'; });
-        this.style.background = '#7c3aed44';
-      });
-    });
   }
 
   // ââ 9. Search input - filter media items ââ
