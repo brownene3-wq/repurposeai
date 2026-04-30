@@ -1526,9 +1526,42 @@
           if (!resp.ok || !data.success){
             throw new Error((data && data.error) || (pretty + ' failed'));
           }
+          var oldUrl = clip.dataset.mediaUrl;
           clip.dataset.mediaUrl = data.serveUrl;
-          // Re-render waveform at new URL
-          try { if (typeof window.attachFilmstripOrWaveform === 'function') window.attachFilmstripOrWaveform(clip); } catch(_){}
+          // Task #66 — if the server returned a video (V1 clip path),
+          // also hot-swap the <video> element src if this clip is the
+          // one currently loaded in the Program Monitor, and rebuild
+          // the filmstrip from the new URL. For audio-only output the
+          // existing waveform refresh is enough.
+          if (data.kind === 'video' && clip.classList.contains('mt-clip-video')){
+            var player = document.getElementById('videoPlayer') || document.querySelector('video');
+            if (player && oldUrl){
+              var curSrc = player.currentSrc || player.src || '';
+              var oldName = oldUrl.split('?')[0].split('/').pop();
+              if (oldName && curSrc.indexOf(oldName) !== -1){
+                var t = player.currentTime;
+                var wasPlaying = !player.paused;
+                try { player.src = data.serveUrl; player.load(); } catch(_){}
+                player.addEventListener('loadedmetadata', function once(){
+                  player.removeEventListener('loadedmetadata', once);
+                  try { player.currentTime = t; } catch(_){}
+                  if (wasPlaying){ try { player.play(); } catch(_){} }
+                }, { once: true });
+              }
+            }
+            if (typeof window.buildClipFilmstrip === 'function'){
+              var oldFS = clip.querySelector('.v10-filmstrip');
+              var oldLb = clip.querySelector('.v10-fs-label');
+              if (oldFS) oldFS.remove();
+              if (oldLb) oldLb.remove();
+              try {
+                window.buildClipFilmstrip(clip, data.serveUrl,
+                  parseFloat(clip.dataset.duration) || 0);
+              } catch(_){}
+            }
+          } else {
+            try { if (typeof window.attachFilmstripOrWaveform === 'function') window.attachFilmstripOrWaveform(clip); } catch(_){}
+          }
         } catch (procErr){
           console.warn('[enhance]', procErr);
           toast(pretty + ' error: ' + (procErr.message || procErr));

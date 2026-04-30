@@ -7235,9 +7235,18 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     var extForFile = (body && body.format) === 'gif' ? 'gif' : 'mp4';
     var outputFilename;
     if (customName){
-      // Append a short ID to avoid collisions if the user exports twice
-      // with the same name. Keeps the name readable in Downloads.
-      outputFilename = customName + '_' + Date.now().toString(36) + '.' + extForFile;
+      // Task #67 — Use the exact name the user typed. Only append a
+      // " (1)", " (2)" suffix if a file with that name already exists
+      // in the output dir, so duplicate exports don't overwrite each
+      // other but the FIRST export of any given name lands as exactly
+      // "<name>.mp4" (or .webm/.gif).
+      outputFilename = customName + '.' + extForFile;
+      var collisionN = 0;
+      while (fs.existsSync(path.join(outputDir, outputFilename))){
+        collisionN += 1;
+        outputFilename = customName + ' (' + collisionN + ').' + extForFile;
+        if (collisionN > 999) break; // safety
+      }
     } else {
       outputFilename = 'timeline_export_' + Date.now() + '_' + req.user.id + '.' + extForFile;
     }
@@ -11029,8 +11038,52 @@ router.post('/process-audio-clip', requireAuth, async (req, res) => {
     } else {
       return res.status(400).json({ error: 'Unknown action ' + action });
     }
+
+    // Task #66 — If the source is a VIDEO file, re-mux the processed
+    // audio back into a new MP4 (video stream copied — fast, no quality
+    // loss) so the client can swap mediaUrl in place without losing the
+    // video preview or breaking export. Audio-only sources still get an
+    // .m4a output (matches the original A1 behavior).
+    var srcExt = path.extname(srcPath).toLowerCase();
+    var isVideo = (srcExt === '.mp4' || srcExt === '.mov' ||
+                   srcExt === '.webm' || srcExt === '.mkv' ||
+                   srcExt === '.m4v' || srcExt === '.avi');
+
+    if (isVideo){
+      var outName = action + '_' + Date.now() + '_' + req.user.id + '.mp4';
+      var outPath = path.join(uploadDir, outName);
+      await new Promise(function(resolve, reject){
+        // -map 0:v + -c:v copy → keep the video stream untouched.
+        // -map 0:a + -af <filter> → re-encode just the audio with the FX.
+        var proc = spawn(ffmpegPath, [
+          '-y', '-i', srcPath,
+          '-map', '0:v:0', '-c:v', 'copy',
+          '-map', '0:a:0?',
+          '-af', filter,
+          '-c:a', 'aac', '-b:a', '192k',
+          '-movflags', '+faststart',
+          outPath
+        ]);
+        var stderr = '';
+        proc.stderr.on('data', function(d){ stderr += d.toString(); });
+        proc.on('close', function(code){
+          if (code === 0 && fs.existsSync(outPath)) resolve();
+          else reject(new Error(action + ' failed: ' + stderr.slice(-300)));
+        });
+        proc.on('error', reject);
+      });
+      return res.json({
+        success: true,
+        filename: outName,
+        serveUrl: '/video-editor/download/' + outName,
+        action: action,
+        kind: 'video'
+      });
+    }
+
+    // Audio-only source: stick with .m4a output.
     var outName = action + '_' + Date.now() + '_' + req.user.id + '.m4a';
-    var outPath = path.join(outputDir, outName);
+    var outPath = path.join(uploadDir, outName);
     await new Promise(function(resolve, reject){
       var proc = spawn(ffmpegPath, [
         '-y', '-i', srcPath,
@@ -11052,7 +11105,8 @@ router.post('/process-audio-clip', requireAuth, async (req, res) => {
       success: true,
       filename: outName,
       serveUrl: '/video-editor/download/' + outName,
-      action: action
+      action: action,
+      kind: 'audio'
     });
   } catch (err){
     console.error('[process-audio-clip] error:', err);
