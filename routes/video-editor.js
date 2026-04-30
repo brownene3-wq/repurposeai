@@ -5097,7 +5097,15 @@ function showToast(message, type = 'success') {
           } else if (text.includes('Folder')) {
             showToast('Create new folder');
           } else if (text.includes('B-Roll')) {
-            showToast('AI B-Roll: analyzing video for B-Roll suggestions...');
+            // Task #74 — Bottom-of-Media-library AI B-Roll button opens
+            // the same transcript-driven modal as the AI tab. Falls back
+            // to a toast if the editor IIFE hasn't finished booting yet.
+            if (typeof window.openBRollModal === 'function'){
+              try { window.openBRollModal(this); }
+              catch (e){ showToast('Could not open B-Roll modal: ' + e.message, 'error'); }
+            } else {
+              showToast('Editor still loading — try again in a moment');
+            }
           }
         });
       });

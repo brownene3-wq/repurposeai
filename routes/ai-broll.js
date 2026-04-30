@@ -1909,6 +1909,191 @@ router.post('/search-inline', requireAuth, async (req, res) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
+// Task #74 — POST /ai-broll/analyze-segments
+// Runs Whisper on the source video to get a word-level transcript, then
+// asks GPT to identify 3-6 short transcript segments where a B-Roll
+// cut-away would best enhance the video. Each suggestion carries the
+// timeline-aligned start/end seconds, the highlighted text, and a
+// Pixabay search query the editor uses to fetch two preview clips on
+// demand when the user clicks the highlight.
+//   Body: { mediaUrl }
+//   Returns: { success, chunks, suggestions, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/analyze-segments', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
+
+    var mediaUrl = String((req.body || {}).mediaUrl || '');
+    var m = /\/video-editor\/download\/([^?#]+)/.exec(mediaUrl);
+    var filename = m ? decodeURIComponent(m[1]) : null;
+    if (!filename){
+      return res.status(400).json({ error: 'mediaUrl must reference an uploaded video' });
+    }
+    var srcPath = path.join(uploadDir, path.basename(filename));
+    if (!fs.existsSync(srcPath)){
+      var alt = path.join(outputDir, path.basename(filename));
+      if (fs.existsSync(alt)) srcPath = alt;
+      else return res.status(404).json({ error: 'Source video not found on server. Upload via the sidebar first.' });
+    }
+
+    // 1. Extract mono 16kHz MP3 for Whisper (small + fast).
+    var mp3Path = path.join(uploadDir, 'broll_seg_' + Date.now() + '_' + req.user.id + '.mp3');
+    await new Promise(function(resolve, reject){
+      var p = spawn(ffmpegPath, [
+        '-fflags', '+genpts',
+        '-i', srcPath,
+        '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k',
+        '-ss', '0',
+        '-af', 'aresample=async=1:first_pts=0',
+        '-avoid_negative_ts', 'make_zero',
+        '-map_metadata', '-1',
+        '-reset_timestamps', '1',
+        '-y', mp3Path
+      ]);
+      var stderr = '';
+      p.stderr.on('data', function(d){ stderr += d.toString(); });
+      p.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Audio extract failed: ' + stderr.slice(-200)));
+      });
+      p.on('error', reject);
+    });
+
+    // 2. Whisper word-level transcription.
+    var transcript;
+    try {
+      var audioBuffer = fs.readFileSync(mp3Path);
+      var file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+      transcript = await openai.audio.transcriptions.create({
+        model: 'whisper-1',
+        file: file,
+        response_format: 'verbose_json',
+        timestamp_granularities: ['word']
+      });
+    } finally {
+      try { fs.unlinkSync(mp3Path); } catch(_){}
+    }
+
+    // 3. Group words into ~6-word phrase chunks (slightly larger than the
+    //    caption flow's 4-word so each chunk reads as a sentence fragment
+    //    — better signal for GPT picking B-Roll candidates).
+    var words = (transcript && Array.isArray(transcript.words)) ? transcript.words : [];
+    var CHUNK_SIZE = 6;
+    var GAP_BREAK  = 0.6;
+    var chunks = [];
+    var buf = [];
+    function flush(){
+      if (!buf.length) return;
+      chunks.push({
+        text:  buf.map(function(w){ return w.word; }).join(' ').replace(/\s+/g, ' ').trim(),
+        start: +buf[0].start.toFixed(3),
+        end:   +buf[buf.length - 1].end.toFixed(3)
+      });
+      buf = [];
+    }
+    for (var k = 0; k < words.length; k++){
+      var w = words[k];
+      if (buf.length){
+        var prev = buf[buf.length - 1];
+        if ((w.start - prev.end) > GAP_BREAK) flush();
+      }
+      buf.push(w);
+      if (buf.length >= CHUNK_SIZE) flush();
+    }
+    flush();
+
+    // Fallback: if Whisper returned no word-level data, split the plain
+    // text by sentence so the UI still has something to work with.
+    if (chunks.length === 0 && transcript && transcript.text){
+      var totalDur = transcript.duration || 30;
+      var parts = String(transcript.text).split(/(?<=[.?!])\s+/).slice(0, 30);
+      var perPart = totalDur / Math.max(1, parts.length);
+      parts.forEach(function(p, i){
+        chunks.push({ text: p.trim(), start: +(i * perPart).toFixed(3), end: +((i + 1) * perPart).toFixed(3) });
+      });
+    }
+
+    // 4. Ask GPT-4o-mini to pick the 3-6 chunks where a B-Roll cut-away
+    //    would visually enhance the video, plus a Pixabay search query
+    //    for each. The chunk-index pointer keeps suggestions perfectly
+    //    aligned with the rendered transcript on the client.
+    var indexedChunks = chunks.map(function(c, i){
+      return '[' + i + '] (' + c.start.toFixed(2) + 's-' + c.end.toFixed(2) + 's) ' + c.text;
+    }).join('\n');
+    var sysPrompt = [
+      'You are a professional video editor selecting B-roll insert points for an existing talking-head video.',
+      'You are given a numbered list of timestamped transcript chunks. Pick 3 to 6 chunks where a 3-6s',
+      'B-roll cut-away would VISUALLY enhance the moment.',
+      '',
+      'For EACH pick, return:',
+      '  "index":   the chunk number from the list',
+      '  "query":   a 2-4 word concrete Pixabay search query that visually represents the moment.',
+      '             Use literal nouns + actions (e.g. "person typing laptop", "city skyline drone"),',
+      '             NEVER abstract terms like "success", "growth", "innovation", "technology".',
+      '  "reason":  one short sentence explaining why this moment benefits from B-roll.',
+      '',
+      'Rules:',
+      '- Pick chunks that contain CONCRETE visual concepts (objects, places, actions).',
+      '- Skip filler chunks (greetings, "uh you know", repeated transitions).',
+      '- Space picks across the timeline — avoid stacking 3 picks in the first 10 seconds.',
+      '- Return ONLY valid JSON: { "suggestions": [ ... ] }. No prose.'
+    ].join('\n');
+    var userPrompt = 'TRANSCRIPT CHUNKS:\n' + indexedChunks;
+
+    var suggestions = [];
+    try {
+      var completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: sysPrompt },
+          { role: 'user',   content: userPrompt }
+        ],
+        temperature: 0.4,
+        max_tokens: 700,
+        response_format: { type: 'json_object' }
+      });
+      var rawOut = (completion.choices[0] && completion.choices[0].message && completion.choices[0].message.content) || '{}';
+      var parsed = JSON.parse(rawOut);
+      var arr = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+      arr.forEach(function(s){
+        var idx = parseInt(s && s.index, 10);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= chunks.length) return;
+        var c = chunks[idx];
+        var q = String((s && s.query) || '').trim().slice(0, 60);
+        if (!q) return;
+        suggestions.push({
+          chunkIndex: idx,
+          startSec:   c.start,
+          endSec:     c.end,
+          text:       c.text,
+          query:      q,
+          reason:     String((s && s.reason) || '').slice(0, 200)
+        });
+      });
+    } catch (gptErr){
+      console.warn('[ai-broll analyze-segments] GPT pick failed; returning empty suggestions:', gptErr.message);
+    }
+
+    try { featureUsageOps.log(req.user.id, 'broll_analyze_segments').catch(function(){}); } catch(_){}
+
+    res.json({
+      success:     true,
+      chunks:      chunks,
+      suggestions: suggestions,
+      duration:    transcript.duration || 0
+    });
+  } catch (err){
+    console.error('[ai-broll analyze-segments] error:', err);
+    res.status(500).json({ error: err.message || 'Analysis failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
 // Task #37 — POST /ai-broll/download-inline
 // Given a Pixabay video URL from search-inline, downloads it server-side
 // to the video-editor uploads dir so the editor can insert it as a V1

@@ -2940,20 +2940,46 @@
           'border-radius:6px;color:#e2e0f0;padding:5px 10px;font-size:12px;cursor:pointer">Close</button>' +
       '</div>' +
       '<div style="display:flex;gap:4px;padding:10px 16px 0">' +
-        '<button class="broTab on" data-bro-tab="stock" style="flex:none;padding:8px 16px;background:rgba(139,92,246,.25);border:1px solid rgba(139,92,246,.5);border-radius:6px 6px 0 0;color:#fff;font-size:12px;font-weight:600;cursor:pointer">\ud83d\udd0d Stock</button>' +
-        '<button class="broTab"    data-bro-tab="ai"    style="flex:none;padding:8px 16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px 6px 0 0;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer">\u2728 AI Search</button>' +
+        // Task #74 \u2014 AI tab is now the default since the transcript-driven
+        // flow is the recommended way to add B-Roll. Stock stays for users
+        // who already know what they want.
+        '<button class="broTab on" data-bro-tab="ai"    style="flex:none;padding:8px 16px;background:rgba(139,92,246,.25);border:1px solid rgba(139,92,246,.5);border-radius:6px 6px 0 0;color:#fff;font-size:12px;font-weight:600;cursor:pointer">\u2728 AI</button>' +
+        '<button class="broTab"    data-bro-tab="stock" style="flex:none;padding:8px 16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px 6px 0 0;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer">\ud83d\udd0d Stock</button>' +
       '</div>' +
-      '<div style="padding:0 16px 10px;border-bottom:1px solid rgba(124,58,237,.2);display:flex;gap:8px">' +
-        '<input id="broQuery" type="text" placeholder="Search stock footage\u2026" ' +
-          'style="flex:1;padding:8px 12px;background:#160f2a;border:1px solid rgba(124,58,237,.3);' +
-          'border-radius:6px;color:#e2e0f0;font-size:13px;outline:none"/>' +
-        '<button id="broGo" style="padding:8px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
-          'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Search</button>' +
+      // Stock tab content \u2014 query input + grid
+      '<div id="broStockArea" style="display:none;flex:1;flex-direction:column;min-height:0">' +
+        '<div style="padding:0 16px 10px;border-bottom:1px solid rgba(124,58,237,.2);display:flex;gap:8px">' +
+          '<input id="broQuery" type="text" placeholder="Search stock footage\u2026" ' +
+            'style="flex:1;padding:8px 12px;background:#160f2a;border:1px solid rgba(124,58,237,.3);' +
+            'border-radius:6px;color:#e2e0f0;font-size:13px;outline:none"/>' +
+          '<button id="broGo" style="padding:8px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
+            'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Search</button>' +
+        '</div>' +
+        '<div id="broGrid" style="flex:1;overflow-y:auto;padding:14px 16px;' +
+          'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">' +
+          '<div style="grid-column:1/-1;color:#5c5a70;font-size:12px;text-align:center;padding:40px 0">' +
+            'Type a search term (e.g. \u201cocean sunset\u201d) and hit Search.' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<div id="broGrid" style="flex:1;overflow-y:auto;padding:14px 16px;' +
-        'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">' +
-        '<div style="grid-column:1/-1;color:#5c5a70;font-size:12px;text-align:center;padding:40px 0">' +
-          'Type a search term (e.g. \u201cocean sunset\u201d) and hit Search, or switch to AI Search to auto-pick from your clip.' +
+      // AI tab content \u2014 Analyze button + transcript with highlights
+      '<div id="broAiArea" style="display:flex;flex:1;flex-direction:column;min-height:0">' +
+        '<div id="broAiHeader" style="padding:14px 16px;border-bottom:1px solid rgba(124,58,237,.2);' +
+          'display:flex;align-items:center;gap:10px">' +
+          '<button id="broAnalyzeBtn" style="flex:none;padding:9px 18px;' +
+            'background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:8px;' +
+            'color:#fff;font-size:13px;font-weight:600;cursor:pointer;' +
+            'box-shadow:0 4px 12px rgba(124,58,237,.4)">' +
+            '\u2728 Analyze Video for B-Roll' +
+          '</button>' +
+          '<span id="broAiStatus" style="font-size:11px;color:#8886a0;flex:1"></span>' +
+        '</div>' +
+        '<div id="broAiBody" style="flex:1;overflow-y:auto;padding:16px 18px;line-height:1.7;' +
+          'font-size:13px;color:#cdc8e0">' +
+          '<div style="color:#5c5a70;font-size:12px;text-align:center;padding:40px 20px">' +
+            'Click <b>Analyze Video for B-Roll</b> to transcribe your clip and let the AI ' +
+            'highlight moments where adding stock footage would boost the video.' +
+          '</div>' +
         '</div>' +
       '</div>';
 
@@ -2962,9 +2988,11 @@
 
     bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
     panel.querySelector('#broClose').addEventListener('click', function(){ bk.remove(); });
-    var grid = panel.querySelector('#broGrid');
-    var query = panel.querySelector('#broQuery');
-    var goBtn = panel.querySelector('#broGo');
+    var grid    = panel.querySelector('#broGrid');
+    var query   = panel.querySelector('#broQuery');
+    var goBtn   = panel.querySelector('#broGo');
+    var stockArea = panel.querySelector('#broStockArea');
+    var aiArea    = panel.querySelector('#broAiArea');
 
     function renderLoading(msg){
       grid.innerHTML = '<div style="grid-column:1/-1;color:#a78bfa;font-size:12px;text-align:center;padding:40px 0">' +
@@ -3023,11 +3051,14 @@
 
     goBtn.addEventListener('click', function(){ doSearch(query.value); });
     query.addEventListener('keydown', function(e){ if (e.key === 'Enter') doSearch(query.value); });
-    setTimeout(function(){ query.focus(); }, 50);
+    // Task #74 — AI tab is the default now, so don't auto-focus the
+    // (hidden) Stock search input. The user can switch tabs to use it.
 
-    // AI Search tab — runs Whisper on the selected clip to get keywords
+    // Task #74 — Tab switcher just toggles panel visibility now. The
+    // AI tab's "Analyze Video for B-Roll" button kicks off the new
+    // transcript-driven flow on demand (no auto-fire on tab switch).
     Array.from(panel.querySelectorAll('.broTab')).forEach(function(t){
-      t.addEventListener('click', async function(){
+      t.addEventListener('click', function(){
         Array.from(panel.querySelectorAll('.broTab')).forEach(function(o){
           o.classList.remove('on');
           o.style.background = 'rgba(255,255,255,.05)';
@@ -3040,32 +3071,196 @@
         t.style.color = '#fff';
         var kind = t.getAttribute('data-bro-tab');
         if (kind === 'ai'){
-          renderLoading('Analyzing your clip\u2026');
-          try {
-            var cR = await fetch('/video-editor/ai-captions', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl })
-            });
-            var cD = await cR.json();
-            if (!cR.ok) throw new Error(cD.error || 'Analysis failed');
-            var text = (cD.chunks || []).map(function(c){ return c.text; }).join(' ');
-            // Trivial keyword extraction: unique words > 4 chars, drop stopwords
-            var STOP = /^(the|and|that|with|this|have|from|they|your|been|will|about|would|could|should|which|there|their)$/i;
-            var words = text.toLowerCase().match(/[a-z]{5,}/g) || [];
-            var uniq = [];
-            for (var w of words){
-              if (STOP.test(w)) continue;
-              if (uniq.indexOf(w) === -1) uniq.push(w);
-              if (uniq.length >= 3) break;
-            }
-            var q = uniq.join(' ') || 'abstract background';
-            query.value = q;
-            await doSearch(q);
-          } catch (err){ renderError('AI search: ' + err.message); }
+          aiArea.style.display    = 'flex';
+          stockArea.style.display = 'none';
+        } else {
+          aiArea.style.display    = 'none';
+          stockArea.style.display = 'flex';
         }
       });
     });
+
+    // ── Task #74 — AI flow: Analyze, highlight, hover-pick ──
+    var analyzeBtn = panel.querySelector('#broAnalyzeBtn');
+    var aiBody     = panel.querySelector('#broAiBody');
+    var aiStatus   = panel.querySelector('#broAiStatus');
+    analyzeBtn.addEventListener('click', async function(){
+      if (analyzeBtn.disabled) return;
+      analyzeBtn.disabled = true;
+      analyzeBtn.style.opacity = '0.6';
+      aiStatus.textContent = 'Transcribing + analyzing…';
+      aiBody.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;color:#a78bfa;font-size:12px;padding:30px 0;justify-content:center">' +
+          '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></span>' +
+          'Whisper is transcribing your clip…' +
+        '</div>';
+      try {
+        var rA = await fetch('/ai-broll/analyze-segments', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl })
+        });
+        var dA = await rA.json();
+        if (!rA.ok || !dA.success) throw new Error(dA.error || 'Analysis failed');
+        renderTranscriptWithHighlights(dA.chunks || [], dA.suggestions || []);
+        var nSug = (dA.suggestions || []).length;
+        aiStatus.textContent = nSug
+          ? (nSug + ' B-Roll suggestion' + (nSug === 1 ? '' : 's') + ' — click any highlight to preview')
+          : 'No B-Roll suggestions found for this clip';
+      } catch (errA){
+        aiBody.innerHTML =
+          '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
+            'Analysis failed: ' + escBHtmlSafe(errA.message || String(errA)) +
+          '</div>';
+        aiStatus.textContent = '';
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.style.opacity = '';
+      }
+    });
+
+    function escBHtmlSafe(s){
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function renderTranscriptWithHighlights(chunks, suggestions){
+      var sugByIndex = {};
+      suggestions.forEach(function(s){ sugByIndex[s.chunkIndex] = s; });
+      var html = chunks.map(function(c, i){
+        var sug = sugByIndex[i];
+        if (sug){
+          return '<span class="broHi" data-chunk="' + i + '" ' +
+            'data-query="' + escBHtmlSafe(sug.query) + '" ' +
+            'data-start="' + sug.startSec + '" ' +
+            'data-end="'   + sug.endSec   + '" ' +
+            'title="' + escBHtmlSafe(sug.reason || ('Search: ' + sug.query)) + '" ' +
+            'style="background:linear-gradient(180deg,rgba(245,158,11,.18),rgba(245,158,11,.32));' +
+              'border-bottom:2px solid #f59e0b;cursor:pointer;padding:2px 4px;border-radius:3px;' +
+              'transition:background .15s">' +
+            escBHtmlSafe(c.text) +
+          '</span>';
+        }
+        return escBHtmlSafe(c.text);
+      }).join(' ');
+      aiBody.innerHTML = '<div style="font-size:13px;line-height:1.85">' + html + '</div>';
+      Array.from(aiBody.querySelectorAll('.broHi')).forEach(function(el){
+        el.addEventListener('mouseenter', function(){
+          el.style.background = 'linear-gradient(180deg,rgba(245,158,11,.34),rgba(245,158,11,.5))';
+        });
+        el.addEventListener('mouseleave', function(){
+          el.style.background = 'linear-gradient(180deg,rgba(245,158,11,.18),rgba(245,158,11,.32))';
+        });
+        el.addEventListener('click', function(e){
+          openSuggestionTooltip(el, e);
+        });
+      });
+    }
+
+    var _activeTooltip = null;
+    function closeTooltip(){
+      if (_activeTooltip){
+        try { _activeTooltip.remove(); } catch(_){}
+        _activeTooltip = null;
+      }
+    }
+    document.addEventListener('click', function(e){
+      if (!_activeTooltip) return;
+      if (_activeTooltip.contains(e.target)) return;
+      if (e.target.closest && e.target.closest('.broHi')) return;
+      closeTooltip();
+    }, true);
+
+    async function openSuggestionTooltip(highlightEl, evt){
+      closeTooltip();
+      var qry      = highlightEl.getAttribute('data-query') || '';
+      var startSec = parseFloat(highlightEl.getAttribute('data-start')) || 0;
+      var endSec   = parseFloat(highlightEl.getAttribute('data-end'))   || (startSec + 5);
+
+      var rect = highlightEl.getBoundingClientRect();
+      var tip  = document.createElement('div');
+      tip.style.cssText = 'position:fixed;z-index:99999;background:#1a1230;' +
+        'border:1px solid rgba(124,58,237,.5);border-radius:10px;' +
+        'box-shadow:0 12px 36px rgba(0,0,0,.5);padding:12px;width:380px;' +
+        'color:#e2e0f0;font-family:system-ui,sans-serif;' +
+        'left:' + Math.max(12, Math.min(window.innerWidth - 392, rect.left)) + 'px;' +
+        'top:'  + Math.max(12, rect.bottom + 6) + 'px';
+      tip.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+          '<span style="font-size:11px;color:#fde047;font-weight:600">SEARCH</span>' +
+          '<span style="font-size:11px;color:#cdc8e0">' + escBHtmlSafe(qry) + '</span>' +
+          '<span style="flex:1"></span>' +
+          '<span style="font-size:10px;color:#8886a0">' + startSec.toFixed(1) + 's-' + endSec.toFixed(1) + 's</span>' +
+        '</div>' +
+        '<div id="broTipBody" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px">' +
+          '<div style="grid-column:1/-1;color:#a78bfa;font-size:11px;text-align:center;padding:36px 0">' +
+            '<span style="display:inline-block;width:12px;height:12px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:6px;vertical-align:middle"></span>' +
+            'Loading 2 suggestions…' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(tip);
+      _activeTooltip = tip;
+      if (evt) evt.stopPropagation();
+
+      try {
+        var rS = await fetch('/ai-broll/search-inline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: qry, max: 2 })
+        });
+        var dS = await rS.json();
+        if (!rS.ok) throw new Error(dS.error || 'Search failed');
+        var results = (dS.results || []).slice(0, 2);
+        var body = tip.querySelector('#broTipBody');
+        if (!results.length){
+          body.innerHTML =
+            '<div style="grid-column:1/-1;color:#8886a0;font-size:11px;text-align:center;padding:30px 10px">' +
+              'No matches for “' + escBHtmlSafe(qry) + '”.' +
+            '</div>';
+          return;
+        }
+        body.innerHTML = results.map(function(rs){
+          var thumb = rs.thumbnailUrl || '';
+          var preview = rs.previewUrl || '';
+          var dur = rs.duration ? Math.round(rs.duration) + 's' : '';
+          return '<div class="broTipCard" data-download="' + encodeURIComponent(rs.downloadUrl) + '" ' +
+              'data-name="' + (rs.name || 'broll').replace(/"/g, '') + '" ' +
+              'data-duration="' + (rs.duration || 0) + '" ' +
+              'data-start-sec="' + startSec + '" ' +
+              'style="background:#0c0814;border:1px solid rgba(124,58,237,.3);border-radius:8px;' +
+                'overflow:hidden;cursor:pointer;transition:transform .12s,border-color .12s;position:relative">' +
+            '<div style="aspect-ratio:16/10;background:#0a0815;position:relative;overflow:hidden">' +
+              (preview
+                ? '<video src="' + preview + '" muted loop playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover" onmouseenter="this.play()" onmouseleave="this.pause()"></video>'
+                : ('<img src="' + thumb + '" style="width:100%;height:100%;object-fit:cover"/>')
+              ) +
+              (dur ? '<span style="position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.7);color:#fff;font-size:10px;padding:1px 5px;border-radius:3px">' + dur + '</span>' : '') +
+            '</div>' +
+            '<div style="padding:6px 8px;font-size:11px;color:#e2e0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+              escBHtmlSafe(rs.name || 'B-Roll') +
+            '</div>' +
+          '</div>';
+        }).join('');
+        Array.from(body.querySelectorAll('.broTipCard')).forEach(function(card){
+          card.addEventListener('click', function(){
+            pickBRoll(card, target, bk);
+            closeTooltip();
+          });
+          card.addEventListener('mouseenter', function(){ card.style.borderColor = '#a78bfa'; card.style.transform = 'translateY(-2px)'; });
+          card.addEventListener('mouseleave', function(){ card.style.borderColor = ''; card.style.transform = ''; });
+        });
+      } catch (errS){
+        var b2 = tip.querySelector('#broTipBody');
+        if (b2){
+          b2.innerHTML = '<div style="grid-column:1/-1;color:#ef4444;font-size:11px;text-align:center;padding:24px 10px">' +
+            escBHtmlSafe(errS.message || 'Search failed') + '</div>';
+        }
+      }
+    }
+
   }
+  try { window.openBRollModal = openBRollModal; } catch(_){}
+
+// Legacy AI-search block removed by Task #74 (transcript-driven flow above replaces it).
 
   async function pickBRoll(card, targetClip, modalEl){
     var url = decodeURIComponent(card.getAttribute('data-download') || '');
@@ -3100,13 +3295,23 @@
       var insertWidthPx = Math.max(60, Math.round(insertDur * PPS));
       var targetLeft = parseFloat(targetClip.style.left) || 0;
       var targetWidth= parseFloat(targetClip.style.width) || 0;
-      var ph = document.getElementById('mtPlayhead');
-      var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
+      // Task #74 — when called from the transcript tooltip, the card
+      // carries data-start-sec — the timeline-time of the highlighted
+      // segment. Convert to pixels and place the b-roll exactly there
+      // so it lines up with the moment the user clicked. Falls back to
+      // the playhead/target-start heuristic for the Stock-tab flow.
+      var explicitStart = parseFloat(card.getAttribute('data-start-sec'));
       var insertLeftPx;
-      if (phPx >= targetLeft && phPx <= targetLeft + targetWidth){
-        insertLeftPx = phPx;
+      if (isFinite(explicitStart) && explicitStart >= 0){
+        insertLeftPx = Math.max(0, Math.round(explicitStart * PPS));
       } else {
-        insertLeftPx = targetLeft;
+        var ph = document.getElementById('mtPlayhead');
+        var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
+        if (phPx >= targetLeft && phPx <= targetLeft + targetWidth){
+          insertLeftPx = phPx;
+        } else {
+          insertLeftPx = targetLeft;
+        }
       }
 
       // Build the new clip inline (matching addClipToTimeline's schema)
