@@ -1372,14 +1372,31 @@ async function confirmBrollSelection() {
   closeBrollSelectionModal();
 
   if (staged > 0) {
-    var msg = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + ', opening editor…';
-    if (failed > 0) msg += ' (' + failed + ' failed to download)';
-    showToast(msg);
-    // Always open editor — server now allows projects without a primary, so a
-    // selection-only project still produces a populated V1 timeline.
-    setTimeout(function () {
-      if (window.__aiBrollOpenInEditor) window.__aiBrollOpenInEditor();
-    }, 400);
+    // ─── If we have a YouTube/source URL but no primary staged yet, import it
+    //     now so the primary lands on V1 and the selected B-roll on V2/V1+ ───
+    var hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
+    var sourceUrl = !hasPrimary ? ((document.getElementById('heroLinkInput') || {}).value || '').trim() : '';
+    var importingMsg = (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) ? 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + '. Importing primary video…' : null;
+    var openingMsg = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + ', opening editor in a new tab…';
+    if (failed > 0) openingMsg += ' (' + failed + ' failed to download)';
+    if (importingMsg) showToast(importingMsg);
+
+    (async function () {
+      // 1) If we have a source URL and no primary, try to import it as primary.
+      if (sourceUrl && !hasPrimary && /^https?:\\/\\//i.test(sourceUrl) && window.__aiBrollImportUrlAsPrimary) {
+        try {
+          await window.__aiBrollImportUrlAsPrimary(sourceUrl);
+        } catch (err) {
+          // Soft-fail — the project will be created B-roll-only with a notice.
+          showToast('Primary import failed (' + (err.message || 'unknown') + '). Continuing with B-roll only.');
+        }
+      }
+      // 2) Open editor in a new tab.
+      showToast(openingMsg);
+      setTimeout(function () {
+        if (window.__aiBrollOpenInEditor) window.__aiBrollOpenInEditor({ newTab: true });
+      }, 400);
+    })();
   } else {
     showToast('Could not stage any clips. Try again.');
   }
@@ -1643,19 +1660,30 @@ async function confirmBrollSelection() {
   // ---- Create Project + redirect ----
   // Programmatic create-project flow — usable by both the button click and the
   // selection modal\'s "Confirm Selection" auto-redirect.
-  async function createProjectAndOpenEditor(triggerBtn) {
-    if (!state.primary) { toastMsg('Pick a primary video first'); return false; }
+  async function createProjectAndOpenEditor(triggerBtn, options) {
+    options = options || {};
+    var newTab = !!options.newTab;
+    var hasPrimary = !!(state.primary && state.primary.filename);
+    var hasBroll = (state.broll || []).length > 0;
+    if (!hasPrimary && !hasBroll) { toastMsg('Pick a primary video or at least one B-roll clip first'); return false; }
     var orig = triggerBtn ? triggerBtn.textContent : '';
     if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = 'Creating project…'; }
     try {
       var r = await fetch('/ai-broll/create-project', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ primary: state.primary, broll: state.broll })
+        body: JSON.stringify({ primary: state.primary || null, broll: state.broll })
       });
       var data = await r.json();
       if (!r.ok) throw new Error(data.error || ('create-project failed (' + r.status + ')'));
-      window.location.href = data.redirectTo || ('/video-editor/' + data.projectId);
+      var url = data.redirectTo || ('/video-editor/' + data.projectId);
+      if (newTab) {
+        window.open(url, '_blank');
+        // Restore the trigger button so the page stays usable for another run.
+        if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = orig; }
+      } else {
+        window.location.href = url;
+      }
       return true;
     } catch (err) {
       toastMsg('Could not create project: ' + err.message);
@@ -1663,8 +1691,26 @@ async function confirmBrollSelection() {
       return false;
     }
   }
-  window.__aiBrollOpenInEditor = function () { return createProjectAndOpenEditor(null); };
+
+  // Programmatic helper: import a YouTube/Zoom/Twitch/Rumble URL as the primary.
+  async function importUrlAsPrimary(url) {
+    if (!url) return false;
+    var r = await fetch('/ai-broll/import-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('Import failed (' + r.status + ')'));
+    if (!data.source) data.source = 'youtube';
+    if (!data.sourceUrl) data.sourceUrl = url;
+    setPrimary(data);
+    return true;
+  }
+
+  window.__aiBrollOpenInEditor = function (opts) { return createProjectAndOpenEditor(null, opts || {}); };
   window.__aiBrollHasPrimary = function () { return !!(state && state.primary && state.primary.filename); };
+  window.__aiBrollImportUrlAsPrimary = function (url) { return importUrlAsPrimary(url); };
 
   function wireCreateProject() {
     var btn = document.getElementById('createProjectBtn');
