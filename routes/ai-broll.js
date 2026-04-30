@@ -1348,7 +1348,7 @@ async function confirmBrollSelection() {
     var item = (window.brollItemsData || []).find(function (x) { return x.id === id; });
     if (!item) { failed++; continue; }
     var dl = item.videoDownloadUrl || item.videoPreviewUrl;
-    if (!dl || !/^https:\/\//i.test(dl)) { failed++; continue; }
+    if (!dl || !/^https:\\/\\//i.test(dl)) { failed++; continue; }
     try {
       var r = await fetch('/ai-broll/download-inline', {
         method: 'POST',
