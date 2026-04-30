@@ -1286,10 +1286,23 @@ async function confirmBrollSelection() {
   }
   if (btn) { btn.disabled = false; }
   closeBrollSelectionModal();
-  if (staged > 0 && failed === 0) {
-    showToast('Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + '. Click “Open in Video Editor” to add to timeline.');
-  } else if (staged > 0 && failed > 0) {
-    showToast('Staged ' + staged + ' of ' + (staged + failed) + ' (some failed to download)');
+  if (staged > 0) {
+    // If a primary video is already staged, auto-open the editor — single-click
+    // path from "Add B-Roll in 1 Click" all the way to a populated timeline.
+    if (window.__aiBrollHasPrimary && window.__aiBrollHasPrimary()) {
+      var msg = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + ', opening editor…';
+      if (failed > 0) msg += ' (' + failed + ' failed to download)';
+      showToast(msg);
+      // Tiny delay so the toast renders before the redirect.
+      setTimeout(function () {
+        if (window.__aiBrollOpenInEditor) window.__aiBrollOpenInEditor();
+      }, 400);
+    } else {
+      var msg2 = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + '. ';
+      msg2 += 'Now upload or import a primary video, then click "Open in Video Editor" to add these to the timeline.';
+      if (failed > 0) msg2 += ' (' + failed + ' failed.)';
+      showToast(msg2);
+    }
   } else {
     showToast('Could not stage any clips. Try again.');
   }
@@ -1551,26 +1564,35 @@ async function confirmBrollSelection() {
   }
 
   // ---- Create Project + redirect ----
+  // Programmatic create-project flow — usable by both the button click and the
+  // selection modal\'s "Confirm Selection" auto-redirect.
+  async function createProjectAndOpenEditor(triggerBtn) {
+    if (!state.primary) { toastMsg('Pick a primary video first'); return false; }
+    var orig = triggerBtn ? triggerBtn.textContent : '';
+    if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = 'Creating project…'; }
+    try {
+      var r = await fetch('/ai-broll/create-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primary: state.primary, broll: state.broll })
+      });
+      var data = await r.json();
+      if (!r.ok) throw new Error(data.error || ('create-project failed (' + r.status + ')'));
+      window.location.href = data.redirectTo || ('/video-editor/' + data.projectId);
+      return true;
+    } catch (err) {
+      toastMsg('Could not create project: ' + err.message);
+      if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = orig; }
+      return false;
+    }
+  }
+  window.__aiBrollOpenInEditor = function () { return createProjectAndOpenEditor(null); };
+  window.__aiBrollHasPrimary = function () { return !!(state && state.primary && state.primary.filename); };
+
   function wireCreateProject() {
     var btn = document.getElementById('createProjectBtn');
     if (!btn) return;
-    btn.addEventListener('click', async function () {
-      if (!state.primary) { toastMsg('Pick a primary video first'); return; }
-      var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Creating project…';
-      try {
-        var r = await fetch('/ai-broll/create-project', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ primary: state.primary, broll: state.broll })
-        });
-        var data = await r.json();
-        if (!r.ok) throw new Error(data.error || ('create-project failed (' + r.status + ')'));
-        window.location.href = data.redirectTo || ('/video-editor/' + data.projectId);
-      } catch (err) {
-        toastMsg('Could not create project: ' + err.message);
-        btn.disabled = false; btn.textContent = orig;
-      }
-    });
+    btn.addEventListener('click', function () { createProjectAndOpenEditor(btn); });
   }
 
   // ---- Hook: stage selected B-roll clips for the project ----
