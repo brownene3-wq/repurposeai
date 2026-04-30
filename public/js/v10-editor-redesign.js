@@ -4893,6 +4893,44 @@
   } else {
     setTimeout(boot, 50);
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #75 — AI B-Roll button stays disabled until a V1 clip is
+  // .selected. Greys out the button visually + blocks pointer events
+  // so the user can't click into the modal without first picking a
+  // source clip on the timeline.
+  // ═════════════════════════════════════════════════════════════════
+  function refreshAIBrollButtonState(){
+    var btns = document.querySelectorAll('.ml-fb.ai');
+    if (!btns.length) return;
+    var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+    var ok = !!(sel && sel.dataset.mediaUrl &&
+      sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+      sel.dataset.clipType !== 'text' &&
+      sel.dataset.clipType !== 'motion');
+    Array.from(btns).forEach(function(b){
+      if (ok){
+        b.disabled = false;
+        b.classList.remove('is-disabled');
+        b.style.pointerEvents = '';
+        b.style.opacity = '';
+        b.style.cursor = 'pointer';
+        b.title = 'Open the AI B-Roll picker for the selected V1 clip';
+      } else {
+        b.disabled = true;
+        b.classList.add('is-disabled');
+        b.style.pointerEvents = 'none';
+        b.style.opacity = '0.4';
+        b.style.cursor = 'not-allowed';
+        b.title = 'Select a V1 clip on the timeline first';
+      }
+    });
+  }
+  // Run continuously so any selection change (clip click, deselect via
+  // background click, clip delete) flips the button state without us
+  // needing to wire into every selection code path.
+  setInterval(refreshAIBrollButtonState, 250);
+  refreshAIBrollButtonState();
 })();
 
 
