@@ -143,7 +143,10 @@ async function renderEditor(req, res) {
   let html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:38px 1fr 260px;height:100vh;gap:0;padding:0;overflow:hidden}
+    /* Task #62 — first grid row matches the editor-topbar height (was 38px,
+       now 56px). Without this update, the topbar overflowed into row 2,
+       clipping the Media library header and the AI/Edit/Audio/FX tabs. */
+    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px 1fr 260px;height:100vh;gap:0;padding:0;overflow:hidden}
     .editor-topbar{grid-column:1/4;grid-row:1}
     .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
     .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
