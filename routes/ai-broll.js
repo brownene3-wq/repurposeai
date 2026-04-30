@@ -5,6 +5,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
+let __ytdl = null;
+try { __ytdl = require('@distube/ytdl-core'); } catch (e) { console.warn('[ai-broll] ytdl-core not available:', e.message); }
 const https = require('https');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
@@ -2030,10 +2032,49 @@ router.post('/import-url', requireAuth, async (req, res) => {
         }
       }
       if (!success) {
-        let msg = 'YouTube blocked every player client (' + tried.join(', ') + ').';
+        // ─── Fallback: try @distube/ytdl-core (different signing path, sometimes
+        //     escapes YouTube's bot detection when yt-dlp is locked out).
+        if (__ytdl) {
+          try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
+          try {
+            console.log('[ai-broll] yt-dlp failed all clients, trying ytdl-core fallback for ' + url);
+            await new Promise((resolve, reject) => {
+              const ws = fs.createWriteStream(outPath);
+              const stream = __ytdl(url, { quality: 'highest', filter: 'audioandvideo' });
+              stream.on('error', (err) => { ws.destroy(); reject(err); });
+              ws.on('finish', () => resolve());
+              ws.on('error', (err) => reject(err));
+              stream.pipe(ws);
+              setTimeout(() => {
+                try { stream.destroy(); } catch (_) {}
+                try { ws.destroy(); } catch (_) {}
+                reject(new Error('ytdl-core download timed out'));
+              }, 180000);
+            });
+            if (fs.existsSync(outPath) && fs.statSync(outPath).size > 10000) {
+              success = true;
+              tried.push('ytdl-core OK');
+              console.log('[ai-broll] ytdl-core fallback succeeded');
+            } else {
+              tried.push('ytdl-core empty');
+              try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
+            }
+          } catch (e2) {
+            tried.push('ytdl-core fail');
+            lastErr = e2;
+            console.log('[ai-broll] ytdl-core fallback failed:', e2.message);
+            try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
+          }
+        }
+      }
+      if (!success) {
+        let msg = 'YouTube blocked this server (' + tried.join(', ') + ').';
         if (!cookiesPath) {
-          msg += ' This server\'s IP appears to be bot-rate-limited by YouTube. ' +
-                 'Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in browser to bypass.';
+          msg += ' This Railway IP is bot-rate-limited by YouTube and our backup downloader also failed. ' +
+                 'Quickest workaround: switch to Upload mode and pick the file from your computer. ' +
+                 'Permanent fix: set the YT_COOKIES_PATH env var to a Netscape cookies.txt exported from a logged-in browser.';
+        } else {
+          msg += ' Even with cookies, every player client failed. The cookies file may be expired \u2014 re-export from a logged-in browser.';
         }
         if (lastErr && lastErr.message) msg += ' Last error: ' + lastErr.message.slice(0, 400);
         throw new Error(msg);
