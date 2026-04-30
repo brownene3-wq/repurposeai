@@ -3088,13 +3088,34 @@
     var aiStatus   = panel.querySelector('#broAiStatus');
 
     function getSelectedV1Clip(){
-      // Strictly: the user-selected V1 clip with a server-resolvable mediaUrl.
+      // Source priority — what "selected video clip" means here:
+      //   1. A V1 .mt-clip with the .selected CSS class (user clicked it)
+      //   2. The V1 clip currently under the playhead
+      //   3. The first V1 clip on the track (fallback so the modal still
+      //      works when nothing is explicitly selected)
+      // Skips text/motion clips and any clip whose mediaUrl is a blob:
+      // (those exist only in the browser; the server can't resolve them).
+      function ok(c){
+        return !!(c && c.dataset.mediaUrl &&
+          c.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+          c.dataset.clipType !== 'text' &&
+          c.dataset.clipType !== 'motion');
+      }
       var sel = document.querySelector('.mt-track-video .mt-clip.selected');
-      if (sel && sel.dataset.mediaUrl &&
-          sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
-          sel.dataset.clipType !== 'text' &&
-          sel.dataset.clipType !== 'motion'){
-        return sel;
+      if (ok(sel)) return sel;
+      var ph = document.getElementById('mtPlayhead');
+      var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
+      var v1Clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
+      if (phPx >= 0){
+        for (var i = 0; i < v1Clips.length; i++){
+          var c = v1Clips[i];
+          var l = parseFloat(c.style.left)  || 0;
+          var w = parseFloat(c.style.width) || 0;
+          if (phPx >= l && phPx <= l + w && ok(c)) return c;
+        }
+      }
+      for (var j = 0; j < v1Clips.length; j++){
+        if (ok(v1Clips[j])) return v1Clips[j];
       }
       return null;
     }
@@ -3113,21 +3134,29 @@
         aiStatus.textContent = 'Select a V1 video clip on the timeline to analyze';
       }
     }
-    refreshSourceLabel();
+    try { refreshSourceLabel(); } catch(_){}
     // Keep the source-label in sync if the user clicks a different
     // clip (or deselects) while the modal is open.
-    var _broSelPoll = setInterval(refreshSourceLabel, 600);
-    bk.addEventListener('remove', function(){ clearInterval(_broSelPoll); });
-    // Also clear the poller when the modal node is detached.
-    var _broCleanupObs = new MutationObserver(function(){
-      if (!document.body.contains(bk)){
-        clearInterval(_broSelPoll);
-        try { _broCleanupObs.disconnect(); } catch(_){}
-      }
-    });
-    try { _broCleanupObs.observe(document.body, { childList: true }); } catch(_){}
+    var _broSelPoll = setInterval(function(){
+      try { refreshSourceLabel(); } catch(_){}
+    }, 600);
+    // Clean up the poller when the modal node is detached.
+    var _broCleanupObs = null;
+    try {
+      _broCleanupObs = new MutationObserver(function(){
+        if (!document.body.contains(bk)){
+          clearInterval(_broSelPoll);
+          try { _broCleanupObs.disconnect(); } catch(_){}
+        }
+      });
+      _broCleanupObs.observe(document.body, { childList: true });
+    } catch(_){}
 
-    analyzeBtn.addEventListener('click', async function(){
+    if (!analyzeBtn){
+      console.warn('[broll] analyze button not found — modal HTML mismatch');
+    }
+    analyzeBtn && analyzeBtn.addEventListener('click', async function(){
+      console.log('[broll] Analyze clicked');
       if (analyzeBtn.disabled) return;
       // Re-pick the source clip RIGHT NOW so changing selection while
       // the modal is open is reflected in the analysis.
