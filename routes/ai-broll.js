@@ -845,7 +845,7 @@ ${pageStyles}
       <div class="results-section">
         <div id="brollResultsContainer">
           <div class="empty-state">
-            <p>Select a video and click "Add B-Roll in 1 Click" to generate footage</p>
+            <p>Paste a YouTube link, upload a video, or describe the topic — then click "Add B-Roll in 1 Click". A selection modal will open with the AI\'s B-Roll suggestions.</p>
           </div>
         </div>
       </div>
@@ -866,6 +866,23 @@ ${pageStyles}
       <div class="video-modal-actions">
         <button class="btn-use-clip" onclick="useSelectedClip()">Use This Clip</button>
         <button class="btn-cancel" onclick="closeVideoModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- B-Roll Selection Modal (multi-select via checkboxes) -->
+  <div class="video-modal" id="brollSelectionModal" style="display:none">
+    <div class="video-modal-content" style="max-width:1100px">
+      <div class="video-modal-header">
+        <h3 id="brollSelectionTitle">B-Roll Suggestions — pick the clips you want</h3>
+        <button class="video-modal-close" onclick="closeBrollSelectionModal()">&times;</button>
+      </div>
+      <p id="brollSelectionSubtitle" style="color:var(--text-muted);font-size:0.9rem;margin:-8px 0 16px 0"></p>
+      <div id="brollSelectionGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;max-height:60vh;overflow-y:auto;padding:4px"></div>
+      <div class="video-modal-actions" style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
+        <span id="brollSelectionCount" style="color:var(--text-muted);font-size:0.85rem;margin-right:auto"></span>
+        <button type="button" class="btn-cancel" onclick="closeBrollSelectionModal()">Cancel</button>
+        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">✓ Confirm Selection</button>
       </div>
     </div>
   </div>
@@ -981,7 +998,7 @@ ${pageStyles}
       } else {
         const url = ((document.getElementById('heroLinkInput') || {}).value || '').trim();
         if (!url) {
-          showToast('Paste a YouTube link first (then click Import)');
+          showToast('Paste a YouTube link first');
           return;
         }
         content = { type: 'youtube', url };
@@ -1037,29 +1054,18 @@ ${pageStyles}
         const data = await response.json();
 
         if (response.ok && data.brollItems && data.brollItems.length > 0) {
-          // Store items data globally for modal access
+          // Store items data globally for both selection modal + the single-preview modal
           window.brollItemsData = data.brollItems;
 
+          // Update the inline status pane with a short summary
           const container = document.getElementById('brollResultsContainer');
-          let html = '<h2 style="margin-bottom: 1.5rem; color: var(--text);">Generated B-Roll</h2>';
-          if (data.pixabayWarning) {
-            html += '<div class="api-warning">' + data.pixabayWarning + '</div>';
-          }
-          html += '<div class="broll-grid">' +
-            data.brollItems.map((item) => \`
-              <div class="broll-item" id="broll-\${item.id}" onclick="selectBroll('\${item.id}')">
-                <div class="broll-thumbnail" style="background-image: url('\${item.thumbnailUrl}');">
-                  <div class="play-button">▶</div>
-                  <div class="duration-badge">\${item.duration}s</div>
-                </div>
-                <div class="broll-info">
-                  <div class="broll-name">\${item.name}</div>
-                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">By \${item.artist}</div>
-                </div>
-              </div>
-            \`).join('') + '</div>';
-          container.innerHTML = html;
-          showToast('B-roll generated successfully!');
+          let summary = '<h2 style="margin-bottom: 0.5rem; color: var(--text);">B-Roll suggestions ready</h2>';
+          if (data.pixabayWarning) summary += '<div class="api-warning">' + data.pixabayWarning + '</div>';
+          summary += '<p style="color:var(--text-muted);font-size:0.9rem">' + data.brollItems.length + ' clips suggested. The selection modal opened so you can pick which ones to use.</p>';
+          container.innerHTML = summary;
+
+          // Open the multi-select modal so the user can choose clips before they are staged.
+          openBrollSelectionModal(data.brollItems);
         } else {
           showToast(data.error || 'Failed to generate B-roll');
         }
@@ -1164,6 +1170,131 @@ ${pageStyles}
 
     ${themeScript}
   
+// ═══ B-Roll Selection Modal (multi-select) ═══
+function openBrollSelectionModal(items) {
+  var modal = document.getElementById('brollSelectionModal');
+  var grid = document.getElementById('brollSelectionGrid');
+  var subtitle = document.getElementById('brollSelectionSubtitle');
+  if (!modal || !grid) return;
+  grid.innerHTML = '';
+  if (subtitle) subtitle.textContent = items.length + ' clips suggested by AI based on your video transcript. Check the ones you want, then Confirm.';
+  items.forEach(function (item, i) {
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:border-color 0.15s,transform 0.15s';
+    card.dataset.itemId = item.id;
+    var why = item.sceneDescription || item.searchQueryUsed || '';
+    var thumb = (item.thumbnailUrl || '').replace(/'/g, '%27');
+    var name = item.name || ('Clip ' + (i+1));
+    var thumbDiv = document.createElement('div');
+    thumbDiv.style.cssText = 'position:relative;aspect-ratio:16/9;background:#000 center/cover no-repeat;background-image:url("' + thumb + '")';
+    var dur = document.createElement('div');
+    dur.style.cssText = 'position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 8px;border-radius:6px;font-size:0.75rem';
+    dur.textContent = (item.duration || 0) + 's';
+    thumbDiv.appendChild(dur);
+    var prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.style.cssText = 'position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,0.65);color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer';
+    prevBtn.textContent = '▶ Preview';
+    prevBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (typeof selectBroll === 'function') selectBroll(item.id);
+    });
+    thumbDiv.appendChild(prevBtn);
+    card.appendChild(thumbDiv);
+    var info = document.createElement('div');
+    info.style.cssText = 'padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:6px';
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'display:flex;align-items:flex-start;gap:8px;cursor:pointer;user-select:none';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'broll-card-checkbox';
+    cb.dataset.itemId = item.id;
+    cb.checked = true;
+    cb.style.cssText = 'margin-top:3px;cursor:pointer;accent-color:var(--primary)';
+    cb.addEventListener('change', updateBrollSelectionCount);
+    lbl.appendChild(cb);
+    var span = document.createElement('span');
+    span.style.flex = '1';
+    var ttl = document.createElement('span');
+    ttl.style.cssText = 'font-weight:600;color:var(--text);font-size:0.9rem;display:block;line-height:1.3';
+    ttl.textContent = name;
+    span.appendChild(ttl);
+    if (why) {
+      var w = document.createElement('span');
+      w.style.cssText = 'color:var(--text-muted);font-size:0.75rem;display:block;margin-top:4px;line-height:1.4';
+      w.textContent = '— ' + why;
+      span.appendChild(w);
+    }
+    lbl.appendChild(span);
+    info.appendChild(lbl);
+    card.appendChild(info);
+    grid.appendChild(card);
+  });
+  modal.style.display = 'flex';
+  updateBrollSelectionCount();
+}
+function updateBrollSelectionCount() {
+  var checked = document.querySelectorAll('#brollSelectionGrid .broll-card-checkbox:checked').length;
+  var total = document.querySelectorAll('#brollSelectionGrid .broll-card-checkbox').length;
+  var countEl = document.getElementById('brollSelectionCount');
+  var btn = document.getElementById('brollConfirmBtn');
+  if (countEl) countEl.textContent = checked + ' of ' + total + ' selected';
+  if (btn) {
+    btn.textContent = '✓ Confirm Selection (' + checked + ')';
+    btn.disabled = checked === 0;
+    btn.style.opacity = checked === 0 ? '0.5' : '1';
+    btn.style.cursor = checked === 0 ? 'not-allowed' : 'pointer';
+  }
+}
+function closeBrollSelectionModal() {
+  var modal = document.getElementById('brollSelectionModal');
+  if (modal) modal.style.display = 'none';
+}
+async function confirmBrollSelection() {
+  var checked = Array.from(document.querySelectorAll('#brollSelectionGrid .broll-card-checkbox:checked'));
+  if (checked.length === 0) {
+    showToast('Pick at least one clip first');
+    return;
+  }
+  var btn = document.getElementById('brollConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Staging…'; }
+  var staged = 0, failed = 0;
+  for (var i = 0; i < checked.length; i++) {
+    var id = checked[i].dataset.itemId;
+    var item = (window.brollItemsData || []).find(function (x) { return x.id === id; });
+    if (!item) { failed++; continue; }
+    var dl = item.videoDownloadUrl || item.videoPreviewUrl;
+    if (!dl || !/^https:\/\//i.test(dl)) { failed++; continue; }
+    try {
+      var r = await fetch('/ai-broll/download-inline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: dl, name: item.name })
+      });
+      var data = await r.json();
+      if (!r.ok || !data.filename) { failed++; continue; }
+      if (window.__aiBrollStageClip) {
+        window.__aiBrollStageClip({
+          filename: data.filename,
+          name: item.name,
+          duration: data.duration || item.duration || 0,
+          serveUrl: data.mediaUrl
+        });
+      }
+      staged++;
+    } catch (err) { failed++; }
+  }
+  if (btn) { btn.disabled = false; }
+  closeBrollSelectionModal();
+  if (staged > 0 && failed === 0) {
+    showToast('Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + '. Click “Open in Video Editor” to add to timeline.');
+  } else if (staged > 0 && failed > 0) {
+    showToast('Staged ' + staged + ' of ' + (staged + failed) + ' (some failed to download)');
+  } else {
+    showToast('Could not stage any clips. Try again.');
+  }
+}
+
 // ═══ AI B-Roll media ingestion + project handoff (client) ═══
 (function () {
   var state = { primary: null, broll: [] };
