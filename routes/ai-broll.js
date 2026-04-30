@@ -993,41 +993,44 @@ ${pageStyles}
 
       try {
         let response;
-        // ── Prefer the staged primary from the new ingestion flow (Upload/URL/Drive/Dropbox).
-        var stagedPrimary = (window.__aiBrollState && window.__aiBrollState.primary) || null;
-        if (stagedPrimary && stagedPrimary.filename && mode === 'ai-generated') {
-          response = await fetch('/ai-broll/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              inputType: stagedPrimary.source === 'youtube' ? 'youtube' : 'upload',
-              url: stagedPrimary.source === 'youtube' ? stagedPrimary.sourceUrl : undefined,
-              mode,
-              prompt: (document.getElementById('aiPrompt') || {}).value || (document.getElementById('searchTerms') || {}).value || '',
-              primary: { filename: stagedPrimary.filename, originalName: stagedPrimary.originalName, source: stagedPrimary.source }
-            })
-          });
-        } else if (content.type === 'upload') {
-          const formData = new FormData();
-          formData.append('video', content.file);
-          formData.append('inputType', 'upload');
-          formData.append('mode', mode);
-          formData.append('prompt', document.getElementById('aiPrompt').value || document.getElementById('searchTerms').value);
-          response = await fetch('/ai-broll/generate', {
-            method: 'POST',
-            body: formData
-          });
+
+        // Build a single JSON request body. The new ingestion flow stages files
+        // server-side via /upload-primary, /import-url, /googledrive-import,
+        // /dropbox-import — so /generate now ALWAYS receives JSON, never multipart.
+        const aiPromptVal = (document.getElementById('aiPrompt') || {}).value || '';
+        const searchTermsVal = (document.getElementById('searchTerms') || {}).value || '';
+        const transcriptVal = (document.getElementById('brollTranscript') || {}).value || '';
+
+        // Combine free-text inputs as the GPT 'prompt' hint.
+        const promptHint = (mode === 'stock' ? searchTermsVal : aiPromptVal) ||
+                           transcriptVal ||
+                           '';
+
+        const reqBody = { mode, prompt: promptHint };
+
+        if (stagedPrimary && stagedPrimary.filename) {
+          reqBody.inputType = stagedPrimary.source === 'youtube' ? 'youtube' : 'upload';
+          reqBody.url = stagedPrimary.sourceUrl || undefined;
+          reqBody.primary = {
+            filename: stagedPrimary.filename,
+            originalName: stagedPrimary.originalName,
+            source: stagedPrimary.source
+          };
+        } else if (content && content.type === 'youtube') {
+          reqBody.inputType = 'youtube';
+          reqBody.url = content.url;
+        } else if (content && content.type === 'text') {
+          reqBody.inputType = 'text';
+          reqBody.prompt = content.text;
         } else {
-          response = await fetch('/ai-broll/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              inputType: content.type,
-              url: content.url,
-              mode,
-              prompt: document.getElementById('aiPrompt').value || document.getElementById('searchTerms').value
-            })
-          });
+          reqBody.inputType = 'upload';
+        }
+
+        response = await fetch('/ai-broll/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reqBody)
+        });
         }
 
         const data = await response.json();
