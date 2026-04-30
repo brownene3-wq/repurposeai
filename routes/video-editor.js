@@ -3330,6 +3330,7 @@ function showToast(message, type = 'success') {
             // Text
             textContent:  c.dataset.textContent  || '',
             fontSize:     c.dataset.fontSize     || '',
+            fontFamily:   c.dataset.fontFamily   || '',  // Task #70 — Brand Kit caption font
             textColor:    c.dataset.textColor    || '',
             position:     c.dataset.position     || '',
             textOffsetX:  c.dataset.textOffsetX  || '',
@@ -3523,13 +3524,23 @@ function showToast(message, type = 'success') {
               format: selFormat,
               quality: selQuality,
               customFilename: customFilename, // Task #29
-              brandLogo: (window.__brandLogo && window.__brandLogo.url)
-                ? {
-                    url:      window.__brandLogo.url,
-                    position: window.__brandLogo.position || 'top-right',
-                    size:     window.__brandLogo.size || 100
-                  }
-                : null  // Task #69 — server applies overlay= filter on V1 segments
+              brandLogo: (function(){
+                if (!(window.__brandLogo && window.__brandLogo.url)) return null;
+                // Task #71 — pass the active V1 source's intrinsic media
+                // dimensions so the server can position the logo inside
+                // the actual video rect (not on the letterbox/pillarbox
+                // black bars produced by aspect-ratio padding).
+                var ve = document.getElementById('videoPlayer');
+                var vw = (ve && ve.videoWidth)  || 0;
+                var vh = (ve && ve.videoHeight) || 0;
+                return {
+                  url:           window.__brandLogo.url,
+                  position:      window.__brandLogo.position || 'top-right',
+                  size:          window.__brandLogo.size || 100,
+                  sourceWidth:   vw,
+                  sourceHeight:  vh
+                };
+              })()  // Task #69/#71 — server applies overlay= filter on V1 segments
             })
           });
           var dataTL = await resp.json();
@@ -6757,14 +6768,53 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       '/System/Library/Fonts/Helvetica.ttc',
       '/Library/Fonts/Arial Bold.ttf'
     ];
+    function escapeDrawtextPath(p){
+      return p.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
+    }
     for (var fci = 0; fci < FONT_CANDIDATES.length; fci++){
       if (fs.existsSync(FONT_CANDIDATES[fci])){
         // Escape drawtext-special chars in the path (: and \)
-        TEXT_FONTFILE = FONT_CANDIDATES[fci]
-          .replace(/\\/g, '\\\\')
-          .replace(/:/g, '\\:');
+        TEXT_FONTFILE = escapeDrawtextPath(FONT_CANDIDATES[fci]);
         break;
       }
+    }
+
+    // Task #70 — pick a fontfile that best matches a CSS font-family stack
+    // declared by a Brand Kit caption style. The stack is parsed for
+    // recognisable family tokens; the first one with a matching system
+    // font wins. Falls back to TEXT_FONTFILE so unknown stacks still get
+    // the bold sans-serif default rather than FFmpeg's thin Vera.
+    var FAMILY_FONT_MAP = [
+      // Display / impact-style
+      { keywords: ['impact', 'arial black', 'komika', 'bebas', 'orbitron'], paths: [
+        '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf'
+      ]},
+      // Script / handwriting
+      { keywords: ['pacifico', 'brush script', 'cursive', 'comic'], paths: [
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf'
+      ]},
+      // Helvetica / Arial (clean sans)
+      { keywords: ['helvetica', 'arial', 'roboto', 'segoe'], paths: [
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+        '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf'
+      ]}
+    ];
+    function fontFileForFamily(family){
+      if (!family) return TEXT_FONTFILE;
+      var s = String(family).toLowerCase();
+      for (var i = 0; i < FAMILY_FONT_MAP.length; i++){
+        var entry = FAMILY_FONT_MAP[i];
+        var hit = entry.keywords.some(function(kw){ return s.indexOf(kw) >= 0; });
+        if (!hit) continue;
+        for (var j = 0; j < entry.paths.length; j++){
+          if (fs.existsSync(entry.paths[j])) return escapeDrawtextPath(entry.paths[j]);
+        }
+      }
+      return TEXT_FONTFILE;
     }
 
     // Only render the video track in v1 (audio-track mixing = follow-up).
@@ -7351,8 +7401,13 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
             brandLogoFile = path.join(workDir, 'brand_logo' + bExt);
             fs.writeFileSync(brandLogoFile, bRow.data);
             brandLogoMeta = {
-              position: String(body.brandLogo.position || 'top-right'),
-              size:     parseFloat(body.brandLogo.size) || 100
+              position:     String(body.brandLogo.position || 'top-right'),
+              size:         parseFloat(body.brandLogo.size) || 100,
+              // Task #71 — source's intrinsic media size so we can place
+              // the logo inside the actual video rect (after the export
+              // canvas's letterbox/pillarbox padding).
+              sourceWidth:  parseInt(body.brandLogo.sourceWidth,  10) || 0,
+              sourceHeight: parseInt(body.brandLogo.sourceHeight, 10) || 0
             };
           }
         }
@@ -7671,8 +7726,13 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
             'y=' + y,
             'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
           ];
-          if (TEXT_FONTFILE){
-            dtParts.splice(3, 0, 'fontfile=' + TEXT_FONTFILE);
+          // Task #70 — pick a fontfile that approximates this clip's
+          // CSS font-family stack (Brand Kit caption styles). Falls back
+          // to TEXT_FONTFILE so plain captions still render with the bold
+          // sans-serif default rather than FFmpeg's thin Vera.
+          var clipFontFile = fontFileForFamily(tc.fontFamily) || TEXT_FONTFILE;
+          if (clipFontFile){
+            dtParts.splice(3, 0, 'fontfile=' + clipFontFile);
           }
           return dtParts.join(':');
         });
@@ -7692,19 +7752,54 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       if (brandLogoInputIdx >= 0 && brandLogoMeta){
         var blPos = String(brandLogoMeta.position || 'top-right').toLowerCase();
         var blSizePx = parseFloat(brandLogoMeta.size) || 100;
-        var blExportW = Math.max(24, Math.round(blSizePx * (outW / 720)));
-        // 4% inset — same as the on-screen preview (.video-container).
-        var blPadX = Math.max(8, Math.round(outW * 0.04));
-        var blPadY = Math.max(8, Math.round(outH * 0.04));
+
+        // Task #71 — Compute the inner video rect within outW × outH
+        // using the source's intrinsic media dimensions (vs the export
+        // canvas aspect). This places the logo on the actual video,
+        // not on the letterbox/pillarbox black bars produced when an
+        // aspect ratio mismatch forces padding during clip encode.
+        var srcW = brandLogoMeta.sourceWidth  || outW;
+        var srcH = brandLogoMeta.sourceHeight || outH;
+        var aSrc = srcW / srcH;
+        var aOut = outW / outH;
+        var innerW, innerH, innerX, innerY;
+        if (aSrc > aOut){
+          innerW = outW;
+          innerH = Math.round(outW / aSrc);
+          innerX = 0;
+          innerY = Math.round((outH - innerH) / 2);
+        } else if (aSrc < aOut){
+          innerH = outH;
+          innerW = Math.round(outH * aSrc);
+          innerX = Math.round((outW - innerW) / 2);
+          innerY = 0;
+        } else {
+          innerW = outW; innerH = outH; innerX = 0; innerY = 0;
+        }
+
+        // Logo width and inset are now relative to the inner video rect
+        // so what the user sees in the preview matches the export.
+        var blExportW = Math.max(24, Math.round(blSizePx * (innerW / 720)));
+        var blPadX = Math.max(8, Math.round(innerW * 0.04));
+        var blPadY = Math.max(8, Math.round(innerH * 0.04));
+
         var blX, blY;
-        if (blPos === 'top-left')         { blX = String(blPadX);          blY = String(blPadY); }
-        else if (blPos === 'bottom-left') { blX = String(blPadX);          blY = '(H-h)-' + blPadY; }
-        else if (blPos === 'bottom-right'){ blX = '(W-w)-' + blPadX;       blY = '(H-h)-' + blPadY; }
-        else if (blPos === 'center')      { blX = '(W-w)/2';               blY = '(H-h)/2'; }
-        else /* top-right (default) */    { blX = '(W-w)-' + blPadX;       blY = String(blPadY); }
-        // Scale the logo input. Use w=NN:h=-1 so the image keeps its
-        // aspect ratio (transparent PNGs survive — overlay= preserves
-        // alpha when the source has it).
+        if (blPos === 'top-left'){
+          blX = String(innerX + blPadX);
+          blY = String(innerY + blPadY);
+        } else if (blPos === 'bottom-left'){
+          blX = String(innerX + blPadX);
+          blY = '(' + (innerY + innerH - blPadY) + ')-h';
+        } else if (blPos === 'bottom-right'){
+          blX = '(' + (innerX + innerW - blPadX) + ')-w';
+          blY = '(' + (innerY + innerH - blPadY) + ')-h';
+        } else if (blPos === 'center'){
+          blX = '(' + (innerX + innerW / 2) + ')-w/2';
+          blY = '(' + (innerY + innerH / 2) + ')-h/2';
+        } else { // top-right (default)
+          blX = '(' + (innerX + innerW - blPadX) + ')-w';
+          blY = String(innerY + blPadY);
+        }
         // Force RGBA on the logo so transparent PNGs blend correctly.
         chains.push('[' + brandLogoInputIdx + ':v]format=rgba,scale=' + blExportW + ':-1[blogoSc]');
         chains.push('[vbase][blogoSc]overlay=x=' + blX + ':y=' + blY + '[vout]');

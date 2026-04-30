@@ -2879,9 +2879,16 @@
     // Task #49 — creation-order stamp (text clips stack by arrival too)
     clip.dataset.addedAt = String(Date.now() * 1000 + (addTextClipToTimeline._seq = ((addTextClipToTimeline._seq || 0) + 1)));
     clip.style.zIndex = String(100 + (addTextClipToTimeline._seq % 1000));
-    if (opts.fontSize)  clip.dataset.fontSize  = String(opts.fontSize);
-    if (opts.textColor) clip.dataset.textColor = opts.textColor;
-    if (opts.position)  clip.dataset.position  = opts.position;
+    // Task #70 — Brand Kit caption style is the default for new T1 clips
+    // unless the caller explicitly overrode any of the typography fields.
+    var bcs = (window.__brandCaptionStyle) || null;
+    var defFontSize = (opts.fontSize != null) ? opts.fontSize : (bcs && bcs.size) || null;
+    var defTextColor = opts.textColor || (bcs && bcs.color) || null;
+    var defFontFamily = opts.fontFamily || (bcs && bcs.font) || null;
+    if (defFontSize != null) clip.dataset.fontSize = String(defFontSize);
+    if (defTextColor)        clip.dataset.textColor = defTextColor;
+    if (defFontFamily)       clip.dataset.fontFamily = defFontFamily;
+    if (opts.position)       clip.dataset.position = opts.position;
     clip.style.left = leftPos + 'px';
     clip.style.width = width + 'px';
     clip.style.padding = '4px 8px';
@@ -4838,6 +4845,12 @@
         // microscopic or hero-sized captions.
         size = Math.max(14, Math.min(size, Math.round(H * 0.22)));
         var color = clip.dataset.textColor || '#ffffff';
+        // Task #70 — caption-style font-family, defaulting to the system
+        // sans-serif stack. Clip's own dataset wins, then the brand-kit
+        // global, then the legacy default.
+        var fontFamily = clip.dataset.fontFamily
+          || (window.__brandCaptionStyle && window.__brandCaptionStyle.font)
+          || '-apple-system, system-ui, "Segoe UI", Roboto, sans-serif';
         var offXFrac = parseFloat(clip.dataset.textOffsetX) || 0;
         var offYFrac = parseFloat(clip.dataset.textOffsetY) || 0;
         var offX = offXFrac * W;
@@ -4852,7 +4865,7 @@
         var widest = 0;
         var MIN_SIZE = 14;
         while (true){
-          ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
+          ctx.font = '700 ' + size + 'px ' + fontFamily;
           var words = String(text).split(/\s+/);
           lines = [];
           var current = '';
@@ -4880,6 +4893,8 @@
           offX: offX, offY: offY,
           // Task #64 — preserve horizontal alignment from parsed position
           hAlign: clip._hAlign || 'center',
+          // Task #70 — pass font-family through to the fill stage
+          fontFamily: fontFamily,
           lines: lines, widest: widest, lineH: lineH, totalH: totalH
         };
       }).filter(Boolean);
@@ -4934,7 +4949,8 @@
         }
 
         ctx.save();
-        ctx.font = '700 ' + size + 'px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif';
+        // Task #70 — use the per-clip font family computed during layout.
+        ctx.font = '700 ' + size + 'px ' + (L.fontFamily || '-apple-system, system-ui, "Segoe UI", Roboto, sans-serif');
         ctx.textAlign = 'center';
         ctx.fillStyle = L.color;
         ctx.shadowColor = 'rgba(0,0,0,.65)';

@@ -3596,20 +3596,39 @@
     //    can pick them up.)
     if (tmpl.captionStyle && captionStyles && captionStyles[tmpl.captionStyle]){
       var cs = captionStyles[tmpl.captionStyle];
+      // Task #70 \u2014 full caption style (font + size + color) lives here so
+      // future T1 inserts inherit the brand identity, not just the colour.
       window.__brandCaptionStyle = {
-        id: tmpl.captionStyle,
-        name: cs.name,
-        color: cs.color
+        id:    tmpl.captionStyle,
+        name:  cs.name,
+        color: cs.color,
+        font:  cs.font || 'system-ui, "Segoe UI", Roboto, sans-serif',
+        size:  parseInt(cs.size, 10) || 60
       };
       summary.push('Caption style \u201c' + cs.name + '\u201d');
 
-      // Retroactively update any existing T1 clips on the timeline so the
-      // user sees an immediate effect.
+      // Retroactively update every existing T1 clip on the timeline.
+      // Per-clip user overrides are respected via *UserSet flags so that
+      // explicit edits aren't overwritten by a later template apply.
+      var bcs = window.__brandCaptionStyle;
       Array.from(document.querySelectorAll('.mt-track-text .mt-clip')).forEach(function(t){
-        if (!t.dataset.textColorUserSet){  // respect per-clip overrides
-          t.dataset.textColor = cs.color;
+        if (!t.dataset.textColorUserSet){
+          t.dataset.textColor = bcs.color;
+        }
+        if (!t.dataset.fontFamilyUserSet){
+          t.dataset.fontFamily = bcs.font;
+        }
+        if (!t.dataset.fontSizeUserSet){
+          t.dataset.fontSize = String(bcs.size);
         }
       });
+      // Repaint the program monitor so the new typography shows up
+      // without needing a play/seek nudge.
+      if (typeof window.repaintProgramMonitor === 'function'){
+        try { window.repaintProgramMonitor(); } catch(_){}
+      } else if (typeof window.renderPGM === 'function'){
+        try { window.renderPGM(); } catch(_){}
+      }
     }
 
     // 3. Logo → render as a TRANSPARENT CSS overlay on the preview area
@@ -3651,7 +3670,7 @@
   // file matches what the user sees.
   // ═════════════════════════════════════════════════════════════════
   function applyBrandLogoOverlay(){
-    // Anchor on the video preview area first so the logo sits over the
+    // Anchor on the video preview area so the logo sits over the
     // actual <video> element rather than the wider container that also
     // includes the filmstrip/timeline rows.
     var previewWrap =
@@ -3676,42 +3695,117 @@
     var bl = window.__brandLogo;
     if (!bl || !bl.url) return;
 
+    // Task #71 — Compute the actual displayed video rect inside the
+    // preview wrapper (object-fit: contain math) so the logo lands on
+    // the video frame, not on letterbox/pillarbox black bars.
+    var videoEl =
+      document.getElementById('videoPlayer') ||
+      previewWrap.querySelector('video');
+    var hostRect = previewWrap.getBoundingClientRect();
+    var innerLeft = 0, innerTop = 0;
+    var innerW = previewWrap.clientWidth  || hostRect.width  || 720;
+    var innerH = previewWrap.clientHeight || hostRect.height || 405;
+
+    if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0){
+      var vRect = videoEl.getBoundingClientRect();
+      var elW = vRect.width, elH = vRect.height;
+      if (elW > 0 && elH > 0){
+        var aV = videoEl.videoWidth / videoEl.videoHeight;
+        var aE = elW / elH;
+        var dispW, dispH, offX, offY;
+        if (aV > aE){
+          // Source wider than the player box — letterbox top/bottom.
+          dispW = elW;
+          dispH = elW / aV;
+          offX  = 0;
+          offY  = (elH - dispH) / 2;
+        } else {
+          // Source taller than the player box — pillarbox left/right.
+          dispH = elH;
+          dispW = elH * aV;
+          offX  = (elW - dispW) / 2;
+          offY  = 0;
+        }
+        innerLeft = (vRect.left - hostRect.left) + offX;
+        innerTop  = (vRect.top  - hostRect.top)  + offY;
+        innerW    = dispW;
+        innerH    = dispH;
+      }
+    }
+
     var img = document.createElement('img');
     img.src = bl.url;
     img.setAttribute('data-brand-logo-overlay', '1');
     img.setAttribute('alt', '');
     img.setAttribute('draggable', 'false');
 
-    // Size in px relative to a 720-wide design canvas; scale to the
-    // preview container's actual width so on-screen size tracks the
-    // export size proportionally.
+    // Size is px-at-720-wide; scale to the actual video width so the
+    // on-screen logo tracks the export size proportionally.
     var sizePx = parseFloat(bl.size) || 100;
-    var hostW = previewWrap.clientWidth || 720;
-    var scaledW = Math.round(sizePx * (hostW / 720));
+    var scaledW = Math.round(sizePx * (innerW / 720));
     if (scaledW < 24) scaledW = 24;
 
     var pos = String(bl.position || 'top-right');
-    // Default safe-area inset: 4% of preview width.
-    var pad = Math.max(8, Math.round(hostW * 0.04));
+    // Default safe-area inset: 4% of the actual video width.
+    var pad = Math.max(8, Math.round(innerW * 0.04));
 
-    var style = 'position:absolute;width:' + scaledW + 'px;height:auto;' +
-      'pointer-events:none;user-select:none;z-index:50;' +
-      'filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));';
+    // All four corners are computed against the inner video rect, NOT
+    // the preview wrapper, so a 9:16 video shown in a wide monitor still
+    // anchors the logo to the visible video frame.
+    var top, left;
     if (pos === 'top-left'){
-      style += 'top:' + pad + 'px;left:' + pad + 'px;';
+      top  = innerTop + pad;
+      left = innerLeft + pad;
     } else if (pos === 'bottom-left'){
-      style += 'bottom:' + pad + 'px;left:' + pad + 'px;';
+      top  = innerTop + innerH - pad - scaledW; // est height ~= scaledW
+      left = innerLeft + pad;
     } else if (pos === 'bottom-right'){
-      style += 'bottom:' + pad + 'px;right:' + pad + 'px;';
+      top  = innerTop + innerH - pad - scaledW;
+      left = innerLeft + innerW - pad - scaledW;
     } else if (pos === 'center'){
-      style += 'top:50%;left:50%;transform:translate(-50%,-50%);';
+      top  = innerTop + (innerH - scaledW) / 2;
+      left = innerLeft + (innerW - scaledW) / 2;
     } else {
       // default: top-right
-      style += 'top:' + pad + 'px;right:' + pad + 'px;';
+      top  = innerTop + pad;
+      left = innerLeft + innerW - pad - scaledW;
     }
-    img.style.cssText = style;
+
+    img.style.cssText =
+      'position:absolute;width:' + scaledW + 'px;height:auto;' +
+      'top:' + Math.round(top) + 'px;left:' + Math.round(left) + 'px;' +
+      'pointer-events:none;user-select:none;z-index:50;' +
+      'filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));';
+
+    // After the image natural size is known, re-anchor bottom/right so
+    // the actual rendered height (not estW=scaledW) is used.
+    img.addEventListener('load', function(){
+      var actualH = img.naturalHeight && img.naturalWidth
+        ? Math.round(scaledW * (img.naturalHeight / img.naturalWidth))
+        : scaledW;
+      var t2 = top, l2 = left;
+      if (pos === 'bottom-left' || pos === 'bottom-right'){
+        t2 = innerTop + innerH - pad - actualH;
+      } else if (pos === 'center'){
+        t2 = innerTop + (innerH - actualH) / 2;
+      }
+      img.style.top = Math.round(t2) + 'px';
+      img.style.left = Math.round(l2) + 'px';
+    });
     img.addEventListener('error', function(){ try { img.remove(); } catch(_){} });
     previewWrap.appendChild(img);
+
+    // Re-anchor when the underlying video reports new metadata (source
+    // change, aspect change). We only attach once per call; the prev/
+    // remove path above guarantees we don't accumulate listeners.
+    if (videoEl && !videoEl.__brandLogoListenerAttached){
+      videoEl.__brandLogoListenerAttached = true;
+      videoEl.addEventListener('loadedmetadata', function(){
+        if (window.__brandLogo){
+          try { applyBrandLogoOverlay(); } catch(_){}
+        }
+      });
+    }
   }
   window.applyBrandLogoOverlay = applyBrandLogoOverlay;
 

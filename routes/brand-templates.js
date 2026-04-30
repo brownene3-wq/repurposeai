@@ -89,15 +89,21 @@ async function deleteLogo(id) {
 }
 
 // Caption style presets
+// Task #70 — each preset defines color + font + size so that when a Brand
+// Template is applied, every T1 caption inherits the brand's full visual
+// identity (not just the color). `size` is in px-at-1280-wide reference;
+// the editor scales it at render time per video width. `font` is a CSS
+// font-family stack used by the canvas preview; the export pipeline
+// maps the same family name to the closest installed system fontfile.
 const captionStyles = {
-  'karaoke': { name: 'Karaoke', description: 'Words appear one by one like singing', color: '#6C3AED' },
-  'bold-pop': { name: 'Bold Pop', description: 'Large bold text with pop effect', color: '#EC4899' },
-  'mrbeast': { name: 'MrBeast', description: 'High energy yellow with effects', color: '#FFD700' },
-  'hormozi': { name: 'Hormozi', description: 'Minimal black & white style', color: '#FFFFFF' },
-  'neon': { name: 'Neon', description: 'Glowing neon effect', color: '#00FF00' },
-  'wave': { name: 'Wave', description: 'Text waves across screen', color: '#00BFFF' },
-  'shadow': { name: 'Shadow', description: 'Dark shadow with depth', color: '#1A1A2E' },
-  'motion': { name: 'Motion', description: 'Fast moving dynamic text', color: '#FF6B6B' }
+  'karaoke':  { name: 'Karaoke',   description: 'Words appear one by one like singing',  color: '#6C3AED', font: 'system-ui, "Segoe UI", Roboto, sans-serif',          size: 56 },
+  'bold-pop': { name: 'Bold Pop',  description: 'Large bold text with pop effect',        color: '#EC4899', font: 'Impact, "Arial Black", system-ui, sans-serif',       size: 72 },
+  'mrbeast':  { name: 'MrBeast',   description: 'High energy yellow with effects',        color: '#FFD700', font: '"Komika Axis", Impact, "Arial Black", sans-serif',   size: 80 },
+  'hormozi':  { name: 'Hormozi',   description: 'Minimal black & white style',            color: '#FFFFFF', font: '"Helvetica Neue", Helvetica, Arial, sans-serif',     size: 52 },
+  'neon':     { name: 'Neon',      description: 'Glowing neon effect',                    color: '#00FF00', font: '"Orbitron", "Bebas Neue", system-ui, sans-serif',    size: 60 },
+  'wave':     { name: 'Wave',      description: 'Text waves across screen',               color: '#00BFFF', font: '"Pacifico", "Brush Script MT", cursive, sans-serif', size: 60 },
+  'shadow':   { name: 'Shadow',    description: 'Dark shadow with depth',                 color: '#1A1A2E', font: '"Helvetica Neue", Helvetica, Arial, sans-serif',     size: 60 },
+  'motion':   { name: 'Motion',    description: 'Fast moving dynamic text',               color: '#FF6B6B', font: 'Impact, "Arial Black", system-ui, sans-serif',       size: 64 }
 };
 
 // Aspect ratios
