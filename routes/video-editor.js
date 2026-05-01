@@ -625,6 +625,18 @@ async function renderEditor(req, res) {
           <div class="editor-topbar">
             <a href="/dashboard" style="text-decoration:none"><span class="e-logo">Splicora</span></a>
             <div class="e-sp"></div>
+            <!-- Task #76 \u2014 Editable project filename. Prefills "Untitled Project"
+                 so a fresh project always has a usable default. Export reads
+                 the current value (with a timestamp fallback if blank) and
+                 skips the legacy prompt-for-filename modal. -->
+            <input type="text" id="projectFilenameInput"
+              value="Untitled Project"
+              placeholder="Untitled Project"
+              maxlength="80"
+              autocomplete="off" spellcheck="false"
+              title="Project filename \u2014 used when you export"
+              style="height:32px;padding:0 12px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.4);border-radius:6px;color:#e2e0f0;font-size:12px;font-family:inherit;outline:none;min-width:200px;max-width:320px"
+              onfocus="this.select()"/>
             <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
           </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
@@ -3315,11 +3327,22 @@ function showToast(message, type = 'success') {
       // Collect EVERY clip from every track — V1 drives the visual concat,
       // A1+ drive audio mixing in the export, T1 drives drawtext overlays.
 
-      // Task #29 — Ask for a custom filename first. Early-exit if cancelled.
+      // Task #76 — Filename comes from the project filename input in the
+      // header (no popup). If the field is empty/whitespace, fall back
+      // to "Untitled Project <timestamp>" so the server never receives
+      // a blank string. The prompt-for-filename modal is gone.
       var _fmtSelProbe = document.getElementById('exportFormatSel');
       var _selFormatEarly = (_fmtSelProbe && _fmtSelProbe.value) || 'mp4';
-      var customFilename = await promptExportFilename(_selFormatEarly);
-      if (customFilename === null) return;  // user cancelled
+      var _projInput = document.getElementById('projectFilenameInput');
+      var customFilename = (_projInput && _projInput.value || '').trim();
+      if (!customFilename){
+        var _ts = new Date();
+        var _pad = function(n){ return n < 10 ? '0' + n : String(n); };
+        var _stamp = _ts.getFullYear() + '-' + _pad(_ts.getMonth() + 1) + '-' + _pad(_ts.getDate()) +
+                     '_' + _pad(_ts.getHours()) + _pad(_ts.getMinutes()) + _pad(_ts.getSeconds());
+        customFilename = 'Untitled Project ' + _stamp;
+        if (_projInput) _projInput.value = 'Untitled Project';
+      }
       var timelineClips = Array.from(document.querySelectorAll('.mt-clip'))
         .map(function(c){
           var track = c.parentElement;
