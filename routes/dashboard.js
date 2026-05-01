@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { contentOps, outputOps } = require('../db/database');
+const { contentOps, outputOps, shortsOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', requireAuth, async (req, res) => {
@@ -11,6 +11,46 @@ router.get('/', requireAuth, async (req, res) => {
     videosProcessed = await contentOps.countByUserIdThisMonth(req.user.id);
     postsGenerated = await outputOps.countByUserId(req.user.id);
   } catch (e) { console.error('Dashboard stats error:', e); }
+
+  // Recent Smart Shorts (read-only preview)
+  function extractYouTubeId(url) {
+    if (!url) return null;
+    const m = String(url).match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+  function escapeAttr(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  let recentShorts = [];
+  try {
+    recentShorts = await shortsOps.getByUserId(req.user.id, 4, 0) || [];
+  } catch (e) { console.error('Dashboard recent shorts error:', e); }
+  const recentShortsHtml = recentShorts.length === 0 ? '' : recentShorts.map(s => {
+    const vid = extractYouTubeId(s.video_url);
+    const thumb = vid ? `https://img.youtube.com/vi/${vid}/mqdefault.jpg` : '';
+    const title = (s.video_title || 'Untitled project').slice(0, 80);
+    let clipCount = 0;
+    if (s.moments) {
+      try { const arr = typeof s.moments === 'string' ? JSON.parse(s.moments) : s.moments; clipCount = Array.isArray(arr) ? arr.length : 0; } catch (e) {}
+    }
+    const subParts = [];
+    if (clipCount > 0) subParts.push(clipCount + ' clip' + (clipCount === 1 ? '' : 's'));
+    if (s.status && s.status !== 'completed') subParts.push(s.status);
+    const subLine = subParts.join(' · ') || 'Smart Shorts';
+    return `
+        <div class="recent-card" aria-label="${escapeAttr(title)}">
+          <div class="recent-thumb"${thumb ? ` style="background-image:url('${escapeAttr(thumb)}')"` : ''}>
+            ${thumb ? '' : '<span class="recent-thumb-fallback">🎬</span>'}
+          </div>
+          <div class="recent-meta">
+            <div class="recent-title">${escapeAttr(title)}</div>
+            <div class="recent-sub">${escapeAttr(subLine)}</div>
+          </div>
+        </div>`;
+  }).join('');
+
   const planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free';
   const creditsUsed = videosProcessed;
   const creditsTotal = req.user.plan === 'pro' ? 100 : req.user.plan === 'enterprise' ? 500 : 5;
@@ -62,7 +102,20 @@ router.get('/', requireAuth, async (req, res) => {
 
     /* Recent Projects */
     .projects-section{margin-bottom:2rem}
-    .projects-section h3{font-size:1.1rem;font-weight:700;margin-bottom:1rem}
+    .projects-section .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;gap:1rem}
+    .projects-section h3{font-size:1.1rem;font-weight:700;margin:0}
+    .projects-section .see-more{color:var(--primary-light);font-size:.85rem;font-weight:600;text-decoration:none;padding:.4rem .8rem;border-radius:8px;transition:background .15s}
+    .projects-section .see-more:hover{background:rgba(108,58,237,0.08)}
+    .recent-shorts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem}
+    .recent-card{background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;cursor:default;user-select:none}
+    .recent-thumb{aspect-ratio:16/9;background:#0a0a0f;background-size:cover;background-position:center;position:relative}
+    .recent-thumb-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.3);font-size:1.6rem}
+    .recent-meta{padding:.65rem .9rem .8rem}
+    .recent-title{font-size:.85rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+    .recent-sub{color:var(--text-dim);font-size:.7rem;margin-top:4px}
+    .quick-actions-cta{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;justify-content:center}
+    body.light .recent-card,html.light .recent-card{border-color:rgba(0,0,0,0.06)}
+    body.light .recent-thumb,html.light .recent-thumb{background:#e5e7eb}
     .empty-state{background:var(--surface);border:1px dashed rgba(255,255,255,0.1);border-radius:16px;padding:3rem;text-align:center;color:var(--text-dim)}
     .empty-state .empty-icon{font-size:3rem;margin-bottom:1rem;opacity:.5}
     .empty-state p{font-size:.9rem;margin-bottom:1rem}
@@ -262,15 +315,26 @@ router.get('/', requireAuth, async (req, res) => {
 
       <!-- Recent Projects -->
       <div class="projects-section">
-        <h3>&#x1F4C2; Recent Projects</h3>
-        <div class="empty-state" id="emptyState">
-          <div class="empty-icon">&#x1F3AC;</div>
-          <p>No projects yet. Paste a YouTube URL above to get started!</p>
-          <div class="quick-actions">
+        <div class="section-head">
+          <h3>&#x1F4C2; Recent Projects</h3>
+          ${recentShorts.length > 0 ? '<a href="/shorts" class="see-more">See more &rarr;</a>' : ''}
+        </div>
+        ${recentShorts.length > 0 ? `
+          <div class="recent-shorts-grid" aria-label="Recent Smart Shorts (preview)">${recentShortsHtml}</div>
+          <div class="quick-actions-cta">
             <a href="/repurpose" class="btn btn-primary btn-sm">&#x1F504; Repurpose a Video</a>
             <a href="/shorts" class="btn btn-outline btn-sm">&#x2702;&#xFE0F; Create Shorts</a>
           </div>
-        </div>
+        ` : `
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon">&#x1F3AC;</div>
+            <p>No projects yet. Paste a YouTube URL above to get started!</p>
+            <div class="quick-actions">
+              <a href="/repurpose" class="btn btn-primary btn-sm">&#x1F504; Repurpose a Video</a>
+              <a href="/shorts" class="btn btn-outline btn-sm">&#x2702;&#xFE0F; Create Shorts</a>
+            </div>
+          </div>
+        `}
       </div>
     </main>
   </div>
