@@ -248,7 +248,29 @@ async function renderEditor(req, res) {
     #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
     .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
     .transcript-timestamp:hover{text-decoration:underline}
-    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;scrollbar-width:thin;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0}
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;scrollbar-width:thin;scrollbar-color:rgba(124,58,237,.30) transparent;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0}
+    /* Task #80 — Subtle thin scrollbar for the editor sidebar (and its
+       t-body inner scrolls). Track is transparent so it doesn't clutter
+       the dark sidebar; thumb is a low-opacity purple that brightens on
+       hover. Cross-browser: Firefox uses scrollbar-width / scrollbar-
+       color; WebKit (Chrome/Safari/Edge) uses ::-webkit-scrollbar. */
+    .editor-sidebar::-webkit-scrollbar,
+    .editor-sidebar .t-body::-webkit-scrollbar{width:6px;height:6px}
+    .editor-sidebar::-webkit-scrollbar-track,
+    .editor-sidebar .t-body::-webkit-scrollbar-track{background:transparent}
+    .editor-sidebar::-webkit-scrollbar-thumb,
+    .editor-sidebar .t-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.30);border-radius:3px;border:1px solid transparent;background-clip:padding-box}
+    .editor-sidebar::-webkit-scrollbar-thumb:hover,
+    .editor-sidebar .t-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.55)}
+    .editor-sidebar::-webkit-scrollbar-corner,
+    .editor-sidebar .t-body::-webkit-scrollbar-corner{background:transparent}
+    .editor-sidebar .t-body{scrollbar-width:thin;scrollbar-color:rgba(124,58,237,.30) transparent}
+    /* Light-mode: keep transparent track, soften the thumb for the white surface */
+    body.light .editor-sidebar,body.light .editor-sidebar .t-body{scrollbar-color:rgba(124,58,237,.35) transparent}
+    body.light .editor-sidebar::-webkit-scrollbar-thumb,
+    body.light .editor-sidebar .t-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.35)}
+    body.light .editor-sidebar::-webkit-scrollbar-thumb:hover,
+    body.light .editor-sidebar .t-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.6)}
     .editor-sidebar::-webkit-scrollbar{width:4px}
     .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
     .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
