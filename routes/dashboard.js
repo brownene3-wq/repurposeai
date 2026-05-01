@@ -212,7 +212,10 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">Captions</span>
           </a>
           <a href="/ai-reframe" class="tool-card">
-            <span class="tool-icon">&#x1F5BC;&#xFE0F;</span>
+            <!-- Task #77 — distinct from AI Thumbnails: triangular ruler
+                 (📐) reads as "framing / aspect ratio" rather than the
+                 generic framed-picture icon. -->
+            <span class="tool-icon">&#x1F4D0;</span>
             <span class="tool-label">AI Reframe</span>
           </a>
           <a href="/video-editor" class="tool-card">

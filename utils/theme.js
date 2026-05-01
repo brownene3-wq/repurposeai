@@ -173,7 +173,7 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/ai-captions', icon: '\u{1F4AC}', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
     { href: '/caption-presets', icon: '\u{1F4DD}', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
     { href: '/ai-hook', icon: '\u{1F3A3}', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
-    { href: '/ai-reframe', icon: '\u{1F5BC}', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
+    { href: '/ai-reframe', icon: '\u{1F4D0}', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
     { href: '/ai-thumbnail', icon: '\u{1F5BC}\u{FE0F}', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
     { href: '/ai-broll', icon: '\u{1F3B5}', label: 'B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
     { href: '/enhance-speech', icon: '\u{1F50A}', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
