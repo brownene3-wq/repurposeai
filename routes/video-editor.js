@@ -604,6 +604,23 @@ async function renderEditor(req, res) {
     .mt-tool-btn svg{flex-shrink:0}
     .mt-toolbar-sep{display:inline-block;width:1px;align-self:stretch;background:rgba(108,58,237,.2);margin:0 4px}
     .mt-toolbar-left{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+    /* Task #79 — Timeline zoom slider styling. Compact pill that lives
+       inside .mt-toolbar-right; uses the same purple accent as the
+       Snap/Razor buttons for visual coherence. */
+    .mt-zoom{display:inline-flex;align-items:center;gap:6px;background:rgba(108,58,237,.10);border:1px solid rgba(108,58,237,.25);border-radius:8px;padding:3px 6px}
+    .mt-zoom-btn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;background:rgba(124,58,237,.18);border:1px solid rgba(124,58,237,.35);border-radius:5px;color:#e2e0f0;font-size:14px;font-weight:700;line-height:1;cursor:pointer;padding:0;user-select:none;transition:background .12s,border-color .12s}
+    .mt-zoom-btn:hover{background:rgba(124,58,237,.32);border-color:rgba(124,58,237,.6)}
+    .mt-zoom-btn:active{transform:translateY(1px)}
+    .mt-zoom-slider{width:120px;height:4px;-webkit-appearance:none;appearance:none;background:rgba(124,58,237,.25);border-radius:2px;outline:none;margin:0 2px;cursor:pointer}
+    .mt-zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#7c3aed);border:1px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer}
+    .mt-zoom-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#7c3aed);border:1px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer}
+    .mt-zoom-val{font-size:10px;font-weight:600;color:#a78bfa;min-width:48px;text-align:right;white-space:nowrap}
+    /* Light-mode overrides */
+    body.light .mt-zoom{background:rgba(108,58,237,.08);border-color:rgba(108,58,237,.25)}
+    body.light .mt-zoom-btn{background:rgba(124,58,237,.10);border-color:rgba(124,58,237,.30);color:#1a1a2e}
+    body.light .mt-zoom-btn:hover{background:rgba(124,58,237,.22)}
+    body.light .mt-zoom-slider{background:rgba(124,58,237,.20)}
+    body.light .mt-zoom-val{color:#7c3aed}
     .mt-add-track-btn{display:flex;align-items:center;gap:4px;padding:4px 10px;font-size:11px;font-weight:600;color:#a78bfa;background:rgba(108,58,237,.08);border:1px solid rgba(108,58,237,.15);border-radius:6px;cursor:pointer;transition:all .2s}
     .mt-add-track-btn:hover{background:rgba(108,58,237,.18);border-color:rgba(108,58,237,.3)}
     .mt-info{font-size:10px;color:#4a3d6a;font-weight:500}
@@ -827,6 +844,16 @@ async function renderEditor(req, res) {
                 </div>
                 <div class="mt-toolbar-right">
                   <span class="mt-info">5 tracks &bull; 0:00</span>
+                  <span class="mt-toolbar-sep"></span>
+                  <!-- Task #79 — Timeline zoom slider. Drives setTimelineZoom();
+                       buttons step ×0.8 / ×1.25, slider sets px-per-second
+                       directly in the [1, 200] range (default 10). -->
+                  <div class="mt-zoom" title="Timeline zoom">
+                    <button class="mt-zoom-btn" id="mtZoomOut" title="Zoom out (Ctrl/Cmd + -)" type="button">&minus;</button>
+                    <input class="mt-zoom-slider" id="mtZoomSlider" type="range" min="1" max="200" step="1" value="10" aria-label="Timeline zoom"/>
+                    <button class="mt-zoom-btn" id="mtZoomIn" title="Zoom in (Ctrl/Cmd + +)" type="button">+</button>
+                    <span class="mt-zoom-val" id="mtZoomVal">10 px/s</span>
+                  </div>
                 </div>
               </div>
               <div class="mt-timeline-body">

@@ -2836,6 +2836,44 @@
   }
   try { window.setTimelineZoom = setTimelineZoom; } catch(_){}
 
+  // ── Task #79 — Toolbar zoom slider (upper-right of the timeline) ──
+  // Slider value is the absolute px/sec target; − and + buttons step
+  // multiplicatively (×0.8 / ×1.25) so power users can zoom without
+  // dragging the slider. Live readout shows current px/sec.
+  (function wireZoomControls(){
+    var slider = document.getElementById('mtZoomSlider');
+    var minus  = document.getElementById('mtZoomOut');
+    var plus   = document.getElementById('mtZoomIn');
+    var readout= document.getElementById('mtZoomVal');
+    if (!slider || !minus || !plus || !readout) return;
+    if (slider.dataset.zoomWired === '1') return;
+    slider.dataset.zoomWired = '1';
+
+    function refreshUI(){
+      try {
+        slider.value = String(Math.round(TIMELINE_PX_PER_SEC));
+        readout.textContent = Math.round(TIMELINE_PX_PER_SEC) + ' px/s';
+      } catch(_){}
+    }
+    function applyAbsolute(targetPps){
+      var current = TIMELINE_PX_PER_SEC || 1;
+      var target  = Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, targetPps));
+      var ratio   = target / current;
+      if (Math.abs(ratio - 1) < 0.001) { refreshUI(); return; }
+      setTimelineZoom(ratio);
+      refreshUI();
+    }
+    slider.addEventListener('input', function(){
+      var v = parseFloat(slider.value);
+      if (!isFinite(v) || v <= 0) return;
+      applyAbsolute(v);
+    });
+    minus.addEventListener('click', function(){ setTimelineZoom(0.8); refreshUI(); });
+    plus .addEventListener('click', function(){ setTimelineZoom(1.25); refreshUI(); });
+
+    refreshUI();
+  })();
+
   // ── Marquee selection ─────────────────────────────────────────
   // Drag on an empty area of the tracks to rubber-band select all
   // overlapping clips. Shift adds to the existing selection; without
