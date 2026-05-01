@@ -963,7 +963,7 @@ router.get('/', requireAuth, (req, res) => {
         <p id="modalDescription">Where would you like to use this caption style?</p>
         <div class="modal-preview" id="modalPreview"></div>
         <div class="modal-actions">
-          <a href="/smart-shorts" class="modal-btn modal-btn-primary">
+          <a href="/shorts" class="modal-btn modal-btn-primary">
             <span>🎬</span> Use in Smart Shorts
           </a>
           <button class="modal-btn modal-btn-secondary" onclick="savePreference()">
