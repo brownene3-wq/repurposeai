@@ -127,6 +127,26 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
 
   try {
     writeProgress('Downloading video...');
+
+    // Try Cobalt API first — most reliable on Railway (yt-dlp + ytdl-core
+    // routinely get bot-blocked from datacenter IPs). Mirrors the Quick
+    // Narrate flow (commits 820c8ce / 5f05882 / 48756f7).
+    try {
+      await downloadWithCobalt(videoUrl, cachedVideoPath);
+      if (fs.existsSync(cachedVideoPath) && fs.statSync(cachedVideoPath).size > 10000) {
+        try { fs.unlinkSync(lockPath); } catch (e) {}
+        const entry = { path: cachedVideoPath, refCount: 1, timer: null };
+        videoDownloadCache.set(cacheKey, entry);
+        console.log(`  Cobalt download succeeded for ${videoId} (${(fs.statSync(cachedVideoPath).size / 1024 / 1024).toFixed(1)}MB)`);
+        return cachedVideoPath;
+      }
+      // File missing or too small — fall through to yt-dlp
+      try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+    } catch (cobaltErr) {
+      console.log(`  Cobalt failed for ${videoId}: ${String(cobaltErr.message || cobaltErr).slice(0, 150)}`);
+      try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+    }
+
     await runDl(ytdlpPath, [
       '--no-playlist',
       '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
