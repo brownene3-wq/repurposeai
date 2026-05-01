@@ -154,7 +154,10 @@ async function renderEditor(req, res) {
     /* Task #62 — first grid row matches the editor-topbar height (was 38px,
        now 56px). Without this update, the topbar overflowed into row 2,
        clipping the Media library header and the AI/Edit/Audio/FX tabs. */
-    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px 1fr 260px;height:100vh;gap:0;padding:0;overflow:hidden}
+    /* Task #80 — bottom half of the viewport is now timeline. The middle
+       row (Media | Preview | Sidebar) and the bottom row (full-width
+       Timeline) split the remaining height 50/50 below the 56px topbar. */
+    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px minmax(0,1fr) minmax(280px,1fr);height:100vh;gap:0;padding:0;overflow:hidden}
     .editor-topbar{grid-column:1/4;grid-row:1}
     .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
     .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
@@ -401,8 +404,8 @@ async function renderEditor(req, res) {
 
     /* Generic body/text fallback so text on the editor isn't pure white in light mode */
     body.light{color:#1a1a2e}
-    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px}}
-    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px}}
+    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px;grid-template-rows:56px minmax(0,1fr) minmax(280px,1fr)}}
+    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px;grid-template-rows:56px minmax(0,1fr) minmax(260px,1fr)}}
     @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:flex;flex-direction:column}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
@@ -851,56 +854,6 @@ async function renderEditor(req, res) {
                 </div>
               </div>
 
-              <div class="timeline-container" id="timelineContainer">
-              <div class="mt-toolbar">
-                <div class="mt-toolbar-left">
-                  <button class="mt-tool-btn" id="mtRazorBtn" title="Razor Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.121 14.121L7.05 21.192a2 2 0 01-2.828 0l-.414-.414a2 2 0 010-2.828l7.07-7.071"/><path d="M16.243 11.999L21.9 6.343a2 2 0 000-2.829l-.707-.707a2 2 0 00-2.828 0L12.707 8.464"/><line x1="8" y1="8" x2="16" y2="16"/></svg> Razor</button>
-                  <button class="mt-tool-btn active" id="mtSelectBtn" title="Select Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg> Select</button>
-                  <span class="mt-toolbar-sep"></span>
-                  <button class="mt-tool-btn" id="mtUndoBtn" title="Undo">\u21a9 Undo</button>
-                  <button class="mt-tool-btn" id="mtRedoBtn" title="Redo">\u21aa Redo</button>
-                  <span class="mt-toolbar-sep"></span>
-                  <button class="mt-tool-btn active" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
-                  <button class="mt-tool-btn" id="mtSnapshotBtn" title="Snapshot" style="display:none">\ud83d\udcf7 Snapshot</button>
-                  <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
-                </div>
-                <div class="mt-toolbar-right">
-                  <span class="mt-info">5 tracks &bull; 0:00</span>
-                  <span class="mt-toolbar-sep"></span>
-                  <!-- Task #79 — Timeline zoom slider. Drives setTimelineZoom();
-                       buttons step ×0.8 / ×1.25, slider sets px-per-second
-                       directly in the [1, 200] range (default 10). -->
-                  <div class="mt-zoom" title="Timeline zoom">
-                    <button class="mt-zoom-btn" id="mtZoomOut" title="Zoom out (Ctrl/Cmd + -)" type="button">&minus;</button>
-                    <input class="mt-zoom-slider" id="mtZoomSlider" type="range" min="1" max="200" step="1" value="10" aria-label="Timeline zoom"/>
-                    <button class="mt-zoom-btn" id="mtZoomIn" title="Zoom in (Ctrl/Cmd + +)" type="button">+</button>
-                    <span class="mt-zoom-val" id="mtZoomVal">10 px/s</span>
-                  </div>
-                </div>
-              </div>
-              <div class="mt-timeline-body">
-                <div class="mt-labels">
-                  <div class="mt-label mt-label-video">V1</div>
-                  <div class="mt-label mt-label-audio">A1</div>
-                  <div class="mt-label mt-label-music">M1</div>
-                  <div class="mt-label mt-label-text">T1</div>
-                  <div class="mt-label mt-label-fx">FX</div>
-                </div>
-                <div class="mt-tracks-area" id="mtTracksArea">
-                  <div class="mt-time-ruler" id="mtTimeRuler">
-                    <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span><span>3:30</span><span>4:00</span>
-                  </div>
-                  <div class="mt-track mt-track-video" data-type="video">
-                  </div>
-                  <div class="mt-track mt-track-audio" data-type="audio">
-                  </div>
-                  <div class="mt-track mt-track-music" data-type="music"></div>
-                  <div class="mt-track mt-track-text" data-type="text"></div>
-                  <div class="mt-track mt-track-fx" data-type="fx"></div>
-                  <div class="mt-playhead" id="mtPlayhead" style="left:0px"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>
-                </div>
-              </div>
-            </div>
 
             <div class="tools-section">
               <button type="button" id="undoBtn" class="tool-button" style="background:linear-gradient(135deg,#F59E0B,#D97706);color:#fff;border:none;font-weight:700" title="Undo last action">↩️ Undo</button>
@@ -1299,6 +1252,57 @@ async function renderEditor(req, res) {
             <button class="exp-go" id="exportButton" type="button">\ud83c\udfac Export Video</button>
           </div>
         </div>
+
+              <div class="timeline-container" id="timelineContainer">
+              <div class="mt-toolbar">
+                <div class="mt-toolbar-left">
+                  <button class="mt-tool-btn" id="mtRazorBtn" title="Razor Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.121 14.121L7.05 21.192a2 2 0 01-2.828 0l-.414-.414a2 2 0 010-2.828l7.07-7.071"/><path d="M16.243 11.999L21.9 6.343a2 2 0 000-2.829l-.707-.707a2 2 0 00-2.828 0L12.707 8.464"/><line x1="8" y1="8" x2="16" y2="16"/></svg> Razor</button>
+                  <button class="mt-tool-btn active" id="mtSelectBtn" title="Select Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg> Select</button>
+                  <span class="mt-toolbar-sep"></span>
+                  <button class="mt-tool-btn" id="mtUndoBtn" title="Undo">\u21a9 Undo</button>
+                  <button class="mt-tool-btn" id="mtRedoBtn" title="Redo">\u21aa Redo</button>
+                  <span class="mt-toolbar-sep"></span>
+                  <button class="mt-tool-btn active" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
+                  <button class="mt-tool-btn" id="mtSnapshotBtn" title="Snapshot" style="display:none">\ud83d\udcf7 Snapshot</button>
+                  <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
+                </div>
+                <div class="mt-toolbar-right">
+                  <span class="mt-info">5 tracks &bull; 0:00</span>
+                  <span class="mt-toolbar-sep"></span>
+                  <!-- Task #79 — Timeline zoom slider. Drives setTimelineZoom();
+                       buttons step ×0.8 / ×1.25, slider sets px-per-second
+                       directly in the [1, 200] range (default 10). -->
+                  <div class="mt-zoom" title="Timeline zoom">
+                    <button class="mt-zoom-btn" id="mtZoomOut" title="Zoom out (Ctrl/Cmd + -)" type="button">&minus;</button>
+                    <input class="mt-zoom-slider" id="mtZoomSlider" type="range" min="1" max="200" step="1" value="10" aria-label="Timeline zoom"/>
+                    <button class="mt-zoom-btn" id="mtZoomIn" title="Zoom in (Ctrl/Cmd + +)" type="button">+</button>
+                    <span class="mt-zoom-val" id="mtZoomVal">10 px/s</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-timeline-body">
+                <div class="mt-labels">
+                  <div class="mt-label mt-label-video">V1</div>
+                  <div class="mt-label mt-label-audio">A1</div>
+                  <div class="mt-label mt-label-music">M1</div>
+                  <div class="mt-label mt-label-text">T1</div>
+                  <div class="mt-label mt-label-fx">FX</div>
+                </div>
+                <div class="mt-tracks-area" id="mtTracksArea">
+                  <div class="mt-time-ruler" id="mtTimeRuler">
+                    <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span><span>3:30</span><span>4:00</span>
+                  </div>
+                  <div class="mt-track mt-track-video" data-type="video">
+                  </div>
+                  <div class="mt-track mt-track-audio" data-type="audio">
+                  </div>
+                  <div class="mt-track mt-track-music" data-type="music"></div>
+                  <div class="mt-track mt-track-text" data-type="text"></div>
+                  <div class="mt-track mt-track-fx" data-type="fx"></div>
+                  <div class="mt-playhead" id="mtPlayhead" style="left:0px"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>
+                </div>
+              </div>
+            </div>
       </div>
     </main>
   </div>
