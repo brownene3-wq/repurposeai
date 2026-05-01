@@ -1619,7 +1619,7 @@ router.get('/', requireAuth, (req, res) => {
               <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
                 <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
-                <button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>
+                \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>\` : ''}
                 <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')">🔄 Regenerate</button>
               </div>
             \`;
@@ -1655,7 +1655,7 @@ router.get('/', requireAuth, (req, res) => {
             <div class="result-content">\${escapeHtml(content)}</div>
             <div class="result-actions">
               <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
-              <button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>
+              \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>\` : ''}
             </div>
           \`;
           grid.appendChild(card);
