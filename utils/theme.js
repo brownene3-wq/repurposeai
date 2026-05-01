@@ -10,27 +10,50 @@ function getBaseCSS() {
     body.theme-ready{transition:background .3s,color .3s}
     html.light{background:var(--dark)}
     .dashboard{display:flex;height:100vh;overflow:hidden}
-    .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:20px 0;position:fixed;height:100vh;overflow-y:auto;display:flex;flex-direction:column;transition:width .25s ease;z-index:100}
+    .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:18px 0;position:fixed;height:100vh;overflow:hidden;display:flex;flex-direction:column;transition:width .25s ease;z-index:100}
     .sidebar.collapsed{width:68px}
-    .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .sidebar-header{padding:0 18px 14px;display:flex;align-items:center;gap:8px}
+    .sidebar.collapsed .sidebar-header{padding:0 8px 14px;justify-content:center}
+    .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;flex:1;text-decoration:none;line-height:1}
     .sidebar .logo span{-webkit-text-fill-color:transparent}
     .sidebar.collapsed .logo-full{display:none}
     .sidebar:not(.collapsed) .logo-mini{display:none}
-    .sidebar .logo-mini{font-size:1.2em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-    .sidebar a{display:flex;align-items:center;gap:10px;padding:12px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent;white-space:nowrap;overflow:hidden}
-    .sidebar.collapsed a{justify-content:center;padding:12px 0;gap:0}
-    .sidebar a .nav-icon{flex-shrink:0;width:20px;text-align:center;font-size:1.05em}
+    .sidebar .logo-mini{font-size:1.2em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;line-height:1}
+    .sidebar-nav{flex:1;overflow-y:auto;min-height:0;padding:4px 0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    .sidebar-nav::-webkit-scrollbar{width:6px}
+    .sidebar-nav::-webkit-scrollbar-track{background:transparent}
+    .sidebar-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    .sidebar-nav::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    .sidebar a{display:flex;align-items:center;gap:12px;padding:11px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent;white-space:nowrap;overflow:hidden;font-size:0.82rem;line-height:1.3}
+    .sidebar.collapsed a{justify-content:center;padding:11px 0;gap:0}
+    .sidebar a .nav-icon{flex-shrink:0;width:18px;text-align:center;font-size:0.95em}
     .sidebar a .nav-label{transition:opacity .2s,width .2s}
     .sidebar.collapsed a .nav-label{opacity:0;width:0;overflow:hidden}
     .sidebar a:not(.logo):hover{color:#fff;background:rgba(108,92,231,0.1)}
     .sidebar a.active{color:#6c5ce7;background:linear-gradient(90deg,rgba(108,58,237,0.12),rgba(236,72,153,0.06));border-left-color:#6C3AED}
-    .sidebar-toggle{background:none;border:1px solid rgba(255,255,255,0.1);color:#888;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9em;transition:all .2s;margin:0 auto 10px}
+    .sidebar-toggle{background:none;border:1px solid rgba(255,255,255,0.1);color:#888;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.85em;transition:all .2s;flex-shrink:0;padding:0}
     .sidebar-toggle:hover{background:rgba(108,58,237,0.15);color:#fff;border-color:rgba(108,58,237,0.3)}
     .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
+    .sidebar-footer{padding:10px 14px 6px;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px}
+    .sidebar.collapsed .sidebar-footer{padding:10px 6px 6px}
+    .user-card{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);margin-bottom:6px}
+    .sidebar.collapsed .user-card{justify-content:center;padding:8px 0;border:none;background:transparent}
+    .user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.88rem;flex-shrink:0}
+    .user-info{min-width:0;flex:1;overflow:hidden}
+    .sidebar.collapsed .user-info{display:none}
+    .user-name{color:#fff;font-size:0.82rem;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .user-plan-badge{display:inline-block;margin-top:3px;padding:2px 8px;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:linear-gradient(135deg,rgba(108,58,237,0.25),rgba(236,72,153,0.18));color:#C8B8FF;border-radius:999px;border:1px solid rgba(108,58,237,0.35)}
+    .sign-out-link{color:#ef4444 !important}
+    .sign-out-link:hover{background:rgba(239,68,68,0.08) !important;color:#fca5a5 !important}
     .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:fixed;top:1.2rem;right:1.5rem;z-index:100}
     body.light .sidebar,html.light .sidebar{background:#f8f8f8;border-color:#e0e0e0}
     body.light .sidebar a,html.light .sidebar a{color:#666}
     body.light .sidebar a.active,html.light .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.08)}
+    body.light .user-card,html.light .user-card{background:rgba(0,0,0,0.03);border-color:rgba(0,0,0,0.06)}
+    body.light .user-name,html.light .user-name{color:#1A1A2E}
+    body.light .sidebar-footer,html.light .sidebar-footer{border-top-color:rgba(0,0,0,0.06)}
+    body.light .sidebar-nav,html.light .sidebar-nav{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .sidebar-nav::-webkit-scrollbar-thumb,html.light .sidebar-nav::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
     body.light .theme-toggle,html.light .theme-toggle{background:#fff;border-color:#ddd}
     .main-content{flex:1;margin-left:250px;padding:2rem;overflow-y:auto;height:100vh;transition:margin-left .25s ease}
     .sidebar.collapsed ~ .main-content,.sidebar-collapsed .main-content{margin-left:68px}
@@ -171,15 +194,40 @@ function getSidebar(activePage, user, teamPermissions) {
     return `      <a href="${link.href}"${activeClass}><span class="nav-icon">${link.icon}</span><span class="nav-label">${link.label}</span></a>`;
   }).join('\n');
 
+  // User profile card data
+  const escapeHtml = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const fullName = (user && user.name) ? String(user.name).trim() : '';
+  const firstName = fullName ? fullName.split(/\s+/)[0] : (user && user.email ? String(user.email).split('@')[0] : 'Friend');
+  const initial = (firstName || '?').charAt(0).toUpperCase();
+  const planRaw = (user && user.plan) ? String(user.plan).toLowerCase() : 'free';
+  const planLabel = planRaw.charAt(0).toUpperCase() + planRaw.slice(1) + ' Plan';
+  const cardTitle = escapeHtml(fullName || firstName) + ' \u00B7 ' + escapeHtml(planLabel);
+
   return `
-    <aside class="sidebar" id="mainSidebar" style="display:flex;flex-direction:column;">
-      <div style="padding:0 20px 15px;display:flex;align-items:center;justify-content:space-between;">
-        <a href="/dashboard" class="logo logo-full" style="padding:0;margin:0;text-decoration:none;border-left:none;">Splicora</a>
-        <a href="/dashboard" class="logo-mini" style="padding:0;margin:0 auto;text-decoration:none;border-left:none;display:none;">S<span>c</span></a>
+    <aside class="sidebar" id="mainSidebar">
+      <div class="sidebar-header">
+        <a href="/dashboard" class="logo logo-full">Splicora</a>
+        <a href="/dashboard" class="logo-mini">S<span>c</span></a>
+        <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
-      <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">&#x276E;</button>
+      <nav class="sidebar-nav">
 ${navLinks}
-      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-card" title="${cardTitle}">
+          <div class="user-avatar" aria-hidden="true">${escapeHtml(initial)}</div>
+          <div class="user-info">
+            <div class="user-name">${escapeHtml(firstName)}</div>
+            <span class="user-plan-badge">${escapeHtml(planLabel)}</span>
+          </div>
+        </div>
+        <a href="/auth/logout" class="sign-out-link"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
+      </div>
     </aside>`;
 }
 
