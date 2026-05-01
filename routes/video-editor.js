@@ -839,7 +839,7 @@ async function renderEditor(req, res) {
                   <button class="mt-tool-btn" id="mtRedoBtn" title="Redo">\u21aa Redo</button>
                   <span class="mt-toolbar-sep"></span>
                   <button class="mt-tool-btn active" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
-                  <button class="mt-tool-btn" id="mtSnapshotBtn" title="Snapshot">\ud83d\udcf7 Snapshot</button>
+                  <button class="mt-tool-btn" id="mtSnapshotBtn" title="Snapshot" style="display:none">\ud83d\udcf7 Snapshot</button>
                   <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
                 </div>
                 <div class="mt-toolbar-right">
