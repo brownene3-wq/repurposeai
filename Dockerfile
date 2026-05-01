@@ -33,6 +33,23 @@ RUN mkdir -p /etc/yt-dlp && \
     echo '--geo-bypass' > /etc/yt-dlp/config && \
     echo '--no-check-certificates' >> /etc/yt-dlp/config
 
+# Download RNNoise model files for FFmpeg's arnndn filter (used by Enhance
+# Speech). These are small (~1MB each) text-format weight files trained by the
+# rnnoise project and packaged by GregorR/rnnoise-models for use with FFmpeg's
+# arnndn filter (which expects rnnoise's text-weights format). Without these,
+# afftdn alone cannot fully eliminate steady ambient noise (fans, AC, hum,
+# room tone) — and that is exactly what users were complaining about. mp.rnnn
+# is the broad general-purpose model; sh.rnnn is the speech-tuned model used
+# for the highest noise-reduction level. License: CC0/public domain.
+RUN mkdir -p /usr/local/share/rnnoise && \
+    curl -fsSL https://github.com/GregorR/rnnoise-models/raw/master/somnolent-hogwash-2018-09-01/sh.rnnn \
+         -o /usr/local/share/rnnoise/sh.rnnn && \
+    curl -fsSL https://github.com/GregorR/rnnoise-models/raw/master/marathon-prescription-2018-08-29/mp.rnnn \
+         -o /usr/local/share/rnnoise/mp.rnnn && \
+    curl -fsSL https://github.com/GregorR/rnnoise-models/raw/master/conjoined-burgers-2018-08-28/cb.rnnn \
+         -o /usr/local/share/rnnoise/cb.rnnn && \
+    ls -la /usr/local/share/rnnoise/
+
 # Install bgutil PO token provider server (generates YouTube auth tokens)
 RUN git clone --single-branch --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/pot-provider && \
     cd /opt/pot-provider/server && \
