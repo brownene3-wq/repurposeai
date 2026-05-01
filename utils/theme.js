@@ -18,7 +18,7 @@ function getBaseCSS() {
     .sidebar.collapsed .logo-mini{cursor:pointer}
     .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;line-height:1;white-space:nowrap;overflow:hidden}
     .sidebar .logo-full{flex:1;min-width:0;opacity:1;max-width:200px;transition:opacity .15s ease,max-width .25s ease,margin .25s ease}
-    .sidebar.collapsed .logo-full{opacity:0;max-width:0;margin:0;flex:0 0 0;width:0;padding:0;pointer-events:none}
+    .sidebar.collapsed .logo-full{opacity:0;max-width:0;margin:0;flex:0 0 0;width:0;padding:0;border:none;pointer-events:none}
     .sidebar .logo-mini{flex:0 0 auto;font-size:1.3em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;line-height:1;text-align:center;width:0;opacity:0;overflow:hidden;pointer-events:none;transition:opacity .25s ease .08s,width .25s ease}
     .sidebar.collapsed .logo-mini{width:24px;opacity:1;pointer-events:auto}
     .sidebar-nav{flex:1;overflow-y:auto;min-height:0;padding:4px 0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
