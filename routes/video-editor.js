@@ -303,6 +303,82 @@ async function renderEditor(req, res) {
     body.light .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.05),rgba(236,72,153,0.05));border-color:rgba(108,58,237,0.3)}
     body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
+
+    /* ═══════════════════════════════════════════════════════════════
+       Task #78 — Editor light-mode palette.
+       Mirrors the dashboard's light theme: white surfaces, dark slate
+       text, soft purple accents. Every editor-specific dark surface
+       gets a counterpart so toggling the floating moon/sun button on
+       the editor lands on a coherent light UI without breaking
+       contrast on the timeline, media library, sidebar, or PGM.
+       ═══════════════════════════════════════════════════════════════ */
+    /* Editor frame surfaces */
+    body.light .editor-topbar{background:#ffffff;border-bottom-color:rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .editor-topbar a,body.light .e-logo{color:#1a1a2e}
+    body.light .e-tb{background:rgba(108,58,237,.08);border-color:rgba(108,58,237,.25);color:#1a1a2e}
+    body.light .e-tb:hover{background:rgba(108,58,237,.16)}
+    body.light .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-color:transparent}
+    body.light #projectFilenameInput{background:#ffffff;border-color:rgba(108,58,237,.25);color:#1a1a2e}
+    body.light #projectFilenameInput::placeholder{color:#94a3b8}
+    body.light .editor-container{background:#f1f3f9}
+    body.light .media-library,body.light .editor-sidebar{background:#ffffff;border-color:rgba(108,58,237,.18)}
+    body.light .editor-main{background:#f1f3f9}
+
+    /* Media library */
+    body.light .ml-head{border-bottom-color:rgba(108,58,237,.18)}
+    body.light .ml-head h3{color:#1a1a2e}
+    body.light .ml-tabs{border-bottom-color:rgba(108,58,237,.14)}
+    body.light .ml-tab{color:#64748b}
+    body.light .ml-tab.active{color:#7c3aed;border-bottom-color:#7c3aed}
+    body.light .ml-search input{background:#ffffff;border-color:rgba(108,58,237,.25);color:#1a1a2e}
+    body.light .ml-search input::placeholder{color:#94a3b8}
+    body.light .ml-section{color:#64748b}
+    body.light .ml-fitem,body.light .ml-fl{background:rgba(108,58,237,.05);border-color:rgba(108,58,237,.15)}
+    body.light .ml-fitem:hover,body.light .ml-fl:hover{background:rgba(108,58,237,.10)}
+    body.light .ml-fnm{color:#475569}
+    body.light .ml-foot{border-top:1px solid rgba(108,58,237,.14);background:#ffffff}
+    body.light .ml-fb{background:rgba(108,58,237,.08);border-color:rgba(108,58,237,.22);color:#1a1a2e}
+    body.light .ml-fb:hover{background:rgba(108,58,237,.16)}
+    body.light .ml-fb.ai{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;border-color:transparent}
+
+    /* Editor sidebar (right) */
+    body.light .editor-sidebar{color:#1a1a2e}
+    body.light .v10-rp,body.light .v10-tab,body.light .v10-tab-row{background:#ffffff;color:#1a1a2e}
+    body.light .v10-tab.active{background:rgba(108,58,237,.16);color:#1a1a2e}
+    body.light .v10-rp-btn,body.light .v10-rp-card{background:rgba(108,58,237,.06);border-color:rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .v10-rp-btn:hover{background:rgba(108,58,237,.14)}
+    body.light .v10-rp-grp h4{color:#475569}
+
+    /* Program monitor / video preview */
+    body.light .video-preview-area{background:#0a0a0a;border-color:rgba(108,58,237,.25)}
+    body.light .upload-zone{color:#1a1a2e}
+    body.light .upload-zone h3{color:#1a1a2e}
+    body.light .upload-zone p{color:#475569}
+
+    /* Timeline */
+    body.light .timeline-container,body.light #timelineContainer{background:#f8f9fc;border-color:rgba(108,58,237,.18)}
+    body.light .mt-toolbar{background:#ffffff;border-bottom-color:rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .mt-tools-row,body.light .mt-tools-row button{color:#1a1a2e}
+    body.light .mt-labels{background:#ffffff;border-right:1px solid rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .mt-track-label{color:#475569}
+    body.light .mt-tracks-area{background:#f1f3f9}
+    body.light .mt-track{background:rgba(108,58,237,.04);border-bottom:1px solid rgba(108,58,237,.10)}
+    body.light .mt-clip{color:#1a1a2e}
+    body.light .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.45),rgba(250,204,21,.28));border-color:rgba(202,138,4,.55);color:#1a1a2e}
+    body.light .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.55),rgba(124,58,237,.35));border-color:rgba(124,58,237,.6);color:#fff}
+    body.light .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.55),rgba(56,189,248,.35));border-color:rgba(56,189,248,.6);color:#0a0a0a}
+    body.light .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.55),rgba(244,114,182,.35));border-color:rgba(244,114,182,.6);color:#fff}
+    body.light .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.55),rgba(52,211,153,.35));border-color:rgba(52,211,153,.6);color:#0a0a0a}
+    body.light .mt-playhead{background:#7c3aed;box-shadow:0 0 4px rgba(124,58,237,.55)}
+
+    /* Filmstrip */
+    body.light .filmstrip-wrap{background:#ffffff;border-color:rgba(108,58,237,.14)}
+    body.light .fs-ruler{background:#f1f3f9;color:#64748b}
+    body.light .fs-track{background:rgba(108,58,237,.05)}
+    body.light .fs-label{color:#475569}
+
+    /* Generic body/text fallback so text on the editor isn't pure white in light mode */
+    body.light{color:#1a1a2e}
     @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px}}
     @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px}}
     @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:flex;flex-direction:column}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
@@ -436,7 +512,11 @@ async function renderEditor(req, res) {
     .editor-fullscreen-toggle{display:none!important}
     .dashboard .main-content{padding:0!important;margin:0!important;width:100vw!important;max-width:100vw!important}
     .dashboard{overflow:hidden!important}
-    .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay,.main-content .theme-toggle{display:none!important}
+    /* Task #78 — keep the floating theme toggle visible inside the
+       editor's full-viewport main-content. The pull-to-refresh, mobile
+       menu, and sidebar overlay are still suppressed. */
+    .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay{display:none!important}
+    .main-content .theme-toggle{position:fixed;top:1.2rem;right:1.5rem;z-index:99999}
     .feedback-btn{display:none!important}
     /* Hide extra original editor panels inside video-container */
     .video-container>div:not(.upload-zone):not(.video-preview-area):not(.filmstrip-wrap):not(.tools-section){display:none!important}
