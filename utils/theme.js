@@ -179,7 +179,7 @@ function getSidebar(activePage, user, teamPermissions) {
       </div>
       <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">&#x276E;</button>
 ${navLinks}
-      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;opacity:0.7;font-size:0.85rem;"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
+      <a href="/auth/logout" style="margin-top:auto;color:#ef4444;"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
     </aside>`;
 }
 
