@@ -34,23 +34,41 @@ function getBaseCSS() {
     .sidebar-toggle{background:none;border:1px solid rgba(255,255,255,0.1);color:#888;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.85em;transition:all .2s;flex-shrink:0;padding:0}
     .sidebar-toggle:hover{background:rgba(108,58,237,0.15);color:#fff;border-color:rgba(108,58,237,0.3)}
     .sidebar.collapsed .sidebar-toggle{transform:rotate(180deg)}
-    .sidebar-footer{padding:10px 14px 6px;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px}
-    .sidebar.collapsed .sidebar-footer{padding:10px 6px 6px}
-    .user-card{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);margin-bottom:6px}
+    .sidebar-footer{position:relative;padding:10px 14px 12px;border-top:1px solid rgba(255,255,255,0.06);margin-top:4px}
+    .sidebar.collapsed .sidebar-footer{padding:10px 6px 12px}
+    .user-card{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;transition:background .15s,border-color .15s}
+    .user-card:hover{background:rgba(255,255,255,0.06);border-color:rgba(108,58,237,0.25)}
+    .user-card.open{background:rgba(108,58,237,0.10);border-color:rgba(108,58,237,0.35)}
     .sidebar.collapsed .user-card{justify-content:center;padding:8px 0;border:none;background:transparent}
     .user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.88rem;flex-shrink:0}
-    .user-info{min-width:0;flex:1;overflow:hidden}
+    .user-info{min-width:0;flex:1;overflow:hidden;display:flex;flex-direction:column;gap:5px}
     .sidebar.collapsed .user-info{display:none}
     .user-name{color:#fff;font-size:0.82rem;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .user-plan-badge{display:inline-block;margin-top:3px;padding:2px 8px;font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:linear-gradient(135deg,rgba(108,58,237,0.25),rgba(236,72,153,0.18));color:#C8B8FF;border-radius:999px;border:1px solid rgba(108,58,237,0.35)}
-    .sign-out-link{color:#ef4444 !important}
-    .sign-out-link:hover{background:rgba(239,68,68,0.08) !important;color:#fca5a5 !important}
+    .user-plan-badge{display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;padding:2px 8px;font-size:0.56rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;line-height:1.4;background:linear-gradient(135deg,rgba(108,58,237,0.25),rgba(236,72,153,0.18));color:#C8B8FF;border-radius:999px;border:1px solid rgba(108,58,237,0.35)}
+    .user-card-caret{flex-shrink:0;color:#888;font-size:0.7rem;transition:transform .18s ease}
+    .user-card.open .user-card-caret{transform:rotate(180deg);color:#c8b8ff}
+    .sidebar.collapsed .user-card-caret{display:none}
+    .user-popover{position:absolute;left:14px;right:14px;bottom:calc(100% - 6px);background:#1a1a22;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px;z-index:200;animation:userPopIn .15s ease}
+    .user-popover[hidden]{display:none}
+    .sidebar.collapsed .user-popover{left:64px;right:auto;width:200px;bottom:auto;top:calc(100% - 60px)}
+    .user-popover a{display:flex !important;align-items:center;gap:10px;padding:9px 12px !important;color:#d1d5db !important;font-size:0.82rem !important;text-decoration:none;border-radius:8px;border-left:none !important;background:transparent;transition:background .15s,color .15s}
+    .user-popover a:hover{background:rgba(108,58,237,0.15) !important;color:#fff !important}
+    .user-popover a .nav-icon{width:16px;font-size:0.95em}
+    .user-popover a.popover-signout{color:#ef4444 !important}
+    .user-popover a.popover-signout:hover{background:rgba(239,68,68,0.10) !important;color:#fca5a5 !important}
+    .user-popover hr{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:4px 0}
+    @keyframes userPopIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
     .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:fixed;top:1.2rem;right:1.5rem;z-index:100}
     body.light .sidebar,html.light .sidebar{background:#f8f8f8;border-color:#e0e0e0}
     body.light .sidebar a,html.light .sidebar a{color:#666}
     body.light .sidebar a.active,html.light .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.08)}
     body.light .user-card,html.light .user-card{background:rgba(0,0,0,0.03);border-color:rgba(0,0,0,0.06)}
+    body.light .user-card:hover,html.light .user-card:hover{background:rgba(0,0,0,0.05);border-color:rgba(108,58,237,0.25)}
+    body.light .user-card.open,html.light .user-card.open{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.35)}
     body.light .user-name,html.light .user-name{color:#1A1A2E}
+    body.light .user-popover,html.light .user-popover{background:#fff;border-color:rgba(0,0,0,0.08);box-shadow:0 12px 40px rgba(0,0,0,0.15)}
+    body.light .user-popover a,html.light .user-popover a{color:#1A1A2E !important}
+    body.light .user-popover hr,html.light .user-popover hr{border-top-color:rgba(0,0,0,0.08)}
     body.light .sidebar-footer,html.light .sidebar-footer{border-top-color:rgba(0,0,0,0.06)}
     body.light .sidebar-nav,html.light .sidebar-nav{scrollbar-color:rgba(0,0,0,0.15) transparent}
     body.light .sidebar-nav::-webkit-scrollbar-thumb,html.light .sidebar-nav::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
@@ -166,8 +184,6 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/dashboard/analytics', icon: '\u{1F4CA}', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
     { href: '/distribute', icon: '\u{26A1}', label: 'Repurpose', key: 'distribute', perm: null },
     // --- Account ---
-    { href: '/billing', icon: '\u{1F4B3}', label: 'Billing', key: 'billing', perm: 'view_billing' },
-    { href: '/settings', icon: '\u{2699}\u{FE0F}', label: 'Settings', key: 'settings', perm: 'manage_settings' },
   ];
 
   // Filter links based on team permissions
@@ -219,14 +235,20 @@ function getSidebar(activePage, user, teamPermissions) {
 ${navLinks}
       </nav>
       <div class="sidebar-footer">
-        <div class="user-card" title="${cardTitle}">
+        <button type="button" class="user-card" id="userCardBtn" onclick="toggleUserMenu(event)" aria-haspopup="menu" aria-expanded="false" title="${cardTitle}">
           <div class="user-avatar" aria-hidden="true">${escapeHtml(initial)}</div>
           <div class="user-info">
             <div class="user-name">${escapeHtml(firstName)}</div>
             <span class="user-plan-badge">${escapeHtml(planLabel)}</span>
           </div>
+          <span class="user-card-caret" aria-hidden="true">&#x25BE;</span>
+        </button>
+        <div class="user-popover" id="userPopover" role="menu" aria-labelledby="userCardBtn" hidden>
+          <a href="/settings" role="menuitem"><span class="nav-icon">&#x2699;&#xFE0F;</span><span class="nav-label">Settings</span></a>
+          <a href="/billing" role="menuitem"><span class="nav-icon">&#x1F4B3;</span><span class="nav-label">Billing</span></a>
+          <hr>
+          <a href="/auth/logout" role="menuitem" class="popover-signout"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
         </div>
-        <a href="/auth/logout" class="sign-out-link"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
       </div>
     </aside>`;
 }
@@ -297,6 +319,45 @@ function getThemeScript() {
       // Update main-content margin
       var mc = document.querySelector('.main-content');
       if (mc) mc.style.marginLeft = collapsed ? '68px' : '250px';
+      // Close any open user menu since geometry changed
+      __closeUserMenu();
+    }
+
+    function toggleUserMenu(e){
+      if (e && e.stopPropagation) e.stopPropagation();
+      var btn = document.getElementById('userCardBtn');
+      var pop = document.getElementById('userPopover');
+      if (!btn || !pop) return;
+      var willOpen = pop.hasAttribute('hidden');
+      if (willOpen) {
+        pop.removeAttribute('hidden');
+        btn.classList.add('open');
+        btn.setAttribute('aria-expanded','true');
+        // Defer attaching outside-click so the current click doesn't close it immediately
+        setTimeout(function(){
+          document.addEventListener('click', __userMenuOutside);
+          document.addEventListener('keydown', __userMenuEsc);
+        }, 0);
+      } else {
+        __closeUserMenu();
+      }
+    }
+    function __closeUserMenu(){
+      var btn = document.getElementById('userCardBtn');
+      var pop = document.getElementById('userPopover');
+      if (pop) pop.setAttribute('hidden','');
+      if (btn) { btn.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+      document.removeEventListener('click', __userMenuOutside);
+      document.removeEventListener('keydown', __userMenuEsc);
+    }
+    function __userMenuOutside(e){
+      var btn = document.getElementById('userCardBtn');
+      var pop = document.getElementById('userPopover');
+      if (!btn || !pop) return;
+      if (!btn.contains(e.target) && !pop.contains(e.target)) __closeUserMenu();
+    }
+    function __userMenuEsc(e){
+      if (e && e.key === 'Escape') __closeUserMenu();
     }
     // Restore sidebar state on page load
     if (localStorage.getItem('sidebarCollapsed') === '1') {
