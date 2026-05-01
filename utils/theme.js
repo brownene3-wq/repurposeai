@@ -25,7 +25,9 @@ function getBaseCSS() {
     .sidebar-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
     .sidebar-nav::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
     .sidebar a{display:flex;align-items:center;gap:12px;padding:11px 20px;color:#888;text-decoration:none;transition:all 0.2s;border-left:3px solid transparent;white-space:nowrap;overflow:hidden;font-size:0.82rem;line-height:1.3}
-    .sidebar.collapsed a{justify-content:center;padding:11px 0;gap:0}
+    .sidebar.collapsed a{justify-content:center;padding:11px 0;gap:0;border-right:3px solid transparent}
+    .sidebar.collapsed .sidebar-nav{scrollbar-width:none}
+    .sidebar.collapsed .sidebar-nav::-webkit-scrollbar{display:none}
     .sidebar a .nav-icon{flex-shrink:0;width:18px;text-align:center;font-size:0.95em}
     .sidebar a .nav-label{transition:opacity .2s,width .2s}
     .sidebar.collapsed a .nav-label{opacity:0;width:0;overflow:hidden}
