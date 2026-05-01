@@ -13,7 +13,7 @@ function getBaseCSS() {
     .sidebar{width:250px;background:#111;border-right:1px solid #222;padding:18px 0;position:fixed;height:100vh;overflow:hidden;display:flex;flex-direction:column;transition:width .25s ease;z-index:100}
     .sidebar.collapsed{width:68px}
     .sidebar-header{padding:0 18px 14px;display:flex;align-items:center;gap:8px}
-    .sidebar.collapsed .sidebar-header{padding:0 8px 14px;justify-content:center}
+    .sidebar.collapsed .sidebar-header{padding:0 8px 14px;flex-direction:column;align-items:center;justify-content:center;gap:10px}
     .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;line-height:1;white-space:nowrap;overflow:hidden}
     .sidebar .logo-full{flex:1;min-width:0;opacity:1;max-width:200px;transition:opacity .15s ease,max-width .25s ease,margin .25s ease}
     .sidebar.collapsed .logo-full{opacity:0;max-width:0;margin:0;pointer-events:none}
