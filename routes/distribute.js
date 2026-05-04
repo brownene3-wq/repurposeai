@@ -1361,11 +1361,15 @@ router.delete('/api/workflow/:id', requireAuth, async (req, res) => {
 router.get('/api/connections', requireAuth, async (req, res) => {
   try {
     const db = getDb();
+    if (!db || !db.connectedAccountOps || typeof db.connectedAccountOps.getByUser !== 'function') {
+      console.error('[connections] getDb did not return ops module. keys=', db ? Object.keys(db).slice(0, 20) : 'null');
+      return res.status(500).json({ error: 'Server misconfiguration: connectedAccountOps not available' });
+    }
     const connections = await db.connectedAccountOps.getByUser(req.user.id);
     res.json(connections);
   } catch (error) {
-    console.error('Get connections error:', error);
-    res.status(500).json({ error: 'Failed to fetch connections' });
+    console.error('Get connections error:', error && error.stack || error);
+    res.status(500).json({ error: 'Failed to fetch connections: ' + (error && error.message || 'unknown') });
   }
 });
 
