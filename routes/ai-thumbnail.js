@@ -1198,17 +1198,17 @@ router.get('/', requireAuth, (req, res) => {
         border: none;
         border-radius: 8px;
         font-weight: 600;
-        font-size: 1rem;
+        font-size: 0.95rem;
         cursor: pointer;
         transition: all 0.3s;
         width: 100%;
         margin-top: 2rem;
-        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.3);
+        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.4);
       }
 
       .action-button:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.4);
+        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.5);
       }
 
       .action-button:disabled {
@@ -1365,20 +1365,21 @@ router.get('/', requireAuth, (req, res) => {
 
       .generate-btn {
         flex: 1;
-        padding: 0.9rem 1.5rem;
-        background: var(--primary);
+        padding: 0.9rem 2rem;
+        background: var(--gradient-1);
         color: #fff;
         border: none;
         border-radius: 8px;
         font-weight: 600;
+        font-size: 0.95rem;
         cursor: pointer;
         transition: all 0.3s;
-        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.3);
+        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.4);
       }
 
       .generate-btn:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.4);
+        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.5);
       }
 
       .generate-btn:disabled {
