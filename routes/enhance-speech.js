@@ -419,8 +419,7 @@ ${pageStyles}
           <div class="setting-group">
             <label class="setting-label">Output Format</label>
             <select id="outputFormat">
-              <option value="original">Original Format</option>
-              <option value="mp3">MP3</option>
+              <option value="mp3" selected>MP3</option>
               <option value="wav">WAV</option>
             </select>
           </div>
@@ -644,9 +643,12 @@ ${pageStyles}
         showToast('No file to download');
         return;
       }
+      // The server's enhanced URL is /enhance-speech/download/enhanced_<ts>.<ext>
+      // — derive the extension from it so a WAV save isn't mis-named .mp3.
+      const ext = (currentDownloadUrl.match(/\.([a-z0-9]+)(?:\?|$)/i) || [,'mp3'])[1].toLowerCase();
       const a = document.createElement('a');
       a.href = currentDownloadUrl;
-      a.download = 'enhanced-audio.mp3';
+      a.download = 'enhanced-audio.' + ext;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -943,19 +945,15 @@ router.post('/process', requireAuth, maybeMultipart, async (req, res) => {
     const noiseLevel = (req.body && req.body.noiseLevel) || '2';
     const voiceBoostRaw = req.body && req.body.voiceBoost;
     const voiceBoost = voiceBoostRaw === true || voiceBoostRaw === 'true';
-    const outputFormat = (req.body && req.body.outputFormat) || 'original';
+    // Output format is now mp3 or wav only — the UI no longer offers
+    // "Original Format" because users were getting a downloaded file whose
+    // extension didn't match what they could open in their audio app.
+    let outputFormat = ((req.body && req.body.outputFormat) || 'mp3').toLowerCase();
+    if (outputFormat !== 'mp3' && outputFormat !== 'wav') outputFormat = 'mp3';
 
     const timestamp = Date.now();
     const baseName = `enhanced_${timestamp}`;
-
-    let outputPath;
-    if (outputFormat === 'mp3') {
-      outputPath = path.join(outputDir, `${baseName}.mp3`);
-    } else if (outputFormat === 'wav') {
-      outputPath = path.join(outputDir, `${baseName}.wav`);
-    } else {
-      outputPath = path.join(outputDir, `${baseName}${originalExtension || '.mp3'}`);
-    }
+    const outputPath = path.join(outputDir, `${baseName}.${outputFormat}`);
 
     await processAudioWithFfmpeg(inputPath, outputPath, noiseLevel, voiceBoost);
 
