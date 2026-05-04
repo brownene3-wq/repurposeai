@@ -250,7 +250,7 @@ router.get('/', requireAuth, async (req, res) => {
         <div class="tools-grid">
           <a href="/repurpose" class="tool-card">
             <span class="tool-icon">&#x1F504;</span>
-            <span class="tool-label">Repurpose</span>
+            <span class="tool-label">Create</span>
           </a>
           <a href="/shorts" class="tool-card">
             <span class="tool-icon">&#x2702;&#xFE0F;</span>
@@ -304,7 +304,7 @@ router.get('/', requireAuth, async (req, res) => {
           </a>
           <a href="/dashboard/calendar" class="tool-card">
             <span class="tool-icon">&#x1F4C5;</span>
-            <span class="tool-label">Scheduler</span>
+            <span class="tool-label">Calendar</span>
           </a>
           <a href="/dashboard/analytics" class="tool-card">
             <span class="tool-icon">&#x1F4CA;</span>

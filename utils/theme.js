@@ -168,7 +168,7 @@ function getSidebar(activePage, user, teamPermissions) {
   // null permission = always visible
   const allLinks = [
     // --- Core Content Tools ---
-    { href: '/dashboard', icon: '\u{1F3AC}', label: 'Dashboard', key: 'dashboard', perm: null },
+    { href: '/dashboard', icon: '\u{1F3E0}', label: 'Dashboard', key: 'dashboard', perm: null },
     { href: '/repurpose', icon: '\u{1F504}', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/repurpose/history', icon: '\u{1F4DA}', label: 'Library', key: 'library', perm: 'use_repurpose' },
     { href: '/shorts', icon: '\u{2702}\u{FE0F}', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
@@ -179,10 +179,10 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/ai-hook', icon: '\u{1F3A3}', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
     { href: '/ai-reframe', icon: '\u{1F4D0}', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
     { href: '/ai-thumbnail', icon: '\u{1F5BC}\u{FE0F}', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
-    { href: '/ai-broll', icon: '\u{1F3B5}', label: 'B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
-    { href: '/enhance-speech', icon: '\u{1F50A}', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
+    { href: '/ai-broll', icon: '\u{1F3A5}', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
+    { href: '/enhance-speech', icon: '\u{1F399}\u{FE0F}', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
-    { href: '/brand-voice', icon: '\u{1F399}', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    { href: '/brand-voice', icon: '\u{1F3A4}', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
     { href: '/brand-templates', icon: '\u{1F5A8}\u{FE0F}', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
     { href: '/dashboard/calendar', icon: '\u{1F4C5}', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
     { href: '/dashboard/analytics', icon: '\u{1F4CA}', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
