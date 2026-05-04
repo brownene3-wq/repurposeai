@@ -1,4 +1,5 @@
 const express = require('express');
+const { getDb } = require('../db/database');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
@@ -1076,9 +1077,15 @@ router.post('/save-preference', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Style and name are required' });
     }
 
-    // Store preference in user's settings (using a simple cookie for now, can be DB later)
+    // Persist to user_settings.default_caption_style so other features (Smart Shorts
+    // caption picker, Settings page) all see the same value.
+    const db = getDb();
+    await db.query('INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [req.user.id]);
+    await db.query('UPDATE user_settings SET default_caption_style = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2', [style, req.user.id]);
+
+    // Also set a cookie so legacy reads still work without an extra DB roundtrip.
     res.cookie('caption_style', JSON.stringify({ style, name }), {
-      maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
+      maxAge: 365 * 24 * 60 * 60 * 1000,
       httpOnly: false,
       sameSite: 'lax'
     });
@@ -1092,15 +1099,23 @@ router.post('/save-preference', requireAuth, async (req, res) => {
 });
 
 // GET: Get saved caption style preference
-router.get('/get-preference', requireAuth, (req, res) => {
+router.get('/get-preference', requireAuth, async (req, res) => {
   try {
+    const db = getDb();
+    const result = await db.query('SELECT default_caption_style FROM user_settings WHERE user_id = $1', [req.user.id]);
+    const dbStyle = result.rows[0]?.default_caption_style;
+    if (dbStyle) {
+      // Style names map roughly to display names; we keep human label sync best-effort.
+      const labelMap = { 'karaoke':'Karaoke','bold-pop':'Bold Pop','minimal':'Minimal','neon-glow':'Neon Glow','gradient-wave':'Gradient Wave','typewriter':'Typewriter','cinematic':'Cinematic','street':'Street','hormozi':'Hormozi','mrbeast':'MrBeast','clean-modern':'Clean Modern','classic-subtitle':'Classic Subtitle' };
+      return res.json({ style: dbStyle, name: labelMap[dbStyle] || dbStyle });
+    }
+    // Cookie fallback for older preferences
     const pref = req.cookies?.caption_style;
     if (pref) {
       const parsed = JSON.parse(pref);
-      res.json(parsed);
-    } else {
-      res.json({ style: null, name: null });
+      return res.json(parsed);
     }
+    res.json({ style: null, name: null });
   } catch (error) {
     res.json({ style: null, name: null });
   }

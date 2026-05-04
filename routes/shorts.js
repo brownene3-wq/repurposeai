@@ -6532,6 +6532,21 @@ ${paginationHtml}
               card.classList.toggle('selected');
             }
           };
+          // Apply user's preferred caption style (set via /caption-presets > Use Style)
+          if (window.__preferredCaptionStyle) {
+            const sel = card.querySelector('select[id^="caption-style-"]');
+            if (sel) {
+              const wanted = window.__preferredCaptionStyle;
+              const exact = Array.from(sel.options).find(o => o.value === wanted);
+              if (exact) sel.value = wanted;
+              else {
+                // Map a few aliases that don't match 1:1 with the dropdown values
+                const aliasMap = { 'neon-glow': 'neon', 'classic-subtitle': 'classic-sub' };
+                const aliased = aliasMap[wanted];
+                if (aliased && Array.from(sel.options).some(o => o.value === aliased)) sel.value = aliased;
+              }
+            }
+          }
           container.appendChild(card);
         });
 
@@ -6951,6 +6966,19 @@ ${paginationHtml}
         btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
       }
     }
+
+    // Preferred caption style — set by user on /caption-presets > Use Style.
+    // Loaded on page open; applied as the default value on every moment-card's
+    // caption-style picker so the user's choice actually takes effect.
+    window.__preferredCaptionStyle = null;
+    (async () => {
+      try {
+        const r = await fetch('/caption-presets/get-preference', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data && data.style) window.__preferredCaptionStyle = data.style;
+      } catch (e) {}
+    })();
 
     // === Workflow Templates ===
     let activeWorkflow = null;
