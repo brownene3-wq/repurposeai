@@ -828,14 +828,23 @@ router.post('/import-url', requireAuth, async (req, res) => {
 
     // Pre-flight title fetch — gives the UI something nicer to show than the
     // raw URL, and also doubles as a "is this URL even reachable / supported"
-    // probe before we commit to a download.
+    // probe before we commit to a download. Mirrors the YouTube anti-bot
+    // arg set used by ai-broll/ai-captions/shorts so YouTube doesn't reject
+    // the request with the "confirm you're not a bot" page.
     let displayName = parsed.hostname + parsed.pathname;
+    const TITLE_ARGS = [
+      '--no-warnings', '--no-check-certificates', '--geo-bypass',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+      '--retries', '3', '--extractor-retries', '3',
+      '--get-title',
+    ];
     try {
       const titleProc = execSync(
-        ytdlpBin + ' --no-warnings --no-check-certificates --geo-bypass --get-title ' +
-        '--user-agent ' + JSON.stringify('Mozilla/5.0') + ' ' +
-        JSON.stringify(rawUrl),
-        { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+        ytdlpBin + ' ' + TITLE_ARGS.map(a => JSON.stringify(a)).join(' ') + ' ' + JSON.stringify(rawUrl),
+        { encoding: 'utf8', timeout: 20000, stdio: ['pipe', 'pipe', 'pipe'] }
       ).trim();
       if (titleProc) displayName = titleProc.split('\n')[0].slice(0, 200);
     } catch (_) { /* fall back to URL as displayName */ }
@@ -850,6 +859,13 @@ router.post('/import-url', requireAuth, async (req, res) => {
         '-x', '--audio-format', 'mp3', '--audio-quality', '0',
         '--user-agent',
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        // Same anti-bot arg set used by ai-broll / ai-captions / shorts —
+        // routes through the bgutil-pot-provider sidecar started in the
+        // Dockerfile, which lets yt-dlp pass YouTube's PO-token check.
+        '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+        '--js-runtimes', 'node',
+        '--remote-components', 'ejs:github',
+        '--retries', '3', '--extractor-retries', '3', '--fragment-retries', '3',
         '-o', outFile.replace(/\.mp3$/, '.%(ext)s'),
         rawUrl,
       ];
