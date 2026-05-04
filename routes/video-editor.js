@@ -488,11 +488,10 @@ async function renderEditor(req, res) {
     .keyframe-dot.active{background:#EC4899;box-shadow:0 0 6px rgba(236,72,153,0.5)}
     
     /* ═══ MEDIA LIBRARY (Left Panel) ═══ */
-    /* Task #86 — Media Library pinned to half the viewport (50vh) with
-       overflow-y:auto. Mirrors the Task #85 editor-sidebar treatment.
-       The inner .ml-body already has flex:1 + overflow-y:auto so the
-       file grid scrolls while head/tabs/search/foot stay pinned. */
-    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-column:1;grid-row:2;min-height:0;height:50vh;max-height:50vh}
+    /* Task #87 — Media Library reverted to full viewport height (100vh).
+       overflow-y:auto stays so the file grid still scrolls when the
+       library content overflows. */
+    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-column:1;grid-row:2;min-height:0;height:100vh;max-height:100vh}
     /* Task #68 — Media library text bumped to dashboard-scale sizing.
        Was 8-11px; rest of the app uses 12-14px. This block keeps the
        same visual hierarchy (header > tabs > items > section labels)
