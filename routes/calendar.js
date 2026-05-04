@@ -21,6 +21,17 @@ router.get('/', requireAuth, (req, res) => {
     .add-entry-btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(108,58,237,0.35)}
     .cal-grid-wrap{background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:14px;overflow:hidden}
     body.light .cal-grid-wrap,html.light .cal-grid-wrap{border-color:rgba(0,0,0,0.06)}
+    .cal-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:12px}
+    body.light .cal-legend,html.light .cal-legend{border-color:rgba(0,0,0,0.06)}
+    .cal-legend-label{font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;align-self:center;margin-right:4px}
+    .legend-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:.75rem;font-weight:600;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);transition:opacity .15s,transform .15s;color:var(--text)}
+    body.light .legend-chip,html.light .legend-chip{background:rgba(0,0,0,0.03);border-color:rgba(0,0,0,0.06)}
+    .legend-chip .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,0.05)}
+    .legend-chip .legend-emoji{font-size:.85rem}
+    .legend-chip .legend-count{margin-left:4px;font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,0.08);color:var(--text)}
+    body.light .legend-chip .legend-count,html.light .legend-chip .legend-count{background:rgba(0,0,0,0.06)}
+    .legend-chip.empty{opacity:0.45}
+    .legend-chip.empty .legend-count{background:transparent;color:var(--text-dim)}
     .cal-day-headers{display:grid;grid-template-columns:repeat(7,1fr);background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06)}
     body.light .cal-day-headers,html.light .cal-day-headers{background:rgba(0,0,0,0.02);border-bottom-color:rgba(0,0,0,0.06)}
     .cal-day-header{padding:10px;text-align:center;font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
@@ -80,6 +91,7 @@ router.get('/', requireAuth, (req, res) => {
               <button class="add-entry-btn" onclick="openCreate()">+ Add Entry</button>
             </div>
           </div>
+          <div class="cal-legend" id="calLegend" aria-label="Platforms scheduled this month"></div>
           <div class="cal-grid-wrap">
             <div class="cal-day-headers">
               <div class="cal-day-header">Sun</div>
@@ -187,6 +199,31 @@ router.get('/', requireAuth, (req, res) => {
         calMonth=t.getMonth();calYear=t.getFullYear();
         loadEntries();
       }
+      function renderLegend(byDate){
+        const counts={};
+        Object.keys(PLATFORM_META).forEach(k=>counts[k]=0);
+        for(const dateKey in byDate){
+          for(const e of byDate[dateKey]){
+            if(counts.hasOwnProperty(e.platform))counts[e.platform]++;
+          }
+        }
+        const order=['tiktok','instagram','shorts','youtube','twitter','linkedin','facebook','blog','newsletter'];
+        let html='<span class="cal-legend-label">Platforms</span>';
+        for(const k of order){
+          const m=PLATFORM_META[k];
+          const c=counts[k]||0;
+          const empty=c===0?' empty':'';
+          const titleAttr=c===0?'No posts scheduled this month':(c+' post'+(c===1?'':'s')+' scheduled this month');
+          html+='<span class="legend-chip'+empty+'" title="'+titleAttr+'">';
+          html+='<span class="legend-dot" style="background:'+m.color+'"></span>';
+          html+='<span class="legend-emoji">'+m.emoji+'</span>';
+          html+=m.label;
+          html+='<span class="legend-count">'+c+'</span>';
+          html+='</span>';
+        }
+        document.getElementById('calLegend').innerHTML=html;
+      }
+
       function renderGrid(){
         const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
         document.getElementById('monthLabel').textContent=months[calMonth]+' '+calYear;
@@ -218,6 +255,7 @@ router.get('/', requireAuth, (req, res) => {
           html+='</div>';
         }
         document.getElementById('calGrid').innerHTML=html;
+        renderLegend(byDate);
       }
       function onCellClick(dateStr){openCreate(dateStr);}
       function openCreate(dateStr){
