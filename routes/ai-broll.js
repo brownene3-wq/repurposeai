@@ -761,9 +761,9 @@ ${pageStyles}
       <!-- Quick Import Bar (mirrors /ai-hook layout: input mode selector + active panel) -->
       <div id="quickImportBar" class="input-section broll-container" style="background:var(--surface);border-radius:12px;padding:2rem;margin-bottom:2rem;border:var(--border-subtle);max-width:1200px;margin-left:auto;margin-right:auto">
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1.25rem">
-          <button type="button" id="modeUrlBtn" onclick="setBrollInputMode('youtube')" style="padding:12px 24px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">🔗 URL Input</button>
-          <button type="button" id="modeUploadBtn" onclick="setBrollInputMode('upload')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">⬆ Upload</button>
-          <button type="button" id="modeTextBtn" onclick="setBrollInputMode('text')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">📝 Text/Transcript</button>
+          <button type="button" id="modeUrlBtn" onclick="setBrollInputMode('youtube')" style="padding:10px 20px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">🔗 URL Input</button>
+          <button type="button" id="modeUploadBtn" onclick="setBrollInputMode('upload')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">⬆ Upload</button>
+          <button type="button" id="modeTextBtn" onclick="setBrollInputMode('text')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">📝 Text/Transcript</button>
         </div>
 
         <!-- URL Input panel (default visible) -->
