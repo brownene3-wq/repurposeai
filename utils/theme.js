@@ -62,6 +62,17 @@ function getBaseCSS() {
     .user-popover a.popover-signout:hover{background:rgba(239,68,68,0.10) !important;color:#fca5a5 !important}
     .user-popover hr{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:4px 0}
     @keyframes userPopIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+    /* Task #84 — Instant CSS tooltip. Native title= attributes have a
+       browser-controlled ~500ms delay; we use ::after with the
+       data-tooltip attribute so the label appears the moment the cursor
+       enters the element. Applied wherever class="splicora-tt" lives. */
+    .splicora-tt{position:relative}
+    .splicora-tt::after{content:attr(data-tooltip);position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);background:rgba(15,12,28,.95);color:#fff;font-size:11px;font-weight:500;letter-spacing:.2px;padding:5px 10px;border-radius:6px;white-space:nowrap;pointer-events:none;opacity:0;visibility:hidden;border:1px solid rgba(124,58,237,.35);box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:10001}
+    .splicora-tt:hover::after,.splicora-tt:focus-visible::after{opacity:1;visibility:visible}
+    /* Mini-logo lives in the collapsed sidebar (left edge) — anchor the
+       tooltip to its right side instead of below so it doesn't get
+       clipped by the sidebar's overflow:hidden. */
+    .splicora-tt.splicora-tt-right::after{top:50%;left:calc(100% + 8px);transform:translateY(-50%)}
     .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:fixed;top:1.2rem;right:1.5rem;z-index:100}
     body.light .sidebar,html.light .sidebar{background:#f8f8f8;border-color:#e0e0e0}
     body.light .sidebar a,html.light .sidebar a{color:#666}
@@ -232,8 +243,8 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
-        <a href="/dashboard" class="logo logo-full" title="Go to Dashboard">Splicora</a>
-        <a href="/dashboard" class="logo logo-mini" aria-label="Splicora" title="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}">S</a>
+        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard">Splicora</a>
+        <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}">S</a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
       <nav class="sidebar-nav">

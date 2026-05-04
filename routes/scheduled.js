@@ -56,7 +56,7 @@ router.get('/', requireAuth, (req, res) => {
   <div class="layout">
     <div class="sidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;" title="Go to Dashboard">Splicora</a>
+        <a href="/dashboard" class="logo splicora-tt" style="padding:0;margin:0;text-decoration:none;border-left:none;" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard">Splicora</a>
       </div>
       <a href="/dashboard">&#x1F3AC; Dashboard</a>
       <a href="/repurpose">&#x1F504; Repurpose</a>
