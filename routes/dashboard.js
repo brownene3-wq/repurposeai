@@ -262,7 +262,7 @@ router.get('/', requireAuth, async (req, res) => {
           </a>
           <a href="/caption-presets" class="tool-card">
             <span class="tool-icon">&#x1F4DD;</span>
-            <span class="tool-label">Captions</span>
+            <span class="tool-label">Caption Styles</span>
           </a>
           <a href="/ai-reframe" class="tool-card">
             <!-- Task #77 — distinct from AI Thumbnails: triangular ruler
