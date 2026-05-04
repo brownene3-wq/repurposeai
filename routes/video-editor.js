@@ -255,7 +255,11 @@ async function renderEditor(req, res) {
        does the scrolling; tabs stay pinned at top, export bar pinned
        at bottom via margin-top:auto. min-height:0 lets the flex
        container actually constrain the inner overflow. */
-    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0;min-height:0;height:100%}
+    /* Task #85 — Sidebar pinned to half the viewport (50vh) with its
+       own overflow-y:auto so the column scrolls when content exceeds
+       that height. The inner Task #83 architecture (tabs / t-body /
+       export) still handles tabs+export pinning above this. */
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0;min-height:0;height:50vh;max-height:50vh}
     .editor-sidebar .cat-tabs-new{flex:none}
     .editor-sidebar .t-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
     .editor-sidebar .exp-section{flex:none}
