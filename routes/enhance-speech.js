@@ -378,10 +378,10 @@ ${pageStyles}
             <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
             <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" readonly style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem;cursor:text" onclick="this.removeAttribute('readonly');this.focus()">
           </div>
-          <button type="button" onclick="document.getElementById('heroLinkInput').removeAttribute('readonly');document.getElementById('heroLinkInput').focus()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
+          <button type="button" id="heroImportBtn" onclick="handleHeroImport()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
         </div>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <button type="button" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
+          <button type="button" id="heroUploadBtn" onclick="document.getElementById('fileInput').click()" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
           <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
           <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
         </div>
@@ -394,8 +394,8 @@ ${pageStyles}
         <div class="upload-section" id="uploadSection" onclick="document.getElementById('fileInput').click()">
           <div class="upload-icon">📁</div>
           <div class="upload-text">Drop your audio or video file here</div>
-          <div class="upload-subtext">Or click to select • MP3, WAV, MP4, MOV supported</div>
-          <input type="file" id="fileInput" class="file-input" accept="audio/*,video/*">
+          <div class="upload-subtext">Or click to select • MP3, WAV, M4A, OGG and other audio formats supported</div>
+          <input type="file" id="fileInput" class="file-input" accept="audio/*">
           <div id="fileName" class="file-name" style="display: none;"></div>
         </div>
 
@@ -476,8 +476,79 @@ ${pageStyles}
     const downloadBtn = document.getElementById('downloadBtn');
     let currentDownloadUrl = null;
 
+    // When the user imports audio from a URL, the server stores it in the
+    // shared upload directory and returns a filename token. We hold that
+    // token here so the Enhance Audio button knows to reference the imported
+    // file rather than re-uploading bytes from disk.
+    let importedFilename = null;
+    let importedDisplayName = null;
+
+    // Whenever the user picks a *local* file (drag/drop or file picker), the
+    // imported-URL state is stale and must be cleared, otherwise we'd send
+    // both and the server would silently use whichever it sees first.
+    function clearImportedFile() {
+      importedFilename = null;
+      importedDisplayName = null;
+    }
+
+    // Import-from-URL flow. Reads the hero link input, validates it, asks
+    // the server to download the audio via yt-dlp, and on success queues
+    // the resulting file as if the user had uploaded it.
+    window.handleHeroImport = async function handleHeroImport() {
+      const heroInput = document.getElementById('heroLinkInput');
+      const importBtn = document.getElementById('heroImportBtn');
+      const url = (heroInput && heroInput.value || '').trim();
+      if (!url) {
+        showToast('Please paste a valid URL', 4000);
+        if (heroInput) {
+          heroInput.removeAttribute('readonly');
+          heroInput.focus();
+        }
+        return;
+      }
+      // Cheap client-side sanity check — server validates strictly.
+      let parsed;
+      try { parsed = new URL(url); }
+      catch (_) { showToast('Please paste a valid URL', 4000); return; }
+      if (!/^https?:$/.test(parsed.protocol)) {
+        showToast('Only http(s) URLs are supported', 4000);
+        return;
+      }
+      const originalLabel = importBtn ? importBtn.innerHTML : '';
+      if (importBtn) {
+        importBtn.disabled = true;
+        importBtn.innerHTML = '<span class="spinner"></span> Importing...';
+      }
+      try {
+        const r = await fetch('/enhance-speech/import-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || ('Import failed (HTTP ' + r.status + ')'));
+        // Success: clear any stale local-file selection and display the
+        // imported file as the queued upload.
+        try { fileInput.value = ''; } catch (_) {}
+        importedFilename = data.filename;
+        importedDisplayName = data.displayName || data.filename;
+        fileName.textContent = '🌐 ' + importedDisplayName;
+        fileName.style.display = 'block';
+        enhanceBtn.disabled = false;
+        showToast('Audio imported — ready to enhance');
+      } catch (err) {
+        showToast('Import failed: ' + err.message, 5000);
+      } finally {
+        if (importBtn) {
+          importBtn.disabled = false;
+          importBtn.innerHTML = originalLabel || '▶ Import';
+        }
+      }
+    };
+
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
+        clearImportedFile();
         const name = e.target.files[0].name;
         fileName.textContent = '📄 ' + name;
         fileName.style.display = 'block';
@@ -499,6 +570,7 @@ ${pageStyles}
       uploadSection.classList.remove('dragover');
       const files = e.dataTransfer.files;
       if (files.length > 0) {
+        clearImportedFile();
         fileInput.files = files;
         const name = files[0].name;
         fileName.textContent = '📄 ' + name;
@@ -513,26 +585,39 @@ ${pageStyles}
     });
 
     enhanceBtn.addEventListener('click', async () => {
-      if (!fileInput.files.length) {
+      const hasLocal = fileInput.files.length > 0;
+      if (!hasLocal && !importedFilename) {
         showToast('Please select a file first');
         return;
       }
 
-      const formData = new FormData();
-      formData.append('file', fileInput.files[0]);
-      formData.append('noiseLevel', document.getElementById('noiseLevel').value);
-      formData.append('voiceBoost', document.getElementById('voiceBoost').checked);
-      formData.append('outputFormat', document.getElementById('outputFormat').value);
+      const noiseLevel = document.getElementById('noiseLevel').value;
+      const voiceBoost = document.getElementById('voiceBoost').checked;
+      const outputFormat = document.getElementById('outputFormat').value;
+
+      let fetchOpts;
+      if (hasLocal) {
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('noiseLevel', noiseLevel);
+        formData.append('voiceBoost', voiceBoost);
+        formData.append('outputFormat', outputFormat);
+        fetchOpts = { method: 'POST', body: formData };
+      } else {
+        // URL-imported file — server already has the bytes; just reference it.
+        fetchOpts = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ importedFilename, noiseLevel, voiceBoost, outputFormat }),
+        };
+      }
 
       enhanceBtn.disabled = true;
       enhanceBtn.classList.add('processing');
       enhanceBtn.innerHTML = '<span class="spinner"></span> Processing...';
 
       try {
-        const response = await fetch('/enhance-speech/process', {
-          method: 'POST',
-          body: formData
-        });
+        const response = await fetch('/enhance-speech/process', fetchOpts);
 
         const data = await response.json();
 
@@ -678,18 +763,172 @@ function processAudioWithFfmpeg(inputPath, outputPath, noiseLevel, voiceBoost) {
   });
 }
 
-// POST - Process audio
-router.post('/process', requireAuth, upload.single('file'), async (req, res) => {
+// Multer wrapper: only invoke multer when the request is multipart. The new
+// JSON variant (used after URL import) doesn't carry a file so multer would
+// otherwise reject the request because it has no file field.
+function maybeMultipart(req, res, next) {
+  const ct = (req.headers['content-type'] || '').toLowerCase();
+  if (ct.startsWith('multipart/')) return upload.single('file')(req, res, next);
+  return next();
+}
+
+// Allow only filenames that look like they came out of multer's upload dir
+// (multer's default disk-storage names are random hex strings). This is the
+// security boundary preventing a logged-in user from passing
+// `../../etc/passwd` and getting it processed/served.
+function isSafeUploadFilename(name) {
+  if (typeof name !== 'string' || !name) return false;
+  if (name.includes('/') || name.includes('\\') || name.includes('\0')) return false;
+  if (name === '.' || name === '..') return false;
+  // Multer's default filenames are 32+ hex chars, optionally with extension.
+  return /^[A-Za-z0-9._-]{8,128}$/.test(name);
+}
+
+// POST - Import audio from URL (YouTube, Twitch, Rumble, Zoom recording, etc.)
+// Uses yt-dlp to download just the audio track into the same upload directory
+// multer uses, so the existing /process flow can pick it up by filename.
+router.post('/import-url', requireAuth, async (req, res) => {
+  let outFile = null;
   try {
-    if (!req.file) {
+    const rawUrl = (req.body && req.body.url || '').toString().trim();
+    if (!rawUrl) return res.status(400).json({ error: 'Please paste a valid URL' });
+
+    let parsed;
+    try { parsed = new URL(rawUrl); } catch (_) {
+      return res.status(400).json({ error: 'Please paste a valid URL' });
+    }
+    if (!/^https?:$/.test(parsed.protocol)) {
+      return res.status(400).json({ error: 'Only http(s) URLs are supported' });
+    }
+    // Block obvious SSRF targets. Public hostnames only.
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' || host === '127.0.0.1' || host === '::1' ||
+      host === '0.0.0.0' || host.endsWith('.local') ||
+      /^10\./.test(host) || /^192\.168\./.test(host) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+    ) {
+      return res.status(400).json({ error: 'That URL is not accessible from the server' });
+    }
+
+    // Resolve yt-dlp; if the binary isn't available, surface a clear error.
+    let ytdlpBin = 'yt-dlp';
+    try { execSync('which yt-dlp', { stdio: 'pipe' }); }
+    catch (_) {
+      try { execSync('pip3 install --break-system-packages yt-dlp', { stdio: 'pipe' }); }
+      catch (_) {
+        return res.status(500).json({ error: 'yt-dlp is not installed on the server' });
+      }
+    }
+
+    // Random target filename (matching multer's style) so /process and /serve
+    // can find it, and so two simultaneous imports don't collide.
+    const token = require('crypto').randomBytes(16).toString('hex');
+    outFile = path.join(uploadDir, token + '.mp3');
+
+    // Pre-flight title fetch — gives the UI something nicer to show than the
+    // raw URL, and also doubles as a "is this URL even reachable / supported"
+    // probe before we commit to a download.
+    let displayName = parsed.hostname + parsed.pathname;
+    try {
+      const titleProc = execSync(
+        ytdlpBin + ' --no-warnings --no-check-certificates --geo-bypass --get-title ' +
+        '--user-agent ' + JSON.stringify('Mozilla/5.0') + ' ' +
+        JSON.stringify(rawUrl),
+        { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+      ).trim();
+      if (titleProc) displayName = titleProc.split('\n')[0].slice(0, 200);
+    } catch (_) { /* fall back to URL as displayName */ }
+
+    // Download audio only, transcoded to mp3 so /process can handle it
+    // uniformly. 5-minute timeout — covers typical podcasts/short videos.
+    await new Promise((resolve, reject) => {
+      const args = [
+        '--no-warnings', '--no-check-certificates', '--geo-bypass',
+        '--no-playlist',
+        '-f', 'bestaudio/best',
+        '-x', '--audio-format', 'mp3', '--audio-quality', '0',
+        '--user-agent',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        '-o', outFile.replace(/\.mp3$/, '.%(ext)s'),
+        rawUrl,
+      ];
+      const proc = spawn(ytdlpBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stderrTail = '';
+      proc.stdout.on('data', () => {});
+      proc.stderr.on('data', (d) => { stderrTail = (stderrTail + d.toString()).slice(-600); });
+      const killer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, 300000);
+      proc.on('close', (code) => {
+        clearTimeout(killer);
+        if (code === 0 && fs.existsSync(outFile)) return resolve();
+        reject(new Error(stderrTail.split('\n').slice(-3).join(' ').trim() || 'Download failed (exit ' + code + ')'));
+      });
+      proc.on('error', (err) => { clearTimeout(killer); reject(err); });
+    });
+
+    if (!fs.existsSync(outFile)) {
+      return res.status(500).json({ error: 'Download finished but file is missing' });
+    }
+    const stat = fs.statSync(outFile);
+    if (stat.size < 1024) {
+      try { fs.unlinkSync(outFile); } catch (_) {}
+      return res.status(500).json({ error: 'Downloaded file is empty' });
+    }
+
+    return res.json({
+      success: true,
+      filename: path.basename(outFile),
+      displayName,
+      sizeBytes: stat.size,
+    });
+  } catch (err) {
+    if (outFile) { try { fs.unlinkSync(outFile); } catch (_) {} }
+    const msg = (err && err.message ? err.message : 'Import failed').slice(0, 300);
+    console.error('[enhance-speech] import-url error:', msg);
+    return res.status(500).json({ error: msg });
+  }
+});
+
+// POST - Process audio.
+// Two ways in:
+//   - multipart upload (legacy / drag-drop / Upload button) — multer puts the
+//     file at req.file.path
+//   - JSON { importedFilename, ... } (new — used after /import-url) — we look
+//     up the file by name in the upload dir.
+router.post('/process', requireAuth, maybeMultipart, async (req, res) => {
+  try {
+    let inputPath, sourceFilename, originalExtension;
+    if (req.file) {
+      inputPath = req.file.path;
+      sourceFilename = req.file.filename;
+      originalExtension = path.extname(req.file.originalname).toLowerCase();
+    } else if (req.body && req.body.importedFilename) {
+      const safe = req.body.importedFilename;
+      if (!isSafeUploadFilename(safe)) {
+        return res.status(400).json({ error: 'Invalid imported filename' });
+      }
+      const candidate = path.join(uploadDir, safe);
+      // Defence-in-depth: ensure the resolved path is still inside uploadDir
+      // (path.join with '..' could escape on some platforms).
+      const resolved = path.resolve(candidate);
+      if (!resolved.startsWith(path.resolve(uploadDir) + path.sep)) {
+        return res.status(400).json({ error: 'Invalid imported filename' });
+      }
+      if (!fs.existsSync(resolved)) {
+        return res.status(400).json({ error: 'Imported file not found — please re-import' });
+      }
+      inputPath = resolved;
+      sourceFilename = safe;
+      originalExtension = path.extname(safe).toLowerCase();
+    } else {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const noiseLevel = req.body.noiseLevel || '2';
-    const voiceBoost = req.body.voiceBoost === 'true';
-    const outputFormat = req.body.outputFormat || 'original';
+    const noiseLevel = (req.body && req.body.noiseLevel) || '2';
+    const voiceBoostRaw = req.body && req.body.voiceBoost;
+    const voiceBoost = voiceBoostRaw === true || voiceBoostRaw === 'true';
+    const outputFormat = (req.body && req.body.outputFormat) || 'original';
 
-    const fileExtension = path.extname(req.file.originalname).toLowerCase();
     const timestamp = Date.now();
     const baseName = `enhanced_${timestamp}`;
 
@@ -699,12 +938,12 @@ router.post('/process', requireAuth, upload.single('file'), async (req, res) => 
     } else if (outputFormat === 'wav') {
       outputPath = path.join(outputDir, `${baseName}.wav`);
     } else {
-      outputPath = path.join(outputDir, `${baseName}${fileExtension}`);
+      outputPath = path.join(outputDir, `${baseName}${originalExtension || '.mp3'}`);
     }
 
-    await processAudioWithFfmpeg(req.file.path, outputPath, noiseLevel, voiceBoost);
+    await processAudioWithFfmpeg(inputPath, outputPath, noiseLevel, voiceBoost);
 
-    const originalUrl = `/enhance-speech/serve/${req.file.filename}`;
+    const originalUrl = `/enhance-speech/serve/${sourceFilename}`;
     const enhancedUrl = `/enhance-speech/download/${path.basename(outputPath)}`;
 
     res.json({
