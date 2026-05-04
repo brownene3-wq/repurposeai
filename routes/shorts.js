@@ -4145,18 +4145,39 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
         writeProgress('Processing final video...');
         const tempOut = outputPath + '.temp.mp4';
         if (audioPath) {
-          if (audioMix === 'replace') {
-            await runCommand(ffmpegPath, [
+          // Build args twice — once for fast stream-copy (-c:v copy), once
+          // for the libx264 fallback if the source codec isn't MP4-compatible.
+          // Stream-copying skips the entire video re-encode, turning what
+          // used to be a 5-10 minute libx264 pass on long videos into roughly
+          // the time it takes to mux: seconds, not minutes.
+          const buildArgs = (videoCodec) => {
+            const reencodeArgs = videoCodec === 'libx264'
+              ? ['-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p']
+              : [];
+            if (audioMix === 'replace') {
+              return [
+                '-i', downloadPath, '-i', audioPath,
+                '-map', '0:v', '-map', '1:a',
+                '-c:v', videoCodec, ...reencodeArgs,
+                '-c:a', 'aac', '-shortest', '-movflags', '+faststart', '-y', tempOut
+              ];
+            }
+            return [
               '-i', downloadPath, '-i', audioPath,
-              '-map', '0:v', '-map', '1:a',
-              '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOut
-            ], { timeout: 360000 });
-          } else {
-            await runCommand(ffmpegPath, [
-              '-i', downloadPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+              '-c:v', videoCodec, ...reencodeArgs,
               '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=longest',
-              '-c:a', 'aac', '-shortest', '-y', tempOut
-            ], { timeout: 360000 });
+              '-c:a', 'aac', '-shortest', '-movflags', '+faststart', '-y', tempOut
+            ];
+          };
+
+          try {
+            writeProgress('Muxing audio (fast path)...');
+            await runCommand(ffmpegPath, buildArgs('copy'), { timeout: 360000 });
+          } catch (copyErr) {
+            console.log(`  Quick Narrate stream-copy failed (${String(copyErr.message || '').slice(0, 120)}), falling back to libx264 re-encode`);
+            try { fs.unlinkSync(tempOut); } catch (e) {}
+            writeProgress('Re-encoding video (fallback)...');
+            await runCommand(ffmpegPath, buildArgs('libx264'), { timeout: 360000 });
           }
         } else {
           // Text-only narration overlay
