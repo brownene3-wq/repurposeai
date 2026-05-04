@@ -162,7 +162,12 @@ async function renderEditor(req, res) {
     .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
     .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
     .editor-sidebar{grid-column:3;grid-row:2;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
-    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden}
+    /* Task #87 — Timeline guaranteed full-width. position:relative +
+       z-index keeps it visually above any sibling whose explicit
+       height (e.g. media-library:100vh) would otherwise leak past
+       its grid track and cover row 3. width:100% pins the inner
+       layout to the grid track regardless of flex shrink. */
+    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:5;width:100%}
     .editor-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0a0612;grid-column:2;grid-row:2}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center;align-items:center}
