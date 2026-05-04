@@ -256,21 +256,6 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-icon">&#x2702;&#xFE0F;</span>
             <span class="tool-label">Smart Shorts</span>
           </a>
-          <a href="/ai-hook" class="tool-card">
-            <span class="tool-icon">&#x1F3A3;</span>
-            <span class="tool-label">AI Hooks</span>
-          </a>
-          <a href="/caption-presets" class="tool-card">
-            <span class="tool-icon">&#x1F4DD;</span>
-            <span class="tool-label">Caption Styles</span>
-          </a>
-          <a href="/ai-reframe" class="tool-card">
-            <!-- Task #77 — distinct from AI Thumbnails: triangular ruler
-                 (📐) reads as "framing / aspect ratio" rather than the
-                 generic framed-picture icon. -->
-            <span class="tool-icon">&#x1F4D0;</span>
-            <span class="tool-label">AI Reframe</span>
-          </a>
           <a href="/video-editor" class="tool-card">
             <span class="tool-icon">&#x1F3AC;</span>
             <span class="tool-label">Video Editor</span>
@@ -280,27 +265,42 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">AI Captions</span>
             <span class="tool-badge">New</span>
           </a>
-          <a href="/enhance-speech" class="tool-card">
-            <span class="tool-icon">&#x1F399;&#xFE0F;</span>
-            <span class="tool-label">Enhance Audio</span>
+          <a href="/caption-presets" class="tool-card">
+            <span class="tool-icon">&#x1F4DD;</span>
+            <span class="tool-label">Caption Styles</span>
+          </a>
+          <a href="/ai-hook" class="tool-card">
+            <span class="tool-icon">&#x1F3A3;</span>
+            <span class="tool-label">AI Hooks</span>
+          </a>
+          <a href="/ai-reframe" class="tool-card">
+            <!-- Task #77 — distinct from AI Thumbnails: triangular ruler
+                 (📐) reads as "framing / aspect ratio" rather than the
+                 generic framed-picture icon. -->
+            <span class="tool-icon">&#x1F4D0;</span>
+            <span class="tool-label">AI Reframe</span>
+          </a>
+          <a href="/ai-thumbnail" class="tool-card">
+            <span class="tool-icon">&#x1F5BC;&#xFE0F;</span>
+            <span class="tool-label">AI Thumbnails</span>
           </a>
           <a href="/ai-broll" class="tool-card">
             <span class="tool-icon">&#x1F3A5;</span>
             <span class="tool-label">AI B-Roll</span>
             <span class="tool-badge">New</span>
           </a>
-          <a href="/brand-templates" class="tool-card">
-            <span class="tool-icon">&#x1F3A8;</span>
-            <span class="tool-label">Brand Templates</span>
-            <span class="tool-badge">New</span>
-          </a>
-          <a href="/ai-thumbnail" class="tool-card">
-            <span class="tool-icon">&#x1F5BC;&#xFE0F;</span>
-            <span class="tool-label">AI Thumbnails</span>
+          <a href="/enhance-speech" class="tool-card">
+            <span class="tool-icon">&#x1F399;&#xFE0F;</span>
+            <span class="tool-label">Enhance Audio</span>
           </a>
           <a href="/brand-voice" class="tool-card">
             <span class="tool-icon">&#x1F3A4;</span>
             <span class="tool-label">Brand Voice</span>
+          </a>
+          <a href="/brand-templates" class="tool-card">
+            <span class="tool-icon">&#x1F3A8;</span>
+            <span class="tool-label">Brand Templates</span>
+            <span class="tool-badge">New</span>
           </a>
           <a href="/dashboard/calendar" class="tool-card">
             <span class="tool-icon">&#x1F4C5;</span>
