@@ -5,7 +5,7 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const OpenAI = require('openai');
 const archiver = require('archiver');
-const { downloadWithCobalt } = require('../utils/cobalt');
+const { downloadWithCobalt, validateDownloadedVideo } = require('../utils/cobalt');
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
@@ -4036,47 +4036,57 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
         const downloadPath = outputPath + '.download.mkv';
         let downloadSuccess = false;
 
-        // Try Cobalt API first
-        try {
-          await downloadWithCobalt(videoUrl, downloadPath);
-          downloadSuccess = true;
-          console.log('  Quick Narrate: Downloaded via Cobalt API');
-        } catch (cobaltErr) {
-          console.log('  Quick Narrate Cobalt failed: ' + String(cobaltErr.message || cobaltErr).slice(0, 150));
-        }
+        // Each downloader writes to downloadPath. After it finishes, run
+        // validateDownloadedVideo(): if it's empty / non-video bytes (e.g.
+        // Cobalt's tunnel returned 0 bytes for this URL, or yt-dlp got
+        // bot-blocked and produced a partial file), throw away the bad
+        // file and try the next downloader. This stops bad bytes from
+        // propagating to ffmpeg, which otherwise fails with a confusing
+        // 'Invalid data found' error.
+        const tryWithValidation = async (label, fn) => {
+          try {
+            await fn();
+            validateDownloadedVideo(downloadPath);
+            downloadSuccess = true;
+            console.log(`  Quick Narrate: Downloaded via ${label}`);
+            return true;
+          } catch (err) {
+            console.log(`  Quick Narrate ${label} failed: ` + String(err.message || err).slice(0, 200));
+            try { fs.unlinkSync(downloadPath); } catch (e) {}
+            return false;
+          }
+        };
 
-        // Fallback to yt-dlp + ytdl-core if Cobalt failed
+        // 1. Cobalt API (preferred)
+        await tryWithValidation('Cobalt API', () => downloadWithCobalt(videoUrl, downloadPath));
+
+        // 2. yt-dlp
         if (!downloadSuccess) {
-        try {
-          await runCommand('yt-dlp', [
+          await tryWithValidation('yt-dlp', () => runCommand('yt-dlp', [
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', downloadPath,
             '--no-part', '--force-overwrites', ...YTDLP_COMMON_ARGS, videoUrl
-          ], { timeout: 240000 });
-          downloadSuccess = true;
-        } catch (dlErr) {
-          console.log(`  Quick Narrate yt-dlp failed: ${dlErr.message.slice(0, 150)}`);
-          // ytdl-core fallback only works for YouTube URLs
-          const isYouTube = extractVideoId(videoUrl);
-          if (ytdl && isYouTube) {
-            writeProgress('Trying alternative download...');
-            await new Promise((resolve, reject) => {
-              const ws = fs.createWriteStream(downloadPath);
-              const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
-              stream.on('progress', (_, dl, tot) => { if (tot) writeProgress('Downloading: ' + Math.round((dl / tot) * 100) + '%'); });
-              stream.on('error', e => { ws.destroy(); reject(e); });
-              ws.on('finish', () => resolve());
-              ws.on('error', e => reject(e));
-              stream.pipe(ws);
-              setTimeout(() => { stream.destroy(); ws.destroy(); reject(new Error('Download timed out')); }, 240000);
-            });
-            downloadSuccess = true;
-          } else {
-            throw dlErr;
-          }
+          ], { timeout: 240000 }));
         }
+
+        // 3. ytdl-core (YouTube only)
+        if (!downloadSuccess && ytdl && extractVideoId(videoUrl)) {
+          writeProgress('Trying alternative download...');
+          await tryWithValidation('ytdl-core', () => new Promise((resolve, reject) => {
+            const ws = fs.createWriteStream(downloadPath);
+            const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
+            stream.on('progress', (_, dl, tot) => { if (tot) writeProgress('Downloading: ' + Math.round((dl / tot) * 100) + '%'); });
+            stream.on('error', e => { ws.destroy(); reject(e); });
+            ws.on('finish', () => resolve());
+            ws.on('error', e => reject(e));
+            stream.pipe(ws);
+            setTimeout(() => { stream.destroy(); ws.destroy(); reject(new Error('Download timed out')); }, 240000);
+          }));
         }
-        if (!downloadSuccess) throw new Error('Video download failed');
+
+        if (!downloadSuccess) {
+          throw new Error('Could not download video — Cobalt, yt-dlp, and ytdl-core all failed for this URL. Try a different video or check that the URL is publicly accessible.');
+        }
 
         // Step 2: Get transcript for context (optional, best-effort)
         let transcriptText = '';

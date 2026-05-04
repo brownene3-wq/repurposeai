@@ -113,4 +113,4 @@ async function downloadWithCobalt(videoUrl, destPath) {
   validateDownloadedVideo(destPath);
 }
 
-module.exports = { downloadWithCobalt };
+module.exports = { downloadWithCobalt, validateDownloadedVideo };
