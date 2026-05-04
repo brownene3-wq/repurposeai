@@ -251,7 +251,14 @@ async function renderEditor(req, res) {
     #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
     .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
     .transcript-timestamp:hover{text-decoration:underline}
-    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;scrollbar-width:thin;scrollbar-color:rgba(124,58,237,.30) transparent;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0}
+    /* Task #83 — Sidebar is a bounded flex column. The middle .t-body
+       does the scrolling; tabs stay pinned at top, export bar pinned
+       at bottom via margin-top:auto. min-height:0 lets the flex
+       container actually constrain the inner overflow. */
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0;min-height:0;height:100%}
+    .editor-sidebar .cat-tabs-new{flex:none}
+    .editor-sidebar .t-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+    .editor-sidebar .exp-section{flex:none}
     /* Task #80 — Subtle thin scrollbar for the editor sidebar (and its
        t-body inner scrolls). Track is transparent so it doesn't clutter
        the dark sidebar; thumb is a low-opacity purple that brightens on
