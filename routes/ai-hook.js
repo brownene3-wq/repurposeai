@@ -384,9 +384,9 @@ ${pageStyles}
       <!-- Quick Import Bar (input mode selector + active panel) -->
       <div style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle)">
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1.25rem">
-          <button type="button" id="modeUrlBtn" onclick="setInputMode('youtube')" style="padding:12px 24px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">🔗 URL Input</button>
-          <button type="button" id="modeUploadBtn" onclick="setInputMode('upload')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">⬆ Upload</button>
-          <button type="button" id="modeTextBtn" onclick="setInputMode('text')" style="padding:12px 24px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.95rem;transition:all 0.2s">📝 Text/Transcript</button>
+          <button type="button" id="modeUrlBtn" onclick="setInputMode('youtube')" style="padding:10px 20px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">🔗 URL Input</button>
+          <button type="button" id="modeUploadBtn" onclick="setInputMode('upload')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">⬆ Upload</button>
+          <button type="button" id="modeTextBtn" onclick="setInputMode('text')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">📝 Text/Transcript</button>
         </div>
 
         <!-- URL Input panel -->
@@ -396,7 +396,7 @@ ${pageStyles}
               <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
               <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
             </div>
-            <button type="button" id="heroImportBtn" onclick="document.getElementById('youtubeUrl').focus()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
+            <button type="button" id="heroImportBtn" onclick="document.getElementById('youtubeUrl').focus()" style="padding:9px 18px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;white-space:nowrap">▶ Import</button>
           </div>
         </div>
 
