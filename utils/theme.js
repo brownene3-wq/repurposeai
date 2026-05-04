@@ -231,8 +231,8 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
-        <a href="/dashboard" class="logo logo-full">Splicora</a>
-        <a href="/dashboard" class="logo logo-mini" aria-label="Splicora" title="Expand sidebar" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}">S</a>
+        <a href="/dashboard" class="logo logo-full" title="Go to Dashboard">Splicora</a>
+        <a href="/dashboard" class="logo logo-mini" aria-label="Splicora" title="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}">S</a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
       <nav class="sidebar-nav">

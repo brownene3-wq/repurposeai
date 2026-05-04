@@ -745,7 +745,7 @@ async function renderEditor(req, res) {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <a href="/dashboard" style="text-decoration:none"><span class="e-logo">Splicora</span></a>
+            <a href="/dashboard" style="text-decoration:none" title="Go to Dashboard"><span class="e-logo">Splicora</span></a>
             <div class="e-sp"></div>
             <!-- Task #76 \u2014 Editable project filename. Prefills "Untitled Project"
                  so a fresh project always has a usable default. Export reads
