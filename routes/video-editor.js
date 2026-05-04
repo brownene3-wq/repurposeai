@@ -280,6 +280,22 @@ async function renderEditor(req, res) {
     .editor-sidebar .t-body::-webkit-scrollbar-corner{background:transparent}
     .editor-sidebar .t-body{scrollbar-width:thin;scrollbar-color:rgba(124,58,237,.30) transparent}
     /* Light-mode: keep transparent track, soften the thumb for the white surface */
+    /* Task #86 — same thin scrollbar treatment for the Media Library
+       and its inner .ml-body so both panels look consistent. */
+    .media-library,.media-library .ml-body{scrollbar-width:thin;scrollbar-color:rgba(124,58,237,.30) transparent}
+    .media-library::-webkit-scrollbar,
+    .media-library .ml-body::-webkit-scrollbar{width:6px;height:6px}
+    .media-library::-webkit-scrollbar-track,
+    .media-library .ml-body::-webkit-scrollbar-track{background:transparent}
+    .media-library::-webkit-scrollbar-thumb,
+    .media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.30);border-radius:3px;border:1px solid transparent;background-clip:padding-box}
+    .media-library::-webkit-scrollbar-thumb:hover,
+    .media-library .ml-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.55)}
+    body.light .media-library,body.light .media-library .ml-body{scrollbar-color:rgba(124,58,237,.35) transparent}
+    body.light .media-library::-webkit-scrollbar-thumb,
+    body.light .media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.35)}
+    body.light .media-library::-webkit-scrollbar-thumb:hover,
+    body.light .media-library .ml-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.6)}
     body.light .editor-sidebar,body.light .editor-sidebar .t-body{scrollbar-color:rgba(124,58,237,.35) transparent}
     body.light .editor-sidebar::-webkit-scrollbar-thumb,
     body.light .editor-sidebar .t-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.35)}
@@ -472,7 +488,11 @@ async function renderEditor(req, res) {
     .keyframe-dot.active{background:#EC4899;box-shadow:0 0 6px rgba(236,72,153,0.5)}
     
     /* ═══ MEDIA LIBRARY (Left Panel) ═══ */
-    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow:hidden;grid-column:1;grid-row:2}
+    /* Task #86 — Media Library pinned to half the viewport (50vh) with
+       overflow-y:auto. Mirrors the Task #85 editor-sidebar treatment.
+       The inner .ml-body already has flex:1 + overflow-y:auto so the
+       file grid scrolls while head/tabs/search/foot stay pinned. */
+    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-column:1;grid-row:2;min-height:0;height:50vh;max-height:50vh}
     /* Task #68 — Media library text bumped to dashboard-scale sizing.
        Was 8-11px; rest of the app uses 12-14px. This block keeps the
        same visual hierarchy (header > tabs > items > section labels)
