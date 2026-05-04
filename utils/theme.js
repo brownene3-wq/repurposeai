@@ -183,7 +183,7 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/enhance-speech', icon: '\u{1F399}\u{FE0F}', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
     { href: '/brand-voice', icon: '\u{1F3A4}', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
-    { href: '/brand-templates', icon: '\u{1F5A8}\u{FE0F}', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
+    { href: '/brand-templates', icon: '\u{1F3A8}', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
     { href: '/dashboard/calendar', icon: '\u{1F4C5}', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
     { href: '/dashboard/analytics', icon: '\u{1F4CA}', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
     { href: '/distribute', icon: '\u{26A1}', label: 'Repurpose', key: 'distribute', perm: null },
