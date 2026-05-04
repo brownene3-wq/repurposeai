@@ -4088,14 +4088,52 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
           throw new Error('Could not download video — Cobalt, yt-dlp, and ytdl-core all failed for this URL. Try a different video or check that the URL is publicly accessible.');
         }
 
-        // Step 2: Get transcript for context (optional, best-effort)
-        let transcriptText = '';
+        // Step 2: Fetch real video context — title AND actual transcript.
+        // Previously this only fetched the title, which meant GPT had no
+        // idea what was actually in the video and would invent unrelated
+        // narrations. Now we pull the same transcript chain that
+        // /auto-generate uses (Supadata → InnerTube → Direct → yt-dlp)
+        // so the script is grounded in the real content.
+        writeProgress('Reading video content...');
+        let videoTitle = '';
         try {
           const titleProc = require('child_process').execSync(
-            'yt-dlp --get-title ' + YTDLP_COMMON_ARGS.map(a => JSON.stringify(a)).join(' ') + ' "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
+            'yt-dlp --get-title ' + YTDLP_COMMON_ARGS.map(a => JSON.stringify(a)).join(' ') + ' "' + videoUrl.replace(/"/g, '') + '"',
+            { encoding: 'utf8', timeout: 15000 }
           ).trim();
-          transcriptText = titleProc || 'Short video';
-        } catch(e) { transcriptText = 'Short video'; }
+          videoTitle = titleProc || '';
+        } catch (e) { videoTitle = ''; }
+
+        // For YouTube URLs, pull the real transcript so GPT writes a
+        // narration that actually reflects what's in the video.
+        let videoTranscriptText = '';
+        const ytId = extractVideoId(videoUrl);
+        if (ytId) {
+          let segments = null;
+          if (process.env.SUPADATA_API_KEY) {
+            try { segments = await fetchTranscriptSupadata(ytId); } catch (e) {}
+          }
+          if (!segments || segments.length === 0) {
+            try { segments = await fetchTranscriptInnerTube(ytId); } catch (e) {}
+          }
+          if (!segments || segments.length === 0) {
+            try { segments = await fetchTranscriptDirect(ytId); } catch (e) {}
+          }
+          if (!segments || segments.length === 0) {
+            try { segments = await fetchTranscriptWithYtdlp(ytId); } catch (e) {}
+          }
+          if (segments && segments.length > 0) {
+            // Concatenate spoken text. Cap at ~3500 chars so the prompt
+            // stays well under model context limits even for long videos.
+            const joined = segments.map(s => (s.text || '').trim()).filter(Boolean).join(' ');
+            videoTranscriptText = joined.length > 3500
+              ? joined.slice(0, 3500) + '… [truncated]'
+              : joined;
+            console.log(`  Quick Narrate: transcript fetched (${segments.length} segments, ${videoTranscriptText.length} chars)`);
+          } else {
+            console.log('  Quick Narrate: no transcript available — falling back to title-only context');
+          }
+        }
 
         // Step 3: Generate narration script
         writeProgress('Generating narration script...');
@@ -4111,11 +4149,23 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
             news: "Write a breaking news broadcast narration. Formal, slightly urgent. Max 4-5 sentences.",
             poetic: "Write beautiful poetic narration with metaphors. Max 4-5 sentences."
           };
+          const styleInstruction = stylePrompts[narrationStyle] || stylePrompts.funny;
+          const userParts = [
+            styleInstruction,
+            '',
+            'The narration MUST be about the actual content of this video — reference what is being shown, said, or happening. Do not invent unrelated content.',
+          ];
+          if (videoTitle) userParts.push('', 'Video title: ' + videoTitle);
+          if (videoTranscriptText) {
+            userParts.push('', 'Video transcript (spoken content):', videoTranscriptText);
+          } else {
+            userParts.push('', '(No transcript available — base the narration on the title and tone described above.)');
+          }
           const resp = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
-              { role: 'system', content: 'You are a creative narration writer for short-form video content. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice.' },
-              { role: 'user', content: (stylePrompts[narrationStyle] || stylePrompts.funny) + '\\nVideo title/context: ' + transcriptText }
+              { role: 'system', content: 'You are a creative narration writer for short-form video content. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice. Always ground the narration in the actual content of the source video.' },
+              { role: 'user', content: userParts.join('\n') }
             ],
             max_tokens: 300, temperature: 0.8
           });
