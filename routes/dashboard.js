@@ -359,6 +359,7 @@ router.get('/', requireAuth, async (req, res) => {
       document.getElementById('platformTabs').innerHTML = '';
       document.getElementById('platformContents').innerHTML = '';
       let platformCount = 0;
+      let errorShown = false;
 
       try {
         const formData = new FormData();
@@ -392,13 +393,18 @@ router.get('/', requireAuth, async (req, res) => {
             if (trimmed.startsWith('data: ')) {
               try {
                 const data = JSON.parse(trimmed.slice(6));
-                if (data.error) { alert(data.error); break; }
+                if (data.error && !data.platform) { console.error('[upload]', data.error); alert(data.error); errorShown = true; break; }
                 if (data.status) {
                   document.querySelector('.loading-spinner p').textContent = data.status;
                   continue;
                 }
                 if (data.done) continue;
                 if (data.platform) {
+                  if (data.error) {
+                    // Per-platform error — log but don't alert (other platforms may still succeed)
+                    console.warn('[upload] ' + data.platform + ' failed: ' + data.error);
+                    continue;
+                  }
                   document.getElementById('loading').classList.remove('show');
                   document.getElementById('results').style.display = 'block';
                   document.getElementById('emptyState').style.display = 'none';
@@ -411,8 +417,9 @@ router.get('/', requireAuth, async (req, res) => {
               } catch(e) { console.log('Parse error:', e); }
             }
           }
+          if (errorShown) break;
         }
-        if (platformCount === 0) {
+        if (platformCount === 0 && !errorShown) {
           alert('No content was generated. Try a different file.');
         }
       } catch (err) {

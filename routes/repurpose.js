@@ -763,7 +763,16 @@ function getOpenAIClient() {
 // File upload setup for video/audio repurposing
 const uploadDir = path.join(__dirname, '..', 'uploads', 'repurpose');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) { cb(null, uploadDir); },
+    filename: function (req, file, cb) {
+      const ext = (path.extname(file.originalname || '') || '').toLowerCase();
+      cb(null, Date.now() + '-' + Math.random().toString(36).slice(2, 10) + ext);
+    }
+  }),
+  limits: { fileSize: 200 * 1024 * 1024 }
+});
 
 // Find ffmpeg binary
 let ffmpegPath = null;
@@ -788,6 +797,13 @@ function extractAudioForRepurpose(inputPath) {
 // Transcribe audio file using OpenAI Whisper
 async function transcribeUploadedFile(audioPath) {
   const openai = getOpenAIClient();
+  let stat;
+  try { stat = fs.statSync(audioPath); } catch (e) { throw new Error('Audio file not found at ' + audioPath); }
+  const sizeMB = stat.size / (1024 * 1024);
+  if (sizeMB > 24.5) {
+    throw new Error('Audio is ' + sizeMB.toFixed(1) + 'MB after extraction. Whisper limit is 25MB. Please upload a shorter clip (or split it first).');
+  }
+  console.log('[transcribeUploadedFile] path=' + audioPath + ' size=' + sizeMB.toFixed(2) + 'MB');
   const fileStream = fs.createReadStream(audioPath);
   const response = await openai.audio.transcriptions.create({
     model: 'whisper-1',
