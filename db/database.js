@@ -462,7 +462,20 @@ console.log('Database initialized successfully');
   }
 };
 
-const getDb = () => pool;
+// Return a hybrid object: pg pool helpers + all ops modules from module.exports.
+// This satisfies both legacy callers using getDb() for raw .query() AND callers
+// using db.connectedAccountOps / db.workflowOps / etc. (originally introduced in
+// routes/distribute.js, routes/tiktok.js, etc.).
+const getDb = () => Object.assign(
+  {
+    query: (...args) => pool.query(...args),
+    connect: () => pool.connect(),
+    end: () => pool.end(),
+    on: (...args) => pool.on(...args),
+    pool
+  },
+  module.exports
+);
 
 // User operations
 const userOps = {
