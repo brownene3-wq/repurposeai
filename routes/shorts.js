@@ -6437,7 +6437,7 @@ ${paginationHtml}
       document.getElementById('atcStatus').value = 'planned';
       document.getElementById('atcDate').value = dateStr;
       document.getElementById('atcTime').value = '12:00';
-      document.getElementById('atcNotes').value = noteParts.join('\n\n');
+      document.getElementById('atcNotes').value = noteParts.join('\\n\\n');
       document.getElementById('atcModal').style.display = 'flex';
       setTimeout(function(){ document.getElementById('atcTitle').focus(); document.getElementById('atcTitle').select(); }, 80);
     }
