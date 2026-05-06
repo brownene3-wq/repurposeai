@@ -5962,7 +5962,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div class="cards-grid">
             ${analyses.map(analysis => {
               // Extract video ID for thumbnail
-              const ytRegex = new RegExp('(?:youtube\\.com/watch\\\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
+              const ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
               const vidMatch = (analysis.video_url || '').match(ytRegex);
               const vidId = vidMatch ? vidMatch[1] : null;
               return `
@@ -6401,22 +6401,30 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Build clickable thumbnail preview (iframes fail when embedding is disabled)
+          // Build clickable thumbnail preview — each moment gets a different frame
+          // (YouTube's 1/2/3.jpg are taken at ~25/50/75% of the video, cycled by index for variety).
+          // Clicking the thumbnail triggers a clip download instead of redirecting to YouTube.
+          const _frameIdx = (idx % 3) + 1; // 1, 2, or 3
           const videoEmbed = videoId ? \`
-            <a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank" style="display:block; position:relative; text-decoration:none; height:120px; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000;">
-              <img src="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg" alt="Video thumbnail"
+            <button type="button" id="thumb-btn-\${idx}" onclick="downloadClip('\${id}', \${idx}, this)" title="Click to download this clip"
+              style="display:block; position:relative; text-decoration:none; height:120px; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
+              <img src="https://img.youtube.com/vi/\${videoId}/\${_frameIdx}.jpg" alt="Clip thumbnail"
+                onerror="this.onerror=null;this.src='https://img.youtube.com/vi/\${videoId}/mqdefault.jpg';"
                 style="width:100%; height:120px; object-fit:cover; display:block;" loading="lazy" />
               <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                width:44px; height:44px; background:rgba(0,0,0,0.7); border-radius:50%;
-                display:flex; align-items:center; justify-content:center;">
-                <div style="width:0; height:0; border-left:16px solid #fff; border-top:10px solid transparent;
-                  border-bottom:10px solid transparent; margin-left:3px;"></div>
+                width:44px; height:44px; background:rgba(108,58,237,0.85); border-radius:50%;
+                display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px; font-weight:600;">
+                ⬇
               </div>
               <div style="position:absolute; bottom:6px; left:6px; background:rgba(0,0,0,0.8);
                 padding:2px 6px; border-radius:4px; color:#fff; font-size:11px;">
                 \${moment.timeRange}
               </div>
-            </a>
+              <div style="position:absolute; top:6px; right:6px; background:rgba(0,0,0,0.7);
+                padding:2px 7px; border-radius:4px; color:#fff; font-size:10px; font-weight:600;">
+                Click to download
+              </div>
+            </button>
           \` : '';
 
           var viralColor = moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b';
