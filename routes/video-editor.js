@@ -260,11 +260,12 @@ async function renderEditor(req, res) {
        does the scrolling; tabs stay pinned at top, export bar pinned
        at bottom via margin-top:auto. min-height:0 lets the flex
        container actually constrain the inner overflow. */
-    /* Task #85 — Sidebar pinned to half the viewport (50vh) with its
-       own overflow-y:auto so the column scrolls when content exceeds
-       that height. The inner Task #83 architecture (tabs / t-body /
-       export) still handles tabs+export pinning above this. */
-    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0;min-height:0;height:50vh;max-height:50vh}
+    /* Task #89 — Sidebar fills exactly its grid-row:2 track height
+       (no more 50vh bleed past the row boundary). align-self:stretch
+       is the grid default; height:100% + max-height:100% pin it to
+       the track so the bottom edge is FLUSH with the top of the
+       timeline at row 3. Inner .t-body still handles its own scroll. */
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0;min-height:0;height:100%;max-height:100%;align-self:stretch}
     .editor-sidebar .cat-tabs-new{flex:none}
     .editor-sidebar .t-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
     .editor-sidebar .exp-section{flex:none}
@@ -487,10 +488,12 @@ async function renderEditor(req, res) {
     .keyframe-dot.active{background:#EC4899;box-shadow:0 0 6px rgba(236,72,153,0.5)}
     
     /* ═══ MEDIA LIBRARY (Left Panel) ═══ */
-    /* Task #87 — Media Library reverted to full viewport height (100vh).
-       overflow-y:auto stays so the file grid still scrolls when the
-       library content overflows. */
-    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-column:1;grid-row:2;min-height:0;height:100vh;max-height:100vh}
+    /* Task #89 — Media library mirrors the sidebar: height:100%
+       + max-height:100% + align-self:stretch so the panel fills
+       exactly grid-row:2 and stops at the timeline's top edge.
+       overflow-y:auto stays for safety; inner .ml-body still does
+       the actual file-grid scroll. */
+    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-column:1;grid-row:2;min-height:0;height:100%;max-height:100%;align-self:stretch}
     /* Task #68 — Media library text bumped to dashboard-scale sizing.
        Was 8-11px; rest of the app uses 12-14px. This block keeps the
        same visual hierarchy (header > tabs > items > section labels)
