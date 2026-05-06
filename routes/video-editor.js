@@ -167,17 +167,23 @@ async function renderEditor(req, res) {
        (~47vh on 1080) and bleed past the row boundary into the
        timeline area, blocking pointer events and visually masking
        V1/A1/M1/T1/FX. See Task #89 for the bug history. */
+    /* Task #91 — Asymmetric layout per Albert's screenshot reference:
+         Row 1: 56px topbar (full width)
+         Row 2 col 1: Media library (also spans row 3 → full height)
+         Row 2 col 2: Editor main / preview
+         Row 2 col 3: Editor sidebar (this row only)
+         Row 3 cols 2-3: Timeline (starts AFTER media library, ends at right edge)
+       Media library reads as a fixed left "rail"; timeline owns
+       everything to the right of it on the bottom half. */
     .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px minmax(0,1fr) minmax(280px,1fr);height:100vh;gap:0;padding:0;overflow:hidden;isolation:isolate}
     .editor-topbar{grid-column:1/4;grid-row:1}
-    .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
+    .media-library{grid-column:1;grid-row:2/4;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
     .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
     .editor-sidebar{grid-column:3;grid-row:2;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
-    /* Timeline at row 3, columns 1/4 → spans full viewport width.
-       z-index:10 + position:relative is a defensive backstop in case
-       any future edit re-introduces panel overflow; combined with
-       Task #89's height:100% on the panels, the timeline now has a
-       guaranteed unobstructed boundary on both sides. */
-    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:10;width:100%}
+    /* Timeline starts at column 2 (right of the full-height Media
+       library) and ends at column 4 (right viewport edge). Row 3
+       only — no overlap with editor-main/sidebar above. */
+    #timelineContainer{grid-column:2/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:10;width:100%}
     .editor-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0a0612;grid-column:2;grid-row:2}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center;align-items:center}
@@ -191,7 +197,7 @@ async function renderEditor(req, res) {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
     .video-preview-area.has-video{display:flex;background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000}
-.timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-column:1/4;grid-row:3}
+.timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-column:2/4;grid-row:3}
     .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
     .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
     .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
@@ -652,7 +658,7 @@ async function renderEditor(req, res) {
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
-    .timeline-container{grid-column:1/4}
+    .timeline-container{grid-column:2/4}
     .tl-toolbar{display:flex;align-items:center;gap:4px;padding:4px 8px;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.05)}
     .tl-btn{padding:3px 7px;font-size:9px;font-weight:700;color:#3d3358;border:1px solid rgba(108,58,237,.06);border-radius:4px;cursor:pointer;background:transparent;transition:all .2s}
     .tl-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.2)}
