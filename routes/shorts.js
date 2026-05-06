@@ -6049,6 +6049,58 @@ ${paginationHtml}
         <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.05);border-radius:8px;overflow:hidden;"></div>
       </div>
     </div>
+    <!-- Add-to-Calendar Modal (opened from a moment card via addToCalendar()) -->
+    <div id="atcModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:9998;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeAtcModal()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">📅 Schedule This Moment</h3>
+        <div style="color:var(--text-muted);font-size:0.82rem;margin-bottom:18px;" id="atcSubtitle">—</div>
+        <input type="hidden" id="atcMomentRef">
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>
+        <input type="text" id="atcTitle" maxlength="120" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Platform</label>
+            <select id="atcPlatform" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+              <option value="tiktok">TikTok</option>
+              <option value="instagram">Instagram</option>
+              <option value="shorts">YouTube Shorts</option>
+              <option value="youtube">YouTube</option>
+              <option value="twitter">Twitter / X</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="facebook">Facebook</option>
+              <option value="blog">Blog Post</option>
+              <option value="newsletter">Newsletter</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Status</label>
+            <select id="atcStatus" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+              <option value="planned">Planned</option>
+              <option value="drafted">Drafted</option>
+              <option value="ready">Ready</option>
+              <option value="published">Published</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
+            <input type="date" id="atcDate" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label>
+            <input type="time" id="atcTime" value="12:00" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          </div>
+        </div>
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
+        <textarea id="atcNotes" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+          <button onclick="closeAtcModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
+          <button id="atcSaveBtn" onclick="saveAtcEntry()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Save to Calendar</button>
+        </div>
+      </div>
+    </div>
+
 </main>
 
   <!-- Calendar Entry Modal -->
@@ -6354,6 +6406,84 @@ ${paginationHtml}
       }
     }
 
+    // === Add to Calendar (from a moment card) ===
+    function addToCalendar(analysisId, momentIdx) {
+      var analysis = window.__currentAnalysis;
+      if (!analysis || !analysis.moments || !analysis.moments[momentIdx]) {
+        showToast('Could not find that moment to schedule.');
+        return;
+      }
+      var moment = analysis.moments[momentIdx];
+      var videoTitle = analysis.video_title || 'Untitled video';
+      var title = (moment.title || 'Viral moment').slice(0, 120);
+      // Build a notes summary so the entry has full context
+      var noteParts = [];
+      if (moment.description) noteParts.push(moment.description);
+      var meta = [];
+      if (moment.timeRange) meta.push('Source: ' + moment.timeRange);
+      if (typeof moment.viralityScore === 'number') meta.push('Virality: ' + moment.viralityScore + '%');
+      if (Array.isArray(moment.keyThemes) && moment.keyThemes.length) meta.push('Themes: ' + moment.keyThemes.slice(0, 5).join(', '));
+      meta.push('From: ' + videoTitle);
+      if (analysis.video_url) meta.push(analysis.video_url);
+      noteParts.push(meta.join(' \u00B7 '));
+
+      var today = new Date();
+      var dateStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+
+      document.getElementById('atcMomentRef').value = analysisId + '|' + momentIdx;
+      document.getElementById('atcSubtitle').textContent = videoTitle + ' — ' + (moment.timeRange || '');
+      document.getElementById('atcTitle').value = title;
+      document.getElementById('atcPlatform').value = 'tiktok';
+      document.getElementById('atcStatus').value = 'planned';
+      document.getElementById('atcDate').value = dateStr;
+      document.getElementById('atcTime').value = '12:00';
+      document.getElementById('atcNotes').value = noteParts.join('\n\n');
+      document.getElementById('atcModal').style.display = 'flex';
+      setTimeout(function(){ document.getElementById('atcTitle').focus(); document.getElementById('atcTitle').select(); }, 80);
+    }
+    function closeAtcModal() {
+      document.getElementById('atcModal').style.display = 'none';
+    }
+    async function saveAtcEntry() {
+      var btn = document.getElementById('atcSaveBtn');
+      var payload = {
+        title: document.getElementById('atcTitle').value.trim(),
+        platform: document.getElementById('atcPlatform').value,
+        status: document.getElementById('atcStatus').value,
+        scheduledDate: document.getElementById('atcDate').value,
+        scheduledTime: document.getElementById('atcTime').value || '12:00',
+        notes: document.getElementById('atcNotes').value
+      };
+      if (!payload.title) { showToast('Title is required'); return; }
+      if (!payload.scheduledDate) { showToast('Date is required'); return; }
+      var orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Saving...';
+      try {
+        var resp = await fetch('/dashboard/calendar/api/entries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) {
+          var err = await resp.json().catch(function(){ return {}; });
+          throw new Error(err.error || 'Save failed');
+        }
+        closeAtcModal();
+        showToast('Added to calendar — ' + payload.scheduledDate);
+      } catch (e) {
+        showToast('Could not save: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+    // ESC closes the add-to-calendar modal
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') {
+        var m = document.getElementById('atcModal');
+        if (m && m.style.display === 'flex') closeAtcModal();
+      }
+    });
+
     function getVideoId(url) {
       if (!url) return null;
       const patterns = [
@@ -6383,6 +6513,7 @@ ${paginationHtml}
           throw new Error(data.error || 'Analysis data not found');
         }
         const analysis = data.analysis;
+        window.__currentAnalysis = analysis;
         const videoId = getVideoId(analysis.video_url || '');
 
         // Build transcript viewer with keyword highlights
@@ -6492,6 +6623,10 @@ ${paginationHtml}
               <button class="clip-tool-btn accent" id="clip-btn-\${idx}"
                 onclick="downloadClip('\${id}', \${idx}, this)">
                 ⬇ Download Clip
+              </button>
+              <button class="clip-tool-btn" onclick="addToCalendar('\${id}', \${idx})" title="Schedule this moment on the calendar"
+                style="background:rgba(108,58,237,0.10); color:#a78bfa; border:1px solid rgba(108,58,237,0.30);">
+                📅 Add to Calendar
               </button>
               <div class="clip-toolbar-divider"></div>
               <label class="clip-captions-toggle" title="Burn animated captions into the clip">
