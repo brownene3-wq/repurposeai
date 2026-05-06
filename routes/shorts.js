@@ -4745,6 +4745,38 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
   <style>
     ${getBaseCSS()}
 
+    /* Active state for Quick Action cards — persistent visual feedback while the
+       paired panel is open. Selectors include !important because the cards have
+       inline styles that the toggle handler resets, which would otherwise win. */
+    [onclick*="toggleToolPanel"].tool-active {
+      border: 1px solid #6C3AED !important;
+      background: linear-gradient(180deg, rgba(108,58,237,0.14), rgba(236,72,153,0.06)) !important;
+      box-shadow: 0 0 0 2px rgba(108,58,237,0.25), 0 10px 32px rgba(108,58,237,0.30) !important;
+      transform: translateY(-3px) !important;
+    }
+    [onclick*="toggleToolPanel"].tool-active::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #6C3AED, #EC4899);
+      pointer-events: none;
+    }
+    [onclick*="toggleToolPanel"].tool-active::after {
+      content: '';
+      position: absolute; bottom: -11px; left: 50%; transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-top: 10px solid #6C3AED;
+      filter: drop-shadow(0 2px 4px rgba(108,58,237,0.45));
+      z-index: 10;
+      pointer-events: none;
+    }
+    /* Subtle highlight on the active panel below to reinforce the visual link */
+    .tool-panel.tool-panel-open {
+      box-shadow: 0 0 0 1px rgba(108,58,237,0.30), 0 12px 40px rgba(108,58,237,0.18);
+      border-radius: 12px;
+    }
+
     /* Shorts-specific styles */
     .main-content {
       margin-left: 250px;
@@ -7003,25 +7035,30 @@ ${paginationHtml}
       var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','settingsPanel','autoGenPanel'];
       var panel = document.getElementById(panelId);
       var isVisible = panel.style.display !== 'none';
-      // Close all panels first
+      // Close all panels first + drop the open marker
       allPanels.forEach(function(id) {
         var p = document.getElementById(id);
-        if (p) p.style.display = 'none';
+        if (p) { p.style.display = 'none'; p.classList.remove('tool-panel-open'); p.classList.remove('tool-panel'); }
       });
-      // Remove active state from all cards
+      // Remove active state from all cards (clear inline styles so the .tool-active CSS wins)
       var cards = document.querySelectorAll('[onclick*="toggleToolPanel"]');
       cards.forEach(function(c) {
         c.classList.remove('tool-active');
-        c.style.borderColor = 'var(--border-subtle)';
-        c.style.transform = 'none';
-        c.style.boxShadow = 'none';
+        c.style.borderColor = '';
+        c.style.transform = '';
+        c.style.boxShadow = '';
       });
       // Toggle the clicked panel
       if (!isVisible) {
         panel.style.display = 'block';
+        panel.classList.add('tool-panel');
+        panel.classList.add('tool-panel-open');
         if (cardEl) {
           cardEl.classList.add('tool-active');
-          cardEl.style.transform = 'translateY(-3px)';
+          // Clear inline styles so the .tool-active rules apply cleanly
+          cardEl.style.borderColor = '';
+          cardEl.style.transform = '';
+          cardEl.style.boxShadow = '';
         }
       }
     }
