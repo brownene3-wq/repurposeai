@@ -151,6 +151,13 @@ router.get('/', requireAuth, (req, res) => {
         </div>
         <label>Notes</label>
         <textarea id="entryNotes" placeholder="Hook ideas, hashtags, links..."></textarea>
+        <div id="clipDlBlock" style="display:none;background:rgba(108,58,237,0.08);border:1px solid rgba(108,58,237,0.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:none;">
+          <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;">From Smart Shorts</div>
+          <a id="clipDlLink" href="#" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;color:#a78bfa;text-decoration:none;font-weight:600;font-size:.85rem;">
+            <span style="font-size:1.1em;">⬇</span> Download Clip
+          </a>
+          <div style="font-size:.7rem;color:var(--text-dim);margin-top:4px;">Opens Smart Shorts and auto-starts the download for this clip.</div>
+        </div>
         <div class="cal-modal-actions">
           <button class="btn-danger" id="deleteBtn" onclick="deleteEntry()" style="display:none">Delete</button>
           <button class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -269,6 +276,7 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('entryDate').value=dateStr;
         document.getElementById('entryTime').value='12:00';
         document.getElementById('entryNotes').value='';
+        var dl=document.getElementById('clipDlBlock'); if(dl) dl.style.display='none';
         document.getElementById('deleteBtn').style.display='none';
         document.getElementById('saveBtn').textContent='Save';
         document.getElementById('entryModal').classList.add('show');
@@ -286,6 +294,15 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('entryDate').value=String(e.scheduled_date).slice(0,10);
         document.getElementById('entryTime').value=(e.scheduled_time||'12:00').slice(0,5);
         document.getElementById('entryNotes').value=e.notes||'';
+        // Show download-clip link when this entry came from a Smart Shorts moment
+        var dl = document.getElementById('clipDlBlock');
+        if(e.analysis_id && (e.moment_index !== null && e.moment_index !== undefined)){
+          dl.style.display='block';
+          var url='/shorts?dlAnalysis='+encodeURIComponent(e.analysis_id)+'&dlMoment='+encodeURIComponent(e.moment_index);
+          document.getElementById('clipDlLink').href=url;
+        } else {
+          dl.style.display='none';
+        }
         document.getElementById('deleteBtn').style.display='inline-block';
         document.getElementById('saveBtn').textContent='Update';
         document.getElementById('entryModal').classList.add('show');
@@ -366,7 +383,9 @@ router.post('/api/entries', requireAuth, async (req, res) => {
       status: req.body.status,
       contentText: req.body.contentText || '',
       notes: req.body.notes || '',
-      color: req.body.color
+      color: req.body.color,
+      analysisId: req.body.analysisId || null,
+      momentIndex: req.body.momentIndex != null ? req.body.momentIndex : null
     });
     res.json({ entry });
   } catch (error) {

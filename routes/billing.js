@@ -81,6 +81,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>3 videos/month</li>
             <li>5 repurposes/month</li>
             <li>1 brand voice</li>
+            <li>3 premium caption styles</li>
             <li>7-day history</li>
             <li>Watermarked exports</li>
           </ul>
@@ -95,6 +96,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>15 videos/month</li>
             <li>30 repurposes/month</li>
             <li>3 brand voices</li>
+            <li>10 premium caption styles</li>
             <li>Quick Narrate (your API key)</li>
             <li>10 AI thumbnails/month</li>
             <li>30 clips/month</li>
@@ -114,6 +116,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>50 videos/month</li>
             <li>100 repurposes/month</li>
             <li>10 brand voices</li>
+            <li>All 24 premium caption styles</li>
             <li>Unlimited AI narrations</li>
             <li>50 AI thumbnails/month</li>
             <li>150 clips/month</li>
@@ -134,6 +137,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>200 videos/month</li>
             <li>500 repurposes/month</li>
             <li>25 brand voices</li>
+            <li>All 24 premium caption styles + custom uploads</li>
             <li>Unlimited AI narrations</li>
             <li>150 AI thumbnails/month</li>
             <li>500 clips/month</li>

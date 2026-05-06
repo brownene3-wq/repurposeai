@@ -3147,7 +3147,7 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
     }
 
-    const { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle } = req.body;
+    const { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle, applyBrandKit } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
       return res.status(400).json({ error: 'Analysis ID and moment index are required' });
@@ -3161,11 +3161,16 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // Fetch user's brand kit for watermark
+    // Fetch user's brand kit for watermark — but only if the user opted in
+    // for this clip via the per-moment "Brand Template" checkbox.
     let brandKit = null;
-    try {
-      brandKit = await brandKitOps.getByUserId(req.user.id);
-    } catch (e) { console.log('Brand kit fetch skipped:', e.message); }
+    if (applyBrandKit !== false) {
+      try {
+        brandKit = await brandKitOps.getByUserId(req.user.id);
+      } catch (e) { console.log('Brand kit fetch skipped:', e.message); }
+    } else {
+      console.log('  Brand template explicitly disabled for this clip');
+    }
 
     // Parse moments
     let moments = analysis.moments;
@@ -4744,6 +4749,17 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
   return `${getHeadHTML('Smart Shorts')}
   <style>
     ${getBaseCSS()}
+
+    /* Brand Kit panel: visually elevated to feel like a modal/window
+       (bordered, glow ring) — matches editor-style polish. */
+    #brandKitPanel.tool-panel-open {
+      background: linear-gradient(180deg, var(--surface), rgba(108,58,237,0.04)) !important;
+      border: 1px solid rgba(108,58,237,0.40) !important;
+      box-shadow: 0 0 0 1px rgba(108,58,237,0.20), 0 18px 60px rgba(108,58,237,0.20) !important;
+      border-radius: 14px !important;
+      padding: 24px !important;
+      margin-top: 8px;
+    }
 
     /* Active state for Quick Action cards — persistent visual feedback while the
        paired panel is open. Selectors include !important because the cards have
@@ -6446,13 +6462,16 @@ ${paginationHtml}
     }
     async function saveAtcEntry() {
       var btn = document.getElementById('atcSaveBtn');
+      var ref = (document.getElementById('atcMomentRef').value || '').split('|');
       var payload = {
         title: document.getElementById('atcTitle').value.trim(),
         platform: document.getElementById('atcPlatform').value,
         status: document.getElementById('atcStatus').value,
         scheduledDate: document.getElementById('atcDate').value,
         scheduledTime: document.getElementById('atcTime').value || '12:00',
-        notes: document.getElementById('atcNotes').value
+        notes: document.getElementById('atcNotes').value,
+        analysisId: ref[0] || null,
+        momentIndex: ref[1] != null && ref[1] !== '' ? Number(ref[1]) : null
       };
       if (!payload.title) { showToast('Title is required'); return; }
       if (!payload.scheduledDate) { showToast('Date is required'); return; }
@@ -6633,6 +6652,11 @@ ${paginationHtml}
                 <input type="checkbox" id="captions-\${idx}" checked
                   style="accent-color:var(--primary); width:14px; height:14px;">
                 <span>Captions</span>
+              </label>
+              <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
+                <input type="checkbox" id="brandkit-\${idx}" checked
+                  style="accent-color:#a78bfa; width:14px; height:14px;">
+                <span>Brand Template</span>
               </label>
               <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style">
                 <option value="classic">Classic</option>
@@ -7063,11 +7087,15 @@ ${paginationHtml}
                 const captionStyle = captionStyleSelect ? captionStyleSelect.value : 'classic';
 
       try {
+        // Per-clip Brand Template toggle
+        const brandKitCheckbox = document.getElementById('brandkit-' + momentIndex);
+        const applyBrandKit = brandKitCheckbox ? brandKitCheckbox.checked : true;
+
         // Request clip generation
         const response = await fetch('/shorts/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle })
+          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle, applyBrandKit })
         });
 
         const data = await response.json();
@@ -7153,6 +7181,31 @@ ${paginationHtml}
         const data = await r.json();
         if (data && data.style) window.__preferredCaptionStyle = data.style;
       } catch (e) {}
+    })();
+
+    // Deep link handler: /shorts?dlAnalysis=ID&dlMoment=N opens the analysis modal
+    // and auto-clicks the matching Download Clip button. Used by the Calendar
+    // entry detail to send users straight from a calendar entry to its clip.
+    (async () => {
+      try {
+        var params = new URLSearchParams(location.search);
+        var dlAnalysis = params.get('dlAnalysis');
+        var dlMoment = params.get('dlMoment');
+        if (!dlAnalysis || dlMoment == null) return;
+        // Wait for viewAnalysis to be defined (script may still be parsing)
+        var tries = 0;
+        while (typeof viewAnalysis !== 'function' && tries < 20) {
+          await new Promise(r => setTimeout(r, 100));
+          tries++;
+        }
+        if (typeof viewAnalysis !== 'function') return;
+        await viewAnalysis(dlAnalysis);
+        // Once the modal is built, click the corresponding download button
+        setTimeout(function(){
+          var btn = document.getElementById('clip-btn-' + dlMoment);
+          if (btn) btn.click();
+        }, 400);
+      } catch (e) { console.warn('Deep-link download failed:', e); }
     })();
 
     // === Workflow Templates ===
