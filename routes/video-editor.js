@@ -268,46 +268,28 @@ async function renderEditor(req, res) {
     .editor-sidebar .cat-tabs-new{flex:none}
     .editor-sidebar .t-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
     .editor-sidebar .exp-section{flex:none}
-    /* Task #80 — Subtle thin scrollbar for the editor sidebar (and its
-       t-body inner scrolls). Track is transparent so it doesn't clutter
-       the dark sidebar; thumb is a low-opacity purple that brightens on
-       hover. Cross-browser: Firefox uses scrollbar-width / scrollbar-
-       color; WebKit (Chrome/Safari/Edge) uses ::-webkit-scrollbar. */
-    .editor-sidebar::-webkit-scrollbar,
-    .editor-sidebar .t-body::-webkit-scrollbar{width:6px;height:6px}
-    .editor-sidebar::-webkit-scrollbar-track,
-    .editor-sidebar .t-body::-webkit-scrollbar-track{background:transparent}
-    .editor-sidebar::-webkit-scrollbar-thumb,
-    .editor-sidebar .t-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.30);border-radius:3px;border:1px solid transparent;background-clip:padding-box}
-    .editor-sidebar::-webkit-scrollbar-thumb:hover,
-    .editor-sidebar .t-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.55)}
-    .editor-sidebar::-webkit-scrollbar-corner,
-    .editor-sidebar .t-body::-webkit-scrollbar-corner{background:transparent}
-    .editor-sidebar .t-body{scrollbar-width:thin;scrollbar-color:rgba(124,58,237,.30) transparent}
-    /* Light-mode: keep transparent track, soften the thumb for the white surface */
-    /* Task #86 — same thin scrollbar treatment for the Media Library
-       and its inner .ml-body so both panels look consistent. */
-    .media-library,.media-library .ml-body{scrollbar-width:thin;scrollbar-color:rgba(124,58,237,.30) transparent}
-    .media-library::-webkit-scrollbar,
-    .media-library .ml-body::-webkit-scrollbar{width:6px;height:6px}
-    .media-library::-webkit-scrollbar-track,
-    .media-library .ml-body::-webkit-scrollbar-track{background:transparent}
-    .media-library::-webkit-scrollbar-thumb,
-    .media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.30);border-radius:3px;border:1px solid transparent;background-clip:padding-box}
-    .media-library::-webkit-scrollbar-thumb:hover,
-    .media-library .ml-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.55)}
-    body.light .media-library,body.light .media-library .ml-body{scrollbar-color:rgba(124,58,237,.35) transparent}
-    body.light .media-library::-webkit-scrollbar-thumb,
-    body.light .media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.35)}
-    body.light .media-library::-webkit-scrollbar-thumb:hover,
-    body.light .media-library .ml-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.6)}
-    body.light .editor-sidebar,body.light .editor-sidebar .t-body{scrollbar-color:rgba(124,58,237,.35) transparent}
-    body.light .editor-sidebar::-webkit-scrollbar-thumb,
-    body.light .editor-sidebar .t-body::-webkit-scrollbar-thumb{background:rgba(124,58,237,.35)}
-    body.light .editor-sidebar::-webkit-scrollbar-thumb:hover,
-    body.light .editor-sidebar .t-body::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.6)}
-    .editor-sidebar::-webkit-scrollbar{width:4px}
-    .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+    /* Task #88 — Match the dashboard's .sidebar-nav scrollbar so the
+       whole app shares one visual treatment. 6px wide, transparent
+       track, white-tinted thumb (rgba(255,255,255,0.08) idle, .16 on
+       hover). Applied to BOTH the editor sidebar and media library
+       (plus their inner scroll containers .t-body and .ml-body). */
+    .editor-sidebar,.editor-sidebar .t-body,
+    .media-library,.media-library .ml-body{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    .editor-sidebar::-webkit-scrollbar,.editor-sidebar .t-body::-webkit-scrollbar,
+    .media-library::-webkit-scrollbar,.media-library .ml-body::-webkit-scrollbar{width:6px;height:6px}
+    .editor-sidebar::-webkit-scrollbar-track,.editor-sidebar .t-body::-webkit-scrollbar-track,
+    .media-library::-webkit-scrollbar-track,.media-library .ml-body::-webkit-scrollbar-track{background:transparent}
+    .editor-sidebar::-webkit-scrollbar-thumb,.editor-sidebar .t-body::-webkit-scrollbar-thumb,
+    .media-library::-webkit-scrollbar-thumb,.media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    .editor-sidebar::-webkit-scrollbar-thumb:hover,.editor-sidebar .t-body::-webkit-scrollbar-thumb:hover,
+    .media-library::-webkit-scrollbar-thumb:hover,.media-library .ml-body::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    .editor-sidebar::-webkit-scrollbar-corner,.editor-sidebar .t-body::-webkit-scrollbar-corner,
+    .media-library::-webkit-scrollbar-corner,.media-library .ml-body::-webkit-scrollbar-corner{background:transparent}
+    /* Light-mode mirrors dashboard's light .sidebar-nav (rgba(0,0,0,0.15) thumb). */
+    body.light .editor-sidebar,body.light .editor-sidebar .t-body,
+    body.light .media-library,body.light .media-library .ml-body{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .editor-sidebar::-webkit-scrollbar-thumb,body.light .editor-sidebar .t-body::-webkit-scrollbar-thumb,
+    body.light .media-library::-webkit-scrollbar-thumb,body.light .media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
     .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
     .tool-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;display:none;flex-shrink:0}
     .tool-panel.active{display:block;max-height:calc(100vh - 400px);overflow-y:auto;animation:panelSlide .2s ease}
@@ -375,8 +357,20 @@ async function renderEditor(req, res) {
     body.light .e-tb{background:rgba(108,58,237,.08);border-color:rgba(108,58,237,.25);color:#1a1a2e}
     body.light .e-tb:hover{background:rgba(108,58,237,.16)}
     body.light .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-color:transparent}
-    body.light #projectFilenameInput{background:#ffffff;border-color:rgba(108,58,237,.25);color:#1a1a2e}
-    body.light #projectFilenameInput::placeholder{color:#94a3b8}
+    /* Task #88 — Project name input. Idle state is intentionally
+       dimmed (low-contrast bg, soft border, muted text) to telegraph
+       that the field is editable but inactive. Hover lifts contrast
+       slightly; focus brightens fully and adds a soft purple glow so
+       the user knows they're typing. */
+    #projectFilenameInput{height:32px;padding:0 12px;background:rgba(124,58,237,.04);border:1px solid rgba(124,58,237,.20);border-radius:6px;color:rgba(226,224,240,.55);font-size:12px;font-family:inherit;outline:none;min-width:200px;max-width:320px;transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease}
+    #projectFilenameInput::placeholder{color:rgba(226,224,240,.30)}
+    #projectFilenameInput:hover{background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.35);color:rgba(226,224,240,.85);cursor:text}
+    #projectFilenameInput:focus{background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.7);color:#e2e0f0;box-shadow:0 0 0 2px rgba(124,58,237,.18)}
+    #projectFilenameInput:focus::placeholder{color:rgba(226,224,240,.5)}
+    body.light #projectFilenameInput{background:rgba(124,58,237,.04);border-color:rgba(108,58,237,.20);color:rgba(26,26,46,.55)}
+    body.light #projectFilenameInput::placeholder{color:rgba(26,26,46,.35)}
+    body.light #projectFilenameInput:hover{background:rgba(124,58,237,.08);border-color:rgba(108,58,237,.35);color:rgba(26,26,46,.85)}
+    body.light #projectFilenameInput:focus{background:#ffffff;border-color:rgba(108,58,237,.7);color:#1a1a2e;box-shadow:0 0 0 2px rgba(108,58,237,.18)}
     body.light .editor-container{background:#f1f3f9}
     body.light .media-library,body.light .editor-sidebar{background:#ffffff;border-color:rgba(108,58,237,.18)}
     body.light .editor-main{background:#f1f3f9}
@@ -696,10 +690,15 @@ async function renderEditor(req, res) {
     .mt-label-music{color:#f472b6}
     .mt-label-text{color:#facc15}
     .mt-label-fx{color:#34d399}
-    .mt-tracks-area{flex:1;overflow-x:auto;overflow-y:auto;position:relative;background:#0a0612}
-    .mt-time-ruler{display:flex;align-items:center;height:22px;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18;position:sticky;top:0;z-index:5}
+    /* Task #88 — Tracks area must consume 100% of the remaining width
+       after the fixed-width .mt-labels column. flex:1 1 auto + min-
+       width:0 lets flex actually grow this child to fill the remaining
+       space; width:100% on the ruler and individual tracks pins them
+       to the container's full width regardless of content. */
+    .mt-tracks-area{flex:1 1 auto;min-width:0;width:100%;overflow-x:auto;overflow-y:auto;position:relative;background:#0a0612}
+    .mt-time-ruler{display:flex;align-items:center;height:22px;width:100%;min-width:100%;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18;position:sticky;top:0;z-index:5}
     .mt-time-ruler span{flex:1;font-size:9px;color:#3d3358;font-variant-numeric:tabular-nums}
-    .mt-track{height:36px;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
+    .mt-track{height:36px;width:100%;min-width:100%;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
     .mt-track:hover{background:rgba(108,58,237,.03)}
     .mt-track-video{background:rgba(124,58,237,.03)}
     .mt-track-audio{background:rgba(56,189,248,.03)}
@@ -786,13 +785,18 @@ async function renderEditor(req, res) {
                  so a fresh project always has a usable default. Export reads
                  the current value (with a timestamp fallback if blank) and
                  skips the legacy prompt-for-filename modal. -->
+            <!-- Task #88 \u2014 Inline style stripped; styling now lives in
+                 #projectFilenameInput CSS rule so :hover and :focus can
+                 lift the field from a dimmed idle state to full
+                 brightness. Native title removed (custom CSS hover-
+                 affordance suffices); aria-label keeps screen-reader
+                 access. -->
             <input type="text" id="projectFilenameInput"
               value="Untitled Project"
               placeholder="Untitled Project"
               maxlength="80"
               autocomplete="off" spellcheck="false"
-              title="Project filename \u2014 used when you export"
-              style="height:32px;padding:0 12px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.4);border-radius:6px;color:#e2e0f0;font-size:12px;font-family:inherit;outline:none;min-width:200px;max-width:320px"
+              aria-label="Project filename"
               onfocus="this.select()"/>
             <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
           </div>
