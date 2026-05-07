@@ -24,14 +24,22 @@ router.get('/', requireAuth, (req, res) => {
     .cal-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:12px}
     body.light .cal-legend,html.light .cal-legend{border-color:rgba(0,0,0,0.06)}
     .cal-legend-label{font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;align-self:center;margin-right:4px}
-    .legend-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:.75rem;font-weight:600;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);transition:opacity .15s,transform .15s;color:var(--text)}
+    .legend-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:.75rem;font-weight:600;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);transition:opacity .15s,transform .15s,background .15s,border-color .15s;color:var(--text);cursor:pointer;user-select:none}
+    .legend-chip:hover{background:rgba(255,255,255,0.08);border-color:rgba(108,58,237,0.30)}
     body.light .legend-chip,html.light .legend-chip{background:rgba(0,0,0,0.03);border-color:rgba(0,0,0,0.06)}
+    body.light .legend-chip:hover,html.light .legend-chip:hover{background:rgba(0,0,0,0.05);border-color:rgba(108,58,237,0.30)}
     .legend-chip .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,0.05)}
     .legend-chip .legend-emoji{font-size:.85rem}
     .legend-chip .legend-count{margin-left:4px;font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,0.08);color:var(--text)}
     body.light .legend-chip .legend-count,html.light .legend-chip .legend-count{background:rgba(0,0,0,0.06)}
     .legend-chip.empty{opacity:0.45}
     .legend-chip.empty .legend-count{background:transparent;color:var(--text-dim)}
+    .legend-chip.active{background:linear-gradient(135deg,rgba(108,58,237,0.25),rgba(236,72,153,0.18));border-color:#6C3AED;box-shadow:0 0 0 1px rgba(108,58,237,0.40),0 4px 14px rgba(108,58,237,0.18);color:#fff;opacity:1}
+    .legend-chip.active .legend-count{background:rgba(108,58,237,0.35);color:#fff}
+    .legend-chip.dimmed{opacity:0.30}
+    .legend-clear{margin-left:auto;font-size:.72rem;font-weight:600;color:#a78bfa;cursor:pointer;padding:5px 10px;border-radius:999px;background:transparent;border:none;transition:background .15s}
+    .legend-clear:hover{background:rgba(108,58,237,0.10)}
+    .legend-clear[hidden]{display:none}
     .cal-day-headers{display:grid;grid-template-columns:repeat(7,1fr);background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06)}
     body.light .cal-day-headers,html.light .cal-day-headers{background:rgba(0,0,0,0.02);border-bottom-color:rgba(0,0,0,0.06)}
     .cal-day-header{padding:10px;text-align:center;font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
@@ -200,6 +208,8 @@ router.get('/', requireAuth, (req, res) => {
       let calMonth=new Date().getMonth();
       let calYear=new Date().getFullYear();
       let entries=[];
+      // Active platform filter — Set of platform keys. Empty = no filter (show all).
+      let activeFilters = new Set();
       function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
       function rangeForMonth(){
         return {start:ymd(new Date(calYear,calMonth,1)),end:ymd(new Date(calYear,calMonth+1,0))};
@@ -255,20 +265,33 @@ router.get('/', requireAuth, (req, res) => {
           }
         }
         const order=['tiktok','instagram','shorts','youtube','twitter','linkedin','facebook','blog','newsletter'];
+        const filterActive = activeFilters.size > 0;
         let html='<span class="cal-legend-label">Platforms</span>';
         for(const k of order){
           const m=PLATFORM_META[k];
           const c=counts[k]||0;
           const empty=c===0?' empty':'';
-          const titleAttr=c===0?'No posts scheduled this month':(c+' post'+(c===1?'':'s')+' scheduled this month');
-          html+='<span class="legend-chip'+empty+'" title="'+titleAttr+'">';
+          const isOn = activeFilters.has(k);
+          const klass = 'legend-chip' + empty + (isOn ? ' active' : '') + (filterActive && !isOn ? ' dimmed' : '');
+          const titleAttr=isOn?('Filtering by ' + m.label + ' — click to clear'):(c===0?('Click to filter by ' + m.label):('Click to filter by ' + m.label + ' (' + c + ' scheduled)'));
+          html+='<span class="'+klass+'" data-platform="'+k+'" onclick="togglePlatformFilter(\''+k+'\')" title="'+titleAttr+'">';
           html+='<span class="legend-dot" style="background:'+m.color+'"></span>';
           html+='<span class="legend-emoji">'+m.emoji+'</span>';
           html+=m.label;
           html+='<span class="legend-count">'+c+'</span>';
           html+='</span>';
         }
+        html += '<button class="legend-clear" onclick="clearPlatformFilters()"' + (filterActive ? '' : ' hidden') + '>Clear filters</button>';
         document.getElementById('calLegend').innerHTML=html;
+      }
+      function togglePlatformFilter(platform){
+        if (activeFilters.has(platform)) activeFilters.delete(platform);
+        else activeFilters.add(platform);
+        renderGrid();
+      }
+      function clearPlatformFilters(){
+        activeFilters.clear();
+        renderGrid();
       }
 
       function renderGrid(){
@@ -278,9 +301,13 @@ router.get('/', requireAuth, (req, res) => {
         const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
         const todayStr=ymd(new Date());
         const byDate={};
+        const allByDate={};
         for(const e of entries){
           const k=e.scheduled_date?String(e.scheduled_date).slice(0,10):null;
           if(!k)continue;
+          (allByDate[k]=allByDate[k]||[]).push(e);
+          // Filter: if filters are active, only include matching platforms
+          if(activeFilters.size > 0 && !activeFilters.has(e.platform)) continue;
           (byDate[k]=byDate[k]||[]).push(e);
         }
         let html='';
@@ -302,7 +329,7 @@ router.get('/', requireAuth, (req, res) => {
           html+='</div>';
         }
         document.getElementById('calGrid').innerHTML=html;
-        renderLegend(byDate);
+        renderLegend(allByDate);
       }
       function onCellClick(dateStr){openCreate(dateStr);}
       function openCreate(dateStr){
