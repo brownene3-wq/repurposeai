@@ -505,7 +505,12 @@ function getBrandKitModal() {
             var capStyle = (captionStyles && captionStyles[t.captionStyle]) || {};
             var aspect   = (aspectRatios   && aspectRatios[t.aspectRatio])  || {};
             var capColor = capStyle.color || '#a78bfa';
-            var capName  = capStyle.name  || (t.captionStyle || 'Default');
+            // Headline = the user-entered template name (e.g. "Renamed Brand TikTok").
+            // The caption style's display name is moved to a secondary line
+            // so users can still see which preset the template uses, but the
+            // card identity is the template they named.
+            var capStyleName = capStyle.name || t.captionStyle || 'Default';
+            var titleName    = (t.name && String(t.name).trim()) || capStyleName;
             var aspName  = (aspect.label ? (aspect.icon + ' ' + aspect.label) : (t.aspectRatio || ''));
             var card = document.createElement('div');
             var isThisSelected = __isSelectMode && (t.id || '') === __selectedId;
@@ -513,8 +518,8 @@ function getBrandKitModal() {
             card.innerHTML =
               '<div class="bk-swatch" style="background:linear-gradient(135deg,' + capColor + ',' + capColor + '80)">Aa</div>' +
               '<div class="bk-card-meta">' +
-                '<div class="bk-card-name">' + bkEsc(capName) + '</div>' +
-                '<div class="bk-card-aspect">' + bkEsc(aspName) + '</div>' +
+                '<div class="bk-card-name">' + bkEsc(titleName) + '</div>' +
+                '<div class="bk-card-aspect">' + bkEsc(aspName) + (capStyleName && capStyleName !== titleName ? ' &middot; ' + bkEsc(capStyleName) : '') + '</div>' +
                 (t.logoUrl
                   ? ('<div class="bk-logo-yes">&#x2713; Logo attached</div>')
                   : ('<div class="bk-logo-no">No logo</div>')
