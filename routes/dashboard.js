@@ -431,73 +431,121 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
+    function showAnalyzeNotice(initialMsg){
+      var n = document.getElementById('analyzeNotice');
+      if (!n) {
+        n = document.createElement('div');
+        n.id = 'analyzeNotice';
+        n.setAttribute('role', 'status');
+        n.style.cssText = 'position:fixed;inset:0;background:rgba(8,6,18,0.78);backdrop-filter:blur(6px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px';
+        n.innerHTML =
+          '<div style="background:linear-gradient(180deg,var(--surface),rgba(108,58,237,0.06));border:1px solid rgba(108,58,237,0.45);border-radius:16px;padding:28px;width:100%;max-width:480px;text-align:center;box-shadow:0 0 0 1px rgba(108,58,237,0.20),0 20px 60px rgba(108,58,237,0.25)">' +
+            '<div style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);margin-bottom:16px;animation:noticePulse 1.6s ease-in-out infinite">' +
+              '<div style="width:28px;height:28px;border:3px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:noticeSpin 1s linear infinite"></div>' +
+            '</div>' +
+            '<h3 style="margin:0 0 6px;font-size:1.15rem;font-weight:800;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent">Analyzing your video</h3>' +
+            '<div id="analyzeStep" style="font-size:0.92rem;color:var(--text);margin-bottom:14px;font-weight:600">Starting…</div>' +
+            '<div style="font-size:0.82rem;color:var(--text-muted);line-height:1.5;background:rgba(108,58,237,0.08);border:1px dashed rgba(108,58,237,0.30);border-radius:10px;padding:10px 14px;text-align:left">' +
+              '<strong style="color:#a78bfa">Please wait while AI analyzes your video.</strong><br>' +
+              'Don\'t switch tabs, close the window, or perform any other actions on the page until the process is complete.' +
+            '</div>' +
+          '</div>' +
+          '<style>@keyframes noticeSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}@keyframes noticePulse{0%,100%{box-shadow:0 0 0 0 rgba(108,58,237,0.4)}50%{box-shadow:0 0 0 14px rgba(108,58,237,0)}}</style>';
+        document.body.appendChild(n);
+        // Discourage accidental navigation while analyzing
+        n.__beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+        window.addEventListener('beforeunload', n.__beforeUnload);
+      }
+      n.style.display = 'flex';
+      var step = n.querySelector('#analyzeStep');
+      if (step && initialMsg) step.textContent = initialMsg;
+    }
+    function setAnalyzeStep(msg){
+      var s = document.getElementById('analyzeStep');
+      if (s && msg) s.textContent = msg;
+    }
+    function hideAnalyzeNotice(){
+      var n = document.getElementById('analyzeNotice');
+      if (n) {
+        n.style.display = 'none';
+        if (n.__beforeUnload) {
+          window.removeEventListener('beforeunload', n.__beforeUnload);
+          n.__beforeUnload = null;
+        }
+      }
+    }
+
     async function processVideo() {
       const url = document.getElementById('youtubeUrl').value.trim();
       if (!url) { alert('Please paste a YouTube URL'); return; }
 
       const btn = document.getElementById('processBtn');
-      btn.disabled = true; btn.innerHTML = 'Processing...';
-      document.getElementById('loading').classList.add('show');
-      document.getElementById('results').style.display = 'none';
-      document.getElementById('platformTabs').innerHTML = '';
-      document.getElementById('platformContents').innerHTML = '';
-      let platformCount = 0;
+      btn.disabled = true; btn.innerHTML = '⚡ Analyzing…';
+      showAnalyzeNotice('Starting…');
 
       try {
-        const res = await fetch('/repurpose/process-stream', {
+        const res = await fetch('/shorts/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, platforms: ['Instagram','Twitter','LinkedIn'], tone: 'Professional' })
+          body: JSON.stringify({ videoUrl: url })
         });
 
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || 'Server error');
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          // Pre-SSE error (e.g. duplicate / invalid URL / quota)
+          const data = await res.json();
+          throw new Error(data.error || 'Analysis failed');
         }
+        if (!res.ok) throw new Error('Analysis failed. Please try again.');
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = '';
+        let buf = '';
         const NL = String.fromCharCode(10);
+        let analysisId = null;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          const parts = buffer.split(NL);
-          buffer = parts.pop();
-
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split(NL);
+          buf = parts.pop() || '';
           for (const line of parts) {
             const trimmed = line.trim();
-            if (trimmed.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(trimmed.slice(6));
-                if (data.error) { alert(data.error); break; }
-                if (data.done) continue;
-                if (data.platform) {
-                  document.getElementById('loading').classList.remove('show');
-                  document.getElementById('results').style.display = 'block';
-                  document.getElementById('emptyState').style.display = 'none';
-                  if (platformCount === 0) {
-                    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                  addPlatformResult(data, platformCount === 0);
-                  platformCount++;
-                }
-              } catch(e) { console.log('Parse error:', e); }
+            if (!trimmed.startsWith('data: ')) continue;
+            let data;
+            try { data = JSON.parse(trimmed.slice(6)); } catch (_) { continue; }
+            if (data.status === 'completed') {
+              analysisId = data.analysisId;
+              setAnalyzeStep('Analysis complete! Redirecting…');
+            } else if (data.status === 'error') {
+              throw new Error(data.message || 'Analysis failed');
+            } else if (data.message) {
+              setAnalyzeStep(data.message);
             }
           }
         }
-        if (platformCount === 0) {
-          alert('No content was generated. Try a different video.');
+
+        // Redirect to Smart Shorts with the analysis open
+        if (analysisId) {
+          if (n_beforeunload()) { /* no-op: already removed below */ }
+          // Remove beforeunload before navigating so the browser doesn't prompt
+          hideAnalyzeNotice();
+          location.href = '/shorts?openAnalysis=' + encodeURIComponent(analysisId);
+          return;
         }
+        // Fallback: just go to /shorts
+        hideAnalyzeNotice();
+        location.href = '/shorts';
       } catch (err) {
-        alert(err.message || 'Processing failed. Please try again.');
+        hideAnalyzeNotice();
+        alert(err.message || 'Analysis failed. Please try again.');
       } finally {
         btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose';
-        document.getElementById('loading').classList.remove('show');
       }
+    }
+    // Helper kept tiny — no-op exists for clarity
+    function n_beforeunload(){ return false; }
     }
 
     function addPlatformResult(output, isFirst) {

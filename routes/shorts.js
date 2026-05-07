@@ -7434,15 +7434,18 @@ ${paginationHtml}
       } catch (e) {}
     })();
 
-    // Deep link handler: /shorts?dlAnalysis=ID&dlMoment=N opens the analysis modal
-    // and auto-clicks the matching Download Clip button. Used by the Calendar
-    // entry detail to send users straight from a calendar entry to its clip.
+    // Deep link handlers:
+    //   /shorts?dlAnalysis=ID&dlMoment=N → open analysis + auto-click Download Clip
+    //   /shorts?openAnalysis=ID          → open analysis modal only (used by /dashboard
+    //                                       redirect after AI completes the analysis)
     (async () => {
       try {
         var params = new URLSearchParams(location.search);
         var dlAnalysis = params.get('dlAnalysis');
         var dlMoment = params.get('dlMoment');
-        if (!dlAnalysis || dlMoment == null) return;
+        var openAnalysis = params.get('openAnalysis');
+        var targetId = dlAnalysis || openAnalysis;
+        if (!targetId) return;
         // Wait for viewAnalysis to be defined (script may still be parsing)
         var tries = 0;
         while (typeof viewAnalysis !== 'function' && tries < 20) {
@@ -7450,13 +7453,14 @@ ${paginationHtml}
           tries++;
         }
         if (typeof viewAnalysis !== 'function') return;
-        await viewAnalysis(dlAnalysis);
-        // Once the modal is built, click the corresponding download button
-        setTimeout(function(){
-          var btn = document.getElementById('clip-btn-' + dlMoment);
-          if (btn) btn.click();
-        }, 400);
-      } catch (e) { console.warn('Deep-link download failed:', e); }
+        await viewAnalysis(targetId);
+        if (dlAnalysis && dlMoment != null) {
+          setTimeout(function(){
+            var btn = document.getElementById('clip-btn-' + dlMoment);
+            if (btn) btn.click();
+          }, 400);
+        }
+      } catch (e) { console.warn('Deep-link handler failed:', e); }
     })();
 
     // === Workflow Templates ===
