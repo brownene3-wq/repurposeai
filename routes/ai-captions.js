@@ -1007,6 +1007,229 @@ const captionPresets = {
     wordHighlightColor: 'FFC1F0',
     animation: 'glow'
   },
+  // ----- Tier 7 + 8: gradient fakes, bg-block fakes, animated approximations -----
+  // The strategy here: pick the dominant colour from the on-page CSS gradient,
+  // plus an outlineColor / shadowColor that hints at the secondary stop. This
+  // is a strict approximation — no native ASS feature reproduces a per-letter
+  // gradient or a scrolling rainbow without per-line override tags.
+  doodle: {
+    name: 'Doodle',
+    fontName: 'DejaVu Sans',
+    fontSize: 46,
+    fontColor: 'FF6FB5',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  sketch: {
+    name: 'Sketch',
+    fontName: 'DejaVu Sans',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '000000',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  scribble: {
+    name: 'Scribble',
+    fontName: 'DejaVu Sans',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FF6FB5',         // pink offset outline (left/right)
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: '00E5FF',          // cyan offset shadow
+    bold: true,
+    angle: -1,                      // slight tilt for scribble feel
+    alignment: 2,
+    wordHighlightColor: '00E5FF',
+    animation: 'pop'
+  },
+  // ----- Trending gradient/multi-shadow -----
+  'reels-pop': {
+    name: 'Reels Pop',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'DD2A7B',            // Instagram pink (middle of the 3-stop gradient)
+    outlineColor: '8134AF',         // purple low end
+    outlineWidth: 4,
+    shadowDepth: 3,
+    shadowColor: 'F58529',          // orange high end
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'F58529',
+    animation: 'glow'
+  },
+  'pop-out': {
+    name: 'Pop Out',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FFFFFF',
+    outlineColor: '00E5FF',         // cyan rim — first shadow color
+    outlineWidth: 4,
+    shadowDepth: 4,
+    shadowColor: 'FF1744',          // red drop — second shadow color
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',
+    animation: 'pop'
+  },
+  splash: {
+    name: 'Splash',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '8134AF',         // purple background (BorderStyle=3 fills with this)
+    outlineWidth: 12,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF6FB5',
+    animation: 'pop'
+  },
+  // ----- Hits: metallic / gradient text fakes -----
+  'gold-rush': {
+    name: 'Gold Rush',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FBBF24',            // bright gold mid
+    outlineColor: 'B45309',         // burnt-amber rim suggesting the gradient's bottom stop
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: '422006',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
+    animation: 'glow'
+  },
+  lava: {
+    name: 'Lava',
+    fontName: 'Arial Black',
+    fontSize: 54,
+    fontColor: 'F97316',            // molten orange
+    outlineColor: 'B91C1C',         // dark red rim
+    outlineWidth: 4,
+    shadowDepth: 3,
+    shadowColor: 'FBBF24',          // yellow-gold under-glow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FBBF24',
+    animation: 'glow'
+  },
+  royal: {
+    name: 'Royal',
+    fontName: 'Liberation Serif',   // Georgia equivalent
+    fontSize: 50,
+    fontColor: 'FBBF24',            // gold body
+    outlineColor: 'C026D3',         // royal purple rim
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '92400E',
+    bold: true,
+    fontSpacing: 8,
+    alignment: 2,
+    wordHighlightColor: 'C026D3',
+    animation: 'glow'
+  },
+  chrome: {
+    name: 'Chrome',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'B8B8B8',            // mid silver
+    outlineColor: '1A1A1A',         // dark rim suggests the gradient's deep stop
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: '6B6B6B',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'F5F5F5',   // bright reflection on active word
+    animation: 'pop'
+  },
+  hologram: {
+    name: 'Hologram',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: '00D9FF',            // dominant cyan from the rainbow
+    outlineColor: 'B14EFF',         // purple stop
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: 'FF6FB5',          // pink stop as drop
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',   // yellow active = hits another rainbow stop
+    animation: 'glow'
+  },
+  glitch: {
+    name: 'Glitch',
+    fontName: 'Liberation Mono',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '00E5FF',         // cyan rim — left chromatic offset
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: 'FF1744',          // red drop — right chromatic offset
+    bold: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: '00E5FF',
+    animation: 'pop'
+  },
+  // ----- Vlog: paper / frame approximations using opaque box (BorderStyle=3) -----
+  'sticky-note': {
+    name: 'Sticky Note',
+    fontName: 'DejaVu Sans',
+    fontSize: 44,
+    fontColor: '422006',
+    outlineColor: 'FEF08A',         // yellow sticky paper bg
+    outlineWidth: 14,
+    shadowDepth: 3,
+    shadowColor: '1A1A1A',
+    borderStyle: 3,
+    bold: true,
+    angle: -3,                       // tilt for the post-it feel
+    alignment: 2,
+    wordHighlightColor: '422006',
+    animation: 'fade'
+  },
+  polaroid: {
+    name: 'Polaroid',
+    fontName: 'Liberation Mono',
+    fontSize: 40,
+    fontColor: '1A1A1A',
+    outlineColor: 'F5F5F5',         // off-white photo frame bg
+    outlineWidth: 14,
+    shadowDepth: 3,
+    shadowColor: '000000',
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'fade'
+  },
+  marker: {
+    name: 'Marker',
+    fontName: 'DejaVu Sans',
+    fontSize: 44,
+    fontColor: '1A1A1A',
+    outlineColor: 'FACC15',         // yellow highlighter bg
+    outlineWidth: 10,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FACC15',
+    animation: 'fade'
+  },
   'neon-glow': {
     name: 'Neon Glow',
     fontName: 'Arial',
@@ -1343,6 +1566,9 @@ const PRESET_BEHAVIOR = {
   'movie-title':   'minimal',
   'trailer':       'minimal',
   'noir':          'minimal',
+  'broadcast':     'minimal',
+  'documentary':   'minimal',
+  'editorial':     'minimal',
   'letterbox':     'minimal',
   'dictation':     'minimal',
   'interview':     'minimal',
@@ -1398,8 +1624,23 @@ const PRESET_BEHAVIOR = {
   'hype-bold':     'neon-glow',
   'award':         'neon-glow',
   'marquee':       'neon-glow',
-  'influencer':    'neon-glow'
-  // (more premium styles will be added here as their renders get implemented)
+  'influencer':    'neon-glow',
+  // Tier 7 + 8: gradient / metallic / bg-block / chromatic — all 80 implemented
+  'doodle':        'bold-pop',
+  'sketch':        'bold-pop',
+  'scribble':      'bold-pop',
+  'reels-pop':     'neon-glow',
+  'pop-out':       'bold-pop',
+  'splash':        'bold-pop',
+  'gold-rush':     'neon-glow',
+  'lava':          'neon-glow',
+  'royal':         'neon-glow',
+  'chrome':        'bold-pop',
+  'hologram':      'neon-glow',
+  'glitch':        'bold-pop',
+  'sticky-note':   'minimal',
+  'polaroid':      'minimal',
+  'marker':        'minimal'
 };
 
 function presetBehavior(preset) {
