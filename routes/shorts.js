@@ -5019,7 +5019,40 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       max-height: 85vh;
       overflow-y: auto;
       width: 95%;
+      position: relative;
+      /* Sidebar-matching scrollbar (see .sidebar-nav in utils/theme.js) */
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.10) transparent;
     }
+    .modal-content::-webkit-scrollbar { width: 6px; }
+    .modal-content::-webkit-scrollbar-track { background: transparent; }
+    .modal-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+    .modal-content::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+    body.light .modal-content,
+    html.light .modal-content { scrollbar-color: rgba(0,0,0,0.15) transparent; }
+    body.light .modal-content::-webkit-scrollbar-thumb,
+    html.light .modal-content::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+    body.light .modal-content::-webkit-scrollbar-thumb:hover,
+    html.light .modal-content::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.28); }
+    /* Apply the same scrollbar treatment to nested overflow regions
+       (e.g. the Generated Content tabbed view inside the modal). */
+    .modal-content [style*="overflow-y:auto"],
+    .modal-content [style*="overflow-y: auto"] {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.10) transparent;
+    }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar { width: 6px; }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-track,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-track { background: transparent; }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-thumb,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-thumb:hover,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+    body.light .modal-content [style*="overflow-y:auto"],
+    body.light .modal-content [style*="overflow-y: auto"] { scrollbar-color: rgba(0,0,0,0.15) transparent; }
+    body.light .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-thumb,
+    body.light .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
 
     .moment-video-wrap {
       position: relative;
@@ -5120,26 +5153,45 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       color: #fff;
     }
 
+    /* Modal close button — matches the site's standard close pattern
+       (see .narrationModal close at line ~6261 and the various tool-panel
+       close buttons): transparent background, text-muted color, sits in
+       the top-right corner of its container, hovers to full text color. */
     .modal-close {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0,0,0,0.6);
-      border: 2px solid rgba(255,255,255,0.3);
-      color: #fff;
-      font-size: 28px;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.10);
+      color: var(--text-muted);
+      font-size: 20px;
+      line-height: 1;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 1002;
-      transition: background 0.2s;
+      padding: 0;
+      z-index: 2;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
     }
     .modal-close:hover {
-      background: rgba(255,0,0,0.6);
+      background: rgba(255,255,255,0.12);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.2);
+    }
+    body.light .modal-close,
+    html.light .modal-close {
+      background: rgba(108,58,237,0.06);
+      border-color: rgba(108,58,237,0.12);
+      color: var(--text-muted);
+    }
+    body.light .modal-close:hover,
+    html.light .modal-close:hover {
+      background: rgba(108,58,237,0.12);
+      color: var(--text);
     }
 
     .platform-selector {
@@ -5475,9 +5527,9 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       .modal-close {
         top: 10px;
         right: 10px;
-        width: 36px;
-        height: 36px;
-        font-size: 22px;
+        width: 30px;
+        height: 30px;
+        font-size: 18px;
       }
 
       /* Moment cards mobile */
