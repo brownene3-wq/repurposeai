@@ -3147,7 +3147,7 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
     }
 
-    const { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle, applyBrandKit } = req.body;
+    let { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle, applyBrandKit, selectedBrandTemplateId } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
       return res.status(400).json({ error: 'Analysis ID and moment index are required' });
@@ -3170,6 +3170,38 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       } catch (e) { console.log('Brand kit fetch skipped:', e.message); }
     } else {
       console.log('  Brand template explicitly disabled for this clip');
+    }
+
+    // If the user has selected a Brand Template via the /shorts Brand Kit
+    // modal, look it up from the cookie store (brand-templates.js writes
+    // them there) and let it influence this clip. Today we use it to set
+    // the default caption style; the logo overlay during ffmpeg encode is
+    // a follow-up step. Only honored when applyBrandKit isn't explicitly
+    // disabled, so the per-moment checkbox still controls it.
+    let selectedBrandTemplate = null;
+    if (applyBrandKit !== false && selectedBrandTemplateId) {
+      try {
+        const raw = req.cookies && req.cookies.brandTemplates;
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            selectedBrandTemplate = list.find(t => t && t.id === selectedBrandTemplateId) || null;
+          }
+        }
+      } catch (e) {
+        console.log('  Selected brand template lookup failed:', e.message);
+      }
+      if (selectedBrandTemplate) {
+        console.log(`  Brand Template selected: "${selectedBrandTemplate.name || selectedBrandTemplate.id}" (caption: ${selectedBrandTemplate.captionStyle || 'n/a'}, logo: ${selectedBrandTemplate.logoFilename ? 'yes' : 'no'})`);
+        // If the user hasn't explicitly chosen a caption style for this
+        // clip, fall back to the template's caption style.
+        if (!captionStyle && selectedBrandTemplate.captionStyle) {
+          captionStyle = selectedBrandTemplate.captionStyle;
+          console.log(`  → using template's caption style: ${captionStyle}`);
+        }
+      } else {
+        console.log(`  Selected brand template id "${selectedBrandTemplateId}" not found in cookie — skipping`);
+      }
     }
 
     // Parse moments
@@ -7144,11 +7176,21 @@ ${paginationHtml}
         const brandKitCheckbox = document.getElementById('brandkit-' + momentIndex);
         const applyBrandKit = brandKitCheckbox ? brandKitCheckbox.checked : true;
 
+        // Pull the user's currently-selected brand template (set via the
+        // shared Brand Kit modal's Select button on /shorts). Server applies
+        // it when applyBrandKit is true.
+        let selectedBrandTemplateId = null;
+        try { selectedBrandTemplateId = localStorage.getItem('brandKitSelectedTemplateId') || null; } catch (e) {}
+
         // Request clip generation
         const response = await fetch('/shorts/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle, applyBrandKit })
+          body: JSON.stringify({
+            analysisId, momentIndex, includeCaptions, clipStyle,
+            captionLanguage, captionStyle, applyBrandKit,
+            selectedBrandTemplateId
+          })
         });
 
         const data = await response.json();
@@ -8647,6 +8689,38 @@ ${paginationHtml}
     }
 
     // === Brand Kit Functions ===
+
+    // /shorts uses the shared Brand Kit modal in "select" mode: button reads
+    // "Select", only one template can be chosen at a time, and that choice
+    // persists in localStorage so it can be applied to every viral clip the
+    // user generates (when the per-moment Brand Template checkbox is on).
+    // /video-editor does NOT set this flag, so its Apply behavior is unchanged.
+    window.brandKitModalMode = 'select';
+    try {
+      window.brandKitSelectedTemplateId = localStorage.getItem('brandKitSelectedTemplateId') || null;
+    } catch (_e) { window.brandKitSelectedTemplateId = null; }
+
+    // Hook called by the shared modal when the user clicks Select on a card.
+    window.applyBrandTemplateChoice = function(tmpl){
+      if (!tmpl || !tmpl.id) return;
+      window.brandKitSelectedTemplateId = tmpl.id;
+      try { localStorage.setItem('brandKitSelectedTemplateId', tmpl.id); } catch (_e) {}
+      try {
+        var name = (tmpl.name || (tmpl.captionStyle || 'template'));
+        if (typeof showToast === 'function') {
+          showToast('Selected "' + name + '" — applied to viral clips when Brand Template is on');
+        }
+      } catch (_e) {}
+      // Re-render the open modal so the picked card shows the SELECTED state
+      // immediately. Re-opening would also work but in-place feels snappier.
+      try {
+        var listEl = document.querySelector('#v10BrandKitModal #bkList');
+        if (listEl && typeof window.openBrandKitModal === 'function') {
+          window.openBrandKitModal();
+        }
+      } catch (_e) {}
+    };
+
     function toggleBrandKit(forceShow) {
       if (forceShow === true) { loadBrandKit(); return; } // handled by toggleToolPanel
       const panel = document.getElementById('brandKitPanel');

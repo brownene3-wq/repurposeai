@@ -446,6 +446,10 @@ function getBrandKitModal() {
       #v10BrandKitModal .bk-logo-no{font-size:10px;color:#5c5a70;margin-top:4px}
       #v10BrandKitModal .bk-logo-thumb{flex:none;width:44px;height:44px;object-fit:contain;background:rgba(255,255,255,.06);border-radius:6px;padding:4px}
       #v10BrandKitModal .bk-apply{flex:none;padding:8px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+      /* Select-mode highlight (used by /shorts; harmless on other pages). */
+      #v10BrandKitModal .bk-card.bk-card-selected{border-color:#a855f7;box-shadow:0 0 0 1px #a855f7 inset,0 8px 22px rgba(168,85,247,.18)}
+      #v10BrandKitModal .bk-card-selected .bk-apply{background:linear-gradient(135deg,#10b981,#059669)}
+      #v10BrandKitModal .bk-selected-badge{font-size:10px;color:#10b981;margin-top:4px;font-weight:700;letter-spacing:.4px}
       #v10BrandKitModal .bk-apply:hover{filter:brightness(1.1)}
       #v10BrandKitModal .bk-footer{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px}
       #v10BrandKitModal .bk-edit-link{color:#a78bfa;font-size:11px;text-decoration:none}
@@ -487,6 +491,15 @@ function getBrandKitModal() {
             return;
           }
           listEl.innerHTML = '';
+          // Select-mode opt-in: pages can set window.brandKitModalMode='select'
+          // to switch the modal from "apply once" semantics to "pick the one
+          // template that future actions on this page should use." /shorts
+          // uses this; /video-editor leaves the default ('apply').
+          var __isSelectMode = (window.brandKitModalMode === 'select');
+          var __selectedId = (window.brandKitSelectedTemplateId
+            || (function(){ try { return localStorage.getItem('brandKitSelectedTemplateId'); } catch(_){ return null; } })()
+            || null);
+          var __btnLabel = __isSelectMode ? 'Select' : 'Apply &rarr;';
           templates.forEach(function(t){
             var capStyle = (captionStyles && captionStyles[t.captionStyle]) || {};
             var aspect   = (aspectRatios   && aspectRatios[t.aspectRatio])  || {};
@@ -494,28 +507,33 @@ function getBrandKitModal() {
             var capName  = capStyle.name  || (t.captionStyle || 'Default');
             var aspName  = (aspect.label ? (aspect.icon + ' ' + aspect.label) : (t.aspectRatio || ''));
             var card = document.createElement('div');
-            card.className = 'bk-card';
+            var isThisSelected = __isSelectMode && (t.id || '') === __selectedId;
+            card.className = 'bk-card' + (isThisSelected ? ' bk-card-selected' : '');
             card.innerHTML =
               '<div class="bk-swatch" style="background:linear-gradient(135deg,' + capColor + ',' + capColor + '80)">Aa</div>' +
               '<div class="bk-card-meta">' +
                 '<div class="bk-card-name">' + bkEsc(capName) + '</div>' +
                 '<div class="bk-card-aspect">' + bkEsc(aspName) + '</div>' +
                 (t.logoUrl
-                  ? ('<div class="bk-logo-yes">✓ Logo attached</div>')
+                  ? ('<div class="bk-logo-yes">&#x2713; Logo attached</div>')
                   : ('<div class="bk-logo-no">No logo</div>')
                 ) +
+                (isThisSelected ? '<div class="bk-selected-badge">&#x2713; SELECTED</div>' : '') +
               '</div>' +
               (t.logoUrl
                 ? ('<img src="' + t.logoUrl + '" class="bk-logo-thumb" onerror="this.remove()"/>')
                 : ''
               ) +
-              '<button class="bk-apply" data-template-id="' + (t.id || '') + '">Apply →</button>';
+              '<button class="bk-apply" data-template-id="' + (t.id || '') + '">' +
+                (isThisSelected ? '&#x2713; Selected' : __btnLabel) +
+              '</button>';
             listEl.appendChild(card);
           });
           Array.prototype.forEach.call(listEl.querySelectorAll('.bk-apply'), function(btn){
             btn.addEventListener('click', function(){
               var tid = btn.getAttribute('data-template-id');
               var tmpl = templates.find(function(t){ return (t.id || '') === tid; }) || templates[0];
+              var modeAtClick = window.brandKitModalMode;
               // Pages can hook custom apply logic via window.applyBrandTemplateChoice
               try {
                 if (typeof window.applyBrandTemplateChoice === 'function'){
@@ -525,7 +543,14 @@ function getBrandKitModal() {
                   if (typeof showToast === 'function') showToast('Applied "' + (tmpl && (tmpl.name || (capStyle && capStyle.name) || 'template')) + '"');
                 }
               } catch (e){ console.warn('Apply hook failed:', e); }
-              closeBrandKitModal();
+              if (modeAtClick === 'select') {
+                // Stay open and re-paint the list so the picked card now
+                // shows its "Selected" state. Use the in-memory templates,
+                // no extra network fetch needed.
+                try { renderTemplates(templates, captionStyles, aspectRatios, listEl); } catch (e) {}
+              } else {
+                closeBrandKitModal();
+              }
             });
           });
         }
