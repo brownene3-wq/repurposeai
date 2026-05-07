@@ -46,6 +46,17 @@ const YTDLP_COMMON_ARGS = [
   '--extractor-retries', '3',
 ];
 
+// Pass --cookies <path> to yt-dlp when YT_COOKIES_PATH is configured and
+// the file exists. This lets yt-dlp authenticate as a real YouTube user
+// and bypass the "Sign in to confirm you're not a bot" wall that hits
+// every Railway datacenter IP. Same pattern used by /ai-thumbnail,
+// /ai-broll, and /video-editor.
+function getYoutubeCookiesArgs() {
+  const p = process.env.YT_COOKIES_PATH;
+  if (p && fs.existsSync(p)) return ['--cookies', p];
+  return [];
+}
+
 // Clips directory
 const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
@@ -158,6 +169,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       '-o', cachedVideoPath,
       '--no-part',
       '--force-overwrites',
+      ...getYoutubeCookiesArgs(),
       ...YTDLP_COMMON_ARGS,
       videoUrl
     ], { timeout: 240000 });
@@ -241,7 +253,10 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
 
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
-    throw new Error('Video download failed. Please try again.');
+    const haveCookies = !!getYoutubeCookiesArgs().length;
+    throw new Error(haveCookies
+      ? 'Video download failed. Please try again.'
+      : 'Video download failed: YouTube blocked all download paths. Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in YouTube account, then redeploy.');
   }
 }
 
@@ -2637,6 +2652,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
             '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempVideo,
             '--no-part', '--force-overwrites',
+            ...getYoutubeCookiesArgs(),
             ...YTDLP_COMMON_ARGS,
             '--download-sections', `*${frameSec}-${frameSec + 5}`,
             videoUrl
@@ -2648,6 +2664,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
               '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
               '--merge-output-format', 'mkv', '-o', tempVideo,
               '--no-part', '--force-overwrites',
+              ...getYoutubeCookiesArgs(),
               ...YTDLP_COMMON_ARGS,
               videoUrl
             ], { timeout: 180000 });
@@ -4171,7 +4188,10 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
           await tryWithValidation('yt-dlp', () => runCommand('yt-dlp', [
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', downloadPath,
-            '--no-part', '--force-overwrites', ...YTDLP_COMMON_ARGS, videoUrl
+            '--no-part', '--force-overwrites',
+            ...getYoutubeCookiesArgs(),
+            ...YTDLP_COMMON_ARGS,
+            videoUrl
           ], { timeout: 240000 }));
         }
 
@@ -4569,6 +4589,7 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempDownload,
             '--no-part', '--force-overwrites',
+            ...getYoutubeCookiesArgs(),
             ...YTDLP_COMMON_ARGS,
             videoUrl
           ], { timeout: 240000 });
