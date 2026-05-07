@@ -8,8 +8,13 @@ const { featureUsageOps } = require('../db/database');
 // =============================================================================
 // CAPTION STYLE CATEGORIES + PRESETS
 // 5 categories × 20 presets = 100 total caption styles.
-// Each preset has: cat (category id), name (display), cls (CSS class slug),
-// preview (HTML rendered inside .preview-text).
+// Each preset has:
+//   cat     - category id ('trending'|'classic'|'hits'|'title'|'vlog')
+//   name    - display name
+//   cls     - CSS class slug
+//   preview - HTML rendered inside .preview-text
+//   tier    - 'free' or 'premium' (premium gets the diamond entitlement icon)
+// Free tier = the original 20 styles. Premium tier = the 80 newer styles.
 // =============================================================================
 
 const CATEGORIES = [
@@ -22,115 +27,130 @@ const CATEGORIES = [
 
 const PRESETS = [
   // ---------------- TRENDING (20) ----------------
-  { cat:'trending', name:'TikTok Trending', cls:'tiktok-trend',  preview:'TRENDING' },
-  { cat:'trending', name:'Hormozi',         cls:'hormozi',       preview:'MAKE <span class="word-highlight">MONEY</span> NOW' },
-  { cat:'trending', name:'MrBeast',         cls:'mrbeast',       preview:'EPIC TEXT' },
-  { cat:'trending', name:'Bold Pop',        cls:'bold-pop',      preview:'BOLD POP' },
-  { cat:'trending', name:'Reels Pop',       cls:'reels-pop',     preview:'REELS' },
-  { cat:'trending', name:'YouTube Shorts',  cls:'yt-shorts',     preview:'SHORTS' },
-  { cat:'trending', name:'Snap Style',      cls:'snap-style',    preview:'snap it' },
-  { cat:'trending', name:'Threads Bold',    cls:'threads-bold',  preview:'THREADS' },
-  { cat:'trending', name:'X Caption',       cls:'x-caption',     preview:'just posted' },
-  { cat:'trending', name:'Viral Yellow',    cls:'viral-yellow',  preview:'VIRAL' },
-  { cat:'trending', name:'Twitch Purple',   cls:'twitch-purple', preview:'LIVE NOW' },
-  { cat:'trending', name:'Reaction Pop',    cls:'reaction-pop',  preview:'WAIT WHAT?!' },
-  { cat:'trending', name:'Influencer',      cls:'influencer',    preview:'✨ Slay ✨' },
-  { cat:'trending', name:'Trending Box',    cls:'trending-box',  preview:'TRENDING NOW' },
-  { cat:'trending', name:'Hype Bold',       cls:'hype-bold',     preview:'HYPE' },
-  { cat:'trending', name:'Storytime',       cls:'storytime',     preview:'so <span class="word-highlight">basically</span>' },
-  { cat:'trending', name:'Pop Out',         cls:'pop-out',       preview:'POP OUT' },
-  { cat:'trending', name:'Splash',          cls:'splash',        preview:'splash!' },
-  { cat:'trending', name:'Buzz',            cls:'buzz',          preview:'BUZZING' },
-  { cat:'trending', name:'Punchline',       cls:'punchline',     preview:'PUNCH LINE' },
+  { cat:'trending', tier:'free',    name:'TikTok Trending', cls:'tiktok-trend',  preview:'TRENDING' },
+  { cat:'trending', tier:'free',    name:'Hormozi',         cls:'hormozi',       preview:'MAKE <span class="word-highlight">MONEY</span> NOW' },
+  { cat:'trending', tier:'free',    name:'MrBeast',         cls:'mrbeast',       preview:'EPIC TEXT' },
+  { cat:'trending', tier:'free',    name:'Bold Pop',        cls:'bold-pop',      preview:'BOLD POP' },
+  { cat:'trending', tier:'premium', name:'Reels Pop',       cls:'reels-pop',     preview:'REELS' },
+  { cat:'trending', tier:'premium', name:'YouTube Shorts',  cls:'yt-shorts',     preview:'SHORTS' },
+  { cat:'trending', tier:'premium', name:'Snap Style',      cls:'snap-style',    preview:'snap it' },
+  { cat:'trending', tier:'premium', name:'Threads Bold',    cls:'threads-bold',  preview:'THREADS' },
+  { cat:'trending', tier:'premium', name:'X Caption',       cls:'x-caption',     preview:'just posted' },
+  { cat:'trending', tier:'premium', name:'Viral Yellow',    cls:'viral-yellow',  preview:'VIRAL' },
+  { cat:'trending', tier:'premium', name:'Twitch Purple',   cls:'twitch-purple', preview:'LIVE NOW' },
+  { cat:'trending', tier:'premium', name:'Reaction Pop',    cls:'reaction-pop',  preview:'WAIT WHAT?!' },
+  { cat:'trending', tier:'premium', name:'Influencer',      cls:'influencer',    preview:'✨ Slay ✨' },
+  { cat:'trending', tier:'premium', name:'Trending Box',    cls:'trending-box',  preview:'TRENDING NOW' },
+  { cat:'trending', tier:'premium', name:'Hype Bold',       cls:'hype-bold',     preview:'HYPE' },
+  { cat:'trending', tier:'premium', name:'Storytime',       cls:'storytime',     preview:'so <span class="word-highlight">basically</span>' },
+  { cat:'trending', tier:'premium', name:'Pop Out',         cls:'pop-out',       preview:'POP OUT' },
+  { cat:'trending', tier:'premium', name:'Splash',          cls:'splash',        preview:'splash!' },
+  { cat:'trending', tier:'premium', name:'Buzz',            cls:'buzz',          preview:'BUZZING' },
+  { cat:'trending', tier:'premium', name:'Punchline',       cls:'punchline',     preview:'PUNCH LINE' },
 
   // ---------------- CLASSIC (20) ----------------
-  { cat:'classic', name:'Minimal',          cls:'minimal',         preview:'subtle text' },
-  { cat:'classic', name:'Classic Subtitle', cls:'classic-sub',     preview:'Classic subtitle text' },
-  { cat:'classic', name:'Outline',          cls:'outline-style',   preview:'OUTLINE' },
-  { cat:'classic', name:'Clean Modern',     cls:'clean-modern',    preview:'Clean Modern' },
-  { cat:'classic', name:'Closed Caption',   cls:'closed-caption',  preview:'[CC] white text' },
-  { cat:'classic', name:'Newsroom',         cls:'newsroom',        preview:'BREAKING NEWS' },
-  { cat:'classic', name:'Broadcast',        cls:'broadcast',       preview:'Broadcast Style' },
-  { cat:'classic', name:'Documentary',      cls:'documentary',     preview:'A documentary tale' },
-  { cat:'classic', name:'Interview',        cls:'interview',       preview:'…and then I said' },
-  { cat:'classic', name:'Lower Third',      cls:'lower-third',     preview:'Albert · Founder' },
-  { cat:'classic', name:'Plain White',      cls:'plain-white',     preview:'Plain white text' },
-  { cat:'classic', name:'Plain Black',      cls:'plain-black',     preview:'Plain black text' },
-  { cat:'classic', name:'Sans Serif',       cls:'sans-serif',      preview:'Sans Serif' },
-  { cat:'classic', name:'Serif Classic',    cls:'serif-classic',   preview:'Serif Classic' },
-  { cat:'classic', name:'Subtitle Bold',    cls:'subtitle-bold',   preview:'BOLD SUBTITLE' },
-  { cat:'classic', name:'Pure Text',        cls:'pure-text',       preview:'pure text' },
-  { cat:'classic', name:'Bordered',         cls:'bordered',        preview:'BORDERED' },
-  { cat:'classic', name:'Dictation',        cls:'dictation',       preview:'transcribed text' },
-  { cat:'classic', name:'Letterbox',        cls:'letterbox',       preview:'L E T T E R B O X' },
-  { cat:'classic', name:'Editorial',        cls:'editorial',       preview:'Editorial Voice' },
+  { cat:'classic', tier:'free',    name:'Minimal',          cls:'minimal',         preview:'subtle text' },
+  { cat:'classic', tier:'free',    name:'Classic Subtitle', cls:'classic-sub',     preview:'Classic subtitle text' },
+  { cat:'classic', tier:'free',    name:'Outline',          cls:'outline-style',   preview:'OUTLINE' },
+  { cat:'classic', tier:'free',    name:'Clean Modern',     cls:'clean-modern',    preview:'Clean Modern' },
+  { cat:'classic', tier:'premium', name:'Closed Caption',   cls:'closed-caption',  preview:'[CC] white text' },
+  { cat:'classic', tier:'premium', name:'Newsroom',         cls:'newsroom',        preview:'BREAKING NEWS' },
+  { cat:'classic', tier:'premium', name:'Broadcast',        cls:'broadcast',       preview:'Broadcast Style' },
+  { cat:'classic', tier:'premium', name:'Documentary',      cls:'documentary',     preview:'A documentary tale' },
+  { cat:'classic', tier:'premium', name:'Interview',        cls:'interview',       preview:'…and then I said' },
+  { cat:'classic', tier:'premium', name:'Lower Third',      cls:'lower-third',     preview:'Albert · Founder' },
+  { cat:'classic', tier:'premium', name:'Plain White',      cls:'plain-white',     preview:'Plain white text' },
+  { cat:'classic', tier:'premium', name:'Plain Black',      cls:'plain-black',     preview:'Plain black text' },
+  { cat:'classic', tier:'premium', name:'Sans Serif',       cls:'sans-serif',      preview:'Sans Serif' },
+  { cat:'classic', tier:'premium', name:'Serif Classic',    cls:'serif-classic',   preview:'Serif Classic' },
+  { cat:'classic', tier:'premium', name:'Subtitle Bold',    cls:'subtitle-bold',   preview:'BOLD SUBTITLE' },
+  { cat:'classic', tier:'premium', name:'Pure Text',        cls:'pure-text',       preview:'pure text' },
+  { cat:'classic', tier:'premium', name:'Bordered',         cls:'bordered',        preview:'BORDERED' },
+  { cat:'classic', tier:'premium', name:'Dictation',        cls:'dictation',       preview:'transcribed text' },
+  { cat:'classic', tier:'premium', name:'Letterbox',        cls:'letterbox',       preview:'L E T T E R B O X' },
+  { cat:'classic', tier:'premium', name:'Editorial',        cls:'editorial',       preview:'Editorial Voice' },
 
   // ---------------- HITS (20) ----------------
-  { cat:'hits', name:'Neon Glow',    cls:'neon-glow',    preview:'NEON GLOW' },
-  { cat:'hits', name:'Fire',         cls:'fire',         preview:'ON FIRE' },
-  { cat:'hits', name:'Street',       cls:'street',       preview:'STREET' },
-  { cat:'hits', name:'Shadow Drop',  cls:'shadow-drop',  preview:'SHADOW' },
-  { cat:'hits', name:'Lightning',    cls:'lightning',    preview:'⚡ LIGHTNING' },
-  { cat:'hits', name:'Ice Blue',     cls:'ice-blue',     preview:'ICE COLD' },
-  { cat:'hits', name:'Crimson',      cls:'crimson',      preview:'CRIMSON' },
-  { cat:'hits', name:'Gold Rush',    cls:'gold-rush',    preview:'GOLD RUSH' },
-  { cat:'hits', name:'Toxic Green',  cls:'toxic-green',  preview:'TOXIC' },
-  { cat:'hits', name:'Hot Pink',     cls:'hot-pink',     preview:'HOT PINK' },
-  { cat:'hits', name:'Lava',         cls:'lava',         preview:'LAVA' },
-  { cat:'hits', name:'Hologram',     cls:'hologram',     preview:'HOLO' },
-  { cat:'hits', name:'Chrome',       cls:'chrome',       preview:'CHROME' },
-  { cat:'hits', name:'Cyber',        cls:'cyber',        preview:'CYBER 2099' },
-  { cat:'hits', name:'Glitch',       cls:'glitch',       preview:'GLITCH' },
-  { cat:'hits', name:'Ember',        cls:'ember',        preview:'EMBER' },
-  { cat:'hits', name:'Frost',        cls:'frost',        preview:'FROST' },
-  { cat:'hits', name:'Rage',         cls:'rage',         preview:'RAGE!!' },
-  { cat:'hits', name:'Boom',         cls:'boom',         preview:'BOOM' },
-  { cat:'hits', name:'Strike',       cls:'strike',       preview:'STRIKE' },
+  { cat:'hits', tier:'free',    name:'Neon Glow',    cls:'neon-glow',    preview:'NEON GLOW' },
+  { cat:'hits', tier:'free',    name:'Fire',         cls:'fire',         preview:'ON FIRE' },
+  { cat:'hits', tier:'free',    name:'Street',       cls:'street',       preview:'STREET' },
+  { cat:'hits', tier:'free',    name:'Shadow Drop',  cls:'shadow-drop',  preview:'SHADOW' },
+  { cat:'hits', tier:'premium', name:'Lightning',    cls:'lightning',    preview:'⚡ LIGHTNING' },
+  { cat:'hits', tier:'premium', name:'Ice Blue',     cls:'ice-blue',     preview:'ICE COLD' },
+  { cat:'hits', tier:'premium', name:'Crimson',      cls:'crimson',      preview:'CRIMSON' },
+  { cat:'hits', tier:'premium', name:'Gold Rush',    cls:'gold-rush',    preview:'GOLD RUSH' },
+  { cat:'hits', tier:'premium', name:'Toxic Green',  cls:'toxic-green',  preview:'TOXIC' },
+  { cat:'hits', tier:'premium', name:'Hot Pink',     cls:'hot-pink',     preview:'HOT PINK' },
+  { cat:'hits', tier:'premium', name:'Lava',         cls:'lava',         preview:'LAVA' },
+  { cat:'hits', tier:'premium', name:'Hologram',     cls:'hologram',     preview:'HOLO' },
+  { cat:'hits', tier:'premium', name:'Chrome',       cls:'chrome',       preview:'CHROME' },
+  { cat:'hits', tier:'premium', name:'Cyber',        cls:'cyber',        preview:'CYBER 2099' },
+  { cat:'hits', tier:'premium', name:'Glitch',       cls:'glitch',       preview:'GLITCH' },
+  { cat:'hits', tier:'premium', name:'Ember',        cls:'ember',        preview:'EMBER' },
+  { cat:'hits', tier:'premium', name:'Frost',        cls:'frost',        preview:'FROST' },
+  { cat:'hits', tier:'premium', name:'Rage',         cls:'rage',         preview:'RAGE!!' },
+  { cat:'hits', tier:'premium', name:'Boom',         cls:'boom',         preview:'BOOM' },
+  { cat:'hits', tier:'premium', name:'Strike',       cls:'strike',       preview:'STRIKE' },
 
   // ---------------- TITLE (20) ----------------
-  { cat:'title', name:'Karaoke',        cls:'karaoke',        preview:'<span class="word-current">Your</span> <span class="word-next">caption</span>' },
-  { cat:'title', name:'Gradient Wave',  cls:'gradient-wave',  preview:'Gradient Wave' },
-  { cat:'title', name:'Cinematic',      cls:'cinematic',      preview:'Cinematic' },
-  { cat:'title', name:'Soft Glow',      cls:'soft-glow',      preview:'Soft Glow' },
-  { cat:'title', name:'Movie Title',    cls:'movie-title',    preview:'MOVIE TITLE' },
-  { cat:'title', name:'Western',        cls:'western',        preview:'WESTERN' },
-  { cat:'title', name:'Vintage Film',   cls:'vintage-film',   preview:'Vintage Film' },
-  { cat:'title', name:'Trailer',        cls:'trailer',        preview:'COMING SOON' },
-  { cat:'title', name:'Big Drop',       cls:'big-drop',       preview:'BIG DROP' },
-  { cat:'title', name:'Marquee',        cls:'marquee',        preview:'MARQUEE' },
-  { cat:'title', name:'Royal',          cls:'royal',          preview:'ROYAL' },
-  { cat:'title', name:'Epic',           cls:'epic',           preview:'EPIC' },
-  { cat:'title', name:'Saga',           cls:'saga',           preview:'The Saga' },
-  { cat:'title', name:'Noir',           cls:'noir',           preview:'NOIR' },
-  { cat:'title', name:'Heading',        cls:'heading',        preview:'Chapter One' },
-  { cat:'title', name:'Headline',       cls:'headline',       preview:'HEADLINE' },
-  { cat:'title', name:'Banner',         cls:'banner',         preview:'BANNER' },
-  { cat:'title', name:'Stamp',          cls:'stamp',          preview:'APPROVED' },
-  { cat:'title', name:'Award',          cls:'award',          preview:'AWARDS' },
-  { cat:'title', name:'Premiere',       cls:'premiere',       preview:'PREMIERE' },
+  { cat:'title', tier:'free',    name:'Karaoke',        cls:'karaoke',        preview:'<span class="word-current">Your</span> <span class="word-next">caption</span>' },
+  { cat:'title', tier:'free',    name:'Gradient Wave',  cls:'gradient-wave',  preview:'Gradient Wave' },
+  { cat:'title', tier:'free',    name:'Cinematic',      cls:'cinematic',      preview:'Cinematic' },
+  { cat:'title', tier:'free',    name:'Soft Glow',      cls:'soft-glow',      preview:'Soft Glow' },
+  { cat:'title', tier:'premium', name:'Movie Title',    cls:'movie-title',    preview:'MOVIE TITLE' },
+  { cat:'title', tier:'premium', name:'Western',        cls:'western',        preview:'WESTERN' },
+  { cat:'title', tier:'premium', name:'Vintage Film',   cls:'vintage-film',   preview:'Vintage Film' },
+  { cat:'title', tier:'premium', name:'Trailer',        cls:'trailer',        preview:'COMING SOON' },
+  { cat:'title', tier:'premium', name:'Big Drop',       cls:'big-drop',       preview:'BIG DROP' },
+  { cat:'title', tier:'premium', name:'Marquee',        cls:'marquee',        preview:'MARQUEE' },
+  { cat:'title', tier:'premium', name:'Royal',          cls:'royal',          preview:'ROYAL' },
+  { cat:'title', tier:'premium', name:'Epic',           cls:'epic',           preview:'EPIC' },
+  { cat:'title', tier:'premium', name:'Saga',           cls:'saga',           preview:'The Saga' },
+  { cat:'title', tier:'premium', name:'Noir',           cls:'noir',           preview:'NOIR' },
+  { cat:'title', tier:'premium', name:'Heading',        cls:'heading',        preview:'Chapter One' },
+  { cat:'title', tier:'premium', name:'Headline',       cls:'headline',       preview:'HEADLINE' },
+  { cat:'title', tier:'premium', name:'Banner',         cls:'banner',         preview:'BANNER' },
+  { cat:'title', tier:'premium', name:'Stamp',          cls:'stamp',          preview:'APPROVED' },
+  { cat:'title', tier:'premium', name:'Award',          cls:'award',          preview:'AWARDS' },
+  { cat:'title', tier:'premium', name:'Premiere',       cls:'premiere',       preview:'PREMIERE' },
 
   // ---------------- VLOG (20) ----------------
-  { cat:'vlog', name:'Typewriter',  cls:'typewriter',  preview:'typewriter' },
-  { cat:'vlog', name:'Comic',       cls:'comic',       preview:'Fun Comic!' },
-  { cat:'vlog', name:'Retro VHS',   cls:'retro-vhs',   preview:'RETRO VHS' },
-  { cat:'vlog', name:'Podcast',     cls:'podcast',     preview:'The key insight is this...' },
-  { cat:'vlog', name:'Handwritten', cls:'handwritten', preview:'handwritten' },
-  { cat:'vlog', name:'Sticky Note', cls:'sticky-note', preview:'sticky note!' },
-  { cat:'vlog', name:'Sketch',      cls:'sketch',      preview:'sketch' },
-  { cat:'vlog', name:'Marker',      cls:'marker',      preview:'highlight' },
-  { cat:'vlog', name:'Doodle',      cls:'doodle',      preview:'doodle :)' },
-  { cat:'vlog', name:'Diary',       cls:'diary',       preview:'Dear diary,' },
-  { cat:'vlog', name:'Casual',      cls:'casual',      preview:'hey friends' },
-  { cat:'vlog', name:'Chat Bubble', cls:'chat-bubble', preview:'hi there' },
-  { cat:'vlog', name:'Polaroid',    cls:'polaroid',    preview:'memories' },
-  { cat:'vlog', name:'Notebook',    cls:'notebook',    preview:'notebook' },
-  { cat:'vlog', name:'Lifestyle',   cls:'lifestyle',   preview:'lifestyle' },
-  { cat:'vlog', name:'Travel',      cls:'travel',      preview:'Travel Diary' },
-  { cat:'vlog', name:'Cooking',     cls:'cooking',     preview:'recipe time' },
-  { cat:'vlog', name:'Daily',       cls:'daily',       preview:'daily vlog' },
-  { cat:'vlog', name:'Memo',        cls:'memo',        preview:'MEMO' },
-  { cat:'vlog', name:'Scribble',    cls:'scribble',    preview:'scribble!' }
+  { cat:'vlog', tier:'free',    name:'Typewriter',  cls:'typewriter',  preview:'typewriter' },
+  { cat:'vlog', tier:'free',    name:'Comic',       cls:'comic',       preview:'Fun Comic!' },
+  { cat:'vlog', tier:'free',    name:'Retro VHS',   cls:'retro-vhs',   preview:'RETRO VHS' },
+  { cat:'vlog', tier:'free',    name:'Podcast',     cls:'podcast',     preview:'The key insight is this...' },
+  { cat:'vlog', tier:'premium', name:'Handwritten', cls:'handwritten', preview:'handwritten' },
+  { cat:'vlog', tier:'premium', name:'Sticky Note', cls:'sticky-note', preview:'sticky note!' },
+  { cat:'vlog', tier:'premium', name:'Sketch',      cls:'sketch',      preview:'sketch' },
+  { cat:'vlog', tier:'premium', name:'Marker',      cls:'marker',      preview:'highlight' },
+  { cat:'vlog', tier:'premium', name:'Doodle',      cls:'doodle',      preview:'doodle :)' },
+  { cat:'vlog', tier:'premium', name:'Diary',       cls:'diary',       preview:'Dear diary,' },
+  { cat:'vlog', tier:'premium', name:'Casual',      cls:'casual',      preview:'hey friends' },
+  { cat:'vlog', tier:'premium', name:'Chat Bubble', cls:'chat-bubble', preview:'hi there' },
+  { cat:'vlog', tier:'premium', name:'Polaroid',    cls:'polaroid',    preview:'memories' },
+  { cat:'vlog', tier:'premium', name:'Notebook',    cls:'notebook',    preview:'notebook' },
+  { cat:'vlog', tier:'premium', name:'Lifestyle',   cls:'lifestyle',   preview:'lifestyle' },
+  { cat:'vlog', tier:'premium', name:'Travel',      cls:'travel',      preview:'Travel Diary' },
+  { cat:'vlog', tier:'premium', name:'Cooking',     cls:'cooking',     preview:'recipe time' },
+  { cat:'vlog', tier:'premium', name:'Daily',       cls:'daily',       preview:'daily vlog' },
+  { cat:'vlog', tier:'premium', name:'Memo',        cls:'memo',        preview:'MEMO' },
+  { cat:'vlog', tier:'premium', name:'Scribble',    cls:'scribble',    preview:'scribble!' }
 ];
+
+// Shared diamond entitlement icon (also used on the Billing page).
+// Exported so routes/billing.js can import it for plan-card markup.
+const PREMIUM_DIAMOND_SVG = `
+<svg class="premium-badge" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-label="Premium" role="img">
+  <defs>
+    <linearGradient id="premiumDiamondGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF3C7"/>
+      <stop offset="45%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#EC4899"/>
+    </linearGradient>
+  </defs>
+  <path d="M12 2.5 L21 9 L12 21.5 L3 9 Z" fill="url(#premiumDiamondGrad)" stroke="#ffffff" stroke-width="0.7" stroke-linejoin="round"/>
+  <path d="M3.2 9 L20.8 9 M7.5 9 L12 21.5 L16.5 9 M12 2.5 L7.5 9 M12 2.5 L16.5 9" stroke="rgba(255,255,255,0.55)" stroke-width="0.4" fill="none"/>
+</svg>`.trim();
 
 router.get('/', requireAuth, (req, res) => {
   const headHTML = getHeadHTML('Caption Styles');
@@ -212,6 +232,26 @@ router.get('/', requireAuth, (req, res) => {
       margin: 0 auto;
     }
 
+    /* Tier legend (Free vs Premium) */
+    .tier-legend {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .tier-legend .legend-item {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+    }
+    .tier-legend .legend-dot {
+      width: 10px; height: 10px; border-radius: 999px;
+      background: #4ADE80;
+    }
+    .tier-legend .legend-diamond {
+      width: 14px; height: 14px;
+    }
+
     /* Category tabs */
     .category-tabs {
       display: flex;
@@ -263,12 +303,8 @@ router.get('/', requireAuth, (req, res) => {
       color: var(--primary);
     }
 
-    .category-section {
-      display: none;
-    }
-    .category-section.active {
-      display: block;
-    }
+    .category-section { display: none; }
+    .category-section.active { display: block; }
     .category-heading {
       display: flex;
       align-items: center;
@@ -329,7 +365,286 @@ router.get('/', requireAuth, (req, res) => {
       align-items: center;
       justify-content: center;
       gap: 0.4rem;
+      will-change: transform, opacity, filter, background-position;
     }
+
+    /* ====== PREMIUM DIAMOND BADGE ====== */
+    .premium-badge {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    /* Caption preview placement */
+    .preview-container > .premium-badge {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
+      z-index: 6;
+      pointer-events: none;
+    }
+
+    /* ====== AUTOPLAY ANIMATIONS ====== */
+    /* Universal shimmer sweep across every preview */
+    .preview-container::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(110deg,
+        transparent 0%,
+        transparent 35%,
+        rgba(255,255,255,0.07) 50%,
+        transparent 65%,
+        transparent 100%);
+      background-size: 250% 100%;
+      animation: shimmerSweep 4.5s linear infinite;
+      z-index: 2;
+    }
+    @keyframes shimmerSweep {
+      0%   { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    /* Karaoke - alternating word highlight */
+    @keyframes karaokeSwap1 {
+      0%, 49.99% { opacity: 1; }
+      50%, 100%  { opacity: 0.45; }
+    }
+    @keyframes karaokeSwap2 {
+      0%, 49.99% { opacity: 0.45; }
+      50%, 100%  { opacity: 1; }
+    }
+    .karaoke .word-current { animation: karaokeSwap1 2.4s steps(1) infinite; }
+    .karaoke .word-next    { animation: karaokeSwap2 2.4s steps(1) infinite; }
+
+    /* Typewriter caret blink */
+    .typewriter .preview-text::after {
+      content: '|';
+      margin-left: 2px;
+      animation: caretBlink 0.6s steps(1) infinite;
+    }
+    @keyframes caretBlink { 50% { opacity: 0; } }
+
+    /* Gradient flow */
+    @keyframes gradientFlow {
+      0%   { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+    .gradient-wave .preview-text,
+    .tiktok-trend .preview-text,
+    .fire .preview-text,
+    .comic .preview-text,
+    .hologram .preview-text,
+    .royal .preview-text,
+    .chrome .preview-text,
+    .gold-rush .preview-text,
+    .lava .preview-text,
+    .reels-pop .preview-text,
+    .pop-out .preview-text,
+    .award .preview-text,
+    .vintage-film .preview-text {
+      background-size: 200% auto;
+      animation: gradientFlow 4s linear infinite;
+    }
+
+    /* Glow pulse for neon-style presets */
+    @keyframes glowPulse {
+      0%, 100% { filter: brightness(1) saturate(1); }
+      50%      { filter: brightness(1.45) saturate(1.2); }
+    }
+    .neon-glow .preview-text,
+    .soft-glow .preview-text,
+    .lightning .preview-text,
+    .ice-blue .preview-text,
+    .hot-pink .preview-text,
+    .toxic-green .preview-text,
+    .ember .preview-text,
+    .frost .preview-text,
+    .crimson .preview-text,
+    .cyber .preview-text {
+      animation: glowPulse 2s ease-in-out infinite;
+    }
+
+    /* Glitch jitter */
+    @keyframes glitchJitter {
+      0%, 92%, 100% { transform: translate(0,0); }
+      93%   { transform: translate(-2px, 1px); }
+      95%   { transform: translate(2px, -1px); }
+      97%   { transform: translate(-1px, 2px); }
+    }
+    .glitch .preview-text { animation: glitchJitter 2.5s steps(1) infinite; }
+
+    /* Rage shake (preserves the rotated baseline from the static rule) */
+    @keyframes rageShake {
+      0%, 100%  { transform: rotate(-2deg); }
+      25%       { transform: rotate(-3deg) translateX(-1px); }
+      50%       { transform: rotate(-1deg) translateX(1px); }
+      75%       { transform: rotate(-3deg) translateX(-1px); }
+    }
+    .rage .preview-text { animation: rageShake 0.4s steps(4) infinite; }
+
+    /* Buzz vibration */
+    @keyframes buzzVibe {
+      0%, 100% { transform: translate(0,0); }
+      20% { transform: translate(0.5px, -0.5px); }
+      40% { transform: translate(-0.5px, 0.5px); }
+      60% { transform: translate(0.5px, 0.5px); }
+      80% { transform: translate(-0.5px, -0.5px); }
+    }
+    .buzz .preview-text { animation: buzzVibe 0.18s steps(5) infinite; }
+
+    /* Wobble for handwritten / sticky / polaroid / stamp / scribble */
+    @keyframes wobble {
+      0%, 100% { transform: rotate(-2deg); }
+      50%      { transform: rotate(2deg); }
+    }
+    .handwritten .preview-text { animation: wobble 3.5s ease-in-out infinite; }
+    .sticky-note .preview-text { animation: wobble 3s ease-in-out infinite; }
+    .polaroid .preview-text    { animation: wobble 3.6s ease-in-out infinite; }
+    .stamp .preview-text       { animation: wobble 4s ease-in-out infinite; }
+    .scribble .preview-text    { animation: wobble 3.2s ease-in-out infinite; }
+
+    /* Strike thickness pulse */
+    @keyframes strikePulse {
+      0%, 100% { text-decoration-thickness: 2px; }
+      50%      { text-decoration-thickness: 6px; }
+    }
+    .strike .preview-text { animation: strikePulse 1.5s ease-in-out infinite; }
+
+    /* Shadow Drop depth pulse */
+    @keyframes shadowGrow {
+      0%, 100% { text-shadow: 4px 4px 0 rgba(108,58,237,0.7), 8px 8px 0 rgba(108,58,237,0.3); }
+      50%      { text-shadow: 6px 6px 0 rgba(108,58,237,0.85), 12px 12px 0 rgba(108,58,237,0.45); }
+    }
+    .shadow-drop .preview-text { animation: shadowGrow 2.4s ease-in-out infinite; }
+
+    /* Big Drop pulse */
+    @keyframes bigDropPulse {
+      0%, 100% { text-shadow: 6px 6px 0 #1a1a1a, 8px 8px 0 var(--primary); }
+      50%      { text-shadow: 8px 8px 0 #1a1a1a, 12px 12px 0 var(--primary); }
+    }
+    .big-drop .preview-text { animation: bigDropPulse 2.4s ease-in-out infinite; }
+
+    /* Marquee bulb blink */
+    @keyframes marqueeBlink {
+      0%, 100% { text-shadow: 0 0 8px #F59E0B, 0 0 16px #B45309, 0 0 4px #ffffff; }
+      50%      { text-shadow: 0 0 14px #F59E0B, 0 0 24px #fbbf24, 0 0 6px #ffffff; }
+    }
+    .marquee .preview-text { animation: marqueeBlink 1.4s ease-in-out infinite; }
+
+    /* Pop styles - reaction-pop, bold-pop, mrbeast, splash */
+    @keyframes popScale {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.05); }
+    }
+    .reaction-pop .preview-text,
+    .bold-pop .preview-text,
+    .mrbeast .preview-text,
+    .pop-out .preview-text {
+      animation: popScale 1.7s ease-in-out infinite;
+    }
+    .splash .preview-text {
+      animation: popScale 1.5s ease-in-out infinite;
+    }
+
+    /* Influencer twinkle */
+    @keyframes influencerTwinkle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.85; transform: scale(1.04); }
+    }
+    .influencer .preview-text { animation: influencerTwinkle 2.2s ease-in-out infinite; }
+
+    /* Cinematic slow letter expand */
+    @keyframes cinematicLetters {
+      0%, 100% { letter-spacing: 0.15em; opacity: 0.85; }
+      50%      { letter-spacing: 0.18em; opacity: 1; }
+    }
+    .cinematic .preview-text { animation: cinematicLetters 3s ease-in-out infinite; }
+
+    /* Boom flash */
+    @keyframes boomFlash {
+      0%, 60%, 100% { filter: brightness(1); }
+      65%, 70%      { filter: brightness(1.7); }
+    }
+    .boom .preview-text { animation: boomFlash 1.6s ease-in-out infinite; }
+
+    /* Yt-shorts subtle pulse */
+    @keyframes ytPulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(255,0,0,0); transform: scale(1); }
+      50%      { box-shadow: 0 0 14px rgba(255,0,0,0.6); transform: scale(1.04); }
+    }
+    .yt-shorts .preview-text { animation: ytPulse 1.6s ease-in-out infinite; }
+
+    /* Twitch-purple glow */
+    @keyframes twitchGlow {
+      0%, 100% { box-shadow: 0 0 0 rgba(145,70,255,0); }
+      50%      { box-shadow: 0 0 16px rgba(145,70,255,0.7); }
+    }
+    .twitch-purple .preview-text { animation: twitchGlow 2s ease-in-out infinite; }
+
+    /* Trending box lift */
+    @keyframes liftPulse {
+      0%, 100% { box-shadow: 0 4px 12px rgba(255,255,255,0.2); transform: translateY(0); }
+      50%      { box-shadow: 0 8px 22px rgba(255,255,255,0.4); transform: translateY(-2px); }
+    }
+    .trending-box .preview-text { animation: liftPulse 2.4s ease-in-out infinite; }
+
+    /* Hype bold red glow */
+    @keyframes hypePulse {
+      0%, 100% { text-shadow: 0 0 12px rgba(255,23,68,0.5); }
+      50%      { text-shadow: 0 0 22px rgba(255,23,68,0.85); }
+    }
+    .hype-bold .preview-text { animation: hypePulse 1.5s ease-in-out infinite; }
+
+    /* Cooking pot warmth pulse */
+    @keyframes warmth {
+      0%, 100% { filter: brightness(1); }
+      50%      { filter: brightness(1.15); }
+    }
+    .cooking .preview-text { animation: warmth 2.4s ease-in-out infinite; }
+
+    /* Snap subtle bob */
+    @keyframes snapBob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-2px); }
+    }
+    .snap-style .preview-text { animation: snapBob 1.8s ease-in-out infinite; }
+
+    /* Doodle bounce */
+    @keyframes doodleBounce {
+      0%, 100% { transform: translateY(0) rotate(-1deg); }
+      50%      { transform: translateY(-2px) rotate(1deg); }
+    }
+    .doodle .preview-text { animation: doodleBounce 2s ease-in-out infinite; }
+
+    /* Marker highlight slide */
+    @keyframes markerSlide {
+      0%   { background-size: 0% 50%; }
+      50%, 100% { background-size: 100% 50%; }
+    }
+    .marker .preview-text {
+      background-repeat: no-repeat;
+      background-position: 0 100%;
+      animation: markerSlide 2.8s ease-in-out infinite;
+    }
+
+    /* Premiere subtle pulse */
+    @keyframes premierePulse {
+      0%, 100% { letter-spacing: 0.15em; }
+      50%      { letter-spacing: 0.2em; }
+    }
+    .premiere .preview-text { animation: premierePulse 3s ease-in-out infinite; }
+
+    /* Royal shimmer */
+    .royal .preview-text { /* gradientFlow already applied above */ }
+
+    /* Punchline accent grow */
+    @keyframes punchAccent {
+      0%, 100% { border-color: #FF1744; }
+      50%      { border-color: #FFB300; }
+    }
+    .punchline .preview-text { animation: punchAccent 1.4s ease-in-out infinite; }
 
     /* =============================== */
     /*   ORIGINAL 20 PRESET STYLES     */
@@ -342,7 +657,7 @@ router.get('/', requireAuth, (req, res) => {
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-    .karaoke .word-next { color: #ffffff; opacity: 0.7; }
+    .karaoke .word-next { color: #ffffff; }
 
     .bold-pop .preview-text {
       font-weight: 900; font-size: 1.4rem; color: #ffffff;
@@ -366,7 +681,6 @@ router.get('/', requireAuth, (req, res) => {
         0 0 10px var(--neon-green), 0 0 20px var(--neon-green),
         0 0 30px var(--neon-green), 0 0 40px var(--neon-cyan),
         0 0 20px var(--neon-cyan);
-      filter: brightness(1.2);
     }
 
     .gradient-wave .preview-text {
@@ -453,7 +767,6 @@ router.get('/', requireAuth, (req, res) => {
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      filter: drop-shadow(2px 2px 0 #000);
     }
 
     .fire .preview-text {
@@ -463,7 +776,6 @@ router.get('/', requireAuth, (req, res) => {
       -webkit-text-fill-color: transparent;
       background-clip: text;
       text-transform: uppercase; letter-spacing: 0.03em;
-      filter: drop-shadow(0 0 8px rgba(255,107,0,0.6));
     }
 
     .clean-modern .preview-text {
@@ -490,7 +802,6 @@ router.get('/', requireAuth, (req, res) => {
 
     .shadow-drop .preview-text {
       font-weight: 800; font-size: 1.3rem; color: #ffffff;
-      text-shadow: 4px 4px 0 rgba(108,58,237,0.7), 8px 8px 0 rgba(108,58,237,0.3);
       text-transform: uppercase; letter-spacing: 0.03em;
     }
 
@@ -504,7 +815,6 @@ router.get('/', requireAuth, (req, res) => {
       background: linear-gradient(135deg, #F58529, #DD2A7B, #8134AF);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text; text-transform: uppercase; letter-spacing: 0.04em;
-      filter: drop-shadow(0 0 6px rgba(221,42,123,0.4));
     }
     .yt-shorts .preview-text {
       font-weight: 900; font-size: 1.35rem; color: #FFFFFF;
@@ -545,7 +855,6 @@ router.get('/', requireAuth, (req, res) => {
       background: linear-gradient(135deg, #FF6FB5, #FFC1F0);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
-      filter: drop-shadow(0 0 6px rgba(255,111,181,0.4));
     }
     .trending-box .preview-text {
       font-weight: 800; font-size: 1.05rem; color: #1a1a1a;
@@ -691,7 +1000,6 @@ router.get('/', requireAuth, (req, res) => {
       background: linear-gradient(180deg, #FEF3C7 0%, #FBBF24 50%, #B45309 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text; text-transform: uppercase; letter-spacing: 0.04em;
-      filter: drop-shadow(2px 2px 0 #422006);
     }
     .toxic-green .preview-text {
       font-weight: 800; font-size: 1.3rem; color: #84CC16;
@@ -708,12 +1016,10 @@ router.get('/', requireAuth, (req, res) => {
       background: linear-gradient(180deg, #FBBF24 0%, #F97316 50%, #B91C1C 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text; text-transform: uppercase; letter-spacing: 0.04em;
-      filter: drop-shadow(0 0 8px rgba(249,115,22,0.6));
     }
     .hologram .preview-text {
       font-weight: 800; font-size: 1.3rem;
       background: linear-gradient(90deg, #00D9FF, #B14EFF, #FF6FB5, #FFEA00, #00D9FF);
-      background-size: 200% 100%;
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text; text-transform: uppercase; letter-spacing: 0.05em;
     }
@@ -722,7 +1028,6 @@ router.get('/', requireAuth, (req, res) => {
       background: linear-gradient(180deg, #f5f5f5 0%, #b8b8b8 30%, #6b6b6b 50%, #b8b8b8 70%, #f5f5f5 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text; text-transform: uppercase; letter-spacing: 0.05em;
-      filter: drop-shadow(2px 2px 0 #1a1a1a);
     }
     .cyber .preview-text {
       font-family: 'Courier New', monospace;
@@ -750,7 +1055,6 @@ router.get('/', requireAuth, (req, res) => {
       font-weight: 900; font-size: 1.35rem; color: #FFFFFF;
       background: #DC2626; padding: 4px 12px; border-radius: 3px;
       text-transform: uppercase; letter-spacing: 0.05em;
-      transform: rotate(-2deg);
     }
     .boom .preview-text {
       font-weight: 900; font-size: 1.5rem; color: #FFEA00;
@@ -784,7 +1088,9 @@ router.get('/', requireAuth, (req, res) => {
       font-family: 'Georgia', serif; font-style: italic;
       font-weight: 600; font-size: 1.25rem;
       color: #FBBF24; letter-spacing: 0.05em;
-      filter: sepia(0.4);
+      background: linear-gradient(90deg, #FCD34D, #FBBF24, #B45309, #FBBF24, #FCD34D);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
     .trailer .preview-text {
       font-family: 'Helvetica', Arial, sans-serif;
@@ -794,13 +1100,11 @@ router.get('/', requireAuth, (req, res) => {
     .big-drop .preview-text {
       font-weight: 900; font-size: 1.5rem; color: #ffffff;
       text-transform: uppercase; letter-spacing: 0.04em;
-      text-shadow: 6px 6px 0 #1a1a1a, 8px 8px 0 var(--primary);
     }
     .marquee .preview-text {
       font-family: 'Georgia', serif;
       font-weight: 900; font-size: 1.4rem; color: #FBBF24;
       text-transform: uppercase; letter-spacing: 0.1em;
-      text-shadow: 0 0 8px #F59E0B, 0 0 16px #B45309, 0 0 4px #ffffff;
     }
     .royal .preview-text {
       font-family: 'Georgia', serif;
@@ -810,7 +1114,7 @@ router.get('/', requireAuth, (req, res) => {
       background-clip: text; text-transform: uppercase; letter-spacing: 0.12em;
     }
     .epic .preview-text {
-      font-weight: 900; font-size: 1.6rem; color: #ffffff;
+      font-weight: 900; font-size: 1.6rem;
       text-transform: uppercase; letter-spacing: 0.1em;
       -webkit-text-stroke: 2px #ffffff;
       color: transparent;
@@ -826,7 +1130,6 @@ router.get('/', requireAuth, (req, res) => {
       font-family: 'Georgia', serif;
       font-weight: 700; font-size: 1.4rem; color: #ffffff;
       text-transform: uppercase; letter-spacing: 0.3em;
-      filter: contrast(1.4);
     }
     .heading .preview-text {
       font-family: 'Helvetica', Arial, sans-serif;
@@ -851,8 +1154,6 @@ router.get('/', requireAuth, (req, res) => {
       font-weight: 900; font-size: 1.25rem; color: #DC2626;
       text-transform: uppercase; letter-spacing: 0.1em;
       border: 3px solid #DC2626; padding: 4px 12px; border-radius: 4px;
-      transform: rotate(-6deg);
-      filter: opacity(0.9);
     }
     .award .preview-text {
       font-family: 'Georgia', serif;
@@ -873,7 +1174,7 @@ router.get('/', requireAuth, (req, res) => {
     .handwritten .preview-text {
       font-family: 'Brush Script MT', 'Lucida Handwriting', cursive;
       font-weight: 400; font-size: 1.5rem; color: #ffffff;
-      letter-spacing: 0.02em; transform: rotate(-2deg);
+      letter-spacing: 0.02em;
     }
     .sticky-note .preview-container { background: #1a1a1a; }
     .sticky-note .preview-text {
@@ -881,7 +1182,6 @@ router.get('/', requireAuth, (req, res) => {
       background: #FEF08A; color: #422006;
       font-weight: 700; font-size: 1rem;
       padding: 8px 14px; border-radius: 2px;
-      transform: rotate(-3deg);
       box-shadow: 3px 4px 8px rgba(0,0,0,0.4);
     }
     .sketch .preview-text {
@@ -893,7 +1193,7 @@ router.get('/', requireAuth, (req, res) => {
     .marker .preview-text {
       font-family: 'Comic Sans MS', cursive;
       font-weight: 700; font-size: 1.15rem; color: #1a1a1a;
-      background: linear-gradient(180deg, transparent 50%, #FACC15 50%);
+      background-image: linear-gradient(180deg, transparent 50%, #FACC15 50%);
       padding: 0 6px;
     }
     .doodle .preview-text {
@@ -923,7 +1223,6 @@ router.get('/', requireAuth, (req, res) => {
       background: #f5f5f5; color: #1a1a1a;
       font-weight: 500; font-size: 0.95rem;
       padding: 8px 14px 16px 14px;
-      transform: rotate(-2deg);
       box-shadow: 2px 4px 12px rgba(0,0,0,0.5);
     }
     .notebook .preview-text {
@@ -1051,7 +1350,7 @@ router.get('/', requireAuth, (req, res) => {
       font-weight: 700;
       padding: 2px 6px;
       border-radius: 10px;
-      z-index: 2;
+      z-index: 7;
     }
 
     /* Modal styles */
@@ -1165,6 +1464,17 @@ router.get('/', requireAuth, (req, res) => {
       opacity: 0.7;
     }
 
+    /* Reduced motion: respect user preference */
+    @media (prefers-reduced-motion: reduce) {
+      .preview-container::after,
+      .preview-text,
+      .karaoke .word-current,
+      .karaoke .word-next,
+      .typewriter .preview-text::after {
+        animation: none !important;
+      }
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .presets-grid {
@@ -1205,9 +1515,10 @@ router.get('/', requireAuth, (req, res) => {
 
   const sectionsHTML = CATEGORIES.map((c, i) => {
     const cards = PRESETS.filter(p => p.cat === c.id).map(p => `
-      <div class="preset-card ${p.cls}">
+      <div class="preset-card ${p.cls}" data-tier="${p.tier}">
         <div class="preview-container">
           <div class="preview-text">${p.preview}</div>
+          ${p.tier === 'premium' ? PREMIUM_DIAMOND_SVG : ''}
         </div>
         <div class="preset-info">
           <h3 class="preset-name">${p.name}</h3>
@@ -1243,6 +1554,11 @@ router.get('/', requireAuth, (req, res) => {
       </div>
 
       <div class="content-wrapper">
+        <div class="tier-legend">
+          <span class="legend-item"><span class="legend-dot"></span> Free</span>
+          <span class="legend-item">${PREMIUM_DIAMOND_SVG.replace('class="premium-badge"', 'class="premium-badge legend-diamond"')} Premium</span>
+        </div>
+
         <div class="category-tabs" role="tablist">
           ${tabsHTML}
         </div>
@@ -1290,7 +1606,6 @@ router.get('/', requireAuth, (req, res) => {
         document.querySelectorAll('.category-section').forEach(sec => {
           sec.classList.toggle('active', sec.getAttribute('data-cat') === cat);
         });
-        // Smooth scroll to top of grid area
         const wrapper = document.querySelector('.content-wrapper');
         if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
@@ -1317,7 +1632,6 @@ router.get('/', requireAuth, (req, res) => {
       document.getElementById('styleModal').classList.remove('show');
     }
 
-    // Close modal on overlay click
     document.getElementById('styleModal').addEventListener('click', function(e) {
       if (e.target === this) closeModal();
     });
@@ -1336,7 +1650,6 @@ router.get('/', requireAuth, (req, res) => {
           closeModal();
           showToast(selectedStyle.name + ' set as your default caption style!');
 
-          // Highlight the selected card
           document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('selected'));
           const sel = document.querySelector('.preset-card.' + selectedStyle.class);
           if (sel) sel.classList.add('selected');
@@ -1365,7 +1678,6 @@ router.get('/', requireAuth, (req, res) => {
       }, 2500);
     }
 
-    // Load saved preference on page load — also activate the category that contains the saved style
     (async function() {
       try {
         const response = await fetch('/caption-presets/get-preference');
@@ -1401,13 +1713,10 @@ router.post('/save-preference', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Style and name are required' });
     }
 
-    // Persist to user_settings.default_caption_style so other features (Smart Shorts
-    // caption picker, Settings page) all see the same value.
     const db = getDb();
     await db.query('INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [req.user.id]);
     await db.query('UPDATE user_settings SET default_caption_style = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2', [style, req.user.id]);
 
-    // Also set a cookie so legacy reads still work without an extra DB roundtrip.
     res.cookie('caption_style', JSON.stringify({ style, name }), {
       maxAge: 365 * 24 * 60 * 60 * 1000,
       httpOnly: false,
@@ -1429,12 +1738,10 @@ router.get('/get-preference', requireAuth, async (req, res) => {
     const result = await db.query('SELECT default_caption_style FROM user_settings WHERE user_id = $1', [req.user.id]);
     const dbStyle = result.rows[0]?.default_caption_style;
     if (dbStyle) {
-      // Best-effort label lookup — find the preset by class slug.
       const found = PRESETS.find(p => p.cls === dbStyle);
       const name = found ? found.name : dbStyle;
       return res.json({ style: dbStyle, name });
     }
-    // Cookie fallback for older preferences
     const pref = req.cookies?.caption_style;
     if (pref) {
       const parsed = JSON.parse(pref);
@@ -1446,4 +1753,6 @@ router.get('/get-preference', requireAuth, async (req, res) => {
   }
 });
 
+// Export the diamond SVG so other routes (e.g. billing) can reuse it.
 module.exports = router;
+module.exports.PREMIUM_DIAMOND_SVG = PREMIUM_DIAMOND_SVG;

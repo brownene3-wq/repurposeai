@@ -3,6 +3,8 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { userOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+// Reuse the same diamond entitlement icon used on the Caption Styles page so visuals stay consistent.
+const { PREMIUM_DIAMOND_SVG } = require('./caption-presets');
 
 const STRIPE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || '';
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
@@ -33,6 +35,7 @@ router.get('/', requireAuth, (req, res) => {
       .plan-badge{padding:.4rem 1rem;border-radius:50px;font-size:.8rem;font-weight:600;background:rgba(16,185,129,0.15);color:var(--success)}
       .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.2rem;margin-bottom:3rem}
       .price-card{background:var(--surface);border-radius:16px;padding:1.8rem;border:var(--border-subtle);transition:all .3s;position:relative}
+      .price-card>.premium-badge{position:absolute;top:14px;right:14px;width:24px;height:24px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));pointer-events:none;z-index:2}
       .price-card.featured{border-color:var(--primary);box-shadow:0 0 40px rgba(108,58,237,0.2);transform:scale(1.02)}
       .price-card.featured::before{content:'MOST POPULAR';position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--gradient-1);color:#fff;padding:.3rem 1rem;border-radius:20px;font-size:.7rem;font-weight:700;letter-spacing:.5px}
       .price-card h3{font-size:1.05rem;font-weight:700;margin-bottom:.5rem}
@@ -89,6 +92,7 @@ router.get('/', requireAuth, (req, res) => {
         </div>
 
         <div class="price-card${userPlan === 'free' ? ' featured' : ''}">
+          ${PREMIUM_DIAMOND_SVG}
           <h3>Starter</h3>
           <div class="price">$19<span>/month</span></div>
           <p class="desc">Perfect for consistent creators</p>
@@ -109,6 +113,7 @@ router.get('/', requireAuth, (req, res) => {
         </div>
 
         <div class="price-card${userPlan === 'starter' ? ' featured' : ''}">
+          ${PREMIUM_DIAMOND_SVG}
           <h3>Pro</h3>
           <div class="price">$39<span>/month</span></div>
           <p class="desc">For creators serious about growth</p>
@@ -130,6 +135,7 @@ router.get('/', requireAuth, (req, res) => {
         </div>
 
         <div class="price-card">
+          ${PREMIUM_DIAMOND_SVG}
           <h3>Teams</h3>
           <div class="price">$79<span>/month</span></div>
           <p class="desc">Scale with your whole team</p>
