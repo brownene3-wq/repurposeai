@@ -404,7 +404,8 @@ router.put('/api/entries/:id', requireAuth, async (req, res) => {
       status: req.body.status,
       contentText: req.body.contentText,
       notes: req.body.notes,
-      color: req.body.color
+      color: req.body.color,
+      reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0
     });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
     res.json({ entry });

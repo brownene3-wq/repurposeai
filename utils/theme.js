@@ -260,6 +260,7 @@ ${navLinks}
           <span class="user-card-caret" aria-hidden="true">&#x25BE;</span>
         </button>
         <div class="user-popover" id="userPopover" role="menu" aria-labelledby="userCardBtn" hidden>
+          <a href="/notifications" role="menuitem"><span class="nav-icon">&#x1F514;</span><span class="nav-label">Notifications</span></a>
           <a href="/settings" role="menuitem"><span class="nav-icon">&#x2699;&#xFE0F;</span><span class="nav-label">Settings</span></a>
           <a href="/billing" role="menuitem"><span class="nav-icon">&#x1F4B3;</span><span class="nav-label">Billing</span></a>
           <hr>
