@@ -175,22 +175,17 @@ async function renderEditor(req, res) {
                 entire bottom half, edge-to-edge.
        All three panels in row 2 use height:100% so they stop at the
        row boundary; nothing bleeds into row 3. */
-    /* Task #93 — Single source of truth: grid-template-areas. Replaces
-       the previous mix of grid-row/grid-column rules so only one model
-       owns placement. The asymmetric layout per Albert's spec:
+    /* Task #94 — Both side panels reduced to 48vh, Timeline fills the
+       entire bottom row. Layout:
          topbar    topbar    topbar       (56px)
-         media     preview   sidebar      (50vh — Media library and
-         media     timeline  timeline      Sidebar live here; Media
-                                           also spans into row 3)
-         (row 3)                          (1fr → ~remaining height,
-                                           Timeline takes cols 2-3 here,
-                                           Media library continues)
+         media     preview   sidebar      (48vh — both panels, top-aligned)
+         timeline  timeline  timeline     (1fr — fills remaining height)
        Net result:
-       - Media Library = full height left rail
-       - Editor Sidebar = 50vh, ends at the Export Video button row
-       - Timeline = cols 2-3 of row 3, starts right of Media library,
-         extends to right edge, sits below the Sidebar */
-    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px 50vh 1fr;grid-template-areas:"topbar topbar topbar" "media preview sidebar" "media timeline timeline";height:100vh;gap:0;padding:0;overflow:hidden;isolation:isolate}
+       - Media Library = 48vh tall (was full-height rail)
+       - Editor Sidebar = 48vh tall (was 50vh)
+       - Timeline = full width across the bottom (no longer overlapping
+         either panel; sits in its own row 3 from edge to edge) */
+    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px 48vh 1fr;grid-template-areas:"topbar topbar topbar" "media preview sidebar" "timeline timeline timeline";height:100vh;gap:0;padding:0;overflow:hidden;isolation:isolate}
     .editor-topbar{grid-area:topbar}
     .media-library{grid-area:media;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
     .editor-main{grid-area:preview;display:flex;flex-direction:column;background:#0a0612;overflow:hidden;min-width:0}
@@ -462,8 +457,8 @@ async function renderEditor(req, res) {
     body.light{color:#1a1a2e}
     /* Task #93 — Responsive breakpoints stay on the same grid-template-
        areas pattern; only the column widths shrink at narrower screens. */
-    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px;grid-template-rows:56px 50vh 1fr}}
-    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px;grid-template-rows:56px 50vh 1fr}}
+    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px;grid-template-rows:56px 48vh 1fr}}
+    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px;grid-template-rows:56px 48vh 1fr}}
     /* Below 768px the layout flattens to a single column stack. Areas
        redefined so each panel claims its own row. */
     @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto auto auto auto auto;grid-template-areas:"topbar" "media" "preview" "sidebar" "timeline";height:auto;gap:0}.media-library{display:flex;flex-direction:column;height:auto;max-height:50vh}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none;height:auto}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
@@ -554,7 +549,9 @@ async function renderEditor(req, res) {
     /* ═════════════════════════════════════════════════════════════════════ */
     .ml-search{padding:5px 8px}
     .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:8px 10px;color:#ccc;font-size:13px;outline:none}
-    .ml-body{flex:1;overflow-y:auto;padding:5px 6px}
+    /* Task #94 — Media library body gets a touch more padding so the
+       file grid has breathing room inside the now-shorter 48vh panel. */
+    .ml-body{flex:1;overflow-y:auto;padding:8px 10px}
     .ml-upload{border:2px dashed rgba(108,58,237,.2);border-radius:9px;padding:12px;text-align:center;margin-bottom:7px;cursor:pointer;transition:all .25s;background:rgba(108,58,237,.02)}
     .ml-upload:hover{border-color:#7c3aed;background:rgba(108,58,237,.06)}
     .ml-section{font-size:11px;font-weight:700;color:#7a6d9c;text-transform:uppercase;letter-spacing:.8px;padding:10px 4px 6px;display:flex;align-items:center;gap:6px}
@@ -572,7 +569,7 @@ async function renderEditor(req, res) {
     .ml-fth .ml-add{position:absolute;bottom:2px;left:2px;background:rgba(108,58,237,.8);color:#fff;font-size:7px;padding:1px 4px;border-radius:2px;font-weight:700;opacity:0;transition:opacity .2s}
     .ml-fitem:hover .ml-add{opacity:1}
     .ml-fnm{padding:6px 8px;font-size:12px;color:#a18ed0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .ml-foot{padding:8px 10px;border-top:1px solid rgba(108,58,237,.05);display:flex;gap:6px}
+    .ml-foot{padding:10px 12px;border-top:1px solid rgba(108,58,237,.05);display:flex;gap:8px}
     .ml-fb{flex:1;padding:9px 10px;background:rgba(108,58,237,.05);border:1px solid rgba(108,58,237,.12);border-radius:7px;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer;text-align:center;transition:all .2s}.ml-fitem.selected{border:2px solid #6c3aed;background:rgba(108,58,237,.15)}.ml-fitem:hover{background:rgba(108,58,237,.08);transform:translateY(-1px)}.ml-folder{cursor:pointer;transition:background .2s}.ml-folder:hover{background:rgba(108,58,237,.1);border-radius:6px}.ml-folder.open{background:rgba(108,58,237,.08)}.ml-fb:hover{background:rgba(108,58,237,.15)!important;transform:translateY(-1px)}.tb3{cursor:pointer;transition:all .15s ease}.tb3:hover{background:rgba(108,58,237,.15)!important;transform:scale(1.02)}.tb3.on{background:rgba(108,58,237,.2)!important;border-color:rgba(108,58,237,.5)!important}.mt-tool-btn{cursor:pointer;transition:all .15s}.mt-tool-btn:hover{background:rgba(108,58,237,.2)}.annotation-tool-btn{cursor:pointer;transition:all .15s}.annotation-tool-btn:hover{background:rgba(108,58,237,.15)}.annotation-tool-btn.active{background:rgba(108,58,237,.25);border-color:#6c3aed}@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
     .ml-fb:hover{background:rgba(108,58,237,.12);color:#a78bfa}
     .ml-fb.ai{background:linear-gradient(135deg,rgba(108,58,237,.08),rgba(236,72,153,.04));border-color:rgba(108,58,237,.1);color:#a78bfa}
@@ -652,12 +649,16 @@ async function renderEditor(req, res) {
     .editor-sidebar .cat-btn:hover{background:rgba(108,58,237,.06);color:#a78bfa}
     .editor-sidebar .cat-btn.on{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;box-shadow:0 2px 8px rgba(108,58,237,.3)}
     .editor-sidebar .cat-btn .ci{font-size:13px}
-    .editor-sidebar .t-body{flex:1;overflow-y:auto;padding:6px}
-    .editor-sidebar .tool-sec{margin-bottom:6px}
-    .editor-sidebar .tool-sec-title{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:4px 2px 3px;display:flex;align-items:center;gap:4px}
+    /* Task #94 — Slightly more breathing room on the AI tools list so
+       the reduced 48vh sidebar doesn't feel compressed. Padding bumped
+       on .t-body, gap+margin on .tg2 + .tool-sec, vertical padding on
+       .tb3 buttons. Hitboxes grow with the padding so taps stay easy. */
+    .editor-sidebar .t-body{flex:1;overflow-y:auto;padding:10px}
+    .editor-sidebar .tool-sec{margin-bottom:10px}
+    .editor-sidebar .tool-sec-title{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:4px 2px 5px;display:flex;align-items:center;gap:4px}
     .editor-sidebar .tool-sec-title::after{content:'';flex:1;height:1px;background:rgba(108,58,237,.05)}
-    .editor-sidebar .tg2{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px}
-    .editor-sidebar .tb3{flex:1 1 calc(50% - 3px);min-width:0;padding:8px 4px;text-align:center;font-size:10px;font-weight:600;color:#b8a6d9;background:#16112a;border:1px solid rgba(108,58,237,.06);border-radius:6px;cursor:pointer;transition:all .2s;white-space:nowrap}
+    .editor-sidebar .tg2{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+    .editor-sidebar .tb3{flex:1 1 calc(50% - 6px);min-width:0;padding:11px 6px;text-align:center;font-size:10px;font-weight:600;color:#b8a6d9;background:#16112a;border:1px solid rgba(108,58,237,.06);border-radius:6px;cursor:pointer;transition:all .2s;white-space:nowrap}
     .editor-sidebar .tb3:hover{border-color:#7c3aed;background:rgba(108,58,237,.07)}
     .editor-sidebar .tb3.on{background:linear-gradient(135deg,rgba(108,58,237,.15),rgba(236,72,153,.06));border-color:#7c3aed;color:#e9d5ff}
     .editor-sidebar .tb3.ai-t{border-color:rgba(236,72,153,.08);background:linear-gradient(135deg,rgba(108,58,237,.04),rgba(236,72,153,.02))}
