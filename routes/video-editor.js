@@ -175,15 +175,29 @@ async function renderEditor(req, res) {
                 entire bottom half, edge-to-edge.
        All three panels in row 2 use height:100% so they stop at the
        row boundary; nothing bleeds into row 3. */
-    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px minmax(0,1fr) minmax(280px,1fr);height:100vh;gap:0;padding:0;overflow:hidden;isolation:isolate}
-    .editor-topbar{grid-column:1/4;grid-row:1}
-    .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
-    .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
-    .editor-sidebar{grid-column:3;grid-row:2;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
-    /* Timeline at row 3 spanning columns 1/4 — full viewport width.
-       z-index:10 + position:relative is a defensive backstop. */
-    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:10;width:100%}
-    .editor-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0a0612;grid-column:2;grid-row:2}
+    /* Task #93 — Single source of truth: grid-template-areas. Replaces
+       the previous mix of grid-row/grid-column rules so only one model
+       owns placement. The asymmetric layout per Albert's spec:
+         topbar    topbar    topbar       (56px)
+         media     preview   sidebar      (50vh — Media library and
+         media     timeline  timeline      Sidebar live here; Media
+                                           also spans into row 3)
+         (row 3)                          (1fr → ~remaining height,
+                                           Timeline takes cols 2-3 here,
+                                           Media library continues)
+       Net result:
+       - Media Library = full height left rail
+       - Editor Sidebar = 50vh, ends at the Export Video button row
+       - Timeline = cols 2-3 of row 3, starts right of Media library,
+         extends to right edge, sits below the Sidebar */
+    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px 50vh 1fr;grid-template-areas:"topbar topbar topbar" "media preview sidebar" "media timeline timeline";height:100vh;gap:0;padding:0;overflow:hidden;isolation:isolate}
+    .editor-topbar{grid-area:topbar}
+    .media-library{grid-area:media;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
+    .editor-main{grid-area:preview;display:flex;flex-direction:column;background:#0a0612;overflow:hidden;min-width:0}
+    .editor-sidebar{grid-area:sidebar;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
+    /* Timeline owns the bottom-right area (cols 2-3 of row 3). z-index
+       backstop kept in case any future edit re-introduces overflow. */
+    #timelineContainer{grid-area:timeline;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:10;width:100%}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
     .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center;align-items:center}
     .upload-zone>*{max-width:100%}
@@ -196,7 +210,7 @@ async function renderEditor(req, res) {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
     .video-preview-area.has-video{display:flex;background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000}
-.timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-column:1/4;grid-row:3}
+.timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-area:timeline}
     .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
     .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
     .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
@@ -280,7 +294,7 @@ async function renderEditor(req, res) {
        is the grid default; height:100% + max-height:100% pin it to
        the track so the bottom edge is FLUSH with the top of the
        timeline at row 3. Inner .t-body still handles its own scroll. */
-    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0;min-height:0;height:100%;max-height:100%;align-self:stretch}
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-area:sidebar;width:auto;min-width:0;min-height:0;height:100%;max-height:100%;align-self:stretch}
     .editor-sidebar .cat-tabs-new{flex:none}
     .editor-sidebar .t-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
     .editor-sidebar .exp-section{flex:none}
@@ -446,9 +460,13 @@ async function renderEditor(req, res) {
 
     /* Generic body/text fallback so text on the editor isn't pure white in light mode */
     body.light{color:#1a1a2e}
-    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px;grid-template-rows:56px minmax(0,1fr) minmax(280px,1fr)}}
-    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px;grid-template-rows:56px minmax(0,1fr) minmax(260px,1fr)}}
-    @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:flex;flex-direction:column}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+    /* Task #93 — Responsive breakpoints stay on the same grid-template-
+       areas pattern; only the column widths shrink at narrower screens. */
+    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px;grid-template-rows:56px 50vh 1fr}}
+    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px;grid-template-rows:56px 50vh 1fr}}
+    /* Below 768px the layout flattens to a single column stack. Areas
+       redefined so each panel claims its own row. */
+    @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto auto auto auto auto;grid-template-areas:"topbar" "media" "preview" "sidebar" "timeline";height:auto;gap:0}.media-library{display:flex;flex-direction:column;height:auto;max-height:50vh}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none;height:auto}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
   
@@ -508,7 +526,7 @@ async function renderEditor(req, res) {
        exactly grid-row:2 and stops at the timeline's top edge.
        overflow-y:auto stays for safety; inner .ml-body still does
        the actual file-grid scroll. */
-    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-column:1;grid-row:2;min-height:0;height:100%;max-height:100%;align-self:stretch}
+    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-area:media;min-height:0;height:100%;max-height:100%;align-self:stretch}
     /* Task #68 — Media library text bumped to dashboard-scale sizing.
        Was 8-11px; rest of the app uses 12-14px. This block keeps the
        same visual hierarchy (header > tabs > items > section labels)
@@ -600,10 +618,13 @@ async function renderEditor(req, res) {
 .fullscreen-btn:hover{background:rgba(124,58,237,.95);transform:scale(1.08)}
 .fullscreen-btn svg{width:18px;height:18px}
 .editor-container.fullscreen-mode .media-library,.editor-container.fullscreen-mode .editor-sidebar{display:none!important}
-.editor-container.fullscreen-mode{grid-template-columns:1fr!important}
-.editor-container.fullscreen-mode .editor-main{grid-column:1!important}
-.editor-container.fullscreen-mode .editor-topbar{grid-column:1!important}
-.editor-container.fullscreen-mode #timelineContainer{grid-column:1!important}
+/* Task #93 — Fullscreen mode redefines the grid as a single-column,
+   2-row stack: topbar (auto) / preview (1fr) / timeline (auto). The
+   side panels are hidden separately. */
+.editor-container.fullscreen-mode{grid-template-columns:1fr!important;grid-template-rows:auto 1fr auto!important;grid-template-areas:"topbar" "preview" "timeline"!important}
+.editor-container.fullscreen-mode .editor-main{grid-area:preview!important}
+.editor-container.fullscreen-mode .editor-topbar{grid-area:topbar!important}
+.editor-container.fullscreen-mode #timelineContainer{grid-area:timeline!important}
 .exit-fullscreen-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(12,8,20,.85);border:1px solid rgba(124,58,237,.3);border-radius:10px;padding:6px 16px;display:flex;align-items:center;gap:10px;z-index:200;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .3s}
 .editor-container.fullscreen-mode .editor-main:hover .exit-fullscreen-bar{opacity:1;pointer-events:auto}
 .exit-fullscreen-bar span{color:rgba(255,255,255,.6);font-size:12px}
@@ -616,7 +637,7 @@ async function renderEditor(req, res) {
        1.4rem logo (was 13px), proportional button sizing. The grid
        still allocates a single 'auto' row for it so the editor body
        below resizes to fill the remaining viewport height. */
-    .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px;gap:12px;height:56px;z-index:100}
+    .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px;gap:12px;height:56px;z-index:100}
     .e-logo{font-size:1.4rem;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-right:14px;cursor:pointer;letter-spacing:.2px}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
     .e-tb{padding:8px 16px;font-size:13px;font-weight:600;color:#a78bfa;background:transparent;border:1px solid rgba(108,58,237,.25);border-radius:8px;cursor:pointer;transition:all .2s}
@@ -657,7 +678,7 @@ async function renderEditor(req, res) {
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
-    .timeline-container{grid-column:1/4}
+    .timeline-container{grid-area:timeline}
     .tl-toolbar{display:flex;align-items:center;gap:4px;padding:4px 8px;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.05)}
     .tl-btn{padding:3px 7px;font-size:9px;font-weight:700;color:#3d3358;border:1px solid rgba(108,58,237,.06);border-radius:4px;cursor:pointer;background:transparent;transition:all .2s}
     .tl-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.2)}
