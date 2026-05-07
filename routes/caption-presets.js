@@ -1339,18 +1339,38 @@ router.get('/', requireAuth, (req, res) => {
       box-shadow: 0 0 0 2px var(--primary), 0 8px 32px rgba(108,58,237,0.25);
       position: relative;
     }
-    .preset-card.selected::after {
-      content: '✓';
+    /* Clickable deselect badge — visible only when the card is selected */
+    .deselect-badge {
+      display: none;
       position: absolute;
       top: 6px;
       right: 6px;
+      width: 22px;
+      height: 22px;
+      align-items: center;
+      justify-content: center;
       background: var(--primary);
-      color: white;
-      font-size: 0.65rem;
+      color: #ffffff;
+      font-size: 0.7rem;
       font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 10px;
-      z-index: 7;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      z-index: 8;
+      padding: 0;
+      line-height: 1;
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+    .deselect-badge:hover {
+      background: #EF4444;
+      transform: scale(1.1);
+    }
+    .deselect-badge::before { content: '✓'; }
+    .deselect-badge:hover::before { content: '×'; font-size: 0.95rem; }
+    .preset-card.selected .deselect-badge { display: inline-flex; }
+    .preset-card.selected .preview-container > .premium-badge {
+      /* Nudge the diamond slightly down-left so it doesn't collide with the deselect badge */
+      top: 6px; right: 34px;
     }
 
     /* Modal styles */
@@ -1519,6 +1539,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="preview-container">
           <div class="preview-text">${p.preview}</div>
           ${p.tier === 'premium' ? PREMIUM_DIAMOND_SVG : ''}
+          <button class="deselect-badge" type="button" aria-label="Clear default" onclick="clearPreference(event,'${p.cls}')"></button>
         </div>
         <div class="preset-info">
           <h3 class="preset-name">${p.name}</h3>
@@ -1636,6 +1657,21 @@ router.get('/', requireAuth, (req, res) => {
       if (e.target === this) closeModal();
     });
 
+    async function clearPreference(ev, styleClass) {
+      ev.stopPropagation();
+      try {
+        const response = await fetch('/caption-presets/clear-preference', { method: 'POST' });
+        if (response.ok) {
+          document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('selected'));
+          showToast('Default caption style cleared');
+        } else {
+          showToast('Failed to clear default', true);
+        }
+      } catch (err) {
+        showToast('Failed to clear default', true);
+      }
+    }
+
     async function savePreference() {
       if (!selectedStyle) return;
 
@@ -1728,6 +1764,19 @@ router.post('/save-preference', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Save caption preference error:', error);
     res.status(500).json({ error: 'Failed to save preference' });
+  }
+});
+
+// POST: Clear the saved caption style preference (deselect the highlighted card)
+router.post('/clear-preference', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    await db.query('UPDATE user_settings SET default_caption_style = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1', [req.user.id]);
+    res.clearCookie('caption_style');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Clear caption preference error:', error);
+    res.status(500).json({ error: 'Failed to clear preference' });
   }
 });
 
