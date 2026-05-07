@@ -3483,8 +3483,8 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
             brandLogoPos === 'bottom-right' ? `W-w-${margin}:H-h-${margin}` :
             /* top-right default */          `W-w-${margin}:${margin}`;
           finalVideoFilter +=
-            `;[${logoInputIdx}:v]scale=${logoW}:-2:flags=lanczos[logo];` +
-            `[vid][logo]overlay=${overlayPos}:format=auto[final]`;
+            `;[${logoInputIdx}:v]format=rgba,scale=${logoW}:-2:flags=lanczos[logo];` +
+            `[vid][logo]overlay=${overlayPos}[ovr];[ovr]format=yuv420p[final]`;
         }
 
         const ffmpegArgs = [
