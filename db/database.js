@@ -441,6 +441,10 @@ const initDatabase = async () => {
       )
     `);
 
+    // Caption styles enabled list — null means "use defaults (all free)".
+    // Stored as JSONB array of class slugs once the user adds/removes their first style.
+    await pool.query(`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS enabled_caption_styles JSONB`).catch(() => {});
+
     // Feature usage tracking for admin analytics
     await pool.query(`
       CREATE TABLE IF NOT EXISTS feature_usage (

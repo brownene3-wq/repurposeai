@@ -27,114 +27,114 @@ const CATEGORIES = [
 
 const PRESETS = [
   // ---------------- TRENDING (20) ----------------
-  { cat:'trending', tier:'free',    name:'TikTok Trending', cls:'tiktok-trend',  preview:'TRENDING' },
-  { cat:'trending', tier:'free',    name:'Hormozi',         cls:'hormozi',       preview:'MAKE <span class="word-highlight">MONEY</span> NOW' },
-  { cat:'trending', tier:'free',    name:'MrBeast',         cls:'mrbeast',       preview:'EPIC TEXT' },
-  { cat:'trending', tier:'free',    name:'Bold Pop',        cls:'bold-pop',      preview:'BOLD POP' },
-  { cat:'trending', tier:'premium', name:'Reels Pop',       cls:'reels-pop',     preview:'REELS' },
-  { cat:'trending', tier:'premium', name:'YouTube Shorts',  cls:'yt-shorts',     preview:'SHORTS' },
-  { cat:'trending', tier:'premium', name:'Snap Style',      cls:'snap-style',    preview:'snap it' },
-  { cat:'trending', tier:'premium', name:'Threads Bold',    cls:'threads-bold',  preview:'THREADS' },
-  { cat:'trending', tier:'premium', name:'X Caption',       cls:'x-caption',     preview:'just posted' },
-  { cat:'trending', tier:'premium', name:'Viral Yellow',    cls:'viral-yellow',  preview:'VIRAL' },
-  { cat:'trending', tier:'premium', name:'Twitch Purple',   cls:'twitch-purple', preview:'LIVE NOW' },
-  { cat:'trending', tier:'premium', name:'Reaction Pop',    cls:'reaction-pop',  preview:'WAIT WHAT?!' },
-  { cat:'trending', tier:'premium', name:'Influencer',      cls:'influencer',    preview:'✨ Slay ✨' },
-  { cat:'trending', tier:'premium', name:'Trending Box',    cls:'trending-box',  preview:'TRENDING NOW' },
-  { cat:'trending', tier:'premium', name:'Hype Bold',       cls:'hype-bold',     preview:'HYPE' },
-  { cat:'trending', tier:'premium', name:'Storytime',       cls:'storytime',     preview:'so <span class="word-highlight">basically</span>' },
-  { cat:'trending', tier:'premium', name:'Pop Out',         cls:'pop-out',       preview:'POP OUT' },
-  { cat:'trending', tier:'premium', name:'Splash',          cls:'splash',        preview:'splash!' },
-  { cat:'trending', tier:'premium', name:'Buzz',            cls:'buzz',          preview:'BUZZING' },
-  { cat:'trending', tier:'premium', name:'Punchline',       cls:'punchline',     preview:'PUNCH LINE' },
+  { cat:'trending', tier:'free',    name:'TikTok Trending', cls:'tiktok-trend',  preview:'TRENDING', cs:{fontFamily:'Impact',fontSize:52,textColor:'25F4EE',outlineColor:'000000',outlineWidth:4,highlightColor:'FE2C55',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'free',    name:'Hormozi',         cls:'hormozi',       preview:'MAKE <span class="word-highlight">MONEY</span> NOW', cs:{fontFamily:'Arial',fontSize:50,textColor:'FFFFFF',outlineColor:'FF0000',outlineWidth:3,highlightColor:'FFFF00',animation:'none',position:'bottom'} },
+  { cat:'trending', tier:'free',    name:'MrBeast',         cls:'mrbeast',       preview:'EPIC TEXT', cs:{fontFamily:'Impact',fontSize:54,textColor:'FFD700',outlineColor:'000000',outlineWidth:5,highlightColor:'FFFFFF',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'free',    name:'Bold Pop',        cls:'bold-pop',      preview:'BOLD POP', cs:{fontFamily:'Impact',fontSize:56,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:4,highlightColor:'FFD700',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Reels Pop',       cls:'reels-pop',     preview:'REELS', cs:{fontFamily:'Impact',fontSize:52,textColor:'F58529',outlineColor:'8134AF',outlineWidth:4,highlightColor:'DD2A7B',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'YouTube Shorts',  cls:'yt-shorts',     preview:'SHORTS', cs:{fontFamily:'Impact',fontSize:54,textColor:'FFFFFF',outlineColor:'FF0000',outlineWidth:4,highlightColor:'FF0000',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Snap Style',      cls:'snap-style',    preview:'snap it', cs:{fontFamily:'Impact',fontSize:46,textColor:'1A1A1A',outlineColor:'FFFC00',outlineWidth:3,highlightColor:'FFFC00',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Threads Bold',    cls:'threads-bold',  preview:'THREADS', cs:{fontFamily:'Impact',fontSize:52,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:4,highlightColor:'FFFFFF',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'X Caption',       cls:'x-caption',     preview:'just posted', cs:{fontFamily:'Helvetica',fontSize:40,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Viral Yellow',    cls:'viral-yellow',  preview:'VIRAL', cs:{fontFamily:'Impact',fontSize:52,textColor:'1A1A1A',outlineColor:'FFEE00',outlineWidth:3,highlightColor:'FFEE00',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Twitch Purple',   cls:'twitch-purple', preview:'LIVE NOW', cs:{fontFamily:'Impact',fontSize:50,textColor:'FFFFFF',outlineColor:'9146FF',outlineWidth:4,highlightColor:'9146FF',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Reaction Pop',    cls:'reaction-pop',  preview:'WAIT WHAT?!', cs:{fontFamily:'Impact',fontSize:54,textColor:'FFFFFF',outlineColor:'FF1744',outlineWidth:4,highlightColor:'FF1744',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Influencer',      cls:'influencer',    preview:'✨ Slay ✨', cs:{fontFamily:'Arial',fontSize:48,textColor:'FF6FB5',outlineColor:'FFC1F0',outlineWidth:2,highlightColor:'FFC1F0',animation:'glow',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Trending Box',    cls:'trending-box',  preview:'TRENDING NOW', cs:{fontFamily:'Helvetica',fontSize:42,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Hype Bold',       cls:'hype-bold',     preview:'HYPE', cs:{fontFamily:'Impact',fontSize:56,textColor:'FF1744',outlineColor:'FFFFFF',outlineWidth:4,highlightColor:'FF1744',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Storytime',       cls:'storytime',     preview:'so <span class="word-highlight">basically</span>', cs:{fontFamily:'Arial',fontSize:48,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'4ADE80',animation:'none',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Pop Out',         cls:'pop-out',       preview:'POP OUT', cs:{fontFamily:'Impact',fontSize:52,textColor:'FFFFFF',outlineColor:'00E5FF',outlineWidth:4,highlightColor:'FFEA00',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Splash',          cls:'splash',        preview:'splash!', cs:{fontFamily:'Impact',fontSize:50,textColor:'FFFFFF',outlineColor:'FF6FB5',outlineWidth:4,highlightColor:'8134AF',animation:'pop',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Buzz',            cls:'buzz',          preview:'BUZZING', cs:{fontFamily:'Impact',fontSize:54,textColor:'FFEA00',outlineColor:'FFEA00',outlineWidth:4,highlightColor:'FFEA00',animation:'glow',position:'bottom'} },
+  { cat:'trending', tier:'premium', name:'Punchline',       cls:'punchline',     preview:'PUNCH LINE', cs:{fontFamily:'Impact',fontSize:52,textColor:'FFFFFF',outlineColor:'FF1744',outlineWidth:4,highlightColor:'FF1744',animation:'pop',position:'bottom'} },
 
   // ---------------- CLASSIC (20) ----------------
-  { cat:'classic', tier:'free',    name:'Minimal',          cls:'minimal',         preview:'subtle text' },
-  { cat:'classic', tier:'free',    name:'Classic Subtitle', cls:'classic-sub',     preview:'Classic subtitle text' },
-  { cat:'classic', tier:'free',    name:'Outline',          cls:'outline-style',   preview:'OUTLINE' },
-  { cat:'classic', tier:'free',    name:'Clean Modern',     cls:'clean-modern',    preview:'Clean Modern' },
-  { cat:'classic', tier:'premium', name:'Closed Caption',   cls:'closed-caption',  preview:'[CC] white text' },
-  { cat:'classic', tier:'premium', name:'Newsroom',         cls:'newsroom',        preview:'BREAKING NEWS' },
-  { cat:'classic', tier:'premium', name:'Broadcast',        cls:'broadcast',       preview:'Broadcast Style' },
-  { cat:'classic', tier:'premium', name:'Documentary',      cls:'documentary',     preview:'A documentary tale' },
-  { cat:'classic', tier:'premium', name:'Interview',        cls:'interview',       preview:'…and then I said' },
-  { cat:'classic', tier:'premium', name:'Lower Third',      cls:'lower-third',     preview:'Albert · Founder' },
-  { cat:'classic', tier:'premium', name:'Plain White',      cls:'plain-white',     preview:'Plain white text' },
-  { cat:'classic', tier:'premium', name:'Plain Black',      cls:'plain-black',     preview:'Plain black text' },
-  { cat:'classic', tier:'premium', name:'Sans Serif',       cls:'sans-serif',      preview:'Sans Serif' },
-  { cat:'classic', tier:'premium', name:'Serif Classic',    cls:'serif-classic',   preview:'Serif Classic' },
-  { cat:'classic', tier:'premium', name:'Subtitle Bold',    cls:'subtitle-bold',   preview:'BOLD SUBTITLE' },
-  { cat:'classic', tier:'premium', name:'Pure Text',        cls:'pure-text',       preview:'pure text' },
-  { cat:'classic', tier:'premium', name:'Bordered',         cls:'bordered',        preview:'BORDERED' },
-  { cat:'classic', tier:'premium', name:'Dictation',        cls:'dictation',       preview:'transcribed text' },
-  { cat:'classic', tier:'premium', name:'Letterbox',        cls:'letterbox',       preview:'L E T T E R B O X' },
-  { cat:'classic', tier:'premium', name:'Editorial',        cls:'editorial',       preview:'Editorial Voice' },
+  { cat:'classic', tier:'free',    name:'Minimal',          cls:'minimal',         preview:'subtle text', cs:{fontFamily:'Helvetica',fontSize:40,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'classic', tier:'free',    name:'Classic Subtitle', cls:'classic-sub',     preview:'Classic subtitle text', cs:{fontFamily:'Arial',fontSize:38,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'free',    name:'Outline',          cls:'outline-style',   preview:'OUTLINE', cs:{fontFamily:'Impact',fontSize:52,textColor:'000000',outlineColor:'FFFFFF',outlineWidth:4,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'free',    name:'Clean Modern',     cls:'clean-modern',    preview:'Clean Modern', cs:{fontFamily:'Helvetica',fontSize:44,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:1,highlightColor:'6C3AED',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Closed Caption',   cls:'closed-caption',  preview:'[CC] white text', cs:{fontFamily:'Helvetica',fontSize:38,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Newsroom',         cls:'newsroom',        preview:'BREAKING NEWS', cs:{fontFamily:'Georgia',fontSize:44,textColor:'FFFFFF',outlineColor:'C8102E',outlineWidth:2,highlightColor:'C8102E',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Broadcast',        cls:'broadcast',       preview:'Broadcast Style', cs:{fontFamily:'Helvetica',fontSize:40,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Documentary',      cls:'documentary',     preview:'A documentary tale', cs:{fontFamily:'Georgia',fontSize:42,textColor:'F5F5F5',outlineColor:'000000',outlineWidth:1,highlightColor:'F5F5F5',animation:'fade',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Interview',        cls:'interview',       preview:'…and then I said', cs:{fontFamily:'Georgia',fontSize:42,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:1,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Lower Third',      cls:'lower-third',     preview:'Albert · Founder', cs:{fontFamily:'Helvetica',fontSize:40,textColor:'FFFFFF',outlineColor:'6C3AED',outlineWidth:2,highlightColor:'6C3AED',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Plain White',      cls:'plain-white',     preview:'Plain white text', cs:{fontFamily:'Helvetica',fontSize:40,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Plain Black',      cls:'plain-black',     preview:'Plain black text', cs:{fontFamily:'Helvetica',fontSize:40,textColor:'000000',outlineColor:'FFFFFF',outlineWidth:0,highlightColor:'000000',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Sans Serif',       cls:'sans-serif',      preview:'Sans Serif', cs:{fontFamily:'Helvetica',fontSize:42,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Serif Classic',    cls:'serif-classic',   preview:'Serif Classic', cs:{fontFamily:'Georgia',fontSize:44,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:1,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Subtitle Bold',    cls:'subtitle-bold',   preview:'BOLD SUBTITLE', cs:{fontFamily:'Impact',fontSize:44,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:3,highlightColor:'FFFFFF',animation:'pop',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Pure Text',        cls:'pure-text',       preview:'pure text', cs:{fontFamily:'Helvetica',fontSize:38,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Bordered',         cls:'bordered',        preview:'BORDERED', cs:{fontFamily:'Helvetica',fontSize:40,textColor:'FFFFFF',outlineColor:'FFFFFF',outlineWidth:2,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Dictation',        cls:'dictation',       preview:'transcribed text', cs:{fontFamily:'Georgia',fontSize:42,textColor:'E2E8F0',outlineColor:'000000',outlineWidth:1,highlightColor:'E2E8F0',animation:'fade',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Letterbox',        cls:'letterbox',       preview:'L E T T E R B O X', cs:{fontFamily:'Helvetica',fontSize:38,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'classic', tier:'premium', name:'Editorial',        cls:'editorial',       preview:'Editorial Voice', cs:{fontFamily:'Georgia',fontSize:44,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:1,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
 
   // ---------------- HITS (20) ----------------
-  { cat:'hits', tier:'free',    name:'Neon Glow',    cls:'neon-glow',    preview:'NEON GLOW' },
-  { cat:'hits', tier:'free',    name:'Fire',         cls:'fire',         preview:'ON FIRE' },
-  { cat:'hits', tier:'free',    name:'Street',       cls:'street',       preview:'STREET' },
-  { cat:'hits', tier:'free',    name:'Shadow Drop',  cls:'shadow-drop',  preview:'SHADOW' },
-  { cat:'hits', tier:'premium', name:'Lightning',    cls:'lightning',    preview:'⚡ LIGHTNING' },
-  { cat:'hits', tier:'premium', name:'Ice Blue',     cls:'ice-blue',     preview:'ICE COLD' },
-  { cat:'hits', tier:'premium', name:'Crimson',      cls:'crimson',      preview:'CRIMSON' },
-  { cat:'hits', tier:'premium', name:'Gold Rush',    cls:'gold-rush',    preview:'GOLD RUSH' },
-  { cat:'hits', tier:'premium', name:'Toxic Green',  cls:'toxic-green',  preview:'TOXIC' },
-  { cat:'hits', tier:'premium', name:'Hot Pink',     cls:'hot-pink',     preview:'HOT PINK' },
-  { cat:'hits', tier:'premium', name:'Lava',         cls:'lava',         preview:'LAVA' },
-  { cat:'hits', tier:'premium', name:'Hologram',     cls:'hologram',     preview:'HOLO' },
-  { cat:'hits', tier:'premium', name:'Chrome',       cls:'chrome',       preview:'CHROME' },
-  { cat:'hits', tier:'premium', name:'Cyber',        cls:'cyber',        preview:'CYBER 2099' },
-  { cat:'hits', tier:'premium', name:'Glitch',       cls:'glitch',       preview:'GLITCH' },
-  { cat:'hits', tier:'premium', name:'Ember',        cls:'ember',        preview:'EMBER' },
-  { cat:'hits', tier:'premium', name:'Frost',        cls:'frost',        preview:'FROST' },
-  { cat:'hits', tier:'premium', name:'Rage',         cls:'rage',         preview:'RAGE!!' },
-  { cat:'hits', tier:'premium', name:'Boom',         cls:'boom',         preview:'BOOM' },
-  { cat:'hits', tier:'premium', name:'Strike',       cls:'strike',       preview:'STRIKE' },
+  { cat:'hits', tier:'free',    name:'Neon Glow',    cls:'neon-glow',    preview:'NEON GLOW', cs:{fontFamily:'Arial',fontSize:48,textColor:'39FF14',outlineColor:'00FF00',outlineWidth:3,highlightColor:'39FF14',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'free',    name:'Fire',         cls:'fire',         preview:'ON FIRE', cs:{fontFamily:'Impact',fontSize:52,textColor:'FF6B00',outlineColor:'000000',outlineWidth:4,highlightColor:'FFD700',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'free',    name:'Street',       cls:'street',       preview:'STREET', cs:{fontFamily:'Impact',fontSize:50,textColor:'FFFF00',outlineColor:'FF0000',outlineWidth:3,highlightColor:'FF6600',animation:'pop',position:'bottom'} },
+  { cat:'hits', tier:'free',    name:'Shadow Drop',  cls:'shadow-drop',  preview:'SHADOW', cs:{fontFamily:'Impact',fontSize:50,textColor:'FFFFFF',outlineColor:'6C3AED',outlineWidth:4,highlightColor:'A855F7',animation:'pop',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Lightning',    cls:'lightning',    preview:'⚡ LIGHTNING', cs:{fontFamily:'Impact',fontSize:50,textColor:'FFEA00',outlineColor:'FFD600',outlineWidth:3,highlightColor:'FFEA00',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Ice Blue',     cls:'ice-blue',     preview:'ICE COLD', cs:{fontFamily:'Arial',fontSize:48,textColor:'BFDBFE',outlineColor:'2563EB',outlineWidth:3,highlightColor:'60A5FA',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Crimson',      cls:'crimson',      preview:'CRIMSON', cs:{fontFamily:'Impact',fontSize:50,textColor:'DC2626',outlineColor:'7F1D1D',outlineWidth:3,highlightColor:'DC2626',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Gold Rush',    cls:'gold-rush',    preview:'GOLD RUSH', cs:{fontFamily:'Impact',fontSize:52,textColor:'FBBF24',outlineColor:'B45309',outlineWidth:4,highlightColor:'FBBF24',animation:'pop',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Toxic Green',  cls:'toxic-green',  preview:'TOXIC', cs:{fontFamily:'Arial',fontSize:48,textColor:'84CC16',outlineColor:'4D7C0F',outlineWidth:3,highlightColor:'84CC16',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Hot Pink',     cls:'hot-pink',     preview:'HOT PINK', cs:{fontFamily:'Arial',fontSize:48,textColor:'FF1493',outlineColor:'C71585',outlineWidth:3,highlightColor:'FF1493',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Lava',         cls:'lava',         preview:'LAVA', cs:{fontFamily:'Impact',fontSize:52,textColor:'FF6B00',outlineColor:'B91C1C',outlineWidth:4,highlightColor:'FBBF24',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Hologram',     cls:'hologram',     preview:'HOLO', cs:{fontFamily:'Arial',fontSize:50,textColor:'B14EFF',outlineColor:'00D9FF',outlineWidth:2,highlightColor:'FFEA00',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Chrome',       cls:'chrome',       preview:'CHROME', cs:{fontFamily:'Impact',fontSize:52,textColor:'B8B8B8',outlineColor:'1A1A1A',outlineWidth:3,highlightColor:'F5F5F5',animation:'none',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Cyber',        cls:'cyber',        preview:'CYBER 2099', cs:{fontFamily:'Courier New',fontSize:46,textColor:'00FFFF',outlineColor:'FF00FF',outlineWidth:2,highlightColor:'FF00FF',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Glitch',       cls:'glitch',       preview:'GLITCH', cs:{fontFamily:'Courier New',fontSize:46,textColor:'FFFFFF',outlineColor:'FF1744',outlineWidth:2,highlightColor:'00E5FF',animation:'none',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Ember',        cls:'ember',        preview:'EMBER', cs:{fontFamily:'Arial',fontSize:48,textColor:'FCA5A5',outlineColor:'991B1B',outlineWidth:3,highlightColor:'DC2626',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Frost',        cls:'frost',        preview:'FROST', cs:{fontFamily:'Arial',fontSize:46,textColor:'ECFEFF',outlineColor:'67E8F9',outlineWidth:2,highlightColor:'BAE6FD',animation:'glow',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Rage',         cls:'rage',         preview:'RAGE!!', cs:{fontFamily:'Impact',fontSize:54,textColor:'FFFFFF',outlineColor:'DC2626',outlineWidth:4,highlightColor:'FFFFFF',animation:'pop',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Boom',         cls:'boom',         preview:'BOOM', cs:{fontFamily:'Impact',fontSize:56,textColor:'FFEA00',outlineColor:'DC2626',outlineWidth:4,highlightColor:'FFEA00',animation:'pop',position:'bottom'} },
+  { cat:'hits', tier:'premium', name:'Strike',       cls:'strike',       preview:'STRIKE', cs:{fontFamily:'Impact',fontSize:50,textColor:'FFFFFF',outlineColor:'DC2626',outlineWidth:3,highlightColor:'DC2626',animation:'none',position:'bottom'} },
 
   // ---------------- TITLE (20) ----------------
-  { cat:'title', tier:'free',    name:'Karaoke',        cls:'karaoke',        preview:'<span class="word-current">Your</span> <span class="word-next">caption</span>' },
-  { cat:'title', tier:'free',    name:'Gradient Wave',  cls:'gradient-wave',  preview:'Gradient Wave' },
-  { cat:'title', tier:'free',    name:'Cinematic',      cls:'cinematic',      preview:'Cinematic' },
-  { cat:'title', tier:'free',    name:'Soft Glow',      cls:'soft-glow',      preview:'Soft Glow' },
-  { cat:'title', tier:'premium', name:'Movie Title',    cls:'movie-title',    preview:'MOVIE TITLE' },
-  { cat:'title', tier:'premium', name:'Western',        cls:'western',        preview:'WESTERN' },
-  { cat:'title', tier:'premium', name:'Vintage Film',   cls:'vintage-film',   preview:'Vintage Film' },
-  { cat:'title', tier:'premium', name:'Trailer',        cls:'trailer',        preview:'COMING SOON' },
-  { cat:'title', tier:'premium', name:'Big Drop',       cls:'big-drop',       preview:'BIG DROP' },
-  { cat:'title', tier:'premium', name:'Marquee',        cls:'marquee',        preview:'MARQUEE' },
-  { cat:'title', tier:'premium', name:'Royal',          cls:'royal',          preview:'ROYAL' },
-  { cat:'title', tier:'premium', name:'Epic',           cls:'epic',           preview:'EPIC' },
-  { cat:'title', tier:'premium', name:'Saga',           cls:'saga',           preview:'The Saga' },
-  { cat:'title', tier:'premium', name:'Noir',           cls:'noir',           preview:'NOIR' },
-  { cat:'title', tier:'premium', name:'Heading',        cls:'heading',        preview:'Chapter One' },
-  { cat:'title', tier:'premium', name:'Headline',       cls:'headline',       preview:'HEADLINE' },
-  { cat:'title', tier:'premium', name:'Banner',         cls:'banner',         preview:'BANNER' },
-  { cat:'title', tier:'premium', name:'Stamp',          cls:'stamp',          preview:'APPROVED' },
-  { cat:'title', tier:'premium', name:'Award',          cls:'award',          preview:'AWARDS' },
-  { cat:'title', tier:'premium', name:'Premiere',       cls:'premiere',       preview:'PREMIERE' },
+  { cat:'title', tier:'free',    name:'Karaoke',        cls:'karaoke',        preview:'<span class="word-current">Your</span> <span class="word-next">caption</span>', cs:{fontFamily:'Arial',fontSize:48,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FF00FF',animation:'none',position:'bottom'} },
+  { cat:'title', tier:'free',    name:'Gradient Wave',  cls:'gradient-wave',  preview:'Gradient Wave', cs:{fontFamily:'Arial',fontSize:50,textColor:'FF6B6B',outlineColor:'6C3AED',outlineWidth:2,highlightColor:'25F4EE',animation:'glow',position:'bottom'} },
+  { cat:'title', tier:'free',    name:'Cinematic',      cls:'cinematic',      preview:'Cinematic', cs:{fontFamily:'Georgia',fontSize:44,textColor:'D4A574',outlineColor:'000000',outlineWidth:1,highlightColor:'F0E0C0',animation:'fade',position:'bottom'} },
+  { cat:'title', tier:'free',    name:'Soft Glow',      cls:'soft-glow',      preview:'Soft Glow', cs:{fontFamily:'Arial',fontSize:46,textColor:'FFFFFF',outlineColor:'A855F7',outlineWidth:2,highlightColor:'A855F7',animation:'glow',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Movie Title',    cls:'movie-title',    preview:'MOVIE TITLE', cs:{fontFamily:'Georgia',fontSize:50,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Western',        cls:'western',        preview:'WESTERN', cs:{fontFamily:'Georgia',fontSize:50,textColor:'92400E',outlineColor:'FBBF24',outlineWidth:3,highlightColor:'FBBF24',animation:'pop',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Vintage Film',   cls:'vintage-film',   preview:'Vintage Film', cs:{fontFamily:'Georgia',fontSize:46,textColor:'FBBF24',outlineColor:'B45309',outlineWidth:2,highlightColor:'FCD34D',animation:'fade',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Trailer',        cls:'trailer',        preview:'COMING SOON', cs:{fontFamily:'Helvetica',fontSize:50,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:3,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Big Drop',       cls:'big-drop',       preview:'BIG DROP', cs:{fontFamily:'Impact',fontSize:56,textColor:'FFFFFF',outlineColor:'1A1A1A',outlineWidth:5,highlightColor:'6C3AED',animation:'pop',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Marquee',        cls:'marquee',        preview:'MARQUEE', cs:{fontFamily:'Georgia',fontSize:50,textColor:'FBBF24',outlineColor:'F59E0B',outlineWidth:3,highlightColor:'FBBF24',animation:'glow',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Royal',          cls:'royal',          preview:'ROYAL', cs:{fontFamily:'Georgia',fontSize:48,textColor:'FBBF24',outlineColor:'C026D3',outlineWidth:2,highlightColor:'C026D3',animation:'glow',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Epic',           cls:'epic',           preview:'EPIC', cs:{fontFamily:'Impact',fontSize:56,textColor:'FFFFFF',outlineColor:'FFFFFF',outlineWidth:3,highlightColor:'FFFFFF',animation:'pop',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Saga',           cls:'saga',           preview:'The Saga', cs:{fontFamily:'Georgia',fontSize:48,textColor:'E5E7EB',outlineColor:'A855F7',outlineWidth:1,highlightColor:'A855F7',animation:'fade',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Noir',           cls:'noir',           preview:'NOIR', cs:{fontFamily:'Georgia',fontSize:50,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:1,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Heading',        cls:'heading',        preview:'Chapter One', cs:{fontFamily:'Helvetica',fontSize:48,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:0,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Headline',       cls:'headline',       preview:'HEADLINE', cs:{fontFamily:'Times New Roman',fontSize:50,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Banner',         cls:'banner',         preview:'BANNER', cs:{fontFamily:'Impact',fontSize:50,textColor:'FFFFFF',outlineColor:'6C3AED',outlineWidth:3,highlightColor:'FFFFFF',animation:'pop',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Stamp',          cls:'stamp',          preview:'APPROVED', cs:{fontFamily:'Courier New',fontSize:46,textColor:'DC2626',outlineColor:'DC2626',outlineWidth:3,highlightColor:'DC2626',animation:'none',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Award',          cls:'award',          preview:'AWARDS', cs:{fontFamily:'Georgia',fontSize:48,textColor:'FBBF24',outlineColor:'92400E',outlineWidth:2,highlightColor:'FBBF24',animation:'glow',position:'bottom'} },
+  { cat:'title', tier:'premium', name:'Premiere',       cls:'premiere',       preview:'PREMIERE', cs:{fontFamily:'Georgia',fontSize:48,textColor:'FBBF24',outlineColor:'DC2626',outlineWidth:2,highlightColor:'DC2626',animation:'fade',position:'bottom'} },
 
   // ---------------- VLOG (20) ----------------
-  { cat:'vlog', tier:'free',    name:'Typewriter',  cls:'typewriter',  preview:'typewriter' },
-  { cat:'vlog', tier:'free',    name:'Comic',       cls:'comic',       preview:'Fun Comic!' },
-  { cat:'vlog', tier:'free',    name:'Retro VHS',   cls:'retro-vhs',   preview:'RETRO VHS' },
-  { cat:'vlog', tier:'free',    name:'Podcast',     cls:'podcast',     preview:'The key insight is this...' },
-  { cat:'vlog', tier:'premium', name:'Handwritten', cls:'handwritten', preview:'handwritten' },
-  { cat:'vlog', tier:'premium', name:'Sticky Note', cls:'sticky-note', preview:'sticky note!' },
-  { cat:'vlog', tier:'premium', name:'Sketch',      cls:'sketch',      preview:'sketch' },
-  { cat:'vlog', tier:'premium', name:'Marker',      cls:'marker',      preview:'highlight' },
-  { cat:'vlog', tier:'premium', name:'Doodle',      cls:'doodle',      preview:'doodle :)' },
-  { cat:'vlog', tier:'premium', name:'Diary',       cls:'diary',       preview:'Dear diary,' },
-  { cat:'vlog', tier:'premium', name:'Casual',      cls:'casual',      preview:'hey friends' },
-  { cat:'vlog', tier:'premium', name:'Chat Bubble', cls:'chat-bubble', preview:'hi there' },
-  { cat:'vlog', tier:'premium', name:'Polaroid',    cls:'polaroid',    preview:'memories' },
-  { cat:'vlog', tier:'premium', name:'Notebook',    cls:'notebook',    preview:'notebook' },
-  { cat:'vlog', tier:'premium', name:'Lifestyle',   cls:'lifestyle',   preview:'lifestyle' },
-  { cat:'vlog', tier:'premium', name:'Travel',      cls:'travel',      preview:'Travel Diary' },
-  { cat:'vlog', tier:'premium', name:'Cooking',     cls:'cooking',     preview:'recipe time' },
-  { cat:'vlog', tier:'premium', name:'Daily',       cls:'daily',       preview:'daily vlog' },
-  { cat:'vlog', tier:'premium', name:'Memo',        cls:'memo',        preview:'MEMO' },
-  { cat:'vlog', tier:'premium', name:'Scribble',    cls:'scribble',    preview:'scribble!' }
+  { cat:'vlog', tier:'free',    name:'Typewriter',  cls:'typewriter',  preview:'typewriter', cs:{fontFamily:'Courier New',fontSize:42,textColor:'00FF00',outlineColor:'003300',outlineWidth:1,highlightColor:'00FF00',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'free',    name:'Comic',       cls:'comic',       preview:'Fun Comic!', cs:{fontFamily:'Verdana',fontSize:46,textColor:'FFE66D',outlineColor:'000000',outlineWidth:4,highlightColor:'FF6B6B',animation:'pop',position:'bottom'} },
+  { cat:'vlog', tier:'free',    name:'Retro VHS',   cls:'retro-vhs',   preview:'RETRO VHS', cs:{fontFamily:'Courier New',fontSize:44,textColor:'FF3366',outlineColor:'00FFFF',outlineWidth:2,highlightColor:'FF0066',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'free',    name:'Podcast',     cls:'podcast',     preview:'The key insight is this...', cs:{fontFamily:'Georgia',fontSize:40,textColor:'E2E8F0',outlineColor:'000000',outlineWidth:1,highlightColor:'6C3AED',animation:'fade',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Handwritten', cls:'handwritten', preview:'handwritten', cs:{fontFamily:'Verdana',fontSize:50,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Sticky Note', cls:'sticky-note', preview:'sticky note!', cs:{fontFamily:'Verdana',fontSize:42,textColor:'422006',outlineColor:'FEF08A',outlineWidth:2,highlightColor:'FEF08A',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Sketch',      cls:'sketch',      preview:'sketch', cs:{fontFamily:'Verdana',fontSize:46,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:2,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Marker',      cls:'marker',      preview:'highlight', cs:{fontFamily:'Verdana',fontSize:44,textColor:'1A1A1A',outlineColor:'FACC15',outlineWidth:2,highlightColor:'FACC15',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Doodle',      cls:'doodle',      preview:'doodle :)', cs:{fontFamily:'Verdana',fontSize:44,textColor:'FF6FB5',outlineColor:'FFFFFF',outlineWidth:2,highlightColor:'FF6FB5',animation:'pop',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Diary',       cls:'diary',       preview:'Dear diary,', cs:{fontFamily:'Georgia',fontSize:44,textColor:'FDE68A',outlineColor:'000000',outlineWidth:1,highlightColor:'FDE68A',animation:'fade',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Casual',      cls:'casual',      preview:'hey friends', cs:{fontFamily:'Helvetica',fontSize:42,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:1,highlightColor:'FFFFFF',animation:'fade',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Chat Bubble', cls:'chat-bubble', preview:'hi there', cs:{fontFamily:'Helvetica',fontSize:38,textColor:'FFFFFF',outlineColor:'2563EB',outlineWidth:2,highlightColor:'2563EB',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Polaroid',    cls:'polaroid',    preview:'memories', cs:{fontFamily:'Courier New',fontSize:36,textColor:'1A1A1A',outlineColor:'F5F5F5',outlineWidth:0,highlightColor:'1A1A1A',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Notebook',    cls:'notebook',    preview:'notebook', cs:{fontFamily:'Courier New',fontSize:38,textColor:'FFFFFF',outlineColor:'000000',outlineWidth:1,highlightColor:'FFFFFF',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Lifestyle',   cls:'lifestyle',   preview:'lifestyle', cs:{fontFamily:'Georgia',fontSize:44,textColor:'FBCFE8',outlineColor:'000000',outlineWidth:1,highlightColor:'FBCFE8',animation:'fade',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Travel',      cls:'travel',      preview:'Travel Diary', cs:{fontFamily:'Georgia',fontSize:42,textColor:'FEF3C7',outlineColor:'000000',outlineWidth:1,highlightColor:'FEF3C7',animation:'fade',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Cooking',     cls:'cooking',     preview:'recipe time', cs:{fontFamily:'Georgia',fontSize:42,textColor:'FFFFFF',outlineColor:'F97316',outlineWidth:3,highlightColor:'DC2626',animation:'glow',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Daily',       cls:'daily',       preview:'daily vlog', cs:{fontFamily:'Helvetica',fontSize:42,textColor:'FFFFFF',outlineColor:'6C3AED',outlineWidth:1,highlightColor:'6C3AED',animation:'fade',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Memo',        cls:'memo',        preview:'MEMO', cs:{fontFamily:'Courier New',fontSize:40,textColor:'FDE68A',outlineColor:'000000',outlineWidth:2,highlightColor:'FDE68A',animation:'none',position:'bottom'} },
+  { cat:'vlog', tier:'premium', name:'Scribble',    cls:'scribble',    preview:'scribble!', cs:{fontFamily:'Verdana',fontSize:44,textColor:'FFFFFF',outlineColor:'FF6FB5',outlineWidth:2,highlightColor:'00E5FF',animation:'pop',position:'bottom'} }
 ];
 
 // Shared diamond entitlement icon (also used on the Billing page).
@@ -232,24 +232,49 @@ router.get('/', requireAuth, (req, res) => {
       margin: 0 auto;
     }
 
-    /* Tier legend (Free vs Premium) */
-    .tier-legend {
+    /* Tier filter (Free vs Premium) - clickable single-select toggle */
+    .tier-filter {
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 0.5rem;
       margin-bottom: 1rem;
-      font-size: 0.85rem;
+    }
+    .tier-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.9rem;
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      border-radius: 999px;
       color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
     }
-    .tier-legend .legend-item {
-      display: inline-flex; align-items: center; gap: 0.4rem;
+    .tier-btn:hover {
+      color: var(--text);
+      border-color: var(--primary);
     }
-    .tier-legend .legend-dot {
+    .tier-btn.active {
+      background: var(--gradient-1);
+      border-color: transparent;
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(108,58,237,0.35);
+    }
+    .tier-btn .legend-dot {
       width: 10px; height: 10px; border-radius: 999px;
       background: #4ADE80;
     }
-    .tier-legend .legend-diamond {
+    .tier-btn .legend-diamond {
       width: 14px; height: 14px;
+    }
+    /* When a tier filter is active, hide cards that don't match */
+    .presets-grid[data-filter='free'] .preset-card[data-tier='premium'],
+    .presets-grid[data-filter='premium'] .preset-card[data-tier='free'] {
+      display: none;
     }
 
     /* Category tabs */
@@ -1292,17 +1317,28 @@ router.get('/', requireAuth, (req, res) => {
       border-radius: 6px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: all 0.2s ease;
       font-size: 0.8rem;
     }
-
     .use-button:hover {
       background: linear-gradient(135deg, var(--primary), #a855f7);
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(108, 58, 237, 0.4);
     }
-
     .use-button:active { transform: translateY(0); }
+
+    /* Remove state */
+    .use-button.is-added {
+      background: rgba(108,58,237,0.12);
+      color: var(--primary);
+      border: 1px solid rgba(108,58,237,0.3);
+    }
+    .use-button.is-added:hover {
+      background: rgba(239,68,68,0.15);
+      color: #EF4444;
+      border-color: rgba(239,68,68,0.4);
+      box-shadow: none;
+    }
 
     /* Toast Notification */
     .toast {
@@ -1535,15 +1571,14 @@ router.get('/', requireAuth, (req, res) => {
 
   const sectionsHTML = CATEGORIES.map((c, i) => {
     const cards = PRESETS.filter(p => p.cat === c.id).map(p => `
-      <div class="preset-card ${p.cls}" data-tier="${p.tier}">
+      <div class="preset-card ${p.cls}" data-tier="${p.tier}" data-cls="${p.cls}">
         <div class="preview-container">
           <div class="preview-text">${p.preview}</div>
           ${p.tier === 'premium' ? PREMIUM_DIAMOND_SVG : ''}
-          <button class="deselect-badge" type="button" aria-label="Clear default" onclick="clearPreference(event,'${p.cls}')"></button>
         </div>
         <div class="preset-info">
           <h3 class="preset-name">${p.name}</h3>
-          <button class="use-button" onclick="useStyle('${escAttr(p.name)}','${p.cls}')">Use Style</button>
+          <button class="use-button add-btn" type="button" data-cls="${p.cls}" data-name="${escAttr(p.name)}">Add</button>
         </div>
       </div>
     `).join('');
@@ -1575,9 +1610,15 @@ router.get('/', requireAuth, (req, res) => {
       </div>
 
       <div class="content-wrapper">
-        <div class="tier-legend">
-          <span class="legend-item"><span class="legend-dot"></span> Free</span>
-          <span class="legend-item">${PREMIUM_DIAMOND_SVG.replace('class="premium-badge"', 'class="premium-badge legend-diamond"')} Premium</span>
+        <div class="tier-filter" role="group" aria-label="Filter by tier">
+          <button class="tier-btn" type="button" data-tier="free" aria-pressed="false">
+            <span class="legend-dot"></span>
+            <span>Free</span>
+          </button>
+          <button class="tier-btn" type="button" data-tier="premium" aria-pressed="false">
+            ${PREMIUM_DIAMOND_SVG.replace('class="premium-badge"', 'class="premium-badge legend-diamond"')}
+            <span>Premium</span>
+          </button>
         </div>
 
         <div class="category-tabs" role="tablist">
@@ -1591,33 +1632,10 @@ router.get('/', requireAuth, (req, res) => {
 
   <div class="toast" id="toast"></div>
 
-  <!-- Style Selection Modal -->
-  <div class="style-modal-overlay" id="styleModal">
-    <div class="style-modal">
-      <div class="style-modal-header">
-        <h3 id="modalTitle">Apply Caption Style</h3>
-        <button class="modal-close" onclick="closeModal()">&times;</button>
-      </div>
-      <div class="style-modal-body">
-        <p id="modalDescription">Where would you like to use this caption style?</p>
-        <div class="modal-preview" id="modalPreview"></div>
-        <div class="modal-actions">
-          <a href="/shorts" class="modal-btn modal-btn-primary">
-            <span>🎬</span> Use in Smart Shorts
-          </a>
-          <button class="modal-btn modal-btn-secondary" onclick="savePreference()">
-            <span>💾</span> Set as Default Style
-          </button>
-        </div>
-        <p class="modal-hint">Your selected style will be applied when generating clips in Smart Shorts</p>
-      </div>
-    </div>
-  </div>
+<!-- modal removed: Add/Remove flow no longer pops up -->
 
   <script>
     ${themeScript}
-
-    let selectedStyle = null;
 
     // Category tab switching
     document.querySelectorAll('.category-tab').forEach(tab => {
@@ -1632,108 +1650,89 @@ router.get('/', requireAuth, (req, res) => {
       });
     });
 
-    function useStyle(styleName, styleClass) {
-      selectedStyle = { name: styleName, class: styleClass };
-
-      // Update modal
-      document.getElementById('modalTitle').textContent = styleName + ' Style';
-      document.getElementById('modalDescription').textContent = 'Apply "' + styleName + '" caption style to your videos';
-
-      // Show preview in modal
-      const previewEl = document.getElementById('modalPreview');
-      const card = document.querySelector('.' + styleClass + ' .preview-text');
-      if (card) {
-        previewEl.innerHTML = '<div class="' + styleClass + '"><div class="preview-text">' + card.innerHTML + '</div></div>';
-      }
-
-      document.getElementById('styleModal').classList.add('show');
+    // Tier filter (Free / Premium) — single-select toggle. Click again to clear.
+    function applyTierFilter(tier) {
+      document.querySelectorAll('.presets-grid').forEach(g => {
+        if (tier) g.setAttribute('data-filter', tier);
+        else g.removeAttribute('data-filter');
+      });
+      document.querySelectorAll('.tier-btn').forEach(b => {
+        const isActive = b.getAttribute('data-tier') === tier;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-pressed', String(isActive));
+      });
     }
-
-    function closeModal() {
-      document.getElementById('styleModal').classList.remove('show');
-    }
-
-    document.getElementById('styleModal').addEventListener('click', function(e) {
-      if (e.target === this) closeModal();
+    let activeTier = null;
+    document.querySelectorAll('.tier-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const t = btn.getAttribute('data-tier');
+        activeTier = (activeTier === t) ? null : t;
+        applyTierFilter(activeTier);
+      });
     });
 
-    async function clearPreference(ev, styleClass) {
-      ev.stopPropagation();
-      try {
-        const response = await fetch('/caption-presets/clear-preference', { method: 'POST' });
-        if (response.ok) {
-          document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('selected'));
-          showToast('Default caption style cleared');
-        } else {
-          showToast('Failed to clear default', true);
-        }
-      } catch (err) {
-        showToast('Failed to clear default', true);
-      }
+    // Add / Remove flow ------------------------------------------------------
+    function setBtnState(btn, isAdded) {
+      btn.textContent = isAdded ? 'Remove' : 'Add';
+      btn.classList.toggle('is-added', !!isAdded);
     }
-
-    async function savePreference() {
-      if (!selectedStyle) return;
-
+    async function toggleAddRemove(btn) {
+      const cls  = btn.getAttribute('data-cls');
+      const name = btn.getAttribute('data-name');
+      const isAdded = btn.classList.contains('is-added');
+      const url = isAdded ? '/caption-presets/remove' : '/caption-presets/add';
+      btn.disabled = true;
       try {
-        const response = await fetch('/caption-presets/save-preference', {
+        const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ style: selectedStyle.class, name: selectedStyle.name })
+          body: JSON.stringify({ style: cls })
         });
-
-        if (response.ok) {
-          closeModal();
-          showToast(selectedStyle.name + ' set as your default caption style!');
-
-          document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('selected'));
-          const sel = document.querySelector('.preset-card.' + selectedStyle.class);
-          if (sel) sel.classList.add('selected');
+        if (!r.ok) throw new Error('bad response');
+        setBtnState(btn, !isAdded);
+        if (!isAdded) {
+          showToast(name + ' is now available on the AI Captions page');
         } else {
-          showToast('Failed to save preference', true);
+          showToast(name + ' removed from AI Captions');
         }
-      } catch (err) {
-        showToast('Failed to save preference', true);
+      } catch (e) {
+        showToast('Could not update — try again', true);
+      } finally {
+        btn.disabled = false;
       }
     }
+    document.querySelectorAll('.add-btn').forEach(btn => {
+      btn.addEventListener('click', () => toggleAddRemove(btn));
+    });
+
+    // Initial state: fetch the user's enabled list and mark added cards
+    (async function() {
+      try {
+        const r = await fetch('/caption-presets/enabled');
+        if (!r.ok) return;
+        const data = await r.json();
+        const enabled = new Set(data.enabled || []);
+        document.querySelectorAll('.add-btn').forEach(btn => {
+          setBtnState(btn, enabled.has(btn.getAttribute('data-cls')));
+        });
+      } catch(e) {}
+    })();
 
     function showToast(message, isError) {
       const toast = document.getElementById('toast');
       toast.textContent = message;
-      if (isError) {
-        toast.style.background = '#EF4444';
-      } else {
-        toast.style.background = 'var(--primary)';
-      }
+      toast.style.background = isError ? '#EF4444' : 'var(--primary)';
       toast.classList.remove('hide');
       toast.classList.add('show');
-
       setTimeout(() => {
         toast.classList.remove('show');
         toast.classList.add('hide');
       }, 2500);
     }
 
-    (async function() {
-      try {
-        const response = await fetch('/caption-presets/get-preference');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.style) {
-            const card = document.querySelector('.preset-card.' + data.style);
-            if (card) {
-              card.classList.add('selected');
-              const section = card.closest('.category-section');
-              if (section) {
-                const cat = section.getAttribute('data-cat');
-                const tab = document.querySelector('.category-tab[data-cat="' + cat + '"]');
-                if (tab) tab.click();
-              }
-            }
-          }
-        }
-      } catch(e) {}
-    })();
+    // ---- old modal logic kept for backwards-compat in case anything still calls it ----
+    // (legacy modal/popup logic removed)
+
   </script>
 </body>
 </html>`;
@@ -1802,6 +1801,81 @@ router.get('/get-preference', requireAuth, async (req, res) => {
   }
 });
 
+// =============================================================================
+// Added-styles list per user. Free styles are enabled by default; premium
+// styles only show on AI Captions once the user has explicitly added them.
+// Storage: user_settings.enabled_caption_styles (JSONB array of class slugs).
+// NULL means "use defaults (the 20 free styles)".
+// =============================================================================
+
+const FREE_STYLE_CLASSES = PRESETS.filter(p => p.tier === 'free').map(p => p.cls);
+
+async function readEnabledStyles(userId) {
+  const db = getDb();
+  await db.query('INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
+  const r = await db.query('SELECT enabled_caption_styles FROM user_settings WHERE user_id = $1', [userId]);
+  const stored = r.rows[0]?.enabled_caption_styles;
+  if (stored === null || stored === undefined) {
+    return [...FREE_STYLE_CLASSES];
+  }
+  return Array.isArray(stored) ? stored : [...FREE_STYLE_CLASSES];
+}
+
+async function writeEnabledStyles(userId, list) {
+  const db = getDb();
+  await db.query('INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
+  await db.query(
+    'UPDATE user_settings SET enabled_caption_styles = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+    [JSON.stringify(list), userId]
+  );
+}
+
+// GET /caption-presets/enabled - returns the user's enabled list
+router.get('/enabled', requireAuth, async (req, res) => {
+  try {
+    const list = await readEnabledStyles(req.user.id);
+    res.json({ enabled: list });
+  } catch (e) {
+    console.error('readEnabledStyles error:', e);
+    res.status(500).json({ error: 'Failed to read' });
+  }
+});
+
+// POST /caption-presets/add - add a style to the user's enabled list
+router.post('/add', requireAuth, async (req, res) => {
+  try {
+    const { style } = req.body || {};
+    if (!style || !PRESETS.some(p => p.cls === style)) {
+      return res.status(400).json({ error: 'Unknown style' });
+    }
+    const list = await readEnabledStyles(req.user.id);
+    if (!list.includes(style)) list.push(style);
+    await writeEnabledStyles(req.user.id, list);
+    res.json({ success: true, enabled: list });
+  } catch (e) {
+    console.error('add style error:', e);
+    res.status(500).json({ error: 'Failed to add' });
+  }
+});
+
+// POST /caption-presets/remove - remove a style from the user's enabled list
+router.post('/remove', requireAuth, async (req, res) => {
+  try {
+    const { style } = req.body || {};
+    if (!style) return res.status(400).json({ error: 'Missing style' });
+    const list = (await readEnabledStyles(req.user.id)).filter(s => s !== style);
+    await writeEnabledStyles(req.user.id, list);
+    res.json({ success: true, enabled: list });
+  } catch (e) {
+    console.error('remove style error:', e);
+    res.status(500).json({ error: 'Failed to remove' });
+  }
+});
+
 // Export the diamond SVG so other routes (e.g. billing) can reuse it.
 module.exports = router;
 module.exports.PREMIUM_DIAMOND_SVG = PREMIUM_DIAMOND_SVG;
+module.exports.PRESETS = PRESETS;
+module.exports.CATEGORIES = CATEGORIES;
+module.exports.readEnabledStyles = readEnabledStyles;
+module.exports.FREE_STYLE_CLASSES = FREE_STYLE_CLASSES;

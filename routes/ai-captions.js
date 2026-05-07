@@ -723,7 +723,18 @@ function burnSubtitles(videoPath, assPath, outputPath) {
 }
 
 // GET: Main AI Captions page
-router.get('/', requireAuth, (req, res) => {
+const { PRESETS: ALL_PRESETS, readEnabledStyles, FREE_STYLE_CLASSES } = require('./caption-presets');
+
+router.get('/', requireAuth, async (req, res) => {
+  // Read which caption styles the user has enabled (free + added premium)
+  let enabledList;
+  try {
+    enabledList = await readEnabledStyles(req.user.id);
+  } catch (e) {
+    enabledList = [...FREE_STYLE_CLASSES];
+  }
+  const enabledSet = new Set(enabledList);
+
   const headHTML = getHeadHTML('AI Captions');
   const sidebar = getSidebar('ai-captions', req.user, req.teamPermissions);
   const themeToggle = getThemeToggle();
@@ -1718,7 +1729,21 @@ router.get('/', requireAuth, (req, res) => {
     //             position) — same shape readCurrentStyle() returns.
     //   sampleWords  optional override for the SAMPLE_CAPTION_WORDS shown
     //             in the live preview (e.g. lowercase variants).
-    const PRESET_LIBRARY = [
+    // List of premium caption styles the user has enabled, plus rendering configs from the shared catalog
+    const ENABLED_STYLES = JSON.parse(${JSON.stringify(JSON.stringify(enabledList))});
+
+    // Premium presets (rendering configs) imported from the Caption Styles catalog
+    // and rendered alongside the original 20 free PRESET_LIBRARY entries below.
+    const PREMIUM_PRESETS_FROM_CATALOG = ${JSON.stringify(
+      ALL_PRESETS.filter(p => p.tier === 'premium' && p.cs).map(p => ({
+        id: p.cls,
+        name: p.name,
+        behavior: ({pop:'bold-pop', glow:'karaoke', fade:'minimal', none:'minimal'})[p.cs.animation] || 'bold-pop',
+        cs: p.cs
+      }))
+    )};
+
+    const _ORIGINAL_PRESET_LIBRARY = [
       { id: 'karaoke',       name: 'Karaoke',       behavior: 'karaoke',
         cs: { fontFamily: 'Arial',           fontSize: 48, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 2, highlightColor: 'FF00FF', animation: 'none',  position: 'bottom' } },
       { id: 'bold-pop',      name: 'Bold Pop',      behavior: 'bold-pop',
@@ -1759,6 +1784,13 @@ router.get('/', requireAuth, (req, res) => {
         cs: { fontFamily: 'Impact',          fontSize: 52, textColor: '25F4EE', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FE2C55', animation: 'pop',   position: 'bottom' } },
       { id: 'shadow-drop',   name: 'Shadow Drop',   behavior: 'bold-pop',
         cs: { fontFamily: 'Impact',          fontSize: 50, textColor: 'FFFFFF', outlineColor: '6C3AED', outlineWidth: 4, highlightColor: 'A855F7', animation: 'pop',   position: 'bottom' } }
+    ];
+
+    // Final PRESET_LIBRARY = original 20 (free, always shown unless user removed)
+    // + premium ones the user has explicitly added.
+    const PRESET_LIBRARY = [
+      ..._ORIGINAL_PRESET_LIBRARY.filter(p => ENABLED_STYLES.includes(p.id)),
+      ...PREMIUM_PRESETS_FROM_CATALOG.filter(p => ENABLED_STYLES.includes(p.id))
     ];
 
     // Build a quick lookup so selectPreset and exportVideo can grab by id.
