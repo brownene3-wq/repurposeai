@@ -842,6 +842,171 @@ const captionPresets = {
     wordHighlightColor: 'FFFFFF',
     animation: 'pop'
   },
+  // ----- Tier 6: multi-layer / partial gradient premium styles -----
+  // Most of these can't be reproduced pixel-perfectly from a single ASS Style
+  // line (CSS lets us stack 3 drop shadows or fill text with a gradient; ASS
+  // does not). Each one picks the single most-distinctive feature that ASS
+  // CAN render and leans into it.
+  western: {
+    name: 'Western',
+    fontName: 'Liberation Serif',
+    fontSize: 50,
+    fontColor: '92400E',          // brown body
+    outlineColor: 'FBBF24',       // yellow rim
+    outlineWidth: 4,
+    shadowDepth: 4,               // chunky shadow stands in for the stacked outline
+    shadowColor: '1A1A1A',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FBBF24',
+    animation: 'pop'
+  },
+  'vintage-film': {
+    name: 'Vintage Film',
+    fontName: 'Georgia',
+    fontSize: 46,
+    fontColor: 'FBBF24',          // sepia gold
+    outlineColor: '92400E',       // dark brown rim for sepia feel
+    outlineWidth: 2,
+    shadowDepth: 2,
+    shadowColor: '422006',
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FCD34D',
+    animation: 'fade'
+  },
+  premiere: {
+    name: 'Premiere',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'FBBF24',          // gold text
+    outlineColor: 'DC2626',       // red carpet halo (full-bg approximation)
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '7F1D1D',
+    bold: true,
+    fontSpacing: 8,
+    alignment: 2,
+    wordHighlightColor: 'FBBF24',
+    animation: 'glow'
+  },
+  // 'epic' — hollow outlined text. Set transparent:true so the fill becomes
+  // fully transparent (alpha FF) and only the white outline shows.
+  epic: {
+    name: 'Epic',
+    fontName: 'Arial Black',
+    fontSize: 60,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 4,
+    shadowDepth: 0,
+    bold: true,
+    transparent: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  'big-drop': {
+    name: 'Big Drop',
+    fontName: 'Arial Black',
+    fontSize: 56,
+    fontColor: 'FFFFFF',
+    outlineColor: '1A1A1A',
+    outlineWidth: 2,
+    shadowDepth: 8,               // deep chunky drop shadow
+    shadowColor: '6C3AED',        // brand purple shadow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '6C3AED',
+    animation: 'pop'
+  },
+  punchline: {
+    name: 'Punchline',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FF1744',       // thick red outline approximates the side bars
+    outlineWidth: 5,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF1744',
+    animation: 'pop'
+  },
+  'reaction-pop': {
+    name: 'Reaction Pop',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 6,
+    shadowColor: 'FF1744',         // red 3D shadow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF1744',
+    animation: 'pop'
+  },
+  'hype-bold': {
+    name: 'Hype Bold',
+    fontName: 'Arial Black',
+    fontSize: 56,
+    fontColor: 'FF1744',           // red body
+    outlineColor: 'FFFFFF',        // white rim
+    outlineWidth: 2,
+    shadowDepth: 4,
+    shadowColor: 'FF1744',         // red glow shadow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF1744',
+    animation: 'glow'
+  },
+  award: {
+    name: 'Award',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'FBBF24',           // bright gold body
+    outlineColor: '92400E',        // deep brown rim suggests the gradient lower half
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '422006',
+    bold: true,
+    fontSpacing: 10,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
+    animation: 'glow'
+  },
+  marquee: {
+    name: 'Marquee',
+    fontName: 'Georgia',
+    fontSize: 50,
+    fontColor: 'FBBF24',
+    outlineColor: 'F59E0B',        // close-match orange halo for the bulb glow
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    fontSpacing: 8,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
+    animation: 'glow'
+  },
+  influencer: {
+    name: 'Influencer',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'FF6FB5',           // pink body
+    outlineColor: 'FFC1F0',        // softer pink halo
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: 'C71585',
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FFC1F0',
+    animation: 'glow'
+  },
   'neon-glow': {
     name: 'Neon Glow',
     fontName: 'Arial',
@@ -1221,7 +1386,19 @@ const PRESET_BEHAVIOR = {
   'lightning':     'neon-glow',
   'cyber':         'neon-glow',
   'buzz':          'neon-glow',
-  'boom':          'bold-pop'  // boom is more 'pop with fat outline' than glow
+  'boom':          'bold-pop',  // boom is more 'pop with fat outline' than glow
+  // Tier 6: multi-layer / partial gradient
+  'western':       'bold-pop',
+  'vintage-film':  'minimal',
+  'premiere':      'neon-glow',
+  'epic':          'bold-pop',
+  'big-drop':      'bold-pop',
+  'punchline':     'bold-pop',
+  'reaction-pop':  'bold-pop',
+  'hype-bold':     'neon-glow',
+  'award':         'neon-glow',
+  'marquee':       'neon-glow',
+  'influencer':    'neon-glow'
   // (more premium styles will be added here as their renders get implemented)
 };
 
@@ -1268,6 +1445,13 @@ function generateASSFile(transcript, preset, customSettings = {}) {
   const borderStyle   = (typeof style.borderStyle === 'number') ? style.borderStyle : 1;
   // Per-preset rotation in degrees (Style.Angle field). Used by rage, stamp.
   const angleDeg      = (typeof style.angle === 'number') ? style.angle : 0;
+  // Drop-shadow fill colour (ASS BackColour slot). Defaults to opaque black.
+  const shadowColorASS = style.shadowColor ? colorToASS(style.shadowColor) : '&H00000000&';
+  // Hollow text — sets the fontColor alpha to FF (fully transparent fill),
+  // leaving only the outline visible. Used by 'epic'.
+  const fontColorASS  = (style.transparent === true)
+    ? colorToASS(fontColor).replace('&H', '&HFF')
+    : colorToASS(fontColor);
 
   // Map position to ASS alignment (numpad style: 1-9)
   const alignmentMap = { top: 8, center: 5, bottom: 2 };
@@ -1298,7 +1482,7 @@ PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},${italicFlag},${underlineFlag},${strikeFlag},100,100,${fontSpacing},${angleDeg},${borderStyle},${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
+Style: Default,${fontFamily},${fontSize},${fontColorASS},${colorToASS(highlightColor)},${colorToASS(outlineColor)},${shadowColorASS},${boldFlag},${italicFlag},${underlineFlag},${strikeFlag},100,100,${fontSpacing},${angleDeg},${borderStyle},${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
