@@ -858,18 +858,11 @@ async function renderEditor(req, res) {
                     <div style="font-size:8px;color:#3d3358;margin-top:1px">MP4, MOV, MP3, WAV, PNG, JPG</div>
                     <button style="margin-top:5px;padding:4px 14px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:5px;color:#fff;font-size:9px;font-weight:700;border:none;cursor:pointer">+ Upload</button>
                   </div>
-                  <div class="ml-section">Folders</div>
-                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Completed Videos</span><span style="font-size:8px;color:#3d3358">12</span></div>
-                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1">Not Completed</span><span style="font-size:8px;color:#3d3358">5</span></div>
-                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1">Leonardo AI Images</span><span style="font-size:8px;color:#3d3358">24</span></div>
-                  <div class="ml-section">Recent &mdash; drag to timeline</div>
                   <div class="ml-fgrid" id="mediaFileGrid">
                   </div>
                 </div>
                 <div class="ml-foot">
-                  <button class="ml-fb">&#128229; Import</button>
-                  <button class="ml-fb">&#128193; Folder</button>
-                  <button class="ml-fb ai">&#10024; AI B-Roll</button>
+                  <button class="ml-fb ai" style="flex:1;width:100%">&#10024; AI B-Roll</button>
                 </div>
               </div>
 
@@ -1201,7 +1194,7 @@ async function renderEditor(req, res) {
           </div>
           <div class="t-body">
             <!-- EDIT TAB -->
-            <div class="cat-content-new active" id="cat-edit2">
+            <div class="cat-content-new" id="cat-edit2">
               <div class="tool-sec"><div class="tool-sec-title">Clip Tools</div>
                 <div class="tg2">
                   <div class="tb3 on">\u2702\ufe0f Trim</div>
@@ -1261,29 +1254,29 @@ async function renderEditor(req, res) {
               </div>
             </div>
             <!-- AI TAB -->
-            <div class="cat-content-new" id="cat-ai2">
-              <div class="tool-sec"><div class="tool-sec-title">AI Generation</div>
+            <div class="cat-content-new active" id="cat-ai2">
+              <div class="tool-sec">
                 <div class="tg2">
-                  <div class="tb3 ai-t on">\u2728 Enhance Audio</div>
-                  <div class="tb3 ai-t">\ud83d\udcdd Captions</div>
-                  <div class="tb3 ai-t">\ud83e\ude9d AI Hook</div>
-                  <div class="tb3 ai-t">\ud83c\udfa8 Brand Kit</div>
-                </div>
-              </div>
-              <div class="tool-sec"><div class="tool-sec-title">AI Analysis</div>
-                <div class="tg2">
-                  <div class="tb3 ai-t">\ud83d\udcdc Transcript</div>
-                  <div class="tb3 ai-t">\ud83c\udfac B-Roll</div>
-                  <div class="tb3 ai-t">\ud83e\udde0 Smart Cut</div>
-                  <div class="tb3 ai-t">\ud83d\udc41\ufe0f Scene Detect</div>
+                  <div class="tb3 ai-t on">\ud83c\udfad Style Transfer</div>
+                  <div class="tb3 ai-t">\ud83d\uddbc\ufe0f BG Remove</div>
+                  <div class="tb3 ai-t">\ud83d\udde3\ufe0f AI Voice</div>
+                  <div class="tb3 ai-t">\ud83c\udf0d Translate</div>
                 </div>
               </div>
               <div class="tool-sec"><div class="tool-sec-title">AI Creative</div>
                 <div class="tg2">
-                  <div class="tb3 ai-t">\ud83c\udfad Style Transfer</div>
-                  <div class="tb3 ai-t">\ud83d\uddbc\ufe0f BG Remove</div>
-                  <div class="tb3 ai-t">\ud83d\udde3\ufe0f AI Voice</div>
-                  <div class="tb3 ai-t">\ud83c\udf0d Translate</div>
+                  <div class="tb3 ai-t">\ud83c\udfac B-Roll</div>
+                  <div class="tb3 ai-t">\ud83e\udde0 Smart Cut</div>
+                  <div class="tb3 ai-t">\ud83d\udc41\ufe0f Scene Detect</div>
+                  <div class="tb3 ai-t">\ud83d\udcdc Transcript</div>
+                </div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">AI Analysis</div>
+                <div class="tg2">
+                  <div class="tb3 ai-t">\u2728 Enhance Audio</div>
+                  <div class="tb3 ai-t">\ud83d\udcdd Captions</div>
+                  <div class="tb3 ai-t">\ud83e\ude9d AI Hook</div>
+                  <div class="tb3 ai-t">\ud83c\udfa8 Brand Kit</div>
                 </div>
               </div>
             </div>
