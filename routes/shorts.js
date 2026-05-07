@@ -6910,7 +6910,7 @@ ${paginationHtml}
               <div class="clip-toolbar-divider"></div>
               <label class="clip-captions-toggle" title="Burn animated captions into the clip">
                 <input type="checkbox" id="captions-\${idx}" checked
-                  style="accent-color:var(--primary); width:14px; height:14px;">
+                  style="accent-color:#a78bfa; width:14px; height:14px;">
                 <span>Captions</span>
               </label>
               <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
