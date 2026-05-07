@@ -528,7 +528,6 @@ router.get('/', requireAuth, async (req, res) => {
 
         // Redirect to Smart Shorts with the analysis open
         if (analysisId) {
-          if (n_beforeunload()) { /* no-op: already removed below */ }
           // Remove beforeunload before navigating so the browser doesn't prompt
           hideAnalyzeNotice();
           location.href = '/shorts?openAnalysis=' + encodeURIComponent(analysisId);
@@ -543,9 +542,6 @@ router.get('/', requireAuth, async (req, res) => {
       } finally {
         btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose';
       }
-    }
-    // Helper kept tiny — no-op exists for clarity
-    function n_beforeunload(){ return false; }
     }
 
     function addPlatformResult(output, isFirst) {
