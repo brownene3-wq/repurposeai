@@ -6,6 +6,10 @@ const { spawn, execSync } = require('child_process');
 const OpenAI = require('openai');
 const archiver = require('archiver');
 const { downloadWithCobalt, validateDownloadedVideo } = require('../utils/cobalt');
+// brand-templates exports fetchLogo() — used by /shorts/clip to bake
+// the selected Brand Template's logo onto the rendered viral clip.
+let brandTemplatesMod = null;
+try { brandTemplatesMod = require('./brand-templates'); } catch (_e) { brandTemplatesMod = null; }
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
@@ -3377,6 +3381,33 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
           }
         }
 
+        // Brand-template logo overlay: if the user selected a template that
+        // has a saved logo, fetch the bytes, write to disk, and remember the
+        // path + position. The actual filter splicing happens after we
+        // build videoFilter below.
+        let brandLogoPath = null;
+        let brandLogoPos = 'top-right';
+        let brandLogoSizePct = 12; // % of clip width (1080 → ~130px)
+        if (selectedBrandTemplate && selectedBrandTemplate.logoFilename && brandTemplatesMod && brandTemplatesMod.fetchLogo) {
+          try {
+            const row = await brandTemplatesMod.fetchLogo(selectedBrandTemplate.logoFilename);
+            if (row && row.data) {
+              const ext = (row.mime_type || '').includes('jpeg') ? 'jpg'
+                       : (row.mime_type || '').includes('webp') ? 'webp'
+                       : 'png';
+              brandLogoPath = path.join(CLIPS_DIR, `_logo_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`);
+              fs.writeFileSync(brandLogoPath, row.data);
+              brandLogoPos = selectedBrandTemplate.logoPosition || 'top-right';
+              const rawSize = parseInt(selectedBrandTemplate.logoSize, 10);
+              if (!isNaN(rawSize) && rawSize > 0) brandLogoSizePct = Math.max(5, Math.min(40, rawSize));
+              console.log(`  Brand logo prepared: ${brandLogoPath} (pos=${brandLogoPos}, size=${brandLogoSizePct}%)`);
+            }
+          } catch (e) {
+            console.log('  Brand logo fetch failed:', e.message);
+            brandLogoPath = null;
+          }
+        }
+
         // Build filter based on selected clip style
         const captionFilter = assFilePath ? `,ass='${assFilePath.replace(/'/g, "'\\''").replace(/:/g, '\\:')}'` : '';
 
@@ -3425,13 +3456,47 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
 
         // PiP uses two inputs of same file to avoid split filter deadlocks
         const isPip = style === 'pip';
+
+        // If a brand-template logo is set, splice an overlay step onto the
+        // existing video filter chain. The logo file becomes a NEW ffmpeg
+        // input, which means its index depends on whether PiP is on.
+        const logoInputIdx = isPip ? 2 : 1;
+        let finalVideoFilter = videoFilter;
+        if (brandLogoPath) {
+          // Tag the existing chain's output as [vid] so we can chain on top.
+          if (finalVideoFilter.includes('[')) {
+            // filter_complex chain — already named labels. Append [vid]
+            // to whatever the last filter step produces.
+            finalVideoFilter = finalVideoFilter + '[vid]';
+          } else {
+            // -vf chain (single ',-style' string). Wrap as a complex filter
+            // so we can name its output and then chain the logo overlay.
+            finalVideoFilter = '[0:v]' + finalVideoFilter + '[vid]';
+          }
+          // Logo width as a fraction of the 1080-wide canvas. The
+          // force_divisible_by=2 keeps libx264's yuv420p happy.
+          const logoW = Math.round(1080 * brandLogoSizePct / 100);
+          const margin = 30;
+          const overlayPos =
+            brandLogoPos === 'top-left'     ? `${margin}:${margin}` :
+            brandLogoPos === 'bottom-left'  ? `${margin}:H-h-${margin}` :
+            brandLogoPos === 'bottom-right' ? `W-w-${margin}:H-h-${margin}` :
+            /* top-right default */          `W-w-${margin}:${margin}`;
+          finalVideoFilter +=
+            `;[${logoInputIdx}:v]scale=${logoW}:-2:flags=lanczos[logo];` +
+            `[vid][logo]overlay=${overlayPos}:format=auto[final]`;
+        }
+
         const ffmpegArgs = [
           '-y',
           '-ss', String(startSec),
           '-i', actualDownload,
           ...(isPip ? ['-ss', String(startSec), '-i', actualDownload] : []),
+          ...(brandLogoPath ? ['-i', brandLogoPath] : []),
           '-t', String(duration),
-          ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
+          ...(brandLogoPath
+            ? ['-filter_complex', finalVideoFilter, '-map', '[final]', '-map', '0:a?']
+            : (videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter])),
           '-c:v', 'libx264',
           '-profile:v', 'high',
           '-level', '4.0',
@@ -3466,9 +3531,12 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
             '-y',
             '-i', actualDownload,
             ...(isPip ? ['-i', actualDownload] : []),
+            ...(brandLogoPath ? ['-i', brandLogoPath] : []),
             '-ss', String(startSec),
             '-t', String(duration),
-            ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
+            ...(brandLogoPath
+              ? ['-filter_complex', finalVideoFilter, '-map', '[final]', '-map', '0:a?']
+              : (videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter])),
             '-c:v', 'libx264',
             '-profile:v', 'high',
             '-level', '4.0',
@@ -3501,6 +3569,7 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
         // Clean up temp files (release shared video cache instead of deleting directly)
         releaseVideoCache(videoId);
         if (assFilePath) { try { fs.unlinkSync(assFilePath); } catch(e) {} }
+        if (brandLogoPath) { try { fs.unlinkSync(brandLogoPath); } catch(e) {} }
 
         // === STEP 3: Validate output and atomically rename ===
         clearTimeout(timeout);
