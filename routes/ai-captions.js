@@ -705,6 +705,143 @@ const captionPresets = {
     wordHighlightColor: '4ADE80',  // green active-word swap, hormozi-style
     animation: 'highlight'
   },
+  // ----- Glow / neon premium styles -----
+  // The trick across this whole tier: pick a vivid fontColor and use a
+  // CLOSELY MATCHING outlineColor at outlineWidth ~4. libass renders that
+  // outline as a soft halo around the text, which reads as a neon glow.
+  // The 'neon-glow' base behavior also bumps outline width on the active
+  // word, so the glow visibly intensifies as each word is spoken.
+  crimson: {
+    name: 'Crimson',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'DC2626',
+    outlineColor: '991B1B',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'EF4444',
+    animation: 'glow'
+  },
+  'ice-blue': {
+    name: 'Ice Blue',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'BFDBFE',
+    outlineColor: '3B82F6',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '93C5FD',
+    animation: 'glow'
+  },
+  'hot-pink': {
+    name: 'Hot Pink',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FF1493',
+    outlineColor: 'C71585',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF69B4',
+    animation: 'glow'
+  },
+  'toxic-green': {
+    name: 'Toxic Green',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: '84CC16',
+    outlineColor: '4D7C0F',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'BEF264',
+    animation: 'glow'
+  },
+  ember: {
+    name: 'Ember',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FCA5A5',
+    outlineColor: '991B1B',
+    outlineWidth: 4,
+    shadowDepth: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'DC2626',
+    animation: 'glow'
+  },
+  frost: {
+    name: 'Frost',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'ECFEFF',
+    outlineColor: '67E8F9',
+    outlineWidth: 3,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'BAE6FD',
+    animation: 'glow'
+  },
+  lightning: {
+    name: 'Lightning',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFEA00',
+    outlineColor: 'FFD600',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',
+    animation: 'glow'
+  },
+  cyber: {
+    name: 'Cyber',
+    fontName: 'Courier New',
+    fontSize: 46,
+    fontColor: '00FFFF',
+    outlineColor: 'FF00FF',
+    outlineWidth: 3,
+    shadowDepth: 2,
+    bold: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: '00FFFF',
+    animation: 'glow'
+  },
+  buzz: {
+    name: 'Buzz',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFEA00',
+    outlineColor: 'FFD600',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',
+    animation: 'glow'
+  },
+  boom: {
+    name: 'Boom',
+    fontName: 'Arial Black',
+    fontSize: 56,
+    fontColor: 'FFEA00',
+    outlineColor: 'DC2626',
+    outlineWidth: 5,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
   'neon-glow': {
     name: 'Neon Glow',
     fontName: 'Arial',
@@ -1073,7 +1210,18 @@ const PRESET_BEHAVIOR = {
   'rage':          'bold-pop',
   'banner':        'bold-pop',
   'stamp':         'minimal',
-  'storytime':     'hormozi'   // green active-word highlight, hormozi behavior
+  'storytime':     'hormozi',  // green active-word highlight, hormozi behavior
+  // Tier 5: glow / neon (matching outline as halo + active-word brightness)
+  'crimson':       'neon-glow',
+  'ice-blue':      'neon-glow',
+  'hot-pink':      'neon-glow',
+  'toxic-green':   'neon-glow',
+  'ember':         'neon-glow',
+  'frost':         'neon-glow',
+  'lightning':     'neon-glow',
+  'cyber':         'neon-glow',
+  'buzz':          'neon-glow',
+  'boom':          'bold-pop'  // boom is more 'pop with fat outline' than glow
   // (more premium styles will be added here as their renders get implemented)
 };
 
