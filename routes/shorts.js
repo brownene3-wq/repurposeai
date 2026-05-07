@@ -3244,11 +3244,30 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       }
       if (selectedBrandTemplate) {
         console.log(`  Brand Template selected: "${selectedBrandTemplate.name || selectedBrandTemplate.id}" (caption: ${selectedBrandTemplate.captionStyle || 'n/a'}, logo: ${selectedBrandTemplate.logoFilename ? 'yes' : 'no'})`);
-        // If the user hasn't explicitly chosen a caption style for this
-        // clip, fall back to the template's caption style.
-        if (!captionStyle && selectedBrandTemplate.captionStyle) {
+
+        // The template is the active brand state at export time — its
+        // captionStyle ALWAYS wins over the dropdown. Previously this was
+        // gated on the dropdown being empty, but the dropdown is never
+        // empty (it defaults to 'classic'), so the template was getting
+        // silently ignored. The same goes for logo position/size below
+        // (already pulled from the template in the ffmpeg builder).
+        if (selectedBrandTemplate.captionStyle) {
+          if (captionStyle && captionStyle !== selectedBrandTemplate.captionStyle) {
+            console.log(`  → overriding caption style "${captionStyle}" with template's "${selectedBrandTemplate.captionStyle}"`);
+          } else {
+            console.log(`  → using template caption style: ${selectedBrandTemplate.captionStyle}`);
+          }
           captionStyle = selectedBrandTemplate.captionStyle;
-          console.log(`  → using template's caption style: ${captionStyle}`);
+        }
+
+        // Suppress the brand_kits watermark text when a template is
+        // active — otherwise the old watermark string from the user's
+        // brand_kits row layers on top of the new template's logo and
+        // looks like an "outdated brand design." The template IS the
+        // brand for this export.
+        if (brandKit) {
+          console.log('  → suppressing brand_kits watermark while template is active');
+          brandKit = Object.assign({}, brandKit, { watermark_text: '' });
         }
       } else {
         console.log(`  Selected brand template id "${selectedBrandTemplateId}" not found in cookie — skipping`);
