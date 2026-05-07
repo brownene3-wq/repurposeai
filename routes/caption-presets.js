@@ -152,223 +152,14 @@ const PREMIUM_DIAMOND_SVG = `
   <path d="M3.2 9 L20.8 9 M7.5 9 L12 21.5 L16.5 9 M12 2.5 L7.5 9 M12 2.5 L16.5 9" stroke="rgba(255,255,255,0.55)" stroke-width="0.4" fill="none"/>
 </svg>`.trim();
 
-router.get('/', requireAuth, (req, res) => {
-  const headHTML = getHeadHTML('Caption Styles');
-  const sidebar = getSidebar('caption-presets', req.user, req.teamPermissions);
-  const themeToggle = getThemeToggle();
-  const themeScript = getThemeScript();
-  const baseCSS = getBaseCSS();
-
-  const css = `
-    ${baseCSS}
-
-    :root {
-      --primary: #6C3AED;
-      --surface: #1a1a2e;
-      --dark: #0f0f1e;
-      --text: #ffffff;
-      --text-muted: #a0aec0;
-      --border-subtle: #2d2d4a;
-      --gradient-1: linear-gradient(135deg, #6C3AED, #ec4899);
-      --gradient-wave: linear-gradient(90deg, #a855f7, #ec4899);
-      --neon-green: #39ff14;
-      --neon-cyan: #00ffff;
-      --golden: #d4a574;
-    }
-
-    [data-theme="light"] {
-      --surface: #ffffff;
-      --dark: #f5f5f5;
-      --text: #1a1a2e;
-      --text-muted: #64748b;
-      --border-subtle: #e2e8f0;
-      --gradient-1: linear-gradient(135deg, #6C3AED, #ec4899);
-      --golden: #b8860b;
-    }
-
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: var(--dark);
-      color: var(--text);
-      line-height: 1.6;
-    }
-
-    .dashboard { display: flex; height: 100vh; overflow: hidden; }
-    .sidebar { flex-shrink: 0; }
-    .main-content { flex: 1; overflow-y: auto; }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 2rem;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border-subtle);
-      margin-bottom: 1.5rem;
-    }
-
-    .header-content h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-      background: var(--gradient-1);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .header-content p {
-      color: var(--text-muted);
-      font-size: 0.95rem;
-    }
-
-    .theme-toggle-header { display: flex; align-items: center; }
-
-    .content-wrapper {
-      padding: 0 2rem 2rem 2rem;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-
-    /* Tier filter (Free vs Premium) - clickable single-select toggle */
-    .tier-filter {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-    }
-    .tier-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.45rem 0.9rem;
-      background: transparent;
-      border: 1px solid var(--border-subtle);
-      border-radius: 999px;
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: inherit;
-      transition: all 0.15s ease;
-    }
-    .tier-btn:hover {
-      color: var(--text);
-      border-color: var(--primary);
-    }
-    .tier-btn.active {
-      background: var(--gradient-1);
-      border-color: transparent;
-      color: #ffffff;
-      box-shadow: 0 4px 14px rgba(108,58,237,0.35);
-    }
-    .tier-btn .legend-dot {
-      width: 10px; height: 10px; border-radius: 999px;
-      background: #4ADE80;
-    }
-    .tier-btn .legend-diamond {
-      width: 14px; height: 14px;
-    }
-    /* When a tier filter is active, hide cards that don't match */
-    .presets-grid[data-filter='free'] .preset-card[data-tier='premium'],
-    .presets-grid[data-filter='premium'] .preset-card[data-tier='free'] {
-      display: none;
-    }
-
-    /* Category tabs */
-    .category-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-bottom: 1.5rem;
-      padding: 0.5rem;
-      background: var(--surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 14px;
-    }
-    .category-tab {
-      flex: 1 1 0;
-      min-width: 110px;
-      padding: 0.75rem 1rem;
-      background: transparent;
-      border: 1px solid transparent;
-      border-radius: 10px;
-      color: var(--text-muted);
-      font-weight: 600;
-      font-size: 0.9rem;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-    .category-tab:hover {
-      color: var(--text);
-      background: rgba(108,58,237,0.1);
-    }
-    .category-tab.active {
-      background: var(--gradient-1);
-      color: #ffffff;
-      box-shadow: 0 4px 14px rgba(108,58,237,0.35);
-    }
-    .category-tab .cat-icon { font-size: 1rem; }
-    .category-tab .cat-count {
-      background: rgba(255,255,255,0.18);
-      padding: 1px 7px;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      font-weight: 700;
-    }
-    .category-tab:not(.active) .cat-count {
-      background: rgba(108,58,237,0.15);
-      color: var(--primary);
-    }
-
-    .category-section { display: none; }
-    .category-section.active { display: block; }
-    .category-heading {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      margin-bottom: 1rem;
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .category-heading .cat-icon { font-size: 1.3rem; }
-    .category-heading .cat-meta {
-      color: var(--text-muted);
-      font-weight: 500;
-      font-size: 0.85rem;
-    }
-
-    .presets-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-
-    .preset-card {
-      background: var(--surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 12px;
-      overflow: hidden;
-      transition: all 0.3s ease;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .preset-card:hover {
-      border-color: var(--primary);
-      box-shadow: 0 6px 24px rgba(108, 58, 237, 0.2);
-      transform: translateY(-3px);
-    }
-
+// =============================================================================
+// Per-style preview CSS shared across the Caption Styles page and the AI
+// Captions page. Both pages render preset cards with identical preview text
+// styling so what you see on Caption Styles is exactly what you get on AI
+// Captions's preset picker. Page-specific layout (grid, header, modal) lives
+// in each page's own <style> block.
+// =============================================================================
+const PRESETS_VISUAL_CSS = `
     .preview-container {
       background: #000000;
       height: 80px;
@@ -1293,6 +1084,226 @@ router.get('/', requireAuth, (req, res) => {
       letter-spacing: 0.02em;
       text-shadow: 2px 2px 0 #FF6FB5, -2px -2px 0 #00E5FF;
     }
+`;
+
+router.get('/', requireAuth, (req, res) => {
+  const headHTML = getHeadHTML('Caption Styles');
+  const sidebar = getSidebar('caption-presets', req.user, req.teamPermissions);
+  const themeToggle = getThemeToggle();
+  const themeScript = getThemeScript();
+  const baseCSS = getBaseCSS();
+
+  const css = `
+    ${baseCSS}
+
+    :root {
+      --primary: #6C3AED;
+      --surface: #1a1a2e;
+      --dark: #0f0f1e;
+      --text: #ffffff;
+      --text-muted: #a0aec0;
+      --border-subtle: #2d2d4a;
+      --gradient-1: linear-gradient(135deg, #6C3AED, #ec4899);
+      --gradient-wave: linear-gradient(90deg, #a855f7, #ec4899);
+      --neon-green: #39ff14;
+      --neon-cyan: #00ffff;
+      --golden: #d4a574;
+    }
+
+    [data-theme="light"] {
+      --surface: #ffffff;
+      --dark: #f5f5f5;
+      --text: #1a1a2e;
+      --text-muted: #64748b;
+      --border-subtle: #e2e8f0;
+      --gradient-1: linear-gradient(135deg, #6C3AED, #ec4899);
+      --golden: #b8860b;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: var(--dark);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .dashboard { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar { flex-shrink: 0; }
+    .main-content { flex: 1; overflow-y: auto; }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 1.5rem;
+    }
+
+    .header-content h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      background: var(--gradient-1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-content p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .theme-toggle-header { display: flex; align-items: center; }
+
+    .content-wrapper {
+      padding: 0 2rem 2rem 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Tier filter (Free vs Premium) - clickable single-select toggle */
+    .tier-filter {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .tier-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.9rem;
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      border-radius: 999px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+    }
+    .tier-btn:hover {
+      color: var(--text);
+      border-color: var(--primary);
+    }
+    .tier-btn.active {
+      background: var(--gradient-1);
+      border-color: transparent;
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(108,58,237,0.35);
+    }
+    .tier-btn .legend-dot {
+      width: 10px; height: 10px; border-radius: 999px;
+      background: #4ADE80;
+    }
+    .tier-btn .legend-diamond {
+      width: 14px; height: 14px;
+    }
+    /* When a tier filter is active, hide cards that don't match */
+    .presets-grid[data-filter='free'] .preset-card[data-tier='premium'],
+    .presets-grid[data-filter='premium'] .preset-card[data-tier='free'] {
+      display: none;
+    }
+
+    /* Category tabs */
+    .category-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      padding: 0.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+    }
+    .category-tab {
+      flex: 1 1 0;
+      min-width: 110px;
+      padding: 0.75rem 1rem;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .category-tab:hover {
+      color: var(--text);
+      background: rgba(108,58,237,0.1);
+    }
+    .category-tab.active {
+      background: var(--gradient-1);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(108,58,237,0.35);
+    }
+    .category-tab .cat-icon { font-size: 1rem; }
+    .category-tab .cat-count {
+      background: rgba(255,255,255,0.18);
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .category-tab:not(.active) .cat-count {
+      background: rgba(108,58,237,0.15);
+      color: var(--primary);
+    }
+
+    .category-section { display: none; }
+    .category-section.active { display: block; }
+    .category-heading {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .category-heading .cat-icon { font-size: 1.3rem; }
+    .category-heading .cat-meta {
+      color: var(--text-muted);
+      font-weight: 500;
+      font-size: 0.85rem;
+    }
+
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .preset-card {
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .preset-card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 6px 24px rgba(108, 58, 237, 0.2);
+      transform: translateY(-3px);
+    }
+
+${PRESETS_VISUAL_CSS}
 
     .preset-info {
       padding: 0.75rem;
@@ -1815,10 +1826,13 @@ async function readEnabledStyles(userId) {
   await db.query('INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
   const r = await db.query('SELECT enabled_caption_styles FROM user_settings WHERE user_id = $1', [userId]);
   const stored = r.rows[0]?.enabled_caption_styles;
+  // Default to an empty array — nothing is enabled until the user explicitly
+  // adds it from the Caption Styles page. Both 'free' and 'premium' styles
+  // require an explicit Add to appear on AI Captions.
   if (stored === null || stored === undefined) {
-    return [...FREE_STYLE_CLASSES];
+    return [];
   }
-  return Array.isArray(stored) ? stored : [...FREE_STYLE_CLASSES];
+  return Array.isArray(stored) ? stored : [];
 }
 
 async function writeEnabledStyles(userId, list) {
@@ -1879,3 +1893,4 @@ module.exports.PRESETS = PRESETS;
 module.exports.CATEGORIES = CATEGORIES;
 module.exports.readEnabledStyles = readEnabledStyles;
 module.exports.FREE_STYLE_CLASSES = FREE_STYLE_CLASSES;
+module.exports.PRESETS_VISUAL_CSS = PRESETS_VISUAL_CSS;

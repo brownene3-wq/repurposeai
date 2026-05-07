@@ -1968,7 +1968,7 @@ function burnSubtitles(videoPath, assPath, outputPath) {
 }
 
 // GET: Main AI Captions page
-const { PRESETS: ALL_PRESETS, readEnabledStyles, FREE_STYLE_CLASSES } = require('./caption-presets');
+const { PRESETS: ALL_PRESETS, readEnabledStyles, FREE_STYLE_CLASSES, PRESETS_VISUAL_CSS } = require('./caption-presets');
 
 router.get('/', requireAuth, async (req, res) => {
   // Read which caption styles the user has enabled (free + added premium)
@@ -2370,201 +2370,49 @@ router.get('/', requireAuth, async (req, res) => {
       box-shadow: 0 0 0 2px rgba(108, 58, 237, 0.3);
     }
 
-    .preset-preview {
+    /* AI Captions's preset CARDS keep their own grid + sizing rules. The
+       per-style PREVIEW rules (font, color, background, animation) are imported
+       wholesale from the Caption Styles catalog so the cards render byte-for-byte
+       identically to what users see when they Add a style. */
+
+    /* CSS variables the catalog rules reference. Defined here so the imported
+       rules resolve regardless of which page they're injected into. */
+    :root {
+      --gradient-wave: linear-gradient(90deg, #a855f7, #ec4899);
+      --neon-green: #39ff14;
+      --neon-cyan:  #00ffff;
+      --golden:     #d4a574;
+    }
+    [data-theme="light"] {
+      --golden: #b8860b;
+    }
+
+    /* Make the AI Captions preview container size match the catalog's so the
+       imported rules look the same. */
+    .preset-card .preview-container {
       width: 100%;
-      height: 64px;
-      background: #000000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0.5rem;
-      overflow: hidden;
     }
 
-    .preset-preview .preview-text {
-      font-size: 0.95rem;
+    ${PRESETS_VISUAL_CSS}
+
+    /* Empty-state message shown when the user has no styles enabled. */
+    .presets-empty {
+      grid-column: 1 / -1;
+      padding: 2rem 1.5rem;
+      border: 1px dashed var(--border-subtle);
+      border-radius: 12px;
       text-align: center;
-      white-space: nowrap;
-      max-width: 100%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.3rem;
-      line-height: 1.1;
-    }
-
-    .preset-name {
-      font-size: 0.75rem;
       color: var(--text-muted);
-      text-align: center;
-      padding: 0.45rem 0.4rem;
-      background: var(--dark);
     }
-    .preset-card.selected .preset-name {
+    .presets-empty-title {
+      font-weight: 700;
       color: var(--text);
+      margin-bottom: 0.4rem;
+      font-size: 0.95rem;
     }
+    .presets-empty-body { font-size: 0.85rem; line-height: 1.5; }
+    .presets-empty-body a { color: var(--primary); font-weight: 600; }
 
-    /* ----- Per-preset WYSIWYG preview styles -----
-       These mirror the styles on /caption-presets so every preset card shows
-       what the burned-in caption will actually look like (font, color, stroke,
-       glow). Keep size scales aware of the 64px preview container. */
-
-    .preset-card.karaoke .preview-text {
-      font-weight: 700; letter-spacing: 0.04em; color: #fff;
-    }
-    .preset-card.karaoke .word-current {
-      background: linear-gradient(90deg, #6C3AED, #FF00FF);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .preset-card.karaoke .word-next { color: #fff; opacity: 0.7; }
-
-    .preset-card.bold-pop .preview-text {
-      font-family: 'Impact','Anton','DejaVu Sans',sans-serif;
-      font-weight: 900; font-size: 1.25rem; color: #fff;
-      -webkit-text-stroke: 2px #000; paint-order: stroke fill;
-    }
-
-    .preset-card.minimal .preview-text {
-      font-family: 'Helvetica','Liberation Sans','Arial',sans-serif;
-      font-weight: 300; font-size: 0.95rem; letter-spacing: 0.1em;
-      color: #fff; text-transform: lowercase; opacity: 0.9;
-    }
-
-    .preset-card.neon-glow .preview-text {
-      font-weight: 600; font-size: 1.05rem;
-      color: #39FF14;
-      text-shadow:
-        0 0 6px #39FF14, 0 0 12px #39FF14,
-        0 0 18px #39FF14, 0 0 12px #25F4EE;
-      filter: brightness(1.1);
-    }
-
-    .preset-card.gradient-wave .preview-text {
-      background: linear-gradient(90deg, #FF6B6B, #FF00FF, #25F4EE);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      font-weight: 800; font-size: 1.2rem; letter-spacing: 0.02em;
-    }
-
-    .preset-card.typewriter .preview-text {
-      font-family: 'Courier New','Liberation Mono',monospace;
-      color: #00ff00; font-weight: 600; font-size: 1.05rem;
-      letter-spacing: 0.04em;
-      text-shadow: 0 0 6px rgba(0,255,0,0.5);
-    }
-
-    .preset-card.cinematic .preview-text {
-      font-family: 'Georgia','Liberation Serif',serif;
-      color: #D4A574; font-weight: 600; font-size: 1.15rem;
-      letter-spacing: 0.12em; font-style: italic;
-    }
-
-    .preset-card.street .preview-text {
-      font-weight: 900; color: #FFFF00;
-      font-size: 1.2rem; font-style: italic;
-      text-transform: uppercase; letter-spacing: 0.04em;
-      text-shadow: 2px 2px 0 #FF6600, 4px 4px 0 #FF0000, -2px 2px 0 #FF0000;
-    }
-
-    .preset-card.hormozi .preview-text {
-      font-weight: 900; font-size: 1.2rem; color: #fff;
-      text-transform: uppercase; letter-spacing: 0.02em;
-    }
-    .preset-card.hormozi .word-highlight {
-      color: #FACC15; background: rgba(250,204,21,0.15);
-      padding: 0 4px; border-radius: 3px;
-    }
-
-    .preset-card.mrbeast .preview-text {
-      font-family: 'Impact','Anton','DejaVu Sans',sans-serif;
-      font-weight: 900; font-size: 1.3rem; color: #FFD700;
-      text-transform: uppercase; letter-spacing: 0.025em;
-      -webkit-text-stroke: 1.5px #000; paint-order: stroke fill;
-      text-shadow: 0 2px 0 #1a1a1a;
-    }
-
-    .preset-card.classic-sub .preview-preview { background: #111; }
-    .preset-card.classic-sub .preview-text {
-      background: rgba(0,0,0,0.78);
-      color: #fff; font-weight: 500; font-size: 0.95rem;
-      padding: 4px 12px; border-radius: 3px; letter-spacing: 0.02em;
-    }
-
-    .preset-card.outline-style .preview-text {
-      font-weight: 900; font-size: 1.25rem;
-      color: transparent;
-      -webkit-text-stroke: 1.5px #fff; paint-order: stroke fill;
-      letter-spacing: 0.05em; text-transform: uppercase;
-    }
-
-    .preset-card.soft-glow .preview-text {
-      color: #fff; font-weight: 600; font-size: 1.1rem;
-      text-shadow:
-        0 0 8px rgba(255,255,255,0.85),
-        0 0 16px rgba(255,255,255,0.4),
-        0 0 28px rgba(168,85,247,0.4);
-      letter-spacing: 0.04em;
-    }
-
-    .preset-card.retro-vhs .preview-text {
-      font-family: 'Courier New','Liberation Mono',monospace;
-      color: #FF3366; font-weight: 700; font-size: 1.1rem;
-      text-transform: uppercase; letter-spacing: 0.12em;
-      text-shadow:
-        2px 0 #00FFFF, -2px 0 #FF0066,
-        0 0 6px rgba(255,51,102,0.45);
-    }
-
-    .preset-card.comic .preview-text {
-      font-family: 'Comic Sans MS','Chalkboard SE',cursive;
-      font-weight: 700; font-size: 1.1rem;
-      background: linear-gradient(135deg, #FF6B6B, #FFE66D);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      filter: drop-shadow(2px 2px 0 #000);
-    }
-
-    .preset-card.fire .preview-text {
-      font-family: 'Impact','Anton','DejaVu Sans',sans-serif;
-      font-weight: 900; font-size: 1.2rem;
-      background: linear-gradient(180deg, #FFD700 0%, #FF6B00 45%, #FF0000 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      text-transform: uppercase; letter-spacing: 0.03em;
-      filter: drop-shadow(0 0 6px rgba(255,107,0,0.55));
-    }
-
-    .preset-card.clean-modern .preview-text {
-      font-weight: 500; font-size: 1.05rem;
-      color: #fff; letter-spacing: 0.07em;
-      border-bottom: 2px solid #6C3AED;
-      padding-bottom: 3px;
-    }
-
-    .preset-card.podcast .preview-text {
-      font-family: 'Georgia','Liberation Serif',serif;
-      color: #e2e8f0; font-weight: 400;
-      font-size: 1.05rem; font-style: italic;
-      letter-spacing: 0.02em;
-      border-left: 3px solid #6C3AED; padding-left: 10px;
-    }
-
-    .preset-card.tiktok-trend .preview-text {
-      font-weight: 800; font-size: 1.2rem;
-      background: linear-gradient(90deg, #25F4EE, #FE2C55);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      text-transform: uppercase; letter-spacing: 0.035em;
-    }
-
-    .preset-card.shadow-drop .preview-text {
-      font-weight: 800; font-size: 1.2rem; color: #fff;
-      text-shadow:
-        4px 4px 0 rgba(108,58,237,0.7),
-        7px 7px 0 rgba(108,58,237,0.3);
-      text-transform: uppercase; letter-spacing: 0.025em;
-    }
 
     .color-picker-group {
       margin-bottom: 1rem;
@@ -2984,8 +2832,16 @@ router.get('/', requireAuth, async (req, res) => {
         id: p.cls,
         name: p.name,
         behavior: ({pop:'bold-pop', glow:'karaoke', fade:'minimal', none:'minimal'})[p.cs.animation] || 'bold-pop',
-        cs: p.cs
+        cs: p.cs,
+        preview: p.preview  // matches the Caption Styles preview text exactly
       }))
+    )};
+
+    // Lookup table of catalog preview HTML keyed by class slug. Used to enrich
+    // the legacy _ORIGINAL_PRESET_LIBRARY entries with the same preview text
+    // they already use on Caption Styles.
+    const _CATALOG_PREVIEWS = ${JSON.stringify(
+      Object.fromEntries(ALL_PRESETS.map(p => [p.cls, p.preview]))
     )};
 
     const _ORIGINAL_PRESET_LIBRARY = [
@@ -3031,8 +2887,14 @@ router.get('/', requireAuth, async (req, res) => {
         cs: { fontFamily: 'Impact',          fontSize: 50, textColor: 'FFFFFF', outlineColor: '6C3AED', outlineWidth: 4, highlightColor: 'A855F7', animation: 'pop',   position: 'bottom' } }
     ];
 
-    // Final PRESET_LIBRARY = original 20 (free, always shown unless user removed)
-    // + premium ones the user has explicitly added.
+    // Enrich originals with the catalog's preview HTML so the on-card preview
+    // matches the Caption Styles page exactly.
+    _ORIGINAL_PRESET_LIBRARY.forEach(p => {
+      if (!p.preview) p.preview = _CATALOG_PREVIEWS[p.id] || 'CAPTIONS';
+    });
+
+    // Final PRESET_LIBRARY = explicitly-added styles only. Both free and
+    // premium require an Add from the Caption Styles page.
     const PRESET_LIBRARY = [
       ..._ORIGINAL_PRESET_LIBRARY.filter(p => ENABLED_STYLES.includes(p.id)),
       ...PREMIUM_PRESETS_FROM_CATALOG.filter(p => ENABLED_STYLES.includes(p.id))
@@ -3059,35 +2921,33 @@ router.get('/', requireAuth, async (req, res) => {
     // sample sentence styled per-preset.
     function initPresets() {
       const grid = document.getElementById('presetsGrid');
-      const sample = 'CAPTIONS';
-      const sampleLower = 'captions';
+
+      if (!PRESET_LIBRARY.length) {
+        // Empty state — user hasn't added any styles yet from Caption Styles.
+        grid.innerHTML = '<div class="presets-empty">' +
+          '<div class="presets-empty-title">No caption styles added yet</div>' +
+          '<div class="presets-empty-body">Visit the <a href="/caption-presets">Caption Styles</a> page and click <strong>Add</strong> on any style to make it available here.</div>' +
+          '</div>';
+        return;
+      }
+
+      // Pick a default selection — the first preset in the list, since karaoke
+      // may not be added.
+      const defaultId = (PRESET_LIBRARY.find(p => p.id === 'karaoke') || PRESET_LIBRARY[0]).id;
 
       grid.innerHTML = PRESET_LIBRARY.map(p => {
-        const isStartSelected = p.id === 'karaoke';
-        // Each preset gets its own preview text variant matching what its
-        // burned output would look like (uppercase for shouty presets,
-        // lowercase for minimal / podcast).
-        const previewText = (() => {
-          switch (p.id) {
-            case 'minimal':
-            case 'typewriter':
-            case 'podcast':
-            case 'cinematic':
-              return sampleLower;
-            case 'karaoke':
-              // Two-word karaoke effect to show the gradient/highlight rolling
-              return '<span class="word-current">CAPTIONS</span>';
-            case 'hormozi':
-              return 'YOU <span class="word-highlight">WIN</span>';
-            default:
-              return sample;
-          }
-        })();
+        const isStartSelected = p.id === defaultId;
+        // Each preset uses the SAME preview HTML as the Caption Styles page,
+        // so the on-card preview is byte-for-byte identical between pages.
+        const previewHTML = p.preview || 'CAPTIONS';
         return '<div class="preset-card ' + p.id + (isStartSelected ? ' selected' : '') + '" data-preset-id="' + p.id + '" title="' + p.name + '">'
-          + '<div class="preset-preview"><div class="preview-text">' + previewText + '</div></div>'
+          + '<div class="preview-container"><div class="preview-text">' + previewHTML + '</div></div>'
           + '<div class="preset-name">' + p.name + '</div>'
           + '</div>';
       }).join('');
+
+      // Default-select the first card on the page
+      currentPreset = defaultId;
 
       // Click handlers
       grid.querySelectorAll('.preset-card').forEach(card => {
