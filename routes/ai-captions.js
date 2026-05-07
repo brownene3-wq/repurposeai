@@ -256,8 +256,246 @@ const captionPresets = {
     outlineWidth: 1,
     shadowDepth: 2,
     bold: true,
+    fontSpacing: 12,
     alignment: 2,
     wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: letterbox — Helvetica with wide letter-spacing.
+  letterbox: {
+    name: 'Letterbox',
+    fontName: 'Helvetica Neue',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: true,
+    fontSpacing: 16,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: dictation — Georgia italic, off-white.
+  dictation: {
+    name: 'Dictation',
+    fontName: 'Georgia',
+    fontSize: 42,
+    fontColor: 'E2E8F0',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'E2E8F0',
+    animation: 'fade'
+  },
+  // Premium: interview — Georgia italic + underline.
+  interview: {
+    name: 'Interview',
+    fontName: 'Georgia',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    underline: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: saga — Georgia italic with a soft purple shadow tint via outline.
+  saga: {
+    name: 'Saga',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'E5E7EB',
+    outlineColor: 'A855F7',
+    outlineWidth: 1,
+    shadowDepth: 2,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'A855F7',
+    animation: 'fade'
+  },
+  // Premium: lifestyle — italic Georgia in soft pink.
+  lifestyle: {
+    name: 'Lifestyle',
+    fontName: 'Georgia',
+    fontSize: 44,
+    fontColor: 'FBCFE8',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FBCFE8',
+    animation: 'fade'
+  },
+  // Premium: diary — italic Georgia in soft gold.
+  diary: {
+    name: 'Diary',
+    fontName: 'Georgia',
+    fontSize: 44,
+    fontColor: 'FDE68A',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FDE68A',
+    animation: 'fade'
+  },
+  // Premium: handwritten — Brush Script with a Verdana fallback for Linux.
+  handwritten: {
+    name: 'Handwritten',
+    fontName: 'Brush Script MT',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: notebook — Courier with underline.
+  notebook: {
+    name: 'Notebook',
+    fontName: 'Courier New',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    underline: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: memo — Courier in soft yellow, suggestive of a sticky memo.
+  memo: {
+    name: 'Memo',
+    fontName: 'Courier New',
+    fontSize: 40,
+    fontColor: 'FDE68A',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FDE68A',
+    animation: 'fade'
+  },
+  // Premium: closed-caption — opaque black box behind text (BorderStyle 3).
+  'closed-caption': {
+    name: 'Closed Caption',
+    fontName: 'Helvetica Neue',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 6,        // when borderStyle=3 this becomes the box padding
+    shadowDepth: 0,
+    borderStyle: 3,         // opaque background box
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: subtitle-bold — bold sans-serif with thick outline.
+  'subtitle-bold': {
+    name: 'Subtitle Bold',
+    fontName: 'Arial Black',
+    fontSize: 44,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  // Premium: x-caption — minimalist, light Helvetica, no outline.
+  'x-caption': {
+    name: 'X Caption',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: threads-bold — heavy black uppercase, no outline.
+  'threads-bold': {
+    name: 'Threads Bold',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  // Premium: strike — strikethrough text in red.
+  strike: {
+    name: 'Strike',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: 'DC2626',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    strikeout: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: bordered — text wrapped in a thick white outline (acts as a frame).
+  bordered: {
+    name: 'Bordered',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 3,
+    shadowDepth: 0,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: travel — Georgia uppercase with a generous outline that visually
+  // approximates the dashed border in the on-page preview.
+  travel: {
+    name: 'Travel',
+    fontName: 'Georgia',
+    fontSize: 42,
+    fontColor: 'FEF3C7',
+    outlineColor: 'FEF3C7',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
     animation: 'fade'
   },
   'neon-glow': {
@@ -584,6 +822,7 @@ function resolveFontName(uiFont) {
 // in sync with the cs.animation field on PRESETS in routes/caption-presets.js.
 const PRESET_BEHAVIOR = {
   // ----- Premium styles, ordered by implementation in the difficulty list -----
+  // Tier 1: trivial (font + color + spacing/italic)
   'plain-white':   'minimal',
   'plain-black':   'minimal',
   'sans-serif':    'minimal',
@@ -594,7 +833,24 @@ const PRESET_BEHAVIOR = {
   'headline':      'minimal',
   'movie-title':   'minimal',
   'trailer':       'minimal',
-  'noir':          'minimal'
+  'noir':          'minimal',
+  'letterbox':     'minimal',
+  'dictation':     'minimal',
+  'interview':     'minimal',
+  'saga':          'minimal',
+  'lifestyle':     'minimal',
+  'diary':         'minimal',
+  // Tier 2: easy (one extra effect)
+  'handwritten':   'minimal',
+  'notebook':      'minimal',
+  'memo':          'minimal',
+  'closed-caption':'minimal',
+  'subtitle-bold': 'bold-pop',  // heavy weight benefits from active-word scale
+  'x-caption':     'minimal',
+  'threads-bold':  'bold-pop',
+  'strike':        'minimal',
+  'bordered':      'minimal',
+  'travel':        'minimal'
   // (more premium styles will be added here as their renders get implemented)
 };
 
@@ -631,6 +887,14 @@ function generateASSFile(transcript, preset, customSettings = {}) {
   // shadow + bold still come from preset (no UI control yet).
   const shadowDepth   = style.shadowDepth;
   const boldFlag      = style.bold ? -1 : 0;
+  // Optional per-preset typography flags. ASS represents booleans as -1/0.
+  const italicFlag    = style.italic ? -1 : 0;
+  const underlineFlag = style.underline ? -1 : 0;
+  const strikeFlag    = style.strikeout ? -1 : 0;
+  // Letter-spacing in ASS is the "Spacing" Style field (pixels).
+  const fontSpacing   = (typeof style.fontSpacing === 'number') ? style.fontSpacing : 0;
+  // BorderStyle: 1 = outline + shadow (default), 3 = opaque box (closed-caption look).
+  const borderStyle   = (typeof style.borderStyle === 'number') ? style.borderStyle : 1;
 
   // Map position to ASS alignment (numpad style: 1-9)
   const alignmentMap = { top: 8, center: 5, bottom: 2 };
@@ -661,7 +925,7 @@ PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},0,0,0,100,100,0,0,1,${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
+Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},${italicFlag},${underlineFlag},${strikeFlag},100,100,${fontSpacing},0,${borderStyle},${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
