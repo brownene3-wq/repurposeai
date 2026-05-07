@@ -274,7 +274,7 @@ router.get('/', requireAuth, (req, res) => {
           const isOn = activeFilters.has(k);
           const klass = 'legend-chip' + empty + (isOn ? ' active' : '') + (filterActive && !isOn ? ' dimmed' : '');
           const titleAttr=isOn?('Filtering by ' + m.label + ' — click to clear'):(c===0?('Click to filter by ' + m.label):('Click to filter by ' + m.label + ' (' + c + ' scheduled)'));
-          html+='<span class="'+klass+'" data-platform="'+k+'" onclick="togglePlatformFilter(\''+k+'\')" title="'+titleAttr+'">';
+          html+='<span class="'+klass+'" data-platform="'+k+'" onclick="togglePlatformFilter(\\''+k+'\\')" title="'+titleAttr+'">';
           html+='<span class="legend-dot" style="background:'+m.color+'"></span>';
           html+='<span class="legend-emoji">'+m.emoji+'</span>';
           html+=m.label;
