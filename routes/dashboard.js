@@ -447,7 +447,7 @@ router.get('/', requireAuth, async (req, res) => {
             '<div id="analyzeStep" style="font-size:0.92rem;color:var(--text);margin-bottom:14px;font-weight:600">Starting…</div>' +
             '<div style="font-size:0.82rem;color:var(--text-muted);line-height:1.5;background:rgba(108,58,237,0.08);border:1px dashed rgba(108,58,237,0.30);border-radius:10px;padding:10px 14px;text-align:left">' +
               '<strong style="color:#a78bfa">Please wait while AI analyzes your video.</strong><br>' +
-              'Don\'t switch tabs, close the window, or perform any other actions on the page until the process is complete.' +
+              'Don&#39;t switch tabs, close the window, or perform any other actions on the page until the process is complete.' +
             '</div>' +
           '</div>' +
           '<style>@keyframes noticeSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}@keyframes noticePulse{0%,100%{box-shadow:0 0 0 0 rgba(108,58,237,0.4)}50%{box-shadow:0 0 0 14px rgba(108,58,237,0)}}</style>';
