@@ -76,7 +76,7 @@ router.get('/', requireAuth, (req, res) => {
       </div>
 
       <div class="pricing-grid">
-        <div class="price-card">
+        <div class="price-card${userPlan === 'free' ? ' active-plan' : ''}">
           <h3>Free</h3>
           <div class="price">$0<span>/month</span></div>
           <p class="desc">Get started with the basics</p>
@@ -91,7 +91,7 @@ router.get('/', requireAuth, (req, res) => {
           ${userPlan === 'free' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-outline" disabled>Free Tier</button>'}
         </div>
 
-        <div class="price-card${userPlan === 'free' ? ' featured' : ''}">
+        <div class="price-card${userPlan === 'free' ? ' featured' : ''}${userPlan === 'starter' ? ' active-plan' : ''}">
           ${PREMIUM_DIAMOND_SVG}
           <h3>Starter</h3>
           <div class="price">$19<span>/month</span></div>
@@ -112,7 +112,7 @@ router.get('/', requireAuth, (req, res) => {
           ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;starter&apos;)">Upgrade to Starter</button>'}
         </div>
 
-        <div class="price-card${userPlan === 'starter' ? ' featured' : ''}">
+        <div class="price-card${userPlan === 'starter' ? ' featured' : ''}${userPlan === 'pro' ? ' active-plan' : ''}">
           ${PREMIUM_DIAMOND_SVG}
           <h3>Pro</h3>
           <div class="price">$39<span>/month</span></div>
@@ -134,7 +134,7 @@ router.get('/', requireAuth, (req, res) => {
           ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;pro&apos;)">Upgrade to Pro</button>'}
         </div>
 
-        <div class="price-card">
+        <div class="price-card${userPlan === 'teams' ? ' active-plan' : ''}">
           ${PREMIUM_DIAMOND_SVG}
           <h3>Teams</h3>
           <div class="price">$79<span>/month</span></div>
