@@ -422,179 +422,146 @@ function getThemeScript() {
 }
 
 function getBrandKitModal() {
-  // Self-contained Brand Kit modal — embeds CSS + HTML + JS.
-  // Embed once per page; openBrandKitModal() opens it. Loads/saves via
-  // /shorts/brand-kit which is the same endpoint Smart Shorts has used.
+  // Centralized Brand Kit picker — mirrors the modal from
+  // public/js/v10-editor-redesign.js so /shorts, /video-editor, and any
+  // other page share one window. It lists saved Brand Templates from
+  // /brand-templates/list and lets the user Apply one. Pages may override
+  // window.applyBrandTemplateChoice to receive the picked template; the
+  // default just toasts and stores window.__appliedBrandTemplate.
   return `
     <style>
-      .bk-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);backdrop-filter:blur(6px);z-index:10000;align-items:center;justify-content:center;padding:20px}
-      .bk-modal-overlay.show{display:flex}
-      .bk-modal{background:linear-gradient(180deg,var(--surface,#161616),rgba(108,58,237,0.06));border:1px solid rgba(108,58,237,0.40);border-radius:16px;width:100%;max-width:640px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 0 0 1px rgba(108,58,237,0.20),0 18px 60px rgba(108,58,237,0.20),0 30px 80px rgba(0,0,0,0.5)}
-      .bk-modal h3{margin:0 0 4px;font-size:1.2rem;font-weight:800;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;display:flex;align-items:center;gap:8px}
-      .bk-modal .bk-sub{color:var(--text-muted,#a0aec0);font-size:0.82rem;margin-bottom:18px}
-      .bk-modal label{display:block;font-size:0.72rem;color:var(--text-muted,#a0aec0);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase}
-      .bk-modal input[type=text],.bk-modal select{width:100%;background:var(--dark,#0a0a0a);border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:var(--text,#fff);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px}
-      .bk-modal input[type=text]:focus,.bk-modal select:focus{border-color:#6C3AED}
-      .bk-modal .bk-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-      .bk-modal .bk-color-row{display:flex;gap:8px;align-items:center;margin-bottom:14px}
-      .bk-modal input[type=color]{width:40px;height:40px;border:1px solid rgba(255,255,255,0.10);border-radius:8px;cursor:pointer;background:transparent;padding:0;flex-shrink:0}
-      .bk-modal input[type=color]::-webkit-color-swatch-wrapper{padding:2px;border-radius:6px}
-      .bk-modal input[type=color]::-webkit-color-swatch{border:none;border-radius:5px}
-      .bk-modal .bk-color-text{flex:1;background:var(--dark,#0a0a0a);border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:var(--text,#fff);font-size:0.85rem;font-family:monospace;outline:none}
-      .bk-modal .bk-color-text:focus{border-color:#6C3AED}
-      .bk-modal .bk-preview{margin-top:6px;margin-bottom:18px;padding:14px;background:rgba(0,0,0,0.4);border:1px dashed rgba(108,58,237,0.30);border-radius:10px;text-align:center;font-size:0.75rem;color:var(--text-muted,#a0aec0)}
-      .bk-modal .bk-preview-watermark{font-weight:700;font-size:1rem;margin-top:6px;letter-spacing:0.02em}
-      .bk-modal .bk-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;flex-wrap:wrap}
-      .bk-modal .bk-status{flex:1;align-self:center;font-size:0.78rem;color:var(--text-muted,#a0aec0)}
-      .bk-modal button{cursor:pointer;font-family:inherit}
-      .bk-modal .bk-btn-cancel{background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text,#fff);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem}
-      .bk-modal .bk-btn-cancel:hover{border-color:#6C3AED}
-      .bk-modal .bk-btn-save{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:700;font-size:0.85rem}
-      .bk-modal .bk-btn-save:disabled{opacity:0.6;cursor:not-allowed}
-      .bk-close{background:transparent;border:none;color:var(--text-muted,#a0aec0);font-size:1.4rem;cursor:pointer;float:right;line-height:1;padding:0;margin:-4px -4px 0 0}
-      .bk-close:hover{color:var(--text,#fff)}
+      #v10BrandKitModal{position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);font-family:system-ui,sans-serif}
+      #v10BrandKitModal.show{display:flex}
+      #v10BrandKitModal .bk-panel{background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(560px,92vw);max-height:82vh;overflow-y:auto;color:#e2e0f0}
+      #v10BrandKitModal .bk-title-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+      #v10BrandKitModal .bk-title{font-weight:700;font-size:14px;color:#fde047}
+      #v10BrandKitModal .bk-sub{font-size:11px;color:#8886a0;margin-bottom:14px;line-height:1.5}
+      #v10BrandKitModal .bk-list{min-height:100px}
+      #v10BrandKitModal .bk-card{background:rgba(255,255,255,.03);border:1px solid rgba(124,58,237,.25);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
+      #v10BrandKitModal .bk-swatch{flex:none;width:72px;height:72px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+      #v10BrandKitModal .bk-card-meta{flex:1;min-width:0}
+      #v10BrandKitModal .bk-card-name{font-size:13px;font-weight:700;color:#e2e0f0;margin-bottom:4px}
+      #v10BrandKitModal .bk-card-aspect{font-size:11px;color:#8886a0}
+      #v10BrandKitModal .bk-logo-yes{font-size:10px;color:#22c55e;margin-top:4px}
+      #v10BrandKitModal .bk-logo-no{font-size:10px;color:#5c5a70;margin-top:4px}
+      #v10BrandKitModal .bk-logo-thumb{flex:none;width:44px;height:44px;object-fit:contain;background:rgba(255,255,255,.06);border-radius:6px;padding:4px}
+      #v10BrandKitModal .bk-apply{flex:none;padding:8px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+      #v10BrandKitModal .bk-apply:hover{filter:brightness(1.1)}
+      #v10BrandKitModal .bk-footer{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px}
+      #v10BrandKitModal .bk-edit-link{color:#a78bfa;font-size:11px;text-decoration:none}
+      #v10BrandKitModal .bk-edit-link:hover{text-decoration:underline}
+      #v10BrandKitModal .bk-close-btn{padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer}
+      #v10BrandKitModal .bk-close-btn:hover{background:rgba(255,255,255,.1)}
+      #v10BrandKitModal .bk-loading{color:#a78bfa;font-size:12px;text-align:center;padding:24px 0}
+      #v10BrandKitModal .bk-spinner{display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:bkSpin 1s linear infinite;margin-right:8px;vertical-align:middle}
+      @keyframes bkSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
     </style>
-    <div class="bk-modal-overlay" id="bkModal" onclick="if(event.target===this)closeBrandKitModal()">
-      <div class="bk-modal">
-        <button class="bk-close" onclick="closeBrandKitModal()" aria-label="Close">&times;</button>
-        <h3>🎨 Brand Kit</h3>
-        <div class="bk-sub">Customize how your generated clips and thumbnails look. Saved settings apply across Smart Shorts and the Video Editor.</div>
-
-        <label>Brand Name</label>
-        <input type="text" id="bkBrandName" placeholder="My Brand" maxlength="80">
-
-        <label>Watermark Text</label>
-        <input type="text" id="bkWatermark" placeholder="@yourbrand" maxlength="40" oninput="bkUpdatePreview()">
-
-        <div class="bk-row">
-          <div>
-            <label>Primary Color</label>
-            <div class="bk-color-row">
-              <input type="color" id="bkPrimaryColor" value="#FF0050" oninput="bkSyncColor('Primary');bkUpdatePreview()">
-              <input type="text" id="bkPrimaryColorText" class="bk-color-text" value="#FF0050" oninput="bkSyncColorFromText('Primary');bkUpdatePreview()" maxlength="7">
-            </div>
-          </div>
-          <div>
-            <label>Secondary Color</label>
-            <div class="bk-color-row">
-              <input type="color" id="bkSecondaryColor" value="#6c5ce7" oninput="bkSyncColor('Secondary')">
-              <input type="text" id="bkSecondaryColorText" class="bk-color-text" value="#6c5ce7" oninput="bkSyncColorFromText('Secondary')" maxlength="7">
-            </div>
-          </div>
+    <div id="v10BrandKitModal" onclick="if(event.target===this)closeBrandKitModal()" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
+      <div class="bk-panel">
+        <div class="bk-title-row">
+          <span style="font-size:18px">🎨</span>
+          <span class="bk-title" id="bkTitle">BRAND KIT</span>
         </div>
-
-        <label>Font Style</label>
-        <select id="bkFontStyle">
-          <option value="modern">Modern</option>
-          <option value="classic">Classic</option>
-          <option value="bold">Bold</option>
-          <option value="elegant">Elegant</option>
-          <option value="playful">Playful</option>
-        </select>
-
-        <label>Preview</label>
-        <div class="bk-preview" id="bkPreview">
-          <div>Your watermark will appear like this on clips:</div>
-          <div class="bk-preview-watermark" id="bkPreviewWatermark" style="color:#FF0050">@yourbrand</div>
-        </div>
-
-        <div class="bk-actions">
-          <span class="bk-status" id="bkStatus"></span>
-          <button class="bk-btn-cancel" onclick="closeBrandKitModal()">Cancel</button>
-          <button class="bk-btn-save" id="bkSaveBtn" onclick="saveBrandKitFromModal()">Save Brand Kit</button>
+        <div class="bk-sub">Pick a saved Brand Template to apply its aspect ratio, caption style, and logo to this project.</div>
+        <div class="bk-list" id="bkList"></div>
+        <div class="bk-footer">
+          <a href="/brand-templates" target="_blank" rel="noopener" class="bk-edit-link">➤ Create / edit templates</a>
+          <button class="bk-close-btn" onclick="closeBrandKitModal()">Close</button>
         </div>
       </div>
     </div>
-
     <script>
-      function bkSyncColor(which){
-        var picker = document.getElementById('bk' + which + 'Color');
-        var text = document.getElementById('bk' + which + 'ColorText');
-        text.value = picker.value;
-      }
-      function bkSyncColorFromText(which){
-        var picker = document.getElementById('bk' + which + 'Color');
-        var text = document.getElementById('bk' + which + 'ColorText');
-        var v = (text.value || '').trim();
-        if (/^#[0-9a-fA-F]{6}$/.test(v)) picker.value = v;
-      }
-      function bkUpdatePreview(){
-        var wm = (document.getElementById('bkWatermark').value || '').trim();
-        var color = document.getElementById('bkPrimaryColor').value || '#FF0050';
-        var el = document.getElementById('bkPreviewWatermark');
-        if (el) {
-          el.textContent = wm || '@yourbrand';
-          el.style.color = color;
-          el.style.opacity = wm ? '1' : '0.4';
+      (function(){
+        function bkEsc(s){
+          return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+          });
         }
-      }
-      async function openBrandKitModal(){
-        document.getElementById('bkModal').classList.add('show');
+        function renderTemplates(templates, captionStyles, aspectRatios, listEl){
+          if (!templates.length){
+            listEl.innerHTML =
+              '<div style="padding:24px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.15);border-radius:8px;text-align:center;font-size:12px;color:#8886a0;line-height:1.5">' +
+                'No saved templates yet.<br>' +
+                '<a href="/brand-templates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Go to Brand Templates</a> to create one.' +
+              '</div>';
+            return;
+          }
+          listEl.innerHTML = '';
+          templates.forEach(function(t){
+            var capStyle = (captionStyles && captionStyles[t.captionStyle]) || {};
+            var aspect   = (aspectRatios   && aspectRatios[t.aspectRatio])  || {};
+            var capColor = capStyle.color || '#a78bfa';
+            var capName  = capStyle.name  || (t.captionStyle || 'Default');
+            var aspName  = (aspect.label ? (aspect.icon + ' ' + aspect.label) : (t.aspectRatio || ''));
+            var card = document.createElement('div');
+            card.className = 'bk-card';
+            card.innerHTML =
+              '<div class="bk-swatch" style="background:linear-gradient(135deg,' + capColor + ',' + capColor + '80)">Aa</div>' +
+              '<div class="bk-card-meta">' +
+                '<div class="bk-card-name">' + bkEsc(capName) + '</div>' +
+                '<div class="bk-card-aspect">' + bkEsc(aspName) + '</div>' +
+                (t.logoUrl
+                  ? ('<div class="bk-logo-yes">✓ Logo attached</div>')
+                  : ('<div class="bk-logo-no">No logo</div>')
+                ) +
+              '</div>' +
+              (t.logoUrl
+                ? ('<img src="' + t.logoUrl + '" class="bk-logo-thumb" onerror="this.remove()"/>')
+                : ''
+              ) +
+              '<button class="bk-apply" data-template-id="' + (t.id || '') + '">Apply →</button>';
+            listEl.appendChild(card);
+          });
+          Array.prototype.forEach.call(listEl.querySelectorAll('.bk-apply'), function(btn){
+            btn.addEventListener('click', function(){
+              var tid = btn.getAttribute('data-template-id');
+              var tmpl = templates.find(function(t){ return (t.id || '') === tid; }) || templates[0];
+              // Pages can hook custom apply logic via window.applyBrandTemplateChoice
+              try {
+                if (typeof window.applyBrandTemplateChoice === 'function'){
+                  window.applyBrandTemplateChoice(tmpl, captionStyles, aspectRatios);
+                } else {
+                  window.__appliedBrandTemplate = tmpl;
+                  if (typeof showToast === 'function') showToast('Applied "' + (tmpl && (tmpl.name || (capStyle && capStyle.name) || 'template')) + '"');
+                }
+              } catch (e){ console.warn('Apply hook failed:', e); }
+              closeBrandKitModal();
+            });
+          });
+        }
+        window.openBrandKitModal = async function(){
+          var modal = document.getElementById('v10BrandKitModal');
+          if (!modal) return;
+          modal.classList.add('show');
+          var list = modal.querySelector('#bkList');
+          list.innerHTML = '<div class="bk-loading"><span class="bk-spinner"></span>Loading templates…</div>';
+          try {
+            var r = await fetch('/brand-templates/list', { credentials: 'same-origin' });
+            var d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'Failed to load');
+            renderTemplates(d.templates || [], d.captionStyles || {}, d.aspectRatios || {}, list);
+          } catch (err){
+            list.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
+              (err.message || 'Failed to load templates') + '</div>';
+          }
+        };
+        window.closeBrandKitModal = function(){
+          var modal = document.getElementById('v10BrandKitModal');
+          if (modal) modal.classList.remove('show');
+        };
+        document.addEventListener('keydown', function(e){
+          if (e.key === 'Escape') {
+            var m = document.getElementById('v10BrandKitModal');
+            if (m && m.classList.contains('show')) closeBrandKitModal();
+          }
+        });
         try {
-          var resp = await fetch('/shorts/brand-kit', { credentials: 'same-origin' });
-          var data = await resp.json();
-          if (data && data.success && data.brandKit) {
-            var k = data.brandKit;
-            document.getElementById('bkBrandName').value = k.brand_name || '';
-            document.getElementById('bkWatermark').value = k.watermark_text || '';
-            var pc = k.primary_color || '#FF0050';
-            var sc = k.secondary_color || '#6c5ce7';
-            document.getElementById('bkPrimaryColor').value = pc;
-            document.getElementById('bkPrimaryColorText').value = pc;
-            document.getElementById('bkSecondaryColor').value = sc;
-            document.getElementById('bkSecondaryColorText').value = sc;
-            document.getElementById('bkFontStyle').value = k.font_style || 'modern';
+          var params = new URLSearchParams(location.search);
+          if (params.get('openBrandKit') === '1') {
+            window.addEventListener('DOMContentLoaded', function(){ openBrandKitModal(); });
           }
         } catch (e) {}
-        bkUpdatePreview();
-        setTimeout(function(){ document.getElementById('bkBrandName').focus(); }, 80);
-      }
-      function closeBrandKitModal(){
-        document.getElementById('bkModal').classList.remove('show');
-      }
-      async function saveBrandKitFromModal(){
-        var btn = document.getElementById('bkSaveBtn');
-        var status = document.getElementById('bkStatus');
-        btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Saving...';
-        status.textContent = '';
-        try {
-          var resp = await fetch('/shorts/brand-kit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              brandName: document.getElementById('bkBrandName').value,
-              watermarkText: document.getElementById('bkWatermark').value,
-              primaryColor: document.getElementById('bkPrimaryColor').value,
-              secondaryColor: document.getElementById('bkSecondaryColor').value,
-              fontStyle: document.getElementById('bkFontStyle').value
-            })
-          });
-          var data = await resp.json();
-          if (!data.success) throw new Error(data.error || 'Save failed');
-          status.textContent = '✓ Saved';
-          status.style.color = '#10B981';
-          setTimeout(closeBrandKitModal, 700);
-        } catch (e) {
-          status.textContent = 'Error: ' + e.message;
-          status.style.color = '#ef4444';
-        } finally {
-          btn.disabled = false; btn.textContent = orig;
-        }
-      }
-      // ESC closes
-      document.addEventListener('keydown', function(e){
-        if (e.key === 'Escape') {
-          var m = document.getElementById('bkModal');
-          if (m && m.classList.contains('show')) closeBrandKitModal();
-        }
-      });
-      // Auto-open when ?openBrandKit=1 (e.g. deep-links from elsewhere)
-      try {
-        var params = new URLSearchParams(location.search);
-        if (params.get('openBrandKit') === '1') {
-          window.addEventListener('DOMContentLoaded', function(){ openBrandKitModal(); });
-        }
-      } catch (e) {}
+      })();
     </script>
   `;
 }
