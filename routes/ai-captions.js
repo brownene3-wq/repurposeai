@@ -118,6 +118,148 @@ const captionPresets = {
     wordHighlightColor: 'FFFFFF',
     animation: 'fade'
   },
+  // Premium: plain-black — pure black text. Needs a white outline so it
+  // stays legible on dark footage, since pure black on black would vanish.
+  'plain-black': {
+    name: 'Plain Black',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: '000000',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 2,
+    shadowDepth: 0,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '000000',
+    animation: 'fade'
+  },
+  // Premium: sans-serif — clean Helvetica with no outline, light weight.
+  'sans-serif': {
+    name: 'Sans Serif',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: casual — friendly Helvetica, medium weight, a tiny shadow for legibility.
+  casual: {
+    name: 'Casual',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: heading — bold Helvetica heading, no outline (relies on shadow for contrast).
+  heading: {
+    name: 'Heading',
+    fontName: 'Helvetica Neue',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: pure-text — light-weight Helvetica, no outline, no shadow (very plain).
+  'pure-text': {
+    name: 'Pure Text',
+    fontName: 'Helvetica Neue',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 0,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: serif-classic — Times-style serif, regular weight.
+  'serif-classic': {
+    name: 'Serif Classic',
+    fontName: 'Times New Roman',
+    fontSize: 44,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: headline — newspaper-style serif, bold, top+bottom rules approximated via outline.
+  headline: {
+    name: 'Headline',
+    fontName: 'Times New Roman',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: movie-title — Georgia uppercase with very wide letter-spacing,
+  // matching the cs.fontSpacing. Font-spacing is applied via the cs override layer.
+  'movie-title': {
+    name: 'Movie Title',
+    fontName: 'Georgia',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: trailer — Helvetica with very wide tracking.
+  trailer: {
+    name: 'Trailer',
+    fontName: 'Helvetica Neue',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: noir — Georgia with extreme tracking, film-noir feel.
+  noir: {
+    name: 'Noir',
+    fontName: 'Georgia',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
   'neon-glow': {
     name: 'Neon Glow',
     fontName: 'Arial',
@@ -442,7 +584,17 @@ function resolveFontName(uiFont) {
 // in sync with the cs.animation field on PRESETS in routes/caption-presets.js.
 const PRESET_BEHAVIOR = {
   // ----- Premium styles, ordered by implementation in the difficulty list -----
-  'plain-white': 'minimal'
+  'plain-white':   'minimal',
+  'plain-black':   'minimal',
+  'sans-serif':    'minimal',
+  'casual':        'minimal',
+  'heading':       'minimal',
+  'pure-text':     'minimal',
+  'serif-classic': 'minimal',
+  'headline':      'minimal',
+  'movie-title':   'minimal',
+  'trailer':       'minimal',
+  'noir':          'minimal'
   // (more premium styles will be added here as their renders get implemented)
 };
 
