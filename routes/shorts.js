@@ -1958,7 +1958,27 @@ router.get('/api/:id', requireAuth, async (req, res) => {
   }
 });
 
-// DELETE /api/:id - Delete analysis
+// GET /api/:id/calendar-links — count + previews of linked calendar entries
+router.get('/api/:id/calendar-links', requireAuth, async (req, res) => {
+  try {
+    const analysis = await shortsOps.getById(req.params.id);
+    if (!analysis) return res.status(404).json({ error: 'Analysis not found' });
+    if (analysis.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const { getDb } = require('../db/database');
+    const db = getDb();
+    const result = await db.query(
+      'SELECT id, title, platform, scheduled_date, scheduled_time FROM calendar_entries WHERE user_id = $1 AND analysis_id = $2 ORDER BY scheduled_date, scheduled_time',
+      [req.user.id, req.params.id]
+    );
+    res.json({ count: result.rows.length, entries: result.rows });
+  } catch (error) {
+    console.error('Calendar-links lookup error:', error);
+    res.status(500).json({ error: 'Failed to look up linked entries' });
+  }
+});
+
+// DELETE /api/:id — Delete analysis. If ?cascade=1, also remove calendar entries
+// linked to this analysis_id.
 router.delete('/api/:id', requireAuth, async (req, res) => {
   try {
     const analysis = await shortsOps.getById(req.params.id);
@@ -1968,8 +1988,18 @@ router.delete('/api/:id', requireAuth, async (req, res) => {
     if (analysis.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
+    let cascadedCount = 0;
+    if (req.query.cascade === '1') {
+      const { getDb } = require('../db/database');
+      const db = getDb();
+      const r = await db.query(
+        'DELETE FROM calendar_entries WHERE user_id = $1 AND analysis_id = $2 RETURNING id',
+        [req.user.id, req.params.id]
+      );
+      cascadedCount = r.rowCount || 0;
+    }
     await shortsOps.delete(req.params.id);
-    res.json({ success: true });
+    res.json({ success: true, cascadedCount });
   } catch (error) {
     console.error('Error deleting analysis:', error);
     res.status(500).json({ error: 'Failed to delete analysis' });
@@ -9038,9 +9068,30 @@ ${paginationHtml}
     });
 
     async function deleteAnalysis(id, btn) {
-      if (!confirm('Delete this analysis? This cannot be undone.')) return;
+      // First check whether any calendar entries are linked to this analysis.
+      // If so, show the spec'd "Delete Everywhere" confirmation. Otherwise,
+      // fall back to the simple native confirm.
+      let cascadeCount = 0;
       try {
-        const resp = await fetch('/shorts/api/' + id, { method: 'DELETE' });
+        const r = await fetch('/shorts/api/' + id + '/calendar-links');
+        if (r.ok) {
+          const d = await r.json();
+          cascadeCount = d.count || 0;
+        }
+      } catch (e) { /* ignore — fall through to native confirm */ }
+
+      const proceed = await new Promise((resolve) => {
+        if (cascadeCount > 0) {
+          showCascadeDeleteModal(cascadeCount, resolve);
+        } else {
+          resolve(window.confirm('Delete this analysis? This cannot be undone.'));
+        }
+      });
+      if (!proceed) return;
+
+      try {
+        const url = '/shorts/api/' + id + (cascadeCount > 0 ? '?cascade=1' : '');
+        const resp = await fetch(url, { method: 'DELETE' });
         const data = await resp.json();
         if (data.success) {
           // Remove the card from the DOM
@@ -9051,13 +9102,59 @@ ${paginationHtml}
             card.style.transform = 'scale(0.9)';
             setTimeout(() => card.remove(), 300);
           }
-          showToast('Analysis deleted');
+          if (data.cascadedCount > 0) {
+            showToast('Deleted analysis + ' + data.cascadedCount + ' scheduled post' + (data.cascadedCount === 1 ? '' : 's'));
+          } else {
+            showToast('Analysis deleted');
+          }
         } else {
           showToast(data.error || 'Failed to delete');
         }
       } catch (err) {
         showToast('Error: ' + err.message);
       }
+    }
+
+    function showCascadeDeleteModal(count, onChoice){
+      // Lazy-create the modal once
+      let m = document.getElementById('cascadeDeleteModal');
+      if (!m) {
+        m = document.createElement('div');
+        m.id = 'cascadeDeleteModal';
+        m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px';
+        m.innerHTML =
+          '<div style="background:var(--surface);border:1px solid rgba(239,68,68,0.40);border-radius:14px;width:100%;max-width:460px;padding:24px;box-shadow:0 0 0 1px rgba(239,68,68,0.20),0 18px 60px rgba(239,68,68,0.18)">' +
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+              '<span style="font-size:1.4rem">⚠️</span>' +
+              '<h3 id="cascadeHeadline" style="margin:0;font-size:1.05rem;font-weight:800;color:var(--text)">Delete scheduled content?</h3>' +
+            '</div>' +
+            '<p id="cascadeBody" style="color:var(--text-muted);font-size:0.88rem;line-height:1.5;margin:0 0 20px">This clip is currently scheduled in your Calendar. Deleting it will also remove the scheduled post. Are you sure you want to proceed?</p>' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px">' +
+              '<button id="cascadeCancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer">Cancel</button>' +
+              '<button id="cascadeConfirm" style="background:linear-gradient(135deg,#ef4444,#f97316);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(239,68,68,0.30)">Delete Everywhere</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(m);
+        m.addEventListener('click', (e) => { if (e.target === m) closeCascade(false); });
+      }
+      // Adjust copy if multiple entries
+      const body = m.querySelector('#cascadeBody');
+      if (count > 1) {
+        body.textContent = 'This clip has ' + count + ' scheduled posts in your Calendar. Deleting it will also remove those scheduled posts. Are you sure you want to proceed?';
+      } else {
+        body.textContent = 'This clip is currently scheduled in your Calendar. Deleting it will also remove the scheduled post. Are you sure you want to proceed?';
+      }
+      m.style.display = 'flex';
+
+      function closeCascade(result) {
+        m.style.display = 'none';
+        document.removeEventListener('keydown', onKey);
+        onChoice(result);
+      }
+      function onKey(e){ if (e.key === 'Escape') closeCascade(false); }
+      m.querySelector('#cascadeCancel').onclick = () => closeCascade(false);
+      m.querySelector('#cascadeConfirm').onclick = () => closeCascade(true);
+      document.addEventListener('keydown', onKey);
     }
 
     function showToast(message) {
