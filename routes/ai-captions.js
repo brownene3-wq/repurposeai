@@ -498,6 +498,213 @@ const captionPresets = {
     wordHighlightColor: 'FEF3C7',
     animation: 'fade'
   },
+  // ----- Background-block premium styles -----
+  // libass with BorderStyle=3 paints OutlineColour as the box background, so
+  // the colored chip we see in the on-page preview is reproduced by setting
+  // outlineColor to the chip color and using BorderStyle 3.
+  'yt-shorts': {
+    name: 'YouTube Shorts',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FF0000',
+    outlineWidth: 8,        // box padding
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  'viral-yellow': {
+    name: 'Viral Yellow',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: '1A1A1A',
+    outlineColor: 'FFEE00',
+    outlineWidth: 8,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'pop'
+  },
+  'snap-style': {
+    name: 'Snap Style',
+    fontName: 'Arial Black',
+    fontSize: 46,
+    fontColor: '1A1A1A',
+    outlineColor: 'FFFC00',
+    outlineWidth: 8,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'pop'
+  },
+  'twitch-purple': {
+    name: 'Twitch Purple',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '9146FF',
+    outlineWidth: 8,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  'trending-box': {
+    name: 'Trending Box',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: '1A1A1A',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    fontSpacing: 4,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'fade'
+  },
+  cooking: {
+    name: 'Cooking',
+    fontName: 'Georgia',
+    fontSize: 44,
+    fontColor: 'FFFFFF',
+    outlineColor: 'F97316',  // warm orange box
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    italic: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  'lower-third': {
+    name: 'Lower Third',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '6C3AED',  // brand purple
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  'chat-bubble': {
+    name: 'Chat Bubble',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: '2563EB',  // imessage blue
+    outlineWidth: 10,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // ----- Underline / accent styles -----
+  daily: {
+    name: 'Daily',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '6C3AED',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: true,
+    underline: true,        // ASS doesn't have wavy underline — straight underline is the closest
+    alignment: 2,
+    wordHighlightColor: '6C3AED',
+    animation: 'fade'
+  },
+  newsroom: {
+    name: 'Newsroom',
+    fontName: 'Georgia',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: 'C8102E',  // bottom-line red, applied as outline to suggest the bar
+    outlineWidth: 2,
+    shadowDepth: 2,
+    bold: true,
+    fontSpacing: 4,
+    alignment: 2,
+    wordHighlightColor: 'C8102E',
+    animation: 'fade'
+  },
+  // ----- Rotation / accented frame styles -----
+  rage: {
+    name: 'Rage',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FFFFFF',
+    outlineColor: 'DC2626',  // red box
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    angle: -2,               // tilt the entire dialogue line
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  banner: {
+    name: 'Banner',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '6C3AED',  // purple box bg (skew not supported per-style; box only)
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    fontSpacing: 4,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  stamp: {
+    name: 'Stamp',
+    fontName: 'Courier New',
+    fontSize: 44,
+    fontColor: 'DC2626',
+    outlineColor: 'DC2626',  // red border around text — the BorderStyle=1 outline acts as the stamp frame
+    outlineWidth: 4,
+    shadowDepth: 0,
+    bold: true,
+    fontSpacing: 6,
+    angle: -6,               // diagonal stamp tilt
+    alignment: 2,
+    wordHighlightColor: 'DC2626',
+    animation: 'fade'
+  },
+  // ----- Active-word highlight style -----
+  storytime: {
+    name: 'Storytime',
+    fontName: 'Arial',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '4ADE80',  // green active-word swap, hormozi-style
+    animation: 'highlight'
+  },
   'neon-glow': {
     name: 'Neon Glow',
     fontName: 'Arial',
@@ -850,7 +1057,23 @@ const PRESET_BEHAVIOR = {
   'threads-bold':  'bold-pop',
   'strike':        'minimal',
   'bordered':      'minimal',
-  'travel':        'minimal'
+  'travel':        'minimal',
+  // Tier 3: solid background blocks (BorderStyle=3 + accent OutlineColour)
+  'yt-shorts':     'bold-pop',
+  'viral-yellow':  'bold-pop',
+  'snap-style':    'bold-pop',
+  'twitch-purple': 'bold-pop',
+  'trending-box':  'minimal',
+  'cooking':       'minimal',
+  'lower-third':   'minimal',
+  'chat-bubble':   'minimal',
+  'daily':         'minimal',
+  'newsroom':      'minimal',
+  // Tier 4: rotation / skew / multi-layer outline
+  'rage':          'bold-pop',
+  'banner':        'bold-pop',
+  'stamp':         'minimal',
+  'storytime':     'hormozi'   // green active-word highlight, hormozi behavior
   // (more premium styles will be added here as their renders get implemented)
 };
 
@@ -895,6 +1118,8 @@ function generateASSFile(transcript, preset, customSettings = {}) {
   const fontSpacing   = (typeof style.fontSpacing === 'number') ? style.fontSpacing : 0;
   // BorderStyle: 1 = outline + shadow (default), 3 = opaque box (closed-caption look).
   const borderStyle   = (typeof style.borderStyle === 'number') ? style.borderStyle : 1;
+  // Per-preset rotation in degrees (Style.Angle field). Used by rage, stamp.
+  const angleDeg      = (typeof style.angle === 'number') ? style.angle : 0;
 
   // Map position to ASS alignment (numpad style: 1-9)
   const alignmentMap = { top: 8, center: 5, bottom: 2 };
@@ -925,7 +1150,7 @@ PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},${italicFlag},${underlineFlag},${strikeFlag},100,100,${fontSpacing},0,${borderStyle},${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
+Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},${colorToASS(highlightColor)},${colorToASS(outlineColor)},&H00000000&,${boldFlag},${italicFlag},${underlineFlag},${strikeFlag},100,100,${fontSpacing},${angleDeg},${borderStyle},${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
