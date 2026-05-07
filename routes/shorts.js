@@ -4872,6 +4872,15 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
   <style>
     ${getBaseCSS()}
 
+    /* Add-to-Calendar modal textarea: themed thin scrollbar matching sidebar */
+    .atc-themed-scroll{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    .atc-themed-scroll::-webkit-scrollbar{width:6px}
+    .atc-themed-scroll::-webkit-scrollbar-track{background:transparent}
+    .atc-themed-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    .atc-themed-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    body.light .atc-themed-scroll,html.light .atc-themed-scroll{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .atc-themed-scroll::-webkit-scrollbar-thumb,html.light .atc-themed-scroll::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+
     /* Brand Kit panel: visually elevated to feel like a modal/window
        (bordered, glow ring) — matches editor-style polish. */
     #brandKitPanel.tool-panel-open {
@@ -6283,8 +6292,12 @@ ${paginationHtml}
             <input type="time" id="atcTime" value="12:00" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
           </div>
         </div>
+        <button type="button" id="atcPeakBtn" onclick="atcSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
+          <span style="font-size:1em;">✨</span> Suggest peak time for this platform
+          <span id="atcPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        </button>
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
-        <textarea id="atcNotes" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
+        <textarea id="atcNotes" class="atc-themed-scroll" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
           <button onclick="closeAtcModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
           <button id="atcSaveBtn" onclick="saveAtcEntry()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Save to Calendar</button>
@@ -6635,6 +6648,29 @@ ${paginationHtml}
     function closeAtcModal() {
       document.getElementById('atcModal').style.display = 'none';
     }
+    async function atcSuggestPeakTime(){
+      var btn = document.getElementById('atcPeakBtn');
+      var hint = document.getElementById('atcPeakHint');
+      var platform = document.getElementById('atcPlatform').value;
+      var orig = hint.textContent;
+      hint.textContent = 'Thinking…';
+      btn.disabled = true;
+      try {
+        var resp = await fetch('/dashboard/calendar/api/peak-time?platform=' + encodeURIComponent(platform));
+        if (!resp.ok) throw new Error('Failed');
+        var d = await resp.json();
+        if (d.date) document.getElementById('atcDate').value = d.date;
+        if (d.time) document.getElementById('atcTime').value = d.time;
+        hint.textContent = d.date && d.time ? (d.date + ' \u00B7 ' + d.time) : '';
+        if (typeof showToast === 'function') showToast(d.reasoning || ('Peak time set: ' + d.date + ' ' + d.time));
+      } catch (e) {
+        hint.textContent = orig;
+        if (typeof showToast === 'function') showToast('Peak time unavailable');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
     async function saveAtcEntry() {
       var btn = document.getElementById('atcSaveBtn');
       var ref = (document.getElementById('atcMomentRef').value || '').split('|');
