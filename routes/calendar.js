@@ -57,7 +57,13 @@ router.get('/', requireAuth, (req, res) => {
     .cal-modal input,.cal-modal select,.cal-modal textarea{width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:.85rem;font-family:inherit;outline:none;margin-bottom:14px}
     body.light .cal-modal input,body.light .cal-modal select,body.light .cal-modal textarea,html.light .cal-modal input,html.light .cal-modal select,html.light .cal-modal textarea{background:var(--dark-2);border-color:rgba(0,0,0,0.1)}
     .cal-modal input:focus,.cal-modal select:focus,.cal-modal textarea:focus{border-color:#6C3AED}
-    .cal-modal textarea{resize:vertical;min-height:70px}
+    .cal-modal textarea{resize:vertical;min-height:70px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    .cal-modal textarea::-webkit-scrollbar{width:6px}
+    .cal-modal textarea::-webkit-scrollbar-track{background:transparent}
+    .cal-modal textarea::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    .cal-modal textarea::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    body.light .cal-modal textarea,html.light .cal-modal textarea{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .cal-modal textarea::-webkit-scrollbar-thumb,html.light .cal-modal textarea::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
     .cal-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .cal-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;flex-wrap:wrap}
     .btn-secondary{background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:.5rem 1rem;border-radius:8px;font-weight:600;font-size:.85rem;cursor:pointer}
@@ -149,14 +155,22 @@ router.get('/', requireAuth, (req, res) => {
             <input type="time" id="entryTime">
           </div>
         </div>
+        <label>Notification</label>
+        <select id="entryReminder">
+          <option value="0">None</option>
+          <option value="15">15 minutes before</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+          <option value="2880">2 days before</option>
+        </select>
         <label>Notes</label>
         <textarea id="entryNotes" placeholder="Hook ideas, hashtags, links..."></textarea>
         <div id="clipDlBlock" style="display:none;background:rgba(108,58,237,0.08);border:1px solid rgba(108,58,237,0.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:none;">
           <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;">From Smart Shorts</div>
           <a id="clipDlLink" href="#" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;color:#a78bfa;text-decoration:none;font-weight:600;font-size:.85rem;">
-            <span style="font-size:1.1em;">⬇</span> Download Clip
+            <span style="font-size:1.1em;">▶</span> Show Clip
           </a>
-          <div style="font-size:.7rem;color:var(--text-dim);margin-top:4px;">Opens Smart Shorts and auto-starts the download for this clip.</div>
+          <div style="font-size:.7rem;color:var(--text-dim);margin-top:4px;">Opens Smart Shorts to this clip so you can preview and download it.</div>
         </div>
         <div class="cal-modal-actions">
           <button class="btn-danger" id="deleteBtn" onclick="deleteEntry()" style="display:none">Delete</button>
@@ -276,6 +290,7 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('entryDate').value=dateStr;
         document.getElementById('entryTime').value='12:00';
         document.getElementById('entryNotes').value='';
+        document.getElementById('entryReminder').value='0';
         var dl=document.getElementById('clipDlBlock'); if(dl) dl.style.display='none';
         document.getElementById('deleteBtn').style.display='none';
         document.getElementById('saveBtn').textContent='Save';
@@ -294,7 +309,8 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('entryDate').value=String(e.scheduled_date).slice(0,10);
         document.getElementById('entryTime').value=(e.scheduled_time||'12:00').slice(0,5);
         document.getElementById('entryNotes').value=e.notes||'';
-        // Show download-clip link when this entry came from a Smart Shorts moment
+        document.getElementById('entryReminder').value=String(e.reminder_minutes||0);
+        // Show clip link when this entry came from a Smart Shorts moment
         var dl = document.getElementById('clipDlBlock');
         if(e.analysis_id && (e.moment_index !== null && e.moment_index !== undefined)){
           dl.style.display='block';
@@ -320,7 +336,8 @@ router.get('/', requireAuth, (req, res) => {
           status:document.getElementById('entryStatus').value,
           scheduledDate:document.getElementById('entryDate').value,
           scheduledTime:document.getElementById('entryTime').value||'12:00',
-          notes:document.getElementById('entryNotes').value
+          notes:document.getElementById('entryNotes').value,
+          reminderMinutes:parseInt(document.getElementById('entryReminder').value||'0',10)||0
         };
         if(!payload.title){showToast('Title is required');return;}
         if(!payload.scheduledDate){showToast('Date is required');return;}
@@ -385,7 +402,8 @@ router.post('/api/entries', requireAuth, async (req, res) => {
       notes: req.body.notes || '',
       color: req.body.color,
       analysisId: req.body.analysisId || null,
-      momentIndex: req.body.momentIndex != null ? req.body.momentIndex : null
+      momentIndex: req.body.momentIndex != null ? req.body.momentIndex : null,
+      reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0
     });
     res.json({ entry });
   } catch (error) {
