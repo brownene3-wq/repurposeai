@@ -2343,29 +2343,36 @@
     // Each button maps to a dedicated tool URL (existing full-page routes
     // in the app). 'route' = URL to open in a new tab. A few don't have
     // dedicated pages yet — those get a helpful toast.
+    // Order matches Figma reference (May 2026 redesign):
+    //   1) Top group, no header — Style Transfer / BG Remove / AI Voice / Translate
+    //   2) AI CREATIVE — B-Roll / Smart Cut / Scene Detect
+    //   3) AI ANALYSIS — Enhance Audio / Captions / AI Hook / Brand Kit
+    // Empty-string `g` renders the section without a section-title row.
     var aiTools = [
-      { g:'AI GENERATION', ic:'\u2728',        label:'Enhance Audio', route:'/enhance-speech' },
-      { g:'AI GENERATION', ic:'\ud83d\udcac',  label:'Captions',      route:'/ai-captions' },
-      { g:'AI GENERATION', ic:'\ud83c\udfa3',  label:'AI Hook',       route:'/ai-hook' },
-      { g:'AI GENERATION', ic:'\ud83c\udfa8',  label:'Brand Kit',     route:'/brand-kits' },
-      // Transcript removed (Task #36) — redundant with Captions
-      { g:'AI ANALYSIS',   ic:'\ud83c\udfac',  label:'B-Roll',        route:'/ai-broll' },
-      { g:'AI ANALYSIS',   ic:'\u2702',        label:'Smart Cut',     route:'#smart-cut' },
-      { g:'AI ANALYSIS',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:'#scene-detect' },
       // Tasks #50-#53 — AI Creative tools wired to real inline modals
-      { g:'AI CREATIVE',   ic:'\ud83e\ude84',  label:'Style Transfer',route:'#style-transfer' },
-      { g:'AI CREATIVE',   ic:'\ud83d\uddbc',  label:'BG Remove',     route:'#bg-remove' },
-      { g:'AI CREATIVE',   ic:'\ud83c\udfa4',  label:'AI Voice',      route:'#ai-voice' },
-      { g:'AI CREATIVE',   ic:'\ud83c\udf10',  label:'Translate',     route:'#translate' }
+      { g:'',              ic:'\ud83e\ude84',  label:'Style Transfer',route:'#style-transfer' },
+      { g:'',              ic:'\ud83d\uddbc',  label:'BG Remove',     route:'#bg-remove' },
+      { g:'',              ic:'\ud83c\udfa4',  label:'AI Voice',      route:'#ai-voice' },
+      { g:'',              ic:'\ud83c\udf10',  label:'Translate',     route:'#translate' },
+      { g:'AI CREATIVE',   ic:'\ud83c\udfac',  label:'B-Roll',        route:'/ai-broll' },
+      { g:'AI CREATIVE',   ic:'\u2702',        label:'Smart Cut',     route:'#smart-cut' },
+      { g:'AI CREATIVE',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:'#scene-detect' },
+      // Transcript removed (Task #36) — redundant with Captions
+      { g:'AI ANALYSIS',   ic:'\u2728',        label:'Enhance Audio', route:'/enhance-speech' },
+      { g:'AI ANALYSIS',   ic:'\ud83d\udcac',  label:'Captions',      route:'/ai-captions' },
+      { g:'AI ANALYSIS',   ic:'\ud83c\udfa3',  label:'AI Hook',       route:'/ai-hook' },
+      { g:'AI ANALYSIS',   ic:'\ud83c\udfa8',  label:'Brand Kit',     route:'/brand-kits' }
     ];
     var html = '';
-    var lastGroup = '';
+    var lastGroup = null;
     aiTools.forEach(function(t, i){
       if (t.g !== lastGroup){
-        if (lastGroup) html += '</div>';
-        html += '<div class="v10-rp-section-title"' +
-          (i === 0 ? '' : ' style="margin-top:14px"') + '>' + t.g + '</div>' +
-          '<div class="v10-rp-grid">';
+        if (lastGroup !== null) html += '</div>';
+        if (t.g) {
+          html += '<div class="v10-rp-section-title"' +
+            (i === 0 ? '' : ' style="margin-top:14px"') + '>' + t.g + '</div>';
+        }
+        html += '<div class="v10-rp-grid">';
         lastGroup = t.g;
       }
       html += '<button class="v10-rp-btn" data-v10-ai-route="' + (t.route || '') + '" data-v10-ai-label="' + t.label + '"><span class="v10-rp-ic">' + t.ic + '</span>' + t.label + '</button>';
