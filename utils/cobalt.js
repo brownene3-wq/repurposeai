@@ -68,31 +68,42 @@ function validateDownloadedVideo(destPath) {
   try { stat = fs.statSync(destPath); } catch (e) {
     throw new Error('Cobalt download produced no file');
   }
+  // The actual smoking-gun symptom we've seen with Cobalt is the
+  // tunnel URL returning Content-Length: 0 for unsupported videos.
+  // Anything under 10 KB cannot be a real video.
   if (stat.size < 10000) {
     throw new Error('Cobalt download too small (' + stat.size + ' bytes) — likely empty/error response');
   }
-  // Read first 16 bytes and check for a known video container magic
+
+  // Scan the first 256 bytes for ANY known container marker. We used to
+  // require 'ftyp' at exactly offset 4, which over-rejected legit MP4s
+  // that begin with a 'wide', 'styp', 'free', 'moov', or 'pdin' box.
+  // Over-rejection was masquerading as 'Video download failed' because
+  // the yt-dlp fallback can't always fetch the same URL.
   let head;
   try {
     const fd = fs.openSync(destPath, 'r');
-    head = Buffer.alloc(16);
-    fs.readSync(fd, head, 0, 16, 0);
+    head = Buffer.alloc(256);
+    fs.readSync(fd, head, 0, 256, 0);
     fs.closeSync(fd);
   } catch (e) {
     throw new Error('Cobalt download unreadable: ' + e.message);
   }
-  // MP4: bytes 4-7 == "ftyp"
-  const isMp4 = head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70;
-  // Matroska/WebM: starts with 1A 45 DF A3 (EBML)
-  const isMkv = head[0] === 0x1A && head[1] === 0x45 && head[2] === 0xDF && head[3] === 0xA3;
-  // RIFF/AVI
-  const isRiff = head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46;
-  // FLV
-  const isFlv = head[0] === 0x46 && head[1] === 0x4C && head[2] === 0x56;
-  if (!isMp4 && !isMkv && !isRiff && !isFlv) {
-    const preview = head.toString('hex');
+  const ascii = head.toString('latin1');
+  const knownMarkers = [
+    'ftyp', 'moov', 'mdat', 'wide', 'styp', 'free', 'pdin', 'sidx', 'mfra', // MP4-family box types
+    'WEBM', 'webm',                                                          // WebM signature
+    'RIFF',                                                                  // AVI
+    'FLV',                                                                   // FLV
+  ];
+  const ebmlHead = head[0] === 0x1A && head[1] === 0x45 && head[2] === 0xDF && head[3] === 0xA3; // Matroska/WebM EBML
+  const looksLikeContainer = ebmlHead || knownMarkers.some(m => ascii.indexOf(m) >= 0);
+  if (!looksLikeContainer) {
+    // Looks like an HTML/JSON error body. Reject so the caller can
+    // fall through to the next downloader.
+    const preview = head.slice(0, 32).toString('hex');
     try { fs.unlinkSync(destPath); } catch (e) {}
-    throw new Error('Cobalt download is not a video container (magic=' + preview + ')');
+    throw new Error('Cobalt download is not a video container (first 32 bytes: ' + preview + ')');
   }
 }
 
