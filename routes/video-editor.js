@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { requireAuth } = require('../middleware/auth');
-const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
 // Task #69 — Brand Kit logo overlay during export. The brand-templates
@@ -793,6 +793,7 @@ async function renderEditor(req, res) {
 
     <main class="main-content">
       ${getThemeToggle()}
+      ${getBrandKitModal()}
 
       <div class="editor-container">
 
@@ -6308,10 +6309,8 @@ setTimeout(function videoControlsWiring(){
           showToastMsg("Captions generated");
         }, 3000);
       } else if(text.indexOf("Brand Kit") !== -1) {
-        showToastMsg("Processing... Applying brand kit");
-        setTimeout(function() {
-          showToastMsg("Brand kit applied");
-        }, 2000);
+        if (typeof openBrandKitModal === 'function') openBrandKitModal();
+        else showToastMsg("Brand Kit unavailable");
       } else if(text.indexOf("Transcript") !== -1) {
         showToastMsg("Processing... Generating transcript");
         setTimeout(function() {

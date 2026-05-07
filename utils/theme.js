@@ -421,4 +421,182 @@ function getThemeScript() {
     var _s=document.createElement('script');_s.src='/public/js/v9-buttons-fix.js';document.head.appendChild(_s);`;
 }
 
-module.exports = { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript };
+function getBrandKitModal() {
+  // Self-contained Brand Kit modal — embeds CSS + HTML + JS.
+  // Embed once per page; openBrandKitModal() opens it. Loads/saves via
+  // /shorts/brand-kit which is the same endpoint Smart Shorts has used.
+  return `
+    <style>
+      .bk-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);backdrop-filter:blur(6px);z-index:10000;align-items:center;justify-content:center;padding:20px}
+      .bk-modal-overlay.show{display:flex}
+      .bk-modal{background:linear-gradient(180deg,var(--surface,#161616),rgba(108,58,237,0.06));border:1px solid rgba(108,58,237,0.40);border-radius:16px;width:100%;max-width:640px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 0 0 1px rgba(108,58,237,0.20),0 18px 60px rgba(108,58,237,0.20),0 30px 80px rgba(0,0,0,0.5)}
+      .bk-modal h3{margin:0 0 4px;font-size:1.2rem;font-weight:800;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;display:flex;align-items:center;gap:8px}
+      .bk-modal .bk-sub{color:var(--text-muted,#a0aec0);font-size:0.82rem;margin-bottom:18px}
+      .bk-modal label{display:block;font-size:0.72rem;color:var(--text-muted,#a0aec0);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase}
+      .bk-modal input[type=text],.bk-modal select{width:100%;background:var(--dark,#0a0a0a);border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:var(--text,#fff);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px}
+      .bk-modal input[type=text]:focus,.bk-modal select:focus{border-color:#6C3AED}
+      .bk-modal .bk-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .bk-modal .bk-color-row{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+      .bk-modal input[type=color]{width:40px;height:40px;border:1px solid rgba(255,255,255,0.10);border-radius:8px;cursor:pointer;background:transparent;padding:0;flex-shrink:0}
+      .bk-modal input[type=color]::-webkit-color-swatch-wrapper{padding:2px;border-radius:6px}
+      .bk-modal input[type=color]::-webkit-color-swatch{border:none;border-radius:5px}
+      .bk-modal .bk-color-text{flex:1;background:var(--dark,#0a0a0a);border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:var(--text,#fff);font-size:0.85rem;font-family:monospace;outline:none}
+      .bk-modal .bk-color-text:focus{border-color:#6C3AED}
+      .bk-modal .bk-preview{margin-top:6px;margin-bottom:18px;padding:14px;background:rgba(0,0,0,0.4);border:1px dashed rgba(108,58,237,0.30);border-radius:10px;text-align:center;font-size:0.75rem;color:var(--text-muted,#a0aec0)}
+      .bk-modal .bk-preview-watermark{font-weight:700;font-size:1rem;margin-top:6px;letter-spacing:0.02em}
+      .bk-modal .bk-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;flex-wrap:wrap}
+      .bk-modal .bk-status{flex:1;align-self:center;font-size:0.78rem;color:var(--text-muted,#a0aec0)}
+      .bk-modal button{cursor:pointer;font-family:inherit}
+      .bk-modal .bk-btn-cancel{background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text,#fff);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem}
+      .bk-modal .bk-btn-cancel:hover{border-color:#6C3AED}
+      .bk-modal .bk-btn-save{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:700;font-size:0.85rem}
+      .bk-modal .bk-btn-save:disabled{opacity:0.6;cursor:not-allowed}
+      .bk-close{background:transparent;border:none;color:var(--text-muted,#a0aec0);font-size:1.4rem;cursor:pointer;float:right;line-height:1;padding:0;margin:-4px -4px 0 0}
+      .bk-close:hover{color:var(--text,#fff)}
+    </style>
+    <div class="bk-modal-overlay" id="bkModal" onclick="if(event.target===this)closeBrandKitModal()">
+      <div class="bk-modal">
+        <button class="bk-close" onclick="closeBrandKitModal()" aria-label="Close">&times;</button>
+        <h3>🎨 Brand Kit</h3>
+        <div class="bk-sub">Customize how your generated clips and thumbnails look. Saved settings apply across Smart Shorts and the Video Editor.</div>
+
+        <label>Brand Name</label>
+        <input type="text" id="bkBrandName" placeholder="My Brand" maxlength="80">
+
+        <label>Watermark Text</label>
+        <input type="text" id="bkWatermark" placeholder="@yourbrand" maxlength="40" oninput="bkUpdatePreview()">
+
+        <div class="bk-row">
+          <div>
+            <label>Primary Color</label>
+            <div class="bk-color-row">
+              <input type="color" id="bkPrimaryColor" value="#FF0050" oninput="bkSyncColor('Primary');bkUpdatePreview()">
+              <input type="text" id="bkPrimaryColorText" class="bk-color-text" value="#FF0050" oninput="bkSyncColorFromText('Primary');bkUpdatePreview()" maxlength="7">
+            </div>
+          </div>
+          <div>
+            <label>Secondary Color</label>
+            <div class="bk-color-row">
+              <input type="color" id="bkSecondaryColor" value="#6c5ce7" oninput="bkSyncColor('Secondary')">
+              <input type="text" id="bkSecondaryColorText" class="bk-color-text" value="#6c5ce7" oninput="bkSyncColorFromText('Secondary')" maxlength="7">
+            </div>
+          </div>
+        </div>
+
+        <label>Font Style</label>
+        <select id="bkFontStyle">
+          <option value="modern">Modern</option>
+          <option value="classic">Classic</option>
+          <option value="bold">Bold</option>
+          <option value="elegant">Elegant</option>
+          <option value="playful">Playful</option>
+        </select>
+
+        <label>Preview</label>
+        <div class="bk-preview" id="bkPreview">
+          <div>Your watermark will appear like this on clips:</div>
+          <div class="bk-preview-watermark" id="bkPreviewWatermark" style="color:#FF0050">@yourbrand</div>
+        </div>
+
+        <div class="bk-actions">
+          <span class="bk-status" id="bkStatus"></span>
+          <button class="bk-btn-cancel" onclick="closeBrandKitModal()">Cancel</button>
+          <button class="bk-btn-save" id="bkSaveBtn" onclick="saveBrandKitFromModal()">Save Brand Kit</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function bkSyncColor(which){
+        var picker = document.getElementById('bk' + which + 'Color');
+        var text = document.getElementById('bk' + which + 'ColorText');
+        text.value = picker.value;
+      }
+      function bkSyncColorFromText(which){
+        var picker = document.getElementById('bk' + which + 'Color');
+        var text = document.getElementById('bk' + which + 'ColorText');
+        var v = (text.value || '').trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) picker.value = v;
+      }
+      function bkUpdatePreview(){
+        var wm = (document.getElementById('bkWatermark').value || '').trim();
+        var color = document.getElementById('bkPrimaryColor').value || '#FF0050';
+        var el = document.getElementById('bkPreviewWatermark');
+        if (el) {
+          el.textContent = wm || '@yourbrand';
+          el.style.color = color;
+          el.style.opacity = wm ? '1' : '0.4';
+        }
+      }
+      async function openBrandKitModal(){
+        document.getElementById('bkModal').classList.add('show');
+        try {
+          var resp = await fetch('/shorts/brand-kit', { credentials: 'same-origin' });
+          var data = await resp.json();
+          if (data && data.success && data.brandKit) {
+            var k = data.brandKit;
+            document.getElementById('bkBrandName').value = k.brand_name || '';
+            document.getElementById('bkWatermark').value = k.watermark_text || '';
+            var pc = k.primary_color || '#FF0050';
+            var sc = k.secondary_color || '#6c5ce7';
+            document.getElementById('bkPrimaryColor').value = pc;
+            document.getElementById('bkPrimaryColorText').value = pc;
+            document.getElementById('bkSecondaryColor').value = sc;
+            document.getElementById('bkSecondaryColorText').value = sc;
+            document.getElementById('bkFontStyle').value = k.font_style || 'modern';
+          }
+        } catch (e) {}
+        bkUpdatePreview();
+        setTimeout(function(){ document.getElementById('bkBrandName').focus(); }, 80);
+      }
+      function closeBrandKitModal(){
+        document.getElementById('bkModal').classList.remove('show');
+      }
+      async function saveBrandKitFromModal(){
+        var btn = document.getElementById('bkSaveBtn');
+        var status = document.getElementById('bkStatus');
+        btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Saving...';
+        status.textContent = '';
+        try {
+          var resp = await fetch('/shorts/brand-kit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              brandName: document.getElementById('bkBrandName').value,
+              watermarkText: document.getElementById('bkWatermark').value,
+              primaryColor: document.getElementById('bkPrimaryColor').value,
+              secondaryColor: document.getElementById('bkSecondaryColor').value,
+              fontStyle: document.getElementById('bkFontStyle').value
+            })
+          });
+          var data = await resp.json();
+          if (!data.success) throw new Error(data.error || 'Save failed');
+          status.textContent = '✓ Saved';
+          status.style.color = '#10B981';
+          setTimeout(closeBrandKitModal, 700);
+        } catch (e) {
+          status.textContent = 'Error: ' + e.message;
+          status.style.color = '#ef4444';
+        } finally {
+          btn.disabled = false; btn.textContent = orig;
+        }
+      }
+      // ESC closes
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape') {
+          var m = document.getElementById('bkModal');
+          if (m && m.classList.contains('show')) closeBrandKitModal();
+        }
+      });
+      // Auto-open when ?openBrandKit=1 (e.g. deep-links from elsewhere)
+      try {
+        var params = new URLSearchParams(location.search);
+        if (params.get('openBrandKit') === '1') {
+          window.addEventListener('DOMContentLoaded', function(){ openBrandKitModal(); });
+        }
+      } catch (e) {}
+    </script>
+  `;
+}
+
+module.exports = { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal };

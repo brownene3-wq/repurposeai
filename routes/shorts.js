@@ -20,7 +20,7 @@ const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
 const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require('../middleware/auth');
 const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
-const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 
 // Guard boot — OpenAI SDK throws at construction if apiKey is empty,
 // which would crash the entire server at startup. Use a placeholder so
@@ -5578,6 +5578,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 </head>
 <body class="dashboard">
   ${getThemeToggle()}
+  ${getBrandKitModal()}
   ${getSidebar('shorts', user, teamPermissions)}
 
   <!-- Main content -->
@@ -5629,7 +5630,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Batch Analyze</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Process multiple videos at once</div>
         </div>
-        <div onclick="toggleToolPanel('brandKitPanel', this); toggleBrandKit(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+        <div onclick="openBrandKitModal()" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
           <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(108,92,231,0.2),rgba(162,155,254,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🎨</div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Brand Kit</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Customize with your brand identity</div>
