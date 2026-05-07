@@ -102,6 +102,22 @@ const captionPresets = {
     wordHighlightColor: 'FFFFFF', // minimal stays flat — keep the same colour
     animation: 'fade'
   },
+  // Premium: plain-white — a pure clean white sans-serif, no outline, no
+  // word-by-word highlight. Renders identically to 'minimal' but kept as a
+  // separate preset so user-facing names line up with the catalog.
+  'plain-white': {
+    name: 'Plain White',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 0,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
   'neon-glow': {
     name: 'Neon Glow',
     fontName: 'Arial',
@@ -420,6 +436,21 @@ function resolveFontName(uiFont) {
 // (fontFamily, fontSize, fontColor, outlineColor, outlineWidth, highlightColor,
 // animation, position) gets honored. Falls back to preset defaults only when
 // a field is missing.
+// Map premium preset names to one of the base behaviors implemented by the
+// ASS pipeline (karaoke, bold-pop, minimal, hormozi, mrbeast, neon-glow).
+// Anything not in the map falls through and is treated as karaoke. Keep this
+// in sync with the cs.animation field on PRESETS in routes/caption-presets.js.
+const PRESET_BEHAVIOR = {
+  // ----- Premium styles, ordered by implementation in the difficulty list -----
+  'plain-white': 'minimal'
+  // (more premium styles will be added here as their renders get implemented)
+};
+
+function presetBehavior(preset) {
+  if (PRESET_BEHAVIOR[preset]) return PRESET_BEHAVIOR[preset];
+  return preset; // free styles already are their own behavior name
+}
+
 function generateASSFile(transcript, preset, customSettings = {}) {
   const style = captionPresets[preset] || captionPresets.karaoke;
   const cs = customSettings || {};
@@ -600,7 +631,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   function activeWordTags(preset) {
     // Preset-specific active-word style mods. Animation mods are appended
     // by the caller so later tags can override earlier ones.
-    switch (preset) {
+    switch (presetBehavior(preset)) {
       case 'bold-pop':
       case 'mrbeast':
         return `\\1c${hiC}\\fscx112\\fscy112`;
@@ -630,12 +661,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   //     (inactiveWordTags + animInactiveDelta)
   function renderPhrase(words) {
     const phraseStart = words[0].start || 0;
-    const isMrBeast = preset === 'mrbeast';
+    const isMrBeast = presetBehavior(preset) === 'mrbeast';
     const userOverride = !!animation && animation !== 'none';
 
     // For "minimal" preset with no animation override, keep the existing
     // flat phrase render (no per-word transitions at all).
-    if (preset === 'minimal' && !userOverride) {
+    if (presetBehavior(preset) === 'minimal' && !userOverride) {
       const flat = words.map(w => isMrBeast ? String(w.word).toUpperCase() : w.word).join(' ');
       return `{\\fad(120,80)}${flat}`;
     }
