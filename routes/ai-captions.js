@@ -2341,20 +2341,23 @@ router.get('/', requireAuth, async (req, res) => {
     .custom-state-pill.show { display: inline-flex; }
     .custom-state-pill::before { content: '●'; font-size: 0.6rem; line-height: 1; }
 
+    /* Card frame matches /caption-presets exactly so the two pages feel
+       like one consistent system. Auto-fill grid, surface background, 12px
+       radius, lifted hover with shadow. */
     .presets-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 1rem;
       margin-bottom: 1rem;
     }
 
     .preset-card {
-      background: var(--dark);
-      border: 2px solid var(--border-subtle);
-      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
       padding: 0;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.3s ease;
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -2362,12 +2365,32 @@ router.get('/', requireAuth, async (req, res) => {
 
     .preset-card:hover {
       border-color: var(--primary);
-      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(108, 58, 237, 0.2);
+      transform: translateY(-3px);
     }
 
     .preset-card.selected {
       border-color: var(--primary);
-      box-shadow: 0 0 0 2px rgba(108, 58, 237, 0.3);
+      box-shadow: 0 0 0 2px rgba(108, 58, 237, 0.45),
+                  0 6px 24px rgba(108, 58, 237, 0.25);
+    }
+
+    /* Info row under the preview. Same padding + typography as the
+       /caption-presets page (its h3.preset-name); the only difference here
+       is no 'Use Style' button — clicking the whole card selects. */
+    .preset-info {
+      padding: 0.75rem;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    h3.preset-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+      text-align: center;
     }
 
     /* AI Captions's preset CARDS keep their own grid + sizing rules. The
@@ -2937,12 +2960,13 @@ router.get('/', requireAuth, async (req, res) => {
 
       grid.innerHTML = PRESET_LIBRARY.map(p => {
         const isStartSelected = p.id === defaultId;
-        // Each preset uses the SAME preview HTML as the Caption Styles page,
-        // so the on-card preview is byte-for-byte identical between pages.
+        // Same card structure as /caption-presets: preview-container +
+        // preset-info wrapper holding an h3.preset-name. The preview HTML
+        // itself comes from the catalog so the rendered look is identical.
         const previewHTML = p.preview || 'CAPTIONS';
         return '<div class="preset-card ' + p.id + (isStartSelected ? ' selected' : '') + '" data-preset-id="' + p.id + '" title="' + p.name + '">'
           + '<div class="preview-container"><div class="preview-text">' + previewHTML + '</div></div>'
-          + '<div class="preset-name">' + p.name + '</div>'
+          + '<div class="preset-info"><h3 class="preset-name">' + p.name + '</h3></div>'
           + '</div>';
       }).join('');
 
