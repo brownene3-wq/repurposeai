@@ -59,6 +59,8 @@ function getBaseCSS() {
     .user-popover a:hover{background:rgba(108,58,237,0.15) !important;color:#fff !important}
     .user-popover a .nav-icon{width:16px;font-size:0.95em}
     .user-popover a.popover-signout{color:#ef4444 !important}
+    .user-popover .notif-bell-badge{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:linear-gradient(135deg,#EC4899,#6C3AED);color:#fff;font-size:0.62rem;font-weight:800;letter-spacing:.02em;line-height:1;box-shadow:0 2px 8px rgba(108,58,237,.30)}
+    .user-popover .notif-bell-badge[hidden]{display:none}
     .user-popover a.popover-signout:hover{background:rgba(239,68,68,0.10) !important;color:#fca5a5 !important}
     .user-popover hr{border:none;border-top:1px solid rgba(255,255,255,0.06);margin:4px 0}
     @keyframes userPopIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
@@ -260,7 +262,7 @@ ${navLinks}
           <span class="user-card-caret" aria-hidden="true">&#x25BE;</span>
         </button>
         <div class="user-popover" id="userPopover" role="menu" aria-labelledby="userCardBtn" hidden>
-          <a href="/notifications" role="menuitem"><span class="nav-icon">&#x1F514;</span><span class="nav-label">Notifications</span></a>
+          <a href="/notifications" role="menuitem" id="notifPopoverLink"><span class="nav-icon">&#x1F514;</span><span class="nav-label">Notifications</span><span id="notifBellBadge" class="notif-bell-badge" hidden>0</span></a>
           <a href="/settings" role="menuitem"><span class="nav-icon">&#x2699;&#xFE0F;</span><span class="nav-label">Settings</span></a>
           <a href="/billing" role="menuitem"><span class="nav-icon">&#x1F4B3;</span><span class="nav-label">Billing</span></a>
           <hr>
@@ -343,6 +345,30 @@ function getThemeScript() {
       // Close any open user menu since geometry changed
       __closeUserMenu();
     }
+
+    // Poll the notifications unread count every 60s and reflect it in the sidebar badge
+    function _refreshNotifBadge(){
+      var badge = document.getElementById('notifBellBadge');
+      if (!badge) return;
+      fetch('/notifications/api/count', { credentials: 'same-origin' })
+        .then(function(r){ return r.ok ? r.json() : { count: 0 }; })
+        .then(function(d){
+          var c = (d && typeof d.count === 'number') ? d.count : 0;
+          if (c > 0) {
+            badge.textContent = c > 99 ? '99+' : String(c);
+            badge.removeAttribute('hidden');
+          } else {
+            badge.setAttribute('hidden', '');
+          }
+        })
+        .catch(function(){});
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _refreshNotifBadge);
+    } else {
+      _refreshNotifBadge();
+    }
+    setInterval(_refreshNotifBadge, 60000);
 
     function toggleUserMenu(e){
       if (e && e.stopPropagation) e.stopPropagation();

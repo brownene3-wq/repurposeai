@@ -79,47 +79,88 @@ router.get('/', requireAuth, (req, res) => {
         try {
           const resp = await fetch('/notifications/api/feed?ts=' + Date.now(), { credentials: 'same-origin' });
           const data = await resp.json();
-          const due = data.due || [];
-          const recent = data.recent || [];
-          if (!due.length && !recent.length) {
-            list.innerHTML = '<div class="notif-empty"><div class="icon">🔕</div><div><strong>You\\'re all caught up.</strong></div><div style="margin-top:6px;font-size:.85rem">Schedule posts on the <a href="/dashboard/calendar" style="color:#a78bfa;text-decoration:none">Calendar</a> with reminders to see them here.</div></div>';
+          const unread = data.unread || data.due || [];
+          const read = data.read || data.recent || [];
+
+          const badge = document.getElementById('notifUnreadBadge');
+          const markBtn = document.getElementById('markAllReadBtn');
+          if (unread.length > 0) {
+            badge.textContent = unread.length;
+            badge.removeAttribute('hidden');
+            markBtn.removeAttribute('hidden');
+          } else {
+            badge.setAttribute('hidden', '');
+            markBtn.setAttribute('hidden', '');
+          }
+
+          if (!unread.length && !read.length) {
+            list.innerHTML = '<div class="notif-empty"><div class="icon">\ud83d\udd15</div><div><strong>You&rsquo;re all caught up.</strong></div><div style="margin-top:6px;font-size:.85rem">Schedule posts on the <a href="/dashboard/calendar" style="color:#a78bfa;text-decoration:none">Calendar</a> with reminders to see them here.</div></div>';
             return;
           }
           let html = '';
-          if (due.length){
-            html += '<div class="notif-section-title">Active reminders</div>';
-            for (const e of due) html += renderCard(e, true);
+          if (unread.length){
+            html += '<div class="notif-section-title">Unread (' + unread.length + ')</div>';
+            for (const e of unread) html += renderCard(e, true);
           }
-          if (recent.length){
-            html += '<div class="notif-section-title">Recent</div>';
-            for (const e of recent) html += renderCard(e, false);
+          if (read.length){
+            html += '<div class="notif-section-title">Read</div>';
+            for (const e of read) html += renderCard(e, false);
           }
           list.innerHTML = html;
         } catch (err) {
           list.innerHTML = '<div class="notif-empty">Could not load notifications.</div>';
         }
       }
-      function renderCard(e, unseen){
+      function renderCard(e, isUnread){
         const dueAt = e.scheduled_date && e.scheduled_time
           ? new Date(String(e.scheduled_date).slice(0,10) + 'T' + (e.scheduled_time || '12:00') + ':00').toLocaleString()
           : '';
-        return '<div class="notif-card' + (unseen ? ' unseen' : '') + '">' +
-          '<div class="notif-icon">📅</div>' +
+        const stamp = e.read_at || e.fired_at;
+        return '<div class="notif-card ' + (isUnread ? 'unseen' : 'read') + '" data-id="' + escHtml(e.id) + '">' +
+          '<div class="notif-icon">\ud83d\udcc5</div>' +
           '<div class="notif-body">' +
-            '<div class="notif-title">' + escHtml(e.title || 'Scheduled post') + '</div>' +
+            '<div class="notif-title">' +
+              (isUnread ? '<span class="unread-dot" aria-hidden="true"></span>' : '') +
+              escHtml(e.title || 'Scheduled post') +
+            '</div>' +
             '<div class="notif-msg">' + fmtMsg(e.title, e.platform) + '</div>' +
             '<div class="notif-meta">' +
               '<span class="pill">' + escHtml(PLATFORM_LABELS[e.platform] || e.platform || 'post') + '</span>' +
               (dueAt ? '<span>Due ' + escHtml(dueAt) + '</span>' : '') +
-              (e.fired_at ? '<span>Fired ' + escHtml(fmtAgo(e.fired_at)) + '</span>' : '') +
+              (!isUnread && stamp ? '<span>Read ' + escHtml(fmtAgo(stamp)) + '</span>' : '') +
             '</div>' +
             '<div class="notif-actions">' +
               '<a href="/dashboard/calendar">Open calendar</a>' +
               (e.analysis_id ? '<a href="/shorts?dlAnalysis=' + encodeURIComponent(e.analysis_id) + '&dlMoment=' + encodeURIComponent(e.moment_index || 0) + '">Download clip</a>' : '') +
+              (isUnread ? '<button class="mark-read-btn" onclick="markOneRead(\'' + escHtml(e.id) + '\', this)">Mark as read</button>' : '') +
             '</div>' +
           '</div>' +
         '</div>';
       }
+      async function markOneRead(id, btn){
+        try {
+          await fetch('/notifications/api/mark-read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+          });
+          await loadNotifications();
+        } catch (e) { console.warn('mark-read failed', e); }
+      }
+      async function markAllRead(){
+        const btn = document.getElementById('markAllReadBtn');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Marking\u2026';
+        try {
+          await fetch('/notifications/api/mark-all-read', { method: 'POST' });
+          await loadNotifications();
+        } catch (e) {
+          alert('Could not mark all read');
+        } finally {
+          btn.disabled = false; btn.textContent = orig;
+        }
+      }
+
       loadNotifications();
       // Refresh every minute so newly-due reminders show up
       setInterval(loadNotifications, 60000);
@@ -128,16 +169,21 @@ router.get('/', requireAuth, (req, res) => {
 </html>`);
 });
 
-// API: list due-now reminders for the current user + recently fired ones.
-// "Due" = reminder_minutes > 0, reminder_sent = FALSE, scheduled_at - reminder_minutes <= NOW(),
-// scheduled time still in the future (we don't fire post-due reminders).
-// On read, mark them sent so they don't fire repeatedly. Recent = sent within 7 days.
+// API: list due/unread reminders + recently-acknowledged ones.
+//   unread (= "Active reminders") = reminder_minutes > 0 AND reminder_sent = FALSE
+//                                   AND time has passed AND not already published.
+//                                   reminder_sent doubles as our "read" flag —
+//                                   it's only flipped TRUE when the user explicitly
+//                                   marks a notification read (via /api/mark-read
+//                                   or /api/mark-all-read), or by visiting an entry's
+//                                   download link, etc.
+//   read (= "Recent") = reminder_sent = TRUE AND updated_at within 7 days.
 router.get('/api/feed', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const userId = req.user.id;
 
-    const dueResult = await db.query(`
+    const unreadResult = await db.query(`
       SELECT * FROM calendar_entries
       WHERE user_id = $1
         AND reminder_minutes > 0
@@ -147,15 +193,10 @@ router.get('/api/feed', requireAuth, async (req, res) => {
       ORDER BY scheduled_date, scheduled_time
       LIMIT 50
     `, [userId]);
-    const due = dueResult.rows;
+    const unread = unreadResult.rows;
 
-    if (due.length) {
-      const ids = due.map(d => d.id);
-      await db.query(`UPDATE calendar_entries SET reminder_sent = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($1::text[])`, [ids]);
-    }
-
-    const recentResult = await db.query(`
-      SELECT *, updated_at AS fired_at FROM calendar_entries
+    const readResult = await db.query(`
+      SELECT *, updated_at AS read_at FROM calendar_entries
       WHERE user_id = $1
         AND reminder_minutes > 0
         AND reminder_sent = TRUE
@@ -163,12 +204,53 @@ router.get('/api/feed', requireAuth, async (req, res) => {
       ORDER BY updated_at DESC
       LIMIT 20
     `, [userId]);
-    const recent = recentResult.rows.filter(r => !due.find(d => d.id === r.id));
+    const read = readResult.rows;
 
-    res.json({ due, recent });
+    // Backward-compat: keep legacy keys (due/recent) so older clients don't break,
+    // and add the new (unread/read) names for clarity.
+    res.json({ due: unread, recent: read, unread, read });
   } catch (error) {
     console.error('Notifications feed error:', error);
     res.status(500).json({ error: 'Failed to load notifications' });
+  }
+});
+
+// API: mark a single notification read
+router.post('/api/mark-read', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const db = getDb();
+    const r = await db.query(
+      `UPDATE calendar_entries SET reminder_sent = TRUE, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [id, req.user.id]
+    );
+    res.json({ success: true, marked: r.rowCount });
+  } catch (error) {
+    console.error('Mark-read error:', error);
+    res.status(500).json({ error: 'Failed to mark read' });
+  }
+});
+
+// API: mark all unread notifications as read
+router.post('/api/mark-all-read', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    const r = await db.query(
+      `UPDATE calendar_entries SET reminder_sent = TRUE, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1
+         AND reminder_minutes > 0
+         AND reminder_sent = FALSE
+         AND status != 'published'
+         AND (scheduled_date::timestamp + scheduled_time::time) - (reminder_minutes || ' minutes')::interval <= NOW()
+       RETURNING id`,
+      [req.user.id]
+    );
+    res.json({ success: true, marked: r.rowCount });
+  } catch (error) {
+    console.error('Mark-all-read error:', error);
+    res.status(500).json({ error: 'Failed to mark all read' });
   }
 });
 
