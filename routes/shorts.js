@@ -6375,7 +6375,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
 ${paginationHtml}
           <!-- Floating Calendar Button -->
-    <button id="calendarFloatBtn" onclick="document.getElementById('calendarModal').style.display='flex';" style="position:fixed;top:18px;right:24px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
+    <button id="calendarFloatBtn" onclick="openShortsCalendar()" style="position:fixed;top:18px;right:24px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
       <span style="font-size:18px;">&#128197;</span> Calendar
     </button>
 
@@ -6850,6 +6850,17 @@ ${paginationHtml}
         }
         closeAtcModal();
         showToast('Added to calendar — ' + payload.scheduledDate);
+        // Refresh the floating Calendar modal so the new entry shows up
+        // without a page reload. Jump to the saved entry's month first so
+        // the user can verify it on the visible grid.
+        try {
+          var d = new Date(payload.scheduledDate + 'T00:00:00');
+          if (!isNaN(d.getTime())) {
+            calendarMonth = d.getMonth();
+            calendarYear = d.getFullYear();
+          }
+          if (typeof renderCalendar === 'function') await renderCalendar();
+        } catch (refreshErr) { /* best-effort */ }
       } catch (e) {
         showToast('Could not save: ' + e.message);
       } finally {
@@ -7705,6 +7716,14 @@ ${paginationHtml}
       calendarMonth = t.getMonth();
       calendarYear = t.getFullYear();
       renderCalendar();
+    }
+
+    function openShortsCalendar(){
+      // Show the modal first (instant feedback), then refresh data so the
+      // grid reflects the latest entries. Subsequent renders update in place.
+      var m = document.getElementById('calendarModal');
+      if (m) m.style.display = 'flex';
+      if (typeof renderCalendar === 'function') renderCalendar();
     }
 
     async function renderCalendar() {
