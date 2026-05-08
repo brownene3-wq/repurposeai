@@ -37,9 +37,12 @@ router.get('/', requireAuth, (req, res) => {
       ${getBrandKitModal()}
       <main class="main-content">
         <div class="notif-page">
-          <div class="notif-header">
-            <h1>🔔 Notifications</h1>
-            <p>Reminders for your scheduled posts. New ones land here automatically.</p>
+          <div class="notif-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:24px;">
+            <div>
+              <h1 style="display:flex;align-items:center;gap:10px;">🔔 Notifications <span id="notifUnreadBadge" class="notif-unread-badge" hidden>0</span></h1>
+              <p>Reminders for your scheduled posts. New ones land here automatically.</p>
+            </div>
+            <button id="markAllReadBtn" onclick="markAllRead()" hidden style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:.55rem 1rem;border-radius:10px;font-weight:600;font-size:.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(108,58,237,.30);">Mark all as read</button>
           </div>
           <div id="notifList"><div class="notif-empty"><div class="icon">🔕</div><div>Loading…</div></div></div>
         </div>
