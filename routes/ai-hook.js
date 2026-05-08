@@ -1737,7 +1737,7 @@ router.get('/voices', requireAuth, async (req, res) => {
 });
 
 // POST - Generate hook
-router.post('/generate', requireAuth, requireCredits('ai-hook'), requireStorageHeadroom(), upload.single('video'), trackUploadBytes(), async (req, res) => {
+router.post('/generate', requireAuth, requireCredits('ai-hook'), requireStorageHeadroom(), upload.single('video'), trackUploadBytes('ai-hook'), async (req, res) => {
   try {
     const { inputType, url, transcript, style, voice, platform } = req.body;
 

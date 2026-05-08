@@ -95,8 +95,10 @@ function requireCredits(featureKey) {
       if (res.statusCode >= 200 && res.statusCode < 400) {
         try {
           await creditOps.incrementUsage(req.user.id, cost);
+          // Phase 4: log to credit_transactions so the breakdown modal works
+          await creditOps.logTransaction(req.user.id, featureKey, cost);
         } catch (err) {
-          console.error('[credits] increment failed:', err);
+          console.error('[credits] increment/log failed:', err);
         }
       }
     });

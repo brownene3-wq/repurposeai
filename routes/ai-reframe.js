@@ -1016,7 +1016,7 @@ router.get('/subject-thumb/:jobId/:subjectId.jpg', requireAuth, async (req, res)
 // Accepts multipart (videoFile) OR form data with youtubeUrl+inputMode.
 // Runs detection, caches the video path + detection under a new jobId,
 // and responds with the trimmed subjects array for the UI to render.
-router.post('/detect-subjects', requireAuth, requireCredits('ai-reframe'), requireStorageHeadroom(), upload.single('videoFile'), trackUploadBytes(), async (req, res) => {
+router.post('/detect-subjects', requireAuth, requireCredits('ai-reframe'), requireStorageHeadroom(), upload.single('videoFile'), trackUploadBytes('ai-reframe'), async (req, res) => {
   let downloadedPath = null;
   try {
     const youtubeUrl = req.body.youtubeUrl || '';

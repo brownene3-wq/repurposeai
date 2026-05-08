@@ -100,8 +100,11 @@ function requireStorageHeadroom() {
 }
 
 // Post-multer middleware. Reads req.file.size (single) or sums req.files (array).
-// Increments the user's bytes_used after the upload has been received.
-function trackUploadBytes() {
+// Increments the user's bytes_used and logs a storage_transactions row so the
+// breakdown modal can show what feature consumed the bytes.
+//
+// featureKey is required so the breakdown by feature works.
+function trackUploadBytes(featureKey) {
   return async (req, res, next) => {
     try {
       let bytes = 0;
@@ -116,6 +119,10 @@ function trackUploadBytes() {
       }
       if (bytes > 0 && req.user && req.user.id) {
         await storageOps.addBytes(req.user.id, bytes);
+        if (featureKey) {
+          try { await storageOps.logTransaction(req.user.id, featureKey, bytes); }
+          catch (e) { console.error('[storage] logTransaction failed:', e); }
+        }
         req.storageRecorded = bytes;
       }
     } catch (err) {

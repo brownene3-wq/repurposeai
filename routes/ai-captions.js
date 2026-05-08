@@ -3625,7 +3625,7 @@ router.get('/qa-frame/:filename', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/upload', requireAuth, requireCredits('ai-captions'), requireStorageHeadroom(), upload.single('video'), trackUploadBytes(), async (req, res) => {
+router.post('/upload', requireAuth, requireCredits('ai-captions'), requireStorageHeadroom(), upload.single('video'), trackUploadBytes('ai-captions'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No video file uploaded' });

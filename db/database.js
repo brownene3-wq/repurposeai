@@ -35,6 +35,25 @@ const initDatabase = async () => {
       // Phase 2: storage byte tracking + grace period
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_bytes_used BIGINT DEFAULT 0`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_grace_until TIMESTAMP`,
+      // Phase 4: per-feature transaction logs for the breakdown modals
+      `CREATE TABLE IF NOT EXISTS credit_transactions (
+         id TEXT PRIMARY KEY,
+         user_id TEXT NOT NULL,
+         feature_key TEXT NOT NULL,
+         credits INTEGER NOT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_tx_user_month
+         ON credit_transactions (user_id, created_at)`,
+      `CREATE TABLE IF NOT EXISTS storage_transactions (
+         id TEXT PRIMARY KEY,
+         user_id TEXT NOT NULL,
+         feature_key TEXT NOT NULL,
+         bytes BIGINT NOT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_storage_tx_user_month
+         ON storage_transactions (user_id, created_at)`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
@@ -1560,6 +1579,29 @@ const creditOps = {
       `UPDATE users SET credits_used_this_month = GREATEST(0, COALESCE(credits_used_this_month, 0) - $1) WHERE id = $2`,
       [n, userId]
     );
+  },
+
+  // Phase 4: log a charge to credit_transactions for the breakdown modal.
+  async logTransaction(userId, featureKey, credits) {
+    if (!credits || credits <= 0) return;
+    await pool.query(
+      `INSERT INTO credit_transactions (id, user_id, feature_key, credits) VALUES ($1, $2, $3, $4)`,
+      [uuidv4(), userId, featureKey, credits]
+    );
+  },
+
+  // Per-feature totals for the current calendar month (UTC).
+  async breakdownThisMonth(userId) {
+    const rows = (await pool.query(
+      `SELECT feature_key, SUM(credits)::int AS total
+         FROM credit_transactions
+        WHERE user_id = $1
+          AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+        GROUP BY feature_key
+        ORDER BY total DESC`,
+      [userId]
+    )).rows;
+    return rows.map(r => ({ feature: r.feature_key, credits: r.total }));
   }
 };
 
@@ -1602,6 +1644,28 @@ const storageOps = {
   // Set the grace_until column. Pass null to clear it.
   async setGrace(userId, until) {
     await pool.query(`UPDATE users SET storage_grace_until = $1 WHERE id = $2`, [until, userId]);
+  },
+
+  // Phase 4: log an upload to storage_transactions for the breakdown modal.
+  async logTransaction(userId, featureKey, bytes) {
+    if (!bytes || bytes <= 0) return;
+    await pool.query(
+      `INSERT INTO storage_transactions (id, user_id, feature_key, bytes) VALUES ($1, $2, $3, $4)`,
+      [uuidv4(), userId, featureKey, bytes]
+    );
+  },
+
+  // Per-feature byte totals (lifetime — storage is cumulative, not monthly).
+  async breakdownAllTime(userId) {
+    const rows = (await pool.query(
+      `SELECT feature_key, SUM(bytes)::bigint AS total
+         FROM storage_transactions
+        WHERE user_id = $1
+        GROUP BY feature_key
+        ORDER BY total DESC`,
+      [userId]
+    )).rows;
+    return rows.map(r => ({ feature: r.feature_key, bytes: Number(r.total) }));
   }
 };
 

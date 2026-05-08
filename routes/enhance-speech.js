@@ -915,7 +915,7 @@ router.post('/import-url', requireAuth, async (req, res) => {
 //     file at req.file.path
 //   - JSON { importedFilename, ... } (new — used after /import-url) — we look
 //     up the file by name in the upload dir.
-router.post('/process', requireAuth, requireCredits('enhance-audio'), requireStorageHeadroom(), maybeMultipart, trackUploadBytes(), async (req, res) => {
+router.post('/process', requireAuth, requireCredits('enhance-audio'), requireStorageHeadroom(), maybeMultipart, trackUploadBytes('enhance-audio'), async (req, res) => {
   try {
     let inputPath, sourceFilename, originalExtension;
     if (req.file) {

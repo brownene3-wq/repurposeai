@@ -124,6 +124,37 @@ router.get('/', requireAuth, async (req, res) => {
     .stat-label{font-size:.78rem;color:var(--text-dim);margin-top:.2rem}
     .stat-bar{margin-top:.6rem;height:4px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden}
     .stat-bar-fill{height:100%;border-radius:4px;transition:width .5s ease}
+    /* Phase 4: clickable cards + modal */
+    .stat-card.clickable{cursor:pointer;transition:transform .15s ease, border-color .15s ease, box-shadow .15s ease}
+    .stat-card.clickable:hover{transform:translateY(-2px);border-color:rgba(108,58,237,0.35);box-shadow:0 6px 20px rgba(108,58,237,0.18)}
+    .stat-card.clickable::after{content:'›';position:absolute;top:.7rem;right:.9rem;color:rgba(255,255,255,0.25);font-size:1.1rem;font-weight:700;transition:color .15s ease, transform .15s ease}
+    .stat-card.clickable:hover::after{color:rgba(255,255,255,0.7);transform:translateX(2px)}
+    body.light .stat-card.clickable::after,html.light .stat-card.clickable::after{color:rgba(0,0,0,0.3)}
+    body.light .stat-card.clickable:hover::after,html.light .stat-card.clickable:hover::after{color:rgba(0,0,0,0.7)}
+    .breakdown-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:9999;opacity:0;transition:opacity .18s ease}
+    .breakdown-modal-backdrop.open{display:flex;opacity:1}
+    .breakdown-modal{background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:18px;padding:1.6rem 1.8rem;width:min(520px,92vw);max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);transform:translateY(8px);transition:transform .2s ease}
+    .breakdown-modal-backdrop.open .breakdown-modal{transform:translateY(0)}
+    .breakdown-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.4rem}
+    .breakdown-title{font-size:1.2rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .breakdown-close{background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:1.4rem;line-height:1;padding:.2rem .5rem;border-radius:8px;transition:background .15s ease, color .15s ease}
+    .breakdown-close:hover{background:rgba(255,255,255,0.06);color:var(--text)}
+    .breakdown-summary{display:flex;justify-content:space-between;gap:1rem;padding:.9rem 1rem;background:rgba(108,58,237,0.08);border-radius:12px;margin:1rem 0 1.2rem;font-size:.88rem}
+    .breakdown-summary div{display:flex;flex-direction:column;gap:.15rem}
+    .breakdown-summary .label{font-size:.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em}
+    .breakdown-summary .value{font-weight:800;font-size:1.05rem}
+    .breakdown-list{display:flex;flex-direction:column;gap:.55rem}
+    .breakdown-row{display:flex;align-items:center;justify-content:space-between;padding:.7rem .9rem;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);font-size:.92rem}
+    body.light .breakdown-row,html.light .breakdown-row{background:rgba(0,0,0,0.02);border-color:rgba(0,0,0,0.06)}
+    .breakdown-row.zero{opacity:.5}
+    .breakdown-row .feature-name{font-weight:600}
+    .breakdown-row .feature-amount{font-variant-numeric:tabular-nums;font-weight:700;color:var(--primary-light)}
+    .breakdown-grace{font-size:.78rem;color:#F59E0B;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);padding:.55rem .8rem;border-radius:10px;margin-top:1rem;font-weight:600}
+    .breakdown-cta{margin-top:1.4rem;display:flex;justify-content:flex-end}
+    .breakdown-cta a{padding:.7rem 1.3rem;background:var(--gradient-1);color:#fff;text-decoration:none;border-radius:12px;font-weight:700;font-size:.9rem;transition:transform .15s ease, box-shadow .15s ease}
+    .breakdown-cta a:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(108,58,237,0.4)}
+    .breakdown-empty{text-align:center;padding:1.4rem 0;color:var(--text-muted);font-size:.88rem}
+    .breakdown-loading{text-align:center;padding:1.4rem 0;color:var(--text-muted);font-size:.88rem}
 
     /* Recent Projects */
     .projects-section{margin-bottom:2rem}
@@ -211,7 +242,7 @@ router.get('/', requireAuth, async (req, res) => {
 
       <!-- Stats Row -->
       <div class="stats-row">
-        <div class="stat-card">
+        <div class="stat-card clickable" data-modal="credits" role="button" tabindex="0" aria-label="Open credits breakdown">
           <div class="stat-value">${creditsUsed}/${creditsTotal}</div>
           <div class="stat-label">Credits Used</div>
           <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min((creditsUsed/creditsTotal)*100,100)}%;background:linear-gradient(90deg,#6C3AED,#EC4899)"></div></div>
@@ -221,7 +252,7 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="stat-label">Posts Generated</div>
           <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min(postsGenerated*5,100)}%;background:linear-gradient(90deg,#0EA5E9,#6366F1)"></div></div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable" data-modal="storage" role="button" tabindex="0" aria-label="Open storage breakdown">
           <div class="stat-value">${storageUsed}</div>
           <div class="stat-label">Storage (${storageTotal})</div>
           <div class="stat-bar"><div class="stat-bar-fill" style="width:${storagePct}%;background:linear-gradient(90deg,#F59E0B,#EF4444)"></div></div>
@@ -617,9 +648,187 @@ router.get('/', requireAuth, async (req, res) => {
       if (e.key === 'Enter') processVideo();
     });
   </script>
+<!-- Phase 4: breakdown modal -->
+<div class="breakdown-modal-backdrop" id="breakdownBackdrop" role="dialog" aria-modal="true" aria-labelledby="breakdownTitle">
+  <div class="breakdown-modal" id="breakdownModal" role="document">
+    <div class="breakdown-head">
+      <div class="breakdown-title" id="breakdownTitle">Loading…</div>
+      <button class="breakdown-close" id="breakdownClose" aria-label="Close">×</button>
+    </div>
+    <div class="breakdown-summary" id="breakdownSummary"></div>
+    <div class="breakdown-list" id="breakdownList"></div>
+    <div id="breakdownGrace"></div>
+    <div class="breakdown-cta">
+      <a href="/billing" id="breakdownUpgrade">Upgrade your plan</a>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const backdrop = document.getElementById('breakdownBackdrop');
+  const titleEl = document.getElementById('breakdownTitle');
+  const summaryEl = document.getElementById('breakdownSummary');
+  const listEl = document.getElementById('breakdownList');
+  const graceEl = document.getElementById('breakdownGrace');
+  const upgradeEl = document.getElementById('breakdownUpgrade');
+  const closeBtn = document.getElementById('breakdownClose');
+
+  function open(){ backdrop.classList.add('open'); document.body.style.overflow='hidden'; }
+  function close(){ backdrop.classList.remove('open'); document.body.style.overflow=''; }
+
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && backdrop.classList.contains('open')) close(); });
+
+  function setLoading(label){
+    titleEl.textContent = label;
+    summaryEl.innerHTML = '';
+    listEl.innerHTML = '<div class="breakdown-loading">Loading…</div>';
+    graceEl.innerHTML = '';
+  }
+
+  function renderSummary(items){
+    summaryEl.innerHTML = items.map(it =>
+      '<div><span class="label">'+it.label+'</span><span class="value">'+it.value+'</span></div>'
+    ).join('');
+  }
+
+  function renderRows(rows, formatter){
+    if (!rows || rows.length === 0 || rows.every(r => formatter(r) === '0' || formatter(r) === '0 B')){
+      listEl.innerHTML = '<div class="breakdown-empty">No usage this month yet. Run a feature and the breakdown will fill in.</div>';
+      return;
+    }
+    listEl.innerHTML = rows.map(r => {
+      const amount = formatter(r);
+      const zero = (amount === '0' || amount === '0 B') ? ' zero' : '';
+      return '<div class="breakdown-row'+zero+'"><span class="feature-name">'+r.label+'</span><span class="feature-amount">'+amount+'</span></div>';
+    }).join('');
+  }
+
+  async function loadCredits(){
+    setLoading('Credits this month');
+    try {
+      const r = await fetch('/dashboard/api/credits-breakdown', { headers: {'Accept':'application/json'} });
+      if (!r.ok) throw new Error('http '+r.status);
+      const data = await r.json();
+      titleEl.textContent = 'Credits this month';
+      renderSummary([
+        { label: 'Used',      value: data.used + ' / ' + data.cap },
+        { label: 'Remaining', value: data.remaining }
+      ]);
+      renderRows(data.breakdown, r => String(r.credits || 0));
+      graceEl.innerHTML = '';
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div class="breakdown-empty">Couldn\'t load credits breakdown. Try refreshing.</div>';
+    }
+  }
+
+  async function loadStorage(){
+    setLoading('Storage usage');
+    try {
+      const r = await fetch('/dashboard/api/storage-breakdown', { headers: {'Accept':'application/json'} });
+      if (!r.ok) throw new Error('http '+r.status);
+      const data = await r.json();
+      titleEl.textContent = 'Storage usage';
+      renderSummary([
+        { label: 'Used',      value: data.usedFormatted + ' / ' + data.capFormatted },
+        { label: 'Remaining', value: data.remainingFormatted }
+      ]);
+      renderRows(data.breakdown, r => r.formatted || '0 B');
+      if (data.graceUntil) {
+        const until = new Date(data.graceUntil);
+        if (until.getTime() > Date.now()) {
+          graceEl.innerHTML = '<div class="breakdown-grace">⚠ You are over your cap. Grace period ends '+until.toLocaleDateString()+'.</div>';
+        } else {
+          graceEl.innerHTML = '';
+        }
+      } else {
+        graceEl.innerHTML = '';
+      }
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div class="breakdown-empty">Couldn\'t load storage breakdown. Try refreshing.</div>';
+    }
+  }
+
+  function attach(card){
+    const trigger = () => {
+      const which = card.getAttribute('data-modal');
+      open();
+      if (which === 'credits') loadCredits();
+      else if (which === 'storage') loadStorage();
+    };
+    card.addEventListener('click', trigger);
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); trigger(); }
+    });
+  }
+  document.querySelectorAll('.stat-card.clickable').forEach(attach);
+})();
+</script>
 </body>
 </html>`;
   res.send(html);
+});
+
+// ─── Phase 4: breakdown endpoints for the dashboard modals ───────────────────
+// Friendly names that the modal renders directly.
+const FEATURE_LABELS = {
+  'smart-shorts':  'Smart Shorts',
+  'ai-reframe':    'AI Reframe',
+  'enhance-audio': 'Enhance Audio',
+  'ai-captions':   'AI Captions',
+  'ai-thumbnail':  'AI Thumbnails',
+  'ai-hook':       'AI Hooks'
+};
+
+router.get('/api/credits-breakdown', requireAuth, async (req, res) => {
+  try {
+    const usage = await creditOps.getOrResetUsage(req.user.id);
+    const used = usage ? (usage.used || 0) : 0;
+    const cap = capFor(req.user.plan);
+    const rows = await creditOps.breakdownThisMonth(req.user.id);
+    // Always include all 6 features (zero-fill the ones with no charges yet).
+    const known = new Map(rows.map(r => [r.feature, r.credits]));
+    const breakdown = Object.keys(FEATURE_LABELS).map(key => ({
+      key,
+      label: FEATURE_LABELS[key],
+      credits: known.get(key) || 0
+    }));
+    res.json({ used, cap, remaining: Math.max(0, cap - used), breakdown });
+  } catch (e) {
+    console.error('credits-breakdown error:', e);
+    res.status(500).json({ error: 'Failed to load credits breakdown' });
+  }
+});
+
+router.get('/api/storage-breakdown', requireAuth, async (req, res) => {
+  try {
+    const su = await storageOps.getUsage(req.user.id);
+    const usedBytes = su ? su.bytes : 0;
+    const capBytes = storageCapBytes(req.user.plan);
+    const rows = await storageOps.breakdownAllTime(req.user.id);
+    const known = new Map(rows.map(r => [r.feature, r.bytes]));
+    const breakdown = Object.keys(FEATURE_LABELS).map(key => ({
+      key,
+      label: FEATURE_LABELS[key],
+      bytes: known.get(key) || 0,
+      formatted: formatBytes(known.get(key) || 0)
+    }));
+    res.json({
+      usedBytes,
+      capBytes,
+      usedFormatted: formatBytes(usedBytes),
+      capFormatted: formatBytes(capBytes),
+      remainingFormatted: formatBytes(Math.max(0, capBytes - usedBytes)),
+      graceUntil: su && su.graceUntil ? su.graceUntil : null,
+      breakdown
+    });
+  } catch (e) {
+    console.error('storage-breakdown error:', e);
+    res.status(500).json({ error: 'Failed to load storage breakdown' });
+  }
 });
 
 module.exports = router;
