@@ -132,7 +132,7 @@ router.get('/', requireAuth, (req, res) => {
             '<div class="notif-actions">' +
               '<a href="/dashboard/calendar">Open calendar</a>' +
               (e.analysis_id ? '<a href="/shorts?dlAnalysis=' + encodeURIComponent(e.analysis_id) + '&dlMoment=' + encodeURIComponent(e.moment_index || 0) + '">Download clip</a>' : '') +
-              (isUnread ? '<button class="mark-read-btn" onclick="markOneRead(\'' + escHtml(e.id) + '\', this)">Mark as read</button>' : '') +
+              (isUnread ? '<button class="mark-read-btn" onclick="markOneRead(\\'' + escHtml(e.id) + '\\', this)">Mark as read</button>' : '') +
             '</div>' +
           '</div>' +
         '</div>';
