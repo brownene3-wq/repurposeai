@@ -1160,6 +1160,56 @@ router.get('/', requireAuth, (req, res) => {
 
     .theme-toggle-header { display: flex; align-items: center; }
 
+    /* Header CTA — quick link to the AI Captions page so users know where
+       added styles end up and can jump there in one click. */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .header-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.7rem 1.2rem;
+      background: var(--gradient-1);
+      color: #ffffff;
+      text-decoration: none;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 4px 14px rgba(108,58,237,0.32);
+      white-space: nowrap;
+    }
+    .header-cta:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 22px rgba(108,58,237,0.5);
+    }
+    .header-cta .cta-arrow {
+      transition: transform 0.15s ease;
+      font-weight: 700;
+    }
+    .header-cta:hover .cta-arrow { transform: translateX(3px); }
+    .header-cta .added-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 7px;
+      background: rgba(255,255,255,0.22);
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .header-cta .added-count.is-empty { display: none; }
+    @media (max-width: 768px) {
+      .header-cta { padding: 0.55rem 0.9rem; font-size: 0.82rem; }
+      .header-cta .cta-label-long { display: none; }
+    }
+
     .content-wrapper {
       padding: 0 2rem 2rem 2rem;
       max-width: 1400px;
@@ -1618,6 +1668,15 @@ ${PRESETS_VISUAL_CSS}
           <h1>Caption Styles</h1>
           <p>Choose from 100 premium caption presets across 5 categories to make your videos stand out</p>
         </div>
+        <div class="header-actions">
+          <a href="/ai-captions" class="header-cta" id="viewAiCaptionsBtn"
+             title="Open the AI Captions page to use the styles you've added">
+            <span aria-hidden="true">✨</span>
+            <span class="cta-label-long">View on </span><span>AI Captions</span>
+            <span class="added-count is-empty" id="addedCountBadge" aria-label="styles added">0</span>
+            <span class="cta-arrow" aria-hidden="true">→</span>
+          </a>
+        </div>
       </div>
 
       <div class="content-wrapper">
@@ -1700,7 +1759,16 @@ ${PRESETS_VISUAL_CSS}
           body: JSON.stringify({ style: cls })
         });
         if (!r.ok) throw new Error('bad response');
+        const data = await r.json().catch(() => null);
         setBtnState(btn, !isAdded);
+        if (data && Array.isArray(data.enabled)) {
+          updateAddedCountBadge(data.enabled.length);
+        } else {
+          // Best-effort fallback — increment/decrement based on the action.
+          const badge = document.getElementById('addedCountBadge');
+          const cur = badge ? parseInt(badge.textContent || '0', 10) || 0 : 0;
+          updateAddedCountBadge(Math.max(0, cur + (isAdded ? -1 : 1)));
+        }
         if (!isAdded) {
           showToast(name + ' is now available on the AI Captions page');
         } else {
@@ -1716,6 +1784,13 @@ ${PRESETS_VISUAL_CSS}
       btn.addEventListener('click', () => toggleAddRemove(btn));
     });
 
+    function updateAddedCountBadge(n) {
+      const badge = document.getElementById('addedCountBadge');
+      if (!badge) return;
+      badge.textContent = String(n);
+      badge.classList.toggle('is-empty', n === 0);
+    }
+
     // Initial state: fetch the user's enabled list and mark added cards
     (async function() {
       try {
@@ -1726,6 +1801,7 @@ ${PRESETS_VISUAL_CSS}
         document.querySelectorAll('.add-btn').forEach(btn => {
           setBtnState(btn, enabled.has(btn.getAttribute('data-cls')));
         });
+        updateAddedCountBadge(enabled.size);
       } catch(e) {}
     })();
 
