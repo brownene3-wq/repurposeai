@@ -19,12 +19,19 @@ router.get('/', requireAuth, (req, res) => {
     .cal-actions{display:flex;gap:10px}
     .add-entry-btn{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:.55rem 1rem;border-radius:8px;font-weight:600;font-size:.85rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
     .add-entry-btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(108,58,237,0.35)}
-    .cal-grid-wrap{background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:14px;overflow:hidden}
+    .cal-grid-wrap{background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:14px;overflow:auto;max-height:calc(100vh - 220px);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    .cal-grid-wrap::-webkit-scrollbar{width:6px;height:6px}
+    .cal-grid-wrap::-webkit-scrollbar-track{background:transparent}
+    .cal-grid-wrap::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    .cal-grid-wrap::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    .cal-grid-wrap::-webkit-scrollbar-corner{background:transparent}
+    body.light .cal-grid-wrap,html.light .cal-grid-wrap{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .cal-grid-wrap::-webkit-scrollbar-thumb,html.light .cal-grid-wrap::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+    body.light .cal-grid-wrap::-webkit-scrollbar-thumb:hover,html.light .cal-grid-wrap::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.30)}
     body.light .cal-grid-wrap,html.light .cal-grid-wrap{border-color:rgba(0,0,0,0.06)}
     .cal-board{display:grid;grid-template-columns:1fr 260px;gap:18px;align-items:stretch}
     @media(max-width:960px){.cal-board{grid-template-columns:1fr}}
-    .cal-grid-wrap{display:flex;flex-direction:column}
-    .cal-grid-wrap .cal-grid{flex:1}
+    .cal-grid-wrap{display:block}
     .cal-legend{display:flex;flex-direction:column;gap:8px;padding:16px;background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:14px;align-self:stretch}
     body.light .cal-legend,html.light .cal-legend{border-color:rgba(0,0,0,0.06)}
     .cal-legend-label{font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin:0 0 4px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.06)}
@@ -47,10 +54,10 @@ router.get('/', requireAuth, (req, res) => {
     .legend-clear{margin-top:auto;font-size:.78rem;font-weight:600;color:#a78bfa;cursor:pointer;padding:9px 12px;border-radius:10px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.20);transition:background .15s,border-color .15s;text-align:center;width:100%;box-sizing:border-box}
     .legend-clear:hover{background:rgba(108,58,237,0.14);border-color:rgba(108,58,237,0.40)}
     .legend-clear[hidden]{display:none}
-    .cal-day-headers{display:grid;grid-template-columns:repeat(7,1fr);background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06)}
+    .cal-day-headers{display:grid;grid-template-columns:repeat(7,minmax(100px,1fr));min-width:700px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06);position:sticky;top:0;z-index:1}
     body.light .cal-day-headers,html.light .cal-day-headers{background:rgba(0,0,0,0.02);border-bottom-color:rgba(0,0,0,0.06)}
     .cal-day-header{padding:10px;text-align:center;font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
-    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.04)}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,minmax(100px,1fr));min-width:700px;gap:1px;background:rgba(255,255,255,0.04)}
     body.light .cal-grid,html.light .cal-grid{background:rgba(0,0,0,0.05)}
     .cal-cell{background:var(--dark-2);min-height:110px;padding:8px;cursor:pointer;transition:background .15s;display:flex;flex-direction:column;gap:4px}
     .cal-cell:hover{background:rgba(108,58,237,0.06)}
