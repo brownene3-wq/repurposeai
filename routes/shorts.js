@@ -6380,7 +6380,7 @@ ${paginationHtml}
     </button>
 
     <!-- Calendar Modal — read-only schedule preview with platform logos per day -->
-    <div id="calendarModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,18,0.78);backdrop-filter:blur(6px);z-index:9995;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)this.style.display='none';">
+    <div id="calendarModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,18,0.78);backdrop-filter:blur(6px);z-index:100001;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)this.style.display='none';">
       <div style="background:linear-gradient(180deg,#1a1a2e,rgba(108,58,237,0.06));border:1px solid rgba(108,58,237,0.40);border-radius:16px;padding:24px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;margin:auto;box-shadow:0 0 0 1px rgba(108,58,237,0.20),0 20px 60px rgba(108,58,237,0.20),0 30px 80px rgba(0,0,0,0.5);">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
           <div style="display:flex;align-items:center;gap:10px;">
