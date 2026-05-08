@@ -6375,7 +6375,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
 ${paginationHtml}
           <!-- Floating Calendar Button -->
-    <button id="calendarFloatBtn" onclick="document.getElementById('calendarModal').style.display='flex';" style="position:fixed;top:18px;right:70px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
+    <button id="calendarFloatBtn" onclick="document.getElementById('calendarModal').style.display='flex';" style="position:fixed;top:18px;right:24px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
       <span style="font-size:18px;">&#128197;</span> Calendar
     </button>
 
