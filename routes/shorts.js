@@ -7798,6 +7798,13 @@ ${paginationHtml}
         html += '</div>';
       }
 
+      // Always render 6 weeks (42 day-cells) so the modal height is constant
+      // regardless of which month is shown — no jumping between 4/5/6 rows.
+      const trailingBlanks = 42 - firstDay - daysInMonth;
+      for (let i = 0; i < trailingBlanks; i++) {
+        html += '<div style="padding:8px;min-height:78px;background:rgba(255,255,255,0.02);"></div>';
+      }
+
       grid.innerHTML = html;
     }
 
