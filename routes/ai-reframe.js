@@ -6,6 +6,7 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
+const { requireCredits } = require('../middleware/credits');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -1014,7 +1015,7 @@ router.get('/subject-thumb/:jobId/:subjectId.jpg', requireAuth, async (req, res)
 // Accepts multipart (videoFile) OR form data with youtubeUrl+inputMode.
 // Runs detection, caches the video path + detection under a new jobId,
 // and responds with the trimmed subjects array for the UI to render.
-router.post('/detect-subjects', requireAuth, upload.single('videoFile'), async (req, res) => {
+router.post('/detect-subjects', requireAuth, requireCredits('ai-reframe'), upload.single('videoFile'), async (req, res) => {
   let downloadedPath = null;
   try {
     const youtubeUrl = req.body.youtubeUrl || '';

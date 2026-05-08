@@ -15,6 +15,7 @@ try { Replicate = require('replicate'); } catch(e){
   console.warn('[ai-thumbnail] replicate SDK not installed — Flux image gen disabled:', e.message);
 }
 const { requireAuth } = require('../middleware/auth');
+const { requireCredits } = require('../middleware/credits');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -3022,7 +3023,7 @@ router.post('/extract', requireAuth, upload.single('videoFile'), async (req, res
 });
 
 // POST - Apply style to frame
-router.post('/style', requireAuth, async (req, res) => {
+router.post('/style', requireAuth, requireCredits('ai-thumbnail'), async (req, res) => {
   try {
     const frameFilename = req.body.frameFilename || '';
     const styleKeysStr = req.body.styles || '[]';

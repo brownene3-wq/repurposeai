@@ -29,6 +29,9 @@ const initDatabase = async () => {
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`,
+      // Phase 1: credit metering columns
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_used_this_month INTEGER DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_period_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
@@ -1505,11 +1508,65 @@ const projectOps = {
 };
 
 
+// Phase 1 — credit metering
+// Single unified credit pool per user, reset monthly. Cost table is in
+// middleware/credits.js so the routes can also reference it without a DB hop.
+const creditOps = {
+  // Returns { used, periodStart, plan }. Resets the period if the stored
+  // periodStart is from a previous calendar month (UTC). The reset is
+  // atomic-ish: a single UPDATE ... RETURNING does the read+reset.
+  async getOrResetUsage(userId) {
+    const row = (await pool.query(
+      `SELECT credits_used_this_month AS used, credits_period_start AS period_start, plan
+         FROM users WHERE id = $1`, [userId]
+    )).rows[0];
+    if (!row) return null;
+    const start = row.period_start ? new Date(row.period_start) : null;
+    const now = new Date();
+    const sameMonth = start &&
+      start.getUTCFullYear() === now.getUTCFullYear() &&
+      start.getUTCMonth() === now.getUTCMonth();
+    if (!sameMonth) {
+      const reset = (await pool.query(
+        `UPDATE users
+            SET credits_used_this_month = 0,
+                credits_period_start = date_trunc('month', CURRENT_TIMESTAMP)
+          WHERE id = $1
+        RETURNING credits_used_this_month AS used, credits_period_start AS period_start, plan`,
+        [userId]
+      )).rows[0];
+      return { used: reset.used, periodStart: reset.period_start, plan: reset.plan };
+    }
+    return { used: row.used || 0, periodStart: start, plan: row.plan };
+  },
+
+  // Atomically add `n` to the user's monthly usage. Used after a successful
+  // operation. We do not check the cap here — middleware does that on the way in.
+  async incrementUsage(userId, n) {
+    if (!n || n <= 0) return;
+    await pool.query(
+      `UPDATE users SET credits_used_this_month = COALESCE(credits_used_this_month, 0) + $1 WHERE id = $2`,
+      [n, userId]
+    );
+  },
+
+  // Refund — used if the operation errors after deduction. Floors at 0.
+  async refundUsage(userId, n) {
+    if (!n || n <= 0) return;
+    await pool.query(
+      `UPDATE users SET credits_used_this_month = GREATEST(0, COALESCE(credits_used_this_month, 0) - $1) WHERE id = $2`,
+      [n, userId]
+    );
+  }
+};
+
+
 module.exports = {
   initDatabase,
   getDb,
   get pool() { return pool; },
   userOps,
+  creditOps,
   contentOps,
   outputOps,
   brandVoiceOps,

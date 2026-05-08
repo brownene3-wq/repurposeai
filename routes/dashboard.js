@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { contentOps, outputOps, shortsOps } = require('../db/database');
+const { contentOps, outputOps, shortsOps, creditOps } = require('../db/database');
+const { capFor } = require('../middleware/credits');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', requireAuth, async (req, res) => {
@@ -53,9 +54,14 @@ router.get('/', requireAuth, async (req, res) => {
         </a>`;
   }).join('');
 
-  const planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free';
-  const creditsUsed = videosProcessed;
-  const creditsTotal = req.user.plan === 'pro' ? 100 : req.user.plan === 'enterprise' ? 500 : 5;
+  const planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : (req.user.plan ? (req.user.plan.charAt(0).toUpperCase() + req.user.plan.slice(1)) : 'Free');
+  // Phase 1: real credit metering. Falls back to 0/cap if the read fails so the UI never breaks.
+  let creditsUsed = 0;
+  try {
+    const usage = await creditOps.getOrResetUsage(req.user.id);
+    if (usage) creditsUsed = usage.used || 0;
+  } catch (e) { console.error('Dashboard credits read error:', e); }
+  const creditsTotal = capFor(req.user.plan);
   const storageUsed = (postsGenerated * 0.02).toFixed(1);
   const storageTotal = req.user.plan === 'pro' ? '50' : req.user.plan === 'enterprise' ? '200' : '1';
 
