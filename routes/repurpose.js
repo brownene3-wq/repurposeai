@@ -1363,7 +1363,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1>Transform Your Content</h1>
+            <h1>&#x1F504; Create</h1>
             <p>Turn any YouTube video into tailored content for multiple platforms with AI</p>
           </div>
 
@@ -2492,7 +2492,7 @@ router.get('/history', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1>Content Library</h1>
+            <h1>&#x1F4DA; Library</h1>
             <p>Browse and manage all your created content</p>
           </div>
 

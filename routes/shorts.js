@@ -5913,7 +5913,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
   <!-- Main content -->
   <main class="main-content">
       <div class="header">
-        <h1 class="header-title">Smart Shorts</h1>
+        <h1 class="header-title">&#x2702;&#xFE0F; Smart Shorts</h1>
         <p class="header-subtitle">Transform any YouTube video into viral short-form content</p>
       </div>
 

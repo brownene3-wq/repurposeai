@@ -1660,7 +1660,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1>AI Reframe</h1>
+        <h1>&#x1F4D0; AI Reframe</h1>
         <p>Resize any video for every platform in 1 click</p>
       </div>
 

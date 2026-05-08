@@ -1663,7 +1663,7 @@ ${PRESETS_VISUAL_CSS}
     <main class="main-content">
       <div class="header">
         <div class="header-content">
-          <h1>Caption Styles</h1>
+          <h1>&#x1F4DD; Caption Styles</h1>
           <p>Choose from 100 premium caption presets across 5 categories to make your videos stand out</p>
         </div>
         <div class="header-actions">

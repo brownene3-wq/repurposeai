@@ -203,7 +203,7 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="main-content">
         <div class="workflows-header">
           <div>
-            <h1>Repurpose</h1>
+            <h1>&#x26A1; Repurpose</h1>
             <p style="color:var(--text-muted);font-size:0.95rem;margin:0.5rem 0 0">Automate posting content across platforms</p>
           </div>
           <a href="/distribute/create" class="btn-gradient">

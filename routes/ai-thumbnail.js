@@ -2017,7 +2017,7 @@ ${pageStyles}
 
     <main class="main-content">
       <div class="page-header">
-        <h1>AI Thumbnails</h1>
+        <h1>&#x1F5BC;&#xFE0F; AI Thumbnails</h1>
         <p>Generate professional YouTube thumbnails with AI styling</p>
       </div>
 

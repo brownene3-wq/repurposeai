@@ -18,6 +18,8 @@ router.get('/', requireAuth, (req, res) => {
     .notif-card{background:var(--surface);border:1px solid rgba(108,58,237,.20);border-radius:12px;padding:16px 20px;margin-bottom:12px;display:flex;gap:14px;align-items:flex-start;transition:border-color .15s}
     body.light .notif-card,html.light .notif-card{border-color:rgba(108,58,237,.18)}
     .notif-card.unseen{background:linear-gradient(180deg,rgba(108,58,237,.08),rgba(236,72,153,.04));border-color:rgba(108,58,237,.45);box-shadow:0 0 0 1px rgba(108,58,237,.20)}
+    .notif-card.upcoming{background:linear-gradient(180deg,rgba(16,185,129,.06),rgba(108,58,237,.03));border-color:rgba(16,185,129,.30)}
+    body.light .notif-card.upcoming,html.light .notif-card.upcoming{border-color:rgba(16,185,129,.35)}
     .notif-icon{flex-shrink:0;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.05em}
     .notif-body{flex:1;min-width:0}
     .notif-title{font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:4px}
@@ -84,6 +86,7 @@ router.get('/', requireAuth, (req, res) => {
           const data = await resp.json();
           const unread = data.unread || data.due || [];
           const read = data.read || data.recent || [];
+          const upcoming = data.upcoming || [];
 
           const badge = document.getElementById('notifUnreadBadge');
           const markBtn = document.getElementById('markAllReadBtn');
@@ -96,7 +99,7 @@ router.get('/', requireAuth, (req, res) => {
             markBtn.setAttribute('hidden', '');
           }
 
-          if (!unread.length && !read.length) {
+          if (!unread.length && !upcoming.length && !read.length) {
             list.innerHTML = '<div class="notif-empty"><div class="icon">\ud83d\udd15</div><div><strong>You&rsquo;re all caught up.</strong></div><div style="margin-top:6px;font-size:.85rem">Schedule posts on the <a href="/dashboard/calendar" style="color:#a78bfa;text-decoration:none">Calendar</a> with reminders to see them here.</div></div>';
             return;
           }
@@ -104,6 +107,10 @@ router.get('/', requireAuth, (req, res) => {
           if (unread.length){
             html += '<div class="notif-section-title">Unread (' + unread.length + ')</div>';
             for (const e of unread) html += renderCard(e, true);
+          }
+          if (upcoming.length){
+            html += '<div class="notif-section-title">Upcoming (' + upcoming.length + ')</div>';
+            for (const e of upcoming) html += renderCard(e, false, true);
           }
           if (read.length){
             html += '<div class="notif-section-title">Read</div>';
@@ -114,23 +121,41 @@ router.get('/', requireAuth, (req, res) => {
           list.innerHTML = '<div class="notif-empty">Could not load notifications.</div>';
         }
       }
-      function renderCard(e, isUnread){
+      function fmtIn(dateStr, timeStr, reminderMins){
+        try {
+          const due = new Date(String(dateStr).slice(0,10) + 'T' + (timeStr || '12:00') + ':00');
+          const fireAt = new Date(due.getTime() - (reminderMins||0)*60000);
+          const diff = fireAt - new Date();
+          if (diff <= 0) return 'soon';
+          const mins = Math.round(diff/60000);
+          if (mins < 60) return 'in ' + mins + ' min';
+          const hrs = Math.round(mins/60);
+          if (hrs < 48) return 'in ' + hrs + ' h';
+          const days = Math.round(hrs/24);
+          return 'in ' + days + ' d';
+        } catch(_) { return ''; }
+      }
+      function renderCard(e, isUnread, isUpcoming){
         const dueAt = e.scheduled_date && e.scheduled_time
           ? new Date(String(e.scheduled_date).slice(0,10) + 'T' + (e.scheduled_time || '12:00') + ':00').toLocaleString()
           : '';
         const stamp = e.read_at || e.fired_at;
-        return '<div class="notif-card ' + (isUnread ? 'unseen' : 'read') + '" data-id="' + escHtml(e.id) + '">' +
-          '<div class="notif-icon">\ud83d\udcc5</div>' +
+        const fireIn = isUpcoming ? fmtIn(e.scheduled_date, e.scheduled_time, e.reminder_minutes) : '';
+        const cardClass = isUnread ? 'unseen' : (isUpcoming ? 'upcoming' : 'read');
+        const icon = isUpcoming ? '\u23F0' : '\ud83d\udcc5';
+        return '<div class="notif-card ' + cardClass + '" data-id="' + escHtml(e.id) + '">' +
+          '<div class="notif-icon">' + icon + '</div>' +
           '<div class="notif-body">' +
             '<div class="notif-title">' +
               (isUnread ? '<span class="unread-dot" aria-hidden="true"></span>' : '') +
               escHtml(e.title || 'Scheduled post') +
             '</div>' +
-            '<div class="notif-msg">' + fmtMsg(e.title, e.platform) + '</div>' +
+            '<div class="notif-msg">' + (isUpcoming ? 'Reminder will fire ' + escHtml(fireIn) + ' (' + escHtml(String(e.reminder_minutes||0)) + ' min before scheduled time).' : fmtMsg(e.title, e.platform)) + '</div>' +
             '<div class="notif-meta">' +
               '<span class="pill">' + escHtml(PLATFORM_LABELS[e.platform] || e.platform || 'post') + '</span>' +
               (dueAt ? '<span>Due ' + escHtml(dueAt) + '</span>' : '') +
-              (!isUnread && stamp ? '<span>Read ' + escHtml(fmtAgo(stamp)) + '</span>' : '') +
+              (isUpcoming && fireIn ? '<span>Fires ' + escHtml(fireIn) + '</span>' : '') +
+              (!isUnread && !isUpcoming && stamp ? '<span>Read ' + escHtml(fmtAgo(stamp)) + '</span>' : '') +
             '</div>' +
             '<div class="notif-actions">' +
               '<a href="/dashboard/calendar">Open calendar</a>' +
@@ -209,9 +234,24 @@ router.get('/api/feed', requireAuth, async (req, res) => {
     `, [userId]);
     const read = readResult.rows;
 
+    // Upcoming = reminder set, not yet fired, reminder window still in the future.
+    // Lets the user see immediate confirmation that their reminder is queued even
+    // when the actual notification time is hours or days away.
+    const upcomingResult = await db.query(`
+      SELECT * FROM calendar_entries
+      WHERE user_id = $1
+        AND reminder_minutes > 0
+        AND reminder_sent = FALSE
+        AND status != 'published'
+        AND (scheduled_date::timestamp + scheduled_time::time) - (reminder_minutes || ' minutes')::interval > NOW()
+      ORDER BY scheduled_date, scheduled_time
+      LIMIT 50
+    `, [userId]);
+    const upcoming = upcomingResult.rows;
+
     // Backward-compat: keep legacy keys (due/recent) so older clients don't break,
-    // and add the new (unread/read) names for clarity.
-    res.json({ due: unread, recent: read, unread, read });
+    // and add the new (unread/read/upcoming) names for clarity.
+    res.json({ due: unread, recent: read, unread, read, upcoming });
   } catch (error) {
     console.error('Notifications feed error:', error);
     res.status(500).json({ error: 'Failed to load notifications' });

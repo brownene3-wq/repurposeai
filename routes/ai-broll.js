@@ -741,7 +741,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1>AI B-Roll Generator</h1>
+        <h1>&#x1F3A5; AI B-Roll</h1>
         <p>Automatically add relevant B-roll to enhance your videos</p>
       </div>
 

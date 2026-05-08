@@ -393,7 +393,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1>Brand Templates</h1>
+        <h1>&#x1F3A8; Brand Templates</h1>
         <p>Create consistent branded videos in 3 easy steps</p>
       </div>
 

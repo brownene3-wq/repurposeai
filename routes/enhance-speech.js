@@ -344,7 +344,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1>Enhance Speech</h1>
+        <h1>&#x1F399;&#xFE0F; Enhance Audio</h1>
         <p>Remove background noise and enhance voice clarity with AI</p>
       </div>
 
