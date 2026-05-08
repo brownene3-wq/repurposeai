@@ -23,7 +23,8 @@ router.get('/', requireAuth, (req, res) => {
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap');
       ${getBaseCSS()}
-      .billing-page{max-width:1100px;margin:0 auto;padding:3rem 2rem}
+      .billing-page{padding:3rem 2rem}
+      .billing-inner{max-width:1100px;margin:0 auto}
       .back-link{color:var(--primary-light);text-decoration:none;font-size:.9rem;font-weight:500;display:inline-flex;align-items:center;gap:.5rem}
       .back-link:hover{text-decoration:underline}
       .page-header{margin-bottom:3rem}
@@ -61,6 +62,7 @@ router.get('/', requireAuth, (req, res) => {
     ${getSidebar('billing', req.user, req.teamPermissions)}
     ${getThemeToggle()}
     <div class="billing-page main-content" style="margin-left:250px">
+      <div class="billing-inner">
       <a href="/dashboard" class="back-link">&#x2190; Back to Dashboard</a>
       <div class="page-header">
         <h1>Billing & Plans</h1>
