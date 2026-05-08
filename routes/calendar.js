@@ -21,25 +21,31 @@ router.get('/', requireAuth, (req, res) => {
     .add-entry-btn:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(108,58,237,0.35)}
     .cal-grid-wrap{background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:14px;overflow:hidden}
     body.light .cal-grid-wrap,html.light .cal-grid-wrap{border-color:rgba(0,0,0,0.06)}
-    .cal-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;padding:14px 16px;background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:12px}
+    .cal-board{display:grid;grid-template-columns:1fr 260px;gap:18px;align-items:stretch}
+    @media(max-width:960px){.cal-board{grid-template-columns:1fr}}
+    .cal-grid-wrap{display:flex;flex-direction:column}
+    .cal-grid-wrap .cal-grid{flex:1}
+    .cal-legend{display:flex;flex-direction:column;gap:8px;padding:16px;background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:14px;align-self:stretch}
     body.light .cal-legend,html.light .cal-legend{border-color:rgba(0,0,0,0.06)}
-    .cal-legend-label{font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;align-self:center;margin-right:4px}
-    .legend-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:.75rem;font-weight:600;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);transition:opacity .15s,transform .15s,background .15s,border-color .15s;color:var(--text);cursor:pointer;user-select:none}
-    .legend-chip:hover{background:rgba(255,255,255,0.08);border-color:rgba(108,58,237,0.30)}
+    .cal-legend-label{font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin:0 0 4px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.06)}
+    body.light .cal-legend-label,html.light .cal-legend-label{border-bottom-color:rgba(0,0,0,0.06)}
+    .legend-chip{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;font-size:.85rem;font-weight:600;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);transition:opacity .15s,transform .15s,background .15s,border-color .15s;color:var(--text);cursor:pointer;user-select:none;width:100%;box-sizing:border-box}
+    .legend-chip:hover{background:rgba(255,255,255,0.08);border-color:rgba(108,58,237,0.30);transform:translateX(2px)}
     body.light .legend-chip,html.light .legend-chip{background:rgba(0,0,0,0.03);border-color:rgba(0,0,0,0.06)}
     body.light .legend-chip:hover,html.light .legend-chip:hover{background:rgba(0,0,0,0.05);border-color:rgba(108,58,237,0.30)}
-    .legend-chip .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,0.05)}
-    .legend-chip .legend-emoji{font-size:.85rem}
+    .legend-chip .legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,0.05)}
+    .legend-chip .legend-emoji{font-size:.95rem}
     .legend-svg svg,.cal-entry-svg svg{width:100%;height:100%;display:block}
-    .legend-chip .legend-count{margin-left:4px;font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,0.08);color:var(--text)}
+    .legend-chip .legend-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .legend-chip .legend-count{margin-left:auto;font-size:.75rem;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(255,255,255,0.08);color:var(--text);min-width:24px;text-align:center}
     body.light .legend-chip .legend-count,html.light .legend-chip .legend-count{background:rgba(0,0,0,0.06)}
     .legend-chip.empty{opacity:0.45}
     .legend-chip.empty .legend-count{background:transparent;color:var(--text-dim)}
     .legend-chip.active{background:linear-gradient(135deg,rgba(108,58,237,0.25),rgba(236,72,153,0.18));border-color:#6C3AED;box-shadow:0 0 0 1px rgba(108,58,237,0.40),0 4px 14px rgba(108,58,237,0.18);color:#fff;opacity:1}
     .legend-chip.active .legend-count{background:rgba(108,58,237,0.35);color:#fff}
     .legend-chip.dimmed{opacity:0.30}
-    .legend-clear{margin-left:auto;font-size:.72rem;font-weight:600;color:#a78bfa;cursor:pointer;padding:5px 10px;border-radius:999px;background:transparent;border:none;transition:background .15s}
-    .legend-clear:hover{background:rgba(108,58,237,0.10)}
+    .legend-clear{margin-top:auto;font-size:.78rem;font-weight:600;color:#a78bfa;cursor:pointer;padding:9px 12px;border-radius:10px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.20);transition:background .15s,border-color .15s;text-align:center;width:100%;box-sizing:border-box}
+    .legend-clear:hover{background:rgba(108,58,237,0.14);border-color:rgba(108,58,237,0.40)}
     .legend-clear[hidden]{display:none}
     .cal-day-headers{display:grid;grid-template-columns:repeat(7,1fr);background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06)}
     body.light .cal-day-headers,html.light .cal-day-headers{background:rgba(0,0,0,0.02);border-bottom-color:rgba(0,0,0,0.06)}
@@ -106,18 +112,20 @@ router.get('/', requireAuth, (req, res) => {
               <button class="add-entry-btn" onclick="openCreate()">+ Add Entry</button>
             </div>
           </div>
-          <div class="cal-legend" id="calLegend" aria-label="Platforms scheduled this month"></div>
-          <div class="cal-grid-wrap">
-            <div class="cal-day-headers">
-              <div class="cal-day-header">Sun</div>
-              <div class="cal-day-header">Mon</div>
-              <div class="cal-day-header">Tue</div>
-              <div class="cal-day-header">Wed</div>
-              <div class="cal-day-header">Thu</div>
-              <div class="cal-day-header">Fri</div>
-              <div class="cal-day-header">Sat</div>
+          <div class="cal-board">
+            <div class="cal-grid-wrap">
+              <div class="cal-day-headers">
+                <div class="cal-day-header">Sun</div>
+                <div class="cal-day-header">Mon</div>
+                <div class="cal-day-header">Tue</div>
+                <div class="cal-day-header">Wed</div>
+                <div class="cal-day-header">Thu</div>
+                <div class="cal-day-header">Fri</div>
+                <div class="cal-day-header">Sat</div>
+              </div>
+              <div class="cal-grid" id="calGrid"></div>
             </div>
-            <div class="cal-grid" id="calGrid"></div>
+            <aside class="cal-legend" id="calLegend" aria-label="Platforms scheduled this month"></aside>
           </div>
         </div>
       </main>
@@ -267,7 +275,7 @@ router.get('/', requireAuth, (req, res) => {
         }
         const order=['tiktok','instagram','shorts','youtube','twitter','linkedin','facebook','blog','newsletter'];
         const filterActive = activeFilters.size > 0;
-        let html='<span class="cal-legend-label">Platforms</span>';
+        let html='<div class="cal-legend-label">Platforms</div>';
         for(const k of order){
           const m=PLATFORM_META[k];
           const c=counts[k]||0;
@@ -275,12 +283,12 @@ router.get('/', requireAuth, (req, res) => {
           const isOn = activeFilters.has(k);
           const klass = 'legend-chip' + empty + (isOn ? ' active' : '') + (filterActive && !isOn ? ' dimmed' : '');
           const titleAttr=isOn?('Filtering by ' + m.label + ' — click to clear'):(c===0?('Click to filter by ' + m.label):('Click to filter by ' + m.label + ' (' + c + ' scheduled)'));
-          html+='<span class="'+klass+'" data-platform="'+k+'" onclick="togglePlatformFilter(\\''+k+'\\')" title="'+titleAttr+'">';
+          html+='<button type="button" class="'+klass+'" data-platform="'+k+'" onclick="togglePlatformFilter(\\''+k+'\\')" title="'+titleAttr+'" style="font-family:inherit;text-align:left;">';
           html+='<span class="legend-dot" style="background:'+m.color+'"></span>';
-          html+='<span class="legend-svg" style="width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:'+m.color+';flex-shrink:0;" aria-hidden="true">'+(m.svg||'')+'</span>';
-          html+=m.label;
+          html+='<span class="legend-svg" style="width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:'+m.color+';flex-shrink:0;" aria-hidden="true">'+(m.svg||'')+'</span>';
+          html+='<span class="legend-name">'+m.label+'</span>';
           html+='<span class="legend-count">'+c+'</span>';
-          html+='</span>';
+          html+='</button>';
         }
         html += '<button class="legend-clear" onclick="clearPlatformFilters()"' + (filterActive ? '' : ' hidden') + '>Clear filters</button>';
         document.getElementById('calLegend').innerHTML=html;
