@@ -22,13 +22,15 @@ const COSTS = {
 
 // Plan cap table. These should be the authoritative caps; the dashboard
 // should read from here too.
+// Canonical plan set: free, starter, pro, teams (matches Stripe PRICE_MAP in routes/billing.js).
+// 'enterprise' is NOT a real plan in this app — kept as a soft alias for safety.
 const CAPS = {
   free: 25,
-  pro: 100,
-  enterprise: 500,
-  // Soft fallbacks for historical plan strings already in the DB.
   starter: 50,
-  teams: 500
+  pro: 100,
+  teams: 500,
+  // Legacy alias — kept only because old code referenced it.
+  enterprise: 500
 };
 
 function capFor(plan) {

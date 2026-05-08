@@ -15,12 +15,14 @@ const GB = 1024 * 1024 * 1024;
 const GRACE_DAYS = 30;
 
 // Plan cap table in BYTES. Aligned with the dashboard widget.
+// Canonical plan set: free, starter, pro, teams (matches Stripe PRICE_MAP).
 const STORAGE_CAPS = {
   free:        1 * GB,
-  pro:        50 * GB,
-  enterprise: 200 * GB,
   starter:    10 * GB,
-  teams:     200 * GB
+  pro:        50 * GB,
+  teams:     200 * GB,
+  // Legacy alias.
+  enterprise: 200 * GB
 };
 
 function capForPlan(plan) {

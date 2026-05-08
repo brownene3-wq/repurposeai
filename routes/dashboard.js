@@ -55,7 +55,9 @@ router.get('/', requireAuth, async (req, res) => {
         </a>`;
   }).join('');
 
-  const planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : (req.user.plan ? (req.user.plan.charAt(0).toUpperCase() + req.user.plan.slice(1)) : 'Free');
+  // Canonical plan labels (matches PRICE_MAP in routes/billing.js).
+  const PLAN_LABELS = { free: 'Free', starter: 'Starter', pro: 'Pro', teams: 'Teams' };
+  const planLabel = PLAN_LABELS[req.user.plan] || (req.user.plan ? (req.user.plan.charAt(0).toUpperCase() + req.user.plan.slice(1)) : 'Free');
   // Phase 1: real credit metering. Falls back to 0/cap if the read fails so the UI never breaks.
   let creditsUsed = 0;
   try {
