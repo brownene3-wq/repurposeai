@@ -14,6 +14,37 @@ router.get('/', requireAuth, async (req, res) => {
     postsGenerated = await outputOps.countByUserId(req.user.id);
   } catch (e) { console.error('Dashboard stats error:', e); }
 
+  // Phase 5: precompute time-saved-this-month for the headline tile.
+  // The constants here MUST stay in sync with TIME_SAVED_MIN below.
+  const TIME_SAVED_MIN_INIT = {
+    'smart-shorts': 30, 'ai-reframe': 15, 'enhance-audio': 20,
+    'ai-captions': 15, 'ai-thumbnail': 10, 'ai-hook': 5
+  };
+  let timeSavedMinutes = 0;
+  try {
+    const { pool } = require('../db/database');
+    const rows = (await pool.query(
+      `SELECT feature_key, COUNT(*)::int AS uses
+         FROM credit_transactions
+        WHERE user_id = $1
+          AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+        GROUP BY feature_key`,
+      [req.user.id]
+    )).rows;
+    for (const r of rows) {
+      timeSavedMinutes += (r.uses || 0) * (TIME_SAVED_MIN_INIT[r.feature_key] || 0);
+    }
+  } catch (e) { console.error('Dashboard time-saved init error:', e); }
+  // Display formatter — "4h 30m" if >= 1h, else "35 min", or "0" with empty footnote.
+  function formatTimeSavedShort(mins) {
+    if (!mins || mins <= 0) return '0';
+    if (mins < 60) return mins + ' min';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? (h + 'h ' + m + 'm') : (h + 'h');
+  }
+  const timeSavedDisplay = formatTimeSavedShort(timeSavedMinutes);
+
   // Recent Smart Shorts (read-only preview)
   function extractYouTubeId(url) {
     if (!url) return null;
@@ -247,10 +278,10 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="stat-label">Credits Used</div>
           <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min((creditsUsed/creditsTotal)*100,100)}%;background:linear-gradient(90deg,#6C3AED,#EC4899)"></div></div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value">${postsGenerated}</div>
-          <div class="stat-label">Posts Generated</div>
-          <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min(postsGenerated*5,100)}%;background:linear-gradient(90deg,#0EA5E9,#6366F1)"></div></div>
+        <div class="stat-card clickable" data-modal="time-saved" role="button" tabindex="0" aria-label="Open time saved breakdown">
+          <div class="stat-value">${timeSavedDisplay}</div>
+          <div class="stat-label">Time Saved This Month</div>
+          <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min((timeSavedMinutes/600)*100,100)}%;background:linear-gradient(90deg,#0EA5E9,#6366F1)"></div></div>
         </div>
         <div class="stat-card clickable" data-modal="storage" role="button" tabindex="0" aria-label="Open storage breakdown">
           <div class="stat-value">${storageUsed}</div>
@@ -752,12 +783,77 @@ router.get('/', requireAuth, async (req, res) => {
     }
   }
 
+  function fmtMins(m){
+    if (!m || m <= 0) return '0';
+    if (m < 60) return m + ' min';
+    const h = Math.floor(m / 60), mm = m % 60;
+    return mm > 0 ? (h + 'h ' + mm + 'm') : (h + 'h');
+  }
+
+  async function loadTimeSaved(){
+    setLoading('Time saved this month');
+    try {
+      const r = await fetch('/dashboard/api/time-saved', { headers: {'Accept':'application/json'} });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const data = await r.json();
+      titleEl.textContent = 'Time saved this month';
+      const delta = data.deltaMinutes;
+      const arrow = delta > 0 ? '↑' : (delta < 0 ? '↓' : '');
+      const deltaColor = delta > 0 ? '#10B981' : (delta < 0 ? '#EF4444' : 'var(--text-muted)');
+      const deltaText = delta === 0 ? 'same as last month'
+        : (arrow + ' ' + fmtMins(Math.abs(delta)) + ' vs last month');
+      summaryEl.innerHTML =
+        '<div><span class="label">Saved this month</span><span class="value">' + fmtMins(data.thisMonthMinutes) + '</span></div>'
+      + '<div><span class="label">Vs last month</span><span class="value" style="color:' + deltaColor + '">' + deltaText + '</span></div>';
+
+      // Per-feature rows: "AI Hooks    3 uses × 5 min      15 min"
+      if (!data.breakdown || data.breakdown.every(r => r.totalMinutes === 0)){
+        listEl.innerHTML = '<div class="breakdown-empty">No time saved yet this month.<br>Run any feature and it starts adding up.</div>';
+      } else {
+        listEl.innerHTML = data.breakdown.map(r => {
+          const zero = r.totalMinutes === 0 ? ' zero' : '';
+          const middle = r.uses > 0
+            ? '<span style="font-size:.78rem;color:var(--text-dim);margin-right:.6rem">' + r.uses + ' use' + (r.uses === 1 ? '' : 's') + ' × ' + r.minutesPer + ' min</span>'
+            : '<span style="font-size:.78rem;color:var(--text-dim);margin-right:.6rem">~' + r.minutesPer + ' min each</span>';
+          return '<div class="breakdown-row' + zero + '"><span class="feature-name">' + r.label + '</span><span style="display:flex;align-items:center">' + middle + '<span class="feature-amount">' + fmtMins(r.totalMinutes) + '</span></span></div>';
+        }).join('');
+      }
+
+      // Equivalent + methodology + spotlight CTA — replace the grace slot.
+      let extra = '';
+      if (data.equivalent) {
+        extra += '<div style="margin-top:1rem;padding:.7rem .9rem;border-radius:10px;background:rgba(14,165,233,0.08);border:1px solid rgba(14,165,233,0.25);font-size:.85rem;color:var(--text-muted)">⏱ ' + data.equivalent + '</div>';
+      }
+      extra += '<div style="margin-top:.6rem;font-size:.72rem;color:var(--text-dim);font-style:italic">Estimates based on average manual effort: transcribing, cutting, captioning, writing. Your mileage may vary.</div>';
+      if (data.spotlight) {
+        extra += '<div style="margin-top:1rem;padding:.85rem 1rem;border-radius:12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(236,72,153,0.12));border:1px solid rgba(108,58,237,0.3)">'
+              + '<div style="font-size:.8rem;color:var(--text-muted);margin-bottom:.4rem">💡 Tip</div>'
+              + '<div style="font-size:.88rem;margin-bottom:.7rem">' + data.spotlight.message + '</div>'
+              + '<a href="' + data.spotlight.href + '" style="display:inline-block;padding:.5rem 1rem;background:var(--gradient-1);color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:.82rem">Open ' + data.spotlight.label + '</a>'
+              + '</div>';
+      }
+      graceEl.innerHTML = extra;
+      // Hide the generic Upgrade CTA on this modal — we have a more specific one.
+      document.querySelector('.breakdown-cta').style.display = 'none';
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div class="breakdown-empty">Could not load time saved. Try refreshing.</div>';
+    }
+  }
+
+  // Restore the Upgrade CTA when the user opens credits/storage modals
+  // (loadTimeSaved hides it; subsequent opens need it back).
+  const origLoadCredits = loadCredits, origLoadStorage = loadStorage;
+  loadCredits = async function(){ document.querySelector('.breakdown-cta').style.display = ''; await origLoadCredits(); };
+  loadStorage = async function(){ document.querySelector('.breakdown-cta').style.display = ''; await origLoadStorage(); };
+
   function attach(card){
     const trigger = () => {
       const which = card.getAttribute('data-modal');
       open();
       if (which === 'credits') loadCredits();
       else if (which === 'storage') loadStorage();
+      else if (which === 'time-saved') loadTimeSaved();
     };
     card.addEventListener('click', trigger);
     card.addEventListener('keydown', e => {
@@ -828,6 +924,122 @@ router.get('/api/storage-breakdown', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('storage-breakdown error:', e);
     res.status(500).json({ error: 'Failed to load storage breakdown' });
+  }
+});
+
+// ─── Phase 5: Time Saved widget — endpoint ───────────────────────────────────
+// Conservative per-feature minute estimates for a manual workflow.
+// Sources: industry averages for transcription, video cutting, copywriting,
+// audio cleanup. Numbers picked on the lower end so the metric stays defensible.
+const TIME_SAVED_MIN = {
+  'smart-shorts':  30,
+  'ai-reframe':    15,
+  'enhance-audio': 20,
+  'ai-captions':   15,
+  'ai-thumbnail':  10,
+  'ai-hook':        5
+};
+
+// Tool URLs for the spotlight CTA.
+const FEATURE_ROUTES = {
+  'smart-shorts':  '/shorts',
+  'ai-reframe':    '/ai-reframe',
+  'enhance-audio': '/enhance-speech',
+  'ai-captions':   '/ai-captions',
+  'ai-thumbnail':  '/ai-thumbnail',
+  'ai-hook':       '/ai-hook'
+};
+
+function pickEquivalent(minutes) {
+  const h = minutes / 60;
+  if (h < 1)   return 'about as long as a movie trailer';
+  if (h < 3)   return 'about a feature-length film';
+  if (h < 8)   return 'roughly a full work day';
+  if (h < 20)  return 'a couple of work days';
+  if (h < 40)  return 'a full work week';
+  return 'more than a full work week';
+}
+
+function pickSpotlight(usageMap) {
+  // Find the highest-value feature the user hasn't used this month.
+  // Order by minutesPer descending so we recommend the biggest time-savers first.
+  const ordered = Object.keys(TIME_SAVED_MIN)
+    .sort((a, b) => TIME_SAVED_MIN[b] - TIME_SAVED_MIN[a]);
+  for (const key of ordered) {
+    if (!usageMap.has(key) || usageMap.get(key) === 0) {
+      return {
+        key,
+        label: FEATURE_LABELS[key],
+        minutes: TIME_SAVED_MIN[key],
+        href: FEATURE_ROUTES[key],
+        message: `You haven't used ${FEATURE_LABELS[key]} this month — could save you ~${TIME_SAVED_MIN[key]} min per use.`
+      };
+    }
+  }
+  // Everyone used everything — recommend the lowest-usage one.
+  let leastKey = ordered[0], leastCount = Infinity;
+  for (const key of ordered) {
+    const c = usageMap.get(key) || 0;
+    if (c < leastCount) { leastCount = c; leastKey = key; }
+  }
+  return {
+    key: leastKey,
+    label: FEATURE_LABELS[leastKey],
+    minutes: TIME_SAVED_MIN[leastKey],
+    href: FEATURE_ROUTES[leastKey],
+    message: `${FEATURE_LABELS[leastKey]} is your least-used tool this month — try leaning on it more.`
+  };
+}
+
+router.get('/api/time-saved', requireAuth, async (req, res) => {
+  try {
+    const { pool } = require('../db/database');
+    // Use counts (rows), not credit sums — each transaction is one feature use.
+    const thisMonthRows = (await pool.query(
+      `SELECT feature_key, COUNT(*)::int AS uses
+         FROM credit_transactions
+        WHERE user_id = $1
+          AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+        GROUP BY feature_key`,
+      [req.user.id]
+    )).rows;
+
+    const lastMonthRows = (await pool.query(
+      `SELECT feature_key, COUNT(*)::int AS uses
+         FROM credit_transactions
+        WHERE user_id = $1
+          AND created_at >= date_trunc('month', CURRENT_TIMESTAMP) - INTERVAL '1 month'
+          AND created_at <  date_trunc('month', CURRENT_TIMESTAMP)
+        GROUP BY feature_key`,
+      [req.user.id]
+    )).rows;
+
+    const usageMap = new Map(thisMonthRows.map(r => [r.feature_key, r.uses]));
+    let thisMonthMinutes = 0;
+    const breakdown = Object.keys(FEATURE_LABELS).map(key => {
+      const uses = usageMap.get(key) || 0;
+      const per = TIME_SAVED_MIN[key] || 0;
+      const total = uses * per;
+      thisMonthMinutes += total;
+      return { key, label: FEATURE_LABELS[key], uses, minutesPer: per, totalMinutes: total };
+    });
+
+    let lastMonthMinutes = 0;
+    for (const r of lastMonthRows) {
+      lastMonthMinutes += (r.uses || 0) * (TIME_SAVED_MIN[r.feature_key] || 0);
+    }
+
+    res.json({
+      thisMonthMinutes,
+      lastMonthMinutes,
+      deltaMinutes: thisMonthMinutes - lastMonthMinutes,
+      breakdown,
+      equivalent: thisMonthMinutes > 0 ? pickEquivalent(thisMonthMinutes) : null,
+      spotlight: pickSpotlight(usageMap)
+    });
+  } catch (e) {
+    console.error('time-saved error:', e);
+    res.status(500).json({ error: 'Failed to load time saved' });
   }
 });
 
