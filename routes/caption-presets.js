@@ -1167,25 +1167,22 @@ router.get('/', requireAuth, (req, res) => {
       align-items: center;
       gap: 0.75rem;
     }
+    /* Quiet text-link variant — matches /billing's .back-link CTA */
     .header-cta {
+      color: var(--primary-light);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
       display: inline-flex;
       align-items: center;
-      gap: 0.55rem;
-      padding: 0.7rem 1.2rem;
-      background: var(--gradient-1);
-      color: #ffffff;
-      text-decoration: none;
-      border-radius: 999px;
-      font-weight: 600;
-      font-size: 0.9rem;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      box-shadow: 0 4px 14px rgba(108,58,237,0.32);
+      gap: 0.5rem;
+      padding: 0;
+      background: transparent;
+      border: none;
+      box-shadow: none;
       white-space: nowrap;
     }
-    .header-cta:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 22px rgba(108,58,237,0.5);
-    }
+    .header-cta:hover { text-decoration: underline; }
     .header-cta .cta-arrow {
       transition: transform 0.15s ease;
       font-weight: 700;
@@ -1195,18 +1192,19 @@ router.get('/', requireAuth, (req, res) => {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 22px;
-      height: 22px;
-      padding: 0 7px;
-      background: rgba(255,255,255,0.22);
+      min-width: 18px;
+      height: 18px;
+      padding: 0 6px;
+      background: rgba(108,58,237,0.18);
       border-radius: 999px;
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 700;
       letter-spacing: 0;
+      color: var(--primary-light);
     }
     .header-cta .added-count.is-empty { display: none; }
     @media (max-width: 768px) {
-      .header-cta { padding: 0.55rem 0.9rem; font-size: 0.82rem; }
+      .header-cta { font-size: 0.82rem; }
       .header-cta .cta-label-long { display: none; }
     }
 
@@ -1671,8 +1669,7 @@ ${PRESETS_VISUAL_CSS}
         <div class="header-actions">
           <a href="/ai-captions" class="header-cta" id="viewAiCaptionsBtn"
              title="Open the AI Captions page to use the styles you've added">
-            <span aria-hidden="true">✨</span>
-            <span class="cta-label-long">View on </span><span>AI Captions</span>
+            <span><span class="cta-label-long">View on </span>AI Captions</span>
             <span class="added-count is-empty" id="addedCountBadge" aria-label="styles added">0</span>
             <span class="cta-arrow" aria-hidden="true">→</span>
           </a>
