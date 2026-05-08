@@ -6446,6 +6446,14 @@ ${paginationHtml}
           <span style="font-size:1em;">✨</span> Suggest peak time for this platform
           <span id="atcPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
         </button>
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
+        <select id="atcReminder" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          <option value="0">None</option>
+          <option value="15">15 minutes before</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+          <option value="2880">2 days before</option>
+        </select>
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
         <textarea id="atcNotes" class="atc-themed-scroll" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
@@ -6791,6 +6799,7 @@ ${paginationHtml}
       document.getElementById('atcStatus').value = 'planned';
       document.getElementById('atcDate').value = dateStr;
       document.getElementById('atcTime').value = '12:00';
+      document.getElementById('atcReminder').value = '0';
       document.getElementById('atcNotes').value = noteParts.join('\\n\\n');
       document.getElementById('atcModal').style.display = 'flex';
       setTimeout(function(){ document.getElementById('atcTitle').focus(); document.getElementById('atcTitle').select(); }, 80);
@@ -6830,6 +6839,7 @@ ${paginationHtml}
         status: document.getElementById('atcStatus').value,
         scheduledDate: document.getElementById('atcDate').value,
         scheduledTime: document.getElementById('atcTime').value || '12:00',
+        reminderMinutes: parseInt(document.getElementById('atcReminder').value || '0', 10) || 0,
         notes: document.getElementById('atcNotes').value,
         analysisId: ref[0] || null,
         momentIndex: ref[1] != null && ref[1] !== '' ? Number(ref[1]) : null
