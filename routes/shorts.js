@@ -6378,20 +6378,24 @@ ${paginationHtml}
       <span style="font-size:18px;">&#128197;</span> Calendar
     </button>
 
-    <!-- Calendar Modal -->
-    <div id="calendarModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9995;align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none';">
-      <div style="background:#1a1a2e;border-radius:16px;padding:28px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <h2 style="font-size:22px;font-weight:700;">Content Calendar</h2>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button class="btn btn-small" onclick="changeCalendarMonth(-1)" style="background:rgba(255,255,255,0.08);">&larr;</button>
-            <span id="calendarMonthLabel" style="font-size:14px;font-weight:600;min-width:140px;text-align:center;"></span>
-            <button class="btn btn-small" onclick="changeCalendarMonth(1)" style="background:rgba(255,255,255,0.08);">&rarr;</button>
-            <button class="btn btn-small" onclick="openAddEntry()" style="background:rgba(108,92,231,0.2);color:#a29bfe;border:1px solid rgba(108,92,231,0.3);">+ Add Entry</button>
-            <button onclick="document.getElementById('calendarModal').style.display='none';" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 8px;">&times;</button>
+    <!-- Calendar Modal — read-only schedule preview with platform logos per day -->
+    <div id="calendarModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,18,0.78);backdrop-filter:blur(6px);z-index:9995;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)this.style.display='none';">
+      <div style="background:linear-gradient(180deg,#1a1a2e,rgba(108,58,237,0.06));border:1px solid rgba(108,58,237,0.40);border-radius:16px;padding:24px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;margin:auto;box-shadow:0 0 0 1px rgba(108,58,237,0.20),0 20px 60px rgba(108,58,237,0.20),0 30px 80px rgba(0,0,0,0.5);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.4rem;">📅</span>
+            <h2 style="font-size:1.2rem;font-weight:800;margin:0;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;">Content Calendar</h2>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button onclick="changeCalendarMonth(-1)" title="Previous month" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);color:#e2e0f0;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:14px;">&larr;</button>
+            <span id="calendarMonthLabel" style="font-size:13px;font-weight:700;min-width:140px;text-align:center;color:#e2e0f0;letter-spacing:.02em;"></span>
+            <button onclick="changeCalendarMonth(1)" title="Next month" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);color:#e2e0f0;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:14px;">&rarr;</button>
+            <button onclick="goToCalendarToday()" title="Today" style="background:rgba(108,58,237,0.12);border:1px solid rgba(108,58,237,0.30);color:#a78bfa;height:32px;padding:0 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">Today</button>
+            <button onclick="document.getElementById('calendarModal').style.display='none';" title="Close" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 10px;line-height:1;">&times;</button>
           </div>
         </div>
-        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.05);border-radius:8px;overflow:hidden;"></div>
+        <div style="font-size:0.75rem;color:#8886a0;margin-bottom:14px;">Read-only preview. Manage entries on the <a href="/dashboard/calendar" style="color:#a78bfa;text-decoration:none;font-weight:600;">Calendar page</a>.</div>
+        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.05);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);"></div>
       </div>
     </div>
     <!-- Add-to-Calendar Modal (opened from a moment card via addToCalendar()) -->
@@ -7680,6 +7684,27 @@ ${paginationHtml}
       renderCalendar();
     }
 
+    // Per-platform brand color + emoji used to render the small circular logos
+    // shown inside each day cell. Mirrors the legend on /dashboard/calendar.
+    const PLATFORM_LOGO = {
+      tiktok:    { color: '#25F4EE', emoji: '🎵', label: 'TikTok' },
+      instagram: { color: '#E4405F', emoji: '📷', label: 'Instagram' },
+      shorts:    { color: '#FF0000', emoji: '▶️', label: 'YT Shorts' },
+      youtube:   { color: '#FF0000', emoji: '📺', label: 'YouTube' },
+      twitter:   { color: '#1DA1F2', emoji: '🐦', label: 'Twitter' },
+      linkedin:  { color: '#0077B5', emoji: '💼', label: 'LinkedIn' },
+      facebook:  { color: '#1877F2', emoji: '👥', label: 'Facebook' },
+      blog:      { color: '#10B981', emoji: '✏️', label: 'Blog' },
+      newsletter:{ color: '#F59E0B', emoji: '✉️', label: 'Newsletter' }
+    };
+
+    function goToCalendarToday(){
+      const t = new Date();
+      calendarMonth = t.getMonth();
+      calendarYear = t.getFullYear();
+      renderCalendar();
+    }
+
     async function renderCalendar() {
       const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       document.getElementById('calendarMonthLabel').textContent = months[calendarMonth] + ' ' + calendarYear;
@@ -7698,39 +7723,46 @@ ${paginationHtml}
       const grid = document.getElementById('calendarGrid');
       let html = '';
 
-      // Day headers
       ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => {
-        html += '<div style="padding:8px;text-align:center;font-size:11px;color:var(--text-muted);font-weight:600;background:rgba(255,255,255,0.03);">' + d + '</div>';
+        html += '<div style="padding:9px 0;text-align:center;font-size:10px;color:#8886a0;font-weight:700;background:rgba(255,255,255,0.03);text-transform:uppercase;letter-spacing:.06em;">' + d + '</div>';
       });
 
-      // Empty cells before first day
       for (let i = 0; i < firstDay; i++) {
-        html += '<div style="padding:8px;min-height:80px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03);"></div>';
+        html += '<div style="padding:8px;min-height:78px;background:rgba(255,255,255,0.02);"></div>';
       }
 
       const today = new Date();
       const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
 
-      // Day cells
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = calendarYear + '-' + String(calendarMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
         const isToday = dateStr === todayStr;
-        const dayEntries = calendarEntries.filter(e => {
-          const ed = (e.scheduled_date || '').substring(0,10);
-          return ed === dateStr;
-        });
+        const dayEntries = calendarEntries.filter(e => (e.scheduled_date || '').substring(0,10) === dateStr);
 
-        html += '<div class="cal-cell' + (isToday ? ' cal-today' : '') + '" onclick="openAddEntry(' + "'" + dateStr + "'" + ')">' +
-          '<div class="cal-day">' + day + '</div>';
+        const cellStyle = 'padding:8px;min-height:78px;background:' + (isToday ? 'rgba(108,58,237,0.10)' : 'rgba(8,6,18,0.50)') + ';display:flex;flex-direction:column;gap:6px;cursor:default;border-top:' + (isToday ? '2px solid #6C3AED' : '1px solid transparent') + ';';
+        html += '<div style="' + cellStyle + '">';
+        html += '<div style="font-size:11px;font-weight:600;color:' + (isToday ? '#a78bfa' : '#8886a0') + ';">' + day + '</div>';
 
-        dayEntries.forEach(entry => {
-          const sc = statusColors[entry.status] || '#6c5ce7';
-          html += '<div class="cal-entry" style="background:' + sc + '22;border-left:2px solid ' + sc +
-            ';" onclick="event.stopPropagation();editCalendarEntry(' + "'" + entry.id + "'" + ')" title="Click to edit or delete: ' + (entry.title || '').replace(/"/g,'&amp;quot;') + '">' +
-            (platformEmojis[entry.platform] || '') + ' ' + (entry.title || '').substring(0,15) +
-            '<span style="position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:8px;opacity:0.5;">&#9998;</span>' +
-          '</div>';
-        });
+        if (dayEntries.length > 0) {
+          // Circular platform logos — overlap when multiple platforms scheduled
+          html += '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">';
+          // Build set of unique platforms (a single date can have multiple posts on same platform; collapse to one badge per platform)
+          const uniquePlatforms = [];
+          const seen = new Set();
+          for (const e of dayEntries) {
+            if (!seen.has(e.platform)) { seen.add(e.platform); uniquePlatforms.push(e.platform); }
+          }
+          const visible = uniquePlatforms.slice(0, 4);
+          visible.forEach((p, i) => {
+            const meta = PLATFORM_LOGO[p] || { color: '#6c5ce7', emoji: '•', label: p };
+            const overlap = i > 0 ? 'margin-left:-6px;' : '';
+            html += '<span title="' + meta.label + '" style="' + overlap + 'width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:' + meta.color + ';border:2px solid #1a1a2e;color:#fff;font-size:11px;line-height:1;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:' + (10 - i) + ';position:relative;">' + meta.emoji + '</span>';
+          });
+          if (uniquePlatforms.length > 4) {
+            html += '<span title="+' + (uniquePlatforms.length - 4) + ' more" style="margin-left:-6px;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#3a3850;border:2px solid #1a1a2e;color:#e2e0f0;font-size:9px;font-weight:700;flex-shrink:0;position:relative;">+' + (uniquePlatforms.length - 4) + '</span>';
+          }
+          html += '</div>';
+        }
 
         html += '</div>';
       }
