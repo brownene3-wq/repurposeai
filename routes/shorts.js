@@ -6376,7 +6376,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 ${paginationHtml}
           <!-- Floating Calendar Button -->
     <button id="calendarFloatBtn" onclick="openShortsCalendar()" style="position:fixed;top:18px;right:24px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
-      <span style="font-size:18px;">&#128197;</span> Calendar
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendar
     </button>
 
     <!-- Calendar Modal — read-only schedule preview with platform logos per day -->
@@ -6384,7 +6384,7 @@ ${paginationHtml}
       <div style="background:linear-gradient(180deg,#1a1a2e,rgba(108,58,237,0.06));border:1px solid rgba(108,58,237,0.40);border-radius:16px;padding:24px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;margin:auto;box-shadow:0 0 0 1px rgba(108,58,237,0.20),0 20px 60px rgba(108,58,237,0.20),0 30px 80px rgba(0,0,0,0.5);">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
           <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:1.4rem;">📅</span>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <h2 style="font-size:1.2rem;font-weight:800;margin:0;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;">Content Calendar</h2>
           </div>
           <div style="display:flex;gap:6px;align-items:center;">
@@ -6402,7 +6402,7 @@ ${paginationHtml}
     <!-- Add-to-Calendar Modal (opened from a moment card via addToCalendar()) -->
     <div id="atcModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:9998;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeAtcModal()">
       <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">📅 Schedule This Moment</h3>
+        <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Schedule This Moment</h3>
         <div style="color:var(--text-muted);font-size:0.82rem;margin-bottom:18px;" id="atcSubtitle">—</div>
         <input type="hidden" id="atcMomentRef">
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>
@@ -7017,7 +7017,7 @@ ${paginationHtml}
               </button>
               <button class="clip-tool-btn" onclick="addToCalendar('\${id}', \${idx})" title="Schedule this moment on the calendar"
                 style="background:rgba(108,58,237,0.10); color:#a78bfa; border:1px solid rgba(108,58,237,0.30);">
-                📅 Add to Calendar
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Add to Calendar
               </button>
               <div class="clip-toolbar-divider"></div>
               <label class="clip-captions-toggle" title="Burn animated captions into the clip">
