@@ -32,6 +32,9 @@ const initDatabase = async () => {
       // Phase 1: credit metering columns
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_used_this_month INTEGER DEFAULT 0`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_period_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+      // Phase 2: storage byte tracking + grace period
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_bytes_used BIGINT DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_grace_until TIMESTAMP`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
@@ -1561,12 +1564,55 @@ const creditOps = {
 };
 
 
+// Phase 2 — storage metering (cumulative bytes ingested per account)
+// Tracks bytes from multer uploads. Grace period kicks in when a user goes
+// over their plan cap; until grace expires they keep working but see a banner.
+const storageOps = {
+  async getUsage(userId) {
+    const row = (await pool.query(
+      `SELECT storage_bytes_used AS bytes, storage_grace_until AS grace_until, plan
+         FROM users WHERE id = $1`, [userId]
+    )).rows[0];
+    if (!row) return null;
+    return {
+      bytes: Number(row.bytes || 0),
+      graceUntil: row.grace_until,
+      plan: row.plan
+    };
+  },
+
+  // Atomically add `n` bytes to the user's tracked usage.
+  async addBytes(userId, bytes) {
+    if (!bytes || bytes <= 0) return;
+    await pool.query(
+      `UPDATE users SET storage_bytes_used = COALESCE(storage_bytes_used, 0) + $1 WHERE id = $2`,
+      [bytes, userId]
+    );
+  },
+
+  // Decrement (used when a tracked file is deleted). Floors at 0.
+  async subBytes(userId, bytes) {
+    if (!bytes || bytes <= 0) return;
+    await pool.query(
+      `UPDATE users SET storage_bytes_used = GREATEST(0, COALESCE(storage_bytes_used, 0) - $1) WHERE id = $2`,
+      [bytes, userId]
+    );
+  },
+
+  // Set the grace_until column. Pass null to clear it.
+  async setGrace(userId, until) {
+    await pool.query(`UPDATE users SET storage_grace_until = $1 WHERE id = $2`, [until, userId]);
+  }
+};
+
+
 module.exports = {
   initDatabase,
   getDb,
   get pool() { return pool; },
   userOps,
   creditOps,
+  storageOps,
   contentOps,
   outputOps,
   brandVoiceOps,

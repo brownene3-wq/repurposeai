@@ -8,6 +8,7 @@ const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
 const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -1736,7 +1737,7 @@ router.get('/voices', requireAuth, async (req, res) => {
 });
 
 // POST - Generate hook
-router.post('/generate', requireAuth, requireCredits('ai-hook'), upload.single('video'), async (req, res) => {
+router.post('/generate', requireAuth, requireCredits('ai-hook'), requireStorageHeadroom(), upload.single('video'), trackUploadBytes(), async (req, res) => {
   try {
     const { inputType, url, transcript, style, voice, platform } = req.body;
 

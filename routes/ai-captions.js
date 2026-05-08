@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
 const { requireAuth } = require('../middleware/auth');
 const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -3624,7 +3625,7 @@ router.get('/qa-frame/:filename', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/upload', requireAuth, requireCredits('ai-captions'), upload.single('video'), async (req, res) => {
+router.post('/upload', requireAuth, requireCredits('ai-captions'), requireStorageHeadroom(), upload.single('video'), trackUploadBytes(), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No video file uploaded' });

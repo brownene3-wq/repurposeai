@@ -24,6 +24,7 @@ const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
 const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require('../middleware/auth');
 const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 
@@ -1375,7 +1376,7 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
 });
 
 // POST /analyze - Analyze YouTube video
-router.post('/analyze', requireAuth, requireCredits('smart-shorts'), async (req, res) => {
+router.post('/analyze', requireAuth, requireCredits('smart-shorts'), requireStorageHeadroom(), async (req, res) => {
   let sseStarted = false;
 
   try {

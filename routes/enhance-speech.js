@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const multer = require('multer');
 const path = require('path');
@@ -914,7 +915,7 @@ router.post('/import-url', requireAuth, async (req, res) => {
 //     file at req.file.path
 //   - JSON { importedFilename, ... } (new — used after /import-url) — we look
 //     up the file by name in the upload dir.
-router.post('/process', requireAuth, requireCredits('enhance-audio'), maybeMultipart, async (req, res) => {
+router.post('/process', requireAuth, requireCredits('enhance-audio'), requireStorageHeadroom(), maybeMultipart, trackUploadBytes(), async (req, res) => {
   try {
     let inputPath, sourceFilename, originalExtension;
     if (req.file) {

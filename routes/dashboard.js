@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { contentOps, outputOps, shortsOps, creditOps } = require('../db/database');
+const { contentOps, outputOps, shortsOps, creditOps, storageOps } = require('../db/database');
 const { capFor } = require('../middleware/credits');
+const { capForPlan: storageCapBytes, formatBytes, graceActive: storageGraceActive } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', requireAuth, async (req, res) => {
@@ -62,8 +63,22 @@ router.get('/', requireAuth, async (req, res) => {
     if (usage) creditsUsed = usage.used || 0;
   } catch (e) { console.error('Dashboard credits read error:', e); }
   const creditsTotal = capFor(req.user.plan);
-  const storageUsed = (postsGenerated * 0.02).toFixed(1);
-  const storageTotal = req.user.plan === 'pro' ? '50' : req.user.plan === 'enterprise' ? '200' : '1';
+  // Phase 2: real storage bytes from users.storage_bytes_used
+  let storageBytes = 0, storageCap = storageCapBytes(req.user.plan), graceUntilStr = null, graceActiveNow = false;
+  try {
+    const su = await storageOps.getUsage(req.user.id);
+    if (su) {
+      storageBytes = su.bytes;
+      if (su.graceUntil) {
+        graceActiveNow = storageGraceActive(su.graceUntil);
+        if (graceActiveNow) graceUntilStr = new Date(su.graceUntil).toLocaleDateString();
+      }
+    }
+  } catch (e) { console.error('Dashboard storage read error:', e); }
+  const storageUsed = formatBytes(storageBytes);
+  const storageTotal = formatBytes(storageCap);
+  const storagePct = storageCap > 0 ? Math.min((storageBytes / storageCap) * 100, 100) : 0;
+  const storageOverCap = storageBytes >= storageCap;
 
   const html = `${getHeadHTML('Dashboard')}
   <style>
@@ -205,9 +220,10 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min(postsGenerated*5,100)}%;background:linear-gradient(90deg,#0EA5E9,#6366F1)"></div></div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">${storageUsed} GB</div>
-          <div class="stat-label">Storage (${storageTotal} GB)</div>
-          <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.min((parseFloat(storageUsed)/parseFloat(storageTotal))*100,100)}%;background:linear-gradient(90deg,#F59E0B,#EF4444)"></div></div>
+          <div class="stat-value">${storageUsed}</div>
+          <div class="stat-label">Storage (${storageTotal})</div>
+          <div class="stat-bar"><div class="stat-bar-fill" style="width:${storagePct}%;background:linear-gradient(90deg,#F59E0B,#EF4444)"></div></div>
+          ${graceActiveNow ? `<div style="font-size:.7rem;color:#F59E0B;margin-top:.4rem;font-weight:600">⚠ Over cap. Grace until ${graceUntilStr}</div>` : ''}
         </div>
         <div class="stat-card">
           <div class="stat-value">${planLabel}</div>
