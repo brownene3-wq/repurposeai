@@ -1278,6 +1278,101 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+// POST /analyze-upload — Analyze an uploaded video/audio file using the same
+// AI pipeline as /analyze. Streams SSE updates and returns analysisId on completion.
+const _repurposeMod = require('./repurpose');
+const _fs = require('fs');
+router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single('file'), async (req, res) => {
+  let sseStarted = false;
+  let filePath = req.file ? req.file.path : null;
+  let audioPath = null;
+
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'AI service is not configured. Please contact support.' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseStarted = true;
+
+    const sendUpdate = (data) => {
+      try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch (e) {}
+    };
+
+    const userId = req.user.id;
+    const fileName = req.file.originalname || 'Uploaded File';
+
+    sendUpdate({ status: 'extracting_audio', message: 'Extracting audio...' });
+    try {
+      audioPath = await _repurposeMod.extractAudioForRepurpose(filePath);
+    } catch (err) {
+      audioPath = filePath; // fallback — Whisper accepts most formats directly
+    }
+
+    sendUpdate({ status: 'transcribing', message: 'Transcribing with AI...' });
+    let transcriptText;
+    try {
+      transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+    } catch (err) {
+      sendUpdate({ status: 'error', message: 'Transcription failed: ' + (err.message || 'unknown error') });
+      return res.end();
+    }
+    if (!transcriptText || !transcriptText.trim()) {
+      sendUpdate({ status: 'error', message: 'Could not extract any speech from the file.' });
+      return res.end();
+    }
+
+    // Save analysis row using the upload\'s filename as a "video_url" stand-in.
+    // The downstream /shorts page can extract a (missing) videoId — that's fine,
+    // it falls back to a generic thumbnail.
+    const sourceUrl = 'upload://' + encodeURIComponent(fileName);
+    const analysisId = await shortsOps.create(userId, sourceUrl, fileName, transcriptText);
+    await shortsOps.updateStatus(analysisId, 'analyzing');
+    sendUpdate({ status: 'analyzing', message: 'Analyzing with AI to identify viral moments...' });
+
+    const systemPrompt = `You are an expert content strategist specializing in identifying viral short-form content moments from transcripts. Analyze the provided transcript and identify the top 5-8 most compelling, viral-worthy moments that would perform exceptionally well on TikTok, Instagram Reels, and YouTube Shorts.\n\nFor each moment, evaluate based on:\n- Emotional hooks (inspiration, surprise, humor, controversy)\n- Actionable insights and practical value\n- Storytelling potential and narrative arcs\n- Relatability and universal appeal\n- Memorable quotes and quotable moments\n- Visual potential and descriptive language\n- Audience engagement probability\n\nReturn a JSON array of moments with this exact structure:\n[\n  {\n    "title": "Brief descriptive title",\n    "timeRange": "MM:SS-MM:SS",\n    "description": "Why this moment is viral-worthy (2-3 sentences)",\n    "script": "Exact transcript text for this moment",\n    "hooks": ["Hook line 1", "Hook line 2", "Hook line 3"],\n    "viralityScore": 85,\n    "keyThemes": ["theme1", "theme2"],\n    "suggestedCaptions": ["caption1", "caption2"],\n    "suggestedHashtags": ["#hashtag1", "#hashtag2"],\n    "emotion": "primary emotion (inspiration/humor/surprise/education/controversy)",\n    "platforms": ["tiktok", "instagram", "shorts"],\n    "platformScores": { "tiktok": 90, "instagram": 80, "shorts": 85, "twitter": 70, "linkedin": 60 }\n  }\n]\n\nEnsure all times are accurate to the transcript. Focus on moments that are 30-120 seconds long when extracted.`;
+
+    const aiResponse = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: 'Analyze this transcript:\n\n' + transcriptText }
+      ],
+      temperature: 0.7,
+      max_tokens: 3000
+    });
+    const momentText = aiResponse.choices[0].message.content;
+    let moments = [];
+    try {
+      const m = momentText.match(/\[[\s\S]*\]/);
+      if (m) moments = JSON.parse(m[0]);
+    } catch (e) { moments = []; }
+
+    await shortsOps.updateMoments(analysisId, moments);
+    await shortsOps.updateStatus(analysisId, 'completed');
+
+    sendUpdate({ status: 'completed', message: 'Analysis complete!', analysisId, moments });
+    res.end();
+  } catch (error) {
+    console.error('analyze-upload error:', error);
+    if (!sseStarted) {
+      res.status(500).json({ error: error.message || 'Upload analysis failed.' });
+    } else {
+      try {
+        res.write(`data: ${JSON.stringify({ status: 'error', message: error.message || 'Upload analysis failed.' })}\n\n`);
+        res.end();
+      } catch (e) {}
+    }
+  } finally {
+    try { if (filePath && _fs.existsSync(filePath)) _fs.unlinkSync(filePath); } catch (e) {}
+    try { if (audioPath && audioPath !== filePath && _fs.existsSync(audioPath)) _fs.unlinkSync(audioPath); } catch (e) {}
+  }
+});
+
 // POST /analyze - Analyze YouTube video
 router.post('/analyze', requireAuth, async (req, res) => {
   let sseStarted = false;

@@ -2757,3 +2757,6 @@ router.get('/api/brand-voices', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.extractAudioForRepurpose = extractAudioForRepurpose;
+module.exports.transcribeUploadedFile = transcribeUploadedFile;
+module.exports.repurposeUpload = upload;

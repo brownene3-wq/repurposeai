@@ -39,16 +39,18 @@ router.get('/', requireAuth, async (req, res) => {
     if (clipCount > 0) subParts.push(clipCount + ' clip' + (clipCount === 1 ? '' : 's'));
     if (s.status && s.status !== 'completed') subParts.push(s.status);
     const subLine = subParts.join(' · ') || 'Smart Shorts';
+    const target = '/shorts?openAnalysis=' + encodeURIComponent(s.id);
     return `
-        <div class="recent-card" aria-label="${escapeAttr(title)}">
+        <a href="${escapeAttr(target)}" class="recent-card" aria-label="${escapeAttr('Open ' + title + ' on Smart Shorts')}" title="Open on Smart Shorts">
           <div class="recent-thumb"${thumb ? ` style="background-image:url('${escapeAttr(thumb)}')"` : ''}>
             ${thumb ? '' : '<span class="recent-thumb-fallback">🎬</span>'}
+            <div class="recent-thumb-hover"><span>▶ Open on Smart Shorts</span></div>
           </div>
           <div class="recent-meta">
             <div class="recent-title">${escapeAttr(title)}</div>
             <div class="recent-sub">${escapeAttr(subLine)}</div>
           </div>
-        </div>`;
+        </a>`;
   }).join('');
 
   const planLabel = req.user.plan === 'pro' ? 'Pro' : req.user.plan === 'enterprise' ? 'Enterprise' : 'Free';
@@ -107,9 +109,13 @@ router.get('/', requireAuth, async (req, res) => {
     .projects-section .see-more{color:var(--primary-light);font-size:.85rem;font-weight:600;text-decoration:none;padding:.4rem .8rem;border-radius:8px;transition:background .15s}
     .projects-section .see-more:hover{background:rgba(108,58,237,0.08)}
     .recent-shorts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem}
-    .recent-card{background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;cursor:default;user-select:none}
+    .recent-card{background:var(--surface);border:1px solid rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;cursor:pointer;user-select:none;color:inherit;text-decoration:none;display:block;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+    .recent-card:hover{transform:translateY(-2px);border-color:rgba(108,58,237,0.40);box-shadow:0 10px 30px rgba(108,58,237,0.18)}
+    .recent-card:hover .recent-thumb-hover{opacity:1}
     .recent-thumb{aspect-ratio:16/9;background:#0a0a0f;background-size:cover;background-position:center;position:relative}
     .recent-thumb-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.3);font-size:1.6rem}
+    .recent-thumb-hover{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(108,58,237,0.10),rgba(0,0,0,0.55));color:#fff;font-size:0.82rem;font-weight:700;letter-spacing:.02em;opacity:0;transition:opacity .15s ease;pointer-events:none}
+    .recent-thumb-hover span{padding:6px 12px;border-radius:999px;background:rgba(108,58,237,0.85);box-shadow:0 6px 24px rgba(108,58,237,0.35)}
     .recent-meta{padding:.65rem .9rem .8rem}
     .recent-title{font-size:.85rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
     .recent-sub{color:var(--text-dim);font-size:.7rem;margin-top:4px}
@@ -346,88 +352,68 @@ router.get('/', requireAuth, async (req, res) => {
 
     async function processUploadedFile(file) {
       if (!file) return;
-      const maxSize = 200 * 1024 * 1024; // 200MB
+      const maxSize = 200 * 1024 * 1024;
       if (file.size > maxSize) {
         alert('File is too large. Maximum size is 200MB.');
         return;
       }
 
       const btn = document.getElementById('processBtn');
-      btn.disabled = true; btn.innerHTML = 'Processing...';
-      document.getElementById('loading').classList.add('show');
-      document.getElementById('results').style.display = 'none';
-      document.getElementById('platformTabs').innerHTML = '';
-      document.getElementById('platformContents').innerHTML = '';
-      let platformCount = 0;
-      let errorShown = false;
+      btn.disabled = true; btn.innerHTML = '⚡ Analyzing…';
+      showAnalyzeNotice('Uploading file…');
 
       try {
         const formData = new FormData();
         formData.append('file', file);
+        const res = await fetch('/shorts/analyze-upload', { method: 'POST', body: formData });
 
-        const res = await fetch('/repurpose/process-upload', {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || 'Server error');
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          throw new Error(data.error || 'Analysis failed');
         }
+        if (!res.ok) throw new Error('Analysis failed. Please try again.');
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = '';
+        let buf = '';
         const NL = String.fromCharCode(10);
+        let analysisId = null;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          const parts = buffer.split(NL);
-          buffer = parts.pop();
-
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split(NL);
+          buf = parts.pop() || '';
           for (const line of parts) {
             const trimmed = line.trim();
-            if (trimmed.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(trimmed.slice(6));
-                if (data.error && !data.platform) { console.error('[upload]', data.error); alert(data.error); errorShown = true; break; }
-                if (data.status) {
-                  document.querySelector('.loading-spinner p').textContent = data.status;
-                  continue;
-                }
-                if (data.done) continue;
-                if (data.platform) {
-                  if (data.error) {
-                    // Per-platform error — log but don't alert (other platforms may still succeed)
-                    console.warn('[upload] ' + data.platform + ' failed: ' + data.error);
-                    continue;
-                  }
-                  document.getElementById('loading').classList.remove('show');
-                  document.getElementById('results').style.display = 'block';
-                  document.getElementById('emptyState').style.display = 'none';
-                  if (platformCount === 0) {
-                    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                  addPlatformResult(data, platformCount === 0);
-                  platformCount++;
-                }
-              } catch(e) { console.log('Parse error:', e); }
+            if (!trimmed.startsWith('data: ')) continue;
+            let data;
+            try { data = JSON.parse(trimmed.slice(6)); } catch (_) { continue; }
+            if (data.status === 'completed') {
+              analysisId = data.analysisId;
+              setAnalyzeStep('Analysis complete! Redirecting…');
+            } else if (data.status === 'error') {
+              throw new Error(data.message || 'Analysis failed');
+            } else if (data.message) {
+              setAnalyzeStep(data.message);
             }
           }
-          if (errorShown) break;
         }
-        if (platformCount === 0 && !errorShown) {
-          alert('No content was generated. Try a different file.');
+
+        if (analysisId) {
+          hideAnalyzeNotice();
+          location.href = '/shorts?openAnalysis=' + encodeURIComponent(analysisId);
+          return;
         }
+        hideAnalyzeNotice();
+        location.href = '/shorts';
       } catch (err) {
-        alert(err.message || 'Processing failed. Please try again.');
+        hideAnalyzeNotice();
+        alert(err.message || 'Analysis failed. Please try again.');
       } finally {
         btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose';
-        document.getElementById('loading').classList.remove('show');
-        document.querySelector('.loading-spinner p').textContent = 'AI is analyzing your video and generating content...';
       }
     }
 
