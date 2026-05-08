@@ -720,7 +720,7 @@ router.get('/', requireAuth, async (req, res) => {
       graceEl.innerHTML = '';
     } catch (err) {
       console.error(err);
-      listEl.innerHTML = '<div class="breakdown-empty">Couldn\'t load credits breakdown. Try refreshing.</div>';
+      listEl.innerHTML = '<div class="breakdown-empty">Could not load credits breakdown. Try refreshing.</div>';
     }
   }
 
@@ -748,7 +748,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
     } catch (err) {
       console.error(err);
-      listEl.innerHTML = '<div class="breakdown-empty">Couldn\'t load storage breakdown. Try refreshing.</div>';
+      listEl.innerHTML = '<div class="breakdown-empty">Could not load storage breakdown. Try refreshing.</div>';
     }
   }
 
