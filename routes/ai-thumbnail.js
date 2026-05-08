@@ -2023,13 +2023,13 @@ ${pageStyles}
 
       <div class="input-section">
         <div class="input-tabs">
-          <button class="input-tab active" data-tab="url">YouTube URL</button>
+          <button class="input-tab active" data-tab="ai">AI Generated</button>
+          <button class="input-tab" data-tab="url">YouTube URL</button>
           <button class="input-tab" data-tab="upload">Upload Video</button>
-          <button class="input-tab" data-tab="ai">AI Generated</button>
         </div>
 
         <form id="thumbnailForm">
-          <div id="urlTab" class="tab-content active">
+          <div id="urlTab" class="tab-content">
             <div class="url-input-group">
               <label class="url-input-label">YouTube URL</label>
               <input type="text" id="youtubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
@@ -2046,7 +2046,7 @@ ${pageStyles}
             </div>
           </div>
 
-          <div id="aiTab" class="tab-content">
+          <div id="aiTab" class="tab-content active">
             <div class="ai-intro">
               Let AI watch your video, pick the most interesting moments, and design 4 custom thumbnails for you.
             </div>
@@ -2102,7 +2102,7 @@ ${pageStyles}
             </div>
           </div>
 
-          <button type="submit" class="action-button" id="extractBtn" disabled>
+          <button type="submit" class="action-button" id="extractBtn" disabled style="display: none;">
             Extract Frames from Video
           </button>
           <div id="errorMessage" style="display: none;"></div>
@@ -2282,7 +2282,9 @@ ${pageStyles}
       }
     });
 
-    var activeInputTab = 'url';
+    // AI Generated is the default tab. extractBtn is hidden in markup
+    // and only revealed if the user switches to a classic-flow tab.
+    var activeInputTab = 'ai';
     document.querySelectorAll('.input-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
         activeInputTab = e.target.dataset.tab;
