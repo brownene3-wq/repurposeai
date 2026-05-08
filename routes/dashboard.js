@@ -289,11 +289,11 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="stat-bar"><div class="stat-bar-fill" style="width:${storagePct}%;background:linear-gradient(90deg,#F59E0B,#EF4444)"></div></div>
           ${graceActiveNow ? `<div style="font-size:.7rem;color:#F59E0B;margin-top:.4rem;font-weight:600">⚠ Over cap. Grace until ${graceUntilStr}</div>` : ''}
         </div>
-        <div class="stat-card">
+        <a href="/billing" class="stat-card clickable" aria-label="Open billing — currently on ${planLabel} plan" title="Manage your subscription on the Billing page" style="text-decoration:none;color:inherit;display:block;">
           <div class="stat-value">${planLabel}</div>
           <div class="stat-label">Current Plan</div>
           <div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:linear-gradient(90deg,#10B981,#06B6D4)"></div></div>
-        </div>
+        </a>
       </div>
 
       <!-- Hero Input -->
@@ -860,7 +860,7 @@ router.get('/', requireAuth, async (req, res) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); trigger(); }
     });
   }
-  document.querySelectorAll('.stat-card.clickable').forEach(attach);
+  document.querySelectorAll('.stat-card.clickable[data-modal]').forEach(attach);
 })();
 </script>
 </body>

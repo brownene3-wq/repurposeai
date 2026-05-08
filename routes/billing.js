@@ -158,6 +158,7 @@ router.get('/', requireAuth, (req, res) => {
           ${userPlan === 'teams' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;teams&apos;)">Upgrade to Teams</button>'}
         </div>
       </div>
+      </div><!-- /.billing-inner -->
     </div>
     </div>
     <script>${getThemeScript()}</script>
