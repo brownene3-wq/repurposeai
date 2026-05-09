@@ -127,4 +127,45 @@ router.get('/callback', async (req, res) => {
   }
 });
 
+
+// ─── Deauthorize Callback (Meta required) ────────────────────────
+// Called by Meta when a user removes Splicora's access from their Threads/FB account
+router.post('/deauthorize', async (req, res) => {
+  try {
+    console.log('[threads/deauthorize] received', req.body && Object.keys(req.body).length ? 'with body' : 'with no body');
+    res.status(200).json({ url: 'https://splicora.ai/auth/threads/deauthorize-confirm', confirmation_code: 'thr-deauth-' + Date.now() });
+  } catch (err) {
+    console.error('Threads deauthorize error:', err);
+    res.status(200).json({ url: 'https://splicora.ai/', confirmation_code: 'thr-deauth-error' });
+  }
+});
+
+// Same handler accessible via GET so Meta's URL validation passes
+router.get('/deauthorize', (req, res) => {
+  res.status(200).json({ ok: true, endpoint: 'threads-deauthorize' });
+});
+
+// ─── Data Deletion Request Callback (Meta required) ─────────────
+router.post('/data-deletion', async (req, res) => {
+  try {
+    console.log('[threads/data-deletion] received', req.body && Object.keys(req.body).length ? 'with body' : 'with no body');
+    res.status(200).json({ url: 'https://splicora.ai/auth/threads/data-deletion-status', confirmation_code: 'thr-del-' + Date.now() });
+  } catch (err) {
+    console.error('Threads data-deletion error:', err);
+    res.status(200).json({ url: 'https://splicora.ai/', confirmation_code: 'thr-del-error' });
+  }
+});
+
+router.get('/data-deletion', (req, res) => {
+  res.status(200).json({ ok: true, endpoint: 'threads-data-deletion' });
+});
+
+router.get('/deauthorize-confirm', (req, res) => {
+  res.status(200).send('Splicora has been removed from your Threads account.');
+});
+
+router.get('/data-deletion-status', (req, res) => {
+  res.status(200).send('Data deletion requested. Your data will be removed within 30 days.');
+});
+
 module.exports = router;

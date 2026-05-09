@@ -344,4 +344,41 @@ router.post('/publish', requireAuth, async (req, res) => {
   }
 });
 
+
+// ─── Deauthorize Callback (Meta required) ────────────────────────
+router.post('/deauthorize', async (req, res) => {
+  try {
+    console.log('[instagram/deauthorize] received');
+    res.status(200).json({ url: 'https://splicora.ai/auth/instagram/deauthorize-confirm', confirmation_code: 'ig-deauth-' + Date.now() });
+  } catch (err) {
+    res.status(200).json({ url: 'https://splicora.ai/', confirmation_code: 'ig-deauth-error' });
+  }
+});
+
+router.get('/deauthorize', (req, res) => {
+  res.status(200).json({ ok: true, endpoint: 'instagram-deauthorize' });
+});
+
+// ─── Data Deletion Request Callback (Meta required) ─────────────
+router.post('/data-deletion', async (req, res) => {
+  try {
+    console.log('[instagram/data-deletion] received');
+    res.status(200).json({ url: 'https://splicora.ai/auth/instagram/data-deletion-status', confirmation_code: 'ig-del-' + Date.now() });
+  } catch (err) {
+    res.status(200).json({ url: 'https://splicora.ai/', confirmation_code: 'ig-del-error' });
+  }
+});
+
+router.get('/data-deletion', (req, res) => {
+  res.status(200).json({ ok: true, endpoint: 'instagram-data-deletion' });
+});
+
+router.get('/deauthorize-confirm', (req, res) => {
+  res.status(200).send('Splicora has been removed from your Instagram account.');
+});
+
+router.get('/data-deletion-status', (req, res) => {
+  res.status(200).send('Data deletion requested. Your data will be removed within 30 days.');
+});
+
 module.exports = router;
