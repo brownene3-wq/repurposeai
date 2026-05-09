@@ -47,7 +47,7 @@ router.get('/connect', requireAuth, (req, res) => {
     client_id: THREADS_CLIENT_ID,
     redirect_uri: BASE_URL + '/auth/threads/callback',
     response_type: 'code',
-    scope: 'threads_basic,threads_content_publish,threads_read_replies,threads_manage_replies',
+    scope: 'threads_basic,threads_content_publish',
     state: state
   });
   res.redirect('https://threads.net/oauth/authorize?' + params.toString());
