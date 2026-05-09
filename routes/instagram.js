@@ -381,4 +381,52 @@ router.get('/data-deletion-status', (req, res) => {
   res.status(200).send('Data deletion requested. Your data will be removed within 30 days.');
 });
 
+
+// ─── Trigger API test calls for Meta App Review ─────────────────
+router.post('/test-api-calls', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    const accounts = await db.connectedAccountOps.getByUserAndPlatform(req.user.id, 'instagram');
+    if (!accounts || accounts.length === 0) {
+      return res.json({ success: false, error: 'No Instagram account connected' });
+    }
+    const accessToken = accounts[0].access_token;
+    const userId = accounts[0].platform_user_id;
+    const results = {};
+
+    // Test 1: instagram_business_basic - read profile
+    try {
+      const profile = await httpsGet(
+        `https://graph.instagram.com/v21.0/me?fields=user_id,username,account_type&access_token=${accessToken}`
+      );
+      results.instagram_business_basic = profile.error ? `error: ${profile.error.message || 'unknown'}` : 'ok';
+    } catch (e) { results.instagram_business_basic = 'error: ' + e.message; }
+
+    // Test 2: instagram_business_content_publish - try to create a media container with a placeholder image URL
+    // Even if it fails (image URL invalid), the API call is logged for Meta App Review
+    try {
+      const create = await httpsPost(
+        `https://graph.instagram.com/v21.0/${userId}/media`,
+        { image_url: 'https://splicora.ai/static/img/placeholder-1080.jpg', caption: 'Splicora API test', access_token: accessToken }
+      );
+      results.instagram_business_content_publish = create.error ? `error: ${create.error.message || 'unknown'}` : ('container_id:' + (create.id || '?'));
+
+      if (create.id) {
+        try {
+          const publish = await httpsPost(
+            `https://graph.instagram.com/v21.0/${userId}/media_publish`,
+            { creation_id: create.id, access_token: accessToken }
+          );
+          results.instagram_business_content_publish_publish = publish.error ? `error: ${publish.error.message || 'unknown'}` : ('post_id:' + (publish.id || '?'));
+        } catch (e) { results.instagram_business_content_publish_publish = 'error: ' + e.message; }
+      }
+    } catch (e) { results.instagram_business_content_publish = 'error: ' + e.message; }
+
+    res.json({ success: true, results });
+  } catch (err) {
+    console.error('Instagram test-api-calls error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
