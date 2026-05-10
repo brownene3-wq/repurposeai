@@ -394,6 +394,23 @@ router.post('/test-api-calls', requireAuth, async (req, res) => {
     const userId = accounts[0].platform_user_id;
     const results = {};
 
+    // Test for pages_read_engagement and pages_show_list - call /me/accounts to get user's pages
+    try {
+      // First get pages list (uses pages_show_list)
+      const pages = await httpsGet(`https://graph.facebook.com/v21.0/me/accounts?access_token=${accessToken}`);
+      results.pages_show_list = pages.error ? `error: ${pages.error.message || 'unknown'}` : ('pages:' + (pages.data?.length || 0));
+
+      // If we got pages, fetch one's engagement data (uses pages_read_engagement)
+      if (pages.data && pages.data.length > 0) {
+        const pageId = pages.data[0].id;
+        const pageToken = pages.data[0].access_token || accessToken;
+        const pageInfo = await httpsGet(`https://graph.facebook.com/v21.0/${pageId}?fields=id,name,fan_count,followers_count&access_token=${pageToken}`);
+        results.pages_read_engagement = pageInfo.error ? `error: ${pageInfo.error.message || 'unknown'}` : ('page:' + (pageInfo.name || pageInfo.id));
+      } else {
+        results.pages_read_engagement = 'no pages connected';
+      }
+    } catch (e) { results.pages_call = 'error: ' + e.message; }
+
     // Test 1: instagram_business_basic - read profile
     try {
       const profile = await httpsGet(
