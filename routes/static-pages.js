@@ -69,7 +69,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
 </style></head><body>
 <div class="bg-orb bg-orb--1"></div><div class="bg-orb bg-orb--2"></div>
 <nav><div class="nav-inner">
-  <a href="/" class="logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:48px;border-radius:8px;"></a>
+  <a href="/" class="logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:36px;"></a>
   <div class="nav-links">
     <a href="/">Home</a>
     <a href="/pricing">Pricing</a>
