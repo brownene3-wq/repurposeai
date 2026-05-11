@@ -423,15 +423,15 @@ router.post('/test-api-calls', requireAuth, async (req, res) => {
     // Even if it fails (image URL invalid), the API call is logged for Meta App Review
     try {
       const create = await httpsPost(
-        `https://graph.instagram.com/v21.0/${userId}/media`,
-        { image_url: 'https://splicora.ai/icons/icon-1024.png', caption: 'Splicora API test', access_token: accessToken }
+        `https://graph.instagram.com/v21.0/me/media`,
+        { image_url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080', caption: 'Splicora API test', access_token: accessToken }
       );
       results.instagram_business_content_publish = create.error ? `error: ${create.error.message || 'unknown'}` : ('container_id:' + (create.id || '?'));
 
       if (create.id) {
         try {
           const publish = await httpsPost(
-            `https://graph.instagram.com/v21.0/${userId}/media_publish`,
+            `https://graph.instagram.com/v21.0/me/media_publish`,
             { creation_id: create.id, access_token: accessToken }
           );
           results.instagram_business_content_publish_publish = publish.error ? `error: ${publish.error.message || 'unknown'}` : ('post_id:' + (publish.id || '?'));
