@@ -47,7 +47,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .carousel-showcase.layout-editor{flex-direction:column;gap:0}
 .carousel-showcase.layout-beforeafter{flex-direction:row;gap:40px}
 .carousel-showcase.layout-centered{flex-direction:column;align-items:center}
-.carousel-screen{background:#111118;border-radius:16px;border:1px solid rgba(255,255,255,0.08);overflow:hidden;position:relative;box-shadow:0 25px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.05)}
+.carousel-screen{background:#111118;border-radius:16px;border:none;overflow:hidden;position:relative;box-shadow:0 25px 80px rgba(0,0,0,0.6)}
 .carousel-screen-main{width:100%;max-width:820px;aspect-ratio:16/9;display:flex;flex-direction:column}
 .carousel-screen-topbar{height:36px;background:#1a1a28;display:flex;align-items:center;padding:0 14px;gap:8px;border-bottom:1px solid rgba(255,255,255,0.06)}
 .carousel-screen-dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.1)}
