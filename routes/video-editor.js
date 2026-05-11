@@ -821,7 +821,7 @@ async function renderEditor(req, res) {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:36px;border-radius:6px;"></span></a><div class="e-sep"></div>
+            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
             <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
             <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
             <button class="e-tb on">\ud83e\uddf2 Snap</button>
