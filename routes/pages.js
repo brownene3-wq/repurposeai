@@ -1014,7 +1014,6 @@ router.get('/', async (req, res) => {
     }, { threshold: 0.3 });
     document.querySelectorAll('.section-video').forEach(v => sectionObserver.observe(v));
   </script>
-<script src="/public/js/media-panel-fix.js"></script>
 </body>
 </html>`;
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
