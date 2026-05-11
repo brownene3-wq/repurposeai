@@ -95,9 +95,9 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .carousel-nav.prev:hover svg{transform:scale(1.1) translateX(-2px)}
 .carousel-nav.next:hover svg{transform:scale(1.1) translateX(2px)}
 .carousel-nav:active{transform:translateY(-50%) scale(.96)}
-.carousel-counter{display:inline-flex;align-items:center;gap:10px;margin-top:20px;padding:8px 18px;background:rgba(20,20,36,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:50px;font-size:.78rem;color:var(--text-muted);font-weight:500;backdrop-filter:blur(10px);letter-spacing:.3px}
-.carousel-counter-dot{width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);box-shadow:0 0 8px rgba(108,58,237,.6)}
-.carousel-counter-wrap{display:flex;justify-content:center}
+.carousel-counter{display:none}
+.carousel-counter-dot{display:none}
+.carousel-counter-wrap{display:none}
 .carousel-slide-label{text-align:center;margin-top:16px;font-size:.85rem;color:var(--text-muted);font-weight:500}
 .carousel-cta{display:flex;align-items:center;gap:12px;justify-content:center;margin-top:24px;padding:14px 24px;background:rgba(20,20,36,0.6);border-radius:50px;border:1px solid rgba(255,255,255,0.08);max-width:500px;margin-left:auto;margin-right:auto}
 .carousel-cta-input{flex:1;background:none;border:none;color:var(--text-muted);font-size:.9rem;outline:none}
@@ -301,7 +301,7 @@ router.get('/', async (req, res) => {
 </head>
 <body>
  <nav class="nav"><div class="nav-inner">
-    <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:36px;"></a>
+    <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:46px;"></a>
     <button class="mobile-nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mobile-open')">&#9776;</button>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -791,7 +791,7 @@ router.get('/', async (req, res) => {
   <footer class="footer">
     <div class="footer-grid">
       <div class="footer-brand">
-        <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:36px;"></a>
+        <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:46px;"></a>
         <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)">&#x1F4F1; Get the App</a></div>
