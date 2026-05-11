@@ -6,7 +6,7 @@ const { getDb } = require('../db/database');
 
 const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || '';
 const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || '';
-const BASE_URL = process.env.BASE_URL || 'https://www.splicora.ai';
+const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 // ─── HTTP helpers (matching auth.js pattern) ──────────────────────
 
@@ -79,8 +79,8 @@ router.get('/connect', requireAuth, (req, res) => {
     return res.status(500).send('TikTok integration not configured. Set TIKTOK_CLIENT_KEY env var.');
   }
 
-  // Store user ID in state to link the account after callback
-  const state = Buffer.from(JSON.stringify({ userId: req.user.id })).toString('base64url');
+  // Store user ID and redirect in state to link the account after callback
+  const state = Buffer.from(JSON.stringify({ userId: req.user.id, redirect: req.query.redirect || '/distribute/connections' })).toString('base64url');
 
   const params = new URLSearchParams({
     client_key: TIKTOK_CLIENT_KEY,
@@ -100,16 +100,17 @@ router.get('/callback', async (req, res) => {
 
     if (error || !code) {
       console.error('TikTok auth error:', error || 'no code');
-      return res.redirect('/settings?error=TikTok+connection+cancelled');
+      return res.redirect('/distribute/connections?error=TikTok+connection+cancelled');
     }
 
-    // Decode state to get userId
-    let userId;
+    // Decode state to get userId and redirect
+    let userId, redirectTo = '/distribute/connections';
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
       userId = stateData.userId;
+      redirectTo = stateData.redirect || '/distribute/connections';
     } catch (e) {
-      return res.redirect('/settings?error=Invalid+TikTok+auth+state');
+      return res.redirect('/distribute/connections?error=Invalid+TikTok+auth+state');
     }
 
     // Exchange authorization code for access token
@@ -123,7 +124,7 @@ router.get('/callback', async (req, res) => {
 
     if (tokenData.error || !tokenData.access_token) {
       console.error('TikTok token exchange failed:', JSON.stringify(tokenData));
-      return res.redirect('/settings?error=TikTok+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
+      return res.redirect('/distribute/connections?error=TikTok+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
     }
 
     const { access_token, refresh_token, expires_in, open_id } = tokenData;
@@ -145,7 +146,7 @@ router.get('/callback', async (req, res) => {
 
     // Save TikTok tokens to user account
     const db = getDb();
-    const { userOps } = db;
+    const { userOps, connectedAccountOps } = db;
     await userOps.updateTikTok(userId, {
       tiktokId: open_id,
       accessToken: access_token,
@@ -154,11 +155,30 @@ router.get('/callback', async (req, res) => {
       username: username
     });
 
-    res.redirect('/settings?success=TikTok+account+connected' + (username ? '+as+@' + encodeURIComponent(username) : ''));
+    // Also save to connected_accounts for Repurpose feature
+    try {
+      const existing = await connectedAccountOps.getByUserAndPlatform(userId, 'tiktok');
+      if (existing.length > 0) {
+        await connectedAccountOps.update(existing[0].id, {
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, platformUsername: username,
+          accountName: username || 'TikTok Account'
+        });
+      } else {
+        await connectedAccountOps.create(userId, {
+          platform: 'tiktok', platformUserId: open_id,
+          platformUsername: username, accountName: username || 'TikTok Account',
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, accountType: 'source_destination'
+        });
+      }
+    } catch (e) { console.error('Connected account save error:', e.message); }
+
+    res.redirect(redirectTo + (redirectTo.includes('?') ? '&' : '?') + 'success=TikTok+connected' + (username ? '+as+@' + encodeURIComponent(username) : ''));
 
   } catch (err) {
     console.error('TikTok OAuth error:', err.message || err);
-    res.redirect('/settings?error=TikTok+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
+    res.redirect('/distribute/connections?error=TikTok+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
   }
 });
 

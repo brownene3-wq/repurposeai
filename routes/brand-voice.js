@@ -425,7 +425,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1>Brand Voice</h1>
+            <h1>&#x1F3A4; Brand Voice</h1>
             <p>Create and manage your unique brand voice profiles</p>
           </div>
 

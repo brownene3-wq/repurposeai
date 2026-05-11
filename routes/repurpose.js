@@ -763,7 +763,16 @@ function getOpenAIClient() {
 // File upload setup for video/audio repurposing
 const uploadDir = path.join(__dirname, '..', 'uploads', 'repurpose');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) { cb(null, uploadDir); },
+    filename: function (req, file, cb) {
+      const ext = (path.extname(file.originalname || '') || '').toLowerCase();
+      cb(null, Date.now() + '-' + Math.random().toString(36).slice(2, 10) + ext);
+    }
+  }),
+  limits: { fileSize: 200 * 1024 * 1024 }
+});
 
 // Find ffmpeg binary
 let ffmpegPath = null;
@@ -788,6 +797,13 @@ function extractAudioForRepurpose(inputPath) {
 // Transcribe audio file using OpenAI Whisper
 async function transcribeUploadedFile(audioPath) {
   const openai = getOpenAIClient();
+  let stat;
+  try { stat = fs.statSync(audioPath); } catch (e) { throw new Error('Audio file not found at ' + audioPath); }
+  const sizeMB = stat.size / (1024 * 1024);
+  if (sizeMB > 24.5) {
+    throw new Error('Audio is ' + sizeMB.toFixed(1) + 'MB after extraction. Whisper limit is 25MB. Please upload a shorter clip (or split it first).');
+  }
+  console.log('[transcribeUploadedFile] path=' + audioPath + ' size=' + sizeMB.toFixed(2) + 'MB');
   const fileStream = fs.createReadStream(audioPath);
   const response = await openai.audio.transcriptions.create({
     model: 'whisper-1',
@@ -1347,7 +1363,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1>Transform Your Content</h1>
+            <h1>&#x1F504; Create</h1>
             <p>Turn any YouTube video into tailored content for multiple platforms with AI</p>
           </div>
 
@@ -1619,7 +1635,7 @@ router.get('/', requireAuth, (req, res) => {
               <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
                 <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
-                <button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>
+                \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>\` : ''}
                 <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')">🔄 Regenerate</button>
               </div>
             \`;
@@ -1655,7 +1671,7 @@ router.get('/', requireAuth, (req, res) => {
             <div class="result-content">\${escapeHtml(content)}</div>
             <div class="result-actions">
               <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
-              <button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>
+              \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>\` : ''}
             </div>
           \`;
           grid.appendChild(card);
@@ -2476,7 +2492,7 @@ router.get('/history', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1>Content Library</h1>
+            <h1>&#x1F4DA; Library</h1>
             <p>Browse and manage all your created content</p>
           </div>
 
@@ -2741,3 +2757,6 @@ router.get('/api/brand-voices', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.extractAudioForRepurpose = extractAudioForRepurpose;
+module.exports.transcribeUploadedFile = transcribeUploadedFile;
+module.exports.repurposeUpload = upload;

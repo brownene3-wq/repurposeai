@@ -7,6 +7,8 @@ const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const OpenAI = require('openai');
 const { requireAuth } = require('../middleware/auth');
+const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -25,7 +27,8 @@ if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath
 let ytdlpPath = null;
 try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Boot guard — see shorts.js explanation
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
 // Common yt-dlp args
 const YTDLP_COMMON_ARGS = [
@@ -85,6 +88,7 @@ const captionPresets = {
     shadowDepth: 2,
     bold: true,
     alignment: 2,
+    wordHighlightColor: 'FFD700', // gold pop on the active word
     animation: 'pop'
   },
   minimal: {
@@ -97,6 +101,1135 @@ const captionPresets = {
     shadowDepth: 0,
     bold: false,
     alignment: 2,
+    wordHighlightColor: 'FFFFFF', // minimal stays flat — keep the same colour
+    animation: 'fade'
+  },
+  // Premium: plain-white — a pure clean white sans-serif, no outline, no
+  // word-by-word highlight. Renders identically to 'minimal' but kept as a
+  // separate preset so user-facing names line up with the catalog.
+  'plain-white': {
+    name: 'Plain White',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 0,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: plain-black — pure black text. Needs a white outline so it
+  // stays legible on dark footage, since pure black on black would vanish.
+  'plain-black': {
+    name: 'Plain Black',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: '000000',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 2,
+    shadowDepth: 0,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '000000',
+    animation: 'fade'
+  },
+  // Premium: sans-serif — clean Helvetica with no outline, light weight.
+  'sans-serif': {
+    name: 'Sans Serif',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: casual — friendly Helvetica, medium weight, a tiny shadow for legibility.
+  casual: {
+    name: 'Casual',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: heading — bold Helvetica heading, no outline (relies on shadow for contrast).
+  heading: {
+    name: 'Heading',
+    fontName: 'Helvetica Neue',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: pure-text — light-weight Helvetica, no outline, no shadow (very plain).
+  'pure-text': {
+    name: 'Pure Text',
+    fontName: 'Helvetica Neue',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 0,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: serif-classic — Times-style serif, regular weight.
+  'serif-classic': {
+    name: 'Serif Classic',
+    fontName: 'Times New Roman',
+    fontSize: 44,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: headline — newspaper-style serif, bold, top+bottom rules approximated via outline.
+  headline: {
+    name: 'Headline',
+    fontName: 'Times New Roman',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: movie-title — Georgia uppercase with very wide letter-spacing,
+  // matching the cs.fontSpacing. Font-spacing is applied via the cs override layer.
+  'movie-title': {
+    name: 'Movie Title',
+    fontName: 'Georgia',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: trailer — Helvetica with very wide tracking.
+  trailer: {
+    name: 'Trailer',
+    fontName: 'Helvetica Neue',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: noir — Georgia with extreme tracking, film-noir feel.
+  noir: {
+    name: 'Noir',
+    fontName: 'Georgia',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 2,
+    bold: true,
+    fontSpacing: 12,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: letterbox — Helvetica with wide letter-spacing.
+  letterbox: {
+    name: 'Letterbox',
+    fontName: 'Helvetica Neue',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: true,
+    fontSpacing: 16,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: dictation — Georgia italic, off-white.
+  dictation: {
+    name: 'Dictation',
+    fontName: 'Georgia',
+    fontSize: 42,
+    fontColor: 'E2E8F0',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'E2E8F0',
+    animation: 'fade'
+  },
+  // Premium: interview — Georgia italic + underline.
+  interview: {
+    name: 'Interview',
+    fontName: 'Georgia',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    underline: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: saga — Georgia italic with a soft purple shadow tint via outline.
+  saga: {
+    name: 'Saga',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'E5E7EB',
+    outlineColor: 'A855F7',
+    outlineWidth: 1,
+    shadowDepth: 2,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'A855F7',
+    animation: 'fade'
+  },
+  // Premium: lifestyle — italic Georgia in soft pink.
+  lifestyle: {
+    name: 'Lifestyle',
+    fontName: 'Georgia',
+    fontSize: 44,
+    fontColor: 'FBCFE8',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FBCFE8',
+    animation: 'fade'
+  },
+  // Premium: diary — italic Georgia in soft gold.
+  diary: {
+    name: 'Diary',
+    fontName: 'Georgia',
+    fontSize: 44,
+    fontColor: 'FDE68A',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FDE68A',
+    animation: 'fade'
+  },
+  // Premium: handwritten — Brush Script with a Verdana fallback for Linux.
+  handwritten: {
+    name: 'Handwritten',
+    fontName: 'Brush Script MT',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: notebook — Courier with underline.
+  notebook: {
+    name: 'Notebook',
+    fontName: 'Courier New',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: false,
+    underline: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: memo — Courier in soft yellow, suggestive of a sticky memo.
+  memo: {
+    name: 'Memo',
+    fontName: 'Courier New',
+    fontSize: 40,
+    fontColor: 'FDE68A',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FDE68A',
+    animation: 'fade'
+  },
+  // Premium: closed-caption — opaque black box behind text (BorderStyle 3).
+  'closed-caption': {
+    name: 'Closed Caption',
+    fontName: 'Helvetica Neue',
+    fontSize: 38,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 6,        // when borderStyle=3 this becomes the box padding
+    shadowDepth: 0,
+    borderStyle: 3,         // opaque background box
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: subtitle-bold — bold sans-serif with thick outline.
+  'subtitle-bold': {
+    name: 'Subtitle Bold',
+    fontName: 'Arial Black',
+    fontSize: 44,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  // Premium: x-caption — minimalist, light Helvetica, no outline.
+  'x-caption': {
+    name: 'X Caption',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 0,
+    shadowDepth: 1,
+    bold: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: threads-bold — heavy black uppercase, no outline.
+  'threads-bold': {
+    name: 'Threads Bold',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  // Premium: strike — strikethrough text in red.
+  strike: {
+    name: 'Strike',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: 'DC2626',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    strikeout: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: bordered — text wrapped in a thick white outline (acts as a frame).
+  bordered: {
+    name: 'Bordered',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 3,
+    shadowDepth: 0,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // Premium: travel — Georgia uppercase with a generous outline that visually
+  // approximates the dashed border in the on-page preview.
+  travel: {
+    name: 'Travel',
+    fontName: 'Georgia',
+    fontSize: 42,
+    fontColor: 'FEF3C7',
+    outlineColor: 'FEF3C7',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
+    animation: 'fade'
+  },
+  // ----- Background-block premium styles -----
+  // libass with BorderStyle=3 paints OutlineColour as the box background, so
+  // the colored chip we see in the on-page preview is reproduced by setting
+  // outlineColor to the chip color and using BorderStyle 3.
+  'yt-shorts': {
+    name: 'YouTube Shorts',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FF0000',
+    outlineWidth: 8,        // box padding
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  'viral-yellow': {
+    name: 'Viral Yellow',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: '1A1A1A',
+    outlineColor: 'FFEE00',
+    outlineWidth: 8,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'pop'
+  },
+  'snap-style': {
+    name: 'Snap Style',
+    fontName: 'Arial Black',
+    fontSize: 46,
+    fontColor: '1A1A1A',
+    outlineColor: 'FFFC00',
+    outlineWidth: 8,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'pop'
+  },
+  'twitch-purple': {
+    name: 'Twitch Purple',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '9146FF',
+    outlineWidth: 8,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  'trending-box': {
+    name: 'Trending Box',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: '1A1A1A',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    fontSpacing: 4,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'fade'
+  },
+  cooking: {
+    name: 'Cooking',
+    fontName: 'Georgia',
+    fontSize: 44,
+    fontColor: 'FFFFFF',
+    outlineColor: 'F97316',  // warm orange box
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    italic: false,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  'lower-third': {
+    name: 'Lower Third',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '6C3AED',  // brand purple
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  'chat-bubble': {
+    name: 'Chat Bubble',
+    fontName: 'Helvetica Neue',
+    fontSize: 40,
+    fontColor: 'FFFFFF',
+    outlineColor: '2563EB',  // imessage blue
+    outlineWidth: 10,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'fade'
+  },
+  // ----- Underline / accent styles -----
+  daily: {
+    name: 'Daily',
+    fontName: 'Helvetica Neue',
+    fontSize: 42,
+    fontColor: 'FFFFFF',
+    outlineColor: '6C3AED',
+    outlineWidth: 1,
+    shadowDepth: 1,
+    bold: true,
+    underline: true,        // ASS doesn't have wavy underline — straight underline is the closest
+    alignment: 2,
+    wordHighlightColor: '6C3AED',
+    animation: 'fade'
+  },
+  newsroom: {
+    name: 'Newsroom',
+    fontName: 'Georgia',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: 'C8102E',  // bottom-line red, applied as outline to suggest the bar
+    outlineWidth: 2,
+    shadowDepth: 2,
+    bold: true,
+    fontSpacing: 4,
+    alignment: 2,
+    wordHighlightColor: 'C8102E',
+    animation: 'fade'
+  },
+  // ----- Rotation / accented frame styles -----
+  rage: {
+    name: 'Rage',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FFFFFF',
+    outlineColor: 'DC2626',  // red box
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    angle: -2,               // tilt the entire dialogue line
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  banner: {
+    name: 'Banner',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '6C3AED',  // purple box bg (skew not supported per-style; box only)
+    outlineWidth: 8,
+    shadowDepth: 1,
+    borderStyle: 3,
+    bold: true,
+    fontSpacing: 4,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  stamp: {
+    name: 'Stamp',
+    fontName: 'Courier New',
+    fontSize: 44,
+    fontColor: 'DC2626',
+    outlineColor: 'DC2626',  // red border around text — the BorderStyle=1 outline acts as the stamp frame
+    outlineWidth: 4,
+    shadowDepth: 0,
+    bold: true,
+    fontSpacing: 6,
+    angle: -6,               // diagonal stamp tilt
+    alignment: 2,
+    wordHighlightColor: 'DC2626',
+    animation: 'fade'
+  },
+  // ----- Active-word highlight style -----
+  storytime: {
+    name: 'Storytime',
+    fontName: 'Arial',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '4ADE80',  // green active-word swap, hormozi-style
+    animation: 'highlight'
+  },
+  // ----- Glow / neon premium styles -----
+  // The trick across this whole tier: pick a vivid fontColor and use a
+  // CLOSELY MATCHING outlineColor at outlineWidth ~4. libass renders that
+  // outline as a soft halo around the text, which reads as a neon glow.
+  // The 'neon-glow' base behavior also bumps outline width on the active
+  // word, so the glow visibly intensifies as each word is spoken.
+  crimson: {
+    name: 'Crimson',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'DC2626',
+    outlineColor: '991B1B',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'EF4444',
+    animation: 'glow'
+  },
+  'ice-blue': {
+    name: 'Ice Blue',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'BFDBFE',
+    outlineColor: '3B82F6',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '93C5FD',
+    animation: 'glow'
+  },
+  'hot-pink': {
+    name: 'Hot Pink',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FF1493',
+    outlineColor: 'C71585',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF69B4',
+    animation: 'glow'
+  },
+  'toxic-green': {
+    name: 'Toxic Green',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: '84CC16',
+    outlineColor: '4D7C0F',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'BEF264',
+    animation: 'glow'
+  },
+  ember: {
+    name: 'Ember',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FCA5A5',
+    outlineColor: '991B1B',
+    outlineWidth: 4,
+    shadowDepth: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'DC2626',
+    animation: 'glow'
+  },
+  frost: {
+    name: 'Frost',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'ECFEFF',
+    outlineColor: '67E8F9',
+    outlineWidth: 3,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'BAE6FD',
+    animation: 'glow'
+  },
+  lightning: {
+    name: 'Lightning',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFEA00',
+    outlineColor: 'FFD600',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',
+    animation: 'glow'
+  },
+  cyber: {
+    name: 'Cyber',
+    fontName: 'Courier New',
+    fontSize: 46,
+    fontColor: '00FFFF',
+    outlineColor: 'FF00FF',
+    outlineWidth: 3,
+    shadowDepth: 2,
+    bold: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: '00FFFF',
+    animation: 'glow'
+  },
+  buzz: {
+    name: 'Buzz',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFEA00',
+    outlineColor: 'FFD600',
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',
+    animation: 'glow'
+  },
+  boom: {
+    name: 'Boom',
+    fontName: 'Arial Black',
+    fontSize: 56,
+    fontColor: 'FFEA00',
+    outlineColor: 'DC2626',
+    outlineWidth: 5,
+    shadowDepth: 2,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  // ----- Tier 6: multi-layer / partial gradient premium styles -----
+  // Most of these can't be reproduced pixel-perfectly from a single ASS Style
+  // line (CSS lets us stack 3 drop shadows or fill text with a gradient; ASS
+  // does not). Each one picks the single most-distinctive feature that ASS
+  // CAN render and leans into it.
+  western: {
+    name: 'Western',
+    fontName: 'Liberation Serif',
+    fontSize: 50,
+    fontColor: '92400E',          // brown body
+    outlineColor: 'FBBF24',       // yellow rim
+    outlineWidth: 4,
+    shadowDepth: 4,               // chunky shadow stands in for the stacked outline
+    shadowColor: '1A1A1A',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FBBF24',
+    animation: 'pop'
+  },
+  'vintage-film': {
+    name: 'Vintage Film',
+    fontName: 'Georgia',
+    fontSize: 46,
+    fontColor: 'FBBF24',          // sepia gold
+    outlineColor: '92400E',       // dark brown rim for sepia feel
+    outlineWidth: 2,
+    shadowDepth: 2,
+    shadowColor: '422006',
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FCD34D',
+    animation: 'fade'
+  },
+  premiere: {
+    name: 'Premiere',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'FBBF24',          // gold text
+    outlineColor: 'DC2626',       // red carpet halo (full-bg approximation)
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '7F1D1D',
+    bold: true,
+    fontSpacing: 8,
+    alignment: 2,
+    wordHighlightColor: 'FBBF24',
+    animation: 'glow'
+  },
+  // 'epic' — hollow outlined text. Set transparent:true so the fill becomes
+  // fully transparent (alpha FF) and only the white outline shows.
+  epic: {
+    name: 'Epic',
+    fontName: 'Arial Black',
+    fontSize: 60,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 4,
+    shadowDepth: 0,
+    bold: true,
+    transparent: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  'big-drop': {
+    name: 'Big Drop',
+    fontName: 'Arial Black',
+    fontSize: 56,
+    fontColor: 'FFFFFF',
+    outlineColor: '1A1A1A',
+    outlineWidth: 2,
+    shadowDepth: 8,               // deep chunky drop shadow
+    shadowColor: '6C3AED',        // brand purple shadow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '6C3AED',
+    animation: 'pop'
+  },
+  punchline: {
+    name: 'Punchline',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FF1744',       // thick red outline approximates the side bars
+    outlineWidth: 5,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF1744',
+    animation: 'pop'
+  },
+  'reaction-pop': {
+    name: 'Reaction Pop',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 2,
+    shadowDepth: 6,
+    shadowColor: 'FF1744',         // red 3D shadow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF1744',
+    animation: 'pop'
+  },
+  'hype-bold': {
+    name: 'Hype Bold',
+    fontName: 'Arial Black',
+    fontSize: 56,
+    fontColor: 'FF1744',           // red body
+    outlineColor: 'FFFFFF',        // white rim
+    outlineWidth: 2,
+    shadowDepth: 4,
+    shadowColor: 'FF1744',         // red glow shadow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF1744',
+    animation: 'glow'
+  },
+  award: {
+    name: 'Award',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'FBBF24',           // bright gold body
+    outlineColor: '92400E',        // deep brown rim suggests the gradient lower half
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '422006',
+    bold: true,
+    fontSpacing: 10,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
+    animation: 'glow'
+  },
+  marquee: {
+    name: 'Marquee',
+    fontName: 'Georgia',
+    fontSize: 50,
+    fontColor: 'FBBF24',
+    outlineColor: 'F59E0B',        // close-match orange halo for the bulb glow
+    outlineWidth: 4,
+    shadowDepth: 2,
+    bold: true,
+    fontSpacing: 8,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
+    animation: 'glow'
+  },
+  influencer: {
+    name: 'Influencer',
+    fontName: 'Georgia',
+    fontSize: 48,
+    fontColor: 'FF6FB5',           // pink body
+    outlineColor: 'FFC1F0',        // softer pink halo
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: 'C71585',
+    bold: false,
+    italic: true,
+    alignment: 2,
+    wordHighlightColor: 'FFC1F0',
+    animation: 'glow'
+  },
+  // ----- Tier 7 + 8: gradient fakes, bg-block fakes, animated approximations -----
+  // The strategy here: pick the dominant colour from the on-page CSS gradient,
+  // plus an outlineColor / shadowColor that hints at the secondary stop. This
+  // is a strict approximation — no native ASS feature reproduces a per-letter
+  // gradient or a scrolling rainbow without per-line override tags.
+  doodle: {
+    name: 'Doodle',
+    fontName: 'DejaVu Sans',
+    fontSize: 46,
+    fontColor: 'FF6FB5',
+    outlineColor: 'FFFFFF',
+    outlineWidth: 3,
+    shadowDepth: 1,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  sketch: {
+    name: 'Sketch',
+    fontName: 'DejaVu Sans',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: '000000',
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '000000',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFFFFF',
+    animation: 'pop'
+  },
+  scribble: {
+    name: 'Scribble',
+    fontName: 'DejaVu Sans',
+    fontSize: 46,
+    fontColor: 'FFFFFF',
+    outlineColor: 'FF6FB5',         // pink offset outline (left/right)
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: '00E5FF',          // cyan offset shadow
+    bold: true,
+    angle: -1,                      // slight tilt for scribble feel
+    alignment: 2,
+    wordHighlightColor: '00E5FF',
+    animation: 'pop'
+  },
+  // ----- Trending gradient/multi-shadow -----
+  'reels-pop': {
+    name: 'Reels Pop',
+    fontName: 'Arial Black',
+    fontSize: 50,
+    fontColor: 'DD2A7B',            // Instagram pink (middle of the 3-stop gradient)
+    outlineColor: '8134AF',         // purple low end
+    outlineWidth: 4,
+    shadowDepth: 3,
+    shadowColor: 'F58529',          // orange high end
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'F58529',
+    animation: 'glow'
+  },
+  'pop-out': {
+    name: 'Pop Out',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FFFFFF',
+    outlineColor: '00E5FF',         // cyan rim — first shadow color
+    outlineWidth: 4,
+    shadowDepth: 4,
+    shadowColor: 'FF1744',          // red drop — second shadow color
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',
+    animation: 'pop'
+  },
+  splash: {
+    name: 'Splash',
+    fontName: 'Arial Black',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '8134AF',         // purple background (BorderStyle=3 fills with this)
+    outlineWidth: 12,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FF6FB5',
+    animation: 'pop'
+  },
+  // ----- Hits: metallic / gradient text fakes -----
+  'gold-rush': {
+    name: 'Gold Rush',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'FBBF24',            // bright gold mid
+    outlineColor: 'B45309',         // burnt-amber rim suggesting the gradient's bottom stop
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: '422006',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FEF3C7',
+    animation: 'glow'
+  },
+  lava: {
+    name: 'Lava',
+    fontName: 'Arial Black',
+    fontSize: 54,
+    fontColor: 'F97316',            // molten orange
+    outlineColor: 'B91C1C',         // dark red rim
+    outlineWidth: 4,
+    shadowDepth: 3,
+    shadowColor: 'FBBF24',          // yellow-gold under-glow
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FBBF24',
+    animation: 'glow'
+  },
+  royal: {
+    name: 'Royal',
+    fontName: 'Liberation Serif',   // Georgia equivalent
+    fontSize: 50,
+    fontColor: 'FBBF24',            // gold body
+    outlineColor: 'C026D3',         // royal purple rim
+    outlineWidth: 3,
+    shadowDepth: 2,
+    shadowColor: '92400E',
+    bold: true,
+    fontSpacing: 8,
+    alignment: 2,
+    wordHighlightColor: 'C026D3',
+    animation: 'glow'
+  },
+  chrome: {
+    name: 'Chrome',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: 'B8B8B8',            // mid silver
+    outlineColor: '1A1A1A',         // dark rim suggests the gradient's deep stop
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: '6B6B6B',
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'F5F5F5',   // bright reflection on active word
+    animation: 'pop'
+  },
+  hologram: {
+    name: 'Hologram',
+    fontName: 'Arial Black',
+    fontSize: 52,
+    fontColor: '00D9FF',            // dominant cyan from the rainbow
+    outlineColor: 'B14EFF',         // purple stop
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: 'FF6FB5',          // pink stop as drop
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FFEA00',   // yellow active = hits another rainbow stop
+    animation: 'glow'
+  },
+  glitch: {
+    name: 'Glitch',
+    fontName: 'Liberation Mono',
+    fontSize: 48,
+    fontColor: 'FFFFFF',
+    outlineColor: '00E5FF',         // cyan rim — left chromatic offset
+    outlineWidth: 3,
+    shadowDepth: 3,
+    shadowColor: 'FF1744',          // red drop — right chromatic offset
+    bold: true,
+    fontSpacing: 6,
+    alignment: 2,
+    wordHighlightColor: '00E5FF',
+    animation: 'pop'
+  },
+  // ----- Vlog: paper / frame approximations using opaque box (BorderStyle=3) -----
+  'sticky-note': {
+    name: 'Sticky Note',
+    fontName: 'DejaVu Sans',
+    fontSize: 44,
+    fontColor: '422006',
+    outlineColor: 'FEF08A',         // yellow sticky paper bg
+    outlineWidth: 14,
+    shadowDepth: 3,
+    shadowColor: '1A1A1A',
+    borderStyle: 3,
+    bold: true,
+    angle: -3,                       // tilt for the post-it feel
+    alignment: 2,
+    wordHighlightColor: '422006',
+    animation: 'fade'
+  },
+  polaroid: {
+    name: 'Polaroid',
+    fontName: 'Liberation Mono',
+    fontSize: 40,
+    fontColor: '1A1A1A',
+    outlineColor: 'F5F5F5',         // off-white photo frame bg
+    outlineWidth: 14,
+    shadowDepth: 3,
+    shadowColor: '000000',
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: '1A1A1A',
+    animation: 'fade'
+  },
+  marker: {
+    name: 'Marker',
+    fontName: 'DejaVu Sans',
+    fontSize: 44,
+    fontColor: '1A1A1A',
+    outlineColor: 'FACC15',         // yellow highlighter bg
+    outlineWidth: 10,
+    shadowDepth: 0,
+    borderStyle: 3,
+    bold: true,
+    alignment: 2,
+    wordHighlightColor: 'FACC15',
     animation: 'fade'
   },
   'neon-glow': {
@@ -109,6 +1242,7 @@ const captionPresets = {
     shadowDepth: 3,
     bold: true,
     alignment: 2,
+    wordHighlightColor: '39FF14',
     animation: 'glow'
   },
   mrbeast: {
@@ -121,6 +1255,7 @@ const captionPresets = {
     shadowDepth: 2,
     bold: true,
     alignment: 2,
+    wordHighlightColor: 'FFD700',
     animation: 'pop'
   },
   hormozi: {
@@ -133,25 +1268,64 @@ const captionPresets = {
     shadowDepth: 2,
     bold: true,
     alignment: 2,
+    wordHighlightColor: 'FFFF00', // yellow box-style highlight on active word
     animation: 'highlight'
   }
 };
 
 // Helper: Validate YouTube URL
+//
+// Accepts every shape of YouTube link a user is likely to paste, with
+// particular care taken for Shorts, which are most commonly shared from the
+// mobile app as `https://m.youtube.com/shorts/<id>?...`. Earlier versions
+// of this validator only allowed `(www.)?youtube.com`, so mobile Shorts
+// links plus music.youtube.com Shorts and youtube-nocookie embeds all
+// failed silently with "Invalid YouTube URL" before yt-dlp ever ran.
+//
+// Patterns covered:
+//   <subdomain>.youtube.com/watch?v=ID
+//   <subdomain>.youtube.com/shorts/ID
+//   <subdomain>.youtube.com/embed/ID
+//   <subdomain>.youtube.com/live/ID
+//   <subdomain>.youtube.com/v/ID
+//   <subdomain>.youtu.be/ID
+//   <subdomain>.youtube-nocookie.com/(embed|v)/ID
+// where <subdomain> can be www, m, music, gaming, kids, etc. (any host
+// label) or absent.
 function isValidYouTubeUrl(url) {
+  const s = String(url || '').trim();
+  if (!s) return false;
   const patterns = [
-    /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]+/,
-    /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]+/,
-    /^(https?:\/\/)?youtu\.be\/[\w-]+/,
-    /^(https?:\/\/)?(www\.)?youtube\.com\/embed\/[\w-]+/,
+    /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)?youtube\.com\/(?:watch\?[^#]*\bv=|shorts\/|embed\/|live\/|v\/|e\/)[A-Za-z0-9_-]{6,}/i,
+    /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)?youtu\.be\/[A-Za-z0-9_-]{6,}/i,
+    /^(?:https?:\/\/)?(?:[a-z0-9-]+\.)?youtube-nocookie\.com\/(?:embed\/|v\/)[A-Za-z0-9_-]{6,}/i
   ];
-  return patterns.some(p => p.test(url.trim()));
+  return patterns.some(p => p.test(s));
 }
 
 // Helper: Extract YouTube video ID
+//
+// Pulls the 11-ish character video ID from any of the link shapes the
+// validator accepts. Tries the more specific Shorts/live/embed/v patterns
+// first so a URL like `youtube.com/shorts/ABC?v=XYZ` returns ABC (the
+// actual Shorts video) instead of the unrelated `v=` query value.
 function extractVideoId(url) {
-  const match = url.match(/(?:v=|\/shorts\/|youtu\.be\/|\/embed\/)([\w-]+)/);
-  return match ? match[1] : null;
+  if (!url) return null;
+  const s = String(url).trim();
+  const patterns = [
+    /\/shorts\/([A-Za-z0-9_-]{6,})/i,
+    /\/live\/([A-Za-z0-9_-]{6,})/i,
+    /\/embed\/([A-Za-z0-9_-]{6,})/i,
+    /\/v\/([A-Za-z0-9_-]{6,})/i,
+    /\/e\/([A-Za-z0-9_-]{6,})/i,
+    /[?&]v=([A-Za-z0-9_-]{6,})/i,
+    /youtu\.be\/([A-Za-z0-9_-]{6,})/i
+  ];
+  for (const p of patterns) {
+    const m = s.match(p);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 // Helper: Get video duration
@@ -263,7 +1437,13 @@ async function downloadYouTubeVideo(videoUrl) {
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
-          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          // Cap the longer dimension at 1920 instead of capping height alone.
+          // YouTube Shorts are vertical 1080x1920 — `height<=1080` was
+          // silently downgrading them to a lower-resolution fallback (or
+          // failing on Shorts that have no <=1080 ladder). The 1920 cap
+          // works for both landscape 1080p (1920x1080) and portrait
+          // Shorts (1080x1920).
+          '-f', 'bestvideo[height<=1920][width<=1920]+bestaudio/best[height<=1920][width<=1920]/best',
           '--merge-output-format', 'mp4',
           '-o', outputPath,
           '--no-part',
@@ -315,87 +1495,438 @@ async function downloadYouTubeVideo(videoUrl) {
   throw new Error('Failed to download YouTube video');
 }
 
+// Helper: Sanitize hex color input. Accepts "RRGGBB", "#RRGGBB", or "0xRRGGBB" (any case).
+// Returns a canonical 6-char uppercase RRGGBB string, or null if invalid.
+function sanitizeHex(hex) {
+  if (!hex || typeof hex !== 'string') return null;
+  let s = hex.trim().replace(/^#/, '').replace(/^0x/i, '');
+  if (s.length === 3) s = s.split('').map(c => c + c).join(''); // expand shorthand
+  if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
+  return s.toUpperCase();
+}
+
 // Helper: Convert color to ASS hex format (BGR)
-function colorToASS(hexColor) {
-  // Input: RRGGBB, Output: &HBBGGRR&
-  if (!hexColor || hexColor.length !== 6) return '&H000000&';
-  const r = hexColor.slice(0, 2);
-  const g = hexColor.slice(2, 4);
-  const b = hexColor.slice(4, 6);
+function colorToASS(hexColor, fallback = '000000') {
+  // Input: RRGGBB (any case, with or without #), Output: &HBBGGRR&
+  const sanitized = sanitizeHex(hexColor) || sanitizeHex(fallback) || '000000';
+  const r = sanitized.slice(0, 2);
+  const g = sanitized.slice(2, 4);
+  const b = sanitized.slice(4, 6);
   return `&H${b}${g}${r}&`;
 }
 
-// Helper: Generate ASS subtitles file with captions
+// Map UI font names to fonts we know are available on the render server.
+// libass uses fontconfig under the hood — if it can't find the requested family
+// it silently falls back to a default sans, which is exactly the bug Albert hit.
+// Server has fonts-liberation + fonts-dejavu + fonts-noto-core + fonts-freefont-ttf
+// installed (see Dockerfile). We alias the user-facing names to those families.
+const FONT_ALIAS = {
+  'Arial':           'Liberation Sans',
+  'Arial Black':     'Liberation Sans',
+  'Helvetica':       'Liberation Sans',
+  'Helvetica Neue':  'Liberation Sans',
+  'Verdana':         'DejaVu Sans',
+  'Times New Roman': 'Liberation Serif',
+  'Georgia':         'Liberation Serif',
+  'Courier New':     'Liberation Mono',
+  // Anton is the standard Google Fonts pick for an Impact-equivalent condensed
+  // sans. The Dockerfile downloads Anton-Regular.ttf and runs fc-cache so libass
+  // can resolve this name. Browsers load the same font from Google Fonts via
+  // the @import in routes/ai-captions.js, so preview and export render Impact
+  // as the same condensed sans on both sides.
+  'Impact':          'Anton'
+};
+function resolveFontName(uiFont) {
+  if (!uiFont) return 'Liberation Sans';
+  const aliased = FONT_ALIAS[uiFont];
+  if (aliased) return aliased;
+  // Unknown font name — pass through but append a safe fallback so libass
+  // has somewhere to land.
+  return `${uiFont},Liberation Sans`;
+}
+
+// Helper: Generate ASS subtitles file with captions.
+// Reads the FULL StyleConfig from customSettings — every field the UI exposes
+// (fontFamily, fontSize, fontColor, outlineColor, outlineWidth, highlightColor,
+// animation, position) gets honored. Falls back to preset defaults only when
+// a field is missing.
+// Map premium preset names to one of the base behaviors implemented by the
+// ASS pipeline (karaoke, bold-pop, minimal, hormozi, mrbeast, neon-glow).
+// Anything not in the map falls through and is treated as karaoke. Keep this
+// in sync with the cs.animation field on PRESETS in routes/caption-presets.js.
+const PRESET_BEHAVIOR = {
+  // ----- Premium styles, ordered by implementation in the difficulty list -----
+  // Tier 1: trivial (font + color + spacing/italic)
+  'plain-white':   'minimal',
+  'plain-black':   'minimal',
+  'sans-serif':    'minimal',
+  'casual':        'minimal',
+  'heading':       'minimal',
+  'pure-text':     'minimal',
+  'serif-classic': 'minimal',
+  'headline':      'minimal',
+  'movie-title':   'minimal',
+  'trailer':       'minimal',
+  'noir':          'minimal',
+  'broadcast':     'minimal',
+  'documentary':   'minimal',
+  'editorial':     'minimal',
+  'letterbox':     'minimal',
+  'dictation':     'minimal',
+  'interview':     'minimal',
+  'saga':          'minimal',
+  'lifestyle':     'minimal',
+  'diary':         'minimal',
+  // Tier 2: easy (one extra effect)
+  'handwritten':   'minimal',
+  'notebook':      'minimal',
+  'memo':          'minimal',
+  'closed-caption':'minimal',
+  'subtitle-bold': 'bold-pop',  // heavy weight benefits from active-word scale
+  'x-caption':     'minimal',
+  'threads-bold':  'bold-pop',
+  'strike':        'minimal',
+  'bordered':      'minimal',
+  'travel':        'minimal',
+  // Tier 3: solid background blocks (BorderStyle=3 + accent OutlineColour)
+  'yt-shorts':     'bold-pop',
+  'viral-yellow':  'bold-pop',
+  'snap-style':    'bold-pop',
+  'twitch-purple': 'bold-pop',
+  'trending-box':  'minimal',
+  'cooking':       'minimal',
+  'lower-third':   'minimal',
+  'chat-bubble':   'minimal',
+  'daily':         'minimal',
+  'newsroom':      'minimal',
+  // Tier 4: rotation / skew / multi-layer outline
+  'rage':          'bold-pop',
+  'banner':        'bold-pop',
+  'stamp':         'minimal',
+  'storytime':     'hormozi',  // green active-word highlight, hormozi behavior
+  // Tier 5: glow / neon (matching outline as halo + active-word brightness)
+  'crimson':       'neon-glow',
+  'ice-blue':      'neon-glow',
+  'hot-pink':      'neon-glow',
+  'toxic-green':   'neon-glow',
+  'ember':         'neon-glow',
+  'frost':         'neon-glow',
+  'lightning':     'neon-glow',
+  'cyber':         'neon-glow',
+  'buzz':          'neon-glow',
+  'boom':          'bold-pop',  // boom is more 'pop with fat outline' than glow
+  // Tier 6: multi-layer / partial gradient
+  'western':       'bold-pop',
+  'vintage-film':  'minimal',
+  'premiere':      'neon-glow',
+  'epic':          'bold-pop',
+  'big-drop':      'bold-pop',
+  'punchline':     'bold-pop',
+  'reaction-pop':  'bold-pop',
+  'hype-bold':     'neon-glow',
+  'award':         'neon-glow',
+  'marquee':       'neon-glow',
+  'influencer':    'neon-glow',
+  // Tier 7 + 8: gradient / metallic / bg-block / chromatic — all 80 implemented
+  'doodle':        'bold-pop',
+  'sketch':        'bold-pop',
+  'scribble':      'bold-pop',
+  'reels-pop':     'neon-glow',
+  'pop-out':       'bold-pop',
+  'splash':        'bold-pop',
+  'gold-rush':     'neon-glow',
+  'lava':          'neon-glow',
+  'royal':         'neon-glow',
+  'chrome':        'bold-pop',
+  'hologram':      'neon-glow',
+  'glitch':        'bold-pop',
+  'sticky-note':   'minimal',
+  'polaroid':      'minimal',
+  'marker':        'minimal'
+};
+
+function presetBehavior(preset) {
+  if (PRESET_BEHAVIOR[preset]) return PRESET_BEHAVIOR[preset];
+  return preset; // free styles already are their own behavior name
+}
+
 function generateASSFile(transcript, preset, customSettings = {}) {
   const style = captionPresets[preset] || captionPresets.karaoke;
+  const cs = customSettings || {};
 
-  // Apply custom overrides
-  const fontSize = customSettings.fontSize || style.fontSize;
-  const fontColor = customSettings.fontColor || style.fontColor;
-  const outlineColor = customSettings.outlineColor || style.outlineColor;
-  const position = customSettings.position || 'bottom';
-  const fontFamily = customSettings.fontFamily || style.fontName;
+  // ----- Resolve every style field with explicit user-override -> preset fallback -----
+  const fontSizeRaw   = parseInt(cs.fontSize, 10);
+  const fontSize      = Number.isFinite(fontSizeRaw) ? fontSizeRaw : style.fontSize;
+
+  const fontColor     = sanitizeHex(cs.fontColor)     || style.fontColor;
+  const outlineColor  = sanitizeHex(cs.outlineColor)  || style.outlineColor;
+  const highlightColor = sanitizeHex(cs.highlightColor) || style.wordHighlightColor || style.fontColor;
+
+  // outlineWidth: explicit 0 must NOT be replaced by preset default (this was
+  // one of the Style "Hardening" issues — `|| style.outlineWidth` ate the 0).
+  const outlineWidth  = (cs.outlineWidth !== undefined && cs.outlineWidth !== null && !isNaN(parseInt(cs.outlineWidth, 10)))
+    ? parseInt(cs.outlineWidth, 10)
+    : style.outlineWidth;
+
+  const position      = cs.position || 'bottom';
+  const fontFamily    = resolveFontName(cs.fontFamily || style.fontName);
+
+  // animation: if user explicitly picked one, that overrides the preset's
+  // built-in animation. "none" means strip the per-preset effect too.
+  const animation     = cs.animation || null; // null = use preset's built-in behavior
+
+  // shadow + bold still come from preset (no UI control yet).
+  const shadowDepth   = style.shadowDepth;
+  const boldFlag      = style.bold ? -1 : 0;
+  // Optional per-preset typography flags. ASS represents booleans as -1/0.
+  const italicFlag    = style.italic ? -1 : 0;
+  const underlineFlag = style.underline ? -1 : 0;
+  const strikeFlag    = style.strikeout ? -1 : 0;
+  // Letter-spacing in ASS is the "Spacing" Style field (pixels).
+  const fontSpacing   = (typeof style.fontSpacing === 'number') ? style.fontSpacing : 0;
+  // BorderStyle: 1 = outline + shadow (default), 3 = opaque box (closed-caption look).
+  const borderStyle   = (typeof style.borderStyle === 'number') ? style.borderStyle : 1;
+  // Per-preset rotation in degrees (Style.Angle field). Used by rage, stamp.
+  const angleDeg      = (typeof style.angle === 'number') ? style.angle : 0;
+  // Drop-shadow fill colour (ASS BackColour slot). Defaults to opaque black.
+  const shadowColorASS = style.shadowColor ? colorToASS(style.shadowColor) : '&H00000000&';
+  // Hollow text — sets the fontColor alpha to FF (fully transparent fill),
+  // leaving only the outline visible. Used by 'epic'.
+  const fontColorASS  = (style.transparent === true)
+    ? colorToASS(fontColor).replace('&H', '&HFF')
+    : colorToASS(fontColor);
 
   // Map position to ASS alignment (numpad style: 1-9)
-  const alignmentMap = {
-    top: 8,
-    center: 5,
-    bottom: 2
-  };
+  const alignmentMap = { top: 8, center: 5, bottom: 2 };
   const alignment = alignmentMap[position] || 2;
+
+  // MarginV — pull caption away from edges, especially for bottom-anchored
+  // overlays so they sit clear of the player's controls bar.
+  const marginV = position === 'bottom' ? 60 : 30;
+
+  // Horizontal margins inside the 1920-wide canvas. Slim margins let phrases
+  // span almost the full video width, which is what stops single-word lines
+  // and gives libass enough horizontal room before WrapStyle=0 has to wrap.
+  const marginH = 80;
 
   let assContent = `[Script Info]
 Title: AI Captions
 ScriptType: v4.00+
+; WrapStyle 0 = smart line break — libass will break at the last whitespace
+; that fits, so a phrase wider than the video automatically wraps to a new
+; line instead of overflowing past the edge.
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+; Pin a known PlayRes so font-size and outline-width scale predictably no
+; matter what dimensions the source video is. The live preview formula uses
+; the same 1080 reference, which keeps preview and export visually in sync.
+PlayResX: 1920
+PlayResY: 1080
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},${colorToASS(fontColor)},&H00FFFFFF&,${colorToASS(outlineColor)},&H00000000&,-1,0,0,0,100,100,0,0,1,${style.outlineWidth},${style.shadowDepth},${alignment},10,10,10,1
+Style: Default,${fontFamily},${fontSize},${fontColorASS},${colorToASS(highlightColor)},${colorToASS(outlineColor)},${shadowColorASS},${boldFlag},${italicFlag},${underlineFlag},${strikeFlag},100,100,${fontSpacing},${angleDeg},${borderStyle},${outlineWidth},${shadowDepth},${alignment},${marginH},${marginH},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
-  // Build subtitle lines with word-by-word timing
-  let currentTime = 0;
-  const lines = [];
+  // Convert seconds to ASS time format (h:mm:ss.cc)
+  const formatTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const cents = Math.floor((seconds % 1) * 100);
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cents).padStart(2, '0')}`;
+  };
 
-  for (let i = 0; i < transcript.length; i++) {
-    const item = transcript[i];
-    const word = item.word || '';
-    const startTime = item.start || currentTime;
-    const endTime = item.end || (currentTime + 1);
-    currentTime = endTime;
+  // ----- Phrase grouping --------------------------------------------------
+  // Albert's spec: captions should span the full video width — no
+  // single-word-per-line displays. Group consecutive transcript words into
+  // phrases, then emit each phrase as ONE Dialogue event spanning the first
+  // word's start to the last word's end. WrapStyle=0 in the header takes
+  // care of wrapping a phrase that's wider than the video.
+  //
+  // Break rules:
+  //   - Phrase exceeds the target character budget for one line
+  //   - Pause between consecutive words is too long (caption should clear)
+  //   - Previous word ended with sentence-ending punctuation
+  //
+  // Target line width is computed from font size so big fonts get fewer
+  // words per line and small fonts get more. The constant divisor is tuned
+  // for Liberation Sans / DejaVu Sans on the 1920-wide canvas; libass's own
+  // line wrapping picks up the slack on the rare miscount.
+  const charBudget = Math.max(14, Math.round(38 * (48 / fontSize)));
+  const gapThreshold = 0.55;          // seconds; longer pause -> new phrase
+  const maxPhraseDuration = 4.5;       // seconds; never hold a phrase longer
+  const sentenceEnd = /[.!?]["')\]]?$/;
 
-    // Convert seconds to ASS time format (h:mm:ss.cc)
-    const formatTime = (seconds) => {
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      const secs = Math.floor(seconds % 60);
-      const cents = Math.floor((seconds % 1) * 100);
-      return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cents).padStart(2, '0')}`;
-    };
+  function groupPhrases(items) {
+    const phrases = [];
+    let current = [];
+    let currentChars = 0;
+    for (let i = 0; i < items.length; i++) {
+      const w = items[i];
+      const wordText = String(w.word || '').trim();
+      if (!wordText) continue;
+      const len = wordText.length + 1; // +1 for trailing space
 
-    const startASS = formatTime(startTime);
-    const endASS = formatTime(endTime);
+      const prev = current[current.length - 1];
+      const gap = prev ? ((w.start || 0) - (prev.end || 0)) : 0;
+      const phraseDur = current.length ? ((w.end || w.start || 0) - current[0].start) : 0;
+      const lastEndsSentence = prev && sentenceEnd.test(String(prev.word || '').trim());
 
-    // Build text with effects based on preset
-    let textLine = word;
+      const shouldBreak = current.length > 0 && (
+        currentChars + len > charBudget ||
+        gap > gapThreshold ||
+        lastEndsSentence ||
+        phraseDur > maxPhraseDuration
+      );
+      if (shouldBreak) {
+        phrases.push(current);
+        current = [];
+        currentChars = 0;
+      }
+      current.push(w);
+      currentChars += len;
+    }
+    if (current.length) phrases.push(current);
+    return phrases;
+  }
 
-    if (preset === 'karaoke') {
-      // Karaoke: highlight current word with gradient
-      const duration = Math.round((endTime - startTime) * 100);
-      textLine = `{\\k${duration}}${word}`;
-    } else if (preset === 'bold-pop') {
-      // Bold pop: scale effect
-      textLine = `{\\fscx110\\fscy110\\t(${Math.round((startTime + 0.1) * 100)},${Math.round(endTime * 100)},\\fscx100\\fscy100)}${word}`;
-    } else if (preset === 'mrbeast') {
-      // MrBeast: all caps with pop
-      textLine = `{\\fscx115\\fscy115\\t(${Math.round((startTime + 0.1) * 100)},${Math.round(endTime * 100)},\\fscx100\\fscy100)}${word.toUpperCase()}`;
+  // ----- Per-word effect tags inside a phrase -----------------------------
+  // The `\t(start,end,tags)` ASS tag animates style mods between the two
+  // millisecond marks (relative to the dialogue line start). We use it to
+  // briefly swap each word's primary colour to the highlight colour while
+  // it's the active word, then revert. This produces a clean active-word
+  // highlight that travels across the multi-word phrase.
+  const textC = colorToASS(fontColor);
+  const hiC = colorToASS(highlightColor);
+
+  // Each user animation has both a per-word ACTIVE state delta and an
+  // INACTIVE resting state. The deltas are layered ON TOP of the preset's
+  // own active-word tags (bold-pop scale, hormozi outline bump, etc.) by
+  // appending — later ASS tags override earlier ones, so a per-word \\t()
+  // that includes the animation delta wins over the preset's own value.
+  //
+  // Mapping (export tag --> matching preview CSS in the page <style>):
+  //   pop    -> \\fscx118\\fscy118   --> .word.active { transform: scale(1.18) }
+  //   glow   -> \\3c<hi>\\bord<w+2>  --> .word.active { filter: drop-shadow(...) }
+  //   slide  -> \\fscy100 + initial \\fscy70 --> translateY(0) / translateY(6px)
+  //   fade   -> \\alpha&H00& + initial \\alpha&H99& --> opacity 1 / opacity 0.4
+  //
+  // Transition durations are picked so libass's \\t(start, start+200, ...)
+  // arc matches the 0.2s CSS transition on .caption-text .word in the
+  // preview, keeping easing perceptually identical.
+  const ANIM_TRANSITION_MS = 200;
+
+  function animActiveDelta() {
+    switch (animation) {
+      case 'pop':   return `\\fscx118\\fscy118`;
+      case 'glow':  return `\\3c${hiC}\\bord${outlineWidth + 2}`;
+      case 'slide': return `\\fscy100`;
+      case 'fade':  return `\\alpha&H00&`;
+      default:      return '';
+    }
+  }
+  function animInactiveDelta() {
+    switch (animation) {
+      case 'slide': return `\\fscy70`;          // word sits "shorter" until it slides up
+      case 'fade':  return `\\alpha&H99&`;       // ~60% transparent until it fades in
+      // pop/glow: inactive == nothing extra (the base tags already reset scale/border)
+      default:      return '';
+    }
+  }
+  function animInitialTags() {
+    // Initial state of every word at phrase start, before any \\t() fires.
+    // For slide and fade this means starting words "off" so the first word
+    // can animate "on" at its activation time.
+    return animInactiveDelta();
+  }
+
+  function activeWordTags(preset) {
+    // Preset-specific active-word style mods. Animation mods are appended
+    // by the caller so later tags can override earlier ones.
+    switch (presetBehavior(preset)) {
+      case 'bold-pop':
+      case 'mrbeast':
+        return `\\1c${hiC}\\fscx112\\fscy112`;
+      case 'hormozi':
+        return `\\1c${hiC}\\bord${outlineWidth + 1}`;
+      case 'neon-glow':
+        return `\\1c${hiC}\\3c${hiC}`;
+      case 'minimal':
+        return ``;                          // minimal stays flat
+      case 'karaoke':
+      default:
+        return `\\1c${hiC}`;
+    }
+  }
+  function inactiveWordTags() {
+    // Reset all the things active state can change (color, scale, border,
+    // outline color) so the word visually returns to its baseline.
+    return `\\1c${textC}\\fscx100\\fscy100\\bord${outlineWidth}\\3c${colorToASS(outlineColor)}`;
+  }
+
+  // Build the text for one phrase, applying per-word highlight + animation
+  // transitions. The model is symmetric with the preview's CSS:
+  //   - Words start in the INITIAL state (animInitialTags)
+  //   - When a word activates: \\t() animates to ACTIVE state
+  //     (preset tags + animActiveDelta)
+  //   - When a word deactivates: \\t() animates back to INACTIVE state
+  //     (inactiveWordTags + animInactiveDelta)
+  function renderPhrase(words) {
+    const phraseStart = words[0].start || 0;
+    const isMrBeast = presetBehavior(preset) === 'mrbeast';
+    const userOverride = !!animation && animation !== 'none';
+
+    // For "minimal" preset with no animation override, keep the existing
+    // flat phrase render (no per-word transitions at all).
+    if (presetBehavior(preset) === 'minimal' && !userOverride) {
+      const flat = words.map(w => isMrBeast ? String(w.word).toUpperCase() : w.word).join(' ');
+      return `{\\fad(120,80)}${flat}`;
     }
 
-    lines.push(`Dialogue: 0,${startASS},${endASS},Default,,0,0,0,,${textLine}`);
+    const initial = animInitialTags();
+    const activeDelta = animActiveDelta();
+    const inactiveDelta = animInactiveDelta();
+    const presetActive = activeWordTags(preset);
+    const baseInactive = inactiveWordTags();
+
+    const wordParts = words.map(w => {
+      const wText = isMrBeast ? String(w.word).toUpperCase() : String(w.word).trim();
+      const relStart = Math.max(0, Math.round(((w.start || 0) - phraseStart) * 1000));
+      const relEnd = Math.max(relStart + 30, Math.round(((w.end || (w.start || 0) + 0.3) - phraseStart) * 1000));
+
+      // Compose ON state = preset active tags + animation active delta
+      const onTags = presetActive + activeDelta;
+      const offTags = baseInactive + inactiveDelta;
+
+      // If neither preset nor animation contribute anything, render flat.
+      if (!onTags && !initial) return wText;
+
+      // Per-word initial tags (e.g. start invisible/short for fade/slide)
+      // are emitted at relStart-1 so they apply right before the activation
+      // transition kicks in — this guarantees clean state for the first
+      // word of every phrase.
+      const initialBlock = initial ? initial : '';
+
+      const transIn = onTags ? `\\t(${relStart},${relStart + ANIM_TRANSITION_MS},${onTags})` : '';
+      const transOut = offTags ? `\\t(${relEnd},${relEnd + ANIM_TRANSITION_MS},${offTags})` : '';
+
+      return `{${initialBlock}${transIn}${transOut}}${wText}`;
+    });
+
+    return wordParts.join(' ');
   }
+
+  const phrases = groupPhrases(transcript);
+  const lines = phrases.map(words => {
+    const start = formatTime(words[0].start || 0);
+    const end = formatTime(words[words.length - 1].end || (words[0].start || 0) + 1);
+    const text = renderPhrase(words);
+    return `Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`;
+  });
 
   assContent += lines.join('\n');
   return assContent;
@@ -412,6 +1943,12 @@ function burnSubtitles(videoPath, assPath, outputPath) {
       '-vf', `ass=${assFilter}`,
       '-c:a', 'aac',
       '-q:a', '5',
+      // Move moov atom to the front so the file is streamable / scrub-friendly.
+      // Without this the browser's <video> element can't render the file from
+      // a blob URL until the entire payload is downloaded, and downstream
+      // tools that probe headers (cloud storage, social uploaders) see a
+      // zero-duration file.
+      '-movflags', '+faststart',
       '-y',
       outputPath
     ];
@@ -433,7 +1970,18 @@ function burnSubtitles(videoPath, assPath, outputPath) {
 }
 
 // GET: Main AI Captions page
-router.get('/', requireAuth, (req, res) => {
+const { PRESETS: ALL_PRESETS, readEnabledStyles, FREE_STYLE_CLASSES, PRESETS_VISUAL_CSS } = require('./caption-presets');
+
+router.get('/', requireAuth, async (req, res) => {
+  // Read which caption styles the user has enabled (free + added premium)
+  let enabledList;
+  try {
+    enabledList = await readEnabledStyles(req.user.id);
+  } catch (e) {
+    enabledList = [...FREE_STYLE_CLASSES];
+  }
+  const enabledSet = new Set(enabledList);
+
   const headHTML = getHeadHTML('AI Captions');
   const sidebar = getSidebar('ai-captions', req.user, req.teamPermissions);
   const themeToggle = getThemeToggle();
@@ -442,6 +1990,12 @@ router.get('/', requireAuth, (req, res) => {
 
   const html = `${headHTML}
   <style>
+    /* Anton is the closest free equivalent to Microsofts Impact and is also
+       installed on the render server (see Dockerfile), so the live preview
+       and the burned-in export render Impact as the same condensed sans on
+       both Mac and Linux. */
+    @import url('https://fonts.googleapis.com/css2?family=Anton&display=swap');
+
     ${baseCSS}
 
     :root {
@@ -598,18 +2152,140 @@ router.get('/', requireAuth, (req, res) => {
       box-shadow: 0 0 0 3px rgba(108, 58, 237, 0.1);
     }
 
-    .video-preview {
+    .video-wrapper {
+      position: relative;
       background: #000000;
       border-radius: 12px;
       overflow: hidden;
       margin-bottom: 1rem;
       max-width: 100%;
-      height: auto;
+      line-height: 0;
     }
 
-    .video-preview video {
+    .video-wrapper video {
       width: 100%;
       height: auto;
+      display: block;
+    }
+
+    /* ===== Live caption preview overlay ===== */
+    .caption-overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      padding: 0 4%;
+      pointer-events: none;
+      text-align: center;
+      z-index: 2;
+      line-height: 1.2;
+      transition: top 0.25s ease, bottom 0.25s ease, transform 0.25s ease;
+    }
+
+    .caption-overlay.position-top    { top: 8%;  bottom: auto; transform: none; }
+    .caption-overlay.position-center { top: 50%; bottom: auto; transform: translateY(-50%); }
+    .caption-overlay.position-bottom { bottom: 10%; top: auto; transform: none; }
+
+    .caption-text {
+      display: inline-block;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      max-width: 94%;
+      word-wrap: break-word;
+    }
+
+    .caption-text .word {
+      display: inline-block;
+      margin: 0 0.08em;
+      transition: color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    /* User animations — these MUST match the per-word \\t() transitions
+       that generateASSFile emits server-side. The export model is:
+         inactive_state -> .word becomes active -> animate to active_state
+         active_state   -> .word becomes inactive -> animate back
+       and the .word base rule below provides the 0.2s easing that mirrors
+       libass's \\t(start, start+200, ...) animation duration. The previous
+       infinite-loop keyframe approach diverged from the export, which only
+       fires once on entry, so the preview lied about the final look. */
+
+    /* Animation: pop — active word scales up on activation */
+    .caption-overlay[data-animation="pop"] .caption-text .word.active {
+      transform: scale(1.18);
+    }
+
+    /* Animation: glow — active word gets a coloured halo */
+    .caption-overlay[data-animation="glow"] .caption-text .word.active {
+      filter: drop-shadow(0 0 6px var(--cap-highlight, #39FF14))
+              drop-shadow(0 0 12px var(--cap-highlight, #39FF14));
+    }
+
+    /* Animation: slide — non-active words sit 6px lower; the active word
+       slides up into position via the .word transition. Mirrors the
+       per-word ASS transition that animates \\fscy (vertical scale) on the
+       active word. */
+    .caption-overlay[data-animation="slide"] .caption-text .word {
+      transform: translateY(6px);
+    }
+    .caption-overlay[data-animation="slide"] .caption-text .word.active {
+      transform: translateY(0);
+    }
+
+    /* Animation: fade — non-active words sit at 40% alpha, the active word
+       fades up to fully opaque. Mirrors per-word \\alpha&H99&/&H00& tags. */
+    .caption-overlay[data-animation="fade"] .caption-text .word {
+      opacity: 0.4;
+    }
+    .caption-overlay[data-animation="fade"] .caption-text .word.active {
+      opacity: 1;
+    }
+
+    /* Per-preset active-word treatments — these MUST mirror the per-word
+       \\t() transitions emitted by generateASSFile() server-side, otherwise
+       the user sees one effect in the preview and a different one in the
+       exported video.
+
+       Mapping (preview rule -> export tag):
+         karaoke   -> color flip                      (\\1c<hi>)
+         bold-pop  -> color flip + 1.12x scale        (\\1c<hi>\\fscx112\\fscy112)
+         mrbeast   -> color flip + 1.12x scale        (same as bold-pop, plus uppercase)
+         hormozi   -> color flip + thicker outline    (\\1c<hi>\\bord+1)
+         neon-glow -> color flip on both fill+stroke  (\\1c<hi>\\3c<hi>)
+         minimal   -> no per-word change              (no \\t())
+    */
+    .caption-overlay[data-preset="karaoke"]   .caption-text .word.active,
+    .caption-overlay[data-preset="bold-pop"]  .caption-text .word.active,
+    .caption-overlay[data-preset="mrbeast"]   .caption-text .word.active,
+    .caption-overlay[data-preset="hormozi"]   .caption-text .word.active,
+    .caption-overlay[data-preset="neon-glow"] .caption-text .word.active {
+      color: var(--cap-highlight, #FF00FF);
+    }
+    .caption-overlay[data-preset="bold-pop"] .caption-text .word.active,
+    .caption-overlay[data-preset="mrbeast"]  .caption-text .word.active {
+      transform: scale(1.12);
+    }
+    .caption-overlay[data-preset="hormozi"] .caption-text .word.active {
+      /* Match the export: bumps -webkit-text-stroke-width by ~1px instead of
+         drawing a CSS background box (which the burn-in cant produce). */
+      -webkit-text-stroke-width: calc(var(--cap-stroke, 0px) + 1.5px);
+    }
+    .caption-overlay[data-preset="neon-glow"] .caption-text .word.active {
+      -webkit-text-stroke-color: var(--cap-highlight, #39FF14);
+    }
+
+    /* MrBeast preset uppercases every word — same as the export's
+       word.toUpperCase() transformation. */
+    .caption-overlay[data-preset="mrbeast"] .caption-text {
+      text-transform: uppercase;
+    }
+
+    .preview-note {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: -0.25rem;
+      margin-bottom: 0.75rem;
+      opacity: 0.8;
+      letter-spacing: 0.02em;
     }
 
     .tabs {
@@ -648,50 +2324,120 @@ router.get('/', requireAuth, (req, res) => {
       display: block;
     }
 
+    /* Custom-state pill — shown above the presets grid the moment the user
+       deviates from the active preset's defaults via the Customize tab.
+       Selecting any preset card clears it. */
+    .custom-state-pill {
+      display: none;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.75rem;
+      background: rgba(108, 58, 237, 0.12);
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      font-size: 0.75rem;
+      color: var(--primary);
+      margin-bottom: 0.75rem;
+      width: fit-content;
+    }
+    .custom-state-pill.show { display: inline-flex; }
+    .custom-state-pill::before { content: '●'; font-size: 0.6rem; line-height: 1; }
+
+    /* Card frame matches /caption-presets exactly so the two pages feel
+       like one consistent system. Auto-fill grid, surface background, 12px
+       radius, lifted hover with shadow. */
     .presets-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 1rem;
       margin-bottom: 1rem;
     }
 
     .preset-card {
-      background: var(--dark);
-      border: 2px solid var(--border-subtle);
-      border-radius: 10px;
-      padding: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 0;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.3s ease;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .preset-card:hover {
       border-color: var(--primary);
+      box-shadow: 0 6px 24px rgba(108, 58, 237, 0.2);
+      transform: translateY(-3px);
     }
 
     .preset-card.selected {
       border-color: var(--primary);
-      background: rgba(108, 58, 237, 0.1);
+      box-shadow: 0 0 0 2px rgba(108, 58, 237, 0.45),
+                  0 6px 24px rgba(108, 58, 237, 0.25);
     }
 
-    .preset-preview {
-      width: 100%;
-      height: 50px;
-      background: #000000;
-      border-radius: 6px;
+    /* Info row under the preview. Same padding + typography as the
+       /caption-presets page (its h3.preset-name); the only difference here
+       is no 'Use Style' button — clicking the whole card selects. */
+    .preset-info {
+      padding: 0.75rem;
+      flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 0.5rem;
-      color: white;
-      font-size: 0.9rem;
-      font-weight: 600;
     }
-
-    .preset-name {
-      font-size: 0.8rem;
-      color: var(--text-muted);
+    h3.preset-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
       text-align: center;
     }
+
+    /* AI Captions's preset CARDS keep their own grid + sizing rules. The
+       per-style PREVIEW rules (font, color, background, animation) are imported
+       wholesale from the Caption Styles catalog so the cards render byte-for-byte
+       identically to what users see when they Add a style. */
+
+    /* CSS variables the catalog rules reference. Defined here so the imported
+       rules resolve regardless of which page they're injected into. */
+    :root {
+      --gradient-wave: linear-gradient(90deg, #a855f7, #ec4899);
+      --neon-green: #39ff14;
+      --neon-cyan:  #00ffff;
+      --golden:     #d4a574;
+    }
+    [data-theme="light"] {
+      --golden: #b8860b;
+    }
+
+    /* Make the AI Captions preview container size match the catalog's so the
+       imported rules look the same. */
+    .preset-card .preview-container {
+      width: 100%;
+    }
+
+    ${PRESETS_VISUAL_CSS}
+
+    /* Empty-state message shown when the user has no styles enabled. */
+    .presets-empty {
+      grid-column: 1 / -1;
+      padding: 2rem 1.5rem;
+      border: 1px dashed var(--border-subtle);
+      border-radius: 12px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .presets-empty-title {
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+      font-size: 0.95rem;
+    }
+    .presets-empty-body { font-size: 0.85rem; line-height: 1.5; }
+    .presets-empty-body a { color: var(--primary); font-weight: 600; }
+
 
     .color-picker-group {
       margin-bottom: 1rem;
@@ -819,6 +2565,24 @@ router.get('/', requireAuth, (req, res) => {
       color: var(--primary);
     }
 
+    /* State C — the rendered video is ready and the user's eye should go to
+       Download. Apply is fully disabled (not just visually) until a new
+       Generate Captions cycle reopens the loop, so it can't trigger a
+       duplicate export. */
+    .btn-state-c {
+      padding: 0.6rem 1.2rem;
+      background: rgba(40, 40, 56, 0.6);
+      color: var(--text-muted);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: not-allowed;
+      pointer-events: none;
+      opacity: 0.6;
+      transition: all 0.2s;
+    }
+
     .toast {
       position: fixed;
       bottom: 20px;
@@ -899,7 +2663,7 @@ router.get('/', requireAuth, (req, res) => {
 
       <div class="container">
           <div class="header">
-            <h1>AI Captions</h1>
+            <h1>&#x1F4AC; AI Captions</h1>
             <p>Generate beautiful animated captions for your videos</p>
           </div>
 
@@ -917,12 +2681,18 @@ router.get('/', requireAuth, (req, res) => {
 
               <div class="input-group">
                 <label class="input-label">YouTube URL</label>
-                <input type="text" class="input-field" id="youtubeUrl" placeholder="https://youtube.com/watch?v=...">
+                <input type="text" class="input-field" id="youtubeUrl" placeholder="youtube.com/watch?v=… or youtube.com/shorts/…">
                 <button class="btn-primary" style="width: 100%; margin-top: 0.5rem;" onclick="downloadFromYouTube()">Load Video</button>
               </div>
 
               <div id="videoPreview" class="hidden">
-                <video class="video-preview" id="videoPlayer" controls></video>
+                <div class="video-wrapper">
+                  <video id="videoPlayer" controls playsinline></video>
+                  <div class="caption-overlay position-bottom" id="captionOverlay" data-animation="none" data-preset="karaoke" aria-hidden="true">
+                    <span class="caption-text" id="captionText"></span>
+                  </div>
+                </div>
+                <div class="preview-note">Live style preview · placeholder text</div>
                 <div class="progress-bar hidden" id="progressBar">
                   <div class="progress-fill" id="progressFill"></div>
                 </div>
@@ -934,19 +2704,25 @@ router.get('/', requireAuth, (req, res) => {
             <div class="section">
               <div class="section-title">✨ Caption Styling</div>
 
+              <!-- Presets first, Customize second (single consolidated tab
+                   that holds everything from the old Font + Effects tabs). -->
               <div class="tabs">
                 <button class="tab-button active" onclick="switchTab('presets')">Presets</button>
-                <button class="tab-button" onclick="switchTab('font')">Font</button>
-                <button class="tab-button" onclick="switchTab('effects')">Effects</button>
+                <button class="tab-button" onclick="switchTab('customize')">Customize</button>
               </div>
 
               <!-- Presets Tab -->
               <div id="presetsTab" class="tab-content active">
+                <div class="custom-state-pill" id="customStatePill">
+                  Custom — based on <span id="customStateBaseName">Karaoke</span>
+                </div>
                 <div class="presets-grid" id="presetsGrid"></div>
               </div>
 
-              <!-- Font Tab -->
-              <div id="fontTab" class="tab-content">
+              <!-- Customize Tab — vertical scrolling pane combining Font +
+                   Effects controls. Manual changes here flip the Presets tab
+                   into a 'Custom' state (deselects the active card). -->
+              <div id="customizeTab" class="tab-content">
                 <div class="input-group">
                   <label class="input-label">Font Family</label>
                   <select class="select-field" id="fontFamily">
@@ -991,10 +2767,7 @@ router.get('/', requireAuth, (req, res) => {
                   </div>
                   <input type="range" class="slider" id="outlineWidth" min="0" max="8" value="2" onchange="updateOutlineWidth()">
                 </div>
-              </div>
 
-              <!-- Effects Tab -->
-              <div id="effectsTab" class="tab-content">
                 <div class="input-group">
                   <label class="input-label">Animation</label>
                   <select class="select-field" id="animation">
@@ -1035,8 +2808,9 @@ router.get('/', requireAuth, (req, res) => {
 
           <div class="section" style="margin-top: 1rem;">
             <div class="section-title">📥 Export</div>
-            <button class="btn-primary" class="btn-primary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
-              Apply & Export
+            <!-- The class on these two buttons is set dynamically by setExportButtonState(). -->
+            <button class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
+              Apply
             </button>
             <button class="btn-secondary" style="width: 100%;" id="downloadBtn" onclick="downloadVideo()" disabled>
               Download Video
@@ -1058,32 +2832,226 @@ router.get('/', requireAuth, (req, res) => {
     let currentPreset = 'karaoke';
     let generatedVideoPath = null;
 
-    // Initialize presets grid
-    function initPresets() {
-      const presetsData = [
-        { id: 'karaoke', name: 'Karaoke', preview: 'HELLO' },
-        { id: 'bold-pop', name: 'Bold Pop', preview: 'HELLO' },
-        { id: 'minimal', name: 'Minimal', preview: 'hello' },
-        { id: 'neon-glow', name: 'Neon Glow', preview: 'HELLO' },
-        { id: 'mrbeast', name: 'MrBeast', preview: 'HELLO' },
-        { id: 'hormozi', name: 'Hormozi', preview: 'HELLO' }
-      ];
+    // ===== Live caption preview =====
+    const SAMPLE_CAPTION_WORDS = ['This', 'is', 'how', 'your', 'captions', 'will', 'look'];
 
+    // 20-preset library — every entry has:
+    //   id        unique key
+    //   name      human-readable display name
+    //   behavior  which backend bucket drives the per-word \\t() animation
+    //             (one of: karaoke, bold-pop, minimal, neon-glow, mrbeast,
+    //             hormozi). The export pipeline reads the 'behavior' field
+    //             and emits the matching active-word transitions.
+    //   cs        full StyleConfig (fontFamily, fontSize, textColor,
+    //             outlineColor, outlineWidth, highlightColor, animation,
+    //             position) — same shape readCurrentStyle() returns.
+    //   sampleWords  optional override for the SAMPLE_CAPTION_WORDS shown
+    //             in the live preview (e.g. lowercase variants).
+    // List of premium caption styles the user has enabled, plus rendering configs from the shared catalog
+    const ENABLED_STYLES = JSON.parse(${JSON.stringify(JSON.stringify(enabledList))});
+
+    // Premium presets (rendering configs) imported from the Caption Styles catalog
+    // and rendered alongside the original 20 free PRESET_LIBRARY entries below.
+    const PREMIUM_PRESETS_FROM_CATALOG = ${JSON.stringify(
+      ALL_PRESETS.filter(p => p.tier === 'premium' && p.cs).map(p => ({
+        id: p.cls,
+        name: p.name,
+        behavior: ({pop:'bold-pop', glow:'karaoke', fade:'minimal', none:'minimal'})[p.cs.animation] || 'bold-pop',
+        cs: p.cs,
+        preview: p.preview  // matches the Caption Styles preview text exactly
+      }))
+    )};
+
+    // Lookup table of catalog preview HTML keyed by class slug. Used to enrich
+    // the legacy _ORIGINAL_PRESET_LIBRARY entries with the same preview text
+    // they already use on Caption Styles.
+    const _CATALOG_PREVIEWS = ${JSON.stringify(
+      Object.fromEntries(ALL_PRESETS.map(p => [p.cls, p.preview]))
+    )};
+
+    const _ORIGINAL_PRESET_LIBRARY = [
+      { id: 'karaoke',       name: 'Karaoke',       behavior: 'karaoke',
+        cs: { fontFamily: 'Arial',           fontSize: 48, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 2, highlightColor: 'FF00FF', animation: 'none',  position: 'bottom' } },
+      { id: 'bold-pop',      name: 'Bold Pop',      behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 56, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FFD700', animation: 'pop',   position: 'bottom' } },
+      { id: 'minimal',       name: 'Minimal',       behavior: 'minimal',
+        cs: { fontFamily: 'Helvetica',       fontSize: 40, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 0, highlightColor: 'FFFFFF', animation: 'fade',  position: 'bottom' } },
+      { id: 'neon-glow',     name: 'Neon Glow',     behavior: 'neon-glow',
+        cs: { fontFamily: 'Arial',           fontSize: 48, textColor: '39FF14', outlineColor: '00FF00', outlineWidth: 3, highlightColor: '39FF14', animation: 'glow',  position: 'bottom' } },
+      { id: 'gradient-wave', name: 'Gradient Wave', behavior: 'karaoke',
+        cs: { fontFamily: 'Arial',           fontSize: 50, textColor: 'FF6B6B', outlineColor: '6C3AED', outlineWidth: 2, highlightColor: '25F4EE', animation: 'glow',  position: 'bottom' } },
+      { id: 'typewriter',    name: 'Typewriter',    behavior: 'minimal',
+        cs: { fontFamily: 'Courier New',     fontSize: 42, textColor: '00FF00', outlineColor: '003300', outlineWidth: 1, highlightColor: '00FF00', animation: 'none',  position: 'bottom' } },
+      { id: 'cinematic',     name: 'Cinematic',     behavior: 'minimal',
+        cs: { fontFamily: 'Georgia',         fontSize: 44, textColor: 'D4A574', outlineColor: '000000', outlineWidth: 1, highlightColor: 'F0E0C0', animation: 'fade',  position: 'bottom' } },
+      { id: 'street',        name: 'Street',        behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 50, textColor: 'FFFF00', outlineColor: 'FF0000', outlineWidth: 3, highlightColor: 'FF6600', animation: 'pop',   position: 'bottom' } },
+      { id: 'hormozi',       name: 'Hormozi',       behavior: 'hormozi',
+        cs: { fontFamily: 'Arial',           fontSize: 50, textColor: 'FFFFFF', outlineColor: 'FF0000', outlineWidth: 3, highlightColor: 'FFFF00', animation: 'none',  position: 'bottom' } },
+      { id: 'mrbeast',       name: 'MrBeast',       behavior: 'mrbeast',
+        cs: { fontFamily: 'Impact',          fontSize: 54, textColor: 'FFD700', outlineColor: '000000', outlineWidth: 5, highlightColor: 'FFFFFF', animation: 'pop',   position: 'bottom' } },
+      { id: 'classic-sub',   name: 'Classic',       behavior: 'minimal',
+        cs: { fontFamily: 'Arial',           fontSize: 38, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 2, highlightColor: 'FFFFFF', animation: 'none',  position: 'bottom' } },
+      { id: 'outline-style', name: 'Outline',       behavior: 'minimal',
+        cs: { fontFamily: 'Impact',          fontSize: 52, textColor: '000000', outlineColor: 'FFFFFF', outlineWidth: 4, highlightColor: 'FFFFFF', animation: 'none',  position: 'bottom' } },
+      { id: 'soft-glow',     name: 'Soft Glow',     behavior: 'karaoke',
+        cs: { fontFamily: 'Arial',           fontSize: 46, textColor: 'FFFFFF', outlineColor: 'A855F7', outlineWidth: 2, highlightColor: 'A855F7', animation: 'glow',  position: 'bottom' } },
+      { id: 'retro-vhs',     name: 'Retro VHS',     behavior: 'karaoke',
+        cs: { fontFamily: 'Courier New',     fontSize: 44, textColor: 'FF3366', outlineColor: '00FFFF', outlineWidth: 2, highlightColor: 'FF0066', animation: 'none',  position: 'bottom' } },
+      { id: 'comic',         name: 'Comic',         behavior: 'bold-pop',
+        cs: { fontFamily: 'Verdana',         fontSize: 46, textColor: 'FFE66D', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FF6B6B', animation: 'pop',   position: 'bottom' } },
+      { id: 'fire',          name: 'Fire',          behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 52, textColor: 'FF6B00', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FFD700', animation: 'glow',  position: 'bottom' } },
+      { id: 'clean-modern',  name: 'Clean Modern',  behavior: 'karaoke',
+        cs: { fontFamily: 'Helvetica',       fontSize: 44, textColor: 'FFFFFF', outlineColor: '000000', outlineWidth: 1, highlightColor: '6C3AED', animation: 'none',  position: 'bottom' } },
+      { id: 'podcast',       name: 'Podcast',       behavior: 'minimal',
+        cs: { fontFamily: 'Georgia',         fontSize: 40, textColor: 'E2E8F0', outlineColor: '000000', outlineWidth: 1, highlightColor: '6C3AED', animation: 'fade',  position: 'bottom' } },
+      { id: 'tiktok-trend',  name: 'TikTok Trend',  behavior: 'mrbeast',
+        cs: { fontFamily: 'Impact',          fontSize: 52, textColor: '25F4EE', outlineColor: '000000', outlineWidth: 4, highlightColor: 'FE2C55', animation: 'pop',   position: 'bottom' } },
+      { id: 'shadow-drop',   name: 'Shadow Drop',   behavior: 'bold-pop',
+        cs: { fontFamily: 'Impact',          fontSize: 50, textColor: 'FFFFFF', outlineColor: '6C3AED', outlineWidth: 4, highlightColor: 'A855F7', animation: 'pop',   position: 'bottom' } }
+    ];
+
+    // Enrich originals with the catalog's preview HTML so the on-card preview
+    // matches the Caption Styles page exactly.
+    _ORIGINAL_PRESET_LIBRARY.forEach(p => {
+      if (!p.preview) p.preview = _CATALOG_PREVIEWS[p.id] || 'CAPTIONS';
+    });
+
+    // Final PRESET_LIBRARY = explicitly-added styles only. Both free and
+    // premium require an Add from the Caption Styles page.
+    const PRESET_LIBRARY = [
+      ..._ORIGINAL_PRESET_LIBRARY.filter(p => ENABLED_STYLES.includes(p.id)),
+      ...PREMIUM_PRESETS_FROM_CATALOG.filter(p => ENABLED_STYLES.includes(p.id))
+    ];
+
+    // Build a quick lookup so selectPreset and exportVideo can grab by id.
+    const PRESET_BY_ID = Object.fromEntries(PRESET_LIBRARY.map(p => [p.id, p]));
+
+    // PRESET_DEFAULTS retained as a thin compatibility shim — anything that
+    // still reads PRESET_DEFAULTS[id] gets the cs object directly.
+    const PRESET_DEFAULTS = Object.fromEntries(PRESET_LIBRARY.map(p => [p.id, p.cs]));
+
+    let previewCycleInterval = null;
+    let previewActiveIdx = 0;
+    // True the moment the user changes anything in Customize after picking
+    // a preset. Clears whenever a preset card is clicked. Drives the Custom
+    // pill in the Presets tab and signals exportVideo() to send raw
+    // customSettings without claiming a preset.
+    let isCustomized = false;
+
+    // Initialize presets grid — every card is a true WYSIWYG preview that
+    // uses the actual preset CSS class so the user sees how the captions
+    // will render before clicking. The card's preview text is the standard
+    // sample sentence styled per-preset.
+    function initPresets() {
       const grid = document.getElementById('presetsGrid');
-      grid.innerHTML = presetsData.map(p => \`
-        <div class="preset-card \${p.id === 'karaoke' ? 'selected' : ''}" onclick="selectPreset('\${p.id}')">
-          <div class="preset-preview">\${p.preview}</div>
-          <div class="preset-name">\${p.name}</div>
-        </div>
-      \`).join('');
+
+      if (!PRESET_LIBRARY.length) {
+        // Empty state — user hasn't added any styles yet from Caption Styles.
+        grid.innerHTML = '<div class="presets-empty">' +
+          '<div class="presets-empty-title">No caption styles added yet</div>' +
+          '<div class="presets-empty-body">Visit the <a href="/caption-presets">Caption Styles</a> page and click <strong>Add</strong> on any style to make it available here.</div>' +
+          '</div>';
+        return;
+      }
+
+      // Pick a default selection — the first preset in the list, since karaoke
+      // may not be added.
+      const defaultId = (PRESET_LIBRARY.find(p => p.id === 'karaoke') || PRESET_LIBRARY[0]).id;
+
+      grid.innerHTML = PRESET_LIBRARY.map(p => {
+        const isStartSelected = p.id === defaultId;
+        // Same card structure as /caption-presets: preview-container +
+        // preset-info wrapper holding an h3.preset-name. The preview HTML
+        // itself comes from the catalog so the rendered look is identical.
+        const previewHTML = p.preview || 'CAPTIONS';
+        return '<div class="preset-card ' + p.id + (isStartSelected ? ' selected' : '') + '" data-preset-id="' + p.id + '" title="' + p.name + '">'
+          + '<div class="preview-container"><div class="preview-text">' + previewHTML + '</div></div>'
+          + '<div class="preset-info"><h3 class="preset-name">' + p.name + '</h3></div>'
+          + '</div>';
+      }).join('');
+
+      // Default-select the first card on the page
+      currentPreset = defaultId;
+
+      // Click handlers
+      grid.querySelectorAll('.preset-card').forEach(card => {
+        card.addEventListener('click', () => selectPreset(card.dataset.presetId, card));
+      });
     }
 
-    function selectPreset(presetId) {
+    function selectPreset(presetId, clickedCard) {
+      const p = PRESET_BY_ID[presetId];
+      if (!p) return;
       currentPreset = presetId;
-      document.querySelectorAll('.preset-card').forEach(card => {
-        card.classList.remove('selected');
-      });
-      event.currentTarget.classList.add('selected');
+      isCustomized = false;
+      hideCustomPill();
+
+      // Visually mark the selected card
+      document.querySelectorAll('.preset-card').forEach(card => card.classList.remove('selected'));
+      const card = clickedCard || document.querySelector('.preset-card[data-preset-id="' + presetId + '"]');
+      if (card) card.classList.add('selected');
+
+      // Sync the Customize controls to this preset's StyleConfig — the
+      // suppressCustomFlag flag stops the change events from immediately
+      // re-marking the state as 'Custom'.
+      window.__suppressCustomFlag = true;
+      try {
+        const cs = p.cs;
+        setSelectValue('fontFamily', cs.fontFamily);
+        setRangeValue('fontSize', cs.fontSize, 'fontSizeValue');
+        setColorValue('textColor', 'textColorHex', cs.textColor);
+        setColorValue('outlineColor', 'outlineColorHex', cs.outlineColor);
+        setRangeValue('outlineWidth', cs.outlineWidth, 'outlineWidthValue');
+        setColorValue('highlightColor', 'highlightColorHex', cs.highlightColor);
+        setSelectValue('animation', cs.animation);
+        setSelectValue('position', cs.position);
+      } finally {
+        window.__suppressCustomFlag = false;
+      }
+      updateCaptionPreview();
+    }
+
+    // Called whenever a Customize control changes. Marks the current state
+    // as 'Custom' (deselects the active preset card, shows the pill).
+    function markCustomIfManual() {
+      if (window.__suppressCustomFlag) return;
+      if (isCustomized) return;
+      isCustomized = true;
+      const baseName = (PRESET_BY_ID[currentPreset] || {}).name || 'Karaoke';
+      document.querySelectorAll('.preset-card').forEach(card => card.classList.remove('selected'));
+      const pill = document.getElementById('customStatePill');
+      const baseSpan = document.getElementById('customStateBaseName');
+      if (baseSpan) baseSpan.textContent = baseName;
+      if (pill) pill.classList.add('show');
+    }
+    function hideCustomPill() {
+      const pill = document.getElementById('customStatePill');
+      if (pill) pill.classList.remove('show');
+    }
+
+    function setSelectValue(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      // Try exact match; fall back to lower-case; leave alone if not found
+      const opts = Array.from(el.options).map(o => o.value);
+      if (opts.includes(value)) el.value = value;
+      else if (opts.includes(String(value).toLowerCase())) el.value = String(value).toLowerCase();
+    }
+
+    function setRangeValue(id, value, labelId) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = value;
+      if (labelId) document.getElementById(labelId).textContent = value;
+    }
+
+    function setColorValue(colorId, hexId, hex) {
+      const colorEl = document.getElementById(colorId);
+      const hexEl = document.getElementById(hexId);
+      if (hexEl) hexEl.value = String(hex).toUpperCase();
+      if (colorEl) colorEl.value = '#' + String(hex).toLowerCase();
     }
 
     function switchTab(tabName) {
@@ -1096,26 +3064,185 @@ router.get('/', requireAuth, (req, res) => {
     function updateFontSize() {
       const value = document.getElementById('fontSize').value;
       document.getElementById('fontSizeValue').textContent = value;
+      updateCaptionPreview();
     }
 
     function updateTextColor() {
       const color = document.getElementById('textColor').value.slice(1);
       document.getElementById('textColorHex').value = color.toUpperCase();
+      updateCaptionPreview();
     }
 
     function updateOutlineColor() {
       const color = document.getElementById('outlineColor').value.slice(1);
       document.getElementById('outlineColorHex').value = color.toUpperCase();
+      updateCaptionPreview();
     }
 
     function updateOutlineWidth() {
       const value = document.getElementById('outlineWidth').value;
       document.getElementById('outlineWidthValue').textContent = value;
+      updateCaptionPreview();
     }
 
     function updateHighlightColor() {
       const color = document.getElementById('highlightColor').value.slice(1);
       document.getElementById('highlightColorHex').value = color.toUpperCase();
+      updateCaptionPreview();
+    }
+
+    // ===== Live preview renderer =====
+    // Browser font stacks that mirror what libass actually picks up server-side
+    // (see FONT_ALIAS in routes/ai-captions.js). Without this, the user sees
+    // their OS's local font in the preview but the export uses Liberation Sans
+    // / DejaVu Sans, and the two diverge — especially for 'Impact' on Mac and
+    // 'Helvetica' on Linux.
+    const PREVIEW_FONT_STACK_MAP = {
+      'Arial':           "'Arial','Liberation Sans',sans-serif",
+      'Helvetica':       "'Helvetica','Liberation Sans','Arial',sans-serif",
+      'Times New Roman': "'Times New Roman','Liberation Serif',serif",
+      'Courier New':     "'Courier New','Liberation Mono',monospace",
+      'Georgia':         "'Georgia','Liberation Serif',serif",
+      'Verdana':         "'Verdana','DejaVu Sans',sans-serif",
+      // Impact -> Anton (Google Fonts) is the closest free condensed sans we
+      // can get the server to install. Keep Impact first so Windows users
+      // (who actually have Impact) still see it; everyone else falls through
+      // to Anton, which the server also uses for libass output.
+      'Impact':          "'Impact','Anton','Liberation Sans Condensed','DejaVu Sans',sans-serif"
+    };
+    function previewFontStack(uiFont) {
+      return PREVIEW_FONT_STACK_MAP[uiFont] || "'" + uiFont + "',sans-serif";
+    }
+
+    // Convert the user's outline-width slider value into pixels for
+    // -webkit-text-stroke. The slider value 0..8 corresponds to libass Outline
+    // units; libass scales them with the rendered font size, so the preview
+    // does the same: stroke is a fraction of the live font pixel size.
+    function previewStrokeWidth(outlineUnits, fontPx) {
+      const w = Math.max(0, Math.min(8, parseInt(outlineUnits, 10) || 0));
+      if (!w) return 0;
+      // Tuned so 1 ASS unit ~= 0.04 * fontSize, which matches libass output
+      // visually within ±1 px across the slider range we offer.
+      return +(fontPx * 0.04 * w).toFixed(2);
+    }
+
+    // Legacy text-shadow outline kept for any other caller; the live preview
+    // now uses previewStrokeWidth() above.
+    function buildTextShadow(colorHex, width) {
+      const w = Math.max(0, Math.min(8, parseInt(width, 10) || 0));
+      if (!w) return 'none';
+      const color = '#' + colorHex;
+      const parts = [];
+      // 8-direction outline at each pixel from 1..w
+      for (let r = 1; r <= w; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+            parts.push(dx + 'px ' + dy + 'px 0 ' + color);
+          }
+        }
+      }
+      return parts.join(', ');
+    }
+
+    function readCurrentStyle() {
+      return {
+        preset: currentPreset,
+        fontFamily: document.getElementById('fontFamily').value,
+        fontSize: parseInt(document.getElementById('fontSize').value, 10) || 48,
+        textColor: (document.getElementById('textColorHex').value || 'FFFFFF').replace('#',''),
+        outlineColor: (document.getElementById('outlineColorHex').value || '000000').replace('#',''),
+        outlineWidth: parseInt(document.getElementById('outlineWidth').value, 10) || 0,
+        highlightColor: (document.getElementById('highlightColorHex').value || 'FF00FF').replace('#',''),
+        animation: document.getElementById('animation').value,
+        position: document.getElementById('position').value
+      };
+    }
+
+    function renderSampleWords(textEl) {
+      if (textEl.dataset.rendered === '1') return;
+      textEl.innerHTML = SAMPLE_CAPTION_WORDS
+        .map(w => '<span class="word">' + w + '</span>')
+        .join(' ');
+      textEl.dataset.rendered = '1';
+      previewActiveIdx = 0;
+      highlightWord(0);
+    }
+
+    function highlightWord(idx) {
+      const textEl = document.getElementById('captionText');
+      if (!textEl) return;
+      const words = textEl.querySelectorAll('.word');
+      if (!words.length) return;
+      words.forEach((w, i) => w.classList.toggle('active', i === (idx % words.length)));
+    }
+
+    function startPreviewCycle() {
+      if (previewCycleInterval) return;
+      previewCycleInterval = setInterval(() => {
+        previewActiveIdx = (previewActiveIdx + 1) % SAMPLE_CAPTION_WORDS.length;
+        highlightWord(previewActiveIdx);
+      }, 520);
+    }
+
+    function stopPreviewCycle() {
+      if (previewCycleInterval) {
+        clearInterval(previewCycleInterval);
+        previewCycleInterval = null;
+      }
+    }
+
+    function updateCaptionPreview() {
+      const overlay = document.getElementById('captionOverlay');
+      const textEl = document.getElementById('captionText');
+      const videoPlayer = document.getElementById('videoPlayer');
+      if (!overlay || !textEl || !videoPlayer) return;
+
+      renderSampleWords(textEl);
+
+      const style = readCurrentStyle();
+
+      // Match the export's ASS PlayResY=1080 reference so the preview text
+      // height tracks the burn-in size at the same proportion. ASS scales
+      // Fontsize relative to PlayResY when ScaledBorderAndShadow=yes, so
+      // previewPx = fontSize * (videoH / 1080) is the right mapping.
+      const videoH = videoPlayer.clientHeight || videoPlayer.offsetHeight || 360;
+      const previewPx = Math.max(10, Math.min(96, style.fontSize * (videoH / 1080)));
+
+      textEl.style.fontFamily = previewFontStack(style.fontFamily);
+      textEl.style.fontSize = previewPx.toFixed(1) + 'px';
+      textEl.style.color = '#' + style.textColor;
+      // libass renders Outline as a true vector stroke around each glyph. Stacked
+      // text-shadows give a chunky pixelated approximation that drifts further
+      // from the real export the wider the outline gets, so we lean on
+      // -webkit-text-stroke + paint-order:stroke-fill, which is the closest
+      // browser primitive to libass's behaviour.
+      const strokePx = previewStrokeWidth(style.outlineWidth, previewPx);
+      textEl.style.webkitTextStroke = strokePx + 'px #' + style.outlineColor;
+      textEl.style.paintOrder = 'stroke fill';
+      // Wipe the legacy text-shadow path so a re-render that sets stroke=0 looks
+      // genuinely strokeless instead of inheriting an old shadow.
+      textEl.style.textShadow = 'none';
+      // Expose stroke width as a CSS var so per-preset active rules (hormozi)
+      // can use calc(var(--cap-stroke) + 1.5px) for the +1 outline bump on
+      // the active word, matching the exports bord+1 behaviour.
+      overlay.style.setProperty('--cap-stroke', strokePx + 'px');
+
+      overlay.style.setProperty('--cap-highlight', '#' + style.highlightColor);
+      overlay.setAttribute('data-animation', style.animation || 'none');
+      overlay.setAttribute('data-preset', style.preset || 'karaoke');
+
+      overlay.classList.remove('position-top', 'position-center', 'position-bottom');
+      overlay.classList.add('position-' + (style.position || 'bottom'));
+
+      startPreviewCycle();
+    }
+
+    function showCaptionPreview() {
+      const overlay = document.getElementById('captionOverlay');
+      if (overlay) overlay.style.display = '';
+      // Defer so the video element has laid out and clientHeight is non-zero
+      requestAnimationFrame(() => updateCaptionPreview());
     }
 
     function showToast(message, type = 'success') {
@@ -1159,6 +3286,7 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('videoPreview').classList.remove('hidden');
         document.getElementById('uploadZone').classList.add('hidden');
         document.getElementById('generateBtn').disabled = false;
+        showCaptionPreview();
 
         showToast('Video uploaded successfully!', 'success');
         updateProgress(100, 'Ready');
@@ -1194,6 +3322,7 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('videoPreview').classList.remove('hidden');
         document.getElementById('uploadZone').classList.add('hidden');
         document.getElementById('generateBtn').disabled = false;
+        showCaptionPreview();
 
         showToast('Video downloaded successfully!', 'success');
         updateProgress(100, 'Ready');
@@ -1229,8 +3358,10 @@ router.get('/', requireAuth, (req, res) => {
 
         transcript = data.transcript;
         updateProgress(100, 'Transcript ready!');
-        showToast('Captions generated! Now click Apply & Export.', 'success');
-        document.getElementById('exportBtn').disabled = false;
+        showToast('Captions generated! Now click Apply.', 'success');
+        // State B — captions are now ready, the next thing the user should do
+        // is hit Apply, so it should be the prominent purple action.
+        setExportButtonState('B');
       } catch (err) {
         showToast('Caption generation failed: ' + err.message, 'error');
         updateProgress(0, '');
@@ -1254,13 +3385,31 @@ router.get('/', requireAuth, (req, res) => {
 
       updateProgress(30, 'Applying captions...');
       try {
+        // SHARED StyleConfig — same values the live preview is currently rendering.
+        // This is the only place we should be sourcing export style from; never
+        // re-read individual DOM fields here or preview/export will drift.
+        const live = readCurrentStyle();
         const customSettings = {
-          fontSize: parseInt(document.getElementById('fontSize').value),
-          fontColor: document.getElementById('textColorHex').value,
-          outlineColor: document.getElementById('outlineColorHex').value,
-          position: document.getElementById('position').value,
-          fontFamily: document.getElementById('fontFamily').value
+          fontFamily: live.fontFamily,
+          fontSize: live.fontSize,
+          fontColor: live.textColor,        // backend uses "fontColor"; UI calls it "textColor"
+          outlineColor: live.outlineColor,
+          outlineWidth: live.outlineWidth,
+          highlightColor: live.highlightColor,
+          animation: live.animation,
+          position: live.position
         };
+
+        // The backend understands a fixed set of "behavior buckets" that
+        // drive per-word \\t() animation patterns (karaoke / bold-pop /
+        // minimal / neon-glow / mrbeast / hormozi). New presets in the
+        // 20-preset library map to one of those via PRESET_BY_ID[id].behavior;
+        // we send THAT, not the raw preset id, so a card like 'gradient-wave'
+        // still gets a real per-word transition. Custom state defaults to
+        // karaoke since the active-word color flip is the safest baseline.
+        const presetMeta = PRESET_BY_ID[currentPreset];
+        const backendBehavior = (presetMeta && presetMeta.behavior) || 'karaoke';
+        console.log('[AI Captions] export StyleConfig =>', { presetId: currentPreset, backendBehavior, isCustomized, customSettings });
 
         const res = await fetch('/ai-captions/apply', {
           method: 'POST',
@@ -1268,7 +3417,7 @@ router.get('/', requireAuth, (req, res) => {
           body: JSON.stringify({
             videoPath: uploadedVideoPath,
             transcript: transcript,
-            preset: currentPreset,
+            preset: backendBehavior,
             customSettings: customSettings
           })
         });
@@ -1278,11 +3427,15 @@ router.get('/', requireAuth, (req, res) => {
         generatedVideoPath = data.outputPath;
         updateProgress(100, 'Complete!');
         showToast('Captions applied!', 'success');
-        document.getElementById('downloadBtn').disabled = false;
+        // State C — the rendered video is now ready. Pull the user's eye to
+        // Download (purple) and step the Apply button back to a dark/disabled
+        // look. The user can still re-apply with new settings if they want.
+        setExportButtonState('C');
       } catch (err) {
         showToast(err.message, 'error');
+        // Apply failed — return to State B so the user can retry.
+        setExportButtonState('B');
       } finally {
-        btn.disabled = false;
         setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1000);
       }
     }
@@ -1290,7 +3443,7 @@ router.get('/', requireAuth, (req, res) => {
     // Download video
     async function downloadVideo() {
       if (!generatedVideoPath) {
-        showToast('Please apply & export captions first', 'error');
+        showToast('Please click Apply first to render your captions.', 'error');
         return;
       }
 
@@ -1312,8 +3465,102 @@ router.get('/', requireAuth, (req, res) => {
       }
     }
 
+    // ===== Wire live-preview listeners =====
+    function bindPreviewListeners() {
+      // Selects — every change in Customize also flips the Custom indicator
+      // unless suppressed (which selectPreset does while it syncs values).
+      ['fontFamily', 'animation', 'position'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', () => { markCustomIfManual(); updateCaptionPreview(); });
+      });
+
+      // Color pickers — fire on 'input' for smooth live dragging
+      [['textColor','textColorHex'], ['outlineColor','outlineColorHex'], ['highlightColor','highlightColorHex']].forEach(([colorId, hexId]) => {
+        const c = document.getElementById(colorId);
+        const h = document.getElementById(hexId);
+        if (c) c.addEventListener('input', () => {
+          document.getElementById(hexId).value = c.value.slice(1).toUpperCase();
+          markCustomIfManual();
+          updateCaptionPreview();
+        });
+        if (h) h.addEventListener('input', () => {
+          const v = h.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+          if (v.length === 6 && c) c.value = '#' + v.toLowerCase();
+          markCustomIfManual();
+          updateCaptionPreview();
+        });
+      });
+
+      // Sliders — live updates as the user drags
+      ['fontSize', 'outlineWidth'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', () => {
+          const labelId = id + 'Value';
+          const label = document.getElementById(labelId);
+          if (label) label.textContent = el.value;
+          markCustomIfManual();
+          updateCaptionPreview();
+        });
+      });
+
+      // Recompute when the video lays out or window resizes
+      const videoPlayer = document.getElementById('videoPlayer');
+      if (videoPlayer) {
+        videoPlayer.addEventListener('loadedmetadata', () => requestAnimationFrame(updateCaptionPreview));
+        videoPlayer.addEventListener('resize', () => requestAnimationFrame(updateCaptionPreview));
+      }
+      window.addEventListener('resize', () => requestAnimationFrame(updateCaptionPreview));
+    }
+
+    // ===== Export-section button state machine =====
+    // Three states drive the Apply / Download Video pair so the user always
+    // knows what the next click should be:
+    //   A = pre-generation     -> both look like neutral secondary buttons
+    //   B = captions ready     -> Apply becomes the primary purple CTA
+    //   C = post-processing    -> Apply steps back (locked), Download becomes purple
+    function setExportButtonState(state) {
+      const exportBtn = document.getElementById('exportBtn');
+      const downloadBtn = document.getElementById('downloadBtn');
+      if (!exportBtn || !downloadBtn) return;
+
+      // Strip any state classes so the new state's class wins regardless of
+      // whatever was set previously.
+      ['btn-primary', 'btn-secondary', 'btn-state-c'].forEach(c => {
+        exportBtn.classList.remove(c);
+        downloadBtn.classList.remove(c);
+      });
+
+      switch (state) {
+        case 'A': // pre-generation
+          exportBtn.classList.add('btn-secondary');
+          downloadBtn.classList.add('btn-secondary');
+          exportBtn.disabled = true;
+          downloadBtn.disabled = true;
+          break;
+        case 'B': // captions ready, Apply is the next action
+          exportBtn.classList.add('btn-primary');
+          downloadBtn.classList.add('btn-secondary');
+          exportBtn.disabled = false;
+          downloadBtn.disabled = true;
+          break;
+        case 'C': // export complete, Download is the next action
+          exportBtn.classList.add('btn-state-c');
+          downloadBtn.classList.add('btn-primary');
+          // Apply is fully locked until a new Generate Captions cycle reopens
+          // it (going back to State B). Both the disabled attribute and
+          // pointer-events (set in .btn-state-c CSS) are used so a stray
+          // click cant fire it.
+          exportBtn.disabled = true;
+          downloadBtn.disabled = false;
+          break;
+      }
+    }
+
     // Initialize
     initPresets();
+    bindPreviewListeners();
+    setExportButtonState('A');
   </script>
 </body>
 </html>`;
@@ -1338,7 +3585,47 @@ router.get('/serve/:filename', requireAuth, (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
-router.post('/upload', requireAuth, upload.single('video'), async (req, res) => {
+// QA-only: extract a single JPEG frame from a /tmp/repurpose-* file at ?t=<seconds>
+// Used by Live QA tooling to verify burned-in captions are rendering as expected.
+// Confined to uploadDir/outputDir + .mp4 only — no path traversal possible.
+router.get('/qa-frame/:filename', requireAuth, async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    if (!/^[A-Za-z0-9._-]+\.mp4$/.test(filename)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    let filePath = path.join(outputDir, filename);
+    if (!fs.existsSync(filePath)) filePath = path.join(uploadDir, filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+    const t = Math.max(0, parseFloat(req.query.t) || 1.0);
+    const outJpg = path.join(outputDir, `qa-frame-${uuidv4()}.jpg`);
+
+    await new Promise((resolve, reject) => {
+      const proc = spawn('ffmpeg', [
+        '-ss', String(t),
+        '-i', filePath,
+        '-frames:v', '1',
+        '-q:v', '3',
+        '-y', outJpg
+      ]);
+      let stderr = '';
+      proc.stderr.on('data', d => { stderr += d.toString(); });
+      proc.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg ' + code + ': ' + stderr.slice(-300))));
+      proc.on('error', reject);
+    });
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    const stream = fs.createReadStream(outJpg);
+    stream.pipe(res);
+    stream.on('close', () => { try { fs.unlinkSync(outJpg); } catch (e) {} });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/upload', requireAuth, requireCredits('ai-captions'), requireStorageHeadroom(), upload.single('video'), trackUploadBytes('ai-captions'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No video file uploaded' });

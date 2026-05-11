@@ -10,7 +10,7 @@ const BRAND = { name: 'Splicora' };
 function pageShell(title, user, content) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+<link rel="icon" type="image/x-icon" href="/images/favicon.ico">
 <title>${title} â ${BRAND.name}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -23,8 +23,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);line-
 @keyframes f{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,-20px)}}
 nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rgba(6,6,15,.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
 .nav-inner{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;justify-content:space-between;align-items:center}
-.logo{font-size:1.4rem;font-weight:800;background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.logo span{font-weight:400;-webkit-text-fill-color:var(--text2)}
+.logo{display:inline-flex;align-items:center;text-decoration:none}
+.logo img{display:block}
 .nav-links{display:flex;gap:24px;align-items:center}
 .nav-links a{font-size:.9rem;color:var(--text2);text-decoration:none;transition:color .3s}
 .nav-links a:hover{color:var(--text)}
@@ -69,7 +69,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
 </style></head><body>
 <div class="bg-orb bg-orb--1"></div><div class="bg-orb bg-orb--2"></div>
 <nav><div class="nav-inner">
-  <a href="/" class="logo">Splicora</a>
+  <a href="/" class="logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:32px;"></a>
   <div class="nav-links">
     <a href="/">Home</a>
     <a href="/pricing">Pricing</a>

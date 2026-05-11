@@ -29,6 +29,31 @@ const initDatabase = async () => {
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`,
+      // Phase 1: credit metering columns
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_used_this_month INTEGER DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_period_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+      // Phase 2: storage byte tracking + grace period
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_bytes_used BIGINT DEFAULT 0`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_grace_until TIMESTAMP`,
+      // Phase 4: per-feature transaction logs for the breakdown modals
+      `CREATE TABLE IF NOT EXISTS credit_transactions (
+         id TEXT PRIMARY KEY,
+         user_id TEXT NOT NULL,
+         feature_key TEXT NOT NULL,
+         credits INTEGER NOT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_credit_tx_user_month
+         ON credit_transactions (user_id, created_at)`,
+      `CREATE TABLE IF NOT EXISTS storage_transactions (
+         id TEXT PRIMARY KEY,
+         user_id TEXT NOT NULL,
+         feature_key TEXT NOT NULL,
+         bytes BIGINT NOT NULL,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_storage_tx_user_month
+         ON storage_transactions (user_id, created_at)`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`,
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
@@ -441,6 +466,10 @@ const initDatabase = async () => {
       )
     `);
 
+    // Caption styles enabled list — null means "use defaults (all free)".
+    // Stored as JSONB array of class slugs once the user adds/removes their first style.
+    await pool.query(`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS enabled_caption_styles JSONB`).catch(() => {});
+
     // Feature usage tracking for admin analytics
     await pool.query(`
       CREATE TABLE IF NOT EXISTS feature_usage (
@@ -455,6 +484,27 @@ const initDatabase = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_user ON feature_usage(user_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_feature_usage_feature ON feature_usage(feature)`);
 
+
+    // Projects table — used by AI B-Roll ingestion → Video Editor handoff
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT DEFAULT 'Untitled Project',
+        primary_filename TEXT,
+        primary_duration REAL DEFAULT 0,
+        primary_serve_url TEXT,
+        broll_clips TEXT DEFAULT '[]',
+        source_hint TEXT,
+        metadata TEXT DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at DESC)`);
+
 console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -462,7 +512,20 @@ console.log('Database initialized successfully');
   }
 };
 
-const getDb = () => pool;
+// Return a hybrid object: pg pool helpers + all ops modules from module.exports.
+// This satisfies both legacy callers using getDb() for raw .query() AND callers
+// using db.connectedAccountOps / db.workflowOps / etc. (originally introduced in
+// routes/distribute.js, routes/tiktok.js, etc.).
+const getDb = () => Object.assign(
+  {
+    query: (...args) => pool.query(...args),
+    connect: () => pool.connect(),
+    end: () => pool.end(),
+    on: (...args) => pool.on(...args),
+    pool
+  },
+  module.exports
+);
 
 // User operations
 const userOps = {
@@ -1412,11 +1475,208 @@ const pageContentOps = {
   }
 };
 
+
+const projectOps = {
+  async create(userId, data) {
+    const id = 'p_' + uuidv4().replace(/-/g, '').slice(0, 16);
+    const brollJson = JSON.stringify(Array.isArray(data.broll) ? data.broll : []);
+    const metaJson = JSON.stringify(data.metadata || {});
+    const result = await pool.query(
+      `INSERT INTO projects (id, user_id, name, primary_filename, primary_duration, primary_serve_url, broll_clips, source_hint, metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [
+        id,
+        userId,
+        data.name || 'Untitled Project',
+        data.primaryFilename || null,
+        data.primaryDuration || 0,
+        data.primaryServeUrl || null,
+        brollJson,
+        data.sourceHint || null,
+        metaJson
+      ]
+    );
+    return result.rows[0];
+  },
+  async getById(id, userId) {
+    const params = userId ? [id, userId] : [id];
+    const where = userId ? 'id = $1 AND user_id = $2' : 'id = $1';
+    const result = await pool.query(`SELECT * FROM projects WHERE ${where}`, params);
+    const row = result.rows[0];
+    if (!row) return null;
+    try { row.broll = JSON.parse(row.broll_clips || '[]'); } catch (e) { row.broll = []; }
+    try { row.metadataObj = JSON.parse(row.metadata || '{}'); } catch (e) { row.metadataObj = {}; }
+    return row;
+  },
+  async listByUser(userId, limit = 50) {
+    const result = await pool.query(
+      `SELECT id, name, primary_filename, primary_duration, created_at, updated_at
+       FROM projects WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [userId, limit]
+    );
+    return result.rows;
+  },
+  async updateBroll(id, userId, broll) {
+    const result = await pool.query(
+      `UPDATE projects SET broll_clips = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND user_id = $3 RETURNING *`,
+      [JSON.stringify(broll || []), id, userId]
+    );
+    return result.rows[0];
+  },
+  async delete(id, userId) {
+    await pool.query(`DELETE FROM projects WHERE id = $1 AND user_id = $2`, [id, userId]);
+  }
+};
+
+
+// Phase 1 — credit metering
+// Single unified credit pool per user, reset monthly. Cost table is in
+// middleware/credits.js so the routes can also reference it without a DB hop.
+const creditOps = {
+  // Returns { used, periodStart, plan }. Resets the period if the stored
+  // periodStart is from a previous calendar month (UTC). The reset is
+  // atomic-ish: a single UPDATE ... RETURNING does the read+reset.
+  async getOrResetUsage(userId) {
+    const row = (await pool.query(
+      `SELECT credits_used_this_month AS used, credits_period_start AS period_start, plan
+         FROM users WHERE id = $1`, [userId]
+    )).rows[0];
+    if (!row) return null;
+    const start = row.period_start ? new Date(row.period_start) : null;
+    const now = new Date();
+    const sameMonth = start &&
+      start.getUTCFullYear() === now.getUTCFullYear() &&
+      start.getUTCMonth() === now.getUTCMonth();
+    if (!sameMonth) {
+      const reset = (await pool.query(
+        `UPDATE users
+            SET credits_used_this_month = 0,
+                credits_period_start = date_trunc('month', CURRENT_TIMESTAMP)
+          WHERE id = $1
+        RETURNING credits_used_this_month AS used, credits_period_start AS period_start, plan`,
+        [userId]
+      )).rows[0];
+      return { used: reset.used, periodStart: reset.period_start, plan: reset.plan };
+    }
+    return { used: row.used || 0, periodStart: start, plan: row.plan };
+  },
+
+  // Atomically add `n` to the user's monthly usage. Used after a successful
+  // operation. We do not check the cap here — middleware does that on the way in.
+  async incrementUsage(userId, n) {
+    if (!n || n <= 0) return;
+    await pool.query(
+      `UPDATE users SET credits_used_this_month = COALESCE(credits_used_this_month, 0) + $1 WHERE id = $2`,
+      [n, userId]
+    );
+  },
+
+  // Refund — used if the operation errors after deduction. Floors at 0.
+  async refundUsage(userId, n) {
+    if (!n || n <= 0) return;
+    await pool.query(
+      `UPDATE users SET credits_used_this_month = GREATEST(0, COALESCE(credits_used_this_month, 0) - $1) WHERE id = $2`,
+      [n, userId]
+    );
+  },
+
+  // Phase 4: log a charge to credit_transactions for the breakdown modal.
+  async logTransaction(userId, featureKey, credits) {
+    if (!credits || credits <= 0) return;
+    await pool.query(
+      `INSERT INTO credit_transactions (id, user_id, feature_key, credits) VALUES ($1, $2, $3, $4)`,
+      [uuidv4(), userId, featureKey, credits]
+    );
+  },
+
+  // Per-feature totals for the current calendar month (UTC).
+  async breakdownThisMonth(userId) {
+    const rows = (await pool.query(
+      `SELECT feature_key, SUM(credits)::int AS total
+         FROM credit_transactions
+        WHERE user_id = $1
+          AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+        GROUP BY feature_key
+        ORDER BY total DESC`,
+      [userId]
+    )).rows;
+    return rows.map(r => ({ feature: r.feature_key, credits: r.total }));
+  }
+};
+
+
+// Phase 2 — storage metering (cumulative bytes ingested per account)
+// Tracks bytes from multer uploads. Grace period kicks in when a user goes
+// over their plan cap; until grace expires they keep working but see a banner.
+const storageOps = {
+  async getUsage(userId) {
+    const row = (await pool.query(
+      `SELECT storage_bytes_used AS bytes, storage_grace_until AS grace_until, plan
+         FROM users WHERE id = $1`, [userId]
+    )).rows[0];
+    if (!row) return null;
+    return {
+      bytes: Number(row.bytes || 0),
+      graceUntil: row.grace_until,
+      plan: row.plan
+    };
+  },
+
+  // Atomically add `n` bytes to the user's tracked usage.
+  async addBytes(userId, bytes) {
+    if (!bytes || bytes <= 0) return;
+    await pool.query(
+      `UPDATE users SET storage_bytes_used = COALESCE(storage_bytes_used, 0) + $1 WHERE id = $2`,
+      [bytes, userId]
+    );
+  },
+
+  // Decrement (used when a tracked file is deleted). Floors at 0.
+  async subBytes(userId, bytes) {
+    if (!bytes || bytes <= 0) return;
+    await pool.query(
+      `UPDATE users SET storage_bytes_used = GREATEST(0, COALESCE(storage_bytes_used, 0) - $1) WHERE id = $2`,
+      [bytes, userId]
+    );
+  },
+
+  // Set the grace_until column. Pass null to clear it.
+  async setGrace(userId, until) {
+    await pool.query(`UPDATE users SET storage_grace_until = $1 WHERE id = $2`, [until, userId]);
+  },
+
+  // Phase 4: log an upload to storage_transactions for the breakdown modal.
+  async logTransaction(userId, featureKey, bytes) {
+    if (!bytes || bytes <= 0) return;
+    await pool.query(
+      `INSERT INTO storage_transactions (id, user_id, feature_key, bytes) VALUES ($1, $2, $3, $4)`,
+      [uuidv4(), userId, featureKey, bytes]
+    );
+  },
+
+  // Per-feature byte totals (lifetime — storage is cumulative, not monthly).
+  async breakdownAllTime(userId) {
+    const rows = (await pool.query(
+      `SELECT feature_key, SUM(bytes)::bigint AS total
+         FROM storage_transactions
+        WHERE user_id = $1
+        GROUP BY feature_key
+        ORDER BY total DESC`,
+      [userId]
+    )).rows;
+    return rows.map(r => ({ feature: r.feature_key, bytes: Number(r.total) }));
+  }
+};
+
+
 module.exports = {
   initDatabase,
   getDb,
   get pool() { return pool; },
   userOps,
+  creditOps,
+  storageOps,
   contentOps,
   outputOps,
   brandVoiceOps,
@@ -1429,6 +1689,7 @@ module.exports = {
   teamOps,
   adminOps,
   featureUsageOps,
+  projectOps,
   pageContentOps,
   connectedAccountOps: {
     async create(userId, data) {
@@ -1465,6 +1726,7 @@ module.exports = {
     },
     async getByUser(userId) { return (await pool.query(`SELECT w.*, sa.platform_username as source_username, da.platform_username as dest_username FROM workflows w LEFT JOIN connected_accounts sa ON w.source_account_id = sa.id LEFT JOIN connected_accounts da ON w.destination_account_id = da.id WHERE w.user_id = $1 ORDER BY w.created_at DESC`, [userId])).rows; },
     async getById(id) { return (await pool.query(`SELECT w.*, sa.platform_username as source_username, da.platform_username as dest_username FROM workflows w LEFT JOIN connected_accounts sa ON w.source_account_id = sa.id LEFT JOIN connected_accounts da ON w.destination_account_id = da.id WHERE w.id = $1`, [id])).rows[0]; },
+    async getActiveWorkflows() { return (await pool.query(`SELECT * FROM workflows WHERE auto_publish = true AND is_active = true ORDER BY created_at DESC`)).rows; },
     async update(id, data) {
       const sets = []; const vals = []; let idx = 1;
       for (const [k, v] of Object.entries(data)) {
@@ -1478,7 +1740,13 @@ module.exports = {
     async toggleAutoPublish(id, value) { return (await pool.query(`UPDATE workflows SET auto_publish = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`, [value, id])).rows[0]; },
     async toggleActive(id, value) { return (await pool.query(`UPDATE workflows SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`, [value, id])).rows[0]; },
     async incrementPostCount(id) { return (await pool.query(`UPDATE workflows SET post_count = post_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`, [id])).rows[0]; },
-    async delete(id) { await pool.query(`DELETE FROM workflows WHERE id = $1`, [id]); }
+    async delete(id) { await pool.query(`DELETE FROM workflows WHERE id = $1`, [id]); },
+    getActiveWorkflows: async () => {
+      const result = await pool.query(
+        'SELECT * FROM workflows WHERE auto_publish = true AND is_active = true ORDER BY created_at DESC'
+      );
+      return result.rows;
+    }
   },
   contentQueueOps: {
     async create(data) {
@@ -1494,7 +1762,34 @@ module.exports = {
       const q = status ? `SELECT * FROM content_queue WHERE workflow_id = $1 AND status = $2 ORDER BY scheduled_at ASC` : `SELECT * FROM content_queue WHERE workflow_id = $1 ORDER BY created_at DESC`;
       return (await pool.query(q, status ? [workflowId, status] : [workflowId])).rows;
     },
+    async getByWorkflowAndSourceId(workflowId, sourceContentId) {
+      const result = await pool.query(
+        `SELECT * FROM content_queue WHERE workflow_id = $1 AND source_video_id = $2 LIMIT 1`,
+        [workflowId, sourceContentId]
+      );
+      return result.rows[0];
+    },
+    async getPendingByWorkflow(workflowId) {
+      return (await pool.query(`SELECT * FROM content_queue WHERE workflow_id = $1 AND status = 'pending' ORDER BY created_at ASC`, [workflowId])).rows;
+    },
+    async getActiveWorkflows() {
+      return (await pool.query(`SELECT * FROM workflows WHERE auto_publish = true AND is_active = true ORDER BY created_at DESC`)).rows;
+    },
     async updateStatus(id, status, errorMessage) { return (await pool.query(`UPDATE content_queue SET status = $1, error_message = $2, published_at = CASE WHEN $1 = 'published' THEN CURRENT_TIMESTAMP ELSE published_at END WHERE id = $3 RETURNING *`, [status, errorMessage, id])).rows[0]; },
-    async getScheduled() { return (await pool.query(`SELECT cq.*, w.destination_platform, w.settings FROM content_queue cq JOIN workflows w ON cq.workflow_id = w.id WHERE cq.status = 'scheduled' AND cq.scheduled_at <= CURRENT_TIMESTAMP ORDER BY cq.scheduled_at ASC`)).rows; }
+    async getScheduled() { return (await pool.query(`SELECT cq.*, w.destination_platform, w.settings FROM content_queue cq JOIN workflows w ON cq.workflow_id = w.id WHERE cq.status = 'scheduled' AND cq.scheduled_at <= CURRENT_TIMESTAMP ORDER BY cq.scheduled_at ASC`)).rows; },
+    getByWorkflowAndSourceId: async (workflowId, sourceId) => {
+      const result = await pool.query(
+        'SELECT * FROM content_queue WHERE workflow_id = $1 AND source_content_id = $2 LIMIT 1',
+        [workflowId, sourceId]
+      );
+      return result.rows[0] || null;
+    },
+    getPendingByWorkflow: async (workflowId) => {
+      const result = await pool.query(
+        'SELECT * FROM content_queue WHERE workflow_id = $1 AND status = $2 ORDER BY scheduled_at ASC',
+        [workflowId, 'pending']
+      );
+      return result.rows;
+    }
   }
 };

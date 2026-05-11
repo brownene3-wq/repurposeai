@@ -6,7 +6,7 @@ const { getDb } = require('../db/database');
 
 const LINKEDIN_CLIENT_ID = process.env.LINKEDIN_CLIENT_ID || '78m5fxmzdcrtgb';
 const LINKEDIN_CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET || '';
-const BASE_URL = process.env.BASE_URL || 'https://www.splicora.ai';
+const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 // ─── HTTP helpers (matching auth.js pattern) ──────────────────────
 
@@ -79,8 +79,8 @@ router.get('/connect', requireAuth, (req, res) => {
     return res.status(500).send('LinkedIn integration not configured. Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET env vars.');
   }
 
-  // Store user ID in state to link the account after callback
-  const state = Buffer.from(JSON.stringify({ userId: req.user.id })).toString('base64url');
+  // Store user ID and redirect in state to link the account after callback
+  const state = Buffer.from(JSON.stringify({ userId: req.user.id, redirect: req.query.redirect || '/distribute/connections' })).toString('base64url');
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -100,16 +100,17 @@ router.get('/callback', async (req, res) => {
 
     if (error || !code) {
       console.error('LinkedIn auth error:', error || 'no code');
-      return res.redirect('/settings?error=LinkedIn+connection+cancelled');
+      return res.redirect('/distribute/connections?error=LinkedIn+connection+cancelled');
     }
 
-    // Decode state to get userId
-    let userId;
+    // Decode state to get userId and redirect
+    let userId, redirectTo = '/distribute/connections';
     try {
       const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
       userId = stateData.userId;
+      redirectTo = stateData.redirect || '/distribute/connections';
     } catch (e) {
-      return res.redirect('/settings?error=Invalid+LinkedIn+auth+state');
+      return res.redirect('/distribute/connections?error=Invalid+LinkedIn+auth+state');
     }
 
     // Exchange authorization code for access token
@@ -123,7 +124,7 @@ router.get('/callback', async (req, res) => {
 
     if (tokenData.error || !tokenData.access_token) {
       console.error('LinkedIn token exchange failed:', JSON.stringify(tokenData));
-      return res.redirect('/settings?error=LinkedIn+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
+      return res.redirect('/distribute/connections?error=LinkedIn+auth+failed:+' + encodeURIComponent(tokenData.error_description || tokenData.error || 'unknown'));
     }
 
     const { access_token, refresh_token, expires_in } = tokenData;
@@ -149,7 +150,7 @@ router.get('/callback', async (req, res) => {
 
     // Save LinkedIn tokens to user account
     const db = getDb();
-    const { userOps } = db;
+    const { userOps, connectedAccountOps } = db;
     await userOps.updateLinkedIn(userId, {
       linkedInId: linkedInId,
       accessToken: access_token,
@@ -158,11 +159,30 @@ router.get('/callback', async (req, res) => {
       name: profileName
     });
 
-    res.redirect('/settings?success=LinkedIn+account+connected' + (profileName ? '+as+' + encodeURIComponent(profileName) : ''));
+    // Also save to connected_accounts for Repurpose feature
+    try {
+      const existing = await connectedAccountOps.getByUserAndPlatform(userId, 'linkedin');
+      if (existing.length > 0) {
+        await connectedAccountOps.update(existing[0].id, {
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, platformUsername: profileName,
+          accountName: profileName || 'LinkedIn Account'
+        });
+      } else {
+        await connectedAccountOps.create(userId, {
+          platform: 'linkedin', platformUserId: linkedInId,
+          platformUsername: profileName, accountName: profileName || 'LinkedIn Account',
+          accessToken: access_token, refreshToken: refresh_token,
+          tokenExpiresAt: expiresAt, accountType: 'destination'
+        });
+      }
+    } catch (e) { console.error('Connected account save error:', e.message); }
+
+    res.redirect(redirectTo + (redirectTo.includes('?') ? '&' : '?') + 'success=LinkedIn+connected' + (profileName ? '+as+' + encodeURIComponent(profileName) : ''));
 
   } catch (err) {
     console.error('LinkedIn OAuth error:', err.message || err);
-    res.redirect('/settings?error=LinkedIn+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
+    res.redirect('/distribute/connections?error=LinkedIn+connection+failed:+' + encodeURIComponent(err.message || 'unknown'));
   }
 });
 

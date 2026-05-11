@@ -5,7 +5,11 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const OpenAI = require('openai');
 const archiver = require('archiver');
-const { downloadWithCobalt } = require('../utils/cobalt');
+const { downloadWithCobalt, validateDownloadedVideo } = require('../utils/cobalt');
+// brand-templates exports fetchLogo() — used by /shorts/clip to bake
+// the selected Brand Template's logo onto the rendered viral clip.
+let brandTemplatesMod = null;
+try { brandTemplatesMod = require('./brand-templates'); } catch (_e) { brandTemplatesMod = null; }
 // Lazy-load ytdl-core to avoid crashing if it has issues
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; console.error('ytdl-core not available:', e.message); }
@@ -19,10 +23,16 @@ if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath
 const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
 const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require('../middleware/auth');
+const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
-const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Guard boot — OpenAI SDK throws at construction if apiKey is empty,
+// which would crash the entire server at startup. Use a placeholder so
+// the module loads; a real check happens at request time when the API
+// call returns 401 from the bogus key.
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
 // Common yt-dlp args to handle YouTube's anti-bot measures
 // PO token provider runs on port 4416 (started in Dockerfile CMD)
@@ -37,6 +47,17 @@ const YTDLP_COMMON_ARGS = [
   '--retries', '3',
   '--extractor-retries', '3',
 ];
+
+// Pass --cookies <path> to yt-dlp when YT_COOKIES_PATH is configured and
+// the file exists. This lets yt-dlp authenticate as a real YouTube user
+// and bypass the "Sign in to confirm you're not a bot" wall that hits
+// every Railway datacenter IP. Same pattern used by /ai-thumbnail,
+// /ai-broll, and /video-editor.
+function getYoutubeCookiesArgs() {
+  const p = process.env.YT_COOKIES_PATH;
+  if (p && fs.existsSync(p)) return ['--cookies', p];
+  return [];
+}
 
 // Clips directory
 const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
@@ -123,6 +144,26 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
 
   try {
     writeProgress('Downloading video...');
+
+    // Try Cobalt API first — most reliable on Railway (yt-dlp + ytdl-core
+    // routinely get bot-blocked from datacenter IPs). Mirrors the Quick
+    // Narrate flow (commits 820c8ce / 5f05882 / 48756f7).
+    try {
+      await downloadWithCobalt(videoUrl, cachedVideoPath);
+      if (fs.existsSync(cachedVideoPath) && fs.statSync(cachedVideoPath).size > 10000) {
+        try { fs.unlinkSync(lockPath); } catch (e) {}
+        const entry = { path: cachedVideoPath, refCount: 1, timer: null };
+        videoDownloadCache.set(cacheKey, entry);
+        console.log(`  Cobalt download succeeded for ${videoId} (${(fs.statSync(cachedVideoPath).size / 1024 / 1024).toFixed(1)}MB)`);
+        return cachedVideoPath;
+      }
+      // File missing or too small — fall through to yt-dlp
+      try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+    } catch (cobaltErr) {
+      console.log(`  Cobalt failed for ${videoId}: ${String(cobaltErr.message || cobaltErr).slice(0, 150)}`);
+      try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+    }
+
     await runDl(ytdlpPath, [
       '--no-playlist',
       '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
@@ -130,6 +171,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       '-o', cachedVideoPath,
       '--no-part',
       '--force-overwrites',
+      ...getYoutubeCookiesArgs(),
       ...YTDLP_COMMON_ARGS,
       videoUrl
     ], { timeout: 240000 });
@@ -213,7 +255,10 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
 
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
-    throw new Error('Video download failed. Please try again.');
+    const haveCookies = !!getYoutubeCookiesArgs().length;
+    throw new Error(haveCookies
+      ? 'Video download failed. Please try again.'
+      : 'Video download failed: YouTube blocked all download paths. Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in YouTube account, then redeploy.');
   }
 }
 
@@ -1235,8 +1280,103 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+// POST /analyze-upload — Analyze an uploaded video/audio file using the same
+// AI pipeline as /analyze. Streams SSE updates and returns analysisId on completion.
+const _repurposeMod = require('./repurpose');
+const _fs = require('fs');
+router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single('file'), async (req, res) => {
+  let sseStarted = false;
+  let filePath = req.file ? req.file.path : null;
+  let audioPath = null;
+
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'AI service is not configured. Please contact support.' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseStarted = true;
+
+    const sendUpdate = (data) => {
+      try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch (e) {}
+    };
+
+    const userId = req.user.id;
+    const fileName = req.file.originalname || 'Uploaded File';
+
+    sendUpdate({ status: 'extracting_audio', message: 'Extracting audio...' });
+    try {
+      audioPath = await _repurposeMod.extractAudioForRepurpose(filePath);
+    } catch (err) {
+      audioPath = filePath; // fallback — Whisper accepts most formats directly
+    }
+
+    sendUpdate({ status: 'transcribing', message: 'Transcribing with AI...' });
+    let transcriptText;
+    try {
+      transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+    } catch (err) {
+      sendUpdate({ status: 'error', message: 'Transcription failed: ' + (err.message || 'unknown error') });
+      return res.end();
+    }
+    if (!transcriptText || !transcriptText.trim()) {
+      sendUpdate({ status: 'error', message: 'Could not extract any speech from the file.' });
+      return res.end();
+    }
+
+    // Save analysis row using the upload\'s filename as a "video_url" stand-in.
+    // The downstream /shorts page can extract a (missing) videoId — that's fine,
+    // it falls back to a generic thumbnail.
+    const sourceUrl = 'upload://' + encodeURIComponent(fileName);
+    const analysisId = await shortsOps.create(userId, sourceUrl, fileName, transcriptText);
+    await shortsOps.updateStatus(analysisId, 'analyzing');
+    sendUpdate({ status: 'analyzing', message: 'Analyzing with AI to identify viral moments...' });
+
+    const systemPrompt = `You are an expert content strategist specializing in identifying viral short-form content moments from transcripts. Analyze the provided transcript and identify the top 5-8 most compelling, viral-worthy moments that would perform exceptionally well on TikTok, Instagram Reels, and YouTube Shorts.\n\nFor each moment, evaluate based on:\n- Emotional hooks (inspiration, surprise, humor, controversy)\n- Actionable insights and practical value\n- Storytelling potential and narrative arcs\n- Relatability and universal appeal\n- Memorable quotes and quotable moments\n- Visual potential and descriptive language\n- Audience engagement probability\n\nReturn a JSON array of moments with this exact structure:\n[\n  {\n    "title": "Brief descriptive title",\n    "timeRange": "MM:SS-MM:SS",\n    "description": "Why this moment is viral-worthy (2-3 sentences)",\n    "script": "Exact transcript text for this moment",\n    "hooks": ["Hook line 1", "Hook line 2", "Hook line 3"],\n    "viralityScore": 85,\n    "keyThemes": ["theme1", "theme2"],\n    "suggestedCaptions": ["caption1", "caption2"],\n    "suggestedHashtags": ["#hashtag1", "#hashtag2"],\n    "emotion": "primary emotion (inspiration/humor/surprise/education/controversy)",\n    "platforms": ["tiktok", "instagram", "shorts"],\n    "platformScores": { "tiktok": 90, "instagram": 80, "shorts": 85, "twitter": 70, "linkedin": 60 }\n  }\n]\n\nEnsure all times are accurate to the transcript. Focus on moments that are 30-120 seconds long when extracted.`;
+
+    const aiResponse = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: 'Analyze this transcript:\n\n' + transcriptText }
+      ],
+      temperature: 0.7,
+      max_tokens: 3000
+    });
+    const momentText = aiResponse.choices[0].message.content;
+    let moments = [];
+    try {
+      const m = momentText.match(/\[[\s\S]*\]/);
+      if (m) moments = JSON.parse(m[0]);
+    } catch (e) { moments = []; }
+
+    await shortsOps.updateMoments(analysisId, moments);
+    await shortsOps.updateStatus(analysisId, 'completed');
+
+    sendUpdate({ status: 'completed', message: 'Analysis complete!', analysisId, moments });
+    res.end();
+  } catch (error) {
+    console.error('analyze-upload error:', error);
+    if (!sseStarted) {
+      res.status(500).json({ error: error.message || 'Upload analysis failed.' });
+    } else {
+      try {
+        res.write(`data: ${JSON.stringify({ status: 'error', message: error.message || 'Upload analysis failed.' })}\n\n`);
+        res.end();
+      } catch (e) {}
+    }
+  } finally {
+    try { if (filePath && _fs.existsSync(filePath)) _fs.unlinkSync(filePath); } catch (e) {}
+    try { if (audioPath && audioPath !== filePath && _fs.existsSync(audioPath)) _fs.unlinkSync(audioPath); } catch (e) {}
+  }
+});
+
 // POST /analyze - Analyze YouTube video
-router.post('/analyze', requireAuth, async (req, res) => {
+router.post('/analyze', requireAuth, requireCredits('smart-shorts'), requireStorageHeadroom(), async (req, res) => {
   let sseStarted = false;
 
   try {
@@ -1915,7 +2055,27 @@ router.get('/api/:id', requireAuth, async (req, res) => {
   }
 });
 
-// DELETE /api/:id - Delete analysis
+// GET /api/:id/calendar-links — count + previews of linked calendar entries
+router.get('/api/:id/calendar-links', requireAuth, async (req, res) => {
+  try {
+    const analysis = await shortsOps.getById(req.params.id);
+    if (!analysis) return res.status(404).json({ error: 'Analysis not found' });
+    if (analysis.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const { getDb } = require('../db/database');
+    const db = getDb();
+    const result = await db.query(
+      'SELECT id, title, platform, scheduled_date, scheduled_time FROM calendar_entries WHERE user_id = $1 AND analysis_id = $2 ORDER BY scheduled_date, scheduled_time',
+      [req.user.id, req.params.id]
+    );
+    res.json({ count: result.rows.length, entries: result.rows });
+  } catch (error) {
+    console.error('Calendar-links lookup error:', error);
+    res.status(500).json({ error: 'Failed to look up linked entries' });
+  }
+});
+
+// DELETE /api/:id — Delete analysis. If ?cascade=1, also remove calendar entries
+// linked to this analysis_id.
 router.delete('/api/:id', requireAuth, async (req, res) => {
   try {
     const analysis = await shortsOps.getById(req.params.id);
@@ -1925,8 +2085,18 @@ router.delete('/api/:id', requireAuth, async (req, res) => {
     if (analysis.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
+    let cascadedCount = 0;
+    if (req.query.cascade === '1') {
+      const { getDb } = require('../db/database');
+      const db = getDb();
+      const r = await db.query(
+        'DELETE FROM calendar_entries WHERE user_id = $1 AND analysis_id = $2 RETURNING id',
+        [req.user.id, req.params.id]
+      );
+      cascadedCount = r.rowCount || 0;
+    }
     await shortsOps.delete(req.params.id);
-    res.json({ success: true });
+    res.json({ success: true, cascadedCount });
   } catch (error) {
     console.error('Error deleting analysis:', error);
     res.status(500).json({ error: 'Failed to delete analysis' });
@@ -2609,6 +2779,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
             '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempVideo,
             '--no-part', '--force-overwrites',
+            ...getYoutubeCookiesArgs(),
             ...YTDLP_COMMON_ARGS,
             '--download-sections', `*${frameSec}-${frameSec + 5}`,
             videoUrl
@@ -2620,6 +2791,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
               '--no-playlist', '-f', 'bestvideo[height<=1920]/best[height<=1920]/best',
               '--merge-output-format', 'mkv', '-o', tempVideo,
               '--no-part', '--force-overwrites',
+              ...getYoutubeCookiesArgs(),
               ...YTDLP_COMMON_ARGS,
               videoUrl
             ], { timeout: 180000 });
@@ -3123,7 +3295,7 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       return res.status(503).json({ error: 'Video clipping is not available on this server. ffmpeg or ytdl-core is missing.' });
     }
 
-    const { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle } = req.body;
+    let { analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle, applyBrandKit, selectedBrandTemplateId } = req.body;
 
     if (!analysisId || momentIndex === undefined) {
       return res.status(400).json({ error: 'Analysis ID and moment index are required' });
@@ -3137,11 +3309,67 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // Fetch user's brand kit for watermark
+    // Fetch user's brand kit for watermark — but only if the user opted in
+    // for this clip via the per-moment "Brand Template" checkbox.
     let brandKit = null;
-    try {
-      brandKit = await brandKitOps.getByUserId(req.user.id);
-    } catch (e) { console.log('Brand kit fetch skipped:', e.message); }
+    if (applyBrandKit !== false) {
+      try {
+        brandKit = await brandKitOps.getByUserId(req.user.id);
+      } catch (e) { console.log('Brand kit fetch skipped:', e.message); }
+    } else {
+      console.log('  Brand template explicitly disabled for this clip');
+    }
+
+    // If the user has selected a Brand Template via the /shorts Brand Kit
+    // modal, look it up from the cookie store (brand-templates.js writes
+    // them there) and let it influence this clip. Today we use it to set
+    // the default caption style; the logo overlay during ffmpeg encode is
+    // a follow-up step. Only honored when applyBrandKit isn't explicitly
+    // disabled, so the per-moment checkbox still controls it.
+    let selectedBrandTemplate = null;
+    if (applyBrandKit !== false && selectedBrandTemplateId) {
+      try {
+        const raw = req.cookies && req.cookies.brandTemplates;
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            selectedBrandTemplate = list.find(t => t && t.id === selectedBrandTemplateId) || null;
+          }
+        }
+      } catch (e) {
+        console.log('  Selected brand template lookup failed:', e.message);
+      }
+      if (selectedBrandTemplate) {
+        console.log(`  Brand Template selected: "${selectedBrandTemplate.name || selectedBrandTemplate.id}" (caption: ${selectedBrandTemplate.captionStyle || 'n/a'}, logo: ${selectedBrandTemplate.logoFilename ? 'yes' : 'no'})`);
+
+        // The template is the active brand state at export time — its
+        // captionStyle ALWAYS wins over the dropdown. Previously this was
+        // gated on the dropdown being empty, but the dropdown is never
+        // empty (it defaults to 'classic'), so the template was getting
+        // silently ignored. The same goes for logo position/size below
+        // (already pulled from the template in the ffmpeg builder).
+        if (selectedBrandTemplate.captionStyle) {
+          if (captionStyle && captionStyle !== selectedBrandTemplate.captionStyle) {
+            console.log(`  → overriding caption style "${captionStyle}" with template's "${selectedBrandTemplate.captionStyle}"`);
+          } else {
+            console.log(`  → using template caption style: ${selectedBrandTemplate.captionStyle}`);
+          }
+          captionStyle = selectedBrandTemplate.captionStyle;
+        }
+
+        // Suppress the brand_kits watermark text when a template is
+        // active — otherwise the old watermark string from the user's
+        // brand_kits row layers on top of the new template's logo and
+        // looks like an "outdated brand design." The template IS the
+        // brand for this export.
+        if (brandKit) {
+          console.log('  → suppressing brand_kits watermark while template is active');
+          brandKit = Object.assign({}, brandKit, { watermark_text: '' });
+        }
+      } else {
+        console.log(`  Selected brand template id "${selectedBrandTemplateId}" not found in cookie — skipping`);
+      }
+    }
 
     // Parse moments
     let moments = analysis.moments;
@@ -3316,6 +3544,33 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
           }
         }
 
+        // Brand-template logo overlay: if the user selected a template that
+        // has a saved logo, fetch the bytes, write to disk, and remember the
+        // path + position. The actual filter splicing happens after we
+        // build videoFilter below.
+        let brandLogoPath = null;
+        let brandLogoPos = 'top-right';
+        let brandLogoSizePct = 12; // % of clip width (1080 → ~130px)
+        if (selectedBrandTemplate && selectedBrandTemplate.logoFilename && brandTemplatesMod && brandTemplatesMod.fetchLogo) {
+          try {
+            const row = await brandTemplatesMod.fetchLogo(selectedBrandTemplate.logoFilename);
+            if (row && row.data) {
+              const ext = (row.mime_type || '').includes('jpeg') ? 'jpg'
+                       : (row.mime_type || '').includes('webp') ? 'webp'
+                       : 'png';
+              brandLogoPath = path.join(CLIPS_DIR, `_logo_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`);
+              fs.writeFileSync(brandLogoPath, row.data);
+              brandLogoPos = selectedBrandTemplate.logoPosition || 'top-right';
+              const rawSize = parseInt(selectedBrandTemplate.logoSize, 10);
+              if (!isNaN(rawSize) && rawSize > 0) brandLogoSizePct = Math.max(5, Math.min(40, rawSize));
+              console.log(`  Brand logo prepared: ${brandLogoPath} (pos=${brandLogoPos}, size=${brandLogoSizePct}%)`);
+            }
+          } catch (e) {
+            console.log('  Brand logo fetch failed:', e.message);
+            brandLogoPath = null;
+          }
+        }
+
         // Build filter based on selected clip style
         const captionFilter = assFilePath ? `,ass='${assFilePath.replace(/'/g, "'\\''").replace(/:/g, '\\:')}'` : '';
 
@@ -3364,13 +3619,47 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
 
         // PiP uses two inputs of same file to avoid split filter deadlocks
         const isPip = style === 'pip';
+
+        // If a brand-template logo is set, splice an overlay step onto the
+        // existing video filter chain. The logo file becomes a NEW ffmpeg
+        // input, which means its index depends on whether PiP is on.
+        const logoInputIdx = isPip ? 2 : 1;
+        let finalVideoFilter = videoFilter;
+        if (brandLogoPath) {
+          // Tag the existing chain's output as [vid] so we can chain on top.
+          if (finalVideoFilter.includes('[')) {
+            // filter_complex chain — already named labels. Append [vid]
+            // to whatever the last filter step produces.
+            finalVideoFilter = finalVideoFilter + '[vid]';
+          } else {
+            // -vf chain (single ',-style' string). Wrap as a complex filter
+            // so we can name its output and then chain the logo overlay.
+            finalVideoFilter = '[0:v]' + finalVideoFilter + '[vid]';
+          }
+          // Logo width as a fraction of the 1080-wide canvas. The
+          // force_divisible_by=2 keeps libx264's yuv420p happy.
+          const logoW = Math.round(1080 * brandLogoSizePct / 100);
+          const margin = 30;
+          const overlayPos =
+            brandLogoPos === 'top-left'     ? `${margin}:${margin}` :
+            brandLogoPos === 'bottom-left'  ? `${margin}:H-h-${margin}` :
+            brandLogoPos === 'bottom-right' ? `W-w-${margin}:H-h-${margin}` :
+            /* top-right default */          `W-w-${margin}:${margin}`;
+          finalVideoFilter +=
+            `;[${logoInputIdx}:v]format=rgba,scale=${logoW}:-2:flags=lanczos[logo];` +
+            `[vid][logo]overlay=${overlayPos}[ovr];[ovr]format=yuv420p[final]`;
+        }
+
         const ffmpegArgs = [
           '-y',
           '-ss', String(startSec),
           '-i', actualDownload,
           ...(isPip ? ['-ss', String(startSec), '-i', actualDownload] : []),
+          ...(brandLogoPath ? ['-i', brandLogoPath] : []),
           '-t', String(duration),
-          ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
+          ...(brandLogoPath
+            ? ['-filter_complex', finalVideoFilter, '-map', '[final]', '-map', '0:a?']
+            : (videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter])),
           '-c:v', 'libx264',
           '-profile:v', 'high',
           '-level', '4.0',
@@ -3405,9 +3694,12 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
             '-y',
             '-i', actualDownload,
             ...(isPip ? ['-i', actualDownload] : []),
+            ...(brandLogoPath ? ['-i', brandLogoPath] : []),
             '-ss', String(startSec),
             '-t', String(duration),
-            ...(videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter]),
+            ...(brandLogoPath
+              ? ['-filter_complex', finalVideoFilter, '-map', '[final]', '-map', '0:a?']
+              : (videoFilter.includes('[') ? ['-filter_complex', videoFilter] : ['-vf', videoFilter])),
             '-c:v', 'libx264',
             '-profile:v', 'high',
             '-level', '4.0',
@@ -3440,6 +3732,7 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
         // Clean up temp files (release shared video cache instead of deleting directly)
         releaseVideoCache(videoId);
         if (assFilePath) { try { fs.unlinkSync(assFilePath); } catch(e) {} }
+        if (brandLogoPath) { try { fs.unlinkSync(brandLogoPath); } catch(e) {} }
 
         // === STEP 3: Validate output and atomically rename ===
         clearTimeout(timeout);
@@ -4012,56 +4305,107 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
         const downloadPath = outputPath + '.download.mkv';
         let downloadSuccess = false;
 
-        // Try Cobalt API first
-        try {
-          await downloadWithCobalt(videoUrl, downloadPath);
-          downloadSuccess = true;
-          console.log('  Quick Narrate: Downloaded via Cobalt API');
-        } catch (cobaltErr) {
-          console.log('  Quick Narrate Cobalt failed: ' + String(cobaltErr.message || cobaltErr).slice(0, 150));
-        }
+        // Each downloader writes to downloadPath. After it finishes, run
+        // validateDownloadedVideo(): if it's empty / non-video bytes (e.g.
+        // Cobalt's tunnel returned 0 bytes for this URL, or yt-dlp got
+        // bot-blocked and produced a partial file), throw away the bad
+        // file and try the next downloader. This stops bad bytes from
+        // propagating to ffmpeg, which otherwise fails with a confusing
+        // 'Invalid data found' error.
+        const tryWithValidation = async (label, fn) => {
+          try {
+            await fn();
+            validateDownloadedVideo(downloadPath);
+            downloadSuccess = true;
+            console.log(`  Quick Narrate: Downloaded via ${label}`);
+            return true;
+          } catch (err) {
+            console.log(`  Quick Narrate ${label} failed: ` + String(err.message || err).slice(0, 200));
+            try { fs.unlinkSync(downloadPath); } catch (e) {}
+            return false;
+          }
+        };
 
-        // Fallback to yt-dlp + ytdl-core if Cobalt failed
+        // 1. Cobalt API (preferred)
+        await tryWithValidation('Cobalt API', () => downloadWithCobalt(videoUrl, downloadPath));
+
+        // 2. yt-dlp
         if (!downloadSuccess) {
-        try {
-          await runCommand('yt-dlp', [
+          await tryWithValidation('yt-dlp', () => runCommand('yt-dlp', [
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', downloadPath,
-            '--no-part', '--force-overwrites', ...YTDLP_COMMON_ARGS, videoUrl
-          ], { timeout: 240000 });
-          downloadSuccess = true;
-        } catch (dlErr) {
-          console.log(`  Quick Narrate yt-dlp failed: ${dlErr.message.slice(0, 150)}`);
-          // ytdl-core fallback only works for YouTube URLs
-          const isYouTube = extractVideoId(videoUrl);
-          if (ytdl && isYouTube) {
-            writeProgress('Trying alternative download...');
-            await new Promise((resolve, reject) => {
-              const ws = fs.createWriteStream(downloadPath);
-              const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
-              stream.on('progress', (_, dl, tot) => { if (tot) writeProgress('Downloading: ' + Math.round((dl / tot) * 100) + '%'); });
-              stream.on('error', e => { ws.destroy(); reject(e); });
-              ws.on('finish', () => resolve());
-              ws.on('error', e => reject(e));
-              stream.pipe(ws);
-              setTimeout(() => { stream.destroy(); ws.destroy(); reject(new Error('Download timed out')); }, 240000);
-            });
-            downloadSuccess = true;
-          } else {
-            throw dlErr;
-          }
+            '--no-part', '--force-overwrites',
+            ...getYoutubeCookiesArgs(),
+            ...YTDLP_COMMON_ARGS,
+            videoUrl
+          ], { timeout: 240000 }));
         }
-        }
-        if (!downloadSuccess) throw new Error('Video download failed');
 
-        // Step 2: Get transcript for context (optional, best-effort)
-        let transcriptText = '';
+        // 3. ytdl-core (YouTube only)
+        if (!downloadSuccess && ytdl && extractVideoId(videoUrl)) {
+          writeProgress('Trying alternative download...');
+          await tryWithValidation('ytdl-core', () => new Promise((resolve, reject) => {
+            const ws = fs.createWriteStream(downloadPath);
+            const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
+            stream.on('progress', (_, dl, tot) => { if (tot) writeProgress('Downloading: ' + Math.round((dl / tot) * 100) + '%'); });
+            stream.on('error', e => { ws.destroy(); reject(e); });
+            ws.on('finish', () => resolve());
+            ws.on('error', e => reject(e));
+            stream.pipe(ws);
+            setTimeout(() => { stream.destroy(); ws.destroy(); reject(new Error('Download timed out')); }, 240000);
+          }));
+        }
+
+        if (!downloadSuccess) {
+          throw new Error('Could not download video — Cobalt, yt-dlp, and ytdl-core all failed for this URL. Try a different video or check that the URL is publicly accessible.');
+        }
+
+        // Step 2: Fetch real video context — title AND actual transcript.
+        // Previously this only fetched the title, which meant GPT had no
+        // idea what was actually in the video and would invent unrelated
+        // narrations. Now we pull the same transcript chain that
+        // /auto-generate uses (Supadata → InnerTube → Direct → yt-dlp)
+        // so the script is grounded in the real content.
+        writeProgress('Reading video content...');
+        let videoTitle = '';
         try {
           const titleProc = require('child_process').execSync(
-            'yt-dlp --get-title ' + YTDLP_COMMON_ARGS.map(a => JSON.stringify(a)).join(' ') + ' "' + videoUrl.replace(/"/g, '') + '"', { encoding: 'utf8', timeout: 15000 }
+            'yt-dlp --get-title ' + YTDLP_COMMON_ARGS.map(a => JSON.stringify(a)).join(' ') + ' "' + videoUrl.replace(/"/g, '') + '"',
+            { encoding: 'utf8', timeout: 15000 }
           ).trim();
-          transcriptText = titleProc || 'Short video';
-        } catch(e) { transcriptText = 'Short video'; }
+          videoTitle = titleProc || '';
+        } catch (e) { videoTitle = ''; }
+
+        // For YouTube URLs, pull the real transcript so GPT writes a
+        // narration that actually reflects what's in the video.
+        let videoTranscriptText = '';
+        const ytId = extractVideoId(videoUrl);
+        if (ytId) {
+          let segments = null;
+          if (process.env.SUPADATA_API_KEY) {
+            try { segments = await fetchTranscriptSupadata(ytId); } catch (e) {}
+          }
+          if (!segments || segments.length === 0) {
+            try { segments = await fetchTranscriptInnerTube(ytId); } catch (e) {}
+          }
+          if (!segments || segments.length === 0) {
+            try { segments = await fetchTranscriptDirect(ytId); } catch (e) {}
+          }
+          if (!segments || segments.length === 0) {
+            try { segments = await fetchTranscriptWithYtdlp(ytId); } catch (e) {}
+          }
+          if (segments && segments.length > 0) {
+            // Concatenate spoken text. Cap at ~3500 chars so the prompt
+            // stays well under model context limits even for long videos.
+            const joined = segments.map(s => (s.text || '').trim()).filter(Boolean).join(' ');
+            videoTranscriptText = joined.length > 3500
+              ? joined.slice(0, 3500) + '… [truncated]'
+              : joined;
+            console.log(`  Quick Narrate: transcript fetched (${segments.length} segments, ${videoTranscriptText.length} chars)`);
+          } else {
+            console.log('  Quick Narrate: no transcript available — falling back to title-only context');
+          }
+        }
 
         // Step 3: Generate narration script
         writeProgress('Generating narration script...');
@@ -4077,11 +4421,23 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
             news: "Write a breaking news broadcast narration. Formal, slightly urgent. Max 4-5 sentences.",
             poetic: "Write beautiful poetic narration with metaphors. Max 4-5 sentences."
           };
+          const styleInstruction = stylePrompts[narrationStyle] || stylePrompts.funny;
+          const userParts = [
+            styleInstruction,
+            '',
+            'The narration MUST be about the actual content of this video — reference what is being shown, said, or happening. Do not invent unrelated content.',
+          ];
+          if (videoTitle) userParts.push('', 'Video title: ' + videoTitle);
+          if (videoTranscriptText) {
+            userParts.push('', 'Video transcript (spoken content):', videoTranscriptText);
+          } else {
+            userParts.push('', '(No transcript available — base the narration on the title and tone described above.)');
+          }
           const resp = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
-              { role: 'system', content: 'You are a creative narration writer for short-form video content. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice.' },
-              { role: 'user', content: (stylePrompts[narrationStyle] || stylePrompts.funny) + '\\nVideo title/context: ' + transcriptText }
+              { role: 'system', content: 'You are a creative narration writer for short-form video content. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice. Always ground the narration in the actual content of the source video.' },
+              { role: 'user', content: userParts.join('\n') }
             ],
             max_tokens: 300, temperature: 0.8
           });
@@ -4121,18 +4477,39 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
         writeProgress('Processing final video...');
         const tempOut = outputPath + '.temp.mp4';
         if (audioPath) {
-          if (audioMix === 'replace') {
-            await runCommand(ffmpegPath, [
+          // Build args twice — once for fast stream-copy (-c:v copy), once
+          // for the libx264 fallback if the source codec isn't MP4-compatible.
+          // Stream-copying skips the entire video re-encode, turning what
+          // used to be a 5-10 minute libx264 pass on long videos into roughly
+          // the time it takes to mux: seconds, not minutes.
+          const buildArgs = (videoCodec) => {
+            const reencodeArgs = videoCodec === 'libx264'
+              ? ['-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p']
+              : [];
+            if (audioMix === 'replace') {
+              return [
+                '-i', downloadPath, '-i', audioPath,
+                '-map', '0:v', '-map', '1:a',
+                '-c:v', videoCodec, ...reencodeArgs,
+                '-c:a', 'aac', '-shortest', '-movflags', '+faststart', '-y', tempOut
+              ];
+            }
+            return [
               '-i', downloadPath, '-i', audioPath,
-              '-map', '0:v', '-map', '1:a',
-              '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOut
-            ], { timeout: 360000 });
-          } else {
-            await runCommand(ffmpegPath, [
-              '-i', downloadPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+              '-c:v', videoCodec, ...reencodeArgs,
               '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=longest',
-              '-c:a', 'aac', '-shortest', '-y', tempOut
-            ], { timeout: 360000 });
+              '-c:a', 'aac', '-shortest', '-movflags', '+faststart', '-y', tempOut
+            ];
+          };
+
+          try {
+            writeProgress('Muxing audio (fast path)...');
+            await runCommand(ffmpegPath, buildArgs('copy'), { timeout: 360000 });
+          } catch (copyErr) {
+            console.log(`  Quick Narrate stream-copy failed (${String(copyErr.message || '').slice(0, 120)}), falling back to libx264 re-encode`);
+            try { fs.unlinkSync(tempOut); } catch (e) {}
+            writeProgress('Re-encoding video (fallback)...');
+            await runCommand(ffmpegPath, buildArgs('libx264'), { timeout: 360000 });
           }
         } else {
           // Text-only narration overlay
@@ -4358,6 +4735,7 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
             '--merge-output-format', 'mkv', '-o', tempDownload,
             '--no-part', '--force-overwrites',
+            ...getYoutubeCookiesArgs(),
             ...YTDLP_COMMON_ARGS,
             videoUrl
           ], { timeout: 240000 });
@@ -4640,6 +5018,58 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
   <style>
     ${getBaseCSS()}
 
+    /* Add-to-Calendar modal textarea: themed thin scrollbar matching sidebar */
+    .atc-themed-scroll{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    .atc-themed-scroll::-webkit-scrollbar{width:6px}
+    .atc-themed-scroll::-webkit-scrollbar-track{background:transparent}
+    .atc-themed-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    .atc-themed-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    body.light .atc-themed-scroll,html.light .atc-themed-scroll{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .atc-themed-scroll::-webkit-scrollbar-thumb,html.light .atc-themed-scroll::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+
+    /* Brand Kit panel: visually elevated to feel like a modal/window
+       (bordered, glow ring) — matches editor-style polish. */
+    #brandKitPanel.tool-panel-open {
+      background: linear-gradient(180deg, var(--surface), rgba(108,58,237,0.04)) !important;
+      border: 1px solid rgba(108,58,237,0.40) !important;
+      box-shadow: 0 0 0 1px rgba(108,58,237,0.20), 0 18px 60px rgba(108,58,237,0.20) !important;
+      border-radius: 14px !important;
+      padding: 24px !important;
+      margin-top: 8px;
+    }
+
+    /* Active state for Quick Action cards — persistent visual feedback while the
+       paired panel is open. Selectors include !important because the cards have
+       inline styles that the toggle handler resets, which would otherwise win. */
+    [onclick*="toggleToolPanel"].tool-active {
+      border: 1px solid #6C3AED !important;
+      background: linear-gradient(180deg, rgba(108,58,237,0.14), rgba(236,72,153,0.06)) !important;
+      box-shadow: 0 0 0 2px rgba(108,58,237,0.25), 0 10px 32px rgba(108,58,237,0.30) !important;
+      transform: translateY(-3px) !important;
+    }
+    [onclick*="toggleToolPanel"].tool-active::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #6C3AED, #EC4899);
+      pointer-events: none;
+    }
+    [onclick*="toggleToolPanel"].tool-active::after {
+      content: '';
+      position: absolute; bottom: -11px; left: 50%; transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-top: 10px solid #6C3AED;
+      filter: drop-shadow(0 2px 4px rgba(108,58,237,0.45));
+      z-index: 10;
+      pointer-events: none;
+    }
+    /* Subtle highlight on the active panel below to reinforce the visual link */
+    .tool-panel.tool-panel-open {
+      box-shadow: 0 0 0 1px rgba(108,58,237,0.30), 0 12px 40px rgba(108,58,237,0.18);
+      border-radius: 12px;
+    }
+
     /* Shorts-specific styles */
     .main-content {
       margin-left: 250px;
@@ -4866,7 +5296,40 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       max-height: 85vh;
       overflow-y: auto;
       width: 95%;
+      position: relative;
+      /* Sidebar-matching scrollbar (see .sidebar-nav in utils/theme.js) */
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.10) transparent;
     }
+    .modal-content::-webkit-scrollbar { width: 6px; }
+    .modal-content::-webkit-scrollbar-track { background: transparent; }
+    .modal-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+    .modal-content::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+    body.light .modal-content,
+    html.light .modal-content { scrollbar-color: rgba(0,0,0,0.15) transparent; }
+    body.light .modal-content::-webkit-scrollbar-thumb,
+    html.light .modal-content::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+    body.light .modal-content::-webkit-scrollbar-thumb:hover,
+    html.light .modal-content::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.28); }
+    /* Apply the same scrollbar treatment to nested overflow regions
+       (e.g. the Generated Content tabbed view inside the modal). */
+    .modal-content [style*="overflow-y:auto"],
+    .modal-content [style*="overflow-y: auto"] {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.10) transparent;
+    }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar { width: 6px; }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-track,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-track { background: transparent; }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-thumb,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+    .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-thumb:hover,
+    .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+    body.light .modal-content [style*="overflow-y:auto"],
+    body.light .modal-content [style*="overflow-y: auto"] { scrollbar-color: rgba(0,0,0,0.15) transparent; }
+    body.light .modal-content [style*="overflow-y:auto"]::-webkit-scrollbar-thumb,
+    body.light .modal-content [style*="overflow-y: auto"]::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
 
     .moment-video-wrap {
       position: relative;
@@ -4967,26 +5430,45 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       color: #fff;
     }
 
+    /* Modal close button — matches the site's standard close pattern
+       (see .narrationModal close at line ~6261 and the various tool-panel
+       close buttons): transparent background, text-muted color, sits in
+       the top-right corner of its container, hovers to full text color. */
     .modal-close {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0,0,0,0.6);
-      border: 2px solid rgba(255,255,255,0.3);
-      color: #fff;
-      font-size: 28px;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.10);
+      color: var(--text-muted);
+      font-size: 20px;
+      line-height: 1;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 1002;
-      transition: background 0.2s;
+      padding: 0;
+      z-index: 2;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
     }
     .modal-close:hover {
-      background: rgba(255,0,0,0.6);
+      background: rgba(255,255,255,0.12);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.2);
+    }
+    body.light .modal-close,
+    html.light .modal-close {
+      background: rgba(108,58,237,0.06);
+      border-color: rgba(108,58,237,0.12);
+      color: var(--text-muted);
+    }
+    body.light .modal-close:hover,
+    html.light .modal-close:hover {
+      background: rgba(108,58,237,0.12);
+      color: var(--text);
     }
 
     .platform-selector {
@@ -5322,9 +5804,9 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       .modal-close {
         top: 10px;
         right: 10px;
-        width: 36px;
-        height: 36px;
-        font-size: 22px;
+        width: 30px;
+        height: 30px;
+        font-size: 18px;
       }
 
       /* Moment cards mobile */
@@ -5425,12 +5907,13 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 </head>
 <body class="dashboard">
   ${getThemeToggle()}
+  ${getBrandKitModal()}
   ${getSidebar('shorts', user, teamPermissions)}
 
   <!-- Main content -->
   <main class="main-content">
       <div class="header">
-        <h1 class="header-title">Smart Shorts</h1>
+        <h1 class="header-title">&#x2702;&#xFE0F; Smart Shorts</h1>
         <p class="header-subtitle">Transform any YouTube video into viral short-form content</p>
       </div>
 
@@ -5476,7 +5959,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Batch Analyze</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Process multiple videos at once</div>
         </div>
-        <div onclick="toggleToolPanel('brandKitPanel', this); toggleBrandKit(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+        <div onclick="openBrandKitModal()" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
           <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(108,92,231,0.2),rgba(162,155,254,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🎨</div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Brand Kit</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Customize with your brand identity</div>
@@ -5857,7 +6340,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div class="cards-grid">
             ${analyses.map(analysis => {
               // Extract video ID for thumbnail
-              const ytRegex = new RegExp('(?:youtube\\.com/watch\\\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
+              const ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
               const vidMatch = (analysis.video_url || '').match(ytRegex);
               const vidId = vidMatch ? vidMatch[1] : null;
               return `
@@ -5892,26 +6375,94 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
 ${paginationHtml}
           <!-- Floating Calendar Button -->
-    <button id="calendarFloatBtn" onclick="document.getElementById('calendarModal').style.display='flex';" style="position:fixed;top:18px;right:70px;z-index:9990;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
-      <span style="font-size:18px;">&#128197;</span> Calendar
+    <button id="calendarFloatBtn" onclick="openShortsCalendar()" style="position:fixed;top:18px;right:24px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendar
     </button>
 
-    <!-- Calendar Modal -->
-    <div id="calendarModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9995;align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none';">
-      <div style="background:#1a1a2e;border-radius:16px;padding:28px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <h2 style="font-size:22px;font-weight:700;">Content Calendar</h2>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button class="btn btn-small" onclick="changeCalendarMonth(-1)" style="background:rgba(255,255,255,0.08);">&larr;</button>
-            <span id="calendarMonthLabel" style="font-size:14px;font-weight:600;min-width:140px;text-align:center;"></span>
-            <button class="btn btn-small" onclick="changeCalendarMonth(1)" style="background:rgba(255,255,255,0.08);">&rarr;</button>
-            <button class="btn btn-small" onclick="openAddEntry()" style="background:rgba(108,92,231,0.2);color:#a29bfe;border:1px solid rgba(108,92,231,0.3);">+ Add Entry</button>
-            <button onclick="document.getElementById('calendarModal').style.display='none';" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 8px;">&times;</button>
+    <!-- Calendar Modal — read-only schedule preview with platform logos per day -->
+    <div id="calendarModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,18,0.78);backdrop-filter:blur(6px);z-index:100001;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)this.style.display='none';">
+      <div style="background:linear-gradient(180deg,#1a1a2e,rgba(108,58,237,0.06));border:1px solid rgba(108,58,237,0.40);border-radius:16px;padding:24px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;margin:auto;box-shadow:0 0 0 1px rgba(108,58,237,0.20),0 20px 60px rgba(108,58,237,0.20),0 30px 80px rgba(0,0,0,0.5);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <h2 style="font-size:1.2rem;font-weight:800;margin:0;background:linear-gradient(135deg,#6C3AED,#EC4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;">Content Calendar</h2>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button onclick="changeCalendarMonth(-1)" title="Previous month" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);color:#e2e0f0;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:14px;">&larr;</button>
+            <span id="calendarMonthLabel" style="font-size:13px;font-weight:700;min-width:140px;text-align:center;color:#e2e0f0;letter-spacing:.02em;"></span>
+            <button onclick="changeCalendarMonth(1)" title="Next month" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);color:#e2e0f0;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:14px;">&rarr;</button>
+            <button onclick="goToCalendarToday()" title="Today" style="background:rgba(108,58,237,0.12);border:1px solid rgba(108,58,237,0.30);color:#a78bfa;height:32px;padding:0 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">Today</button>
+            <button onclick="document.getElementById('calendarModal').style.display='none';" title="Close" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;padding:4px 10px;line-height:1;">&times;</button>
           </div>
         </div>
-        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.05);border-radius:8px;overflow:hidden;"></div>
+        <div style="font-size:0.75rem;color:#8886a0;margin-bottom:14px;">Read-only preview. Manage entries on the <a href="/dashboard/calendar" style="color:#a78bfa;text-decoration:none;font-weight:600;">Calendar page</a>.</div>
+        <style>#calendarGrid svg{width:100%;height:100%;display:block}</style><div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:rgba(255,255,255,0.05);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);"></div>
       </div>
     </div>
+    <!-- Add-to-Calendar Modal (opened from a moment card via addToCalendar()) -->
+    <div id="atcModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:9998;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeAtcModal()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Schedule This Moment</h3>
+        <div style="color:var(--text-muted);font-size:0.82rem;margin-bottom:18px;" id="atcSubtitle">—</div>
+        <input type="hidden" id="atcMomentRef">
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>
+        <input type="text" id="atcTitle" maxlength="120" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Platform</label>
+            <select id="atcPlatform" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+              <option value="tiktok">TikTok</option>
+              <option value="instagram">Instagram</option>
+              <option value="shorts">YouTube Shorts</option>
+              <option value="youtube">YouTube</option>
+              <option value="twitter">Twitter / X</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="facebook">Facebook</option>
+              <option value="blog">Blog Post</option>
+              <option value="newsletter">Newsletter</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Status</label>
+            <select id="atcStatus" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+              <option value="planned">Planned</option>
+              <option value="drafted">Drafted</option>
+              <option value="ready">Ready</option>
+              <option value="published">Published</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
+            <input type="date" id="atcDate" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label>
+            <input type="time" id="atcTime" value="12:00" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          </div>
+        </div>
+        <button type="button" id="atcPeakBtn" onclick="atcSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
+          <span style="font-size:1em;">✨</span> Suggest peak time for this platform
+          <span id="atcPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        </button>
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
+        <select id="atcReminder" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          <option value="0">None</option>
+          <option value="15">15 minutes before</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+          <option value="2880">2 days before</option>
+        </select>
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
+        <textarea id="atcNotes" class="atc-themed-scroll" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+          <button onclick="closeAtcModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
+          <button id="atcSaveBtn" onclick="saveAtcEntry()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Save to Calendar</button>
+        </div>
+      </div>
+    </div>
+
 </main>
 
   <!-- Calendar Entry Modal -->
@@ -6217,6 +6768,123 @@ ${paginationHtml}
       }
     }
 
+    // === Add to Calendar (from a moment card) ===
+    function addToCalendar(analysisId, momentIdx) {
+      var analysis = window.__currentAnalysis;
+      if (!analysis || !analysis.moments || !analysis.moments[momentIdx]) {
+        showToast('Could not find that moment to schedule.');
+        return;
+      }
+      var moment = analysis.moments[momentIdx];
+      var videoTitle = analysis.video_title || 'Untitled video';
+      var title = (moment.title || 'Viral moment').slice(0, 120);
+      // Build a notes summary so the entry has full context
+      var noteParts = [];
+      if (moment.description) noteParts.push(moment.description);
+      var meta = [];
+      if (moment.timeRange) meta.push('Source: ' + moment.timeRange);
+      if (typeof moment.viralityScore === 'number') meta.push('Virality: ' + moment.viralityScore + '%');
+      if (Array.isArray(moment.keyThemes) && moment.keyThemes.length) meta.push('Themes: ' + moment.keyThemes.slice(0, 5).join(', '));
+      meta.push('From: ' + videoTitle);
+      if (analysis.video_url) meta.push(analysis.video_url);
+      noteParts.push(meta.join(' \u00B7 '));
+
+      var today = new Date();
+      var dateStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+
+      document.getElementById('atcMomentRef').value = analysisId + '|' + momentIdx;
+      document.getElementById('atcSubtitle').textContent = videoTitle + ' — ' + (moment.timeRange || '');
+      document.getElementById('atcTitle').value = title;
+      document.getElementById('atcPlatform').value = 'tiktok';
+      document.getElementById('atcStatus').value = 'planned';
+      document.getElementById('atcDate').value = dateStr;
+      document.getElementById('atcTime').value = '12:00';
+      document.getElementById('atcReminder').value = '0';
+      document.getElementById('atcNotes').value = noteParts.join('\\n\\n');
+      document.getElementById('atcModal').style.display = 'flex';
+      setTimeout(function(){ document.getElementById('atcTitle').focus(); document.getElementById('atcTitle').select(); }, 80);
+    }
+    function closeAtcModal() {
+      document.getElementById('atcModal').style.display = 'none';
+    }
+    async function atcSuggestPeakTime(){
+      var btn = document.getElementById('atcPeakBtn');
+      var hint = document.getElementById('atcPeakHint');
+      var platform = document.getElementById('atcPlatform').value;
+      var orig = hint.textContent;
+      hint.textContent = 'Thinking…';
+      btn.disabled = true;
+      try {
+        var resp = await fetch('/dashboard/calendar/api/peak-time?platform=' + encodeURIComponent(platform));
+        if (!resp.ok) throw new Error('Failed');
+        var d = await resp.json();
+        if (d.date) document.getElementById('atcDate').value = d.date;
+        if (d.time) document.getElementById('atcTime').value = d.time;
+        hint.textContent = d.date && d.time ? (d.date + ' \u00B7 ' + d.time) : '';
+        if (typeof showToast === 'function') showToast(d.reasoning || ('Peak time set: ' + d.date + ' ' + d.time));
+      } catch (e) {
+        hint.textContent = orig;
+        if (typeof showToast === 'function') showToast('Peak time unavailable');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function saveAtcEntry() {
+      var btn = document.getElementById('atcSaveBtn');
+      var ref = (document.getElementById('atcMomentRef').value || '').split('|');
+      var payload = {
+        title: document.getElementById('atcTitle').value.trim(),
+        platform: document.getElementById('atcPlatform').value,
+        status: document.getElementById('atcStatus').value,
+        scheduledDate: document.getElementById('atcDate').value,
+        scheduledTime: document.getElementById('atcTime').value || '12:00',
+        reminderMinutes: parseInt(document.getElementById('atcReminder').value || '0', 10) || 0,
+        notes: document.getElementById('atcNotes').value,
+        analysisId: ref[0] || null,
+        momentIndex: ref[1] != null && ref[1] !== '' ? Number(ref[1]) : null
+      };
+      if (!payload.title) { showToast('Title is required'); return; }
+      if (!payload.scheduledDate) { showToast('Date is required'); return; }
+      var orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Saving...';
+      try {
+        var resp = await fetch('/dashboard/calendar/api/entries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) {
+          var err = await resp.json().catch(function(){ return {}; });
+          throw new Error(err.error || 'Save failed');
+        }
+        closeAtcModal();
+        showToast('Added to calendar — ' + payload.scheduledDate);
+        // Refresh the floating Calendar modal so the new entry shows up
+        // without a page reload. Jump to the saved entry's month first so
+        // the user can verify it on the visible grid.
+        try {
+          var d = new Date(payload.scheduledDate + 'T00:00:00');
+          if (!isNaN(d.getTime())) {
+            calendarMonth = d.getMonth();
+            calendarYear = d.getFullYear();
+          }
+          if (typeof renderCalendar === 'function') await renderCalendar();
+        } catch (refreshErr) { /* best-effort */ }
+      } catch (e) {
+        showToast('Could not save: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+    // ESC closes the add-to-calendar modal
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') {
+        var m = document.getElementById('atcModal');
+        if (m && m.style.display === 'flex') closeAtcModal();
+      }
+    });
+
     function getVideoId(url) {
       if (!url) return null;
       const patterns = [
@@ -6246,6 +6914,7 @@ ${paginationHtml}
           throw new Error(data.error || 'Analysis data not found');
         }
         const analysis = data.analysis;
+        window.__currentAnalysis = analysis;
         const videoId = getVideoId(analysis.video_url || '');
 
         // Build transcript viewer with keyword highlights
@@ -6296,22 +6965,30 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Build clickable thumbnail preview (iframes fail when embedding is disabled)
+          // Build clickable thumbnail preview — each moment gets a different frame
+          // (YouTube's 1/2/3.jpg are taken at ~25/50/75% of the video, cycled by index for variety).
+          // Clicking the thumbnail triggers a clip download instead of redirecting to YouTube.
+          const _frameIdx = (idx % 3) + 1; // 1, 2, or 3
           const videoEmbed = videoId ? \`
-            <a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank" style="display:block; position:relative; text-decoration:none; height:120px; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000;">
-              <img src="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg" alt="Video thumbnail"
+            <button type="button" id="thumb-btn-\${idx}" onclick="downloadClip('\${id}', \${idx}, this)" title="Click to download this clip"
+              style="display:block; position:relative; text-decoration:none; height:120px; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
+              <img src="https://img.youtube.com/vi/\${videoId}/\${_frameIdx}.jpg" alt="Clip thumbnail"
+                onerror="this.onerror=null;this.src='https://img.youtube.com/vi/\${videoId}/mqdefault.jpg';"
                 style="width:100%; height:120px; object-fit:cover; display:block;" loading="lazy" />
               <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                width:44px; height:44px; background:rgba(0,0,0,0.7); border-radius:50%;
-                display:flex; align-items:center; justify-content:center;">
-                <div style="width:0; height:0; border-left:16px solid #fff; border-top:10px solid transparent;
-                  border-bottom:10px solid transparent; margin-left:3px;"></div>
+                width:44px; height:44px; background:rgba(108,58,237,0.85); border-radius:50%;
+                display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px; font-weight:600;">
+                ⬇
               </div>
               <div style="position:absolute; bottom:6px; left:6px; background:rgba(0,0,0,0.8);
                 padding:2px 6px; border-radius:4px; color:#fff; font-size:11px;">
                 \${moment.timeRange}
               </div>
-            </a>
+              <div style="position:absolute; top:6px; right:6px; background:rgba(0,0,0,0.7);
+                padding:2px 7px; border-radius:4px; color:#fff; font-size:10px; font-weight:600;">
+                Click to download
+              </div>
+            </button>
           \` : '';
 
           var viralColor = moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b';
@@ -6348,11 +7025,20 @@ ${paginationHtml}
                 onclick="downloadClip('\${id}', \${idx}, this)">
                 ⬇ Download Clip
               </button>
+              <button class="clip-tool-btn" onclick="addToCalendar('\${id}', \${idx})" title="Schedule this moment on the calendar"
+                style="background:rgba(108,58,237,0.10); color:#a78bfa; border:1px solid rgba(108,58,237,0.30);">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Add to Calendar
+              </button>
               <div class="clip-toolbar-divider"></div>
               <label class="clip-captions-toggle" title="Burn animated captions into the clip">
                 <input type="checkbox" id="captions-\${idx}" checked
-                  style="accent-color:var(--primary); width:14px; height:14px;">
+                  style="accent-color:#a78bfa; width:14px; height:14px;">
                 <span>Captions</span>
+              </label>
+              <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
+                <input type="checkbox" id="brandkit-\${idx}" checked
+                  style="accent-color:#a78bfa; width:14px; height:14px;">
+                <span>Brand Template</span>
               </label>
               <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style">
                 <option value="classic">Classic</option>
@@ -6427,6 +7113,21 @@ ${paginationHtml}
               card.classList.toggle('selected');
             }
           };
+          // Apply user's preferred caption style (set via /caption-presets > Use Style)
+          if (window.__preferredCaptionStyle) {
+            const sel = card.querySelector('select[id^="caption-style-"]');
+            if (sel) {
+              const wanted = window.__preferredCaptionStyle;
+              const exact = Array.from(sel.options).find(o => o.value === wanted);
+              if (exact) sel.value = wanted;
+              else {
+                // Map a few aliases that don't match 1:1 with the dropdown values
+                const aliasMap = { 'neon-glow': 'neon', 'classic-subtitle': 'classic-sub' };
+                const aliased = aliasMap[wanted];
+                if (aliased && Array.from(sel.options).some(o => o.value === aliased)) sel.value = aliased;
+              }
+            }
+          }
           container.appendChild(card);
         });
 
@@ -6768,11 +7469,25 @@ ${paginationHtml}
                 const captionStyle = captionStyleSelect ? captionStyleSelect.value : 'classic';
 
       try {
+        // Per-clip Brand Template toggle
+        const brandKitCheckbox = document.getElementById('brandkit-' + momentIndex);
+        const applyBrandKit = brandKitCheckbox ? brandKitCheckbox.checked : true;
+
+        // Pull the user's currently-selected brand template (set via the
+        // shared Brand Kit modal's Select button on /shorts). Server applies
+        // it when applyBrandKit is true.
+        let selectedBrandTemplateId = null;
+        try { selectedBrandTemplateId = localStorage.getItem('brandKitSelectedTemplateId') || null; } catch (e) {}
+
         // Request clip generation
         const response = await fetch('/shorts/clip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisId, momentIndex, includeCaptions, clipStyle, captionLanguage, captionStyle })
+          body: JSON.stringify({
+            analysisId, momentIndex, includeCaptions, clipStyle,
+            captionLanguage, captionStyle, applyBrandKit,
+            selectedBrandTemplateId
+          })
         });
 
         const data = await response.json();
@@ -6847,6 +7562,48 @@ ${paginationHtml}
       }
     }
 
+    // Preferred caption style — set by user on /caption-presets > Use Style.
+    // Loaded on page open; applied as the default value on every moment-card's
+    // caption-style picker so the user's choice actually takes effect.
+    window.__preferredCaptionStyle = null;
+    (async () => {
+      try {
+        const r = await fetch('/caption-presets/get-preference', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data && data.style) window.__preferredCaptionStyle = data.style;
+      } catch (e) {}
+    })();
+
+    // Deep link handlers:
+    //   /shorts?dlAnalysis=ID&dlMoment=N → open analysis + auto-click Download Clip
+    //   /shorts?openAnalysis=ID          → open analysis modal only (used by /dashboard
+    //                                       redirect after AI completes the analysis)
+    (async () => {
+      try {
+        var params = new URLSearchParams(location.search);
+        var dlAnalysis = params.get('dlAnalysis');
+        var dlMoment = params.get('dlMoment');
+        var openAnalysis = params.get('openAnalysis');
+        var targetId = dlAnalysis || openAnalysis;
+        if (!targetId) return;
+        // Wait for viewAnalysis to be defined (script may still be parsing)
+        var tries = 0;
+        while (typeof viewAnalysis !== 'function' && tries < 20) {
+          await new Promise(r => setTimeout(r, 100));
+          tries++;
+        }
+        if (typeof viewAnalysis !== 'function') return;
+        await viewAnalysis(targetId);
+        if (dlAnalysis && dlMoment != null) {
+          setTimeout(function(){
+            var btn = document.getElementById('clip-btn-' + dlMoment);
+            if (btn) btn.click();
+          }, 400);
+        }
+      } catch (e) { console.warn('Deep-link handler failed:', e); }
+    })();
+
     // === Workflow Templates ===
     let activeWorkflow = null;
     const workflows = {
@@ -6862,25 +7619,30 @@ ${paginationHtml}
       var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','settingsPanel','autoGenPanel'];
       var panel = document.getElementById(panelId);
       var isVisible = panel.style.display !== 'none';
-      // Close all panels first
+      // Close all panels first + drop the open marker
       allPanels.forEach(function(id) {
         var p = document.getElementById(id);
-        if (p) p.style.display = 'none';
+        if (p) { p.style.display = 'none'; p.classList.remove('tool-panel-open'); p.classList.remove('tool-panel'); }
       });
-      // Remove active state from all cards
+      // Remove active state from all cards (clear inline styles so the .tool-active CSS wins)
       var cards = document.querySelectorAll('[onclick*="toggleToolPanel"]');
       cards.forEach(function(c) {
         c.classList.remove('tool-active');
-        c.style.borderColor = 'var(--border-subtle)';
-        c.style.transform = 'none';
-        c.style.boxShadow = 'none';
+        c.style.borderColor = '';
+        c.style.transform = '';
+        c.style.boxShadow = '';
       });
       // Toggle the clicked panel
       if (!isVisible) {
         panel.style.display = 'block';
+        panel.classList.add('tool-panel');
+        panel.classList.add('tool-panel-open');
         if (cardEl) {
           cardEl.classList.add('tool-active');
-          cardEl.style.transform = 'translateY(-3px)';
+          // Clear inline styles so the .tool-active rules apply cleanly
+          cardEl.style.borderColor = '';
+          cardEl.style.transform = '';
+          cardEl.style.boxShadow = '';
         }
       }
     }
@@ -6944,6 +7706,36 @@ ${paginationHtml}
       renderCalendar();
     }
 
+    // Per-platform brand color + official SVG logo for the small circular badges
+    // shown inside each day cell. SVGs adapted from the platform-icons set in
+    // routes/distribute.js so they match the rest of the app's branding.
+    const PLATFORM_LOGO = {
+      tiktok:    { color: '#25F4EE', label: 'TikTok',    svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.88-2.88 2.89 2.89 0 0 1 2.88-2.88c.28 0 .56.04.81.1v-3.5a6.37 6.37 0 0 0-.81-.05A6.34 6.34 0 0 0 3.15 15a6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.18 8.18 0 0 0 4.76 1.52V6.82a4.83 4.83 0 0 1-1-.13z"/></svg>' },
+      instagram: { color: '#E4405F', label: 'Instagram', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>' },
+      shorts:    { color: '#FF0000', label: 'YT Shorts', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.77 10.32l-1.2-.5L18 9.06c1.84-1 2.53-3.37 1.53-5.36C18.78 2.22 17.39 1.4 15.92 1.4c-.61 0-1.23.14-1.81.45L4 7.4c-1.84 1-2.53 3.37-1.53 5.36.7 1.39 2.07 2.22 3.55 2.22h.04l-.65.36c-1.84 1.03-2.53 3.4-1.5 5.36.7 1.39 2.07 2.22 3.54 2.22.61 0 1.23-.14 1.81-.45l11-6c1.84-1 2.53-3.37 1.53-5.36-.5-1.04-1.31-1.69-2.32-1.99zM10 15.04V8.82l5.5 3.13L10 15.04z"/></svg>' },
+      youtube:   { color: '#FF0000', label: 'YouTube',   svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>' },
+      twitter:   { color: '#000000', label: 'X',         svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>' },
+      linkedin:  { color: '#0A66C2', label: 'LinkedIn',  svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>' },
+      facebook:  { color: '#1877F2', label: 'Facebook',  svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>' },
+      blog:      { color: '#10B981', label: 'Blog',      svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' },
+      newsletter:{ color: '#F59E0B', label: 'Newsletter',svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>' }
+    };
+
+    function goToCalendarToday(){
+      const t = new Date();
+      calendarMonth = t.getMonth();
+      calendarYear = t.getFullYear();
+      renderCalendar();
+    }
+
+    function openShortsCalendar(){
+      // Show the modal first (instant feedback), then refresh data so the
+      // grid reflects the latest entries. Subsequent renders update in place.
+      var m = document.getElementById('calendarModal');
+      if (m) m.style.display = 'flex';
+      if (typeof renderCalendar === 'function') renderCalendar();
+    }
+
     async function renderCalendar() {
       const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       document.getElementById('calendarMonthLabel').textContent = months[calendarMonth] + ' ' + calendarYear;
@@ -6962,41 +7754,55 @@ ${paginationHtml}
       const grid = document.getElementById('calendarGrid');
       let html = '';
 
-      // Day headers
       ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => {
-        html += '<div style="padding:8px;text-align:center;font-size:11px;color:var(--text-muted);font-weight:600;background:rgba(255,255,255,0.03);">' + d + '</div>';
+        html += '<div style="padding:9px 0;text-align:center;font-size:10px;color:#8886a0;font-weight:700;background:rgba(255,255,255,0.03);text-transform:uppercase;letter-spacing:.06em;">' + d + '</div>';
       });
 
-      // Empty cells before first day
       for (let i = 0; i < firstDay; i++) {
-        html += '<div style="padding:8px;min-height:80px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03);"></div>';
+        html += '<div style="padding:8px;min-height:78px;background:rgba(255,255,255,0.02);"></div>';
       }
 
       const today = new Date();
       const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
 
-      // Day cells
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = calendarYear + '-' + String(calendarMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
         const isToday = dateStr === todayStr;
-        const dayEntries = calendarEntries.filter(e => {
-          const ed = (e.scheduled_date || '').substring(0,10);
-          return ed === dateStr;
-        });
+        const dayEntries = calendarEntries.filter(e => (e.scheduled_date || '').substring(0,10) === dateStr);
 
-        html += '<div class="cal-cell' + (isToday ? ' cal-today' : '') + '" onclick="openAddEntry(' + "'" + dateStr + "'" + ')">' +
-          '<div class="cal-day">' + day + '</div>';
+        const cellStyle = 'padding:8px;min-height:78px;background:' + (isToday ? 'rgba(108,58,237,0.10)' : 'rgba(8,6,18,0.50)') + ';display:flex;flex-direction:column;gap:6px;cursor:default;border-top:' + (isToday ? '2px solid #6C3AED' : '1px solid transparent') + ';';
+        html += '<div style="' + cellStyle + '">';
+        html += '<div style="font-size:11px;font-weight:600;color:' + (isToday ? '#a78bfa' : '#8886a0') + ';">' + day + '</div>';
 
-        dayEntries.forEach(entry => {
-          const sc = statusColors[entry.status] || '#6c5ce7';
-          html += '<div class="cal-entry" style="background:' + sc + '22;border-left:2px solid ' + sc +
-            ';" onclick="event.stopPropagation();editCalendarEntry(' + "'" + entry.id + "'" + ')" title="Click to edit or delete: ' + (entry.title || '').replace(/"/g,'&amp;quot;') + '">' +
-            (platformEmojis[entry.platform] || '') + ' ' + (entry.title || '').substring(0,15) +
-            '<span style="position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:8px;opacity:0.5;">&#9998;</span>' +
-          '</div>';
-        });
+        if (dayEntries.length > 0) {
+          // Circular platform logos — overlap when multiple platforms scheduled
+          html += '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">';
+          // Build set of unique platforms (a single date can have multiple posts on same platform; collapse to one badge per platform)
+          const uniquePlatforms = [];
+          const seen = new Set();
+          for (const e of dayEntries) {
+            if (!seen.has(e.platform)) { seen.add(e.platform); uniquePlatforms.push(e.platform); }
+          }
+          const visible = uniquePlatforms.slice(0, 4);
+          visible.forEach((p, i) => {
+            const meta = PLATFORM_LOGO[p] || { color: '#6c5ce7', emoji: '•', label: p };
+            const overlap = i > 0 ? 'margin-left:-6px;' : '';
+            html += '<span title="' + meta.label + '" style="' + overlap + 'width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:' + meta.color + ';border:2px solid #1a1a2e;color:#fff;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:' + (10 - i) + ';position:relative;"><span style="width:13px;height:13px;display:inline-flex;align-items:center;justify-content:center;">' + (meta.svg || '') + '</span></span>';
+          });
+          if (uniquePlatforms.length > 4) {
+            html += '<span title="+' + (uniquePlatforms.length - 4) + ' more" style="margin-left:-6px;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#3a3850;border:2px solid #1a1a2e;color:#e2e0f0;font-size:9px;font-weight:700;flex-shrink:0;position:relative;">+' + (uniquePlatforms.length - 4) + '</span>';
+          }
+          html += '</div>';
+        }
 
         html += '</div>';
+      }
+
+      // Always render 6 weeks (42 day-cells) so the modal height is constant
+      // regardless of which month is shown — no jumping between 4/5/6 rows.
+      const trailingBlanks = 42 - firstDay - daysInMonth;
+      for (let i = 0; i < trailingBlanks; i++) {
+        html += '<div style="padding:8px;min-height:78px;background:rgba(255,255,255,0.02);"></div>';
       }
 
       grid.innerHTML = html;
@@ -8228,6 +9034,38 @@ ${paginationHtml}
     }
 
     // === Brand Kit Functions ===
+
+    // /shorts uses the shared Brand Kit modal in "select" mode: button reads
+    // "Select", only one template can be chosen at a time, and that choice
+    // persists in localStorage so it can be applied to every viral clip the
+    // user generates (when the per-moment Brand Template checkbox is on).
+    // /video-editor does NOT set this flag, so its Apply behavior is unchanged.
+    window.brandKitModalMode = 'select';
+    try {
+      window.brandKitSelectedTemplateId = localStorage.getItem('brandKitSelectedTemplateId') || null;
+    } catch (_e) { window.brandKitSelectedTemplateId = null; }
+
+    // Hook called by the shared modal when the user clicks Select on a card.
+    window.applyBrandTemplateChoice = function(tmpl){
+      if (!tmpl || !tmpl.id) return;
+      window.brandKitSelectedTemplateId = tmpl.id;
+      try { localStorage.setItem('brandKitSelectedTemplateId', tmpl.id); } catch (_e) {}
+      try {
+        var name = (tmpl.name || (tmpl.captionStyle || 'template'));
+        if (typeof showToast === 'function') {
+          showToast('Selected "' + name + '" — applied to viral clips when Brand Template is on');
+        }
+      } catch (_e) {}
+      // Re-render the open modal so the picked card shows the SELECTED state
+      // immediately. Re-opening would also work but in-place feels snappier.
+      try {
+        var listEl = document.querySelector('#v10BrandKitModal #bkList');
+        if (listEl && typeof window.openBrandKitModal === 'function') {
+          window.openBrandKitModal();
+        }
+      } catch (_e) {}
+    };
+
     function toggleBrandKit(forceShow) {
       if (forceShow === true) { loadBrandKit(); return; } // handled by toggleToolPanel
       const panel = document.getElementById('brandKitPanel');
@@ -8419,9 +9257,30 @@ ${paginationHtml}
     });
 
     async function deleteAnalysis(id, btn) {
-      if (!confirm('Delete this analysis? This cannot be undone.')) return;
+      // First check whether any calendar entries are linked to this analysis.
+      // If so, show the spec'd "Delete Everywhere" confirmation. Otherwise,
+      // fall back to the simple native confirm.
+      let cascadeCount = 0;
       try {
-        const resp = await fetch('/shorts/api/' + id, { method: 'DELETE' });
+        const r = await fetch('/shorts/api/' + id + '/calendar-links');
+        if (r.ok) {
+          const d = await r.json();
+          cascadeCount = d.count || 0;
+        }
+      } catch (e) { /* ignore — fall through to native confirm */ }
+
+      const proceed = await new Promise((resolve) => {
+        if (cascadeCount > 0) {
+          showCascadeDeleteModal(cascadeCount, resolve);
+        } else {
+          resolve(window.confirm('Delete this analysis? This cannot be undone.'));
+        }
+      });
+      if (!proceed) return;
+
+      try {
+        const url = '/shorts/api/' + id + (cascadeCount > 0 ? '?cascade=1' : '');
+        const resp = await fetch(url, { method: 'DELETE' });
         const data = await resp.json();
         if (data.success) {
           // Remove the card from the DOM
@@ -8432,13 +9291,59 @@ ${paginationHtml}
             card.style.transform = 'scale(0.9)';
             setTimeout(() => card.remove(), 300);
           }
-          showToast('Analysis deleted');
+          if (data.cascadedCount > 0) {
+            showToast('Deleted analysis + ' + data.cascadedCount + ' scheduled post' + (data.cascadedCount === 1 ? '' : 's'));
+          } else {
+            showToast('Analysis deleted');
+          }
         } else {
           showToast(data.error || 'Failed to delete');
         }
       } catch (err) {
         showToast('Error: ' + err.message);
       }
+    }
+
+    function showCascadeDeleteModal(count, onChoice){
+      // Lazy-create the modal once
+      let m = document.getElementById('cascadeDeleteModal');
+      if (!m) {
+        m = document.createElement('div');
+        m.id = 'cascadeDeleteModal';
+        m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px';
+        m.innerHTML =
+          '<div style="background:var(--surface);border:1px solid rgba(239,68,68,0.40);border-radius:14px;width:100%;max-width:460px;padding:24px;box-shadow:0 0 0 1px rgba(239,68,68,0.20),0 18px 60px rgba(239,68,68,0.18)">' +
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+              '<span style="font-size:1.4rem">⚠️</span>' +
+              '<h3 id="cascadeHeadline" style="margin:0;font-size:1.05rem;font-weight:800;color:var(--text)">Delete scheduled content?</h3>' +
+            '</div>' +
+            '<p id="cascadeBody" style="color:var(--text-muted);font-size:0.88rem;line-height:1.5;margin:0 0 20px">This clip is currently scheduled in your Calendar. Deleting it will also remove the scheduled post. Are you sure you want to proceed?</p>' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px">' +
+              '<button id="cascadeCancel" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer">Cancel</button>' +
+              '<button id="cascadeConfirm" style="background:linear-gradient(135deg,#ef4444,#f97316);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(239,68,68,0.30)">Delete Everywhere</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(m);
+        m.addEventListener('click', (e) => { if (e.target === m) closeCascade(false); });
+      }
+      // Adjust copy if multiple entries
+      const body = m.querySelector('#cascadeBody');
+      if (count > 1) {
+        body.textContent = 'This clip has ' + count + ' scheduled posts in your Calendar. Deleting it will also remove those scheduled posts. Are you sure you want to proceed?';
+      } else {
+        body.textContent = 'This clip is currently scheduled in your Calendar. Deleting it will also remove the scheduled post. Are you sure you want to proceed?';
+      }
+      m.style.display = 'flex';
+
+      function closeCascade(result) {
+        m.style.display = 'none';
+        document.removeEventListener('keydown', onKey);
+        onChoice(result);
+      }
+      function onKey(e){ if (e.key === 'Escape') closeCascade(false); }
+      m.querySelector('#cascadeCancel').onclick = () => closeCascade(false);
+      m.querySelector('#cascadeConfirm').onclick = () => closeCascade(true);
+      document.addEventListener('keydown', onKey);
     }
 
     function showToast(message) {

@@ -2,6 +2,7 @@ const express = require('express'); // v1.0.1
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const { initDatabase } = require('./db/database');
+const { startWorkflowEngine } = require('./services/workflowEngine');
 
 const app = express();
 const fs = require('fs');
@@ -99,6 +100,7 @@ const analyticsRouter = require('./routes/analytics');
 const scheduledRouter = require('./routes/scheduled');
 const brandVoiceRouter = require('./routes/brand-voice');
 const calendarRouter = require('./routes/calendar');
+const notificationsRouter = require('./routes/notifications');
 const chatbotRouter = require('./routes/chatbot');
 const shortsRouter = require('./routes/shorts');
 const staticPagesRouter = require('./routes/static-pages');
@@ -124,6 +126,21 @@ const linkedinRouter = require('./routes/linkedin');
 const pinterestRouter = require('./routes/pinterest');
 const youtubeRouter = require('./routes/youtube');
 const facebookRouter = require('./routes/facebook');
+const threadsRouter = require('./routes/threads');
+const blueskyRouter = require('./routes/bluesky');
+const snapchatRouter = require('./routes/snapchat');
+const googledriveRouter = require('./routes/googledrive');
+const dropboxRouter = require('./routes/dropbox');
+const twitchRouter = require('./routes/twitch');
+const heygenRouter = require('./routes/heygen');
+const audiopodcastRouter = require('./routes/audiopodcast');
+const videopodcastRouter = require('./routes/videopodcast');
+const zoomRouter = require('./routes/zoom');
+const webexRouter = require('./routes/webex');
+const amazonRouter = require('./routes/amazon');
+const soundcloudRouter = require('./routes/soundcloud');
+const libsynRouter = require('./routes/libsyn');
+const captivateRouter = require('./routes/captivate');
 
 // Team permission enforcement middleware
 // Restricts team members to only the features they have permission for
@@ -213,6 +230,7 @@ app.use('/auth', authRouter);
 app.use('/dashboard/analytics', analyticsRouter);
 app.use('/dashboard/scheduled', scheduledRouter);
 app.use('/dashboard/calendar', calendarRouter);
+app.use('/notifications', notificationsRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
@@ -248,6 +266,21 @@ app.use('/pinterest', pinterestRouter);
 app.use('/auth/pinterest', pinterestRouter);
 app.use('/youtube', youtubeRouter);
 app.use('/auth/youtube', youtubeRouter);
+app.use('/auth/threads', threadsRouter);
+app.use('/auth/bluesky', blueskyRouter);
+app.use('/auth/snapchat', snapchatRouter);
+app.use('/auth/googledrive', googledriveRouter);
+app.use('/auth/dropbox', dropboxRouter);
+app.use('/auth/twitch', twitchRouter);
+app.use('/auth/heygen', heygenRouter);
+app.use('/auth/audiopodcast', audiopodcastRouter);
+app.use('/auth/videopodcast', videopodcastRouter);
+app.use('/auth/zoom', zoomRouter);
+app.use('/auth/webex', webexRouter);
+app.use('/auth/amazon', amazonRouter);
+app.use('/auth/soundcloud', soundcloudRouter);
+app.use('/auth/libsyn', libsynRouter);
+app.use('/auth/captivate', captivateRouter);
 app.use('/facebook', facebookRouter);
 app.use('/auth/facebook', facebookRouter);
 app.use('/ai-captions', aiCaptionsRouter);
@@ -266,13 +299,13 @@ app.get('/manifest.json', (req, res) => {
     theme_color: '#6C3AED',
     orientation: 'portrait-primary',
     icons: [
-      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      { src: '/images/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/images/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
     ],
     categories: ['productivity', 'social'],
     shortcuts: [
-      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] },
-      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] }
+      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] },
+      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] }
     ]
   });
 });
@@ -319,17 +352,8 @@ app.get('/offline', (req, res) => {
     '</head><body><div class="box"><h1>You\'re Offline</h1><p>Check your internet connection and try again.</p><button onclick="location.reload()">Retry</button></div></body></html>');
 });
 
-// Generate PWA icons dynamically (SVG-based)
-app.get('/icons/:filename', (req, res) => {
-  const size = req.params.filename.includes('512') ? 512 : 192;
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
-    '<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#6C3AED"/><stop offset="100%" style="stop-color:#EC4899"/></linearGradient></defs>' +
-    '<rect width="' + size + '" height="' + size + '" rx="' + (size * 0.2) + '" fill="url(#g)"/>' +
-    '<text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="Arial,sans-serif" font-weight="800" font-size="' + (size * 0.35) + '" fill="white">R</text>' +
-    '</svg>';
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.send(svg);
-});
+// Serve logo and icon images from public/images
+app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {
@@ -431,6 +455,9 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 
+  // Start workflow engine for automated content repurposing
+  startWorkflowEngine();
+
   // Start calendar reminder checker (every 2 minutes)
   const { calendarOps } = require('./db/database');
   const { sendPostingReminder } = require('./utils/email');
@@ -457,4 +484,5 @@ app.listen(PORT, () => {
       // Silently ignore if DB not ready yet
     }
   }, 120000); // Check every 2 minutes
+
 });
