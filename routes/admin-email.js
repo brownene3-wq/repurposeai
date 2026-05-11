@@ -69,7 +69,7 @@ function getAdminSidebar(activePage) {
   return `
     <aside class="sidebar" style="display:flex;flex-direction:column;">
       <div style="padding:0 20px 20px;">
-        <a href="/dashboard" class="logo" style="padding:0;margin:0;text-decoration:none;border-left:none;">Splicora</a>
+        <a href="/dashboard" class="logo splicora-tt" style="padding:0;margin:0;text-decoration:none;border-left:none;" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard">Splicora</a>
         <div style="margin-top:8px;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:#6C3AED;font-weight:700;">Admin Panel</div>
       </div>
       ${navLinks}

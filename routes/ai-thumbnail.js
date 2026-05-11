@@ -5,9 +5,33 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
+const OpenAI = require('openai');
+// Replicate is not guaranteed to be in package.json (its entry was reverted
+// during a Flux→GPT-image rollback and then the Flux code got re-added
+// separately). Require it defensively so a missing module doesn't crash
+// the whole server at startup — only the AI-Thumbnail Flux path fails.
+let Replicate = null;
+try { Replicate = require('replicate'); } catch(e){
+  console.warn('[ai-thumbnail] replicate SDK not installed — Flux image gen disabled:', e.message);
+}
 const { requireAuth } = require('../middleware/auth');
+const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
+
+// OpenAI client for Whisper transcription + GPT-4o-mini concept synthesis.
+// Boot guard — the OpenAI SDK throws at construction if apiKey is empty,
+// which would crash the entire server. Pass a placeholder when the env
+// var is missing; real auth check happens at request time.
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
+
+// Replicate client for Flux Schnell image generation. Lazy-constructed
+// only if the SDK loaded AND the auth token exists, so the server boots
+// cleanly even when the module / env var is absent.
+const replicate = (Replicate && process.env.REPLICATE_API_TOKEN)
+  ? new Replicate({ auth: process.env.REPLICATE_API_TOKEN })
+  : null;
 
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
@@ -48,6 +72,15 @@ const YTDLP_COMMON_ARGS = [
   '--extractor-retries', '3',
 ];
 
+// YouTube cookies — same env var as /ai-broll and /video-editor. When set to a
+// readable Netscape-format cookies.txt, yt-dlp authenticates as that account
+// and bypasses the bot-detection challenge that hits Railway IPs.
+function getYoutubeCookiesArgs() {
+  var p = process.env.YT_COOKIES_PATH;
+  if (p && fs.existsSync(p)) return ['--cookies', p];
+  return [];
+}
+
 // Validate YouTube URL
 function isValidYouTubeUrl(url) {
   const patterns = [
@@ -80,12 +113,16 @@ async function downloadYouTubeVideo(videoUrl) {
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
-          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          // Prefer a standalone high-res video stream (no audio merge needed — faster
+          // and avoids dropping to 720p when the audio merger fails). Fall back to
+          // progressive formats only if every video-only option is unavailable.
+          '-f', 'bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/bestvideo[ext=mp4]/bestvideo/best[height<=1080]/best',
           '--merge-output-format', 'mp4',
           '-o', outputPath,
           '--no-part',
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
+          ...getYoutubeCookiesArgs(),
           videoUrl
         ]);
         let stderr = '';
@@ -149,33 +186,40 @@ async function fetchYouTubeThumbnails(videoUrl) {
   if (!videoId) throw new Error('Could not extract video ID');
 
   const https = require('https');
-  const thumbnailUrls = [
-    `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-    `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
-    `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-    `https://img.youtube.com/vi/${videoId}/0.jpg`,
-    `https://img.youtube.com/vi/${videoId}/1.jpg`,
-    `https://img.youtube.com/vi/${videoId}/2.jpg`,
-    `https://img.youtube.com/vi/${videoId}/3.jpg`,
+  // Only high-res sources. The numbered (0.jpg/1.jpg/2.jpg/3.jpg) variants
+  // are 120x90 tiny previews and would cause terrible output if a user
+  // picked them as a "frame", so they're excluded. WebP encodes the same
+  // resolution at noticeably higher quality than JPG.
+  const candidates = [
+    { url: `https://i.ytimg.com/vi_webp/${videoId}/maxresdefault.webp`, ext: 'webp' },
+    { url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, ext: 'jpg' },
+    { url: `https://i.ytimg.com/vi_webp/${videoId}/sddefault.webp`, ext: 'webp' },
+    { url: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`, ext: 'jpg' },
+    { url: `https://i.ytimg.com/vi_webp/${videoId}/hqdefault.webp`, ext: 'webp' },
+    { url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, ext: 'jpg' },
   ];
 
   const frames = [];
-  for (let i = 0; i < thumbnailUrls.length; i++) {
+  const seenSizes = new Set();
+  for (let i = 0; i < candidates.length; i++) {
     try {
-      const filename = `yt-frame-${videoId}-${i}.jpg`;
+      const { url, ext } = candidates[i];
+      const filename = `yt-frame-${videoId}-${i}.${ext === 'webp' ? 'jpg' : 'jpg'}`;
+      const rawPath = path.join(outputDir, `yt-raw-${videoId}-${i}.${ext}`);
       const filePath = path.join(outputDir, filename);
 
-      await new Promise((resolve, reject) => {
-        const request = https.get(thumbnailUrls[i], (response) => {
+      const downloaded = await new Promise((resolve) => {
+        const request = https.get(url, (response) => {
           if (response.statusCode === 200 && response.headers['content-type'] && response.headers['content-type'].includes('image')) {
-            const writeStream = fs.createWriteStream(filePath);
+            const writeStream = fs.createWriteStream(rawPath);
             response.pipe(writeStream);
             writeStream.on('finish', () => {
-              const stat = fs.statSync(filePath);
-              if (stat.size > 1000) {
+              const stat = fs.statSync(rawPath);
+              // 4000 bytes is a reasonable floor for a real thumbnail vs a 1x1 placeholder
+              if (stat.size > 4000) {
                 resolve(true);
               } else {
-                try { fs.unlinkSync(filePath); } catch(e) {}
+                try { fs.unlinkSync(rawPath); } catch (e) {}
                 resolve(false);
               }
             });
@@ -186,11 +230,35 @@ async function fetchYouTubeThumbnails(videoUrl) {
         });
         request.on('error', () => resolve(false));
         request.setTimeout(10000, () => { request.destroy(); resolve(false); });
-      }).then(ok => {
-        if (ok && fs.existsSync(filePath)) {
-          frames.push({ filename, url: '/ai-thumbnail/serve/' + filename });
-        }
       });
+
+      if (!downloaded) continue;
+
+      // Convert to a consistent JPG so downstream style filters are predictable,
+      // and dedupe by file size so we don't show the user the same image twice
+      // (maxresdefault.webp and .jpg often resolve to identical content).
+      const fileSize = fs.statSync(rawPath).size;
+      const sizeBucket = Math.round(fileSize / 2048); // rough dedupe bucket
+      if (seenSizes.has(sizeBucket)) {
+        try { fs.unlinkSync(rawPath); } catch (e) {}
+        continue;
+      }
+      seenSizes.add(sizeBucket);
+
+      if (ext === 'webp') {
+        // Re-encode webp to high-quality jpg so the style pipeline (ffmpeg) handles it uniformly
+        await new Promise((resolve) => {
+          const proc = spawn(ffmpegPath || 'ffmpeg', ['-i', rawPath, '-q:v', '2', '-y', filePath]);
+          proc.on('close', () => resolve());
+          proc.on('error', () => resolve());
+        });
+        try { fs.unlinkSync(rawPath); } catch (e) {}
+        if (!fs.existsSync(filePath) || fs.statSync(filePath).size < 2000) continue;
+      } else {
+        fs.renameSync(rawPath, filePath);
+      }
+
+      frames.push({ filename, url: '/ai-thumbnail/serve/' + filename });
     } catch (e) { /* skip this thumbnail */ }
   }
 
@@ -218,69 +286,108 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 }
 });
 
+// Get width/height of a frame using ffprobe — used to preserve the video's
+// original aspect ratio in the generated thumbnail (fixes stretch bug on 9:16 inputs).
+function getFrameDimensions(framePath) {
+  return new Promise((resolve) => {
+    const ffprobePath = ffmpegPath === 'ffmpeg' ? 'ffprobe' : ffmpegPath.replace(/ffmpeg([^/]*)$/, 'ffprobe$1');
+    const proc = spawn(ffprobePath, [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height',
+      '-of', 'csv=p=0',
+      framePath
+    ]);
+    let out = '';
+    proc.stdout.on('data', (d) => { out += d.toString(); });
+    proc.on('close', () => {
+      const parts = out.trim().split(',').map((s) => parseInt(s, 10));
+      if (parts[0] > 0 && parts[1] > 0) {
+        resolve({ width: parts[0], height: parts[1] });
+      } else {
+        // Fallback — default to landscape YouTube-ish size
+        resolve({ width: 1200, height: 630 });
+      }
+    });
+    proc.on('error', () => resolve({ width: 1200, height: 630 }));
+  });
+}
+
+// Compute target output size preserving the input aspect ratio.
+// Longest side is clamped to maxSide so we don't upscale small videos too far.
+// Dimensions are forced to even numbers (required by many codecs/filters).
+function computeOutputSize(width, height, maxSide = 1280) {
+  if (!width || !height) return { width: 1200, height: 630 };
+  const aspect = width / height;
+  let outW, outH;
+  if (width >= height) {
+    outW = Math.min(width, maxSide);
+    outH = Math.round(outW / aspect);
+  } else {
+    outH = Math.min(height, maxSide);
+    outW = Math.round(outH * aspect);
+  }
+  outW = Math.max(2, Math.round(outW / 2) * 2);
+  outH = Math.max(2, Math.round(outH / 2) * 2);
+  return { width: outW, height: outH };
+}
+
 // Thumbnail style presets with FFmpeg filter configurations
 const thumbnailStylePresets = {
   'gradient-overlay': {
     name: 'Gradient Overlay',
     description: 'Vibrant purple-to-pink gradient',
-    apply: (inputFrame, outputPath) => {
-      return applyGradientOverlay(inputFrame, outputPath, 'gradient');
+    apply: (inputFrame, outputPath, dims) => {
+      return applyGradientOverlay(inputFrame, outputPath, dims);
     }
   },
   'dark-cinematic': {
     name: 'Dark Cinematic',
     description: 'Dark vignette with high contrast',
-    apply: (inputFrame, outputPath) => {
-      return applyDarkCinematic(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyDarkCinematic(inputFrame, outputPath, dims);
     }
   },
   'bold-border': {
     name: 'Bold Border',
     description: 'Thick colored border with accent',
-    apply: (inputFrame, outputPath) => {
-      return applyBoldBorder(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyBoldBorder(inputFrame, outputPath, dims);
     }
   },
   'split-design': {
     name: 'Split Design',
     description: 'Two-tone split background design',
-    apply: (inputFrame, outputPath) => {
-      return applySplitDesign(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applySplitDesign(inputFrame, outputPath, dims);
     }
   },
   'text-focus': {
     name: 'Text Focus',
     description: 'Dark overlay for text legibility',
-    apply: (inputFrame, outputPath) => {
-      return applyTextFocus(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyTextFocus(inputFrame, outputPath, dims);
     }
   },
   'clean-minimal': {
     name: 'Clean Minimal',
     description: 'Subtle brightness and contrast boost',
-    apply: (inputFrame, outputPath) => {
-      return applyCleanMinimal(inputFrame, outputPath);
+    apply: (inputFrame, outputPath, dims) => {
+      return applyCleanMinimal(inputFrame, outputPath, dims);
     }
   }
 };
 
 // Apply gradient overlay style
-function applyGradientOverlay(inputFrame, outputPath) {
+function applyGradientOverlay(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
-    const filterComplex = `
-      format=yuv420p,
-      scale=1200:630,
-      [0]split[a][b];
-      [a]colorize=h=280:s=0.8:l=0.5[grad];
-      [b]colorchannelmixer=0.3:0.59:0.11:0:0.3:0.59:0.11:0:0.3:0.59:0.11:0[luma];
-      [grad]alphaextract[alpha];
-      [luma][alpha]alphamerge[dimmed];
-      [dimmed]colorlevels=rh=0.8:gh=0.4:bh=0.8[styled]
-    `;
-
+    const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,colorbalance=rs=0.35:gs=-0.1:bs=0.3:ms=0.25:mh=-0.05:mb=0.2,eq=contrast=1.1:saturation=1.2`,
+      // Note: colorbalance midtone options are rm/gm/bm (not ms/mh/mb) —
+      // the old param names were invalid and caused every Gradient Overlay
+      // render to fail with "Option 'ms' not found".
+      '-vf', `scale=${W}:${H}:flags=lanczos,colorbalance=rs=0.35:gs=-0.1:bs=0.3:rm=0.25:gm=-0.05:bm=0.2,eq=contrast=1.1:saturation=1.2`,
       '-y', outputPath
     ];
 
@@ -304,11 +411,12 @@ function applyGradientOverlay(inputFrame, outputPath) {
 }
 
 // Apply dark cinematic style
-function applyDarkCinematic(inputFrame, outputPath) {
+function applyDarkCinematic(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', 'scale=1200:630,vignette=PI/4,eq=brightness=-0.05:contrast=1.3:saturation=0.9',
+      '-vf', `scale=${W}:${H}:flags=lanczos,vignette=PI/4,eq=brightness=-0.05:contrast=1.3:saturation=0.9`,
       '-y', outputPath
     ];
 
@@ -332,13 +440,22 @@ function applyDarkCinematic(inputFrame, outputPath) {
 }
 
 // Apply bold border style
-function applyBoldBorder(inputFrame, outputPath) {
+function applyBoldBorder(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
+    // 5% outer padding, 2.5% inner stroke offset — proportional so portrait and landscape both look balanced
+    const marginX = Math.max(2, Math.round(W * 0.05 / 2) * 2);
+    const marginY = Math.max(2, Math.round(H * 0.05 / 2) * 2);
+    const innerW = Math.max(2, W - marginX * 2);
+    const innerH = Math.max(2, H - marginY * 2);
+    const boxX = Math.round(marginX / 2);
+    const boxY = Math.round(marginY / 2);
+    const boxW = W - boxX * 2;
+    const boxH = H - boxY * 2;
+    const borderT = Math.max(3, Math.round(Math.min(W, H) * 0.006));
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1140:570,
-        pad=1200:630:(1200-1140)/2:(630-570)/2:EC4899,
-        drawbox=x=15:y=15:w=1170:h=600:color=6C3AED:t=3`,
+      '-vf', `scale=${innerW}:${innerH}:flags=lanczos,pad=${W}:${H}:${marginX}:${marginY}:EC4899,drawbox=x=${boxX}:y=${boxY}:w=${boxW}:h=${boxH}:color=6C3AED:t=${borderT}`,
       '-y', outputPath
     ];
 
@@ -362,11 +479,19 @@ function applyBoldBorder(inputFrame, outputPath) {
 }
 
 // Apply split design style
-function applySplitDesign(inputFrame, outputPath) {
+function applySplitDesign(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
+    // Two-tone background halves + centered image overlay at ~90% of the frame
+    const halfW = Math.max(2, Math.round(W / 2 / 2) * 2);
+    const halfW2 = Math.max(2, W - halfW);
+    const innerW = Math.max(2, Math.round(W * 0.9 / 2) * 2);
+    const innerH = Math.max(2, Math.round(H * 0.9 / 2) * 2);
+    const overlayX = Math.round((W - innerW) / 2);
+    const overlayY = Math.round((H - innerH) / 2);
     const args = [
       '-i', inputFrame,
-      '-filter_complex', '[0:v]scale=1100:570[img];color=c=0x1a1a2e:s=600x630:d=1[left];color=c=0x6C3AED:s=600x630:d=1[right];[left][right]hstack[bg];[bg][img]overlay=50:30[out]',
+      '-filter_complex', `[0:v]scale=${innerW}:${innerH}:flags=lanczos[img];color=c=0x1a1a2e:s=${halfW}x${H}:d=1[left];color=c=0x6C3AED:s=${halfW2}x${H}:d=1[right];[left][right]hstack[bg];[bg][img]overlay=${overlayX}:${overlayY}[out]`,
       '-map', '[out]',
       '-frames:v', '1',
       '-y', outputPath
@@ -392,11 +517,15 @@ function applySplitDesign(inputFrame, outputPath) {
 }
 
 // Apply text focus style
-function applyTextFocus(inputFrame, outputPath) {
+function applyTextFocus(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
+    // Dark banner at bottom occupying ~28% of frame height (same proportion as original 180/630)
+    const bannerH = Math.max(2, Math.round(H * 0.285 / 2) * 2);
+    const bannerY = Math.max(0, H - bannerH);
     const args = [
       '-i', inputFrame,
-      '-vf', 'scale=1200:630,drawbox=x=0:y=450:w=1200:h=180:color=0x000000:t=fill,eq=brightness=0.05:contrast=1.1',
+      '-vf', `scale=${W}:${H}:flags=lanczos,drawbox=x=0:y=${bannerY}:w=${W}:h=${bannerH}:color=0x000000:t=fill,eq=brightness=0.05:contrast=1.1`,
       '-y', outputPath
     ];
 
@@ -420,12 +549,12 @@ function applyTextFocus(inputFrame, outputPath) {
 }
 
 // Apply clean minimal style
-function applyCleanMinimal(inputFrame, outputPath) {
+function applyCleanMinimal(inputFrame, outputPath, dims) {
   return new Promise((resolve, reject) => {
+    const W = dims.width, H = dims.height;
     const args = [
       '-i', inputFrame,
-      '-vf', `scale=1200:630,
-        eq=brightness=0.08:contrast=1.1:saturation=1.05`,
+      '-vf', `scale=${W}:${H}:flags=lanczos,eq=brightness=0.08:contrast=1.1:saturation=1.05`,
       '-y', outputPath
     ];
 
@@ -550,6 +679,386 @@ function extractKeyFrames(videoPath, maxFrames = 12) {
       reject(new Error('ffprobe not available: ' + err.message));
     });
   });
+}
+
+// ============================================================================
+// AI-Generated Thumbnails pipeline
+// ----------------------------------------------------------------------------
+// 1. Ingest video (upload or YouTube download — reuses existing helpers).
+// 2. Extract a short audio clip with ffmpeg and transcribe it with Whisper.
+// 3. Ask GPT-4o-mini to pick out the most interesting moments and produce
+//    N thumbnail concepts (title, caption, image prompt, referenced moment).
+// 4. Generate one image per concept in parallel via GPT-image-1.
+// 5. Save PNGs to outputDir and return filenames + metadata to the client.
+// ============================================================================
+
+// Extract a Whisper-friendly MP3 from a video. Mono, 16kHz, 64kbps stays well
+// under Whisper's 25MB limit. We also cap to the first 10 minutes — enough to
+// understand what a video is about without blowing up cost/latency for long clips.
+function extractAudioForAIThumbnail(videoPath) {
+  return new Promise((resolve, reject) => {
+    const outputPath = path.join(uploadDir, `ai-thumb-audio-${uuidv4().slice(0, 8)}.mp3`);
+    const proc = spawn(ffmpegPath, [
+      '-i', videoPath,
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-b:a', '64k',
+      '-t', '600',
+      '-y',
+      outputPath
+    ]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outputPath)) {
+        resolve(outputPath);
+      } else {
+        reject(new Error('Audio extraction failed: ' + stderr.slice(-200)));
+      }
+    });
+    proc.on('error', reject);
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} }, 120000);
+  });
+}
+
+// Transcribe audio with Whisper. Returns the flat text transcript.
+async function transcribeForAIThumbnail(audioPath) {
+  const audioBuffer = fs.readFileSync(audioPath);
+  // eslint-disable-next-line no-undef
+  const file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+  const transcript = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: file,
+    response_format: 'text'
+  });
+  // When response_format is 'text', SDK returns the raw string.
+  if (typeof transcript === 'string') return transcript.trim();
+  if (transcript && transcript.text) return String(transcript.text).trim();
+  return '';
+}
+
+// Ask GPT-4o-mini to propose N distinct thumbnail concepts based on the
+// transcript + optional user hint. Returns an array of concept objects.
+async function generateThumbnailConcepts({ transcript, hint, videoTitle, aspectLabel, count }) {
+  const safeTranscript = (transcript || '').slice(0, 12000);
+
+  // The three fixed creative angles. For count N, we take the first N of these.
+  // Each angle produces a visually distinct concept so outputs are not just
+  // variations of the same image.
+  const angleRotation = [
+    { key: 'character', label: 'CHARACTER FOCUS (High Emotion)', guide: 'A hyper-idealized human face or body expressing strong emotion tied to the topic — awe, shock, determination, triumph, grief. The subject embodies the topic. Close or medium shot, eye contact or strong gaze, dramatic rim lighting.' },
+    { key: 'action', label: 'ACTION/EVENT FOCUS (High Energy)', guide: 'A high-energy moment — the peak instant of the topic in motion. Motion blur, sparks, impact, crowds, kinetic composition. Camera angle: low, dutch, or wide dramatic perspective.' },
+    { key: 'object', label: 'OBJECT/RESULT FOCUS (The Outcome)', guide: 'The singular object, result, or artifact that represents the topic. Hero-shot lighting, glossy surfaces, dramatic shadow, clean background. The "what it looks like when it works" image.' }
+  ];
+  const anglesToUse = angleRotation.slice(0, Math.max(1, Math.min(count, 3)));
+  const anglesBlock = anglesToUse.map((a, i) => `  Concept ${i + 1} — ${a.label}: ${a.guide}`).join('\n');
+
+  const systemPrompt = `You are a senior YouTube thumbnail art director. You design thumbnails for maximum click-through on mobile.
+
+STEP 1 — Extract the HOOK TOPIC.
+Identify the single abstract idea the video is about (e.g., "AI replacing jobs", "beating procrastination", "the future of electric cars", "how to bake the perfect sourdough"). Ignore incidental visuals like the host's outfit or the studio — the topic is the IDEA, not the physical evidence.
+
+STEP 2 — Generate exactly ${count} concept${count > 1 ? 's' : ''}, each using a DIFFERENT creative angle (no overlap):
+${anglesBlock}
+
+STEP 3 — For each concept, write:
+• title: a 1-4 word punchy hook in ALL CAPS. Examples: "AI WILL REPLACE YOU", "IT ACTUALLY WORKS", "THE FUTURE IS HERE", "NEVER BAKE AGAIN". This gets rendered as a large text overlay on top of the image.
+• moment: one sentence describing what part of the video (or what claim from the transcript) this concept draws on.
+• imagePrompt: a detailed text-to-image prompt. Every prompt MUST include: hyper-idealized subject, cinematic/dramatic composition, high-impact lighting (rim, golden hour, neon, chiaroscuro — pick what fits), vibrant color palette, shallow depth of field when relevant, and clear negative space in the TOP-LEFT 25% of the frame for a text overlay. Do NOT instruct the image model to render any text, logos, watermarks, real celebrities, or copyrighted characters.`;
+
+  const userPrompt = `Video title: ${videoTitle || '(unknown)'}
+Target aspect ratio: ${aspectLabel}
+User style hint: ${hint || '(none — choose what best fits the topic)'}
+
+Transcript (may be truncated):
+"""
+${safeTranscript || '(no transcript available)'}
+"""
+
+Return JSON shaped as:
+{
+  "hookTopic": "One short phrase naming the abstract topic.",
+  "concepts": [
+    {
+      "angle": "character" | "action" | "object",
+      "title": "1-4 WORD PUNCHY HOOK IN CAPS",
+      "moment": "One sentence tying this to the video.",
+      "imagePrompt": "Detailed visual prompt following the rules above."
+    }
+  ]
+}`;
+
+  const resp = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.8,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  });
+
+  const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
+  if (!raw) throw new Error('Concept generation returned empty response');
+
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch (e) { throw new Error('Concept JSON parse failed: ' + e.message); }
+
+  const concepts = Array.isArray(parsed.concepts) ? parsed.concepts : [];
+  if (concepts.length === 0) throw new Error('Model returned no concepts');
+
+  const validAngles = new Set(['character', 'action', 'object']);
+  return concepts.slice(0, count).map((c, i) => ({
+    angle: validAngles.has(String(c.angle)) ? String(c.angle) : (anglesToUse[i] && anglesToUse[i].key) || 'character',
+    title: String(c.title || `Concept ${i + 1}`).slice(0, 60),
+    moment: String(c.moment || '').slice(0, 200),
+    imagePrompt: String(c.imagePrompt || c.prompt || '').slice(0, 1800),
+    hookTopic: String(parsed.hookTopic || '').slice(0, 160)
+  }));
+}
+
+// ============================================================================
+// ROLLBACK: Previous GPT-image-1 implementation (commented out for one-touch
+// rollback if Flux Schnell turns out to not meet the bar). To revert: delete
+// the Flux implementation below and uncomment this block.
+// ============================================================================
+/*
+// Map aspect ratio string to the GPT-image-1 size parameter.
+function aspectToImageSize(aspect) {
+  if (aspect === '9:16') return '1024x1536';
+  if (aspect === '1:1') return '1024x1024';
+  return '1536x1024'; // default 16:9
+}
+
+// Call GPT-image-1 via raw REST (bypasses any SDK version gaps for this model).
+async function generateAIImage({ prompt, aspect, jobId, index }) {
+  const size = aspectToImageSize(aspect);
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
+
+  const resp = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt: prompt,
+      size: size,
+      n: 1,
+      quality: 'medium'
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw new Error('gpt-image-1 HTTP ' + resp.status + ': ' + errText.slice(0, 300));
+  }
+
+  const data = await resp.json();
+  const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
+  if (!b64) throw new Error('gpt-image-1 returned no image data');
+
+  const filename = 'ai-thumb-' + jobId + '-' + index + '.png';
+  const outputPath = path.join(outputDir, filename);
+  fs.writeFileSync(outputPath, Buffer.from(b64, 'base64'));
+  return { filename };
+}
+*/
+
+// Normalize aspect ratio to a value Flux Schnell accepts directly as input.
+function aspectForFlux(aspect) {
+  if (aspect === '9:16') return '9:16';
+  if (aspect === '1:1') return '1:1';
+  return '16:9'; // default
+}
+
+// Locate a bold TrueType font on the host for the text overlay. Checked in
+// preference order — first match wins. Returns null if none are present, in
+// which case the overlay step is skipped (raw image is served instead).
+let _cachedFontPath;
+function findSystemFont() {
+  if (_cachedFontPath !== undefined) return _cachedFontPath;
+  const candidates = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/Library/Fonts/Arial Bold.ttf',
+    '/Library/Fonts/Arial.ttf',
+    '/System/Library/Fonts/Supplemental/Arial Bold.ttf'
+  ];
+  for (const f of candidates) {
+    try { if (fs.existsSync(f)) { _cachedFontPath = f; return f; } } catch (e) {}
+  }
+  _cachedFontPath = null;
+  return null;
+}
+
+// Burn the 1-4 word hook title onto the image using ffmpeg drawtext.
+// Text goes in the TOP-LEFT safe zone (out of the way of YouTube's bottom
+// scrubber and right-side share/close buttons). Font scales with image height.
+// High-contrast dark box + shadow keeps it legible on any background.
+// Uses the textfile= form of drawtext so apostrophes/colons/etc in titles
+// don't require ffmpeg-filter escaping gymnastics.
+async function compositeHookTitle(inputPath, titleText, outputPath) {
+  const cleanTitle = String(titleText || '').trim().slice(0, 60);
+  if (!cleanTitle) {
+    // No title — just copy input to output
+    fs.copyFileSync(inputPath, outputPath);
+    return;
+  }
+  const font = findSystemFont();
+  if (!font) {
+    console.warn('[AI Thumbnail] No bold font found on host — skipping title overlay.');
+    fs.copyFileSync(inputPath, outputPath);
+    return;
+  }
+
+  const textfilePath = path.join(outputDir, `title-${uuidv4().slice(0, 8)}.txt`);
+  fs.writeFileSync(textfilePath, cleanTitle);
+
+  // Filter breakdown:
+  //   fontfile=...            explicit font path
+  //   textfile=...            read text from file (avoids escape issues)
+  //   fontsize=h*0.075        ~7.5% of image height — big and bold
+  //   fontcolor=white
+  //   x=w*0.05 y=h*0.05       top-left safe zone with 5% padding
+  //   box=1 boxcolor=black@0.45 boxborderw=22    dark rounded-ish backdrop
+  //   shadowcolor=black@0.9 shadowx=3 shadowy=3  extra legibility
+  const filter = [
+    'drawtext=',
+    `fontfile='${font}'`,
+    `:textfile='${textfilePath}'`,
+    ':fontsize=h*0.075',
+    ':fontcolor=white',
+    ':x=w*0.05:y=h*0.05',
+    ':box=1:boxcolor=black@0.45:boxborderw=22',
+    ':shadowcolor=black@0.9:shadowx=3:shadowy=3'
+  ].join('');
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath || 'ffmpeg', [
+      '-i', inputPath,
+      '-vf', filter,
+      '-y',
+      outputPath
+    ]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      if (code === 0) resolve();
+      else reject(new Error('compositeHookTitle ffmpeg exit ' + code + ': ' + stderr.slice(-220)));
+    });
+    proc.on('error', (err) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      reject(err);
+    });
+  });
+}
+
+// Generate a thumbnail image via Replicate's Flux Schnell model.
+// Uses predictions.create + wait so we get a stable URL output shape across
+// replicate SDK versions (unlike replicate.run() which started returning
+// ReadableStream instances in v1.x). Schnell typically completes in 2-4s.
+// After the image comes back, the hook title is burned into the top-left
+// safe zone via compositeHookTitle().
+async function generateAIImage({ prompt, aspect, jobId, index, title }) {
+  if (!replicate){
+    throw new Error('Replicate SDK is not installed on this server. Run `npm install replicate` or set REPLICATE_API_TOKEN.');
+  }
+  if (!process.env.REPLICATE_API_TOKEN) {
+    throw new Error('REPLICATE_API_TOKEN not configured');
+  }
+
+  const prediction = await replicate.predictions.create({
+    model: 'black-forest-labs/flux-schnell',
+    input: {
+      prompt: prompt,
+      aspect_ratio: aspectForFlux(aspect),
+      num_outputs: 1,
+      output_format: 'png',
+      output_quality: 90,
+      megapixels: '1',
+      num_inference_steps: 4,
+      go_fast: true
+    }
+  });
+
+  const finalPrediction = await replicate.wait(prediction, { interval: 1500 });
+
+  if (finalPrediction.status !== 'succeeded') {
+    const err = finalPrediction.error ? String(finalPrediction.error).slice(0, 300) : 'no error detail';
+    throw new Error(`Replicate prediction ${finalPrediction.status}: ${err}`);
+  }
+
+  const out = finalPrediction.output;
+  const imageUrl = Array.isArray(out) ? out[0] : out;
+  if (!imageUrl || typeof imageUrl !== 'string') {
+    throw new Error('Replicate returned no image URL');
+  }
+
+  const imgResp = await fetch(imageUrl);
+  if (!imgResp.ok) {
+    throw new Error(`Failed to download generated image: HTTP ${imgResp.status}`);
+  }
+  const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
+
+  const rawFilename = `ai-thumb-${jobId}-${index}-raw.png`;
+  const rawPath = path.join(outputDir, rawFilename);
+  fs.writeFileSync(rawPath, imgBuffer);
+
+  const finalFilename = `ai-thumb-${jobId}-${index}.png`;
+  const finalPath = path.join(outputDir, finalFilename);
+
+  try {
+    await compositeHookTitle(rawPath, title, finalPath);
+    try { fs.unlinkSync(rawPath); } catch (e) {}
+  } catch (overlayErr) {
+    // Fall back to the raw image if overlay fails (font missing, ffmpeg
+    // weirdness, etc.). User still gets a thumbnail.
+    console.warn('[AI Thumbnail] title overlay failed, serving raw Flux image:', overlayErr.message);
+    try { fs.renameSync(rawPath, finalPath); } catch (e) {
+      throw new Error('Both overlay and raw fallback failed: ' + overlayErr.message);
+    }
+  }
+
+  return { filename: finalFilename };
+}
+
+// Pull the best-effort YouTube title when we have a URL. Falls back to empty
+// string if yt-dlp/ytdl-core aren't available or the call fails.
+async function getYouTubeTitle(videoUrl) {
+  if (ytdlpPath) {
+    try {
+      const title = await new Promise((resolve, reject) => {
+        const proc = spawn(ytdlpPath, [
+          '--get-title', '--no-playlist', '--no-warnings',
+          ...YTDLP_COMMON_ARGS,
+          videoUrl
+        ]);
+        let out = '';
+        proc.stdout.on('data', (d) => { out += d.toString(); });
+        proc.on('close', (code) => code === 0 ? resolve(out.trim()) : reject(new Error('yt-dlp title exit ' + code)));
+        proc.on('error', reject);
+        setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('title timeout')); }, 15000);
+      });
+      if (title) return title;
+    } catch (e) { /* fall through */ }
+  }
+  if (ytdl) {
+    try {
+      const info = await ytdl.getBasicInfo(videoUrl);
+      return (info && info.videoDetails && info.videoDetails.title) || '';
+    } catch (e) { /* fall through */ }
+  }
+  return '';
 }
 
 // GET - Main page
@@ -691,17 +1200,17 @@ router.get('/', requireAuth, (req, res) => {
         border: none;
         border-radius: 8px;
         font-weight: 600;
-        font-size: 1rem;
+        font-size: 0.95rem;
         cursor: pointer;
         transition: all 0.3s;
         width: 100%;
         margin-top: 2rem;
-        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.3);
+        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.4);
       }
 
       .action-button:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.4);
+        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.5);
       }
 
       .action-button:disabled {
@@ -777,8 +1286,10 @@ router.get('/', requireAuth, (req, res) => {
 
       .frame-image {
         width: 100%;
-        aspect-ratio: 16 / 9;
-        object-fit: cover;
+        height: auto;
+        max-height: 360px;
+        object-fit: contain;
+        background: #000;
         display: block;
       }
 
@@ -856,20 +1367,21 @@ router.get('/', requireAuth, (req, res) => {
 
       .generate-btn {
         flex: 1;
-        padding: 0.9rem 1.5rem;
-        background: var(--primary);
+        padding: 0.9rem 2rem;
+        background: var(--gradient-1);
         color: #fff;
         border: none;
         border-radius: 8px;
         font-weight: 600;
+        font-size: 0.95rem;
         cursor: pointer;
         transition: all 0.3s;
-        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.3);
+        box-shadow: 0 4px 20px rgba(108, 58, 237, 0.4);
       }
 
       .generate-btn:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.4);
+        box-shadow: 0 6px 30px rgba(108, 58, 237, 0.5);
       }
 
       .generate-btn:disabled {
@@ -918,8 +1430,10 @@ router.get('/', requireAuth, (req, res) => {
 
       .thumbnail-image {
         width: 100%;
-        aspect-ratio: 1200 / 630;
-        object-fit: cover;
+        height: auto;
+        max-height: 480px;
+        object-fit: contain;
+        background: #000;
         display: block;
       }
 
@@ -956,6 +1470,478 @@ router.get('/', requireAuth, (req, res) => {
       .thumbnail-download:hover {
         transform: translateY(-1px);
         box-shadow: 0 4px 12px rgba(108, 58, 237, 0.3);
+      }
+
+      /* ===== AI Generated tab ===== */
+      .ai-intro {
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+        line-height: 1.55;
+      }
+
+      .ai-source-tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.25rem;
+        padding: 0.3rem;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 10px;
+        width: fit-content;
+      }
+
+      .ai-source-tab {
+        padding: 0.55rem 1.1rem;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        font-weight: 600;
+        font-size: 0.9rem;
+        border-radius: 7px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .ai-source-tab.active {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      .ai-controls {
+        margin-top: 1.5rem;
+      }
+
+      .ai-aspect-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+      }
+
+      .ai-aspect-btn {
+        padding: 0.65rem 1.2rem;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--text-muted);
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+      }
+
+      .ai-aspect-btn.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+      }
+
+      .ai-aspect-btn:hover:not(.active) {
+        color: var(--text);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .ai-progress {
+        margin-top: 1.25rem;
+        padding: 1rem 1.25rem;
+        background: rgba(108, 58, 237, 0.1);
+        border: 1px solid rgba(108, 58, 237, 0.25);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: var(--text);
+      }
+
+      .ai-results-section {
+        margin-top: 2rem;
+      }
+
+      .ai-results-caption {
+        color: var(--text-muted);
+        margin-bottom: 1.25rem;
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+
+      .ai-results-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1.5rem;
+      }
+
+      .ai-thumb-card {
+        background: var(--surface);
+        border: var(--border-subtle);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: all 0.3s;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .ai-thumb-card:hover {
+        border-color: var(--primary);
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(108, 58, 237, 0.2);
+      }
+
+      .ai-thumb-image {
+        width: 100%;
+        height: auto;
+        display: block;
+        background: #000;
+      }
+
+      .ai-thumb-body {
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        flex: 1;
+      }
+
+      .ai-thumb-kicker {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
+      .ai-thumb-title {
+        color: var(--text);
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .ai-thumb-caption {
+        color: var(--primary);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .ai-thumb-moment {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+
+      .ai-thumb-download {
+        margin-top: auto;
+        display: block;
+        padding: 0.6rem;
+        text-align: center;
+        background: var(--primary);
+        color: #fff;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 0.88rem;
+        transition: all 0.2s;
+      }
+
+      .ai-thumb-download:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(108, 58, 237, 0.3);
+      }
+
+      /* ===== Classic-flow card actions (Add Text + Download buttons) ===== */
+      .thumbnail-actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .thumbnail-add-text-btn {
+        flex: 1;
+        padding: 0.7rem;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .thumbnail-add-text-btn:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .thumbnail-actions .thumbnail-download {
+        flex: 1;
+      }
+
+      /* ===== Text Overlay Modal ===== */
+      .tom-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+
+      .tom-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+      }
+
+      .tom-dialog {
+        position: relative;
+        z-index: 1;
+        background: var(--surface, #1a1a2e);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        max-width: 1100px;
+        width: 100%;
+        max-height: 92vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+
+      .tom-header {
+        padding: 1rem 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .tom-title {
+        color: var(--text);
+        font-weight: 600;
+        font-size: 1.05rem;
+      }
+
+      .tom-close-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 1.6rem;
+        line-height: 1;
+        cursor: pointer;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+
+      .tom-close-btn:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+      }
+
+      .tom-toolbar {
+        padding: 0.85rem 1.25rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+
+      .tom-text-input {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        padding: 0.6rem 0.8rem;
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        resize: vertical;
+        min-height: 2.5rem;
+      }
+
+      .tom-text-input:focus {
+        outline: none;
+        border-color: var(--primary);
+      }
+
+      .tom-toolbar-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+      }
+
+      .tom-toolbar-row > * {
+        flex-shrink: 0;
+      }
+
+      .tom-font-select {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        padding: 0.45rem 0.7rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        min-width: 8rem;
+      }
+
+      .tom-size-wrap, .tom-color-wrap, .tom-stroke-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+      }
+
+      .tom-size-input {
+        width: 4rem;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        padding: 0.4rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+      }
+
+      .tom-size-unit {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-left: -0.3rem;
+      }
+
+      .tom-color-wrap input[type=color] {
+        width: 2.4rem;
+        height: 1.9rem;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: transparent;
+        border-radius: 5px;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .tom-fmt-btn, .tom-align-btn {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text-muted);
+        width: 2.2rem;
+        height: 2.05rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.95rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .tom-fmt-btn:hover, .tom-align-btn:hover {
+        color: var(--text);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .tom-fmt-btn.active, .tom-align-btn.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+      }
+
+      .tom-align-group {
+        display: inline-flex;
+        gap: 0.25rem;
+        padding: 0 0.25rem;
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .tom-canvas-wrapper {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        background: #0a0a14;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        overflow: auto;
+      }
+
+      .tom-canvas-wrapper canvas {
+        max-width: 100%;
+        max-height: 65vh;
+        height: auto;
+        cursor: grab;
+        background: #000;
+        border-radius: 6px;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+        display: block;
+      }
+
+      .tom-canvas-wrapper canvas:active {
+        cursor: grabbing;
+      }
+
+      .tom-canvas-hint {
+        position: absolute;
+        bottom: 0.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        pointer-events: none;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+      }
+
+      .tom-canvas-loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        display: none;
+      }
+
+      .tom-canvas-loading.show {
+        display: block;
+      }
+
+      .tom-footer {
+        padding: 1rem 1.25rem;
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .tom-btn-secondary, .tom-btn-primary {
+        padding: 0.6rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        border: none;
+      }
+
+      .tom-btn-secondary {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .tom-btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .tom-btn-primary {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      .tom-btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(108, 58, 237, 0.35);
       }
 
       .toast {
@@ -1019,6 +2005,9 @@ router.get('/', requireAuth, (req, res) => {
   `;
 
   const html = `${headHTML}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Oswald:wght@700&family=Montserrat:wght@900&display=swap" rel="stylesheet">
 ${pageStyles}
 </head>
 <body>
@@ -1028,18 +2017,19 @@ ${pageStyles}
 
     <main class="main-content">
       <div class="page-header">
-        <h1>AI Thumbnails</h1>
+        <h1>&#x1F5BC;&#xFE0F; AI Thumbnails</h1>
         <p>Generate professional YouTube thumbnails with AI styling</p>
       </div>
 
       <div class="input-section">
         <div class="input-tabs">
-          <button class="input-tab active" data-tab="url">YouTube URL</button>
+          <button class="input-tab active" data-tab="ai">AI Generated</button>
+          <button class="input-tab" data-tab="url">YouTube URL</button>
           <button class="input-tab" data-tab="upload">Upload Video</button>
         </div>
 
         <form id="thumbnailForm">
-          <div id="urlTab" class="tab-content active">
+          <div id="urlTab" class="tab-content">
             <div class="url-input-group">
               <label class="url-input-label">YouTube URL</label>
               <input type="text" id="youtubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
@@ -1056,11 +2046,73 @@ ${pageStyles}
             </div>
           </div>
 
-          <button type="submit" class="action-button" id="extractBtn" disabled>
+          <div id="aiTab" class="tab-content active">
+            <div class="ai-intro">
+              Let AI watch your video, pick the most interesting moments, and design 4 custom thumbnails for you.
+            </div>
+
+            <div class="ai-source-tabs" role="tablist">
+              <button type="button" class="ai-source-tab active" data-aisource="url">YouTube URL</button>
+              <button type="button" class="ai-source-tab" data-aisource="upload">Upload Video</button>
+            </div>
+
+            <div class="ai-source-content" data-aisource-content="url">
+              <div class="url-input-group">
+                <label class="url-input-label">YouTube URL</label>
+                <input type="text" id="aiYoutubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
+              </div>
+            </div>
+
+            <div class="ai-source-content" data-aisource-content="upload" style="display:none">
+              <div class="upload-area" id="aiUploadArea" onclick="document.getElementById('aiFileInput').click()">
+                <div class="upload-icon">🎬</div>
+                <div class="upload-text">Drop your video file here</div>
+                <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
+                <input type="file" id="aiFileInput" class="file-input" accept="video/*">
+                <div id="aiFileName" class="file-name" style="display: none;"></div>
+              </div>
+            </div>
+
+            <div class="ai-controls">
+              <label class="url-input-label">Aspect ratio</label>
+              <div class="ai-aspect-row">
+                <button type="button" class="ai-aspect-btn active" data-aspect="16:9">16:9 &bull; YouTube</button>
+                <button type="button" class="ai-aspect-btn" data-aspect="9:16">9:16 &bull; Shorts / TikTok</button>
+                <button type="button" class="ai-aspect-btn" data-aspect="1:1">1:1 &bull; Square</button>
+              </div>
+
+              <label class="url-input-label" style="margin-top: 1.25rem;">Number of thumbnails</label>
+              <div class="ai-aspect-row">
+                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="1">1 &bull; Character</button>
+                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="2">2 &bull; + Action</button>
+                <button type="button" class="ai-aspect-btn ai-count-btn active" data-count="3">3 &bull; + Object</button>
+              </div>
+
+              <label class="url-input-label" style="margin-top: 1.25rem;">Style hint (optional)</label>
+              <input type="text" id="aiStyleHint" class="url-input" placeholder="e.g. bright and energetic, dark cinematic, bold minimal" maxlength="300" />
+            </div>
+
+            <button type="button" class="action-button" id="aiGenerateBtn" disabled>
+              Generate 3 AI Thumbnails
+            </button>
+
+            <div id="aiProgress" class="ai-progress" style="display: none;">
+              <span class="spinner"></span>
+              <span id="aiProgressMsg">Starting&hellip;</span>
+            </div>
+          </div>
+
+          <button type="submit" class="action-button" id="extractBtn" disabled style="display: none;">
             Extract Frames from Video
           </button>
           <div id="errorMessage" style="display: none;"></div>
         </form>
+      </div>
+
+      <div class="ai-results-section" id="aiResultsSection" style="display: none;">
+        <h2 style="margin-bottom: 0.5rem; color: var(--text);">Your AI-Generated Thumbnails</h2>
+        <div class="ai-results-caption" id="aiResultsCaption"></div>
+        <div class="ai-results-grid" id="aiResultsGrid"></div>
       </div>
 
       <div class="frames-section" id="framesSection" style="display: none;">
@@ -1091,6 +2143,55 @@ ${pageStyles}
 
   <div class="toast" id="toast"></div>
 
+  <!-- Canvas-based text overlay editor — opened from each generated thumbnail card -->
+  <div id="textOverlayModal" class="tom-modal" style="display:none">
+    <div class="tom-backdrop" id="tomBackdrop"></div>
+    <div class="tom-dialog">
+      <div class="tom-header">
+        <span class="tom-title">Add Text Overlay</span>
+        <button type="button" class="tom-close-btn" id="tomCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="tom-toolbar">
+        <textarea id="tomText" class="tom-text-input" placeholder="YOUR TEXT HERE&#10;(Enter for new line)" rows="2"></textarea>
+        <div class="tom-toolbar-row">
+          <select id="tomFont" class="tom-font-select" title="Font">
+            <option value="Anton, Impact, sans-serif">Anton (YT classic)</option>
+            <option value="'Bebas Neue', Impact, sans-serif">Bebas Neue</option>
+            <option value="Oswald, Impact, sans-serif">Oswald</option>
+            <option value="Montserrat, Helvetica, sans-serif">Montserrat Black</option>
+            <option value="Impact, sans-serif">Impact</option>
+            <option value="'Arial Black', Helvetica, sans-serif">Arial Black</option>
+            <option value="Helvetica, Arial, sans-serif">Helvetica</option>
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+            <option value="Verdana, sans-serif">Verdana</option>
+            <option value="'Courier New', monospace">Courier New</option>
+          </select>
+          <label class="tom-size-wrap">Size <input type="number" id="tomSize" class="tom-size-input" min="2" max="40" step="0.5" value="9"><span class="tom-size-unit">%</span></label>
+          <button type="button" id="tomBold" class="tom-fmt-btn active" title="Bold"><b>B</b></button>
+          <button type="button" id="tomItalic" class="tom-fmt-btn" title="Italic"><i>I</i></button>
+          <div class="tom-align-group" role="radiogroup" aria-label="Alignment">
+            <button type="button" data-align="left" class="tom-align-btn" title="Align left">&#8676;</button>
+            <button type="button" data-align="center" class="tom-align-btn active" title="Align center">&#8644;</button>
+            <button type="button" data-align="right" class="tom-align-btn" title="Align right">&#8677;</button>
+          </div>
+          <label class="tom-color-wrap">Color <input type="color" id="tomColor" value="#ffffff"></label>
+          <label class="tom-stroke-wrap"><input type="checkbox" id="tomStroke" checked> Outline</label>
+        </div>
+      </div>
+      <div class="tom-canvas-wrapper">
+        <canvas id="tomCanvas"></canvas>
+        <div class="tom-canvas-hint">Click and drag the text to reposition</div>
+        <div class="tom-canvas-loading" id="tomCanvasLoading">Loading thumbnail&hellip;</div>
+      </div>
+      <div class="tom-footer">
+        <button type="button" id="tomCancelBtn" class="tom-btn-secondary">Cancel</button>
+        <button type="button" id="tomDownloadBtn" class="tom-btn-primary">Download with Text</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function showToast(message, duration = 3000, isError = false) {
       const toast = document.getElementById('toast');
@@ -1114,14 +2215,28 @@ ${pageStyles}
       errorDiv.style.display = 'none';
     }
 
-    // Tab switching
+    // Tab switching — also toggles visibility of the classic extract button
+    // and AI-generated section depending on which top-level tab is active.
     document.querySelectorAll('.input-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
         const tabName = e.target.dataset.tab;
         document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         e.target.classList.add('active');
-        document.getElementById(tabName + 'Tab').classList.add('active');
+        const targetTab = document.getElementById(tabName + 'Tab');
+        if (targetTab) targetTab.classList.add('active');
+
+        const isAiMode = (tabName === 'ai');
+        const extractBtnEl = document.getElementById('extractBtn');
+        const framesSection = document.getElementById('framesSection');
+        const previewSection = document.getElementById('previewSection');
+        const aiResultsSection = document.getElementById('aiResultsSection');
+
+        if (extractBtnEl) extractBtnEl.style.display = isAiMode ? 'none' : '';
+        if (framesSection) framesSection.style.display = isAiMode ? 'none' : (framesSection.dataset.hadFrames ? 'block' : 'none');
+        if (previewSection) previewSection.style.display = isAiMode ? 'none' : (previewSection.classList.contains('show') ? 'block' : '');
+        if (aiResultsSection) aiResultsSection.style.display = isAiMode ? (aiResultsSection.dataset.hasResults ? 'block' : 'none') : 'none';
+
         checkInputs();
       });
     });
@@ -1167,7 +2282,9 @@ ${pageStyles}
       }
     });
 
-    var activeInputTab = 'url';
+    // AI Generated is the default tab. extractBtn is hidden in markup
+    // and only revealed if the user switches to a classic-flow tab.
+    var activeInputTab = 'ai';
     document.querySelectorAll('.input-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
         activeInputTab = e.target.dataset.tab;
@@ -1282,7 +2399,9 @@ ${pageStyles}
           throw new Error(data.message || 'Extraction failed');
         }
 
-        document.getElementById('framesSection').style.display = 'block';
+        const fs_ = document.getElementById('framesSection');
+        fs_.style.display = 'block';
+        fs_.dataset.hadFrames = '1';
         renderFrames(data.frames);
         renderStyles();
         showToast('Frames extracted successfully!', 4000);
@@ -1364,16 +2483,484 @@ ${pageStyles}
           <div class="thumbnail-info">
             <div class="thumbnail-style-name">\${thumb.styleName}</div>
             <div class="thumbnail-style-desc">\${thumb.description}</div>
-            <a href="/ai-thumbnail/download/\${thumb.filename}" class="thumbnail-download" download>
-              Download
-            </a>
+            <div class="thumbnail-actions">
+              <button type="button" class="thumbnail-add-text-btn" data-filename="\${thumb.filename}">Add Text</button>
+              <a href="/ai-thumbnail/download/\${thumb.filename}" class="thumbnail-download" download>Download</a>
+            </div>
           </div>
         \`;
         previewGrid.appendChild(container);
       });
 
+      // Wire up the "Add Text" buttons
+      previewGrid.querySelectorAll('.thumbnail-add-text-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (window.openTextOverlayEditor) {
+            window.openTextOverlayEditor(btn.dataset.filename);
+          }
+        });
+      });
+
       previewSection.classList.add('show');
     }
+
+    // ===========================================================
+    // AI Generated tab — separate flow (no frame extraction)
+    // ===========================================================
+    var aiActiveSource = 'url';
+    var aiActiveAspect = '16:9';
+    var aiActiveCount = 3;
+
+    document.querySelectorAll('.ai-source-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        aiActiveSource = btn.dataset.aisource;
+        document.querySelectorAll('.ai-source-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('[data-aisource-content]').forEach(el => {
+          el.style.display = (el.dataset.aisourceContent === aiActiveSource) ? '' : 'none';
+        });
+        checkAIInputs();
+      });
+    });
+
+    // Aspect-ratio buttons (only the ones with data-aspect, not count buttons)
+    document.querySelectorAll('.ai-aspect-btn[data-aspect]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        aiActiveAspect = btn.dataset.aspect;
+        document.querySelectorAll('.ai-aspect-btn[data-aspect]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+
+    // Count buttons — keep the generate button label in sync with selection
+    function updateGenerateBtnLabel() {
+      const btn = document.getElementById('aiGenerateBtn');
+      if (!btn || btn.classList.contains('loading')) return;
+      btn.innerHTML = 'Generate ' + aiActiveCount + ' AI Thumbnail' + (aiActiveCount === 1 ? '' : 's');
+    }
+    document.querySelectorAll('.ai-count-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        aiActiveCount = parseInt(btn.dataset.count, 10) || 3;
+        document.querySelectorAll('.ai-count-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        updateGenerateBtnLabel();
+      });
+    });
+
+    const aiYoutubeUrlEl = document.getElementById('aiYoutubeUrl');
+    const aiFileInputEl = document.getElementById('aiFileInput');
+    const aiUploadAreaEl = document.getElementById('aiUploadArea');
+    const aiFileNameEl = document.getElementById('aiFileName');
+    const aiGenerateBtn = document.getElementById('aiGenerateBtn');
+    const aiProgressEl = document.getElementById('aiProgress');
+    const aiProgressMsgEl = document.getElementById('aiProgressMsg');
+
+    if (aiYoutubeUrlEl) aiYoutubeUrlEl.addEventListener('input', checkAIInputs);
+    if (aiFileInputEl) {
+      aiFileInputEl.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          aiFileNameEl.textContent = '🎬 ' + e.target.files[0].name;
+          aiFileNameEl.style.display = 'block';
+        }
+        checkAIInputs();
+      });
+    }
+    if (aiUploadAreaEl) {
+      aiUploadAreaEl.addEventListener('dragover', (e) => { e.preventDefault(); aiUploadAreaEl.classList.add('dragover'); });
+      aiUploadAreaEl.addEventListener('dragleave', () => aiUploadAreaEl.classList.remove('dragover'));
+      aiUploadAreaEl.addEventListener('drop', (e) => {
+        e.preventDefault();
+        aiUploadAreaEl.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+          aiFileInputEl.files = e.dataTransfer.files;
+          aiFileNameEl.textContent = '🎬 ' + e.dataTransfer.files[0].name;
+          aiFileNameEl.style.display = 'block';
+          checkAIInputs();
+        }
+      });
+    }
+
+    function checkAIInputs() {
+      const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
+      const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
+      if (aiGenerateBtn) aiGenerateBtn.disabled = !(hasUrl || hasFile);
+    }
+
+    // Cycle progress messages while the backend is working.
+    let aiProgressTimer = null;
+    function startAIProgress() {
+      const stages = [
+        'Downloading video…',
+        'Extracting audio…',
+        'Transcribing with Whisper (this usually takes the longest)…',
+        'Identifying the most interesting moments…',
+        'Designing thumbnail concepts…',
+        'Generating images with GPT-image-1 (this can take 20-40 seconds)…',
+        'Rendering final thumbnails…'
+      ];
+      let idx = 0;
+      aiProgressMsgEl.textContent = stages[0];
+      aiProgressEl.style.display = 'flex';
+      clearInterval(aiProgressTimer);
+      aiProgressTimer = setInterval(() => {
+        idx = Math.min(idx + 1, stages.length - 1);
+        aiProgressMsgEl.textContent = stages[idx];
+      }, 7000);
+    }
+    function stopAIProgress() {
+      clearInterval(aiProgressTimer);
+      aiProgressTimer = null;
+      aiProgressEl.style.display = 'none';
+    }
+
+    if (aiGenerateBtn) {
+      aiGenerateBtn.addEventListener('click', async () => {
+        clearError();
+        const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl.value.trim().length > 0;
+        const hasFile = aiActiveSource === 'upload' && aiFileInputEl.files.length > 0;
+        if (!hasUrl && !hasFile) {
+          showError(aiActiveSource === 'url' ? 'Please paste a YouTube URL' : 'Please upload a video file');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.set('inputMode', aiActiveSource);
+        formData.set('aspect', aiActiveAspect);
+        formData.set('styleHint', document.getElementById('aiStyleHint').value.trim());
+        formData.set('count', String(aiActiveCount));
+        if (hasUrl) formData.set('youtubeUrl', aiYoutubeUrlEl.value.trim());
+        if (hasFile) formData.set('videoFile', aiFileInputEl.files[0]);
+
+        aiGenerateBtn.disabled = true;
+        aiGenerateBtn.classList.add('loading');
+        aiGenerateBtn.innerHTML = '<span class="spinner"></span> Working&hellip;';
+        startAIProgress();
+
+        try {
+          const response = await fetch('/ai-thumbnail/ai-generate', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.message || 'AI thumbnail generation failed');
+          }
+          renderAIResults(data);
+          showToast('AI thumbnails generated', 4000);
+        } catch (err) {
+          showError('Error: ' + err.message);
+        } finally {
+          stopAIProgress();
+          aiGenerateBtn.classList.remove('loading');
+          aiGenerateBtn.innerHTML = 'Generate ' + aiActiveCount + ' AI Thumbnail' + (aiActiveCount === 1 ? '' : 's');
+          checkAIInputs();
+        }
+      });
+    }
+
+    function renderAIResults(data) {
+      const section = document.getElementById('aiResultsSection');
+      const grid = document.getElementById('aiResultsGrid');
+      const caption = document.getElementById('aiResultsCaption');
+      if (!section || !grid) return;
+      grid.innerHTML = '';
+
+      const bits = [];
+      if (data.hookTopic) bits.push('Hook topic: ' + data.hookTopic);
+      if (data.videoTitle) bits.push('Source: "' + data.videoTitle + '"');
+      if (data.aspect) bits.push('Aspect: ' + data.aspect);
+      if (data.partialFailures && data.partialFailures.length) {
+        bits.push(data.partialFailures.length + ' of ' + (data.thumbnails.length + data.partialFailures.length) + ' image(s) failed to render — showing the ones that succeeded');
+      }
+      caption.textContent = bits.join(' · ');
+
+      const angleLabel = { character: 'Character Focus', action: 'Action Focus', object: 'Object Focus' };
+      data.thumbnails.forEach(thumb => {
+        const card = document.createElement('div');
+        card.className = 'ai-thumb-card';
+        const typeLabel = thumb.outputType || 'Generated Thumbnail';
+        const angleText = thumb.angle && angleLabel[thumb.angle] ? angleLabel[thumb.angle] : '';
+        card.innerHTML = \`
+          <img src="/ai-thumbnail/serve/\${thumb.filename}" class="ai-thumb-image" alt="\${(thumb.title || 'AI Thumbnail').replace(/"/g, '&quot;')}">
+          <div class="ai-thumb-body">
+            <div class="ai-thumb-kicker">\${escapeHtml(typeLabel)}\${angleText ? ' &middot; ' + escapeHtml(angleText) : ''}</div>
+            <div class="ai-thumb-title">\${escapeHtml(thumb.title || 'AI Thumbnail')}</div>
+            \${thumb.moment ? '<div class="ai-thumb-moment">' + escapeHtml(thumb.moment) + '</div>' : ''}
+            <a href="/ai-thumbnail/download/\${thumb.filename}" class="ai-thumb-download" download>Download</a>
+          </div>
+        \`;
+        grid.appendChild(card);
+      });
+      section.dataset.hasResults = '1';
+      section.style.display = 'block';
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    // ===========================================================
+    // Canvas-based Text Overlay Editor
+    // -----------------------------------------------------------
+    // Opens from any thumbnail card on the YouTube URL / Upload Video
+    // flows (window.openTextOverlayEditor(filename)). The image is drawn
+    // to a canvas at its natural resolution; text properties live in JS
+    // state and re-render on every change. Drag the text on the canvas
+    // to reposition. "Download with Text" exports the composited PNG
+    // via canvas.toBlob — image quality is preserved at full resolution.
+    // ===========================================================
+    (function setupTextOverlayEditor() {
+      const modal = document.getElementById('textOverlayModal');
+      if (!modal) return;
+      const canvas = document.getElementById('tomCanvas');
+      const ctx = canvas.getContext('2d');
+      const txtIn = document.getElementById('tomText');
+      const fontSel = document.getElementById('tomFont');
+      const sizeIn = document.getElementById('tomSize');
+      const colorIn = document.getElementById('tomColor');
+      const boldBtn = document.getElementById('tomBold');
+      const italicBtn = document.getElementById('tomItalic');
+      const strokeIn = document.getElementById('tomStroke');
+      const downloadBtn = document.getElementById('tomDownloadBtn');
+      const cancelBtn = document.getElementById('tomCancelBtn');
+      const closeBtn = document.getElementById('tomCloseBtn');
+      const backdrop = document.getElementById('tomBackdrop');
+      const loadingEl = document.getElementById('tomCanvasLoading');
+
+      const state = {
+        img: null,
+        text: 'YOUR TEXT HERE',
+        font: 'Anton, Impact, sans-serif',
+        // size is a percentage of image height — keeps the look consistent
+        // whether the source thumb is 1080x1920 or 1280x720
+        sizePct: 9,
+        bold: true,
+        italic: false,
+        align: 'center',
+        color: '#ffffff',
+        stroke: true,
+        x: 0.5, // fraction of image width (text anchor point)
+        y: 0.5, // fraction of image height
+        sourceFilename: ''
+      };
+
+      let dragging = false;
+
+      // Greedy word-wrap that respects manual newlines and an explicit
+      // max width (in pixels). A "paragraph" is a chunk of text between two
+      // \\n characters; each paragraph is wrapped independently using
+      // ctx.measureText. Single words longer than maxWidth are broken
+      // character-by-character so the line never overflows the canvas.
+      function wrapTextToLines(rawText, maxWidthPx) {
+        const out = [];
+        const paragraphs = String(rawText || '').split('\\n');
+        for (const para of paragraphs) {
+          if (para === '') { out.push(''); continue; }
+          const words = para.split(/\\s+/).filter(Boolean);
+          if (words.length === 0) { out.push(''); continue; }
+          let current = '';
+          for (const word of words) {
+            const test = current ? current + ' ' + word : word;
+            if (ctx.measureText(test).width <= maxWidthPx || current === '') {
+              // Single word longer than max — fall back to char-by-char break
+              if (!current && ctx.measureText(word).width > maxWidthPx) {
+                let buf = '';
+                for (const ch of word) {
+                  if (ctx.measureText(buf + ch).width <= maxWidthPx || buf === '') {
+                    buf += ch;
+                  } else {
+                    out.push(buf);
+                    buf = ch;
+                  }
+                }
+                current = buf;
+              } else {
+                current = test;
+              }
+            } else {
+              out.push(current);
+              current = word;
+            }
+          }
+          if (current) out.push(current);
+        }
+        return out;
+      }
+
+      function renderCanvas() {
+        if (!state.img) return;
+        const W = canvas.width;
+        const H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(state.img, 0, 0, W, H);
+
+        if (!state.text || state.text === '') return;
+
+        const weight = state.bold ? '900' : '700';
+        const fontStyle = state.italic ? 'italic' : 'normal';
+        const fontSizePx = Math.max(8, (state.sizePct / 100) * H);
+        ctx.font = fontStyle + ' ' + weight + ' ' + fontSizePx + 'px ' + state.font;
+        ctx.textAlign = state.align;
+        ctx.textBaseline = 'middle';
+
+        // Wrap to 90% of canvas width — leaves a comfortable side margin
+        // and matches the safe zone YouTube's player UI hovers within.
+        const maxWidthPx = W * 0.9;
+        const lines = wrapTextToLines(state.text, maxWidthPx);
+        if (lines.length === 0) return;
+
+        const x = state.x * W;
+        const y = state.y * H;
+        const lineHeight = fontSizePx * 1.1;
+        const totalH = lineHeight * lines.length;
+        const startY = y - totalH / 2 + lineHeight / 2;
+
+        if (state.stroke) {
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = fontSizePx * 0.09;
+          ctx.lineJoin = 'round';
+          ctx.miterLimit = 2;
+          for (let i = 0; i < lines.length; i++) {
+            ctx.strokeText(lines[i], x, startY + i * lineHeight);
+          }
+        }
+        ctx.fillStyle = state.color;
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], x, startY + i * lineHeight);
+        }
+      }
+
+      function openWith(filename) {
+        if (!filename) return;
+        state.sourceFilename = filename;
+        state.text = 'YOUR TEXT HERE';
+        state.x = 0.5;
+        state.y = 0.5;
+        txtIn.value = state.text;
+        loadingEl.classList.add('show');
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          state.img = img;
+          canvas.width = img.naturalWidth || img.width || 1280;
+          canvas.height = img.naturalHeight || img.height || 720;
+          loadingEl.classList.remove('show');
+          renderCanvas();
+        };
+        img.onerror = () => {
+          loadingEl.textContent = 'Failed to load thumbnail';
+        };
+        img.src = '/ai-thumbnail/serve/' + encodeURIComponent(filename);
+
+        modal.style.display = 'flex';
+        // Focus text input on next tick
+        setTimeout(() => txtIn.focus(), 50);
+      }
+
+      function close() {
+        modal.style.display = 'none';
+        state.img = null;
+        loadingEl.classList.remove('show');
+        loadingEl.textContent = 'Loading thumbnail\\u2026';
+      }
+
+      // Wire up toolbar
+      txtIn.addEventListener('input', (e) => { state.text = e.target.value; renderCanvas(); });
+      fontSel.addEventListener('change', (e) => { state.font = e.target.value; renderCanvas(); });
+      sizeIn.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0) { state.sizePct = v; renderCanvas(); }
+      });
+      colorIn.addEventListener('input', (e) => { state.color = e.target.value; renderCanvas(); });
+      boldBtn.addEventListener('click', () => {
+        state.bold = !state.bold;
+        boldBtn.classList.toggle('active', state.bold);
+        renderCanvas();
+      });
+      italicBtn.addEventListener('click', () => {
+        state.italic = !state.italic;
+        italicBtn.classList.toggle('active', state.italic);
+        renderCanvas();
+      });
+      strokeIn.addEventListener('change', (e) => { state.stroke = e.target.checked; renderCanvas(); });
+
+      document.querySelectorAll('.tom-align-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.align = btn.dataset.align;
+          document.querySelectorAll('.tom-align-btn').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          // Snap horizontal anchor to alignment
+          if (state.align === 'left') state.x = 0.05;
+          else if (state.align === 'right') state.x = 0.95;
+          else state.x = 0.5;
+          renderCanvas();
+        });
+      });
+
+      // Drag-to-reposition
+      function getCanvasCoords(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          cx: (clientX - rect.left) / rect.width,
+          cy: (clientY - rect.top) / rect.height
+        };
+      }
+      canvas.addEventListener('mousedown', () => { dragging = true; });
+      window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const { cx, cy } = getCanvasCoords(e.clientX, e.clientY);
+        state.x = Math.max(0, Math.min(1, cx));
+        state.y = Math.max(0, Math.min(1, cy));
+        renderCanvas();
+      });
+      window.addEventListener('mouseup', () => { dragging = false; });
+      // Touch support
+      canvas.addEventListener('touchstart', (e) => { dragging = true; }, { passive: true });
+      canvas.addEventListener('touchmove', (e) => {
+        if (!dragging || !e.touches[0]) return;
+        const t = e.touches[0];
+        const { cx, cy } = getCanvasCoords(t.clientX, t.clientY);
+        state.x = Math.max(0, Math.min(1, cx));
+        state.y = Math.max(0, Math.min(1, cy));
+        renderCanvas();
+        e.preventDefault();
+      }, { passive: false });
+      canvas.addEventListener('touchend', () => { dragging = false; });
+
+      // Close interactions
+      closeBtn.addEventListener('click', close);
+      cancelBtn.addEventListener('click', close);
+      backdrop.addEventListener('click', close);
+      window.addEventListener('keydown', (e) => {
+        if (modal.style.display !== 'none' && e.key === 'Escape') close();
+      });
+
+      // Download — bake the canvas as a PNG and trigger save
+      downloadBtn.addEventListener('click', () => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            showToast('Could not export image — try again', 4000, true);
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          const baseName = (state.sourceFilename || 'thumbnail').replace(/\\.(png|jpg|jpeg)$/i, '');
+          a.download = baseName + '-with-text.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+          showToast('Downloaded', 2500);
+        }, 'image/png');
+      });
+
+      // Expose globally so the displayResults card buttons can open it
+      window.openTextOverlayEditor = openWith;
+    })();
 
     ${themeScript}
   </script>
@@ -1439,7 +3026,7 @@ router.post('/extract', requireAuth, upload.single('videoFile'), async (req, res
 });
 
 // POST - Apply style to frame
-router.post('/style', requireAuth, async (req, res) => {
+router.post('/style', requireAuth, requireCredits('ai-thumbnail'), requireStorageHeadroom(), async (req, res) => {
   try {
     const frameFilename = req.body.frameFilename || '';
     const styleKeysStr = req.body.styles || '[]';
@@ -1457,6 +3044,11 @@ router.post('/style', requireAuth, async (req, res) => {
     const thumbnails = [];
     const jobId = uuidv4();
 
+    // Detect the frame's real dimensions so the generated thumbnail matches
+    // the video's aspect ratio (9:16, 1:1, 16:9, etc.) instead of being stretched.
+    const frameDims = await getFrameDimensions(framePath);
+    const outputSize = computeOutputSize(frameDims.width, frameDims.height);
+
     for (const styleKey of styleKeys) {
       const preset = thumbnailStylePresets[styleKey];
       if (!preset) continue;
@@ -1465,7 +3057,7 @@ router.post('/style', requireAuth, async (req, res) => {
       const outputPath = path.join(outputDir, outputFilename);
 
       try {
-        await preset.apply(framePath, outputPath);
+        await preset.apply(framePath, outputPath, outputSize);
         thumbnails.push({
           filename: outputFilename,
           style: styleKey,
@@ -1525,6 +3117,144 @@ router.get('/download/:filename', requireAuth, (req, res) => {
     res.download(filePath);
   } catch (error) {
     res.status(500).json({ success: false, message: 'Download failed' });
+  }
+});
+
+// POST - AI-Generated Thumbnails
+// Accepts a video (uploaded file OR YouTube URL), transcribes the audio,
+// asks GPT-4o-mini to propose N thumbnail concepts rooted in the video's
+// most interesting moments, then renders each concept into an image via
+// GPT-image-1 in parallel. Returns the array of generated thumbnails.
+router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req, res) => {
+  let videoPath = null;
+  let downloadedYoutubeFile = null;
+  let audioPath = null;
+
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ success: false, message: 'OpenAI API key not configured on the server' });
+    }
+
+    const inputMode = (req.body.inputMode || 'upload').toString();
+    const youtubeUrl = (req.body.youtubeUrl || '').toString().trim();
+    const aspect = ['16:9', '9:16', '1:1'].includes(req.body.aspect) ? req.body.aspect : '16:9';
+    const styleHint = (req.body.styleHint || '').toString().slice(0, 300);
+    const requestedCount = Math.min(Math.max(parseInt(req.body.count, 10) || 3, 1), 3);
+    const videoFile = req.file;
+
+    // Resolve the source video path
+    let videoTitle = '';
+    if (inputMode === 'url' && youtubeUrl) {
+      if (!isValidYouTubeUrl(youtubeUrl)) {
+        return res.status(400).json({ success: false, message: 'Please enter a valid YouTube URL' });
+      }
+      try {
+        videoPath = await downloadYouTubeVideo(youtubeUrl);
+        downloadedYoutubeFile = videoPath;
+      } catch (dlErr) {
+        console.error('[AI Thumbnail AI-Gen] YouTube download failed:', dlErr.message);
+        return res.status(400).json({ success: false, message: 'Could not download that YouTube video. It may be private, age-restricted, or blocked from this server.' });
+      }
+      videoTitle = await getYouTubeTitle(youtubeUrl).catch(() => '');
+    } else if (videoFile) {
+      videoPath = videoFile.path;
+    } else {
+      return res.status(400).json({ success: false, message: 'Please provide a YouTube URL or upload a video' });
+    }
+
+    if (!videoPath || !fs.existsSync(videoPath)) {
+      return res.status(400).json({ success: false, message: 'Video file not found on server' });
+    }
+
+    // Extract audio + transcribe
+    let transcript = '';
+    try {
+      audioPath = await extractAudioForAIThumbnail(videoPath);
+      transcript = await transcribeForAIThumbnail(audioPath);
+    } catch (err) {
+      console.warn('[AI Thumbnail AI-Gen] Transcription step failed, continuing with empty transcript:', err.message);
+      transcript = '';
+    }
+
+    // If transcription yielded nothing AND we have no title, the model has
+    // nothing to work with — ask the user to add a hint.
+    if (!transcript && !videoTitle && !styleHint) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not extract any audio or title from the video. Add a style hint describing the video and try again.'
+      });
+    }
+
+    // Generate concepts via GPT-4o-mini
+    const aspectLabel = aspect === '16:9' ? 'Horizontal 16:9 (YouTube)'
+      : aspect === '9:16' ? 'Vertical 9:16 (Shorts / TikTok / Reels)'
+      : 'Square 1:1 (Instagram)';
+
+    let concepts;
+    try {
+      concepts = await generateThumbnailConcepts({
+        transcript,
+        hint: styleHint,
+        videoTitle,
+        aspectLabel,
+        count: requestedCount
+      });
+    } catch (err) {
+      console.error('[AI Thumbnail AI-Gen] Concept generation failed:', err.message);
+      return res.status(500).json({ success: false, message: 'Could not generate thumbnail concepts: ' + err.message });
+    }
+
+    // Generate images in parallel
+    const jobId = uuidv4().slice(0, 10);
+    const results = await Promise.allSettled(concepts.map((concept, index) =>
+      generateAIImage({ prompt: concept.imagePrompt, aspect, jobId, index, title: concept.title })
+        .then((img) => ({ ...img, concept }))
+    ));
+
+    const thumbnails = [];
+    const failures = [];
+    let hookTopic = '';
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        thumbnails.push({
+          filename: r.value.filename,
+          outputType: 'Generated Thumbnail',
+          title: r.value.concept.title,
+          angle: r.value.concept.angle,
+          moment: r.value.concept.moment,
+          prompt: r.value.concept.imagePrompt
+        });
+        if (!hookTopic && r.value.concept.hookTopic) hookTopic = r.value.concept.hookTopic;
+      } else {
+        failures.push({ index: i, error: r.reason && r.reason.message ? r.reason.message : String(r.reason) });
+      }
+    });
+
+    if (thumbnails.length === 0) {
+      const msg = failures.length
+        ? 'All image generations failed. First error: ' + failures[0].error
+        : 'No thumbnails produced';
+      return res.status(500).json({ success: false, message: msg });
+    }
+
+    featureUsageOps.log(req.user.id, 'ai_thumbnails_ai').catch(() => {});
+    res.json({
+      success: true,
+      thumbnails,
+      partialFailures: failures,
+      aspect,
+      hookTopic,
+      transcriptPreview: transcript ? transcript.slice(0, 400) : '',
+      videoTitle
+    });
+  } catch (error) {
+    console.error('[AI Thumbnail AI-Gen] Unhandled error:', error);
+    res.status(500).json({ success: false, message: error.message || 'AI thumbnail generation failed' });
+  } finally {
+    // Cleanup temp files
+    if (audioPath) { try { fs.unlinkSync(audioPath); } catch (e) {} }
+    if (downloadedYoutubeFile) { try { fs.unlinkSync(downloadedYoutubeFile); } catch (e) {} }
+    if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch (e) {} }
   }
 });
 

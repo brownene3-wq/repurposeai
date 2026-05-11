@@ -2,6 +2,7 @@ const express = require('express'); // v1.0.1
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const { initDatabase } = require('./db/database');
+const { startWorkflowEngine } = require('./services/workflowEngine');
 
 const app = express();
 const fs = require('fs');
@@ -99,6 +100,7 @@ const analyticsRouter = require('./routes/analytics');
 const scheduledRouter = require('./routes/scheduled');
 const brandVoiceRouter = require('./routes/brand-voice');
 const calendarRouter = require('./routes/calendar');
+const notificationsRouter = require('./routes/notifications');
 const chatbotRouter = require('./routes/chatbot');
 const shortsRouter = require('./routes/shorts');
 const staticPagesRouter = require('./routes/static-pages');
@@ -228,6 +230,7 @@ app.use('/auth', authRouter);
 app.use('/dashboard/analytics', analyticsRouter);
 app.use('/dashboard/scheduled', scheduledRouter);
 app.use('/dashboard/calendar', calendarRouter);
+app.use('/notifications', notificationsRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/billing', billingRouter);
 app.use('/contact', contactRouter);
@@ -460,6 +463,9 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Start workflow engine for automated content repurposing
+  startWorkflowEngine();
 
   // Start calendar reminder checker (every 2 minutes)
   const { calendarOps } = require('./db/database');
