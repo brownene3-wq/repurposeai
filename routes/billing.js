@@ -3,6 +3,8 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { userOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+// Reuse the same diamond entitlement icon used on the Caption Styles page so visuals stay consistent.
+const { PREMIUM_DIAMOND_SVG } = require('./caption-presets');
 
 const STRIPE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || '';
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
@@ -21,7 +23,8 @@ router.get('/', requireAuth, (req, res) => {
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&display=swap');
       ${getBaseCSS()}
-      .billing-page{max-width:1100px;margin:0 auto;padding:3rem 2rem}
+      .billing-page{padding:3rem 2rem}
+      .billing-inner{max-width:1100px;margin:0 auto}
       .back-link{color:var(--primary-light);text-decoration:none;font-size:.9rem;font-weight:500;display:inline-flex;align-items:center;gap:.5rem}
       .back-link:hover{text-decoration:underline}
       .page-header{margin-bottom:3rem}
@@ -33,6 +36,7 @@ router.get('/', requireAuth, (req, res) => {
       .plan-badge{padding:.4rem 1rem;border-radius:50px;font-size:.8rem;font-weight:600;background:rgba(16,185,129,0.15);color:var(--success)}
       .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.2rem;margin-bottom:3rem}
       .price-card{background:var(--surface);border-radius:16px;padding:1.8rem;border:var(--border-subtle);transition:all .3s;position:relative}
+      .price-card>.premium-badge{position:absolute;top:14px;right:14px;width:24px;height:24px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));pointer-events:none;z-index:2}
       .price-card.featured{border-color:var(--primary);box-shadow:0 0 40px rgba(108,58,237,0.2);transform:scale(1.02)}
       .price-card.featured::before{content:'MOST POPULAR';position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--gradient-1);color:#fff;padding:.3rem 1rem;border-radius:20px;font-size:.7rem;font-weight:700;letter-spacing:.5px}
       .price-card h3{font-size:1.05rem;font-weight:700;margin-bottom:.5rem}
@@ -58,6 +62,7 @@ router.get('/', requireAuth, (req, res) => {
     ${getSidebar('billing', req.user, req.teamPermissions)}
     ${getThemeToggle()}
     <div class="billing-page main-content" style="margin-left:250px">
+      <div class="billing-inner">
       <a href="/dashboard" class="back-link">&#x2190; Back to Dashboard</a>
       <div class="page-header">
         <h1>Billing & Plans</h1>
@@ -73,7 +78,7 @@ router.get('/', requireAuth, (req, res) => {
       </div>
 
       <div class="pricing-grid">
-        <div class="price-card">
+        <div class="price-card${userPlan === 'free' ? ' active-plan' : ''}">
           <h3>Free</h3>
           <div class="price">$0<span>/month</span></div>
           <p class="desc">Get started with the basics</p>
@@ -81,13 +86,15 @@ router.get('/', requireAuth, (req, res) => {
             <li>3 videos/month</li>
             <li>5 repurposes/month</li>
             <li>1 brand voice</li>
+            <li>3 premium caption styles</li>
             <li>7-day history</li>
             <li>Watermarked exports</li>
           </ul>
           ${userPlan === 'free' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-outline" disabled>Free Tier</button>'}
         </div>
 
-        <div class="price-card${userPlan === 'free' ? ' featured' : ''}">
+        <div class="price-card${userPlan === 'free' ? ' featured' : ''}${userPlan === 'starter' ? ' active-plan' : ''}">
+          ${PREMIUM_DIAMOND_SVG}
           <h3>Starter</h3>
           <div class="price">$19<span>/month</span></div>
           <p class="desc">Perfect for consistent creators</p>
@@ -95,6 +102,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>15 videos/month</li>
             <li>30 repurposes/month</li>
             <li>3 brand voices</li>
+            <li>10 premium caption styles</li>
             <li>Quick Narrate (your API key)</li>
             <li>10 AI thumbnails/month</li>
             <li>30 clips/month</li>
@@ -106,7 +114,8 @@ router.get('/', requireAuth, (req, res) => {
           ${userPlan === 'starter' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;starter&apos;)">Upgrade to Starter</button>'}
         </div>
 
-        <div class="price-card${userPlan === 'starter' ? ' featured' : ''}">
+        <div class="price-card${userPlan === 'starter' ? ' featured' : ''}${userPlan === 'pro' ? ' active-plan' : ''}">
+          ${PREMIUM_DIAMOND_SVG}
           <h3>Pro</h3>
           <div class="price">$39<span>/month</span></div>
           <p class="desc">For creators serious about growth</p>
@@ -114,6 +123,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>50 videos/month</li>
             <li>100 repurposes/month</li>
             <li>10 brand voices</li>
+            <li>All 24 premium caption styles</li>
             <li>Unlimited AI narrations</li>
             <li>50 AI thumbnails/month</li>
             <li>150 clips/month</li>
@@ -126,7 +136,8 @@ router.get('/', requireAuth, (req, res) => {
           ${userPlan === 'pro' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;pro&apos;)">Upgrade to Pro</button>'}
         </div>
 
-        <div class="price-card">
+        <div class="price-card${userPlan === 'teams' ? ' active-plan' : ''}">
+          ${PREMIUM_DIAMOND_SVG}
           <h3>Teams</h3>
           <div class="price">$79<span>/month</span></div>
           <p class="desc">Scale with your whole team</p>
@@ -134,6 +145,7 @@ router.get('/', requireAuth, (req, res) => {
             <li>200 videos/month</li>
             <li>500 repurposes/month</li>
             <li>25 brand voices</li>
+            <li>All 24 premium caption styles + custom uploads</li>
             <li>Unlimited AI narrations</li>
             <li>150 AI thumbnails/month</li>
             <li>500 clips/month</li>
@@ -148,6 +160,7 @@ router.get('/', requireAuth, (req, res) => {
           ${userPlan === 'teams' ? '<button class="btn btn-current">&#x2713; Current Plan</button>' : '<button class="btn btn-primary" onclick="handleCheckout(&apos;teams&apos;)">Upgrade to Teams</button>'}
         </div>
       </div>
+      </div><!-- /.billing-inner -->
     </div>
     </div>
     <script>${getThemeScript()}</script>

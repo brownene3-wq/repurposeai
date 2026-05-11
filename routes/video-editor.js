@@ -5,8 +5,16 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { requireAuth } = require('../middleware/auth');
-const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
+const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
+
+// Task #69 — Brand Kit logo overlay during export. The brand-templates
+// module exposes fetchLogo(filename) which reads the BLOB out of the
+// brand_template_logos Postgres table; we use that to materialise the
+// logo to a temp file and pass it to FFmpeg as an extra input.
+let brandTemplatesMod = null;
+try { brandTemplatesMod = require('./brand-templates'); }
+catch (_brErr){ brandTemplatesMod = null; }
 
 // FFmpeg detection and setup
 let ffmpegPath = null;
@@ -138,20 +146,56 @@ function runFFmpeg(args) {
   });
 }
 
-// GET: Render video editor page
-router.get('/', requireAuth, async (req, res) => {
-  const html = `${getHeadHTML('Video Editor')}
+// GET: Render video editor page (also used by /:projectId handler)
+async function renderEditor(req, res) {
+  let html = `${getHeadHTML('Video Editor')}
   <style>
     ${getBaseCSS()}
-    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:38px 1fr 260px;height:100vh;gap:0;padding:0;overflow:hidden}
-    .editor-topbar{grid-column:1/4;grid-row:1}
-    .media-library{grid-column:1;grid-row:2;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
-    .editor-main{grid-column:2;grid-row:2;display:flex;flex-direction:column;background:#0a0612;overflow:hidden}
-    .editor-sidebar{grid-column:3;grid-row:2;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
-    #timelineContainer{grid-column:1/4;grid-row:3;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden}
-    .editor-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0a0612;grid-column:2;grid-row:2}
+    /* Task #62 — first grid row matches the editor-topbar height (was 38px,
+       now 56px). Without this update, the topbar overflowed into row 2,
+       clipping the Media library header and the AI/Edit/Audio/FX tabs. */
+    /* Task #90 — Three-row grid that strictly separates topbar / panels
+       row / timeline row. The 56px first row matches .editor-topbar's
+       intrinsic height. The remaining (100vh - 56px) is split evenly
+       between row 2 (Media library | Preview | Editor sidebar) and
+       row 3 (full-width Timeline), with row 3 floored at 280px so the
+       tracks stay usable on short viewports.
+
+       Hard rule: NO vh-based heights on .media-library or .editor-sidebar.
+       Both must use height:100% so they fill exactly their grid track.
+       Any vh value would mismatch the row's actual computed height
+       (~47vh on 1080) and bleed past the row boundary into the
+       timeline area, blocking pointer events and visually masking
+       V1/A1/M1/T1/FX. See Task #89 for the bug history. */
+    /* Task #92 — Symmetric layout per Albert's latest screenshot:
+         Row 1: 56px topbar (full width)
+         Row 2: Media library | Preview / Editor main | Editor sidebar
+                — all three panels live ONLY in this row.
+         Row 3: Timeline (full width via cols 1/4) — owns the
+                entire bottom half, edge-to-edge.
+       All three panels in row 2 use height:100% so they stop at the
+       row boundary; nothing bleeds into row 3. */
+    /* Task #94 — Both side panels reduced to 48vh, Timeline fills the
+       entire bottom row. Layout:
+         topbar    topbar    topbar       (56px)
+         media     preview   sidebar      (48vh — both panels, top-aligned)
+         timeline  timeline  timeline     (1fr — fills remaining height)
+       Net result:
+       - Media Library = 48vh tall (was full-height rail)
+       - Editor Sidebar = 48vh tall (was 50vh)
+       - Timeline = full width across the bottom (no longer overlapping
+         either panel; sits in its own row 3 from edge to edge) */
+    .editor-container{display:grid;grid-template-columns:350px 1fr 380px;grid-template-rows:56px 48vh 1fr;grid-template-areas:"topbar topbar topbar" "media preview sidebar" "timeline timeline timeline";height:100vh;gap:0;padding:0;overflow:hidden;isolation:isolate}
+    .editor-topbar{grid-area:topbar}
+    .media-library{grid-area:media;display:flex;flex-direction:column;overflow:hidden;background:#110d1c;border-right:1px solid rgba(108,58,237,.08)}
+    .editor-main{grid-area:preview;display:flex;flex-direction:column;background:#0a0612;overflow:hidden;min-width:0}
+    .editor-sidebar{grid-area:sidebar;display:flex;flex-direction:column;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);overflow:hidden;width:auto;min-width:0}
+    /* Timeline owns the bottom-right area (cols 2-3 of row 3). z-index
+       backstop kept in case any future edit re-introduces overflow. */
+    #timelineContainer{grid-area:timeline;background:#0c0814;border-top:1px solid rgba(108,58,237,.12);display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:10;width:100%}
     .video-container{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.5rem;flex:1;display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 120px);overflow:hidden}
-    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center}
+    .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border:2px dashed var(--primary);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center;align-items:center}
+    .upload-zone>*{max-width:100%}
     .upload-zone.dragover{background:linear-gradient(135deg,rgba(108,58,237,0.2),rgba(236,72,153,0.2));border-color:var(--primary)}
     .upload-zone.has-video{display:none}
     .upload-zone h3{font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:.5rem}
@@ -161,7 +205,7 @@ router.get('/', requireAuth, async (req, res) => {
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
     .video-preview-area.has-video{display:flex;background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000}
-.timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-column:1/4;grid-row:3}
+.timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-area:timeline}
     .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
     .timeline-ruler-mark{position:absolute;bottom:0;font-size:.6rem;color:rgba(255,255,255,0.35);transform:translateX(-50%)}
     .timeline-ruler-mark::after{content:'';display:block;width:1px;height:6px;background:rgba(255,255,255,0.15);margin:2px auto 0}
@@ -236,9 +280,41 @@ router.get('/', requireAuth, async (req, res) => {
     #youtubeUrlInput:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(108,58,237,.2)}
     .transcript-timestamp{color:var(--primary);font-weight:600;cursor:pointer;font-size:.8rem}
     .transcript-timestamp:hover{text-decoration:underline}
-    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;scrollbar-width:thin;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-column:3;grid-row:2;width:auto;min-width:0}
-    .editor-sidebar::-webkit-scrollbar{width:4px}
-    .editor-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+    /* Task #83 — Sidebar is a bounded flex column. The middle .t-body
+       does the scrolling; tabs stay pinned at top, export bar pinned
+       at bottom via margin-top:auto. min-height:0 lets the flex
+       container actually constrain the inner overflow. */
+    /* Task #89 — Sidebar fills exactly its grid-row:2 track height
+       (no more 50vh bleed past the row boundary). align-self:stretch
+       is the grid default; height:100% + max-height:100% pin it to
+       the track so the bottom edge is FLUSH with the top of the
+       timeline at row 3. Inner .t-body still handles its own scroll. */
+    .editor-sidebar{display:flex;flex-direction:column;gap:.4rem;overflow-y:auto;overflow-x:hidden;padding:0;background:#110d1c;border-left:1px solid rgba(108,58,237,.08);grid-area:sidebar;width:auto;min-width:0;min-height:0;height:100%;max-height:100%;align-self:stretch}
+    .editor-sidebar .cat-tabs-new{flex:none}
+    .editor-sidebar .t-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+    .editor-sidebar .exp-section{flex:none}
+    /* Task #88 — Match the dashboard's .sidebar-nav scrollbar so the
+       whole app shares one visual treatment. 6px wide, transparent
+       track, white-tinted thumb (rgba(255,255,255,0.08) idle, .16 on
+       hover). Applied to BOTH the editor sidebar and media library
+       (plus their inner scroll containers .t-body and .ml-body). */
+    .editor-sidebar,.editor-sidebar .t-body,
+    .media-library,.media-library .ml-body{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    .editor-sidebar::-webkit-scrollbar,.editor-sidebar .t-body::-webkit-scrollbar,
+    .media-library::-webkit-scrollbar,.media-library .ml-body::-webkit-scrollbar{width:6px;height:6px}
+    .editor-sidebar::-webkit-scrollbar-track,.editor-sidebar .t-body::-webkit-scrollbar-track,
+    .media-library::-webkit-scrollbar-track,.media-library .ml-body::-webkit-scrollbar-track{background:transparent}
+    .editor-sidebar::-webkit-scrollbar-thumb,.editor-sidebar .t-body::-webkit-scrollbar-thumb,
+    .media-library::-webkit-scrollbar-thumb,.media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    .editor-sidebar::-webkit-scrollbar-thumb:hover,.editor-sidebar .t-body::-webkit-scrollbar-thumb:hover,
+    .media-library::-webkit-scrollbar-thumb:hover,.media-library .ml-body::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    .editor-sidebar::-webkit-scrollbar-corner,.editor-sidebar .t-body::-webkit-scrollbar-corner,
+    .media-library::-webkit-scrollbar-corner,.media-library .ml-body::-webkit-scrollbar-corner{background:transparent}
+    /* Light-mode mirrors dashboard's light .sidebar-nav (rgba(0,0,0,0.15) thumb). */
+    body.light .editor-sidebar,body.light .editor-sidebar .t-body,
+    body.light .media-library,body.light .media-library .ml-body{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .editor-sidebar::-webkit-scrollbar-thumb,body.light .editor-sidebar .t-body::-webkit-scrollbar-thumb,
+    body.light .media-library::-webkit-scrollbar-thumb,body.light .media-library .ml-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
     .properties-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:.6rem .8rem;flex-shrink:0}
     .tool-panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;padding:1rem;display:none;flex-shrink:0}
     .tool-panel.active{display:block;max-height:calc(100vh - 400px);overflow-y:auto;animation:panelSlide .2s ease}
@@ -291,9 +367,101 @@ router.get('/', requireAuth, async (req, res) => {
     body.light .upload-zone{background:linear-gradient(135deg,rgba(108,58,237,0.05),rgba(236,72,153,0.05));border-color:rgba(108,58,237,0.3)}
     body.light .input-field,body.light .text-input{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
     body.light .filter-btn{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.15)}
-    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px}}
-    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px}}
-    @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;gap:0}.media-library{display:flex;flex-direction:column}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
+
+    /* ═══════════════════════════════════════════════════════════════
+       Task #78 — Editor light-mode palette.
+       Mirrors the dashboard's light theme: white surfaces, dark slate
+       text, soft purple accents. Every editor-specific dark surface
+       gets a counterpart so toggling the floating moon/sun button on
+       the editor lands on a coherent light UI without breaking
+       contrast on the timeline, media library, sidebar, or PGM.
+       ═══════════════════════════════════════════════════════════════ */
+    /* Editor frame surfaces */
+    body.light .editor-topbar{background:#ffffff;border-bottom-color:rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .editor-topbar a,body.light .e-logo{color:#1a1a2e}
+    body.light .e-tb{background:rgba(108,58,237,.08);border-color:rgba(108,58,237,.25);color:#1a1a2e}
+    body.light .e-tb:hover{background:rgba(108,58,237,.16)}
+    body.light .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-color:transparent}
+    /* Task #88 — Project name input. Idle state is intentionally
+       dimmed (low-contrast bg, soft border, muted text) to telegraph
+       that the field is editable but inactive. Hover lifts contrast
+       slightly; focus brightens fully and adds a soft purple glow so
+       the user knows they're typing. */
+    #projectFilenameInput{height:32px;padding:0 12px;background:rgba(124,58,237,.04);border:1px solid rgba(124,58,237,.20);border-radius:6px;color:rgba(226,224,240,.55);font-size:12px;font-family:inherit;outline:none;min-width:200px;max-width:320px;transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease}
+    #projectFilenameInput::placeholder{color:rgba(226,224,240,.30)}
+    #projectFilenameInput:hover{background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.35);color:rgba(226,224,240,.85);cursor:text}
+    #projectFilenameInput:focus{background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.7);color:#e2e0f0;box-shadow:0 0 0 2px rgba(124,58,237,.18)}
+    #projectFilenameInput:focus::placeholder{color:rgba(226,224,240,.5)}
+    body.light #projectFilenameInput{background:rgba(124,58,237,.04);border-color:rgba(108,58,237,.20);color:rgba(26,26,46,.55)}
+    body.light #projectFilenameInput::placeholder{color:rgba(26,26,46,.35)}
+    body.light #projectFilenameInput:hover{background:rgba(124,58,237,.08);border-color:rgba(108,58,237,.35);color:rgba(26,26,46,.85)}
+    body.light #projectFilenameInput:focus{background:#ffffff;border-color:rgba(108,58,237,.7);color:#1a1a2e;box-shadow:0 0 0 2px rgba(108,58,237,.18)}
+    body.light .editor-container{background:#f1f3f9}
+    body.light .media-library,body.light .editor-sidebar{background:#ffffff;border-color:rgba(108,58,237,.18)}
+    body.light .editor-main{background:#f1f3f9}
+
+    /* Media library */
+    body.light .ml-head{border-bottom-color:rgba(108,58,237,.18)}
+    body.light .ml-head h3{color:#1a1a2e}
+    body.light .ml-tabs{border-bottom-color:rgba(108,58,237,.14)}
+    body.light .ml-tab{color:#64748b}
+    body.light .ml-tab.active{color:#7c3aed;border-bottom-color:#7c3aed}
+    body.light .ml-search input{background:#ffffff;border-color:rgba(108,58,237,.25);color:#1a1a2e}
+    body.light .ml-search input::placeholder{color:#94a3b8}
+    body.light .ml-section{color:#64748b}
+    body.light .ml-fitem,body.light .ml-fl{background:rgba(108,58,237,.05);border-color:rgba(108,58,237,.15)}
+    body.light .ml-fitem:hover,body.light .ml-fl:hover{background:rgba(108,58,237,.10)}
+    body.light .ml-fnm{color:#475569}
+    body.light .ml-foot{border-top:1px solid rgba(108,58,237,.14);background:#ffffff}
+    body.light .ml-fb{background:rgba(108,58,237,.08);border-color:rgba(108,58,237,.22);color:#1a1a2e}
+    body.light .ml-fb:hover{background:rgba(108,58,237,.16)}
+    body.light .ml-fb.ai{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;border-color:transparent}
+
+    /* Editor sidebar (right) */
+    body.light .editor-sidebar{color:#1a1a2e}
+    body.light .v10-rp,body.light .v10-tab,body.light .v10-tab-row{background:#ffffff;color:#1a1a2e}
+    body.light .v10-tab.active{background:rgba(108,58,237,.16);color:#1a1a2e}
+    body.light .v10-rp-btn,body.light .v10-rp-card{background:rgba(108,58,237,.06);border-color:rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .v10-rp-btn:hover{background:rgba(108,58,237,.14)}
+    body.light .v10-rp-grp h4{color:#475569}
+
+    /* Program monitor / video preview */
+    body.light .video-preview-area{background:#0a0a0a;border-color:rgba(108,58,237,.25)}
+    body.light .upload-zone{color:#1a1a2e}
+    body.light .upload-zone h3{color:#1a1a2e}
+    body.light .upload-zone p{color:#475569}
+
+    /* Timeline */
+    body.light .timeline-container,body.light #timelineContainer{background:#f8f9fc;border-color:rgba(108,58,237,.18)}
+    body.light .mt-toolbar{background:#ffffff;border-bottom-color:rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .mt-tools-row,body.light .mt-tools-row button{color:#1a1a2e}
+    body.light .mt-labels{background:#ffffff;border-right:1px solid rgba(108,58,237,.18);color:#1a1a2e}
+    body.light .mt-track-label{color:#475569}
+    body.light .mt-tracks-area{background:#f1f3f9}
+    body.light .mt-track{background:rgba(108,58,237,.04);border-bottom:1px solid rgba(108,58,237,.10)}
+    body.light .mt-clip{color:#1a1a2e}
+    body.light .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.45),rgba(250,204,21,.28));border-color:rgba(202,138,4,.55);color:#1a1a2e}
+    body.light .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.55),rgba(124,58,237,.35));border-color:rgba(124,58,237,.6);color:#fff}
+    body.light .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.55),rgba(56,189,248,.35));border-color:rgba(56,189,248,.6);color:#0a0a0a}
+    body.light .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.55),rgba(244,114,182,.35));border-color:rgba(244,114,182,.6);color:#fff}
+    body.light .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.55),rgba(52,211,153,.35));border-color:rgba(52,211,153,.6);color:#0a0a0a}
+    body.light .mt-playhead{background:#7c3aed;box-shadow:0 0 4px rgba(124,58,237,.55)}
+
+    /* Filmstrip */
+    body.light .filmstrip-wrap{background:#ffffff;border-color:rgba(108,58,237,.14)}
+    body.light .fs-ruler{background:#f1f3f9;color:#64748b}
+    body.light .fs-track{background:rgba(108,58,237,.05)}
+    body.light .fs-label{color:#475569}
+
+    /* Generic body/text fallback so text on the editor isn't pure white in light mode */
+    body.light{color:#1a1a2e}
+    /* Task #93 — Responsive breakpoints stay on the same grid-template-
+       areas pattern; only the column widths shrink at narrower screens. */
+    @media(max-width:1400px){.editor-container{grid-template-columns:350px 1fr 380px;grid-template-rows:56px 48vh 1fr}}
+    @media(max-width:1200px){.editor-container{grid-template-columns:300px 1fr 320px;grid-template-rows:56px 48vh 1fr}}
+    /* Below 768px the layout flattens to a single column stack. Areas
+       redefined so each panel claims its own row. */
+    @media(max-width:768px){.editor-container{grid-template-columns:1fr;grid-template-rows:auto auto auto auto auto;grid-template-areas:"topbar" "media" "preview" "sidebar" "timeline";height:auto;gap:0}.media-library{display:flex;flex-direction:column;height:auto;max-height:50vh}.editor-main{min-height:600px}.editor-sidebar{width:100%;min-width:100%;max-height:none;height:auto}.video-preview-area{min-height:250px}.timeline-container{margin-top:.5rem}.tools-section{flex-direction:column}.tool-button{width:100%;justify-content:center}}
     /* Override main-content padding for editor — maximize usable space */
     .main-content{padding:.5rem !important}
   
@@ -348,19 +516,45 @@ router.get('/', requireAuth, async (req, res) => {
     .keyframe-dot.active{background:#EC4899;box-shadow:0 0 6px rgba(236,72,153,0.5)}
     
     /* ═══ MEDIA LIBRARY (Left Panel) ═══ */
-    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow:hidden;grid-column:1;grid-row:2}
-    .ml-head{padding:8px 10px;border-bottom:1px solid rgba(108,58,237,.06);display:flex;align-items:center;gap:6px}
-    .ml-head h3{font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.7px;flex:1}
+    /* Task #89 — Media library mirrors the sidebar: height:100%
+       + max-height:100% + align-self:stretch so the panel fills
+       exactly grid-row:2 and stops at the timeline's top edge.
+       overflow-y:auto stays for safety; inner .ml-body still does
+       the actual file-grid scroll. */
+    .media-library{background:#110d1c;border-right:1px solid rgba(108,58,237,.08);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;grid-area:media;min-height:0;height:100%;max-height:100%;align-self:stretch}
+    /* Task #68 — Media library text bumped to dashboard-scale sizing.
+       Was 8-11px; rest of the app uses 12-14px. This block keeps the
+       same visual hierarchy (header > tabs > items > section labels)
+       but at sizes that don't look like debug output next to the
+       editor sidebar's normal 13px UI. */
+    .ml-head{padding:12px 14px;border-bottom:1px solid rgba(108,58,237,.06);display:flex;align-items:center;gap:8px}
+    .ml-head h3{font-size:14px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.7px;flex:1}
     .ml-tabs{display:flex;border-bottom:1px solid rgba(108,58,237,.06)}
-    .ml-tab{flex:1;padding:8px 4px;text-align:center;font-size:9.5px;font-weight:700;color:#4a3d65;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:.3px;background:none;border-top:none;border-left:none;border-right:none}
+    .ml-tab{flex:1;padding:10px 6px;text-align:center;font-size:12px;font-weight:700;color:#4a3d65;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:.3px;background:none;border-top:none;border-left:none;border-right:none}
     .ml-tab:hover{color:#a78bfa;background:rgba(108,58,237,.03)}
     .ml-tab.active{color:#a78bfa;border-bottom-color:#7c3aed;background:rgba(108,58,237,.04)}
+    /* ═══ V10 CRITICAL HIDE RULES — INLINED TO PREVENT LEGACY-LAYOUT FLASH ═══
+       Without these, the legacy sidebar (search, upload, folders) renders
+       visible for ~500ms on load until v10-editor-redesign.js mounts its
+       CSS via JS. We apply the critical display:none rules pre-paint so
+       the user never sees the flash. The V10 script later re-asserts these
+       same rules; duplicates are a no-op. */
+    .media-library .ml-search{display:none!important}
+    .media-library .ml-body>.ml-upload{display:none!important}
+    .media-library .ml-body>.ml-section:not([data-v10]){display:none!important}
+    .media-library .ml-folder{display:none!important}
+    .media-library [data-v10-folder]{display:none!important}
+    .media-library .ml-body>.ml-fgrid:empty{display:none}
+    .filmstrip-wrap{display:none!important}
+    /* ═════════════════════════════════════════════════════════════════════ */
     .ml-search{padding:5px 8px}
-    .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;outline:none}
-    .ml-body{flex:1;overflow-y:auto;padding:5px 6px}
+    .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:8px 10px;color:#ccc;font-size:13px;outline:none}
+    /* Task #94 — Media library body gets a touch more padding so the
+       file grid has breathing room inside the now-shorter 48vh panel. */
+    .ml-body{flex:1;overflow-y:auto;padding:8px 10px}
     .ml-upload{border:2px dashed rgba(108,58,237,.2);border-radius:9px;padding:12px;text-align:center;margin-bottom:7px;cursor:pointer;transition:all .25s;background:rgba(108,58,237,.02)}
     .ml-upload:hover{border-color:#7c3aed;background:rgba(108,58,237,.06)}
-    .ml-section{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:6px 2px 3px;display:flex;align-items:center;gap:4px}
+    .ml-section{font-size:11px;font-weight:700;color:#7a6d9c;text-transform:uppercase;letter-spacing:.8px;padding:10px 4px 6px;display:flex;align-items:center;gap:6px}
     .ml-section::after{content:'';flex:1;height:1px;background:rgba(108,58,237,.05)}
     .ml-folder{display:flex;align-items:center;gap:6px;padding:5px 7px;background:#16112a;border-radius:6px;border:1px solid rgba(108,58,237,.04);cursor:pointer;margin-bottom:2px;transition:all .2s}
     .ml-folder:hover{border-color:rgba(108,58,237,.15);background:rgba(108,58,237,.04)}
@@ -374,9 +568,9 @@ router.get('/', requireAuth, async (req, res) => {
     .ml-fth .ml-dur{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.75);color:#bbb;font-size:7px;padding:0 3px;border-radius:2px;font-weight:600}
     .ml-fth .ml-add{position:absolute;bottom:2px;left:2px;background:rgba(108,58,237,.8);color:#fff;font-size:7px;padding:1px 4px;border-radius:2px;font-weight:700;opacity:0;transition:opacity .2s}
     .ml-fitem:hover .ml-add{opacity:1}
-    .ml-fnm{padding:3px 5px;font-size:8px;color:#5a4d78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .ml-foot{padding:5px 6px;border-top:1px solid rgba(108,58,237,.05);display:flex;gap:3px}
-    .ml-fb{flex:1;padding:5px;background:rgba(108,58,237,.05);border:1px solid rgba(108,58,237,.06);border-radius:5px;color:#5a4d78;font-size:8px;font-weight:700;cursor:pointer;text-align:center;transition:all .2s}.ml-fitem.selected{border:2px solid #6c3aed;background:rgba(108,58,237,.15)}.ml-fitem:hover{background:rgba(108,58,237,.08);transform:translateY(-1px)}.ml-folder{cursor:pointer;transition:background .2s}.ml-folder:hover{background:rgba(108,58,237,.1);border-radius:6px}.ml-folder.open{background:rgba(108,58,237,.08)}.ml-fb:hover{background:rgba(108,58,237,.15)!important;transform:translateY(-1px)}.tb3{cursor:pointer;transition:all .15s ease}.tb3:hover{background:rgba(108,58,237,.15)!important;transform:scale(1.02)}.tb3.on{background:rgba(108,58,237,.2)!important;border-color:rgba(108,58,237,.5)!important}.mt-tool-btn{cursor:pointer;transition:all .15s}.mt-tool-btn:hover{background:rgba(108,58,237,.2)}.annotation-tool-btn{cursor:pointer;transition:all .15s}.annotation-tool-btn:hover{background:rgba(108,58,237,.15)}.annotation-tool-btn.active{background:rgba(108,58,237,.25);border-color:#6c3aed}@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+    .ml-fnm{padding:6px 8px;font-size:12px;color:#a18ed0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ml-foot{padding:10px 12px;border-top:1px solid rgba(108,58,237,.05);display:flex;gap:8px}
+    .ml-fb{flex:1;padding:9px 10px;background:rgba(108,58,237,.05);border:1px solid rgba(108,58,237,.12);border-radius:7px;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer;text-align:center;transition:all .2s}.ml-fitem.selected{border:2px solid #6c3aed;background:rgba(108,58,237,.15)}.ml-fitem:hover{background:rgba(108,58,237,.08);transform:translateY(-1px)}.ml-folder{cursor:pointer;transition:background .2s}.ml-folder:hover{background:rgba(108,58,237,.1);border-radius:6px}.ml-folder.open{background:rgba(108,58,237,.08)}.ml-fb:hover{background:rgba(108,58,237,.15)!important;transform:translateY(-1px)}.tb3{cursor:pointer;transition:all .15s ease}.tb3:hover{background:rgba(108,58,237,.15)!important;transform:scale(1.02)}.tb3.on{background:rgba(108,58,237,.2)!important;border-color:rgba(108,58,237,.5)!important}.mt-tool-btn{cursor:pointer;transition:all .15s}.mt-tool-btn:hover{background:rgba(108,58,237,.2)}.annotation-tool-btn{cursor:pointer;transition:all .15s}.annotation-tool-btn:hover{background:rgba(108,58,237,.15)}.annotation-tool-btn.active{background:rgba(108,58,237,.25);border-color:#6c3aed}@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
     .ml-fb:hover{background:rgba(108,58,237,.12);color:#a78bfa}
     .ml-fb.ai{background:linear-gradient(135deg,rgba(108,58,237,.08),rgba(236,72,153,.04));border-color:rgba(108,58,237,.1);color:#a78bfa}
 
@@ -405,7 +599,11 @@ router.get('/', requireAuth, async (req, res) => {
     .editor-fullscreen-toggle{display:none!important}
     .dashboard .main-content{padding:0!important;margin:0!important;width:100vw!important;max-width:100vw!important}
     .dashboard{overflow:hidden!important}
-    .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay,.main-content .theme-toggle{display:none!important}
+    /* Task #78 — keep the floating theme toggle visible inside the
+       editor's full-viewport main-content. The pull-to-refresh, mobile
+       menu, and sidebar overlay are still suppressed. */
+    .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay{display:none!important}
+    .main-content .theme-toggle{position:fixed;top:1.2rem;right:1.5rem;z-index:99999}
     .feedback-btn{display:none!important}
     /* Hide extra original editor panels inside video-container */
     .video-container>div:not(.upload-zone):not(.video-preview-area):not(.filmstrip-wrap):not(.tools-section){display:none!important}
@@ -417,10 +615,13 @@ router.get('/', requireAuth, async (req, res) => {
 .fullscreen-btn:hover{background:rgba(124,58,237,.95);transform:scale(1.08)}
 .fullscreen-btn svg{width:18px;height:18px}
 .editor-container.fullscreen-mode .media-library,.editor-container.fullscreen-mode .editor-sidebar{display:none!important}
-.editor-container.fullscreen-mode{grid-template-columns:1fr!important}
-.editor-container.fullscreen-mode .editor-main{grid-column:1!important}
-.editor-container.fullscreen-mode .editor-topbar{grid-column:1!important}
-.editor-container.fullscreen-mode #timelineContainer{grid-column:1!important}
+/* Task #93 — Fullscreen mode redefines the grid as a single-column,
+   2-row stack: topbar (auto) / preview (1fr) / timeline (auto). The
+   side panels are hidden separately. */
+.editor-container.fullscreen-mode{grid-template-columns:1fr!important;grid-template-rows:auto 1fr auto!important;grid-template-areas:"topbar" "preview" "timeline"!important}
+.editor-container.fullscreen-mode .editor-main{grid-area:preview!important}
+.editor-container.fullscreen-mode .editor-topbar{grid-area:topbar!important}
+.editor-container.fullscreen-mode #timelineContainer{grid-area:timeline!important}
 .exit-fullscreen-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(12,8,20,.85);border:1px solid rgba(124,58,237,.3);border-radius:10px;padding:6px 16px;display:flex;align-items:center;gap:10px;z-index:200;backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .3s}
 .editor-container.fullscreen-mode .editor-main:hover .exit-fullscreen-bar{opacity:1;pointer-events:auto}
 .exit-fullscreen-bar span{color:rgba(255,255,255,.6);font-size:12px}
@@ -428,14 +629,20 @@ router.get('/', requireAuth, async (req, res) => {
 .exit-fullscreen-btn:hover{background:rgba(124,58,237,1)}
 
     /* ═══ TOP BAR ═══ */
-    .editor-topbar{grid-column:1/4;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 12px;gap:5px;height:38px;z-index:100}
-    .e-logo{font-size:13px;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:8px;cursor:pointer}
+    /* Task #62 — Editor topbar sized to match the standard dashboard
+       header: 56px tall (was 38px), 24px horizontal padding (was 12px),
+       proportional button sizing. The grid still allocates a single
+       'auto' row for it so the editor body below resizes to fill the
+       remaining viewport height. */
+    .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px;gap:12px;height:56px;z-index:100}
+    .e-logo{margin-right:14px;cursor:pointer}
+    .e-logo img{display:block}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
-    .e-tb{padding:4px 9px;font-size:10px;font-weight:600;color:#5a4d78;background:transparent;border:1px solid rgba(108,58,237,.08);border-radius:5px;cursor:pointer;transition:all .2s}
-    .e-tb:hover{color:#a78bfa;border-color:#7c3aed}
-    .e-tb.on{background:rgba(108,58,237,.1);color:#a78bfa}
+    .e-tb{padding:8px 16px;font-size:13px;font-weight:600;color:#a78bfa;background:transparent;border:1px solid rgba(108,58,237,.25);border-radius:8px;cursor:pointer;transition:all .2s}
+    .e-tb:hover{color:#fff;border-color:#7c3aed;background:rgba(108,58,237,.12)}
+    .e-tb.on{background:rgba(108,58,237,.18);color:#fff}
     .e-sp{flex:1}
-    .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-weight:700;padding:5px 16px}
+    .e-tb.ex{background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-weight:700;padding:9px 22px;font-size:13px}
 
     /* ═══ RIGHT PANEL: ORGANIZED SECTIONS ═══ */
     .editor-sidebar .cat-tabs-new{display:flex;gap:1px;padding:3px;background:#0c0814;border-bottom:1px solid rgba(108,58,237,.06)}
@@ -443,12 +650,16 @@ router.get('/', requireAuth, async (req, res) => {
     .editor-sidebar .cat-btn:hover{background:rgba(108,58,237,.06);color:#a78bfa}
     .editor-sidebar .cat-btn.on{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;box-shadow:0 2px 8px rgba(108,58,237,.3)}
     .editor-sidebar .cat-btn .ci{font-size:13px}
-    .editor-sidebar .t-body{flex:1;overflow-y:auto;padding:6px}
-    .editor-sidebar .tool-sec{margin-bottom:6px}
-    .editor-sidebar .tool-sec-title{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:4px 2px 3px;display:flex;align-items:center;gap:4px}
+    /* Task #94 — Slightly more breathing room on the AI tools list so
+       the reduced 48vh sidebar doesn't feel compressed. Padding bumped
+       on .t-body, gap+margin on .tg2 + .tool-sec, vertical padding on
+       .tb3 buttons. Hitboxes grow with the padding so taps stay easy. */
+    .editor-sidebar .t-body{flex:1;overflow-y:auto;padding:10px}
+    .editor-sidebar .tool-sec{margin-bottom:10px}
+    .editor-sidebar .tool-sec-title{font-size:8px;font-weight:700;color:#3d3358;text-transform:uppercase;letter-spacing:.8px;padding:4px 2px 5px;display:flex;align-items:center;gap:4px}
     .editor-sidebar .tool-sec-title::after{content:'';flex:1;height:1px;background:rgba(108,58,237,.05)}
-    .editor-sidebar .tg2{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px}
-    .editor-sidebar .tb3{flex:1 1 calc(50% - 3px);min-width:0;padding:8px 4px;text-align:center;font-size:10px;font-weight:600;color:#b8a6d9;background:#16112a;border:1px solid rgba(108,58,237,.06);border-radius:6px;cursor:pointer;transition:all .2s;white-space:nowrap}
+    .editor-sidebar .tg2{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+    .editor-sidebar .tb3{flex:1 1 calc(50% - 6px);min-width:0;padding:11px 6px;text-align:center;font-size:10px;font-weight:600;color:#b8a6d9;background:#16112a;border:1px solid rgba(108,58,237,.06);border-radius:6px;cursor:pointer;transition:all .2s;white-space:nowrap}
     .editor-sidebar .tb3:hover{border-color:#7c3aed;background:rgba(108,58,237,.07)}
     .editor-sidebar .tb3.on{background:linear-gradient(135deg,rgba(108,58,237,.15),rgba(236,72,153,.06));border-color:#7c3aed;color:#e9d5ff}
     .editor-sidebar .tb3.ai-t{border-color:rgba(236,72,153,.08);background:linear-gradient(135deg,rgba(108,58,237,.04),rgba(236,72,153,.02))}
@@ -469,7 +680,7 @@ router.get('/', requireAuth, async (req, res) => {
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
-    .timeline-container{grid-column:1/4}
+    .timeline-container{grid-area:timeline}
     .tl-toolbar{display:flex;align-items:center;gap:4px;padding:4px 8px;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.05)}
     .tl-btn{padding:3px 7px;font-size:9px;font-weight:700;color:#3d3358;border:1px solid rgba(108,58,237,.06);border-radius:4px;cursor:pointer;background:transparent;transition:all .2s}
     .tl-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.2)}
@@ -486,21 +697,49 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-tool-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.25);background:rgba(108,58,237,.06)}
     .mt-tool-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
     .mt-tool-btn svg{flex-shrink:0}
+    .mt-toolbar-sep{display:inline-block;width:1px;align-self:stretch;background:rgba(108,58,237,.2);margin:0 4px}
+    .mt-toolbar-left{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+    /* Task #79 — Timeline zoom slider styling. Compact pill that lives
+       inside .mt-toolbar-right; uses the same purple accent as the
+       Snap/Razor buttons for visual coherence. */
+    .mt-zoom{display:inline-flex;align-items:center;gap:6px;background:rgba(108,58,237,.10);border:1px solid rgba(108,58,237,.25);border-radius:8px;padding:3px 6px}
+    .mt-zoom-btn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;background:rgba(124,58,237,.18);border:1px solid rgba(124,58,237,.35);border-radius:5px;color:#e2e0f0;font-size:14px;font-weight:700;line-height:1;cursor:pointer;padding:0;user-select:none;transition:background .12s,border-color .12s}
+    .mt-zoom-btn:hover{background:rgba(124,58,237,.32);border-color:rgba(124,58,237,.6)}
+    .mt-zoom-btn:active{transform:translateY(1px)}
+    .mt-zoom-slider{width:120px;height:4px;-webkit-appearance:none;appearance:none;background:rgba(124,58,237,.25);border-radius:2px;outline:none;margin:0 2px;cursor:pointer}
+    .mt-zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#7c3aed);border:1px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer}
+    .mt-zoom-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#7c3aed);border:1px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer}
+    .mt-zoom-val{font-size:10px;font-weight:600;color:#a78bfa;min-width:48px;text-align:right;white-space:nowrap}
+    /* Light-mode overrides */
+    body.light .mt-zoom{background:rgba(108,58,237,.08);border-color:rgba(108,58,237,.25)}
+    body.light .mt-zoom-btn{background:rgba(124,58,237,.10);border-color:rgba(124,58,237,.30);color:#1a1a2e}
+    body.light .mt-zoom-btn:hover{background:rgba(124,58,237,.22)}
+    body.light .mt-zoom-slider{background:rgba(124,58,237,.20)}
+    body.light .mt-zoom-val{color:#7c3aed}
     .mt-add-track-btn{display:flex;align-items:center;gap:4px;padding:4px 10px;font-size:11px;font-weight:600;color:#a78bfa;background:rgba(108,58,237,.08);border:1px solid rgba(108,58,237,.15);border-radius:6px;cursor:pointer;transition:all .2s}
     .mt-add-track-btn:hover{background:rgba(108,58,237,.18);border-color:rgba(108,58,237,.3)}
     .mt-info{font-size:10px;color:#4a3d6a;font-weight:500}
-    .mt-timeline-body{display:flex;flex:1;overflow:hidden}
-    .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px}
-    .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04)}
+    .mt-timeline-body{display:flex;flex:1;overflow:hidden;min-height:0}
+    .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px;overflow-y:hidden}
+    .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04);position:relative;flex-shrink:0}
+    /* Always-visible delete button on user-added audio tracks. Red bullet in
+       the top-right of the label. Turns solid red on hover for affordance. */
+    .mt-label .mt-label-del{display:block;position:absolute;top:2px;right:2px;width:14px;height:14px;font-size:10px;font-weight:700;line-height:13px;text-align:center;border-radius:50%;background:rgba(239,68,68,.25);color:#fca5a5;cursor:pointer;border:1px solid rgba(239,68,68,.5);z-index:2;user-select:none}
+    .mt-label .mt-label-del:hover{background:#ef4444;color:#fff;border-color:#ef4444}
     .mt-label-video{color:#a78bfa}
     .mt-label-audio{color:#38bdf8}
     .mt-label-music{color:#f472b6}
     .mt-label-text{color:#facc15}
     .mt-label-fx{color:#34d399}
-    .mt-tracks-area{flex:1;overflow-x:auto;overflow-y:hidden;position:relative;background:#0a0612}
-    .mt-time-ruler{display:flex;align-items:center;height:22px;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18}
+    /* Task #88 — Tracks area must consume 100% of the remaining width
+       after the fixed-width .mt-labels column. flex:1 1 auto + min-
+       width:0 lets flex actually grow this child to fill the remaining
+       space; width:100% on the ruler and individual tracks pins them
+       to the container's full width regardless of content. */
+    .mt-tracks-area{flex:1 1 auto;min-width:0;width:100%;overflow-x:auto;overflow-y:auto;position:relative;background:#0a0612}
+    .mt-time-ruler{display:flex;align-items:center;height:22px;width:100%;min-width:100%;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18;position:sticky;top:0;z-index:5}
     .mt-time-ruler span{flex:1;font-size:9px;color:#3d3358;font-variant-numeric:tabular-nums}
-    .mt-track{height:36px;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
+    .mt-track{height:36px;width:100%;min-width:100%;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
     .mt-track:hover{background:rgba(108,58,237,.03)}
     .mt-track-video{background:rgba(124,58,237,.03)}
     .mt-track-audio{background:rgba(56,189,248,.03)}
@@ -509,14 +748,61 @@ router.get('/', requireAuth, async (req, res) => {
     .mt-track-fx{background:rgba(52,211,153,.02)}
     .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab;transition:box-shadow .2s}
     .mt-clip:hover{box-shadow:0 0 12px rgba(124,58,237,.3)}
+    /* Trim handles — 8px grip zones anchored to each clip edge. Become
+       visible on hover so they don't clutter the timeline at rest. */
+    .mt-clip-trim{position:absolute;top:0;width:8px;height:100%;cursor:ew-resize;z-index:2;opacity:0;transition:opacity .15s;background:rgba(255,255,255,.35);pointer-events:auto}
+    .mt-clip:hover > .mt-clip-trim,.mt-clip.selected > .mt-clip-trim{opacity:.85}
+    .mt-clip-trim:hover{background:rgba(255,255,255,.85)}
+    .mt-clip-trim.mt-trim-l{left:0;border-radius:6px 0 0 6px}
+    .mt-clip-trim.mt-trim-r{right:0;border-radius:0 6px 6px 0}
+    .mt-clip.mt-trimming{outline:2px solid #f59e0b;outline-offset:-2px}
+    /* Reverse-playback indicator — small ◀ badge pinned to the clip's
+       right edge so users can see at a glance which clips are reversed. */
+    .mt-clip.clip-reverse-on::after{content:'\u25C0';position:absolute;right:4px;top:50%;transform:translateY(-50%);color:#fde047;font-size:10px;pointer-events:none;text-shadow:0 0 3px rgba(0,0,0,.8)}
+    /* Task #55 — Freeze-frame indicator: a small \u2744 snowflake on top-right
+       of any clip that carries data-freeze="1". Distinct color from
+       reverse (cyan) so users can tell the two apart at a glance. */
+    .mt-clip[data-freeze="1"]::after{content:'\u2744\ufe0f';position:absolute;right:4px;top:2px;color:#22d3ee;font-size:10px;pointer-events:none;text-shadow:0 0 3px rgba(0,0,0,.9);z-index:5}
+    /* Linked-audio marker — cyan outline + chain icon so grouped audio clips
+       are visually associated on the timeline (set by Link Audio in MIXING). */
+    .mt-clip.audio-linked{box-shadow:inset 0 0 0 2px #22d3ee, 0 0 4px rgba(34,211,238,.4)}
+    .mt-clip.audio-linked::before{content:'\ud83d\udd17';position:absolute;left:4px;top:2px;color:#22d3ee;font-size:9px;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.8)}
+    /* Enhanced-audio marker — small \u2728 sparkle pinned to the top-left of
+       V1 clips whose audio has been cleaned via AI \u2192 Enhance Audio.
+       Uses ::before so it doesn't collide with the reverse badge (::after). */
+    .mt-clip-video[data-audio-enhanced="true"]::before{content:'\u2728';position:absolute;left:4px;top:2px;color:#fde047;font-size:10px;pointer-events:none;text-shadow:0 0 3px rgba(0,0,0,.85);z-index:5}
+    /* Marquee selection rectangle (drawn while dragging across tracks) */
+    .mt-marquee{position:absolute;border:1px dashed #a78bfa;background:rgba(124,58,237,.15);pointer-events:none;z-index:9;border-radius:3px}
+    /* Keyframe markers — yellow diamonds anchored along the top edge
+       of the clip at each keyframe's relative t position. */
+    .mt-kf-marker{position:absolute;top:-3px;width:7px;height:7px;background:#fde047;border:1px solid #ca8a04;transform:translateX(-50%) rotate(45deg);border-radius:1px;pointer-events:none;z-index:3;box-shadow:0 0 3px rgba(253,224,71,.8)}
     .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:1px solid rgba(124,58,237,.4)}
     .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:1px solid rgba(56,189,248,.35)}
+    .mt-clip.selected{outline:2px solid #a78bfa;outline-offset:-2px;box-shadow:0 0 16px rgba(139,92,246,.55)}
+    /* Task #72 — Snap feedback while dragging. Border glows cyan when the
+       active clip's edge is locked to a neighbour or playhead. */
+    .mt-clip.snap-active{outline:2px solid #22d3ee !important;outline-offset:-2px;box-shadow:0 0 12px rgba(34,211,238,.7) !important}
+    .mt-snap-guide{position:absolute;top:0;width:2px;height:100%;background:#22d3ee;box-shadow:0 0 8px rgba(34,211,238,.85);z-index:9998;pointer-events:none;opacity:0;transition:opacity .08s ease-out}
+    .mt-snap-guide.show{opacity:1}
+    body[data-timeline-tool="select"] .mt-clip{cursor:grab}
+    body[data-timeline-tool="select"] .mt-clip:active{cursor:grabbing}
+    body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}
+    /* Razor tool: clicking a clip splits it at the click point */
+    body[data-timeline-tool="razor"] .mt-clip{cursor:col-resize}
     .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:1px solid rgba(244,114,182,.35)}
     .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .mt-playhead{position:absolute;top:0;left:80px;width:2px;height:100%;background:#7c3aed;z-index:10;pointer-events:none}
-    .mt-playhead::before{content:'';position:absolute;top:0;left:-5px;width:12px;height:8px;background:#7c3aed;border-radius:0 0 3px 3px}
+    /* Task #63 — playhead must always render above clips. AI-inserted
+       clips (Hook=950, Brand Logo=920, B-Roll=900, Freeze=850) and
+       creation-stamped clips (addedAt-based, up to ~1100) stack above
+       the old z-index:10, leaving the playhead obscured. Bumped to
+       9999 so it sits above every clip layer regardless of order. */
+    .mt-playhead{position:absolute;top:0;left:0;width:2px;height:100%;background:#7c3aed;z-index:9999;pointer-events:none;box-shadow:0 0 4px rgba(124,58,237,.5)}
+    .mt-playhead .mt-playhead-handle{position:absolute;top:0;left:-7px;width:16px;height:14px;background:#7c3aed;border-radius:0 0 4px 4px;cursor:ew-resize;pointer-events:auto;box-shadow:0 2px 4px rgba(0,0,0,.3)}
+    .mt-playhead .mt-playhead-handle:hover{background:#a78bfa}
+    .mt-playhead.mt-playhead-dragging .mt-playhead-handle{background:#a78bfa}
+    .mt-tracks-area{cursor:crosshair}
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -530,28 +816,45 @@ router.get('/', requireAuth, async (req, res) => {
 
     <main class="main-content">
       ${getThemeToggle()}
+      ${getBrandKitModal()}
 
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <a href="/dashboard" style="text-decoration:none"><span class="e-logo">Splicora</span></a><div class="e-sep"></div>
+            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
             <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
             <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
             <button class="e-tb on">\ud83e\uddf2 Snap</button>
             <button class="e-tb">\ud83d\udcf7 Snapshot</button>
             <button class="e-tb">\ud83d\udd17 Link Tracks</button>
             <div class="e-sp"></div>
-            <button class="e-tb">\ud83d\udcbe Auto-saved</button>
-            <button class="e-tb ex" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export</button>
+            <!-- Task #76 \u2014 Editable project filename. Prefills "Untitled Project"
+                 so a fresh project always has a usable default. Export reads
+                 the current value (with a timestamp fallback if blank) and
+                 skips the legacy prompt-for-filename modal. -->
+            <!-- Task #88 \u2014 Inline style stripped; styling now lives in
+                 #projectFilenameInput CSS rule so :hover and :focus can
+                 lift the field from a dimmed idle state to full
+                 brightness. Native title removed (custom CSS hover-
+                 affordance suffices); aria-label keeps screen-reader
+                 access. -->
+            <input type="text" id="projectFilenameInput"
+              value="Untitled Project"
+              placeholder="Untitled Project"
+              maxlength="80"
+              autocomplete="off" spellcheck="false"
+              aria-label="Project filename"
+              onfocus="this.select()"/>
+            <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
           </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
               <div class="media-library" id="mediaLibrary">
                 <div class="ml-head"><h3>&#128194; Media</h3></div>
                 <div class="ml-tabs">
-                  <button class="ml-tab active" data-filter="all" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=''})">Videos</button>
+                  <button class="ml-tab active" data-filter="vid" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='vid'?'':'none'})">Videos</button>
                   <button class="ml-tab" data-filter="aud" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='aud'?'':'none'})">Audio</button>
                   <button class="ml-tab" data-filter="img" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=el.dataset.mediaType==='img'?'':'none'})">Images</button>
-                  <button class="ml-tab" data-filter="stock" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display='none'})">Stock</button>
+                  <button class="ml-tab" data-filter="all" onclick="document.querySelectorAll('.ml-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');document.querySelectorAll('.ml-fitem').forEach(el=>{el.style.display=''})">All</button>
                 </div>
                 <div class="ml-search"><input placeholder="&#128269; Search media..." /></div>
                 <div class="ml-body">
@@ -561,18 +864,11 @@ router.get('/', requireAuth, async (req, res) => {
                     <div style="font-size:8px;color:#3d3358;margin-top:1px">MP4, MOV, MP3, WAV, PNG, JPG</div>
                     <button style="margin-top:5px;padding:4px 14px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:5px;color:#fff;font-size:9px;font-weight:700;border:none;cursor:pointer">+ Upload</button>
                   </div>
-                  <div class="ml-section">Folders</div>
-                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Completed Videos</span><span style="font-size:8px;color:#3d3358">12</span></div>
-                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1">Not Completed</span><span style="font-size:8px;color:#3d3358">5</span></div>
-                  <div class="ml-folder"><span style="font-size:15px">&#128193;</span><span style="font-size:10px;font-weight:600;color:#b8a6d9;flex:1">Leonardo AI Images</span><span style="font-size:8px;color:#3d3358">24</span></div>
-                  <div class="ml-section">Recent &mdash; drag to timeline</div>
                   <div class="ml-fgrid" id="mediaFileGrid">
                   </div>
                 </div>
                 <div class="ml-foot">
-                  <button class="ml-fb">&#128229; Import</button>
-                  <button class="ml-fb">&#128193; Folder</button>
-                  <button class="ml-fb ai">&#10024; AI B-Roll</button>
+                  <button class="ml-fb ai" style="flex:1;width:100%">&#10024; AI B-Roll</button>
                 </div>
               </div>
 
@@ -637,44 +933,6 @@ router.get('/', requireAuth, async (req, res) => {
                 </div>
               </div>
 
-              <div class="timeline-container" id="timelineContainer">
-              <div class="mt-toolbar">
-                <div class="mt-toolbar-left">
-                  <button class="mt-tool-btn active" id="mtRazorBtn" title="Razor Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.121 14.121L7.05 21.192a2 2 0 01-2.828 0l-.414-.414a2 2 0 010-2.828l7.07-7.071"/><path d="M16.243 11.999L21.9 6.343a2 2 0 000-2.829l-.707-.707a2 2 0 00-2.828 0L12.707 8.464"/><line x1="8" y1="8" x2="16" y2="16"/></svg> Razor</button>
-                  <button class="mt-tool-btn" id="mtSelectBtn" title="Select Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg> Select</button>
-                  <button class="mt-tool-btn" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
-                </div>
-                <div class="mt-toolbar-right">
-                  <button class="mt-add-track-btn" id="mtAddTrackBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Track</button>
-                  <span class="mt-info">5 tracks &bull; 0:00</span>
-                </div>
-              </div>
-              <div class="mt-timeline-body">
-                <div class="mt-labels">
-                  <div class="mt-label mt-label-video">V1</div>
-                  <div class="mt-label mt-label-audio">A1</div>
-                  <div class="mt-label mt-label-music">M1</div>
-                  <div class="mt-label mt-label-text">T1</div>
-                  <div class="mt-label mt-label-fx">FX</div>
-                </div>
-                <div class="mt-tracks-area" id="mtTracksArea">
-                  <div class="mt-time-ruler" id="mtTimeRuler">
-                    <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span><span>3:30</span><span>4:00</span>
-                  </div>
-                  <div class="mt-track mt-track-video" data-type="video">
-                    <div class="mt-clip mt-clip-video" style="left:0;width:35%"><span class="mt-clip-label">clip_01.mp4</span></div>
-                    <div class="mt-clip mt-clip-video" style="left:37%;width:25%"><span class="mt-clip-label">clip_02.mp4</span></div>
-                  </div>
-                  <div class="mt-track mt-track-audio" data-type="audio">
-                    <div class="mt-clip mt-clip-audio" style="left:0;width:60%"><span class="mt-clip-label">audio_main.wav</span></div>
-                  </div>
-                  <div class="mt-track mt-track-music" data-type="music"></div>
-                  <div class="mt-track mt-track-text" data-type="text"></div>
-                  <div class="mt-track mt-track-fx" data-type="fx"></div>
-                  <div class="mt-playhead" id="mtPlayhead"></div>
-                </div>
-              </div>
-            </div>
 
             <div class="tools-section">
               <button type="button" id="undoBtn" class="tool-button" style="background:linear-gradient(135deg,#F59E0B,#D97706);color:#fff;border:none;font-weight:700" title="Undo last action">↩️ Undo</button>
@@ -928,21 +1186,21 @@ router.get('/', requireAuth, async (req, res) => {
               <button type="button" class="toolbar-btn" id="zoomInBtn" title="Zoom In">➕</button>
               <div style="flex:1"></div>
               <button type="button" class="toolbar-btn" id="saveChangesBtn" title="Save Changes" style="background:var(--primary);color:white;border-color:var(--primary)">💾 Save</button>
-              <button type="button" class="toolbar-btn" id="quickExportBtn" title="Export" style="background:linear-gradient(135deg,#10B981,#06B6D4);color:white;border-color:transparent">📥 Export</button>
+              <button type="button" class="toolbar-btn" id="quickSaveDraftBtn" title="Save the current project state as a draft" style="background:linear-gradient(135deg,#10B981,#06B6D4);color:white;border-color:transparent">💾 Save as Draft</button>
             </div>
           </div>
         </div>
 
         <div class="editor-sidebar">
           <div class="cat-tabs-new">
-            <button class="cat-btn on" onclick="swCat2(this,'edit')"><span class="ci">\u2702\ufe0f</span>EDIT</button>
+            <button class="cat-btn on" onclick="swCat2(this,'ai')"><span class="ci">\u2728</span>AI</button>
+            <button class="cat-btn" onclick="swCat2(this,'edit')"><span class="ci">\u2702\ufe0f</span>EDIT</button>
             <button class="cat-btn" onclick="swCat2(this,'audio')"><span class="ci">\ud83d\udd0a</span>AUDIO</button>
-            <button class="cat-btn" onclick="swCat2(this,'ai')"><span class="ci">\u2728</span>AI</button>
             <button class="cat-btn" onclick="swCat2(this,'fx')"><span class="ci">\ud83c\udfa8</span>FX</button>
           </div>
           <div class="t-body">
             <!-- EDIT TAB -->
-            <div class="cat-content-new active" id="cat-edit2">
+            <div class="cat-content-new" id="cat-edit2">
               <div class="tool-sec"><div class="tool-sec-title">Clip Tools</div>
                 <div class="tg2">
                   <div class="tb3 on">\u2702\ufe0f Trim</div>
@@ -1002,29 +1260,29 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
             </div>
             <!-- AI TAB -->
-            <div class="cat-content-new" id="cat-ai2">
-              <div class="tool-sec"><div class="tool-sec-title">AI Generation</div>
+            <div class="cat-content-new active" id="cat-ai2">
+              <div class="tool-sec">
                 <div class="tg2">
-                  <div class="tb3 ai-t on">\u2728 Enhance</div>
-                  <div class="tb3 ai-t">\ud83d\udcdd Captions</div>
-                  <div class="tb3 ai-t">\ud83e\ude9d AI Hook</div>
-                  <div class="tb3 ai-t">\ud83c\udfa8 Brand Kit</div>
-                </div>
-              </div>
-              <div class="tool-sec"><div class="tool-sec-title">AI Analysis</div>
-                <div class="tg2">
-                  <div class="tb3 ai-t">\ud83d\udcdc Transcript</div>
-                  <div class="tb3 ai-t">\ud83c\udfac B-Roll</div>
-                  <div class="tb3 ai-t">\ud83e\udde0 Smart Cut</div>
-                  <div class="tb3 ai-t">\ud83d\udc41\ufe0f Scene Detect</div>
+                  <div class="tb3 ai-t on">\ud83c\udfad Style Transfer</div>
+                  <div class="tb3 ai-t">\ud83d\uddbc\ufe0f BG Remove</div>
+                  <div class="tb3 ai-t">\ud83d\udde3\ufe0f AI Voice</div>
+                  <div class="tb3 ai-t">\ud83c\udf0d Translate</div>
                 </div>
               </div>
               <div class="tool-sec"><div class="tool-sec-title">AI Creative</div>
                 <div class="tg2">
-                  <div class="tb3 ai-t">\ud83c\udfad Style Transfer</div>
-                  <div class="tb3 ai-t">\ud83d\uddbc\ufe0f BG Remove</div>
-                  <div class="tb3 ai-t">\ud83d\udde3\ufe0f AI Voice</div>
-                  <div class="tb3 ai-t">\ud83c\udf0d Translate</div>
+                  <div class="tb3 ai-t">\ud83c\udfac B-Roll</div>
+                  <div class="tb3 ai-t">\ud83e\udde0 Smart Cut</div>
+                  <div class="tb3 ai-t">\ud83d\udc41\ufe0f Scene Detect</div>
+                  <div class="tb3 ai-t">\ud83d\udcdc Transcript</div>
+                </div>
+              </div>
+              <div class="tool-sec"><div class="tool-sec-title">AI Analysis</div>
+                <div class="tg2">
+                  <div class="tb3 ai-t">\u2728 Enhance Audio</div>
+                  <div class="tb3 ai-t">\ud83d\udcdd Captions</div>
+                  <div class="tb3 ai-t">\ud83e\ude9d AI Hook</div>
+                  <div class="tb3 ai-t">\ud83c\udfa8 Brand Kit</div>
                 </div>
               </div>
             </div>
@@ -1058,12 +1316,72 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
           <div class="exp-section">
             <div class="exp-row">
-              <select class="exp-sel"><option>1080p</option><option>720p</option><option>4K</option></select>
-              <select class="exp-sel"><option>MP4</option><option>MOV</option><option>WebM</option></select>
+              <select class="exp-sel" id="exportQualitySel">
+                <option value="480p">480p</option>
+                <option value="720p" selected>720p</option>
+                <option value="1080p">1080p</option>
+                <option value="4K">4K</option>
+              </select>
+              <select class="exp-sel" id="exportFormatSel">
+                <option value="mp4" selected>MP4</option>
+                <option value="mov">MOV</option>
+                <option value="webm">WebM</option>
+              </select>
             </div>
-            <button class="exp-go" onclick="if(typeof exportVideo==='function')exportVideo()">\ud83c\udfac Export Video</button>
+            <button class="exp-go" id="exportButton" type="button">\ud83c\udfac Export Video</button>
           </div>
         </div>
+
+              <div class="timeline-container" id="timelineContainer">
+              <div class="mt-toolbar">
+                <div class="mt-toolbar-left">
+                  <button class="mt-tool-btn" id="mtRazorBtn" title="Razor Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.121 14.121L7.05 21.192a2 2 0 01-2.828 0l-.414-.414a2 2 0 010-2.828l7.07-7.071"/><path d="M16.243 11.999L21.9 6.343a2 2 0 000-2.829l-.707-.707a2 2 0 00-2.828 0L12.707 8.464"/><line x1="8" y1="8" x2="16" y2="16"/></svg> Razor</button>
+                  <button class="mt-tool-btn active" id="mtSelectBtn" title="Select Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg> Select</button>
+                  <span class="mt-toolbar-sep"></span>
+                  <button class="mt-tool-btn" id="mtUndoBtn" title="Undo">\u21a9 Undo</button>
+                  <button class="mt-tool-btn" id="mtRedoBtn" title="Redo">\u21aa Redo</button>
+                  <span class="mt-toolbar-sep"></span>
+                  <button class="mt-tool-btn active" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
+                  <button class="mt-tool-btn" id="mtSnapshotBtn" title="Snapshot" style="display:none">\ud83d\udcf7 Snapshot</button>
+                  <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
+                </div>
+                <div class="mt-toolbar-right">
+                  <span class="mt-info">5 tracks &bull; 0:00</span>
+                  <span class="mt-toolbar-sep"></span>
+                  <!-- Task #79 — Timeline zoom slider. Drives setTimelineZoom();
+                       buttons step ×0.8 / ×1.25, slider sets px-per-second
+                       directly in the [1, 200] range (default 10). -->
+                  <div class="mt-zoom" title="Timeline zoom">
+                    <button class="mt-zoom-btn" id="mtZoomOut" title="Zoom out (Ctrl/Cmd + -)" type="button">&minus;</button>
+                    <input class="mt-zoom-slider" id="mtZoomSlider" type="range" min="1" max="200" step="1" value="10" aria-label="Timeline zoom"/>
+                    <button class="mt-zoom-btn" id="mtZoomIn" title="Zoom in (Ctrl/Cmd + +)" type="button">+</button>
+                    <span class="mt-zoom-val" id="mtZoomVal">10 px/s</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-timeline-body">
+                <div class="mt-labels">
+                  <div class="mt-label mt-label-video">V1</div>
+                  <div class="mt-label mt-label-audio">A1</div>
+                  <div class="mt-label mt-label-music">M1</div>
+                  <div class="mt-label mt-label-text">T1</div>
+                  <div class="mt-label mt-label-fx">FX</div>
+                </div>
+                <div class="mt-tracks-area" id="mtTracksArea">
+                  <div class="mt-time-ruler" id="mtTimeRuler">
+                    <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span><span>2:00</span><span>2:30</span><span>3:00</span><span>3:30</span><span>4:00</span>
+                  </div>
+                  <div class="mt-track mt-track-video" data-type="video">
+                  </div>
+                  <div class="mt-track mt-track-audio" data-type="audio">
+                  </div>
+                  <div class="mt-track mt-track-music" data-type="music"></div>
+                  <div class="mt-track mt-track-text" data-type="text"></div>
+                  <div class="mt-track mt-track-fx" data-type="fx"></div>
+                  <div class="mt-playhead" id="mtPlayhead" style="left:0px"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>
+                </div>
+              </div>
+            </div>
       </div>
     </main>
   </div>
@@ -1115,24 +1433,9 @@ router.get('/', requireAuth, async (req, res) => {
     function populateMediaGrid() {
       const grid = document.getElementById('mediaFileGrid');
       if (!grid) return;
-      const files = [
-        {name:'0314(1).mp4',type:'vid',dur:'2:21',icon:'\ud83c\udfac'},
-        {name:'0314.mp4',type:'vid',dur:'0:35',icon:'\ud83c\udfac'},
-        {name:'intro_hook.mp4',type:'vid',dur:'1:30',icon:'\ud83c\udfac'},
-        {name:'beat_chill.mp3',type:'aud',dur:'3:15',icon:'\ud83c\udfb5'},
-        {name:'thumbnail.png',type:'img',dur:'',icon:'\ud83d\uddbc\ufe0f'},
-        {name:'broll_city.mp4',type:'vid',dur:'0:22',icon:'\ud83c\udfac'}
-      ];
-      grid.innerHTML = files.map(f => 
-        '<div class="ml-fitem" draggable="true" data-media-type="' + f.type + '">' +
-          '<div class="ml-fth">' + f.icon +
-            '<span class="ml-badge ' + f.type + '">' + f.type.toUpperCase() + '</span>' +
-            (f.dur ? '<span class="ml-dur">' + f.dur + '</span>' : '') +
-            '<span class="ml-add">+ Timeline</span>' +
-          '</div>' +
-          '<div class="ml-fnm">' + f.name + '</div>' +
-        '</div>'
-      ).join('');
+      // Start empty — only real user uploads populate the media library.
+      // Items are appended by media-panel-fix.js handleFiles() on upload.
+      grid.innerHTML = '';
     }
 
     // ═══ FILMSTRIP: Generate video thumbnails ═══
@@ -1599,6 +1902,34 @@ function showToast(message, type = 'success') {
 
         // Set end time to video duration
         (function(){var e=document.getElementById('endTime');if(e)e.value=Math.round(videoDuration);})();
+
+        // Add the uploaded file to the Media library ("All" + correct type
+        // tab) as a raw asset. Do NOT create a Draft here — Media and
+        // Projects are strictly separate.
+        try {
+          if (typeof window.addUploadedMediaItem === 'function') {
+            window.addUploadedMediaItem({
+              name: (file && file.name) || data.filename,
+              filename: data.filename,
+              serveUrl: data.serveUrl,
+              duration: videoDuration
+            });
+          }
+        } catch (_) {}
+
+        // ALSO auto-place the uploaded video on V1, appended after any
+        // existing clips. addClipToTimeline uses findRightmostClipEnd so
+        // new clips sit back-to-back with whatever's already on the track.
+        try {
+          if (typeof window.addClipToTimeline === 'function') {
+            window.addClipToTimeline(
+              (file && file.name) || data.filename,
+              'vid',
+              videoDuration,
+              data.serveUrl
+            );
+          }
+        } catch (_) {}
 
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
@@ -3107,17 +3438,370 @@ function showToast(message, type = 'success') {
     });
 
     // Export handler
+    // Task #29 — Prompt the user for a custom output filename before any
+    // export work begins. Returns a Promise that resolves with a sanitized
+    // filename (no extension) or null if the user cancels. A default
+    // timestamped name is pre-filled so one-click works.
+    async function promptExportFilename(defaultExt){
+      return await new Promise(function(resolve){
+        // Toggle-close / double-click guard
+        var existing = document.getElementById('exportFilenameDialog');
+        if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+
+        var pad = function(n){ return n < 10 ? '0' + n : String(n); };
+        var d = new Date();
+        var defaultName = 'Splicora-' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate())
+                       + '-' + pad(d.getHours()) + pad(d.getMinutes());
+
+        var backdrop = document.createElement('div');
+        backdrop.id = 'exportFilenameDialog';
+        backdrop.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.6);' +
+          'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+
+        var modal = document.createElement('div');
+        modal.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);' +
+          'border-radius:14px;padding:22px;width:min(440px,92vw);' +
+          'box-shadow:0 30px 80px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+
+        modal.innerHTML =
+          '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83c\udfac EXPORT VIDEO</div>' +
+          '<div style="font-size:11px;color:#8886a0;margin-bottom:14px;line-height:1.4">' +
+            'Name your output file (the format extension will be added automatically).' +
+          '</div>' +
+          '<label style="display:block;font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px;letter-spacing:.3px">FILENAME</label>' +
+          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+            '<input id="exportFilenameInput" type="text" value="' + defaultName + '" ' +
+              'style="flex:1;padding:8px 10px;background:#0c0814;border:1px solid rgba(124,58,237,.25);' +
+              'border-radius:6px;color:#e2e0f0;font-size:13px;font-family:inherit;outline:none"/>' +
+            '<span style="color:#8886a0;font-size:12px">.' + (defaultExt || 'mp4') + '</span>' +
+          '</div>' +
+          '<div id="exportFilenameError" style="font-size:10px;color:#ef4444;min-height:14px;margin-bottom:10px"></div>' +
+          '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+            '<button id="exportFilenameCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);' +
+              'border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;' +
+              'cursor:pointer">Cancel</button>' +
+            '<button id="exportFilenameOK" style="padding:8px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
+              'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">' +
+              'Export \u2192</button>' +
+          '</div>';
+
+        backdrop.appendChild(modal);
+        document.body.appendChild(backdrop);
+
+        var input = modal.querySelector('#exportFilenameInput');
+        var err   = modal.querySelector('#exportFilenameError');
+        var ok    = modal.querySelector('#exportFilenameOK');
+        var cancel= modal.querySelector('#exportFilenameCancel');
+
+        // Auto-focus + select so user can immediately type a replacement
+        setTimeout(function(){ input.focus(); input.select(); }, 30);
+
+        function sanitize(name){
+          name = String(name || '').trim();
+          // Strip any extension the user typed (we add it back server-side)
+          name = name.replace(/\.(mp4|mov|webm|mkv|gif)$/i, '');
+          // Allowlist: letters, digits, hyphen, underscore, space, dot
+          name = name.replace(/[^A-Za-z0-9._ \-]+/g, '_');
+          // Collapse consecutive underscores and trim leading/trailing dots
+          name = name.replace(/_+/g, '_').replace(/^\.+|\.+$/g, '');
+          return name;
+        }
+        function close(val){
+          try { backdrop.remove(); } catch(_){}
+          document.removeEventListener('keydown', onKey, true);
+          resolve(val);
+        }
+        function accept(){
+          var v = sanitize(input.value);
+          // If user cleared the field or typed only special chars that
+          // got fully stripped, fall back to the default name silently
+          // instead of blocking the export with an error.
+          if (!v){ v = sanitize(defaultName) || 'Splicora-export'; }
+          if (v.length > 80){ err.textContent = 'Name is too long (max 80 characters).'; return; }
+          close(v);
+        }
+        function onKey(e){
+          if (e.key === 'Escape'){ e.preventDefault(); close(null); }
+          else if (e.key === 'Enter'){ e.preventDefault(); accept(); }
+        }
+        ok.addEventListener('click', accept);
+        cancel.addEventListener('click', function(){ close(null); });
+        backdrop.addEventListener('click', function(e){ if (e.target === backdrop) close(null); });
+        document.addEventListener('keydown', onKey, true);
+      });
+    }
+
     document.getElementById('exportButton')?.addEventListener('click', async () => {
-      if (!currentVideoFile) {
-        showToast('Please upload a video first', 'error');
-        return;
+      // Timeline-aware export: if the user has built a sequence on V1, render
+      // the timeline (multiple clips + gaps + razor splits) via the new
+      // /video-editor/export-timeline endpoint. Fall back to the single-file
+      // /video-editor/export (with filters) only when the timeline is empty.
+      // Collect EVERY clip from every track — V1 drives the visual concat,
+      // A1+ drive audio mixing in the export, T1 drives drawtext overlays.
+
+      // Task #76 — Filename comes from the project filename input in the
+      // header (no popup). If the field is empty/whitespace, fall back
+      // to "Untitled Project <timestamp>" so the server never receives
+      // a blank string. The prompt-for-filename modal is gone.
+      var _fmtSelProbe = document.getElementById('exportFormatSel');
+      var _selFormatEarly = (_fmtSelProbe && _fmtSelProbe.value) || 'mp4';
+      var _projInput = document.getElementById('projectFilenameInput');
+      var customFilename = (_projInput && _projInput.value || '').trim();
+      if (!customFilename){
+        var _ts = new Date();
+        var _pad = function(n){ return n < 10 ? '0' + n : String(n); };
+        var _stamp = _ts.getFullYear() + '-' + _pad(_ts.getMonth() + 1) + '-' + _pad(_ts.getDate()) +
+                     '_' + _pad(_ts.getHours()) + _pad(_ts.getMinutes()) + _pad(_ts.getSeconds());
+        customFilename = 'Untitled Project ' + _stamp;
+        if (_projInput) _projInput.value = 'Untitled Project';
+      }
+      var timelineClips = Array.from(document.querySelectorAll('.mt-clip'))
+        .map(function(c){
+          var track = c.parentElement;
+          return {
+            track:        (track && track.getAttribute('data-type')) || 'video',
+            left:         c.style.left,
+            width:        c.style.width,
+            duration:     c.dataset.duration     || '',
+            sourceOffset: c.dataset.sourceOffset || '0',
+            mediaUrl:     c.dataset.mediaUrl     || '',
+            filename:     c.dataset.serverFilename || c.dataset.fileName || '',
+            clipType:     c.dataset.clipType     || 'vid',
+            // Text
+            textContent:  c.dataset.textContent  || '',
+            fontSize:     c.dataset.fontSize     || '',
+            fontFamily:   c.dataset.fontFamily   || '',  // Task #70 — Brand Kit caption font
+            textColor:    c.dataset.textColor    || '',
+            position:     c.dataset.position     || '',
+            textOffsetX:  c.dataset.textOffsetX  || '',
+            textOffsetY:  c.dataset.textOffsetY  || '',
+            // Audio
+            volume:       c.dataset.volume       || '',
+            muted:        c.dataset.muted        || '',
+            fadeIn:          c.dataset.fadeIn          || '',
+            fadeOut:         c.dataset.fadeOut         || '',
+            audioDenoise:    c.dataset.audioDenoise    || '',
+            audioNormalize:  c.dataset.audioNormalize  || '',
+            // Transform
+            scale:        c.dataset.scale        || '',
+            rotate:       c.dataset.rotate       || '',
+            flipH:        c.dataset.flipH        || '',
+            flipV:        c.dataset.flipV        || '',
+            // Clip Tools
+            speed:        c.dataset.speed        || '',
+            crop:         c.dataset.crop         || '',
+            trimIn:       c.dataset.trimIn       || '',
+            trimOut:      c.dataset.trimOut      || '',
+            reverse:      c.dataset.reverse      || '',
+            loop:         c.dataset.loop         || '',
+            freeze:       c.dataset.freeze       || '',
+            // FX (color + visual)
+            fxBrightness: c.dataset.fxBrightness || '',
+            fxContrast:   c.dataset.fxContrast   || '',
+            fxSaturate:   c.dataset.fxSaturate   || '',
+            fxBlur:       c.dataset.fxBlur       || '',
+            fxHue:        c.dataset.fxHue        || '',
+            fxColorGrade: c.dataset.fxColorGrade || '',
+            // FX (post-overlay boolean flags)
+            fxVignette:   c.dataset.fxVignette   || '',
+            fxGlow:       c.dataset.fxGlow       || '',
+            fxGrain:      c.dataset.fxGrain      || '',
+            fxSharpen:    c.dataset.fxSharpen    || '',
+            fxChromatic:  c.dataset.fxChromatic  || '',
+            fxPixelate:   c.dataset.fxPixelate   || '',
+            // Motion (M1)
+            motionEffect: c.dataset.motionEffect || '',
+            // Position offset
+            offsetX:      c.dataset.offsetX      || '',
+            offsetY:      c.dataset.offsetY      || '',
+            // Task #49 — creation-order stamp for overlap resolution
+            addedAt:      c.dataset.addedAt      || '',
+            // FX-track clips (for the export server to merge into any
+            // overlapping V1 segment — drag-to-broadcast support)
+            fxKey:        c.dataset.fxKey        || '',
+            fxValue:      c.dataset.fxValue      || '',
+            // Task #69 — flag legacy brand-logo V1 clips so the server can
+            // skip them (logos now ride on the post-pass overlay= filter).
+            brandLogo:    c.dataset.brandLogo    || '',
+            // Task #73 — flag B-Roll clips so the export pipeline keeps
+            // the underlying primary audio audible and ducks B-Roll audio.
+            broll:        c.dataset.broll        || ''
+          };
+        });
+
+      var button = document.getElementById('exportButton');
+      button.disabled = true;
+      // Generic label; the WYSIWYG path overwrites this with a live
+      // countdown once recording starts.
+      button.innerHTML = '<span class="spinner"></span> Preparing\u2026';
+
+      // Helper to kick off the download + housekeeping + UI reset
+      function handleSuccess(data){
+        var downloadLink = document.createElement('a');
+        downloadLink.href = data.downloadUrl;
+        downloadLink.download = data.filename;
+        downloadLink.click();
+        try {
+          var _now = new Date();
+          var _dateStr = _now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          if (typeof window.addCompletedEntry === 'function') {
+            window.addCompletedEntry({
+              id: 'c_' + Date.now(),
+              name: data.filename,
+              filename: data.filename,
+              serveUrl: data.downloadUrl,
+              downloadUrl: data.downloadUrl,
+              size: '',
+              date: _dateStr
+            });
+          }
+          if (typeof window.removeDraftByFilename === 'function' && currentVideoFile && currentVideoFile.filename) {
+            window.removeDraftByFilename(currentVideoFile.filename);
+          }
+        } catch (_) {}
+        var msg = data.renderedFromTimeline
+          ? 'Timeline exported (' + (data.clipCount||0) + ' clip' + (data.clipCount===1?'':'s') + ', ' + Math.round(data.duration||0) + 's)'
+          : 'Video exported successfully!';
+        showToast(msg, 'success');
       }
 
-      const button = document.getElementById('exportButton');
-      button.disabled = true;
-      button.innerHTML = '<span class="spinner"></span> Exporting...';
-
       try {
+        // Path 1: timeline has clips → server-side FFmpeg render.
+        // This is a REAL render of the timeline assets (not a screen
+        // capture of the preview). Each clip is re-encoded through the
+        // per-clip FX + transform + crop + speed chain, stitched with
+        // concat, text overlays drawn, audio tracks mixed, FX-track
+        // clips merged into any overlapping V1 segment. The final
+        // output is a high-quality encode at the user's selected
+        // quality + format.
+        if (timelineClips.length > 0) {
+          var qSel = document.getElementById('exportQualitySel');
+          var fSel = document.getElementById('exportFormatSel');
+          var selQuality = (qSel && qSel.value) || '720p';
+          var selFormat  = (fSel && fSel.value) || 'mp4';
+
+          // Quality → target height, aspect from Smart Resize (9:16, 1:1,
+          // 4:5) when the user has picked one via the SmartResize popover;
+          // otherwise default to 16:9. window.__exportAspect is set by
+          // clipActionSmartResize in public/js/media-panel-fix.js.
+          var heightMap = { '480p': 480, '720p': 720, '1080p': 1080, '4K': 2160, '4k': 2160 };
+          var targetH = heightMap[selQuality] || 720;
+          var aspectStr = (window.__exportAspect || '16:9');
+          var aParts = String(aspectStr).split(':').map(Number);
+          var aspectNum = (aParts[0] && aParts[1]) ? (aParts[0] / aParts[1]) : (16/9);
+          // For portrait aspects at e.g. 720p users expect 720 to be the
+          // SHORT dimension (width), not height → keep targetH but use it
+          // as the dominant side. Use the smaller of W/H = target height
+          // for portrait, so 720p 9:16 ≈ 720×1280.
+          var targetW;
+          if (aspectNum < 1){
+            // Portrait: treat targetH as the width (short side), scale height up
+            targetW = targetH;
+            targetH = Math.round(targetW / aspectNum);
+          } else {
+            targetW = Math.round(targetH * aspectNum);
+          }
+          // Ensure even dimensions (required by H.264)
+          if (targetW % 2) targetW += 1;
+          if (targetH % 2) targetH += 1;
+
+          // Audio clips on A1 often carry blob: URLs (created by the
+          // sidebar's local file picker via URL.createObjectURL). The
+          // server can't resolve blob: URLs so those clips get silently
+          // dropped from the export's audio mix. Pre-upload any blob
+          // media to the server and rewrite the clip's mediaUrl to the
+          // returned serveUrl before we call /export-timeline.
+          var blobClips = timelineClips.filter(function(c){
+            return c.mediaUrl && c.mediaUrl.indexOf('blob:') === 0;
+          });
+          if (blobClips.length > 0){
+            button.innerHTML = '\u2b06\ufe0f Uploading ' + blobClips.length + ' local file' + (blobClips.length === 1 ? '' : 's') + '\u2026';
+            for (var bi = 0; bi < blobClips.length; bi++){
+              var bc = blobClips[bi];
+              try {
+                var blobResp = await fetch(bc.mediaUrl);
+                var blobData = await blobResp.blob();
+                var ext = '';
+                var fn = bc.filename || '';
+                if (fn && fn.lastIndexOf('.') >= 0) ext = fn.slice(fn.lastIndexOf('.'));
+                if (!ext){
+                  // Guess extension from blob mime type
+                  var mime = blobData.type || '';
+                  if (mime.indexOf('mp3')   >= 0) ext = '.mp3';
+                  else if (mime.indexOf('mpeg')  >= 0) ext = '.mp3';
+                  else if (mime.indexOf('wav')   >= 0) ext = '.wav';
+                  else if (mime.indexOf('mp4')   >= 0) ext = '.mp4';
+                  else if (mime.indexOf('webm')  >= 0) ext = '.webm';
+                  else if (mime.indexOf('image/png')  >= 0) ext = '.png';
+                  else if (mime.indexOf('image/jpeg') >= 0) ext = '.jpg';
+                  else ext = '.bin';
+                }
+                var fd = new FormData();
+                fd.append('file', blobData, (fn || 'clip') + (fn.endsWith(ext) ? '' : ext));
+                var upResp = await fetch('/video-editor/upload-blob', {
+                  method: 'POST',
+                  body: fd,
+                  credentials: 'same-origin'
+                });
+                var upData = await upResp.json();
+                if (!upResp.ok || !upData.success){
+                  throw new Error(upData.error || 'Blob upload failed');
+                }
+                bc.mediaUrl = upData.serveUrl;
+              } catch (upErr){
+                console.warn('[export] blob upload failed for', bc.filename, upErr);
+                showToast('Could not upload "' + (bc.filename || 'clip') + '" — will be skipped', 'error');
+              }
+            }
+          }
+
+          button.innerHTML = '\u23f3 Rendering ' + selQuality + ' ' + selFormat.toUpperCase() + '\u2026';
+          var resp = await fetch('/video-editor/export-timeline', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clips: timelineClips,
+              pxPerSec: 10,
+              width: targetW,
+              height: targetH,
+              format: selFormat,
+              quality: selQuality,
+              customFilename: customFilename, // Task #29
+              brandLogo: (function(){
+                if (!(window.__brandLogo && window.__brandLogo.url)) return null;
+                // Task #71 — pass the active V1 source's intrinsic media
+                // dimensions so the server can position the logo inside
+                // the actual video rect (not on the letterbox/pillarbox
+                // black bars produced by aspect-ratio padding).
+                var ve = document.getElementById('videoPlayer');
+                var vw = (ve && ve.videoWidth)  || 0;
+                var vh = (ve && ve.videoHeight) || 0;
+                return {
+                  url:           window.__brandLogo.url,
+                  position:      window.__brandLogo.position || 'top-right',
+                  size:          window.__brandLogo.size || 100,
+                  sourceWidth:   vw,
+                  sourceHeight:  vh
+                };
+              })()  // Task #69/#71 — server applies overlay= filter on V1 segments
+            })
+          });
+          var dataTL = await resp.json();
+          if (!resp.ok) throw new Error(dataTL.error || 'Timeline export failed');
+          handleSuccess(dataTL);
+          button.disabled = false;
+          button.innerHTML = '\ud83c\udfac Export Video';
+          return;
+        }
+
+        // Path 2: no timeline clips, but a single primary video loaded → filters export
+        if (!currentVideoFile) {
+          showToast('Please upload a video first or add clips to the timeline', 'error');
+          button.disabled = false;
+          button.innerHTML = '\ud83c\udfac Export Video';
+          return;
+        }
+
         const brightness = parseFloat(document.getElementById('brightness')?.value);
         const contrast = parseFloat(document.getElementById('contrast')?.value);
         const saturation = parseFloat(document.getElementById('saturation')?.value);
@@ -3147,12 +3831,32 @@ function showToast(message, type = 'success') {
         downloadLink.download = data.filename;
         downloadLink.click();
 
+        // Promote this project from Drafts -> Completed Videos
+        try {
+          var _now = new Date();
+          var _dateStr = _now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          if (typeof window.addCompletedEntry === 'function') {
+            window.addCompletedEntry({
+              id: 'c_' + Date.now(),
+              name: data.filename || (currentVideoFile && currentVideoFile.filename) || 'Exported video',
+              filename: data.filename,
+              serveUrl: data.downloadUrl,
+              downloadUrl: data.downloadUrl,
+              size: '',
+              date: _dateStr
+            });
+          }
+          if (typeof window.removeDraftByFilename === 'function' && currentVideoFile && currentVideoFile.filename) {
+            window.removeDraftByFilename(currentVideoFile.filename);
+          }
+        } catch (_) {}
+
         showToast('Video exported successfully!', 'success');
       } catch (error) {
         showToast('Export failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '📥 Export Video';
+        button.innerHTML = '🎬 Export Video';
       }
     });
 
@@ -3331,6 +4035,27 @@ function showToast(message, type = 'success') {
           uploadZone.classList.add('has-video');
           videoPreviewArea.classList.add('has-video');
           document.getElementById('exportButton').disabled = false;
+          // Task #58 — URL imports now follow the same lifecycle as local
+          // uploads: drop the imported clip into the Media library AND
+          // append it to V1 (matches the file-upload flow at line ~1655).
+          try {
+            if (typeof window.addUploadedMediaItem === 'function') {
+              window.addUploadedMediaItem({
+                name: data.title || data.filename || 'YouTube import',
+                filename: data.filename,
+                serveUrl: data.serveUrl,
+                duration: videoDuration
+              });
+            }
+          } catch (_){}
+          try {
+            if (typeof window.addClipToTimeline === 'function') {
+              window.addClipToTimeline(
+                data.title || data.filename || 'YouTube import',
+                'vid', videoDuration, data.serveUrl
+              );
+            }
+          } catch (_){}
         } catch (err) {
           showToast(err.message, 'error');
         } finally {
@@ -3372,6 +4097,25 @@ function showToast(message, type = 'success') {
                 uploadZone.classList.add('has-video');
                 videoPreviewArea.classList.add('has-video');
                 document.getElementById('exportButton').disabled = false;
+                // Task #58 — same lifecycle as local uploads
+                try {
+                  if (typeof window.addUploadedMediaItem === 'function') {
+                    window.addUploadedMediaItem({
+                      name: file.name || data.filename,
+                      filename: data.filename,
+                      serveUrl: data.serveUrl,
+                      duration: videoDuration
+                    });
+                  }
+                } catch (_){}
+                try {
+                  if (typeof window.addClipToTimeline === 'function') {
+                    window.addClipToTimeline(
+                      file.name || data.filename,
+                      'vid', videoDuration, data.serveUrl
+                    );
+                  }
+                } catch (_){}
               } catch (err) {
                 showToast(err.message, 'error');
               } finally {
@@ -3430,11 +4174,22 @@ function showToast(message, type = 'success') {
       });
     }
 
-    let timelineZoom = 1;
+    // Real timeline zoom — rescales every clip's left/width in pixels and
+    // updates the global px-per-second so cuts/clicks stay frame-accurate.
+    // (The old implementation applied a cosmetic scaleX transform which
+    // looked fine but broke playhead math and drop positions.)
     const zoomInBtn = document.getElementById('zoomInBtn');
     const zoomOutBtn = document.getElementById('zoomOutBtn');
-    if (zoomInBtn) zoomInBtn.addEventListener('click', () => { timelineZoom = Math.min(timelineZoom + 0.25, 4); if (timelineContainer) timelineContainer.style.transform = 'scaleX(' + timelineZoom + ')'; });
-    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => { timelineZoom = Math.max(timelineZoom - 0.25, 0.25); if (timelineContainer) timelineContainer.style.transform = 'scaleX(' + timelineZoom + ')'; });
+    function applyTimelineZoom(factor){
+      if (typeof window.setTimelineZoom === 'function'){
+        window.setTimelineZoom(factor);
+      } else {
+        // Fallback if the helper isn't loaded yet
+        showToast('Zoom not ready yet');
+      }
+    }
+    if (zoomInBtn)  zoomInBtn.addEventListener('click',  function(){ applyTimelineZoom(1.5);  });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', function(){ applyTimelineZoom(1/1.5); });
 
     const saveChangesBtn = document.getElementById('saveChangesBtn');
     if (saveChangesBtn) {
@@ -3446,9 +4201,19 @@ function showToast(message, type = 'success') {
     }
 
     const quickExportBtn = document.getElementById('quickExportBtn');
+    // Legacy quickExportBtn forwarder (no-op if button doesn't exist)
     if (quickExportBtn) {
       quickExportBtn.addEventListener('click', function() {
         document.getElementById('exportButton')?.click();
+      });
+    }
+    // Secondary Save as Draft button in the Editor Toolbar — forwards
+    // to the primary saveAsDraftBtn so both buttons share the exact
+    // same save-draft behaviour.
+    var quickSaveDraftBtn = document.getElementById('quickSaveDraftBtn');
+    if (quickSaveDraftBtn) {
+      quickSaveDraftBtn.addEventListener('click', function() {
+        document.getElementById('saveAsDraftBtn')?.click();
       });
     }
 
@@ -4511,64 +5276,22 @@ function showToast(message, type = 'success') {
     }
 </script>
 <script>
-(function(){
-  // Hidden file input for Upload button
-  var fi = document.createElement('input');
-  fi.type = 'file';
-  fi.multiple = true;
-  fi.accept = 'video/*,audio/*,image/*';
-  fi.style.display = 'none';
-  fi.id = 'mediaFileInput';
-  document.body.appendChild(fi);
-
-  // Wire up the + Upload button
-  var uploadBtns = document.querySelectorAll('button');
-  uploadBtns.forEach(function(btn){
-    if(btn.textContent.trim().indexOf('Upload') !== -1 && btn.textContent.trim().indexOf('+') !== -1){
-      btn.onclick = function(e){
-        e.preventDefault();
-        fi.click();
-      };
-    }
-  });
-
-  // Also wire the ml-upload drop zone click
-  var mlUpload = document.querySelector('.ml-upload');
-  if(mlUpload){
-    mlUpload.style.cursor = 'pointer';
-    mlUpload.addEventListener('click', function(e){
-      if(e.target.tagName !== 'BUTTON') fi.click();
-    });
-  }
-
-  // Handle file selection
-  fi.addEventListener('change', function(){
-    if(!fi.files.length) return;
-    var grid = document.getElementById('mediaFileGrid');
-    if(!grid) return;
-    Array.from(fi.files).forEach(function(file){
-      var ext = file.name.split('.').pop().toLowerCase();
-      var mediaType = 'vid';
-      var emoji = '\ud83c\udfac';
-      var badge = 'vid';
-      if(['mp3','wav','ogg','aac','flac','m4a'].indexOf(ext) !== -1){
-        mediaType = 'aud'; emoji = '\ud83c\udfb5'; badge = 'aud';
-      } else if(['png','jpg','jpeg','gif','webp','svg','bmp'].indexOf(ext) !== -1){
-        mediaType = 'img'; emoji = '\ud83d\uddbc\ufe0f'; badge = 'img';
-      }
-      var item = document.createElement('div');
-      item.className = 'ml-fitem';
-      item.draggable = true;
-      item.dataset.mediaType = mediaType;
-      item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">'+emoji+'</div>'
-        + '<span class="ml-badge '+badge+'">'+badge.toUpperCase()+'</span>'
-        + '<span class="ml-fname" style="font-size:9px;color:#c4b5fd;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+file.name+'</span>'
-        + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
-      grid.insertBefore(item, grid.firstChild);
-    });
-    fi.value = '';
-  });
-})();
+/* Legacy +Upload wiring removed.
+ *
+ * Previously this IIFE created a separate #mediaFileInput and bound
+ *   btn.onclick = function(){ fi.click(); }
+ * to EVERY button on the page containing "+ Upload". That ran in parallel
+ * with v10-editor-redesign.js's addEventListener click handler on the same
+ * button, so a single user click opened TWO file dialogs (one per input).
+ *
+ * The entire responsibility — creating file inputs, handling the upload
+ * click, and appending media items on change — is now owned by
+ *   public/js/media-panel-fix.js  (handleFiles, appendMediaItem)
+ *   public/js/v10-editor-redesign.js  (buildDropZone, triggerUpload)
+ * which also store serveUrl/blob URLs on the .ml-fitem dataset so the
+ * preview window can play them. Removing the legacy block eliminates the
+ * double-dialog bug.
+ */
 
     // ═══════════════════════════════════════════════════════════
     // WIRE UP ALL INTERACTIVE UI ELEMENTS
@@ -4592,33 +5315,9 @@ function showToast(message, type = 'success') {
         });
       });
 
-      // ── 2. MEDIA CLIPS (click to load into player) ──
-      document.querySelectorAll('.ml-fitem').forEach(function(item) {
-        item.style.cursor = 'pointer';
-        item.addEventListener('click', function(e) {
-          // Don't trigger if clicking the "+ Timeline" button
-          if (e.target.classList.contains('ml-add')) return;
-          var nameEl = this.querySelector('.ml-fnm');
-          var fileName = nameEl ? nameEl.textContent.trim() : 'Unknown';
-          var type = this.getAttribute('data-media-type');
-          // Highlight selected clip
-          document.querySelectorAll('.ml-fitem').forEach(function(c) { c.classList.remove('selected'); });
-          this.classList.add('selected');
-          showToast('Selected: ' + fileName);
-        });
-
-        // Wire the "+ Timeline" button to add clip to timeline
-        var addBtn = item.querySelector('.ml-add');
-        if (addBtn) {
-          addBtn.style.cursor = 'pointer';
-          addBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var nameEl = item.querySelector('.ml-fnm');
-            var fileName = nameEl ? nameEl.textContent.trim() : 'clip';
-            showToast('Added to timeline: ' + fileName);
-          });
-        }
-      });
+      // ── 2. MEDIA CLIPS click-to-timeline — handled by media-panel-fix.js
+      // (appendMediaItem + wireItem). Legacy handler removed.
+      //
 
       // ── 3. BOTTOM TABS (Import, Folder, AI B-Roll) ──
       document.querySelectorAll('.ml-fb').forEach(function(btn) {
@@ -4633,30 +5332,96 @@ function showToast(message, type = 'success') {
           } else if (text.includes('Folder')) {
             showToast('Create new folder');
           } else if (text.includes('B-Roll')) {
-            showToast('AI B-Roll: analyzing video for B-Roll suggestions...');
+            // Task #74 — Bottom-of-Media-library AI B-Roll button opens
+            // the same transcript-driven modal as the AI tab. Falls back
+            // to a toast if the editor IIFE hasn't finished booting yet.
+            if (typeof window.openBRollModal === 'function'){
+              try { window.openBRollModal(this); }
+              catch (e){ showToast('Could not open B-Roll modal: ' + e.message, 'error'); }
+            } else {
+              showToast('Editor still loading — try again in a moment');
+            }
           }
         });
       });
 
       // ── 4. TIMELINE TOOLS (Razor, Select, Snap) ──
-      document.querySelectorAll('.mt-tool-btn').forEach(function(btn) {
-        btn.style.cursor = 'pointer';
-        btn.addEventListener('click', function() {
-          document.querySelectorAll('.mt-tool-btn').forEach(function(b) { b.classList.remove('active'); });
-          this.classList.add('active');
-          var tool = this.textContent.trim();
-          showToast('Tool: ' + tool + ' activated');
-        });
-      });
+      // Wired by media-panel-fix.js wireTimelineTools() with proper semantics:
+      //   - Razor & Select are mutually exclusive (active tool)
+      //   - Snap is an independent boolean toggle
+      // Legacy handler removed (it treated all three as mutually exclusive).
 
-      // ── 5. + Add Track button ──
-      var addTrackBtn = document.querySelector('.mt-add-track-btn');
-      if (addTrackBtn) {
-        addTrackBtn.style.cursor = 'pointer';
-        addTrackBtn.addEventListener('click', function() {
-          showToast('Add Track: select track type');
+      // Add Track removed per request. Tracks are now fixed: V1, A1, M1, T1, FX.
+
+      // ── 5c. Sync labels column vertical scroll with tracks area ──
+      (function(){
+        var tracksArea = document.getElementById('mtTracksArea');
+        var labelsArea = document.querySelector('.mt-labels');
+        if (!tracksArea || !labelsArea || tracksArea.dataset.vScrollWired) return;
+        tracksArea.dataset.vScrollWired = '1';
+        tracksArea.addEventListener('scroll', function(){
+          // Keep labels column scroll in lockstep with tracks-area vertical
+          // scroll so e.g. M1/T1/FX labels stay aligned with their rows when
+          // the user scrolls down past several audio tracks.
+          labelsArea.scrollTop = tracksArea.scrollTop;
         });
-      }
+      })();
+
+      // ── 5b. Playhead drag + track-click navigation ──
+      (function(){
+        var playhead = document.getElementById('mtPlayhead');
+        var handle = document.getElementById('mtPlayheadHandle');
+        var tracksArea = document.getElementById('mtTracksArea');
+        if (!playhead || !tracksArea || playhead.dataset.wired) return;
+        playhead.dataset.wired = '1';
+
+        function videoElRef(){ return document.getElementById('videoPlayer') || document.querySelector('video'); }
+
+        function setPlayheadFromClientX(clientX){
+          var areaRect = tracksArea.getBoundingClientRect();
+          var x = Math.max(0, Math.min(clientX - areaRect.left + tracksArea.scrollLeft, tracksArea.scrollWidth));
+          playhead.style.left = x + 'px';
+          // Swap the preview to whichever video clip the playhead is currently
+          // over, seeking to the correct offset inside that clip. This makes
+          // the playhead a true sequence scrubber instead of being stuck on
+          // the first uploaded video.
+          if (typeof window.syncPreviewToPlayhead === 'function'){
+            try { window.syncPreviewToPlayhead(); return; } catch(_){}
+          }
+          // Fallback (no clips / no mediaUrl): fall back to proportional
+          // scrubbing against the currently-loaded video, if any.
+          var video = videoElRef();
+          var scrollW = tracksArea.scrollWidth || areaRect.width;
+          if (video && video.duration && isFinite(video.duration) && video.duration > 0){
+            var pct = x / scrollW;
+            try { video.currentTime = Math.max(0, Math.min(video.duration, pct * video.duration)); } catch(_){}
+          }
+        }
+
+        function onMouseMove(e){ setPlayheadFromClientX(e.clientX); }
+        function onMouseUp(){
+          playhead.classList.remove('mt-playhead-dragging');
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        if (handle){
+          handle.addEventListener('mousedown', function(e){
+            e.preventDefault();
+            playhead.classList.add('mt-playhead-dragging');
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+          });
+        }
+
+        // Clicking anywhere in the tracks area (not on the handle itself or a clip)
+        // jumps the playhead to that x position.
+        tracksArea.addEventListener('click', function(e){
+          if (e.target.closest('.mt-playhead-handle')) return;
+          if (e.target.closest('.mt-clip')) return; // let clip click handlers run
+          setPlayheadFromClientX(e.clientX);
+        });
+      })();
 
       // ── 6. TOP TOOLBAR BUTTONS (Snap, Snapshot, Link Tracks) ──
       document.querySelectorAll('.e-tb').forEach(function(btn) {
@@ -5030,56 +5795,13 @@ setTimeout(function comprehensiveUIFix(){
     });
   });
 
-  // Left panel tab switching
-  var mlBody=document.querySelector(".ml-body");
-  var mlTabs=document.querySelectorAll(".ml-tab");
-  if(mlBody&&mlTabs.length>=4){
-    var origChildren=[];
-    for(var ci=0;ci<mlBody.children.length;ci++)origChildren.push(mlBody.children[ci]);
-
-    function makeTabContent(name){
-      var wrap=document.createDocumentFragment();
-      wrap.appendChild(el("div",{cls:"ml-section",css:"display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px"},[el("span",{text:name+" Files"})]));
-      wrap.appendChild(el("div",{cls:"ml-upload",css:"border:1px dashed rgba(108,58,237,.2);border-radius:8px;padding:20px;text-align:center"},[
-        el("p",{text:"Drop "+name.toLowerCase()+" files or click to upload",css:"color:#888;margin:0 0 8px;font-size:12px"}),
-        el("button",{text:"+ Upload "+name,css:"margin-top:10px;background:linear-gradient(135deg,#6c3aed,#7c4dff);color:#fff;border:none;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:12px"})
-      ]));
-      wrap.appendChild(el("div",{text:"No "+name.toLowerCase()+" files added yet.",css:"padding:12px;text-align:center;color:#555;font-size:12px"}));
-      return wrap;
-    }
-
-    function makeStockContent(){
-      var wrap=document.createDocumentFragment();
-      wrap.appendChild(el("div",{cls:"ml-section",css:"display:flex;align-items:center;gap:6px;padding:8px 0;color:#888;font-size:12px"},[el("span",{text:"Stock Library"})]));
-      wrap.appendChild(el("div",{css:"padding:8px 0"},[el("input",{type:"text",placeholder:"Search stock videos and images...",css:"width:100%;background:#1a1333;color:#fff;border:1px solid rgba(108,58,237,.2);border-radius:6px;padding:8px 12px;font-size:12px;box-sizing:border-box"})]));
-      var grid=el("div",{css:"display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px"});
-      var cats=[["Stock Videos","V"],["Stock Images","I"],["Stock Audio","A"],["AI Generated","AI"]];
-      cats.forEach(function(c){
-        grid.appendChild(el("div",{css:"background:#1a1333;border-radius:8px;padding:16px;text-align:center;cursor:pointer;border:1px solid rgba(108,58,237,.1)"},[
-          el("div",{text:c[1],css:"font-size:20px;margin-bottom:4px;color:#7c4dff"}),
-          el("div",{text:c[0],css:"color:#aaa;font-size:11px"})
-        ]));
-      });
-      wrap.appendChild(grid);
-      return wrap;
-    }
-
-    mlTabs.forEach(function(tab){
-      tab.addEventListener("click",function(){
-        mlTabs.forEach(function(t){t.classList.remove("active");});
-        tab.classList.add("active");
-        var name=tab.textContent.trim();
-        mlBody.innerHTML="";
-        if(name==="Videos"){
-          origChildren.forEach(function(n){mlBody.appendChild(n);});
-        }else if(name==="Stock"){
-          mlBody.appendChild(makeStockContent());
-        }else{
-          mlBody.appendChild(makeTabContent(name));
-        }
-      });
-    });
-  }
+  // Left panel tab switching is handled by:
+  //   1) the inline onclick on each .ml-tab above (type-based filtering)
+  //   2) v10-editor-redesign.js applyFilter() which keeps the Projects folders
+  //      (Completed Videos / Drafts) visible and filters folder items by type
+  // The earlier behavior here wiped mlBody.innerHTML on every Audio/Images/All
+  // click and replaced it with a throwaway "Audio Files" shell, which destroyed
+  // the real uploaded media list and the Projects section. Removed.
 
   // Bottom tabs (Folder create, AI B-Roll)
   document.querySelectorAll(".ml-fb").forEach(function(tab){
@@ -5608,10 +6330,8 @@ setTimeout(function videoControlsWiring(){
           showToastMsg("Captions generated");
         }, 3000);
       } else if(text.indexOf("Brand Kit") !== -1) {
-        showToastMsg("Processing... Applying brand kit");
-        setTimeout(function() {
-          showToastMsg("Brand kit applied");
-        }, 2000);
+        if (typeof openBrandKitModal === 'function') openBrandKitModal();
+        else showToastMsg("Brand Kit unavailable");
       } else if(text.indexOf("Transcript") !== -1) {
         showToastMsg("Processing... Generating transcript");
         setTimeout(function() {
@@ -5672,27 +6392,12 @@ setTimeout(function videoControlsWiring(){
     });
   });
 
-  var toolBtns = document.querySelectorAll(".mt-tool-btn");
-  var activeToolBtn = null;
-  toolBtns.forEach(function(btn) {
-    btn.addEventListener("click", function(e) {
-      e.preventDefault();
-      if(activeToolBtn) {
-        activeToolBtn.classList.remove("active");
-      }
-      this.classList.add("active");
-      activeToolBtn = this;
-
-      var text = this.textContent || "";
-      if(text.indexOf("Razor") !== -1) {
-        showToastMsg("Razor tool selected");
-      } else if(text.indexOf("Select") !== -1) {
-        showToastMsg("Select tool active");
-      } else if(text.indexOf("Snap") !== -1) {
-        showToastMsg("Snap to grid enabled");
-      }
-    });
-  });
+  // .mt-tool-btn wiring is owned by media-panel-fix.js wireTimelineTools().
+  // Razor/Select are mutually exclusive (active tool); Snap is an independent
+  // boolean toggle. The legacy handler that once lived here treated all three
+  // as a single mutex group, which fought with the new semantics and caused
+  // Snap to appear stuck-on (it kept re-adding .active after the real handler
+  // removed it).
 
   applyTransforms();
   applyFilters();
@@ -5941,12 +6646,178 @@ setTimeout(function sidebarLayoutFix(){
 }, 2000);
 
 
+    // ═══ INITIAL PROJECT BOOT ═══
+    // If the user was redirected here from the AI B-Roll ingestion flow,
+    // window.__INITIAL_PROJECT__ is injected by the /:projectId route and
+    // contains { primary: {filename, duration, serveUrl}, broll: [...] }.
+    // We replay what uploadVideo() does for the primary, then append every
+    // B-roll clip to V1 via the same addClipToTimeline path the media
+    // library uses — so it naturally stacks after the primary.
+    (function bootFromProject() {
+      function run() {
+        try {
+          var proj = window.__INITIAL_PROJECT__;
+          if (!proj) return;
+          var prim = proj.primary;
+          var brollList = Array.isArray(proj.broll) ? proj.broll : [];
+          // If neither a primary nor any broll, nothing to do.
+          if ((!prim || !prim.filename) && brollList.length === 0) return;
+
+          // If no primary but we have broll, promote the first broll clip to be the
+          // "active" video for the player + duration calculations. This is what
+          // makes B-roll-only projects (created from the AI B-Roll selection modal
+          // without an imported primary) populate the editor correctly.
+          if ((!prim || !prim.filename) && brollList.length > 0) {
+            var first = brollList[0];
+            prim = {
+              filename: first.filename,
+              duration: first.duration,
+              serveUrl: first.serveUrl || ('/video-editor/download/' + first.filename)
+            };
+            // Remove the promoted clip from brollList so it's not added twice.
+            brollList = brollList.slice(1);
+          }
+
+          // ——— 1. Set the primary as the currentVideoFile ———
+          var primaryData = {
+            filename: prim.filename,
+            duration: Number(prim.duration) || 0,
+            serveUrl: prim.serveUrl || ('/video-editor/download/' + prim.filename)
+          };
+          try {
+            currentVideoFile = primaryData;
+            originalVideoFile = Object.assign({}, primaryData);
+            videoDuration = primaryData.duration || 0;
+          } catch (_) {
+            // currentVideoFile may be in a closure; fall back to window.
+            window.currentVideoFile = primaryData;
+            window.originalVideoFile = Object.assign({}, primaryData);
+            window.videoDuration = primaryData.duration || 0;
+          }
+
+          // ——— 2. Wire the preview player ———
+          var videoPlayer = document.getElementById('videoPlayer');
+          if (videoPlayer) {
+            videoPlayer.src = primaryData.serveUrl;
+            videoPlayer.addEventListener('loadedmetadata', function () {
+              if (typeof showFilmstrip === 'function') showFilmstrip(this.duration);
+              if (videoPlayer.duration && videoPlayer.duration !== Infinity) {
+                try { videoDuration = videoPlayer.duration; } catch (_) { window.videoDuration = videoPlayer.duration; }
+              }
+            });
+          }
+          var uploadZone = document.querySelector('.upload-zone');
+          if (uploadZone) uploadZone.classList.add('has-video');
+          var videoPreviewArea = document.querySelector('.video-preview-area');
+          if (videoPreviewArea) videoPreviewArea.classList.add('has-video');
+
+          // ——— 3. Init the timeline (primary fills V1 initially) ———
+          if (typeof initTimeline === 'function') {
+            try { initTimeline(); } catch (_) {}
+          }
+
+          // ——— 4. Enable the toolbar buttons normally gated on a video ———
+          ['trimButton','exportButton','splitButton','filterButton','speedButton',
+           'audioButton','previewVoiceButton','voiceoverButton','vtPreviewBtn',
+           'vtApplyBtn','textButton','speedSelect','addMusicButton',
+           'removeFillerWordsBtn','removePausesBtn']
+          .forEach(function (id) {
+            var e = document.getElementById(id);
+            if (e) e.disabled = false;
+          });
+
+          // ——— 5. Drop the primary into the Media library ———
+          if (typeof window.addUploadedMediaItem === 'function') {
+            window.addUploadedMediaItem({
+              serveUrl: primaryData.serveUrl,
+              filename: primaryData.filename,
+              name: primaryData.filename,
+              duration: primaryData.duration,
+              mediaType: 'vid'
+            });
+          }
+
+          // ——— 6. Append B-roll clips to the V1 track, sequenced after ———
+          var broll = brollList;
+          broll.forEach(function (clip) {
+            if (!clip || !clip.filename) return;
+            var srv = clip.serveUrl || ('/video-editor/download/' + clip.filename);
+            if (typeof window.addUploadedMediaItem === 'function') {
+              window.addUploadedMediaItem({
+                serveUrl: srv,
+                filename: clip.filename,
+                name: clip.name || clip.filename,
+                duration: clip.duration,
+                mediaType: 'vid'
+              });
+            }
+            if (typeof addClipToTimeline === 'function') {
+              try {
+                addClipToTimeline(clip.name || clip.filename, 'vid', clip.duration, srv);
+              } catch (err) {
+                console.warn('[initial-project] could not append broll', clip.filename, err);
+              }
+            }
+          });
+
+          try {
+            if (typeof showToast === 'function') {
+              showToast('Loaded project: ' + (proj.name || proj.id) + ' (' + broll.length + ' B-roll clip' + (broll.length === 1 ? '' : 's') + ')');
+            }
+          } catch (_) {}
+        } catch (err) {
+          console.error('[initial-project] boot failed:', err);
+        }
+      }
+
+      // Wait for everything (including media-panel-fix.js) to finish wiring.
+      if (document.readyState === 'complete') {
+        setTimeout(run, 50);
+      } else {
+        window.addEventListener('load', function () { setTimeout(run, 50); });
+      }
+    })();
+
+
 </script>
 <script src="/public/js/media-panel-fix.js?v=${Date.now()}"></script>
 <script src="/public/js/v10-editor-redesign.js?v=${Date.now()}"></script>
 </body>
 </html>`;
+  if (res.locals && res.locals.initialProject) {
+    const payload = JSON.stringify(res.locals.initialProject).replace(/</g, '\\u003c');
+    const inj = '<script>window.__INITIAL_PROJECT__ = ' + payload + ';<\/script>';
+    html = html.replace('</body>', inj + '\n</body>');
+  }
   res.send(html);
+}
+router.get('/', requireAuth, renderEditor);
+
+// GET /video-editor/:projectId — boot the editor from a saved project created
+// by the AI B-Roll ingestion flow. Only matches IDs like p_<hex> so we don't
+// collide with the other sub-routes (upload, trim, export, etc.).
+router.get('/:projectId(p_[a-f0-9]+)', requireAuth, async (req, res, next) => {
+  try {
+    const { projectOps } = require('../db/database');
+    const project = await projectOps.getById(req.params.projectId, req.user.id);
+    if (!project) return res.redirect('/video-editor/');
+    res.locals.initialProject = {
+      id: project.id,
+      name: project.name,
+      primary: project.primary_filename ? {
+        filename: project.primary_filename,
+        duration: Number(project.primary_duration) || 0,
+        serveUrl: project.primary_serve_url || ('/video-editor/download/' + project.primary_filename)
+      } : null,
+      broll: (project.broll || []).map(b => ({
+        filename: b.filename,
+        name: b.name || b.filename,
+        duration: Number(b.duration) || 0,
+        serveUrl: b.serveUrl || ('/video-editor/download/' + b.filename)
+      }))
+    };
+    return renderEditor(req, res);
+  } catch (err) { next(err); }
 });
 
 // POST: Upload video
@@ -6123,6 +6994,1348 @@ router.post('/export', requireAuth, async (req, res) => {
   }
 });
 
+// POST: Export the TIMELINE (multiple clips in sequence) to a single MP4.
+//
+// Body shape:
+//   { clips: [{ track, left, width, duration, sourceOffset, mediaUrl,
+//               clipType, filename }, ...],
+//     pxPerSec: number,
+//     width: number, height: number,
+//     format?: 'mp4' }
+//
+// Algorithm (v1 — video track only; audio-track mixing is a future add):
+//   1. Filter clips to the first video track, sort by `left`.
+//   2. For each clip: produce a temp .mp4 segment at the output resolution:
+//        - Video clip: ffmpeg -ss SRC_OFF -i file -t DUR ... (trim source slice)
+//        - Image clip: ffmpeg -loop 1 -i img -t DUR ... (still → video)
+//   3. For each gap between clips, produce a black filler segment of the
+//      same duration (color=black + anullsrc).
+//   4. Concat all segments with the ffmpeg concat demuxer (-c copy works
+//      because every segment is encoded with the same codec/params).
+//   5. Return the final output via the existing /download/:filename route.
+router.post('/export-timeline', requireAuth, async (req, res) => {
+  const workDir = path.join(outputDir, 'tl_' + Date.now() + '_' + req.user.id);
+  try {
+    const body = req.body || {};
+    const clips = Array.isArray(body.clips) ? body.clips : [];
+    const pxPerSec = parseFloat(body.pxPerSec) || 10;
+    const outW = parseInt(body.width,  10) || 1280;
+    const outH = parseInt(body.height, 10) || 720;
+
+    // Pick a bold sans-serif font for drawtext so exported text looks
+    // like the PGM preview (which uses `700 …px system-ui, sans-serif`).
+    // Without a fontfile, FFmpeg falls back to its default which is
+    // usually a thin regular weight — visually different from preview.
+    var TEXT_FONTFILE = '';
+    var FONT_CANDIDATES = [
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+      '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf',
+      '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
+      '/System/Library/Fonts/Helvetica.ttc',
+      '/Library/Fonts/Arial Bold.ttf'
+    ];
+    function escapeDrawtextPath(p){
+      return p.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
+    }
+    for (var fci = 0; fci < FONT_CANDIDATES.length; fci++){
+      if (fs.existsSync(FONT_CANDIDATES[fci])){
+        // Escape drawtext-special chars in the path (: and \)
+        TEXT_FONTFILE = escapeDrawtextPath(FONT_CANDIDATES[fci]);
+        break;
+      }
+    }
+
+    // Task #70 — pick a fontfile that best matches a CSS font-family stack
+    // declared by a Brand Kit caption style. The stack is parsed for
+    // recognisable family tokens; the first one with a matching system
+    // font wins. Falls back to TEXT_FONTFILE so unknown stacks still get
+    // the bold sans-serif default rather than FFmpeg's thin Vera.
+    var FAMILY_FONT_MAP = [
+      // Display / impact-style
+      { keywords: ['impact', 'arial black', 'komika', 'bebas', 'orbitron'], paths: [
+        '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf'
+      ]},
+      // Script / handwriting
+      { keywords: ['pacifico', 'brush script', 'cursive', 'comic'], paths: [
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf'
+      ]},
+      // Helvetica / Arial (clean sans)
+      { keywords: ['helvetica', 'arial', 'roboto', 'segoe'], paths: [
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+        '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf'
+      ]}
+    ];
+    function fontFileForFamily(family){
+      if (!family) return TEXT_FONTFILE;
+      var s = String(family).toLowerCase();
+      for (var i = 0; i < FAMILY_FONT_MAP.length; i++){
+        var entry = FAMILY_FONT_MAP[i];
+        var hit = entry.keywords.some(function(kw){ return s.indexOf(kw) >= 0; });
+        if (!hit) continue;
+        for (var j = 0; j < entry.paths.length; j++){
+          if (fs.existsSync(entry.paths[j])) return escapeDrawtextPath(entry.paths[j]);
+        }
+      }
+      return TEXT_FONTFILE;
+    }
+
+    // Only render the video track in v1 (audio-track mixing = follow-up).
+    // Task #69 — drop any legacy "brand logo" V1 clips left over from the
+    // previous (opaque) implementation; logos now ride on the post-pass
+    // overlay= filter, so a full-frame V1 image clip would just hide the
+    // footage underneath.
+    const v1 = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      if (c.brandLogo === '1' || c.brandLogo === 1 || c.brandLogo === true) return false;
+      return (t === 'video' || t === 'vid' || t === '') && c.mediaUrl;
+    });
+    if (v1.length === 0) {
+      return res.status(400).json({
+        error: 'Timeline has no video clips to export. Add at least one clip to V1.'
+      });
+    }
+
+    // Sort clips left-to-right by timeline position.
+    v1.sort(function(a, b){
+      return (parseFloat(a.left)||0) - (parseFloat(b.left)||0);
+    });
+
+    // ─── Task #49 — Resolve V1 overlap: latest-added clip wins ──────────
+    // When multiple V1 clips overlap in timeline time, the one added most
+    // recently (highest clip.addedAt) should appear in the final output;
+    // older clips get their overlapping regions carved out (and possibly
+    // split into before/after slivers). This mirrors the client-side
+    // preview behavior where getClipAtPlayheadX returns the newest clip.
+    (function resolveV1Overlaps(){
+      if (v1.length < 2) return;
+      // Annotate each clip with timeline-seconds range + parsed fields
+      v1.forEach(function(c){
+        c._t0 = (parseFloat(c.left)  || 0) / pxPerSec;
+        c._t1 = c._t0 + ((parseFloat(c.width) || 0) / pxPerSec);
+        c._srcOff = parseFloat(c.sourceOffset) || 0;
+        c._intervals = [[c._t0, c._t1]];  // start with the full range
+      });
+      // Task #73 — snapshot every clip's ORIGINAL range + media so a
+      // B-Roll's effective segment can later look up the older clip
+      // it's overlaying and pull its audio in.
+      var v1Snapshot = v1.map(function(c){
+        return {
+          mediaUrl: c.mediaUrl,
+          addedAt:  parseFloat(c.addedAt) || 0,
+          isBroll:  (c.broll === '1' || c.broll === 1 || c.broll === true),
+          t0:       c._t0,
+          t1:       c._t1,
+          srcOff:   c._srcOff,
+          // Per-clip volume / mute carry over so a muted underlay stays muted.
+          volume:   c.volume,
+          muted:    c.muted
+        };
+      });
+      // Process newest-first so each "newer" clip carves its territory
+      // out of every older clip's remaining intervals.
+      var ordered = v1.slice().sort(function(a, b){
+        return (parseFloat(b.addedAt) || 0) - (parseFloat(a.addedAt) || 0);
+      });
+      function subtract(intervals, rt0, rt1){
+        var out = [];
+        intervals.forEach(function(iv){
+          var a = iv[0], b = iv[1];
+          if (rt1 <= a || rt0 >= b){ out.push(iv); return; }  // disjoint
+          if (rt0 > a) out.push([a, Math.min(rt0, b)]);
+          if (rt1 < b) out.push([Math.max(rt1, a), b]);
+        });
+        return out;
+      }
+      for (var i = 0; i < ordered.length; i++){
+        for (var j = 0; j < i; j++){
+          var newer = ordered[j];
+          ordered[i]._intervals = subtract(ordered[i]._intervals, newer._t0, newer._t1);
+        }
+      }
+      // Build the effective V1 list: each surviving interval becomes a clip
+      var effective = [];
+      ordered.forEach(function(c){
+        c._intervals.forEach(function(iv){
+          var dur = iv[1] - iv[0];
+          if (dur < 0.05) return;  // skip slivers <50ms
+          var offsetFromStart = iv[0] - c._t0;  // seconds into this clip
+          var eff = Object.assign({}, c);
+          eff.left = String(iv[0] * pxPerSec) + 'px';
+          eff.width = String(dur * pxPerSec) + 'px';
+          eff.duration = String(dur);
+          eff.sourceOffset = String(c._srcOff + offsetFromStart);
+          // Task #73 — for B-Roll segments, find the older non-B-Roll
+          // V1 clip whose ORIGINAL range covers this segment, and stash
+          // its mediaUrl + sourceOffset so the segment encoder can mix
+          // the primary dialogue audio under the (ducked) B-Roll audio.
+          if (eff.broll === '1' || eff.broll === 1 || eff.broll === true){
+            var brollAdded = parseFloat(c.addedAt) || 0;
+            var segMid = (iv[0] + iv[1]) / 2;
+            // Pick the most recently-added underlay that is still older
+            // than the b-roll itself, so stacked underlays resolve to the
+            // currently-visible primary footage rather than something below it.
+            var bestUnderlay = null;
+            v1Snapshot.forEach(function(s){
+              if (s.isBroll) return;
+              if (s.addedAt >= brollAdded) return;
+              if (segMid < s.t0 || segMid > s.t1) return;
+              if (!bestUnderlay || s.addedAt > bestUnderlay.addedAt){
+                bestUnderlay = s;
+              }
+            });
+            if (bestUnderlay && bestUnderlay.mediaUrl){
+              eff.underlayMediaUrl     = bestUnderlay.mediaUrl;
+              eff.underlaySourceOffset = bestUnderlay.srcOff + (iv[0] - bestUnderlay.t0);
+              eff.underlayVolume       = bestUnderlay.volume;
+              eff.underlayMuted        = bestUnderlay.muted;
+            }
+          }
+          delete eff._t0; delete eff._t1; delete eff._srcOff; delete eff._intervals;
+          effective.push(eff);
+        });
+      });
+      // Replace v1 in place (sorted by left ascending)
+      effective.sort(function(a, b){ return (parseFloat(a.left)||0) - (parseFloat(b.left)||0); });
+      v1.length = 0;
+      effective.forEach(function(c){ v1.push(c); });
+    })();
+
+    // FX-track clips broadcast their effect to every V1 clip they overlap
+    // in time. We build a per-V1-clip "effective FX" view by merging the
+    // V1 clip's own dataset with any FX-track clip whose range overlaps
+    // (fxClip.left < v1.left + v1.width AND fxClip.left + fxClip.width > v1.left).
+    const fxTrackClips = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      return (t === 'fx' || c.clipType === 'fx') && c.fxKey;
+    });
+    function mergeFxTrackIntoV1(v1Clip){
+      if (fxTrackClips.length === 0) return v1Clip;
+      var l1 = parseFloat(v1Clip.left)  || 0;
+      var w1 = parseFloat(v1Clip.width) || 0;
+      var r1 = l1 + w1;
+      var merged = Object.assign({}, v1Clip);
+      fxTrackClips.forEach(function(fx){
+        var l2 = parseFloat(fx.left)  || 0;
+        var w2 = parseFloat(fx.width) || 0;
+        var r2 = l2 + w2;
+        if (l2 >= r1 || r2 <= l1) return;  // no overlap
+        if (fx.fxValue === '' || fx.fxValue === 'false') return;
+        // Only override if the V1 clip doesn't already have a value
+        // (so per-clip settings still win when explicitly set).
+        if (!merged[fx.fxKey] || merged[fx.fxKey] === 'false'){
+          merged[fx.fxKey] = fx.fxValue;
+        }
+      });
+      return merged;
+    }
+
+    // Resolve a mediaUrl (e.g. '/video-editor/download/xyz.mp4' or full URL)
+    // to a file on disk in either uploadDir or outputDir. Returns null for
+    // blob: URLs (sidebar-only files that have no server copy).
+    function urlToFilePath(url){
+      if (!url || url.indexOf('blob:') === 0) return null;
+      var m = /\/video-editor\/download\/([^?#]+)/.exec(url);
+      var name = m ? decodeURIComponent(m[1]) : null;
+      if (!name) return null;
+      var up = path.join(uploadDir, path.basename(name));
+      if (fs.existsSync(up)) return up;
+      var out = path.join(outputDir, path.basename(name));
+      if (fs.existsSync(out)) return out;
+      return null;
+    }
+
+    fs.mkdirSync(workDir, { recursive: true });
+
+    // Common encoding params — every segment uses THESE so the concat
+    // demuxer can -c copy them together without re-encoding at the end.
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+    var SCALE_PAD = 'scale=' + outW + ':' + outH +
+                    ':force_original_aspect_ratio=decrease,' +
+                    'pad=' + outW + ':' + outH + ':(ow-iw)/2:(oh-ih)/2:color=black,' +
+                    'setsar=1';
+
+    // Clip-aware version of SCALE_PAD — shifts the padded letterbox rect
+    // by the clip's Position (offsetX / offsetY) so the rendered frame is
+    // translated within a black-filled canvas. Preserves the base state
+    // (content stays at its original scale); this is purely a pad-offset.
+    function buildScalePad(clip){
+      var offX = parseFloat(clip && clip.offsetX) || 0;
+      var offY = parseFloat(clip && clip.offsetY) || 0;
+      var padX = (offX === 0) ? '(ow-iw)/2' : ('(ow-iw)/2+(' + offX.toFixed(2) + ')');
+      var padY = (offY === 0) ? '(oh-ih)/2' : ('(oh-ih)/2+(' + offY.toFixed(2) + ')');
+      return 'scale=' + outW + ':' + outH +
+             ':force_original_aspect_ratio=decrease,' +
+             'pad=' + outW + ':' + outH + ':' + padX + ':' + padY + ':color=black,' +
+             'setsar=1';
+    }
+
+    // Build a per-clip filter chain that transforms the source BEFORE the
+    // standard SCALE_PAD output-fit stage. Each property is optional and
+    // composes in a sensible order:
+    //   crop → color (eq/hue/colorbalance/curves) → blur → transforms
+    //   (flip/rotate/scale-resize).
+    function buildClipVFChain(c){
+      var chain = [];
+      // Crop (x,y,w,h in %)
+      if (c.crop){
+        var cp = String(c.crop).split(',').map(function(s){ return parseFloat(s); });
+        if (cp.length === 4 && cp.every(function(v){ return isFinite(v); })){
+          chain.push('crop=iw*' + (cp[2]/100).toFixed(4) + ':ih*' + (cp[3]/100).toFixed(4) +
+                     ':iw*' + (cp[0]/100).toFixed(4) + ':ih*' + (cp[1]/100).toFixed(4));
+        }
+      }
+      // FX: brightness / contrast / saturation — FFmpeg `eq` takes
+      //   brightness as an OFFSET -1..1 (where 0 = neutral) while our UI
+      //   passes a multiplier 0..2 with 1 = neutral. Convert multiplier→offset.
+      var b = parseFloat(c.fxBrightness);
+      var ct = parseFloat(c.fxContrast);
+      var sat = parseFloat(c.fxSaturate);
+      if ((isFinite(b) && b !== 1) || (isFinite(ct) && ct !== 1) || (isFinite(sat) && sat !== 1)){
+        var eqParts = [];
+        if (isFinite(b)  && b  !== 1) eqParts.push('brightness=' + (b - 1).toFixed(2));
+        if (isFinite(ct) && ct !== 1) eqParts.push('contrast='   + ct.toFixed(2));
+        if (isFinite(sat)&& sat!== 1) eqParts.push('saturation=' + sat.toFixed(2));
+        if (eqParts.length) chain.push('eq=' + eqParts.join(':'));
+      }
+      // FX: hue rotate
+      var hue = parseFloat(c.fxHue);
+      if (isFinite(hue) && hue !== 0) chain.push('hue=h=' + hue.toFixed(2));
+      // FX: gaussian blur (sigma=Npx)
+      var blur = parseFloat(c.fxBlur);
+      if (isFinite(blur) && blur > 0) chain.push('gblur=sigma=' + blur.toFixed(2));
+      // FX: color-grade presets
+      if (c.fxColorGrade){
+        var g = String(c.fxColorGrade).toLowerCase();
+        if (g === 'warm')        chain.push('colorbalance=rs=0.1:bs=-0.08');
+        else if (g === 'cool')   chain.push('colorbalance=rs=-0.08:bs=0.1');
+        else if (g === 'vintage')chain.push('curves=preset=vintage');
+        else if (g === 'bw')     chain.push('hue=s=0');
+        else if (g === 'punch')  chain.push('eq=contrast=1.15:saturation=1.25');
+      }
+      // FX post-overlays: vignette / glow / grain. These mirror the PGM
+      // canvas post-fx (radial darken / purple tint / film noise) and go
+      // LATE in the chain so they sit on top of crop + color grade.
+      //   • vignette  → native vignette filter (moderate PI/4 spread)
+      //   • grain     → native noise filter with temporal per-frame flag
+      //   • glow      → subtle brighten + slight saturation + purple tint
+      //                 overlay via drawbox (uniform approximation of the
+      //                 preview's purple→pink gradient)
+      if (c.fxVignette === 'true') {
+        chain.push('vignette=PI/4');
+      }
+      if (c.fxGrain === 'true') {
+        chain.push('noise=alls=18:allf=t+u');
+      }
+      if (c.fxGlow === 'true') {
+        chain.push('eq=brightness=0.05:saturation=1.1');
+        chain.push('drawbox=x=0:y=0:w=iw:h=ih:color=0x8b5cf6@0.15:t=fill');
+      }
+      // FX: sharpen — native unsharp mask, luminance-only (bias 1.0).
+      if (c.fxSharpen === 'true') {
+        chain.push('unsharp=5:5:1.0:5:5:0.0');
+      }
+      // FX: chromatic aberration — shift red +3px right, blue -3px left.
+      if (c.fxChromatic === 'true') {
+        chain.push('rgbashift=rh=3:bh=-3');
+      }
+      // FX: pixelate — downsample then upsample with nearest-neighbor.
+      // Applied BEFORE the final SCALE_PAD fit so the blocky output still
+      // letterboxes cleanly into the output canvas.
+      if (c.fxPixelate === 'true') {
+        chain.push('scale=iw/8:ih/8:flags=neighbor');
+        chain.push('scale=iw*8:ih*8:flags=neighbor');
+      }
+      // Transforms: hflip / vflip
+      if (c.flipH === 'true') chain.push('hflip');
+      if (c.flipV === 'true') chain.push('vflip');
+      // Transforms: rotate — in radians around center, original canvas size,
+      // black fill for exposed areas.
+      var rot = parseFloat(c.rotate);
+      if (isFinite(rot) && rot !== 0){
+        chain.push('rotate=' + (rot * Math.PI / 180).toFixed(4) + ':ow=iw:oh=ih:c=black');
+      }
+      // Task #61 — Resize is now applied AFTER buildScalePad in
+      // buildResizePostFit() below so the user's scale doesn't get
+      // canceled by the output-canvas fit step. Don't add scale here.
+      return chain;
+    }
+
+    // Task #61 — Resize / scale step that runs AFTER buildScalePad.
+    // buildScalePad fits the source into outW×outH with letterbox/pillarbox.
+    // This helper then takes that fitted frame and applies the user's
+    // scale multiplier:
+    //   • scl > 1  → enlarge then center-crop back to outW×outH (zoom in)
+    //   • scl < 1  → shrink then center-pad with black to outW×outH
+    //                (zoom out / picture-shrunk effect)
+    //   • scl == 1 → no-op
+    // Returns a comma-prefixed filter string ready to append to vfChain,
+    // or '' when no scaling is needed.
+    function buildResizePostFit(c){
+      var scl = parseFloat(c && c.scale);
+      if (!isFinite(scl) || scl <= 0 || Math.abs(scl - 1) < 1e-3) return '';
+      var sw = 'trunc(' + outW + '*' + scl.toFixed(4) + '/2)*2';
+      var sh = 'trunc(' + outH + '*' + scl.toFixed(4) + '/2)*2';
+      if (scl > 1){
+        // Zoom in: scale the canvas-fitted frame up, then crop the center
+        // back to outW×outH so the output stays the right size.
+        return ',scale=' + sw + ':' + sh +
+               ',crop=' + outW + ':' + outH + ':(iw-' + outW + ')/2:(ih-' + outH + ')/2';
+      } else {
+        // Zoom out: shrink, then pad black to outW×outH centered.
+        return ',scale=' + sw + ':' + sh +
+               ',pad=' + outW + ':' + outH + ':(ow-iw)/2:(oh-ih)/2:color=black';
+      }
+    }
+
+    var segments = [];
+    var cursor = 0; // timeline seconds covered so far
+
+    for (var idx = 0; idx < v1.length; idx++){
+      var clip = v1[idx];
+      var leftPx  = parseFloat(clip.left)  || 0;
+      var widthPx = parseFloat(clip.width) || 0;
+      if (widthPx < 2) continue; // skip zero-width
+      var startSec = leftPx  / pxPerSec;
+      var durSec   = widthPx / pxPerSec;
+      var srcOff   = parseFloat(clip.sourceOffset) || 0;
+      var clipType = clip.clipType || 'vid';
+
+      // Fill gap before this clip
+      if (startSec > cursor + 0.05){
+        var gapDur = startSec - cursor;
+        var gapPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_gap.mp4');
+        await runFFmpeg([
+          '-f', 'lavfi', '-i', 'color=c=black:s=' + outW + 'x' + outH + ':d=' + gapDur.toFixed(3) + ':r=30',
+          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+          '-t', gapDur.toFixed(3),
+          '-vf', 'setsar=1'
+        ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-y', gapPath]));
+        segments.push(gapPath);
+      }
+
+      var srcPath = urlToFilePath(clip.mediaUrl);
+      if (!srcPath){
+        throw new Error('Source file not found on server: ' + (clip.filename || clip.mediaUrl) +
+          ' (files uploaded via the sidebar + Upload button live only in your browser and can\'t be exported yet)');
+      }
+
+      var segPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_clip.mp4');
+
+      // Assemble this clip's video-filter chain: per-clip FX/transform
+      // BEFORE the output SCALE_PAD fit. SCALE_PAD is built per-clip so
+      // the pad-anchor picks up the Position offsetX/offsetY, translating
+      // the rendered content off-center within the black canvas.
+      // mergeFxTrackIntoV1 injects effects from any FX-track clip whose
+      // time range overlaps this V1 clip, so a single FX-track clip
+      // dragged across multiple V1 clips applies to all of them.
+      var fxMerged = mergeFxTrackIntoV1(clip);
+      var clipChain = buildClipVFChain(fxMerged);
+      // Task #61 — append the post-fit resize step (no-op if scale == 1)
+      var vfChain = clipChain.concat([buildScalePad(fxMerged)]).join(',') +
+                    buildResizePostFit(fxMerged);
+
+      // Timing: per-clip speed. Valid range is >0; we clamp to 0.1..10 to
+      // avoid extreme atempo chains. For non-1.0 speed we scale video PTS
+      // and apply atempo to the audio stream. setpts=PTS/speed compresses
+      // or stretches time to fit durSec of OUTPUT from durSec*speed of
+      // source.
+      var speed = parseFloat(clip.speed);
+      if (!isFinite(speed) || speed <= 0) speed = 1;
+      speed = Math.max(0.1, Math.min(10, speed));
+      var readDurSec = durSec * speed;
+      // Chain atempo filters if speed is outside [0.5, 2.0] range.
+      function atempoChain(s){
+        var out = [];
+        var x = s;
+        while (x > 2.0){ out.push('atempo=2.0'); x /= 2.0; }
+        while (x < 0.5){ out.push('atempo=0.5'); x *= 2.0; }
+        out.push('atempo=' + x.toFixed(4));
+        return out.join(',');
+      }
+
+      // Clip Tools timing flags — mirror the preview semantics:
+      //   freeze  → hold on the frame at srcOff for durSec (speed/reverse/loop ignored)
+      //   loop    → source slice repeats to fill durSec (works with speed)
+      //   reverse → source slice plays backward (works with speed)
+      var freeze  = clip.freeze  === 'true';
+      var loopOn  = clip.loop    === 'true';
+      var reverse = clip.reverse === 'true';
+
+      if (clipType === 'img'){
+        // Image — loop for the clip duration with silent audio. Speed
+        // has no meaning for a still image; we use durSec directly.
+        await runFFmpeg([
+          '-loop', '1', '-framerate', '30', '-i', srcPath,
+          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+          '-t', durSec.toFixed(3),
+          '-vf', vfChain
+        ].concat(VCODEC).concat(ACODEC).concat(['-shortest', '-r', '30', '-y', segPath]));
+      } else if (freeze){
+        // Freeze: grab the single frame at srcOff and loop it for durSec
+        // with silent audio. loop filter (size=1) caches ONE frame then
+        // emits it forever; setpts=N/FRAME_RATE/TB rebases PTS so the
+        // output is a well-formed 30fps stream.
+        // Task #61 — append post-fit resize so freeze frames also honor scale
+        var freezeVfChain = ['loop=loop=-1:size=1:start=0', 'setpts=N/FRAME_RATE/TB']
+          .concat(clipChain).concat([buildScalePad(clip)]).join(',') +
+          buildResizePostFit(clip);
+        await runFFmpeg([
+          '-ss', srcOff.toFixed(3), '-i', srcPath,
+          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+          '-t', durSec.toFixed(3),
+          '-vf', freezeVfChain,
+          '-map', '0:v', '-map', '1:a',
+          '-r', '30', '-shortest'
+        ].concat(VCODEC).concat(ACODEC).concat(['-y', segPath]));
+      } else {
+        // Video — seek to sourceOffset, read durSec*speed of source,
+        // apply clip FX/transform, apply setpts to compress to durSec
+        // output, then SCALE_PAD. Audio: atempo + apad.
+        //
+        // Order of composition within the vf chain:
+        //   setpts (speed) → FX/Transform chain → reverse → SCALE_PAD
+        // For loop we add `-stream_loop -1` input option and cut at
+        // durSec of OUTPUT.
+        var vfParts = [];
+        if (speed !== 1) vfParts.push('setpts=(PTS-STARTPTS)/' + speed.toFixed(4));
+        vfParts = vfParts.concat(clipChain);
+        if (reverse) vfParts.push('reverse');
+        vfParts.push(buildScalePad(clip));
+        // Task #61 — post-fit resize step (no-op if scale == 1)
+        var vfWithSpeed = vfParts.join(',') + buildResizePostFit(clip);
+
+        var afParts = [];
+        if (speed !== 1) afParts.push(atempoChain(speed));
+        if (reverse) afParts.push('areverse');
+        // Task #24 — Per-V1-clip audio FX for embedded audio. Same filter
+        // set that A1 clips get in the final audioGraph (afftdn / loudnorm
+        // / afade / volume / mute), applied during the V1 segment encode
+        // so the concatenated intermediate already has the FX baked in.
+        if (clip.audioDenoise === 'true')   afParts.push('afftdn=nf=-25');
+        if (clip.audioNormalize === 'true') afParts.push('loudnorm=I=-16:TP=-1.5:LRA=11');
+        var v1FadeIn  = Math.max(0, parseFloat(clip.fadeIn)  || 0);
+        var v1FadeOut = Math.max(0, parseFloat(clip.fadeOut) || 0);
+        if (v1FadeIn > 0){
+          v1FadeIn = Math.min(v1FadeIn, durSec);
+          afParts.push('afade=t=in:st=0:d=' + v1FadeIn.toFixed(3));
+        }
+        if (v1FadeOut > 0){
+          v1FadeOut = Math.min(v1FadeOut, durSec);
+          var v1FoStart = Math.max(0, durSec - v1FadeOut);
+          afParts.push('afade=t=out:st=' + v1FoStart.toFixed(3) + ':d=' + v1FadeOut.toFixed(3));
+        }
+        var v1VolRaw = parseFloat(clip.volume);
+        var v1Vol    = isFinite(v1VolRaw) ? Math.max(0, Math.min(2, v1VolRaw / 100)) : 1;
+        if (clip.muted === 'true') v1Vol = 0;
+        if (Math.abs(v1Vol - 1) > 1e-3) afParts.push('volume=' + v1Vol.toFixed(3));
+        afParts.push('apad');
+        var afWithSpeed = afParts.join(',');
+
+        // Input options: stream_loop + seek
+        var inputOpts = [];
+        if (loopOn) inputOpts.push('-stream_loop', '-1');
+        inputOpts.push('-ss', srcOff.toFixed(3), '-i', srcPath);
+
+        // ── Task #73 — B-Roll w/ underlying primary audio ─────────────
+        // When this segment is a B-Roll layered over an older V1 clip,
+        // the underlay's mediaUrl + sourceOffset were attached during
+        // resolveV1Overlaps. Encode the segment as a 2-input ffmpeg call
+        // that pulls video from the B-Roll while mixing primary dialogue
+        // (the underlay) at full volume with the B-Roll's own audio
+        // ducked, so the dialogue stays focal during cut-aways.
+        var underlayPath = null;
+        if (clip.underlayMediaUrl){
+          underlayPath = urlToFilePath(clip.underlayMediaUrl);
+        }
+        if (underlayPath){
+          var BROLL_DUCK = 0.20;  // ~14 dB attenuation — keeps B-Roll audible but well below dialogue
+          var underVolRaw = parseFloat(clip.underlayVolume);
+          var underVol    = isFinite(underVolRaw) ? Math.max(0, Math.min(2, underVolRaw / 100)) : 1;
+          if (clip.underlayMuted === 'true') underVol = 0;
+          var underSrcOff = parseFloat(clip.underlaySourceOffset) || 0;
+
+          // B-Roll audio chain = the per-clip audio FX (afParts) + duck.
+          // afParts already includes speed/atempo/reverse/denoise/normalize/
+          // fade/volume; tagging on a final volume= multiplies it.
+          var brollAfChain   = afParts.concat(['volume=' + BROLL_DUCK.toFixed(3)]).join(',');
+          var underlayAfChain = [
+            'volume=' + underVol.toFixed(3),
+            'apad'
+          ].join(',');
+          var afilterComplex =
+            '[0:a]' + brollAfChain + '[brollA];' +
+            '[1:a]' + underlayAfChain + '[underA];' +
+            '[brollA][underA]amix=inputs=2:duration=longest:normalize=0[outA]';
+
+          // Build args: B-Roll input first (idx 0 — provides video + own audio),
+          // underlay input second (idx 1 — provides primary dialogue audio).
+          var blArgs = inputOpts.slice();   // already includes B-Roll -ss + -i
+          blArgs.push('-ss', underSrcOff.toFixed(3), '-i', underlayPath);
+          if (loopOn){
+            blArgs.push('-t', durSec.toFixed(3));
+          } else {
+            blArgs.push('-t', readDurSec.toFixed(3));
+          }
+          blArgs.push(
+            '-vf', vfWithSpeed,
+            '-filter_complex', afilterComplex,
+            '-map', '0:v',
+            '-map', '[outA]',
+            '-r', '30', '-shortest'
+          );
+          blArgs = blArgs.concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
+          try {
+            await runFFmpeg(blArgs);
+            segments.push(segPath);
+            cursor = startSec + durSec;
+            continue;
+          } catch (eBL){
+            // Fallback: B-Roll might lack an audio track. Replace
+            // [0:a] with a silent stream so the underlay still mixes.
+            console.warn('[export-timeline] B-Roll mix failed, retrying with silent B-Roll audio:', eBL.message);
+            try {
+              var fbBL = ['-ss', srcOff.toFixed(3), '-i', srcPath,
+                          '-ss', underSrcOff.toFixed(3), '-i', underlayPath,
+                          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+                          '-t', (loopOn ? durSec : readDurSec).toFixed(3),
+                          '-vf', vfWithSpeed,
+                          '-filter_complex',
+                            '[1:a]' + underlayAfChain + '[underA];' +
+                            '[2:a][underA]amix=inputs=2:duration=longest:normalize=0[outA]',
+                          '-map', '0:v', '-map', '[outA]',
+                          '-r', '30', '-shortest']
+                          .concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
+              await runFFmpeg(fbBL);
+              segments.push(segPath);
+              cursor = startSec + durSec;
+              continue;
+            } catch (eBL2){
+              console.warn('[export-timeline] B-Roll silent-fallback also failed; falling through to single-input encode:', eBL2.message);
+              // Fall through to the regular single-input branch below.
+            }
+          }
+        }
+
+        // Duration control: for loop, cap output at durSec; otherwise
+        // read exactly readDurSec of source (reverse needs the whole
+        // slice buffered so same limit applies).
+        var args = inputOpts.slice();
+        if (loopOn){
+          args.push('-t', durSec.toFixed(3));
+        } else {
+          args.push('-t', readDurSec.toFixed(3));
+        }
+        args.push(
+          '-vf', vfWithSpeed,
+          '-af', afWithSpeed,
+          '-r', '30', '-shortest'
+        );
+        args = args.concat(VCODEC).concat(ACODEC).concat(['-y', segPath]);
+        try {
+          await runFFmpeg(args);
+        } catch (e) {
+          // Fallback: source may be audio-less — re-encode with an explicit
+          // silent track. Preserves the clip filter chain + speed/loop/reverse.
+          var fbArgs = inputOpts.slice();
+          fbArgs.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
+          if (loopOn) fbArgs.push('-t', durSec.toFixed(3));
+          else fbArgs.push('-t', readDurSec.toFixed(3));
+          fbArgs.push('-vf', vfWithSpeed, '-r', '30', '-map', '0:v:0', '-map', '1:a:0');
+          fbArgs = fbArgs.concat(VCODEC).concat(ACODEC).concat(['-shortest', '-y', segPath]);
+          await runFFmpeg(fbArgs);
+        }
+      }
+      segments.push(segPath);
+      cursor = startSec + durSec;
+    }
+
+    if (segments.length === 0){
+      return res.status(400).json({ error: 'No renderable clips found.' });
+    }
+
+    // Concat list
+    var listPath = path.join(workDir, 'concat.txt');
+    fs.writeFileSync(
+      listPath,
+      segments.map(function(p){ return "file '" + p.replace(/'/g, "'\\''") + "'"; }).join('\n') + '\n'
+    );
+
+    // Stage A: stitch the V1 video segments into an intermediate MP4
+    // (with the V1 clips' own audio as [0:a]).
+    var intermediatePath = path.join(workDir, 'stitched.mp4');
+    try {
+      await runFFmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', '-y', intermediatePath]);
+    } catch (e) {
+      var reInputs = [];
+      segments.forEach(function(p){ reInputs.push('-i', p); });
+      var n = segments.length;
+      var filter = '';
+      for (var i = 0; i < n; i++) filter += '[' + i + ':v][' + i + ':a]';
+      filter += 'concat=n=' + n + ':v=1:a=1[v][a]';
+      await runFFmpeg(reInputs.concat([
+        '-filter_complex', filter,
+        '-map', '[v]', '-map', '[a]'
+      ]).concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', intermediatePath]));
+    }
+
+    // Stage B: bake in TEXT overlays (from T1) + MULTI-TRACK audio mix
+    // (from every audio track) via a final filter_complex pass.
+    //
+    // Text: one drawtext filter per text clip with
+    //       enable='between(t,startSec,endSec)'.
+    // Audio: each server-resolvable audio clip becomes another -i input;
+    //        atrim to its source slice, adelay to its timeline position,
+    //        volume scaled by its per-clip volume/100; amix with the
+    //        video's own audio track.
+    // Task #29 — use the user-provided filename if supplied (stripped of
+    // any path separators, extension added server-side based on format).
+    var customName = (body && body.customFilename) ? String(body.customFilename) : '';
+    customName = customName.replace(/[\\\/]/g, '_').replace(/\.(mp4|mov|webm|mkv|gif)$/i, '');
+    customName = customName.replace(/[^A-Za-z0-9._ \-]+/g, '_').replace(/^\.+|\.+$/g, '').slice(0, 80);
+    var extForFile = (body && body.format) === 'gif' ? 'gif' : 'mp4';
+    var outputFilename;
+    if (customName){
+      // Task #67 — Use the exact name the user typed. Only append a
+      // " (1)", " (2)" suffix if a file with that name already exists
+      // in the output dir, so duplicate exports don't overwrite each
+      // other but the FIRST export of any given name lands as exactly
+      // "<name>.mp4" (or .webm/.gif).
+      outputFilename = customName + '.' + extForFile;
+      var collisionN = 0;
+      while (fs.existsSync(path.join(outputDir, outputFilename))){
+        collisionN += 1;
+        outputFilename = customName + ' (' + collisionN + ').' + extForFile;
+        if (collisionN > 999) break; // safety
+      }
+    } else {
+      outputFilename = 'timeline_export_' + Date.now() + '_' + req.user.id + '.' + extForFile;
+    }
+    var outputPath = path.join(outputDir, outputFilename);
+
+    var textClips = clips.filter(function(c){
+      return (c.clipType === 'text' || (c.track || '').toLowerCase() === 'text')
+        && (c.textContent || '').trim().length > 0;
+    });
+    // Count A1 clips first so we can tell the client if any were
+    // dropped due to unresolvable URLs (blob: URLs that weren't
+    // pre-uploaded, expired files, etc.)
+    var allA1 = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      return (t === 'audio' || t === 'aud') && !!c.mediaUrl;
+    });
+    var audioClips = allA1.filter(function(c){
+      if (c.muted === 'true') return false;
+      return urlToFilePath(c.mediaUrl) !== null;
+    });
+    var droppedA1 = allA1.filter(function(c){
+      if (c.muted === 'true') return false;
+      return urlToFilePath(c.mediaUrl) === null;
+    });
+    if (droppedA1.length > 0){
+      console.warn('[export-timeline] A1 clips dropped (URL not resolvable server-side):',
+        droppedA1.map(function(c){ return { url: c.mediaUrl, file: c.filename }; }));
+    }
+    // M1 motion clips — bake into the stitched video as time-gated
+    // post-filters. Effects split into two categories by FFmpeg mechanics:
+    //
+    //   INLINE_MOTION  — filters that chain directly on [0:v]:
+    //                    rotate, fade-in, fade-out, zoom-in
+    //   OVERLAY_MOTION — effects that require split + black canvas +
+    //                    overlay with per-frame x/y/scale expressions:
+    //                    pan-left, pan-right, zoom-out, shake
+    //
+    // The full graph pipeline for motion looks like:
+    //   [0:v] -> inline filters -> split -> (fg:scale) -> overlay on black
+    //         -> drawtext -> [vout]
+    var INLINE_MOTION  = { 'rotate': 1, 'fade-in': 1, 'fade-out': 1, 'zoom-in': 1 };
+    var OVERLAY_MOTION = { 'pan-left': 1, 'pan-right': 1, 'zoom-out': 1, 'shake': 1 };
+    var motionClips = clips.filter(function(c){
+      var t = (c.track || '').toLowerCase();
+      var isMotionTrack = (t === 'music' || t === 'mus' || c.clipType === 'motion');
+      if (!isMotionTrack) return false;
+      var eff = (c.motionEffect || '').toLowerCase();
+      return !!(INLINE_MOTION[eff] || OVERLAY_MOTION[eff]);
+    });
+
+    // ─── Task #69 — Brand-logo overlay (transparent layer over V1) ──────
+    // The client passes brandLogo: { url, position, size } when the user
+    // applied a Brand Template that includes a logo. The URL points to
+    // /brand-templates/logo/<filename>; we resolve it via fetchLogo() to
+    // a temp file and feed it as an extra ffmpeg input in the post-pass.
+    var brandLogoFile = null;     // temp file path (deleted in finally)
+    var brandLogoMeta = null;     // { position, size }
+    if (body && body.brandLogo && body.brandLogo.url && brandTemplatesMod && brandTemplatesMod.fetchLogo){
+      try {
+        var bUrl = String(body.brandLogo.url);
+        var bm = /\/brand-templates\/logo\/([^?#]+)/.exec(bUrl);
+        var bFname = bm ? decodeURIComponent(bm[1]) : null;
+        if (bFname && (!brandTemplatesMod.safeFilename || brandTemplatesMod.safeFilename(bFname))){
+          var bRow = await brandTemplatesMod.fetchLogo(bFname);
+          if (bRow && bRow.data){
+            // Pick an extension matching the BLOB's MIME so FFmpeg's
+            // demuxer auto-detection picks the right decoder.
+            var bExt = '.png';
+            var bMime = (bRow.mime_type || '').toLowerCase();
+            if (bMime.indexOf('jpeg') >= 0 || bMime.indexOf('jpg') >= 0) bExt = '.jpg';
+            else if (bMime.indexOf('webp') >= 0) bExt = '.webp';
+            else if (bMime.indexOf('gif') >= 0) bExt = '.gif';
+            else if (bMime.indexOf('svg') >= 0) bExt = '.svg';
+            brandLogoFile = path.join(workDir, 'brand_logo' + bExt);
+            fs.writeFileSync(brandLogoFile, bRow.data);
+            brandLogoMeta = {
+              position:     String(body.brandLogo.position || 'top-right'),
+              size:         parseFloat(body.brandLogo.size) || 100,
+              // Task #71 — source's intrinsic media size so we can place
+              // the logo inside the actual video rect (after the export
+              // canvas's letterbox/pillarbox padding).
+              sourceWidth:  parseInt(body.brandLogo.sourceWidth,  10) || 0,
+              sourceHeight: parseInt(body.brandLogo.sourceHeight, 10) || 0
+            };
+          }
+        }
+      } catch (eBL){
+        console.warn('[export-timeline] brand-logo resolve failed:', eBL && eBL.message);
+        brandLogoFile = null;
+        brandLogoMeta = null;
+      }
+    }
+
+    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0 || !!brandLogoFile;
+
+    if (!hasPostPass){
+      // Nothing to bake — just rename the intermediate to the final path.
+      fs.renameSync(intermediatePath, outputPath);
+    } else {
+      // Assemble the final filter graph.
+      var ffArgs = ['-i', intermediatePath];
+      audioClips.forEach(function(c){
+        var p = urlToFilePath(c.mediaUrl);
+        if (p) ffArgs.push('-i', p);
+      });
+      // Brand-logo input goes AFTER all audio inputs so its index is stable
+      // and predictable (1 + audioClips.length).
+      var brandLogoInputIdx = -1;
+      if (brandLogoFile){
+        brandLogoInputIdx = 1 + audioClips.length;
+        ffArgs.push('-i', brandLogoFile);
+      }
+
+      // Video filter chain: drawtext per text clip. Escape special chars.
+      function escDT(s){
+        return String(s || '')
+          .replace(/\\/g, '\\\\')
+          .replace(/'/g,  "\u2019")        // curly apostrophe dodges shell quoting
+          .replace(/:/g,  '\\:')
+          .replace(/,/g,  '\\,')
+          .replace(/%/g,  '\\%')
+          .replace(/\{/g, '\\{')
+          .replace(/\}/g, '\\}');
+      }
+      // Motion filters: rotate/fade-in/fade-out/zoom-in for M1 clips.
+      // Each filter is time-gated to its motion clip's timeline window via
+      // between(t, START, END); outside the window, the filter is a no-op.
+      function buildMotionFilter(mc){
+        var leftSec = (parseFloat(mc.left)  || 0) / pxPerSec;
+        var durSec  = (parseFloat(mc.width) || 0) / pxPerSec;
+        if (durSec <= 0.01) return null;
+        var S = leftSec;
+        var E = leftSec + durSec;
+        var D = durSec;
+        var eff = (mc.motionEffect || '').toLowerCase();
+        function f(n){ return n.toFixed(3); }
+        if (eff === 'fade-in'){
+          return 'fade=t=in:st=' + f(S) + ':d=' + f(D);
+        }
+        if (eff === 'fade-out'){
+          return 'fade=t=out:st=' + f(S) + ':d=' + f(D);
+        }
+        if (eff === 'rotate'){
+          // ±10° pulse via sin curve, zero at both endpoints so the video
+          // returns to its default state at the clip boundaries.
+          var pulse = '0.17453*sin((t-' + f(S) + ')/' + f(D) + '*PI)';
+          var gated = 'if(between(t\\,' + f(S) + '\\,' + f(E) + ')\\,' + pulse + '\\,0)';
+          return 'rotate=a=\'' + gated + '\':c=black:ow=iw:oh=ih';
+        }
+        if (eff === 'zoom-in'){
+          // Crop an ever-shrinking center region then scale back to the
+          // output dimensions — net effect is a zoom-in pulse. Divisor
+          // returns to 1 outside the motion window (no-op crop).
+          var scale = '1+0.3*sin((t-' + f(S) + ')/' + f(D) + '*PI)';
+          var gated = 'if(between(t\\,' + f(S) + '\\,' + f(E) + ')\\,' + scale + '\\,1)';
+          var wExpr = 'iw/(' + gated + ')';
+          var hExpr = 'ih/(' + gated + ')';
+          return 'crop=w=\'' + wExpr + '\':h=\'' + hExpr + '\':x=\'(iw-ow)/2\':y=\'(ih-oh)/2\'' +
+                 ',scale=' + outW + ':' + outH + ':flags=bicubic';
+        }
+        return null;
+      }
+
+      // Split motion clips by pipeline category
+      var inlineMotion  = motionClips.filter(function(mc){
+        return !!INLINE_MOTION[(mc.motionEffect || '').toLowerCase()];
+      });
+      var overlayMotion = motionClips.filter(function(mc){
+        return !!OVERLAY_MOTION[(mc.motionEffect || '').toLowerCase()];
+      });
+
+      // ---------- Overlay motion expression composers ----------
+      // All of these produce FFmpeg expression strings with commas and
+      // colons pre-escaped (\\,) for use inside single-quoted overlay/scale
+      // option values.
+      function fmtN(n){ return n.toFixed(3); }
+
+      // Sum of x-offset contributions (pan-left/right are signed, shake
+      // adds a high-frequency sin component). Every term is time-gated so
+      // clips outside their window contribute 0.
+      function buildOverlayXExpr(list){
+        var parts = ['0'];
+        list.forEach(function(mc){
+          var S = (parseFloat(mc.left)  || 0) / pxPerSec;
+          var D = (parseFloat(mc.width) || 0) / pxPerSec;
+          if (D <= 0.01) return;
+          var E = S + D;
+          var eff = (mc.motionEffect || '').toLowerCase();
+          var pulse = 'sin((t-' + fmtN(S) + ')/' + fmtN(D) + '*PI)';
+          var gate  = 'between(t\\,' + fmtN(S) + '\\,' + fmtN(E) + ')';
+          if (eff === 'pan-left'){
+            var AMT = Math.round(outW * 0.15);
+            parts.push('-' + AMT + '*if(' + gate + '\\,' + pulse + '\\,0)');
+          } else if (eff === 'pan-right'){
+            var AMT = Math.round(outW * 0.15);
+            parts.push('+' + AMT + '*if(' + gate + '\\,' + pulse + '\\,0)');
+          } else if (eff === 'shake'){
+            // High-frequency jitter during the window
+            parts.push('+12*if(' + gate + '\\,sin(40*(t-' + fmtN(S) + '))\\,0)');
+          }
+        });
+        return parts.join('');
+      }
+
+      function buildOverlayYExpr(list){
+        var parts = ['0'];
+        list.forEach(function(mc){
+          var S = (parseFloat(mc.left)  || 0) / pxPerSec;
+          var D = (parseFloat(mc.width) || 0) / pxPerSec;
+          if (D <= 0.01) return;
+          var E = S + D;
+          var eff = (mc.motionEffect || '').toLowerCase();
+          var gate = 'between(t\\,' + fmtN(S) + '\\,' + fmtN(E) + ')';
+          if (eff === 'shake'){
+            parts.push('+12*if(' + gate + '\\,cos(37*(t-' + fmtN(S) + '))\\,0)');
+          }
+        });
+        return parts.join('');
+      }
+
+      // Product of scale contributions from zoom-out clips. Each clip
+      // multiplies (1 - 0.3*sin pulse during window). Returns '1' if no
+      // zoom-out so caller can skip the scale step entirely.
+      function buildOverlayScaleExpr(list){
+        var zoomOuts = list.filter(function(c){
+          return (c.motionEffect || '').toLowerCase() === 'zoom-out';
+        });
+        if (zoomOuts.length === 0) return '1';
+        var parts = [];
+        zoomOuts.forEach(function(mc){
+          var S = (parseFloat(mc.left)  || 0) / pxPerSec;
+          var D = (parseFloat(mc.width) || 0) / pxPerSec;
+          if (D <= 0.01) return;
+          var E = S + D;
+          var gate  = 'between(t\\,' + fmtN(S) + '\\,' + fmtN(E) + ')';
+          var pulse = 'sin((t-' + fmtN(S) + ')/' + fmtN(D) + '*PI)';
+          parts.push('(1-0.3*if(' + gate + '\\,' + pulse + '\\,0))');
+        });
+        return parts.length > 0 ? parts.join('*') : '1';
+      }
+
+      // ---------- Assemble filter graph as a sequence of chains ----------
+      var chains      = [];
+      var currentLbl  = '[0:v]';
+      var lblCounter  = 0;
+
+      // Chain A: inline motion filters (rotate, fades, zoom-in)
+      if (inlineMotion.length > 0){
+        var inlineFilters = inlineMotion
+          .map(function(mc){ return buildMotionFilter(mc); })
+          .filter(Boolean);
+        if (inlineFilters.length > 0){
+          var nextLbl = '[vm' + (++lblCounter) + ']';
+          chains.push(currentLbl + inlineFilters.join(',') + nextLbl);
+          currentLbl = nextLbl;
+        }
+      }
+
+      // Chain B: overlay motion (split -> drawbox black -> scale fg -> overlay)
+      if (overlayMotion.length > 0){
+        lblCounter++;
+        var bgSrc    = '[mbg'  + lblCounter + ']';
+        var fgSrc    = '[mfg'  + lblCounter + ']';
+        var bgBlack  = '[mbgb' + lblCounter + ']';
+        var fgScaled = '[mfgs' + lblCounter + ']';
+        var afterOv  = '[vm'   + lblCounter + ']';
+
+        chains.push(currentLbl + 'split=2' + bgSrc + fgSrc);
+        chains.push(bgSrc + 'drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill' + bgBlack);
+
+        var scaleExpr = buildOverlayScaleExpr(overlayMotion);
+        if (scaleExpr === '1'){
+          // No zoom-out contributors — skip the scale step
+          fgScaled = fgSrc;
+        } else {
+          chains.push(fgSrc +
+            'scale=w=\'iw*' + scaleExpr + '\':h=\'ih*' + scaleExpr + '\':eval=frame' +
+            fgScaled);
+        }
+
+        var xExpr = buildOverlayXExpr(overlayMotion);
+        var yExpr = buildOverlayYExpr(overlayMotion);
+        chains.push(bgBlack + fgScaled +
+          'overlay=x=\'(W-w)/2' + xExpr + '\':y=\'(H-h)/2' + yExpr + '\':eval=frame' +
+          afterOv);
+
+        currentLbl = afterOv;
+      }
+
+      // Chain C: drawtext overlays (final chain -> [vout])
+      // Typography rules (match PGM preview):
+      //   #14 Font size is px-at-1280-wide; scale by outW/1280 so captions
+      //       read at the same relative size on Reels (720x1280), 1080p,
+      //       4K, etc. Default font when unset is ~6.5% of output width.
+      //   #15 Safe-area: 7.5% L/R horizontal margin, 8% top/bottom margin.
+      //   #16 Overlap prevention: each text clip is assigned a "lane" in
+      //       its position zone (top/center/bottom) based on which other
+      //       clips in the same zone are actively playing at its start.
+      //       Lane 0 = baseline, each subsequent lane is stacked by one
+      //       approx-line-height in the zone's natural stack direction.
+      var videoGraph;
+      if (textClips.length){
+        // Pre-pass: assign overlap lane per text clip
+        var byZone = { top: [], center: [], bottom: [] };
+        textClips.forEach(function(tc){
+          var p = tc.position || 'center';
+          if (!byZone[p]) p = 'center';
+          byZone[p].push(tc);
+        });
+        Object.keys(byZone).forEach(function(zone){
+          var zClips = byZone[zone].slice();
+          zClips.sort(function(a,b){ return (parseFloat(a.left)||0) - (parseFloat(b.left)||0); });
+          var active = []; // [{ end, lane }]
+          zClips.forEach(function(tc){
+            var l = (parseFloat(tc.left)  || 0) / pxPerSec;
+            var d = (parseFloat(tc.width) || 0) / pxPerSec;
+            var r = l + d;
+            active = active.filter(function(a){ return a.end > l; });
+            var used = {};
+            active.forEach(function(a){ used[a.lane] = true; });
+            var lane = 0;
+            while (used[lane]) lane++;
+            tc.__tOverlapLane = lane;
+            active.push({ end: r, lane: lane });
+          });
+        });
+
+        var parts = textClips.map(function(tc){
+          var leftSec = (parseFloat(tc.left)  || 0) / pxPerSec;
+          var durSec  = (parseFloat(tc.width) || 0) / pxPerSec;
+          var startSec = leftSec;
+          var endSec   = leftSec + durSec;
+          var txt   = escDT(tc.textContent);
+          // #14 Scale user-set fontSize as px-at-1280-wide reference
+          var rawSize = parseInt(tc.fontSize, 10);
+          var REF_W   = 1280;
+          var sz;
+          if (isFinite(rawSize) && rawSize > 0){
+            sz = Math.round(rawSize * (outW / REF_W));
+          } else {
+            sz = Math.round(outW * 0.065);
+          }
+          // Clamp so extreme aspects don't produce tiny/hero captions
+          sz = Math.max(14, Math.min(sz, Math.round(outH * 0.22)));
+          var col   = (tc.textColor || '#ffffff').replace('#','0x');
+          // Task #64 — parse compound position (vertical-horizontal)
+          var rawPos = String(tc.position || 'center').toLowerCase();
+          var vPos, hPos;
+          if (rawPos === 'top' || rawPos === 'center' || rawPos === 'bottom'){
+            vPos = rawPos; hPos = 'center';
+          } else if (rawPos === 'left' || rawPos === 'right'){
+            vPos = 'center'; hPos = rawPos;
+          } else {
+            var rp = rawPos.split('-');
+            vPos = (rp[0] === 'top' || rp[0] === 'center' || rp[0] === 'bottom') ? rp[0] : 'bottom';
+            hPos = (rp[1] === 'left' || rp[1] === 'center' || rp[1] === 'right') ? rp[1] : 'center';
+          }
+          var offFracX = parseFloat(tc.textOffsetX) || 0;
+          var offFracY = parseFloat(tc.textOffsetY) || 0;
+
+          // #16 Lane offset — approx line-height + 1.2% gap, in px
+          var lane    = tc.__tOverlapLane || 0;
+          var laneGap = Math.round(sz * 1.15) + Math.round(outH * 0.012);
+          var laneOff = lane * laneGap;
+
+          // #15 Safe-area anchors (y = TOP-of-text in drawtext)
+          var y;
+          if (vPos === 'top')         y = 'h*0.08';                 // stack downward
+          else if (vPos === 'bottom') y = 'h-h*0.08-text_h';         // stack upward
+          else                        y = '(h-text_h)/2';            // stack downward from center
+          if (laneOff){
+            if (vPos === 'bottom')    y = y + '-' + laneOff;
+            else                      y = y + '+' + laneOff;
+          }
+
+          // Task #64 — horizontal anchor based on hPos. Safe zone is
+          // 7.5%–92.5% of width. drawtext expects x = LEFT edge of text.
+          var xOff = offFracX * outW;
+          var anchorX;
+          if (hPos === 'left')       anchorX = 'w*0.075';                       // left-anchored
+          else if (hPos === 'right') anchorX = 'w*0.925-text_w';                // right-anchored
+          else                       anchorX = '(w-text_w)/2';                  // centered
+          var xRaw = anchorX + (xOff ? ((xOff > 0 ? '+' : '') + xOff.toFixed(1)) : '');
+          var xExpr =
+            'if(lt(' + xRaw + '\\,w*0.075)\\,w*0.075\\,' +
+              'if(gt(' + xRaw + '+text_w\\,w*0.925)\\,w*0.925-text_w\\,' + xRaw + '))';
+
+          if (offFracY){ y = y + (offFracY > 0 ? '+' : '') + (offFracY * outH).toFixed(1); }
+          var shadowY = Math.max(1, Math.round(sz * 0.08));
+          var dtParts = [
+            'drawtext=text=\'' + txt + '\'',
+            'fontsize=' + sz,
+            'fontcolor=' + col,
+            'shadowx=0',
+            'shadowy=' + shadowY,
+            'shadowcolor=black@0.65',
+            'borderw=1', 'bordercolor=black@0.4',
+            'x=' + xExpr,
+            'y=' + y,
+            'enable=\'between(t\\,' + startSec.toFixed(3) + '\\,' + endSec.toFixed(3) + ')\''
+          ];
+          // Task #70 — pick a fontfile that approximates this clip's
+          // CSS font-family stack (Brand Kit caption styles). Falls back
+          // to TEXT_FONTFILE so plain captions still render with the bold
+          // sans-serif default rather than FFmpeg's thin Vera.
+          var clipFontFile = fontFileForFamily(tc.fontFamily) || TEXT_FONTFILE;
+          if (clipFontFile){
+            dtParts.splice(3, 0, 'fontfile=' + clipFontFile);
+          }
+          return dtParts.join(':');
+        });
+        chains.push(currentLbl + parts.join(',') + '[vbase]');
+      } else if (chains.length === 0){
+        // No filters whatsoever for the video stream
+        chains.push('[0:v]null[vbase]');
+      } else {
+        // Motion filters ran but no text — rename the last label to [vbase]
+        // by adding a terminal null chain.
+        chains.push(currentLbl + 'null[vbase]');
+      }
+
+      // Task #69 — Brand-logo overlay step. Scales the logo input to the
+      // export-relative size (logoSize is px-at-720-wide) and overlays it
+      // at the configured corner with a 4% inset. Result becomes [vout].
+      if (brandLogoInputIdx >= 0 && brandLogoMeta){
+        var blPos = String(brandLogoMeta.position || 'top-right').toLowerCase();
+        var blSizePx = parseFloat(brandLogoMeta.size) || 100;
+
+        // Task #71 — Compute the inner video rect within outW × outH
+        // using the source's intrinsic media dimensions (vs the export
+        // canvas aspect). This places the logo on the actual video,
+        // not on the letterbox/pillarbox black bars produced when an
+        // aspect ratio mismatch forces padding during clip encode.
+        var srcW = brandLogoMeta.sourceWidth  || outW;
+        var srcH = brandLogoMeta.sourceHeight || outH;
+        var aSrc = srcW / srcH;
+        var aOut = outW / outH;
+        var innerW, innerH, innerX, innerY;
+        if (aSrc > aOut){
+          innerW = outW;
+          innerH = Math.round(outW / aSrc);
+          innerX = 0;
+          innerY = Math.round((outH - innerH) / 2);
+        } else if (aSrc < aOut){
+          innerH = outH;
+          innerW = Math.round(outH * aSrc);
+          innerX = Math.round((outW - innerW) / 2);
+          innerY = 0;
+        } else {
+          innerW = outW; innerH = outH; innerX = 0; innerY = 0;
+        }
+
+        // Logo width and inset are now relative to the inner video rect
+        // so what the user sees in the preview matches the export.
+        var blExportW = Math.max(24, Math.round(blSizePx * (innerW / 720)));
+        var blPadX = Math.max(8, Math.round(innerW * 0.04));
+        var blPadY = Math.max(8, Math.round(innerH * 0.04));
+
+        var blX, blY;
+        if (blPos === 'top-left'){
+          blX = String(innerX + blPadX);
+          blY = String(innerY + blPadY);
+        } else if (blPos === 'bottom-left'){
+          blX = String(innerX + blPadX);
+          blY = '(' + (innerY + innerH - blPadY) + ')-h';
+        } else if (blPos === 'bottom-right'){
+          blX = '(' + (innerX + innerW - blPadX) + ')-w';
+          blY = '(' + (innerY + innerH - blPadY) + ')-h';
+        } else if (blPos === 'center'){
+          blX = '(' + (innerX + innerW / 2) + ')-w/2';
+          blY = '(' + (innerY + innerH / 2) + ')-h/2';
+        } else { // top-right (default)
+          blX = '(' + (innerX + innerW - blPadX) + ')-w';
+          blY = String(innerY + blPadY);
+        }
+        // Force RGBA on the logo so transparent PNGs blend correctly.
+        chains.push('[' + brandLogoInputIdx + ':v]format=rgba,scale=' + blExportW + ':-1[blogoSc]');
+        chains.push('[vbase][blogoSc]overlay=x=' + blX + ':y=' + blY + '[vout]');
+      } else {
+        // No brand logo — pass [vbase] through to [vout] unchanged.
+        chains.push('[vbase]null[vout]');
+      }
+
+      videoGraph = chains.join(';');
+
+      // Audio graph: mix video's own audio + every audio clip
+      var audioGraph;
+      if (audioClips.length === 0){
+        audioGraph = '[0:a]anull[aout]';
+      } else {
+        var lines = [];
+        var labels = ['[0:a]']; // intermediate's audio (video clips' own audio)
+        audioClips.forEach(function(c, i){
+          var inIdx = i + 1; // 0 is intermediate
+          var leftSec = (parseFloat(c.left)  || 0) / pxPerSec;
+          var durSec  = (parseFloat(c.width) || 0) / pxPerSec;
+          var srcOff  = parseFloat(c.sourceOffset) || 0;
+          var vRaw    = parseFloat(c.volume);
+          var vol     = isFinite(vRaw) ? Math.max(0, Math.min(2, vRaw / 100)) : 1;
+          var delayMs = Math.max(0, Math.round(leftSec * 1000));
+          // Per-clip Audio FX from the AUDIO tab sidebar. Applied INSIDE
+          // the trimmed/zero-based slice so fade times are relative to the
+          // clip, then adelay pushes to the timeline position, then volume.
+          //   • fadeIn    → afade=t=in  at clip-time 0 for fadeInDur
+          //   • fadeOut   → afade=t=out at clip-time (dur - fadeOutDur)
+          //   • denoise   → afftdn (FFT-based noise floor suppression)
+          //   • normalize → loudnorm (EBU R128 per-clip target)
+          var preDelay = [];  // filters applied before adelay (clip-time domain)
+          if (c.audioDenoise === 'true')    preDelay.push('afftdn=nf=-25');
+          if (c.audioNormalize === 'true')  preDelay.push('loudnorm=I=-16:TP=-1.5:LRA=11');
+          var fadeInDur  = Math.max(0, parseFloat(c.fadeIn)  || 0);
+          var fadeOutDur = Math.max(0, parseFloat(c.fadeOut) || 0);
+          if (fadeInDur > 0){
+            fadeInDur = Math.min(fadeInDur, durSec);
+            preDelay.push('afade=t=in:st=0:d=' + fadeInDur.toFixed(3));
+          }
+          if (fadeOutDur > 0){
+            fadeOutDur = Math.min(fadeOutDur, durSec);
+            var foStart = Math.max(0, durSec - fadeOutDur);
+            preDelay.push('afade=t=out:st=' + foStart.toFixed(3) + ':d=' + fadeOutDur.toFixed(3));
+          }
+          var preDelayStr = preDelay.length ? (preDelay.join(',') + ',') : '';
+          // Trim from the source slice, zero-base its PTS, apply Audio FX,
+          // delay to timeline position, then scale volume.
+          lines.push(
+            '[' + inIdx + ':a]' +
+            'atrim=start=' + srcOff.toFixed(3) + ':end=' + (srcOff + durSec).toFixed(3) + ',' +
+            'asetpts=PTS-STARTPTS,' +
+            preDelayStr +
+            'adelay=' + delayMs + '|' + delayMs + ',' +
+            'volume=' + vol.toFixed(3) +
+            '[a' + i + ']'
+          );
+          labels.push('[a' + i + ']');
+        });
+        lines.push(labels.join('') + 'amix=inputs=' + labels.length + ':duration=longest:dropout_transition=0,dynaudnorm[aout]');
+        audioGraph = lines.join(';');
+      }
+
+      var filterComplex = videoGraph + ';' + audioGraph;
+      ffArgs = ffArgs.concat([
+        '-filter_complex', filterComplex,
+        '-map', '[vout]',
+        '-map', '[aout]'
+      ]).concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outputPath]);
+
+      await runFFmpeg(ffArgs);
+    }
+
+    // Clean up temp segments, concat list, and (if still present) the
+    // stitched intermediate used as input to the post-pass.
+    try {
+      segments.forEach(function(p){ try { fs.unlinkSync(p); } catch(_){} });
+      try { fs.unlinkSync(listPath); } catch(_){}
+      try { if (fs.existsSync(intermediatePath)) fs.unlinkSync(intermediatePath); } catch(_){}
+      // Task #69 — drop the temp brand-logo file (if we materialised one).
+      try { if (brandLogoFile && fs.existsSync(brandLogoFile)) fs.unlinkSync(brandLogoFile); } catch(_){}
+      try { fs.rmdirSync(workDir); } catch(_){}
+    } catch(_){}
+
+    // Format conversion: the stitched output is MP4 (H.264+AAC).
+    // If the user picked MOV, remux with stream-copy (fast). If they
+    // picked WebM, transcode to VP9+Opus (slower, re-encode needed).
+    // MP4 is the default and needs no conversion.
+    var reqFormat = String((body && body.format) || 'mp4').toLowerCase();
+    if (reqFormat !== 'mp4'){
+      var convertedName, convertArgs;
+      if (reqFormat === 'mov'){
+        convertedName = outputFilename.replace(/\.mp4$/i, '') + '.mov';
+        convertArgs = ['-y', '-i', outputPath, '-c', 'copy', '-movflags', '+faststart',
+                       path.join(outputDir, convertedName)];
+      } else if (reqFormat === 'webm'){
+        convertedName = outputFilename.replace(/\.mp4$/i, '') + '.webm';
+        convertArgs = ['-y', '-i', outputPath,
+                       '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-pix_fmt', 'yuv420p',
+                       '-c:a', 'libopus', '-b:a', '128k',
+                       path.join(outputDir, convertedName)];
+      }
+      if (convertedName && convertArgs){
+        try {
+          await new Promise(function(resolve, reject){
+            var proc = spawn(ffmpegPath, convertArgs);
+            var stderr = '';
+            proc.stderr.on('data', function(d){ stderr += d.toString(); });
+            proc.on('close', function(code){
+              if (code === 0) resolve();
+              else reject(new Error('Format conversion failed: ' + stderr.slice(-300)));
+            });
+            proc.on('error', reject);
+          });
+          // Delete the intermediate MP4 now that we have the target file
+          try { fs.unlinkSync(outputPath); } catch(_){}
+          outputFilename = convertedName;
+          outputPath = path.join(outputDir, convertedName);
+        } catch (convErr){
+          console.warn('[export-timeline] format conversion failed, returning MP4:', convErr.message);
+          // Fall through with MP4 — better than erroring out entirely
+        }
+      }
+    }
+
+    var totalSec = cursor;
+    res.json({
+      filename: outputFilename,
+      downloadUrl: '/video-editor/download/' + outputFilename,
+      size: fs.statSync(outputPath).size,
+      duration: totalSec,
+      clipCount: v1.length,
+      format: reqFormat,
+      renderedFromTimeline: true
+    });
+    featureUsageOps.log(req.user.id, 'video_editor').catch(function(){});
+  } catch (error) {
+    // Best-effort cleanup
+    try { if (fs.existsSync(workDir)) {
+      fs.readdirSync(workDir).forEach(function(f){ try { fs.unlinkSync(path.join(workDir, f)); } catch(_){} });
+      fs.rmdirSync(workDir);
+    } } catch(_){}
+    res.status(500).json({ error: error.message || 'Timeline export failed' });
+  }
+});
+
 // GET: Download file
 router.get('/download/:filename', requireAuth, (req, res) => {
   try {
@@ -6140,7 +8353,15 @@ router.get('/download/:filename', requireAuth, (req, res) => {
 
     // Serve file for video playback (not just download)
     const ext = path.extname(filePath).toLowerCase();
-    const mimeTypes = { '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.avi': 'video/x-msvideo', '.gif': 'image/gif' };
+    const mimeTypes = {
+      '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
+      '.avi': 'video/x-msvideo',
+      '.gif': 'image/gif', '.png': 'image/png',
+      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp', '.svg': 'image/svg+xml',
+      '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+      '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac'
+    };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
     const stat = fs.statSync(filePath);
@@ -7848,32 +10069,104 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
     // Always update yt-dlp to latest version (YouTube changes frequently)
     try { execSync('pip install --upgrade yt-dlp', { stdio: 'pipe', timeout: 30000 }); } catch (e) { console.log('yt-dlp update skipped:', e.message); }
 
-    await new Promise((resolve, reject) => {
-      const proc = spawn(ytdlpPath, [
-        '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '--merge-output-format', 'mp4',
-        '-o', outputPath,
-        '--max-filesize', '500m',
-        '--no-playlist',
-        '--no-warnings',
-        '--no-check-certificates',
-        '--geo-bypass',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-        '--js-runtimes', 'node',
-        '--remote-components', 'ejs:github',
-        '--retries', '3',
-        '--extractor-retries', '3',
-        url
-      ]);
-      let stderr = '';
-      proc.stderr.on('data', d => stderr += d.toString());
-      proc.on('close', code => {
-        if (code === 0) resolve();
-        else reject(new Error(stderr || 'Download failed with code ' + code));
+    // Task #60 — YouTube anti-bot bypass.
+    // YouTube is increasingly flagging cloud-provider IPs and refusing
+    // unauthenticated requests with "Sign in to confirm you're not a bot".
+    // Strategy:
+    //   1. Try multiple player_client variants — each uses a different
+    //      YouTube API path with different auth requirements. iOS, tv,
+    //      android variants frequently slip past the wall when web fails.
+    //   2. If a cookies file is mounted at YT_COOKIES_PATH (env var),
+    //      use it as a final fallback. This is the most reliable bypass
+    //      but requires the operator to provide cookies (export from a
+    //      logged-in browser). See yt-dlp wiki for the format.
+    //   3. Surface the LAST stderr to the user with a concrete fix path.
+    var COMMON_ARGS = [
+      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '--merge-output-format', 'mp4',
+      '-o', outputPath,
+      '--max-filesize', '500m',
+      '--no-playlist',
+      '--no-warnings',
+      '--no-check-certificates',
+      '--geo-bypass',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      '--add-header', 'Accept-Language:en-US,en;q=0.9',
+      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+      '--retries', '5',
+      '--extractor-retries', '5',
+      '--fragment-retries', '5',
+      '--sleep-interval', '1',
+      '--max-sleep-interval', '3'
+    ];
+
+    // Optional cookies file (if the operator provides one)
+    var cookiesArgs = [];
+    var cookiesPath = process.env.YT_COOKIES_PATH;
+    if (cookiesPath && fs.existsSync(cookiesPath)){
+      cookiesArgs = ['--cookies', cookiesPath];
+    }
+
+    // Player-client fallback chain. Each entry is one attempt.
+    // Order: iOS variants (most reliable), then TV, Android, then web variants.
+    var CLIENT_ATTEMPTS = [
+      'ios',
+      'ios_music',
+      'tv',
+      'tv_embedded',
+      'android',
+      'android_vr',
+      'mweb',
+      'web_safari',
+      'web_creator',
+      'web'
+    ];
+
+    function runYtdlp(client){
+      var clientArgs = ['--extractor-args', 'youtube:player_client=' + client];
+      var args = COMMON_ARGS.concat(clientArgs).concat(cookiesArgs).concat([url]);
+      return new Promise((resolve, reject) => {
+        const proc = spawn(ytdlpPath, args);
+        let stderr = '';
+        proc.stderr.on('data', d => stderr += d.toString());
+        proc.on('close', code => {
+          if (code === 0 && fs.existsSync(outputPath)) resolve();
+          else reject(new Error(stderr.slice(-1500) || 'yt-dlp exit code ' + code));
+        });
+        proc.on('error', reject);
       });
-      proc.on('error', reject);
-    });
+    }
+
+    var lastErr = null;
+    var triedList = [];
+    var success = false;
+    for (var i = 0; i < CLIENT_ATTEMPTS.length; i++){
+      var client = CLIENT_ATTEMPTS[i];
+      try {
+        await runYtdlp(client);
+        triedList.push(client + ' \u2713');
+        success = true;
+        break;
+      } catch (e){
+        lastErr = e;
+        triedList.push(client + ' \u2717');
+        // Clear any partial output before the next attempt
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch(_){}
+      }
+    }
+    if (!success){
+      var msg = 'YouTube blocked every player client (' + triedList.join(', ') + ').';
+      if (!cookiesPath){
+        msg += ' This server\'s IP appears to be rate-limited by YouTube. ' +
+               'Set the YT_COOKIES_PATH environment variable to a Netscape-format cookies.txt ' +
+               'exported from a logged-in browser (see yt-dlp wiki: "How do I pass cookies to yt-dlp?") ' +
+               'and redeploy. As a workaround, download the video locally and use the Upload button.';
+      } else {
+        msg += ' Cookies file at ' + cookiesPath + ' may have expired \u2014 re-export from a logged-in browser. ';
+      }
+      if (lastErr) msg += ' Last yt-dlp error: ' + (lastErr.message || '').slice(-300);
+      throw new Error(msg);
+    }
 
     const metadata = await getVideoMetadata(outputPath);
 
@@ -8128,6 +10421,1282 @@ router.post('/export-premiere', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Premiere export error:', error);
     res.status(500).json({ error: error.message || 'Failed to export for Premiere' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Inline AI actions — called directly from the editor sidebar so
+// the user never leaves the editor. Each endpoint takes a mediaUrl
+// (same URLs we serve via /video-editor/download/) and does work
+// server-side, returning either a new asset URL or structured data.
+// ─────────────────────────────────────────────────────────────────
+
+// Module-level url→file path resolver shared by the inline-AI endpoints.
+// Mirrors the per-export helper: accepts only /video-editor/download/*
+// URLs and looks first in the upload dir, then the output dir.
+function resolveMediaUrlToPath(url){
+  if (!url || typeof url !== 'string') return null;
+  if (url.indexOf('blob:') === 0) return null;
+  var m = /\/video-editor\/download\/([^?#]+)/.exec(url);
+  var name = m ? decodeURIComponent(m[1]) : null;
+  if (!name) return null;
+  var safeName = path.basename(name);
+  var up = path.join(uploadDir, safeName);
+  if (fs.existsSync(up)) return up;
+  var out = path.join(outputDir, safeName);
+  if (fs.existsSync(out)) return out;
+  return null;
+}
+
+// POST /video-editor/ai-enhance
+// body: { mediaUrl: string, noiseLevel?: '1'|'2'|'3', voiceBoost?: boolean }
+// response: { success, enhancedUrl, filename, duration }
+//
+// Extracts the audio track from the given media file, runs it through
+// the same afftdn+highpass (+optional EQ) chain used by the full
+// /enhance-speech page, and saves the enhanced audio as a standalone
+// .m4a in the output dir. The frontend drops that file onto A1 as a
+// new clip so the user hears the cleaned-up audio alongside the video.
+router.post('/ai-enhance', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    var body = req.body || {};
+    var mediaUrl   = body.mediaUrl;
+    var noiseLevel = String(body.noiseLevel || '2');
+    var voiceBoost = body.voiceBoost === true || body.voiceBoost === 'true';
+
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({
+        error: 'Could not find that media on the server. ' +
+               'Files uploaded only in your browser need to be uploaded via the sidebar first.'
+      });
+    }
+
+    var NOISE_FILTERS = {
+      '1': 'afftdn=nf=-25',
+      '2': 'afftdn=nf=-40',
+      '3': 'afftdn=nf=-60'
+    };
+    var chain = (NOISE_FILTERS[noiseLevel] || NOISE_FILTERS['2']) + ',highpass=f=80';
+    if (voiceBoost){
+      chain += ',equalizer=f=1000:t=q:w=1:g=3,' +
+               'equalizer=f=3000:t=q:w=1:g=2,' +
+               'compand=attacks=0.02:decays=0.15:' +
+               'points=-80/-80|-45/-15|-27/-9|0/-3|20/-3:gain=3';
+    }
+
+    var outName = 'enhanced_' + Date.now() + '_' + req.user.id + '.m4a';
+    var outPath = path.join(outputDir, outName);
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vn',
+        '-af', chain,
+        '-c:a', 'aac',
+        '-b:a', '160k',
+        '-y', outPath
+      ]);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Enhance failed: ' + stderr.slice(-200)));
+      });
+      proc.on('error', reject);
+    });
+
+    // If the source is a VIDEO (not already audio-only), produce a new
+    // MP4 with the enhanced audio re-muxed in place of the original
+    // audio track. Video stream is copied (no re-encode → fast) so the
+    // clip's visuals, duration, and sourceOffset/trimIn/trimOut stay
+    // valid against the new file. The client uses enhancedVideoUrl to
+    // SWAP the V1 clip's mediaUrl in place (no new A1 clip).
+    var enhancedVideoUrl = null;
+    var srcExt = path.extname(srcPath).toLowerCase();
+    var looksLikeVideo = (srcExt === '.mp4' || srcExt === '.mov' ||
+                          srcExt === '.webm' || srcExt === '.mkv' ||
+                          srcExt === '.m4v');
+    if (looksLikeVideo){
+      try {
+        var mp4Name = 'enhanced_video_' + Date.now() + '_' + req.user.id + '.mp4';
+        var mp4Path = path.join(outputDir, mp4Name);
+        await new Promise(function(resolve, reject){
+          var proc = spawn(ffmpegPath, [
+            '-i', srcPath,
+            '-i', outPath,
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-b:a', '160k',
+            '-movflags', '+faststart',
+            '-shortest',
+            '-y', mp4Path
+          ]);
+          var stderr = '';
+          proc.stderr.on('data', function(d){ stderr += d.toString(); });
+          proc.on('close', function(code){
+            if (code === 0) resolve();
+            else reject(new Error('Mux failed: ' + stderr.slice(-200)));
+          });
+          proc.on('error', reject);
+        });
+        // Copy to uploads so the download-serve route can find it via
+        // the same file-resolution path used for user-uploaded media.
+        try {
+          fs.copyFileSync(mp4Path, path.join(uploadDir, mp4Name));
+        } catch(_){}
+        enhancedVideoUrl = '/video-editor/download/' + mp4Name;
+      } catch (muxErr){
+        console.warn('[ai-enhance] re-mux failed, falling back to audio-only:', muxErr.message);
+        // enhancedVideoUrl stays null — client falls back to the
+        // legacy A1-clip path so the user still gets the cleaned audio.
+      }
+    }
+
+    // Duration for the client (so it can build the A1 clip at the
+    // correct width without loading the audio file first)
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = '';
+      await new Promise(function(resolve, reject){
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error',
+          '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1',
+          outPath
+        ]);
+        p.stdout.on('data', function(d){ probeOut += d.toString(); });
+        p.on('close', function(){ resolve(); });
+        p.on('error', function(){ resolve(); });
+      });
+      duration = parseFloat(probeOut.trim()) || 0;
+    } catch(_){}
+
+    try { featureUsageOps.log(req.user.id, 'enhance_speech_inline').catch(function(){}); } catch(_){}
+
+    res.json({
+      success: true,
+      enhancedUrl: '/video-editor/download/' + outName,
+      enhancedVideoUrl: enhancedVideoUrl,  // null if source was audio-only
+      filename: outName,
+      duration: duration,
+      voiceBoost: voiceBoost,
+      noiseLevel: noiseLevel
+    });
+  } catch (err){
+    console.error('[ai-enhance] error:', err);
+    res.status(500).json({ error: err.message || 'Enhance failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #38 + #39 — POST /video-editor/smart-cut
+// Analyzes a media file and returns a list of time ranges to cut or
+// split. Three modes:
+//   • 'silence' — Whisper word timestamps; gaps > thresholdSec between
+//                 words are reported as { start, end, reason:'silence' }.
+//   • 'filler'  — Whisper words matching the filler vocab are reported
+//                 individually as { start, end, reason:'filler:<word>' }.
+//   • 'scene'   — FFmpeg scene-change filter (perceptual diff). Returns
+//                 split POINTS as { start, end:start, reason:'scene' }.
+// Body: { mediaUrl: string, mode: 'silence'|'filler'|'scene',
+//         thresholdSec?: number (silence only, default 1.0),
+//         sceneThreshold?: number (scene only, default 0.4, range 0-1) }
+// Returns: { success, mode, cuts: [...], totalDuration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/smart-cut', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    var mediaUrl = (req.body || {}).mediaUrl;
+    var mode     = String((req.body || {}).mode || 'silence').toLowerCase();
+    var threshSilence = Math.max(0.25, Math.min(5, parseFloat((req.body || {}).thresholdSec) || 1.0));
+    var threshScene   = Math.max(0.1,  Math.min(0.9, parseFloat((req.body || {}).sceneThreshold) || 0.4));
+
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({ error: 'Media not found on server' });
+    }
+
+    // Scene mode uses FFmpeg only (no Whisper needed)
+    if (mode === 'scene'){
+      var sceneCuts = await new Promise(function(resolve, reject){
+        var out = '';
+        var p = spawn(ffmpegPath, [
+          '-i', srcPath,
+          '-filter:v', "select='gt(scene," + threshScene.toFixed(3) + ")',showinfo",
+          '-f', 'null', '-'
+        ]);
+        p.stderr.on('data', function(d){ out += d.toString(); });
+        p.on('close', function(){
+          // Parse `pts_time:X.XXX` from showinfo output
+          var re = /pts_time:([0-9.]+)/g, m, times = [];
+          while ((m = re.exec(out)) !== null){ times.push(parseFloat(m[1])); }
+          resolve(times.filter(function(t){ return t > 0.1; }));
+        });
+        p.on('error', reject);
+      });
+      return res.json({
+        success: true,
+        mode: 'scene',
+        cuts: sceneCuts.map(function(t){ return { start: t, end: t, reason: 'scene' }; })
+      });
+    }
+
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY required for silence/filler modes' });
+    }
+
+    // Silence + filler modes share Whisper extraction
+    var mp3Path = path.join(uploadDir, 'smartcut_' + Date.now() + '_' + req.user.id + '.mp3');
+    await new Promise(function(resolve, reject){
+      var p = spawn(ffmpegPath, [
+        '-fflags', '+genpts',
+        '-i', srcPath,
+        '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k',
+        '-ss', '0',
+        '-af', 'aresample=async=1:first_pts=0',
+        '-avoid_negative_ts', 'make_zero',
+        '-map_metadata', '-1',
+        '-reset_timestamps', '1',
+        '-y', mp3Path
+      ]);
+      var err = '';
+      p.stderr.on('data', function(d){ err += d.toString(); });
+      p.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Audio extract failed: ' + err.slice(-200)));
+      });
+      p.on('error', reject);
+    });
+
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var audioBuffer = fs.readFileSync(mp3Path);
+    var file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+    var transcript = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: file,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word']
+    });
+    try { fs.unlinkSync(mp3Path); } catch(_){}
+
+    var words = (transcript.words || []).map(function(w){
+      return { word: w.word, start: w.start, end: w.end };
+    });
+    var duration = transcript.duration || (words.length ? words[words.length - 1].end : 0);
+
+    var cuts = [];
+    if (mode === 'silence'){
+      // Gaps > threshSilence between consecutive word ends & next word start
+      var prevEnd = 0;
+      for (var i = 0; i < words.length; i++){
+        var gap = words[i].start - prevEnd;
+        if (gap >= threshSilence){
+          cuts.push({ start: prevEnd, end: words[i].start, reason: 'silence' });
+        }
+        prevEnd = words[i].end;
+      }
+      // Trailing silence
+      if (duration - prevEnd >= threshSilence){
+        cuts.push({ start: prevEnd, end: duration, reason: 'silence' });
+      }
+    } else if (mode === 'filler'){
+      // Vocabulary of fillers (case-insensitive, strips trailing punctuation)
+      var FILLERS = /^(uh|uhh|uhhh|um|umm|ummm|er|erm|hmm|like|you\s+know|basically|literally|actually|so|well|right)$/i;
+      // For multi-word fillers we need a sliding window pass
+      for (var j = 0; j < words.length; j++){
+        var w1 = String(words[j].word || '').trim().replace(/[.,!?;:]+$/, '');
+        if (FILLERS.test(w1)){
+          cuts.push({ start: words[j].start, end: words[j].end, reason: 'filler:' + w1.toLowerCase() });
+          continue;
+        }
+        if (j + 1 < words.length){
+          var w2 = w1 + ' ' + String(words[j+1].word || '').trim().replace(/[.,!?;:]+$/, '');
+          if (FILLERS.test(w2)){
+            cuts.push({ start: words[j].start, end: words[j+1].end, reason: 'filler:' + w2.toLowerCase() });
+            j++; // skip the paired word
+          }
+        }
+      }
+    } else {
+      return res.status(400).json({ error: 'Unknown mode: ' + mode });
+    }
+
+    res.json({
+      success: true,
+      mode: mode,
+      cuts: cuts,
+      totalDuration: duration,
+      wordCount: words.length
+    });
+  } catch (err){
+    console.error('[smart-cut]', err);
+    res.status(500).json({ error: err.message || 'Smart cut failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #55 — POST /video-editor/freeze-frame
+// Extracts a single PNG from the given media at the requested source
+// time (seconds). Returns a URL the client can insert as an image clip.
+// Body: { mediaUrl: string, sourceTime: number (seconds into source) }
+// Returns: { success, mediaUrl ('/video-editor/download/frame_*.png'),
+//           width, height }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/freeze-frame', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+    var t = Math.max(0, parseFloat(b.sourceTime) || 0);
+
+    var outName = 'frame_' + Date.now() + '_' + req.user.id + '.png';
+    var outPath = path.join(uploadDir, outName);
+
+    // -ss BEFORE -i for fast seek to the nearest keyframe, then -ss AFTER
+    // -i for precise seek into the GOP. Combined pattern gets us within
+    // 1 frame of the requested timestamp without re-decoding the whole file.
+    var preSeek = Math.max(0, t - 1.5);
+    var postSeek = t - preSeek;
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-ss', preSeek.toFixed(3),
+        '-i', srcPath,
+        '-ss', postSeek.toFixed(3),
+        '-frames:v', '1',
+        '-q:v', '2',  // high quality PNG
+        '-y', outPath
+      ]);
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0 && fs.existsSync(outPath)) resolve();
+        else reject(new Error('Frame extract failed: ' + err.slice(-200)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Probe width/height for the client so it can pick a sensible clip
+    // aspect without re-downloading the image.
+    var width = 0, height = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error',
+          '-select_streams', 'v:0',
+          '-show_entries', 'stream=width,height',
+          '-of', 'csv=p=0',
+          outPath
+        ]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      var parts = (probeOut || '').trim().split(',');
+      width  = parseInt(parts[0], 10) || 0;
+      height = parseInt(parts[1], 10) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      width: width, height: height
+    });
+  } catch (err){
+    console.error('[freeze-frame]', err);
+    res.status(500).json({ error: err.message || 'Freeze frame failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #55 — POST /video-editor/reverse-clip
+// Produces a reversed copy of the given media so the PGM preview can
+// play the clip backward via simple forward playback. The client swaps
+// the V1 clip's mediaUrl to the reversed file (and stashes the original
+// on dataset.originalMediaUrl so reverse-OFF can restore it).
+// Body: { mediaUrl: string }
+// Returns: { success, mediaUrl, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/reverse-clip', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var srcPath = resolveMediaUrlToPath((req.body || {}).mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+
+    var outName = 'reversed_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outPath = path.join(uploadDir, outName);
+
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vf', 'reverse',
+        '-af', 'areverse'
+      ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else {
+          // Retry without audio (some sources have no audio stream)
+          var p2 = spawn(ffmpegPath, [
+            '-i', srcPath,
+            '-vf', 'reverse',
+            '-an'
+          ].concat(VCODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+          var err2 = '';
+          p2.stderr.on('data', function(d){ err2 += d.toString(); });
+          p2.on('close', function(code2){
+            if (code2 === 0) resolve();
+            else reject(new Error('Reverse failed: ' + err.slice(-200)));
+          });
+          p2.on('error', reject);
+        }
+      });
+      proc.on('error', reject);
+    });
+
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var out = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error', '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1', outPath
+        ]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat((out || '').trim()) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration
+    });
+  } catch (err){
+    console.error('[reverse-clip]', err);
+    res.status(500).json({ error: err.message || 'Reverse failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #50 — POST /video-editor/ai-voice
+// Generates a voiceover from user text via OpenAI TTS (tts-1 model).
+// Returns the downloaded MP3 URL; client inserts it as an A1 audio clip.
+// Body: { text: string (required, max 4000 chars),
+//         voice: 'alloy'|'echo'|'fable'|'onyx'|'nova'|'shimmer' (default 'alloy'),
+//         speed: number 0.5-2.0 (default 1.0) }
+// Returns: { success, mediaUrl, filename, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/ai-voice', requireAuth, async (req, res) => {
+  try {
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
+    var text  = String((req.body || {}).text  || '').trim().slice(0, 4000);
+    var voice = String((req.body || {}).voice || 'alloy').toLowerCase();
+    var speed = parseFloat((req.body || {}).speed);
+    if (!isFinite(speed)) speed = 1.0;
+    speed = Math.max(0.5, Math.min(2.0, speed));
+
+    if (!text){
+      return res.status(400).json({ error: 'text is required' });
+    }
+    var VOICES = ['alloy','echo','fable','onyx','nova','shimmer'];
+    if (VOICES.indexOf(voice) < 0) voice = 'alloy';
+
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var mp3Resp = await openai.audio.speech.create({
+      model: 'tts-1',
+      voice: voice,
+      input: text,
+      speed: speed,
+      response_format: 'mp3'
+    });
+    var buf = Buffer.from(await mp3Resp.arrayBuffer());
+    var outName = 'voice_' + voice + '_' + Date.now() + '_' + req.user.id + '.mp3';
+    var outPath = path.join(uploadDir, outName);
+    fs.writeFileSync(outPath, buf);
+
+    // Duration probe
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var out = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, [
+          '-v', 'error',
+          '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1',
+          outPath
+        ]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat((out || '').trim()) || 0;
+    } catch(_){}
+
+    try { featureUsageOps.log(req.user.id, 'ai_voice_inline').catch(function(){}); } catch(_){}
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration,
+      voice: voice
+    });
+  } catch (err){
+    console.error('[ai-voice]', err);
+    res.status(500).json({ error: err.message || 'AI Voice failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #51 — POST /video-editor/translate-captions
+// Whispers the selected clip, then translates each caption chunk via
+// GPT-4o-mini into the target language. Returns chunks ready for T1.
+// Body: { mediaUrl: string, targetLang: string (e.g. 'es', 'fr', 'ja') }
+// Returns: { success, chunks: [{ text, start, end }], targetLang }
+// ═════════════════════════════════════════════════════════════════════
+var LANGUAGE_NAMES = {
+  'es': 'Spanish', 'fr': 'French', 'de': 'German', 'pt': 'Portuguese',
+  'ja': 'Japanese', 'zh': 'Simplified Chinese', 'ko': 'Korean',
+  'ar': 'Arabic', 'hi': 'Hindi', 'it': 'Italian', 'ru': 'Russian',
+  'nl': 'Dutch', 'pl': 'Polish', 'tr': 'Turkish', 'vi': 'Vietnamese',
+  'id': 'Indonesian', 'en': 'English'
+};
+router.post('/translate-captions', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
+    var mediaUrl = (req.body || {}).mediaUrl;
+    var targetLang = String((req.body || {}).targetLang || 'es').toLowerCase();
+    var langName = LANGUAGE_NAMES[targetLang];
+    if (!langName){
+      return res.status(400).json({ error: 'Unsupported language: ' + targetLang });
+    }
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({ error: 'Media not found on server' });
+    }
+    // Extract audio (same pipeline as ai-captions)
+    var mp3Path = path.join(uploadDir, 'translate_' + Date.now() + '_' + req.user.id + '.mp3');
+    await new Promise(function(resolve, reject){
+      var p = spawn(ffmpegPath, [
+        '-fflags', '+genpts', '-i', srcPath,
+        '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k',
+        '-ss', '0', '-af', 'aresample=async=1:first_pts=0',
+        '-avoid_negative_ts', 'make_zero',
+        '-map_metadata', '-1', '-reset_timestamps', '1',
+        '-y', mp3Path
+      ]);
+      var err = '';
+      p.stderr.on('data', function(d){ err += d.toString(); });
+      p.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Audio extract failed: ' + err.slice(-200)));
+      });
+      p.on('error', reject);
+    });
+
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var buf = fs.readFileSync(mp3Path);
+    var file = new File([buf], 'audio.mp3', { type: 'audio/mpeg' });
+    var transcript = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: file,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word']
+    });
+    try { fs.unlinkSync(mp3Path); } catch(_){}
+
+    // Group into phrase chunks (same logic as ai-captions)
+    var words = (transcript.words || []).map(function(w){
+      return { word: w.word, start: w.start, end: w.end };
+    });
+    var chunks = [];
+    var buf2 = [];
+    function flush(){
+      if (!buf2.length) return;
+      chunks.push({
+        text: buf2.map(function(w){ return w.word; }).join(' ').trim(),
+        start: buf2[0].start,
+        end: buf2[buf2.length - 1].end
+      });
+      buf2 = [];
+    }
+    var CHUNK_SIZE = 4, GAP_BREAK = 0.6;
+    for (var i = 0; i < words.length; i++){
+      var w = words[i];
+      if (buf2.length){
+        var prev = buf2[buf2.length - 1];
+        if ((w.start - prev.end) > GAP_BREAK) flush();
+      }
+      buf2.push(w);
+      if (buf2.length >= CHUNK_SIZE) flush();
+    }
+    flush();
+
+    if (!chunks.length){
+      return res.json({ success: true, chunks: [], targetLang: targetLang });
+    }
+
+    // Batch-translate all chunks in a single GPT call to save tokens
+    var joined = chunks.map(function(c, i){ return (i + 1) + ') ' + c.text; }).join('\n');
+    var translatePrompt = 'Translate the following numbered phrases into ' + langName +
+      '. Preserve the numbering. Each line on a new line. Return only the translations, no prose.\n\n' + joined;
+    var completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: translatePrompt }],
+      max_tokens: 2000,
+      temperature: 0.3
+    });
+    var output = (completion.choices[0].message.content || '').trim();
+    // Parse "1) foo\n2) bar\n..."
+    var lines = output.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+    var parsed = {};
+    lines.forEach(function(line){
+      var m = /^\s*(\d+)\s*[)\.\:]\s*(.+)$/.exec(line);
+      if (m) parsed[parseInt(m[1], 10)] = m[2].trim();
+    });
+    // Map back into chunks with their original timestamps
+    var outChunks = chunks.map(function(c, i){
+      return {
+        text:  parsed[i + 1] || c.text,  // fallback to original if parse failed
+        start: c.start,
+        end:   c.end
+      };
+    });
+
+    try { featureUsageOps.log(req.user.id, 'translate_captions').catch(function(){}); } catch(_){}
+    res.json({ success: true, chunks: outChunks, targetLang: targetLang, languageName: langName });
+  } catch (err){
+    console.error('[translate-captions]', err);
+    res.status(500).json({ error: err.message || 'Translate failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #52 — POST /video-editor/bg-remove
+// Runs FFmpeg colorkey over the given V1 clip's source video to replace
+// a color-range background with a solid fill. Not neural, but works for
+// green-screen / blue-screen / dark / light footage without any API key.
+// Body: { mediaUrl: string,
+//         preset: 'green'|'blue'|'dark'|'light'|'custom',
+//         keyColor: '0xRRGGBB' (custom only),
+//         similarity: number 0.01-0.5 (default 0.25),
+//         blend: number 0-0.3 (default 0.1),
+//         replaceColor: '0xRRGGBB' (default 0x000000) }
+// Returns: { success, mediaUrl, filename, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/bg-remove', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+
+    var preset = String(b.preset || 'green').toLowerCase();
+    var PRESETS = {
+      'green': '0x00ff00',
+      'blue':  '0x0000ff',
+      'dark':  '0x101010',
+      'light': '0xf0f0f0'
+    };
+    var keyColor = preset === 'custom'
+      ? String(b.keyColor || '0x00ff00')
+      : (PRESETS[preset] || '0x00ff00');
+    // Accept #rrggbb as well
+    if (keyColor[0] === '#') keyColor = '0x' + keyColor.slice(1);
+    var replaceColor = String(b.replaceColor || '0x000000');
+    if (replaceColor[0] === '#') replaceColor = '0x' + replaceColor.slice(1);
+    var similarity = Math.max(0.01, Math.min(0.5, parseFloat(b.similarity) || 0.25));
+    var blend      = Math.max(0,    Math.min(0.3, parseFloat(b.blend)      || 0.10));
+
+    var outName = 'bgremoved_' + preset + '_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outPath = path.join(outputDir, outName);
+
+    // filter_complex: background = solid color layer; foreground = source
+    // with chroma-key making keyColor transparent; overlay fg on bg.
+    var filterComplex =
+      'color=c=' + replaceColor + ':s=1280x720:r=30[bg];' +
+      '[0:v]colorkey=color=' + keyColor +
+        ':similarity=' + similarity.toFixed(3) +
+        ':blend=' + blend.toFixed(3) + '[fg];' +
+      '[bg][fg]overlay=shortest=1:format=auto[v]';
+
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-filter_complex', filterComplex,
+        '-map', '[v]', '-map', '0:a?',
+      ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('BG remove failed: ' + err.slice(-300)));
+      });
+      proc.on('error', reject);
+    });
+    // Copy to uploads so the download route can serve it
+    try {
+      fs.copyFileSync(outPath, path.join(uploadDir, outName));
+    } catch(_){}
+
+    // Probe duration
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, ['-v', 'error', '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1', outPath]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat(probeOut.trim()) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration,
+      preset: preset
+    });
+  } catch (err){
+    console.error('[bg-remove]', err);
+    res.status(500).json({ error: err.message || 'BG Remove failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Task #53 — POST /video-editor/style-transfer
+// Applies a preset visual style to the V1 clip via a baked FFmpeg filter
+// chain. Each style combines EQ/curves/vignette/grain to evoke a look.
+// Body: { mediaUrl: string, style: preset id }
+// Returns: { success, mediaUrl, filename, duration, style }
+// ═════════════════════════════════════════════════════════════════════
+var STYLE_PRESETS_FX = {
+  'cyberpunk':   'hue=h=180:s=2.0,eq=contrast=1.2:brightness=-0.04:saturation=1.8,curves=preset=color_negative',
+  'film_noir':   'hue=s=0,eq=contrast=1.45:brightness=-0.04,curves=preset=darker',
+  'oil_painting':'edgedetect=mode=colormix:high=0.3,eq=saturation=1.3:contrast=1.1',
+  'watercolor':  'gblur=sigma=2:steps=2,eq=saturation=1.4:brightness=0.06,hue=s=1.3',
+  'comic':       'eq=contrast=1.6:saturation=1.8,curves=preset=strong_contrast,unsharp=5:5:1.5',
+  'neon':        'hue=h=200:s=3.0,eq=contrast=1.3:brightness=-0.02:saturation=2.5,gblur=sigma=1',
+  'vintage_film':'eq=contrast=1.1:saturation=0.75:brightness=-0.02,curves=preset=vintage,noise=alls=8:allf=t+u',
+  'sepia':       'colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131:0,eq=saturation=0.7:brightness=-0.02'
+};
+router.post('/style-transfer', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+    var style = String(b.style || 'cyberpunk').toLowerCase();
+    var chain = STYLE_PRESETS_FX[style];
+    if (!chain){ return res.status(400).json({ error: 'Unknown style: ' + style }); }
+
+    var outName = 'styled_' + style + '_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outPath = path.join(outputDir, outName);
+
+    var VCODEC = ['-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                  '-profile:v', 'high', '-level', '4.0'];
+    var ACODEC = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k'];
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vf', chain + ',format=yuv420p',
+        '-c:a', 'copy'
+      ].concat(VCODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else {
+          // Fallback — some filters (edgedetect) require specific pix_fmt.
+          // Retry with a preliminary pixel-format conversion.
+          var proc2 = spawn(ffmpegPath, [
+            '-i', srcPath,
+            '-vf', 'format=rgb24,' + chain + ',format=yuv420p',
+          ].concat(VCODEC).concat(ACODEC).concat(['-movflags', '+faststart', '-y', outPath]));
+          var err2 = '';
+          proc2.stderr.on('data', function(d){ err2 += d.toString(); });
+          proc2.on('close', function(code2){
+            if (code2 === 0) resolve();
+            else reject(new Error('Style transfer failed: ' + err.slice(-300)));
+          });
+          proc2.on('error', reject);
+        }
+      });
+      proc.on('error', reject);
+    });
+    try {
+      fs.copyFileSync(outPath, path.join(uploadDir, outName));
+    } catch(_){}
+
+    // Duration probe
+    var duration = 0;
+    try {
+      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
+        var s = '';
+        var p = spawn(ffprobeLocal, ['-v', 'error', '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1', outPath]);
+        p.stdout.on('data', function(d){ s += d.toString(); });
+        p.on('close', function(){ resolve(s); });
+        p.on('error', function(){ resolve(''); });
+      });
+      duration = parseFloat(probeOut.trim()) || 0;
+    } catch(_){}
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: duration,
+      style: style
+    });
+  } catch (err){
+    console.error('[style-transfer]', err);
+    res.status(500).json({ error: err.message || 'Style transfer failed' });
+  }
+});
+
+// POST /video-editor/ai-captions
+// body: { mediaUrl: string }
+// response: { success, words: [{word, start, end}, ...], chunks: [{text, start, end}, ...] }
+//
+// Extracts a low-bitrate MP3 from the media file (under Whisper's 25MB
+// limit), sends it to Whisper-1 for word-level transcription, and also
+// groups consecutive words into ~4-word phrase chunks so the caller
+// can drop them onto T1 as text clips aligned to the soundtrack.
+router.post('/ai-captions', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available on this server' });
+    }
+    if (!process.env.OPENAI_API_KEY){
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+    }
+
+    var mediaUrl = (req.body || {}).mediaUrl;
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({
+        error: 'Could not find that media on the server. ' +
+               'Upload via the sidebar first.'
+      });
+    }
+
+    // Extract mono 16kHz MP3 (Whisper-friendly, <25MB for long videos).
+    // Task #22 — Force timestamps to start at 0 so Whisper's word-level
+    // starts line up with the video's t=0. Without -avoid_negative_ts and
+    // -fflags +genpts, containers whose audio stream has a non-zero
+    // start_time (common when files are re-muxed by other editors) pass
+    // that offset through to the MP3, which then shifts every caption
+    // start by that offset — producing the "captions are 2s late" bug.
+    var mp3Path = path.join(uploadDir, 'captions_' + Date.now() + '_' + req.user.id + '.mp3');
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-fflags', '+genpts',
+        '-i', srcPath,
+        '-vn',
+        '-ac', '1',
+        '-ar', '16000',
+        '-b:a', '64k',
+        // Task #34 — Extra-aggressive PTS normalization so Whisper sees
+        // audio starting at t=0 regardless of the source's stream_start
+        // or any container-level offset. Combining -ss 0 on output with
+        // aresample async + avoid_negative_ts covers all the known cases
+        // where caption delays of 1-2s leak in.
+        '-ss', '0',
+        '-af', 'aresample=async=1:first_pts=0',
+        '-avoid_negative_ts', 'make_zero',
+        '-map_metadata', '-1',
+        '-reset_timestamps', '1',
+        '-y', mp3Path
+      ]);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Audio extract failed: ' + stderr.slice(-200)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Transcribe
+    var OpenAI = require('openai');
+    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    var audioBuffer = fs.readFileSync(mp3Path);
+    var file = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
+    var transcript = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: file,
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word']
+    });
+
+    // ─── Task #40/#42 — Waveform-based word alignment v2 ──────────────
+    // Runs FFmpeg silencedetect at a TIGHT threshold (noise=-35dB,
+    // d=0.06) so word-level boundaries register, not just long pauses.
+    // The resulting silence_end timestamps are the instants when audio
+    // energy rises above -35dB — but this detection has a small ~80ms
+    // lag vs. the true acoustic onset (the filter needs to observe the
+    // rise before reporting it). So we subtract ONSET_LAG_CORRECTION
+    // from each silence_end to land on the actual onset.
+    //
+    // Each Whisper word's start is then snapped to the nearest onset in
+    // a WIDE window [-0.8s, +0.15s] — we allow a big leftward pull to
+    // correct Whisper's systematic late bias, but very little rightward
+    // drift (a word shouldn't slide later than Whisper thinks).
+    var ONSET_LAG_CORRECTION = 0.08;
+    var onsets = await new Promise(function(resolve){
+      var out = '';
+      var p = spawn(ffmpegPath, [
+        '-i', mp3Path,
+        '-af', 'silencedetect=noise=-35dB:d=0.06',
+        '-f', 'null', '-'
+      ]);
+      p.stderr.on('data', function(d){ out += d.toString(); });
+      p.on('close', function(){
+        var re = /silence_end:\s*([0-9.]+)/g, m, arr = [];
+        while ((m = re.exec(out)) !== null){
+          var t = parseFloat(m[1]) - ONSET_LAG_CORRECTION;
+          if (t >= 0) arr.push(t);
+        }
+        // First spoken region has no silence_end — add t=0 as an implicit
+        // onset if the file starts with speech (silencedetect wouldn't emit
+        // a silence_end for that case).
+        arr.unshift(0);
+        resolve(arr.sort(function(a,b){ return a - b; }));
+      });
+      p.on('error', function(){ resolve([0]); });
+    });
+    // Task #42 — wider leftward snap window since captions still felt
+    // delayed at ±500/200 ms. Allow up to 0.8s earlier but only 0.15s
+    // later (keeps words from drifting past Whisper's estimate).
+    var SNAP_LEFT  = 0.8;
+    var SNAP_RIGHT = 0.15;
+    function snapToOnset(t){
+      if (!onsets.length) return t;
+      var lo = 0, hi = onsets.length - 1, best = -1, bestDiff = Infinity;
+      while (lo <= hi){
+        var mid = (lo + hi) >> 1;
+        var diff = onsets[mid] - t;
+        if (Math.abs(diff) < bestDiff){ best = mid; bestDiff = Math.abs(diff); }
+        if (diff < 0) lo = mid + 1;
+        else if (diff > 0) hi = mid - 1;
+        else { best = mid; bestDiff = 0; break; }
+      }
+      if (best < 0) return t;
+      var candidate = onsets[best];
+      if (candidate >= t - SNAP_LEFT && candidate <= t + SNAP_RIGHT) return candidate;
+      return t;
+    }
+
+    // Clean up the extracted audio
+    try { fs.unlinkSync(mp3Path); } catch(_){}
+
+    var words = [];
+    if (transcript.words && Array.isArray(transcript.words)){
+      for (var i = 0; i < transcript.words.length; i++){
+        var rawStart = transcript.words[i].start;
+        var rawEnd   = transcript.words[i].end;
+        var snappedStart = snapToOnset(rawStart);
+        // Keep word duration constant so a snap doesn't eat the word
+        var wordDur = Math.max(0.05, rawEnd - rawStart);
+        words.push({
+          word: transcript.words[i].word,
+          start: snappedStart,
+          end: snappedStart + wordDur
+        });
+      }
+    } else {
+      // Fallback: spread words evenly across duration
+      var text = transcript.text || '';
+      var list = text.split(/\s+/).filter(function(w){ return !!w; });
+      var d = transcript.duration || (list.length * 0.45);
+      var tp = list.length > 0 ? d / list.length : 0.5;
+      for (var j = 0; j < list.length; j++){
+        words.push({ word: list[j], start: j * tp, end: (j + 1) * tp });
+      }
+    }
+
+    // Group words into ~4-word phrase chunks, breaking on gaps >0.6s
+    var CHUNK_SIZE = 4;
+    var GAP_BREAK  = 0.6;
+    var chunks = [];
+    var buf = [];
+    function flush(){
+      if (!buf.length) return;
+      chunks.push({
+        text: buf.map(function(w){ return w.word; }).join(' ').trim(),
+        start: buf[0].start,
+        end:   buf[buf.length - 1].end
+      });
+      buf = [];
+    }
+    for (var k = 0; k < words.length; k++){
+      var w = words[k];
+      if (buf.length){
+        var prev = buf[buf.length - 1];
+        if ((w.start - prev.end) > GAP_BREAK) flush();
+      }
+      buf.push(w);
+      if (buf.length >= CHUNK_SIZE) flush();
+    }
+    flush();
+
+    try { featureUsageOps.log(req.user.id, 'ai_captions_inline').catch(function(){}); } catch(_){}
+
+    res.json({
+      success: true,
+      words: words,
+      chunks: chunks,
+      duration: transcript.duration || 0
+    });
+  } catch (err){
+    console.error('[ai-captions] error:', err);
+    res.status(500).json({ error: err.message || 'Captions generation failed' });
+  }
+});
+
+// ─── WYSIWYG export transcode ────────────────────────────────────
+// Accepts the WebM blob produced by the browser's MediaRecorder
+// capture of the Program Monitor, plus a quality + format selection,
+// and returns a resized/remuxed file the client can download.
+router.post('/transcode-export', requireAuth, upload.single('clip'), async (req, res) => {
+  try {
+    if (!ffmpegPath) return res.status(500).json({ error: 'FFmpeg not available' });
+    if (!req.file)   return res.status(400).json({ error: 'No clip uploaded' });
+
+    var quality = String(req.body.quality || '720p').toLowerCase();
+    var format  = String(req.body.format  || 'mp4').toLowerCase();
+
+    // Target height → output size (preserve aspect; use -2 for the other dim)
+    var targetH = ({ '480p': 480, '720p': 720, '1080p': 1080, '4k': 2160 })[quality] || 720;
+    var scaleFilter = 'scale=-2:' + targetH;
+
+    var allowed = { 'mp4': 1, 'mov': 1, 'webm': 1 };
+    if (!allowed[format]) format = 'mp4';
+    var outName = 'export_' + Date.now() + '_' + req.user.id + '.' + format;
+    var outPath = path.join(outputDir, outName);
+
+    var vcodec, acodec;
+    if (format === 'webm'){
+      vcodec = ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-pix_fmt', 'yuv420p'];
+      acodec = ['-c:a', 'libopus', '-b:a', '128k'];
+    } else {
+      // mp4 + mov share the same codec set (H.264 + AAC)
+      vcodec = ['-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.0'];
+      acodec = ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '160k'];
+    }
+    var args = ['-y', '-i', req.file.path, '-vf', scaleFilter];
+    args = args.concat(vcodec).concat(acodec);
+    if (format === 'mp4') args.push('-movflags', '+faststart');
+    args.push(outPath);
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, args);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error('Transcode failed: ' + stderr.slice(-400)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Clean up the uploaded WebM once the transcode is written
+    try { fs.unlinkSync(req.file.path); } catch(_){}
+
+    res.json({
+      success: true,
+      filename: outName,
+      downloadUrl: '/video-editor/download/' + outName,
+      quality: quality,
+      format: format,
+      targetHeight: targetH
+    });
+  } catch (err){
+    console.error('[transcode-export] error:', err);
+    res.status(500).json({ error: err.message || 'Transcode failed' });
+  }
+});
+
+// Generic media upload — accepts any file extension (used for the
+// A1 blob-URL pre-upload pass before export).
+const mediaUploadAny = multer({
+  dest: uploadDir,
+  limits: { fileSize: 500 * 1024 * 1024 }
+  // No fileFilter — caller's responsibility to send valid media.
+});
+
+// POST /video-editor/upload-blob
+// Accepts any media blob (audio, image, short video) and saves it to
+// the upload dir so it's resolvable by urlToFilePath during export.
+// Returns { success, filename, serveUrl }.
+router.post('/upload-blob', requireAuth, mediaUploadAny.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    var orig = req.file.originalname || 'blob';
+    var ext = path.extname(orig).toLowerCase();
+    // Fall back to .bin when extension is missing — FFmpeg's input
+    // demuxer figures out the format from the content anyway.
+    if (!ext || ext.length > 6) ext = '.bin';
+    var newName = 'blob_' + Date.now() + '_' + req.user.id + ext;
+    var newPath = path.join(uploadDir, newName);
+    fs.renameSync(req.file.path, newPath);
+    res.json({
+      success: true,
+      filename: newName,
+      serveUrl: '/video-editor/download/' + newName
+    });
+  } catch (err){
+    console.error('[upload-blob] error:', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
+  }
+});
+
+// POST /video-editor/process-audio-clip
+// One-click audio enhancement for a single clip. Accepts a mediaUrl
+// + action ('denoise' | 'normalize') and returns a URL to the
+// processed file. Runs an FFmpeg filter chain matched to the action.
+router.post('/process-audio-clip', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath) return res.status(500).json({ error: 'FFmpeg not available' });
+    var body = req.body || {};
+    var mediaUrl = body.mediaUrl;
+    var action   = String(body.action || '').toLowerCase();
+    var srcPath = resolveMediaUrlToPath(mediaUrl);
+    if (!srcPath){
+      return res.status(400).json({ error: 'Source not on server. Upload first.' });
+    }
+    var filter;
+    if (action === 'denoise'){
+      filter = 'afftdn=nf=-35:tn=1,highpass=f=60';
+    } else if (action === 'normalize'){
+      filter = 'loudnorm=I=-16:TP=-1.5:LRA=11';
+    } else {
+      return res.status(400).json({ error: 'Unknown action ' + action });
+    }
+
+    // Task #66 — If the source is a VIDEO file, re-mux the processed
+    // audio back into a new MP4 (video stream copied — fast, no quality
+    // loss) so the client can swap mediaUrl in place without losing the
+    // video preview or breaking export. Audio-only sources still get an
+    // .m4a output (matches the original A1 behavior).
+    var srcExt = path.extname(srcPath).toLowerCase();
+    var isVideo = (srcExt === '.mp4' || srcExt === '.mov' ||
+                   srcExt === '.webm' || srcExt === '.mkv' ||
+                   srcExt === '.m4v' || srcExt === '.avi');
+
+    if (isVideo){
+      var outName = action + '_' + Date.now() + '_' + req.user.id + '.mp4';
+      var outPath = path.join(uploadDir, outName);
+      await new Promise(function(resolve, reject){
+        // -map 0:v + -c:v copy → keep the video stream untouched.
+        // -map 0:a + -af <filter> → re-encode just the audio with the FX.
+        var proc = spawn(ffmpegPath, [
+          '-y', '-i', srcPath,
+          '-map', '0:v:0', '-c:v', 'copy',
+          '-map', '0:a:0?',
+          '-af', filter,
+          '-c:a', 'aac', '-b:a', '192k',
+          '-movflags', '+faststart',
+          outPath
+        ]);
+        var stderr = '';
+        proc.stderr.on('data', function(d){ stderr += d.toString(); });
+        proc.on('close', function(code){
+          if (code === 0 && fs.existsSync(outPath)) resolve();
+          else reject(new Error(action + ' failed: ' + stderr.slice(-300)));
+        });
+        proc.on('error', reject);
+      });
+      return res.json({
+        success: true,
+        filename: outName,
+        serveUrl: '/video-editor/download/' + outName,
+        action: action,
+        kind: 'video'
+      });
+    }
+
+    // Audio-only source: stick with .m4a output.
+    var outName = action + '_' + Date.now() + '_' + req.user.id + '.m4a';
+    var outPath = path.join(uploadDir, outName);
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-y', '-i', srcPath,
+        '-vn',
+        '-af', filter,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        outPath
+      ]);
+      var stderr = '';
+      proc.stderr.on('data', function(d){ stderr += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0) resolve();
+        else reject(new Error(action + ' failed: ' + stderr.slice(-300)));
+      });
+      proc.on('error', reject);
+    });
+    res.json({
+      success: true,
+      filename: outName,
+      serveUrl: '/video-editor/download/' + outName,
+      action: action,
+      kind: 'audio'
+    });
+  } catch (err){
+    console.error('[process-audio-clip] error:', err);
+    res.status(500).json({ error: err.message || 'Processing failed' });
   }
 });
 

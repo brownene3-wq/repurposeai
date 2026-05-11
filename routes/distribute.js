@@ -203,7 +203,7 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="main-content">
         <div class="workflows-header">
           <div>
-            <h1>Repurpose</h1>
+            <h1>&#x26A1; Repurpose</h1>
             <p style="color:var(--text-muted);font-size:0.95rem;margin:0.5rem 0 0">Automate posting content across platforms</p>
           </div>
           <a href="/distribute/create" class="btn-gradient">
@@ -1361,11 +1361,15 @@ router.delete('/api/workflow/:id', requireAuth, async (req, res) => {
 router.get('/api/connections', requireAuth, async (req, res) => {
   try {
     const db = getDb();
+    if (!db || !db.connectedAccountOps || typeof db.connectedAccountOps.getByUser !== 'function') {
+      console.error('[connections] getDb did not return ops module. keys=', db ? Object.keys(db).slice(0, 20) : 'null');
+      return res.status(500).json({ error: 'Server misconfiguration: connectedAccountOps not available' });
+    }
     const connections = await db.connectedAccountOps.getByUser(req.user.id);
     res.json(connections);
   } catch (error) {
-    console.error('Get connections error:', error);
-    res.status(500).json({ error: 'Failed to fetch connections' });
+    console.error('Get connections error:', error && error.stack || error);
+    res.status(500).json({ error: 'Failed to fetch connections: ' + (error && error.message || 'unknown') });
   }
 });
 

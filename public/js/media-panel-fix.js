@@ -61,11 +61,16 @@
     var tab = getActiveTab();
     if (tab === 'audio') return fiAudio;
     if (tab === 'images') return fiImage;
-    if (tab === 'stock') return fiAll;
+    if (tab === 'stock' || tab === 'all') return fiAll;
     return fiVideo;
   }
 
   function triggerUpload() {
+    // Share a throttle with v10-editor-redesign.js so paths from either file
+    // honor the same 500ms window — one user click = at most one dialog.
+    var now = Date.now();
+    if (window.__v10LastUploadTrigger && (now - window.__v10LastUploadTrigger) < 500) return;
+    window.__v10LastUploadTrigger = now;
     var fi = getFileInput();
     fi.value = '';
     fi.click();
@@ -87,36 +92,110 @@
     }, true);
   }
 
-  // Handle file selection for all file inputs
-  function handleFiles(files) {
+  // Map extension -> media type/emoji/badge. Shared by sidebar uploads and
+  // server-uploaded items arriving via addUploadedMediaItem.
+  function classifyFileName(name){
+    var ext = String(name || '').split('.').pop().toLowerCase();
+    if (['mp3','wav','ogg','aac','flac','m4a'].indexOf(ext) !== -1)  return {mediaType:'aud', emoji:'\uD83C\uDFB5', badge:'aud'};
+    if (['png','jpg','jpeg','gif','webp','svg','bmp'].indexOf(ext) !== -1) return {mediaType:'img', emoji:'\uD83D\uDDBC', badge:'img'};
+    return {mediaType:'vid', emoji:'\uD83C\uDFAC', badge:'vid'};
+  }
+
+  // Build a .ml-fitem DOM element and append it to the Media library grid.
+  // Supports two call patterns:
+  //   - Local sidebar upload: pass `file` (a File object). We create a blob
+  //     URL so the item can be played locally.
+  //   - Server upload (via /video-editor/upload): pass `serveUrl` + optional
+  //     `filename`. The item plays from the server URL.
+  function appendMediaItem(opts){
     var grid = document.getElementById('mediaFileGrid');
-    if (!grid || !files.length) return;
+    if (!grid) return null;
 
-    Array.from(files).forEach(function(file) {
-      var ext = file.name.split('.').pop().toLowerCase();
-      var mediaType = 'vid';
-      var emoji = '\uD83C\uDFAC';
-      var badge = 'vid';
-      if (['mp3','wav','ogg','aac','flac','m4a'].indexOf(ext) !== -1) {
-        mediaType = 'aud'; emoji = '\uD83C\uDFB5'; badge = 'aud';
-      } else if (['png','jpg','jpeg','gif','webp','svg','bmp'].indexOf(ext) !== -1) {
-        mediaType = 'img'; emoji = '\uD83D\uDDBC'; badge = 'img';
+    var file = opts.file;
+    var name = opts.name || (file && file.name) || opts.filename || 'file';
+    var c = classifyFileName(name);
+    if (opts.mediaType) { c.mediaType = opts.mediaType; c.badge = opts.mediaType; }
+
+    var url = opts.serveUrl || '';
+    if (!url && file){
+      try { url = URL.createObjectURL(file); } catch(_){}
+    }
+
+    var item = document.createElement('div');
+    item.className = 'ml-fitem';
+    item.draggable = true;
+    item.dataset.mediaType = c.mediaType;
+    item.dataset.fileName = name;
+    if (url)            item.dataset.mediaUrl   = url;
+    if (opts.filename)  item.dataset.serverFilename = opts.filename;
+    if (opts.duration)  item.dataset.duration   = String(opts.duration);
+    item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">' + c.emoji + '</div>'
+      + '<span class="ml-badge ' + c.badge + '">' + c.badge.toUpperCase() + '</span>'
+      + '<span class="ml-fname" style="font-size:9px;color:#c4bfda;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + name + '</span>'
+      + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 4px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
+
+    grid.insertBefore(item, grid.firstChild);
+    wireItem(item);
+
+    // Re-apply whatever tab filter is currently active so the newly-added
+    // item respects it (e.g. an audio upload while "Videos" is selected
+    // should be hidden immediately).
+    var activeTab = document.querySelector('.ml-tab.active');
+    if (activeTab && typeof activeTab.click === 'function'){
+      // The inline onclick on each tab is what does the per-item filter;
+      // trigger it by simulating a click with the active tab already chosen.
+      // This keeps the UI consistent.
+      var f = activeTab.getAttribute('data-filter');
+      if (f && f !== 'all'){
+        item.style.display = item.dataset.mediaType === f ? '' : 'none';
       }
+    }
+    return item;
+  }
 
-      var item = document.createElement('div');
-      item.className = 'ml-fitem';
-      item.draggable = true;
-      item.dataset.mediaType = mediaType;
-      item.dataset.fileName = file.name;
-      item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">' + emoji + '</div>'
-        + '<span class="ml-badge ' + badge + '">' + badge.toUpperCase() + '</span>'
-        + '<span class="ml-fname" style="font-size:9px;color:#c4bfda;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + file.name + '</span>'
-        + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 4px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
+  // Expose so the real /video-editor/upload handler can inject server-uploaded
+  // files into the Media library (not Drafts).
+  try {
+    window.addUploadedMediaItem = function(spec){
+      try { return appendMediaItem(spec || {}); } catch(_){ return null; }
+    };
+  } catch(_){}
 
-      grid.insertBefore(item, grid.firstChild);
-      wireItem(item);
+  // Load metadata for a blob URL and return the media's duration via callback.
+  // Images resolve with duration=0 immediately (no meaningful duration).
+  function estimateMediaDuration(url, mediaType, cb){
+    if (mediaType === 'img' || !url) { cb(0); return; }
+    var el = mediaType === 'aud' ? new Audio() : document.createElement('video');
+    el.preload = 'metadata';
+    var done = false;
+    var finish = function(v){ if (done) return; done = true; cb(isFinite(v) && v > 0 ? v : 0); };
+    el.addEventListener('loadedmetadata', function(){ finish(el.duration); });
+    el.addEventListener('error', function(){ finish(0); });
+    setTimeout(function(){ finish(0); }, 4000); // safety timeout
+    try { el.src = url; } catch(_){ finish(0); }
+  }
+
+  // Handle file selection for sidebar file inputs (local-only, no server upload).
+  // Each picked file becomes a .ml-fitem in the Media library AND is auto-
+  // placed on the correct timeline track (V1/A1) after any existing clips.
+  function handleFiles(files) {
+    if (!files || !files.length) return;
+    Array.from(files).forEach(function(file){
+      var item = appendMediaItem({file: file});
+      if (!item) return;
+      var url = item.dataset.mediaUrl;
+      var mediaType = item.dataset.mediaType || 'vid';
+      // Images go on V1 with a 5-second default duration (addClipToTimeline
+      // applies the 5s fallback when duration is 0 for image clips).
+      if (mediaType === 'img'){
+        try { addClipToTimeline(file.name, 'img', 0, url); } catch(_){}
+        return;
+      }
+      estimateMediaDuration(url, mediaType, function(dur){
+        if (dur > 0) item.dataset.duration = String(dur);
+        try { addClipToTimeline(file.name, mediaType, dur, url); } catch(_){}
+      });
     });
-
     showToast('Added ' + files.length + ' file(s) to media library');
   }
 
@@ -163,46 +242,5971 @@
   });
 
   // ââ 3. +Timeline button - add clips to timeline ââ
-  function addClipToTimeline(fileName, mediaType) {
-    var trackSelector;
-    var clipClass;
-    if (mediaType === 'aud') {
-      trackSelector = '.mt-track-audio';
-      clipClass = 'mt-clip mt-clip-audio';
-    } else if (mediaType === 'img') {
-      trackSelector = '.mt-track-video';
-      clipClass = 'mt-clip mt-clip-video';
+  // Timeline clip sequencing + Select tool + Snap toggle.
+  //
+  // TIMELINE_PX_PER_SEC sets the visual time-scale. A 30s clip renders
+  // 30*PX_PER_SEC wide. The tracks area has overflow-x:auto so longer
+  // timelines scroll naturally.
+  var TIMELINE_PX_PER_SEC = 10;
+  // Default-on snap so edges magnetize out of the box.
+  var _timelineState = { tool: 'select', snap: true };
+
+  function findRightmostClipEnd(trackEl){
+    var maxEnd = 0;
+    trackEl.querySelectorAll('.mt-clip').forEach(function(c){
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (l + w > maxEnd) maxEnd = l + w;
+    });
+    return maxEnd;
+  }
+
+  // For now, new clicks from the Media panel always land on the FIRST track
+  // of the matching type (V1 for video, A1 for audio). Once on the timeline,
+  // the user can drag a clip onto A2/A3 if desired.
+  function findTargetTrack(mediaType){
+    var sel = mediaType === 'aud' ? '.mt-track-audio' : '.mt-track-video';
+    return document.querySelector(sel);
+  }
+
+  function updateTimelineInfo(){
+    var info = document.querySelector('.mt-info');
+    if (!info) return;
+    var tracks = document.querySelectorAll('.mt-track').length;
+    var clips = document.querySelectorAll('.mt-clip').length;
+    info.textContent = tracks + ' tracks \u2022 ' + clips + ' clips';
+  }
+
+  // Snap candidate positions: every other clip's left + right edge, plus the playhead.
+  function collectSnapTargets(ignoreClip){
+    var targets = [];
+    document.querySelectorAll('.mt-clip').forEach(function(c){
+      if (c === ignoreClip) return;
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      targets.push(l, l + w);
+    });
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) targets.push(parseFloat(ph.style.left) || 0);
+    return targets;
+  }
+
+  // Overlap helpers — used to prevent clips from occupying the same x-range
+  // on a track. Two clips overlap if their [left, left+width] ranges intersect.
+  function clipOverlaps(track, left, width, ignoreClip){
+    var clips = track.querySelectorAll('.mt-clip');
+    for (var i = 0; i < clips.length; i++){
+      var c = clips[i];
+      if (c === ignoreClip) continue;
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (!(left + width <= l || left >= l + w)) return c;
+    }
+    return null;
+  }
+  // Clamp target position to the nearest non-overlapping spot on a track.
+  // Picks left-or-right of the conflicting clip depending on drag direction.
+  function clampAwayFromOverlap(track, targetLeft, width, ignoreClip){
+    var overlap = clipOverlaps(track, targetLeft, width, ignoreClip);
+    if (!overlap) return targetLeft;
+    var oL = parseFloat(overlap.style.left) || 0;
+    var oW = parseFloat(overlap.style.width) || 0;
+    var targetCenter = targetLeft + width/2;
+    var overlapCenter = oL + oW/2;
+    var candidate;
+    if (targetCenter < overlapCenter){
+      candidate = Math.max(0, oL - width);
     } else {
-      trackSelector = '.mt-track-video';
-      clipClass = 'mt-clip mt-clip-video';
+      candidate = oL + oW;
+    }
+    if (candidate < 0) candidate = 0;
+    // If the fallback also overlaps something else, give up and keep original.
+    if (clipOverlaps(track, candidate, width, ignoreClip)) return targetLeft;
+    return candidate;
+  }
+  // Look for another audio track (different from currentTrack) where this
+  // clip would not overlap. Returns null if none exists.
+  function findFreeAudioTrack(targetLeft, width, currentTrack, ignoreClip){
+    var tracks = document.querySelectorAll('.mt-track-audio');
+    for (var i = 0; i < tracks.length; i++){
+      var t = tracks[i];
+      if (t === currentTrack) continue;
+      if (!clipOverlaps(t, targetLeft, width, ignoreClip)) return t;
+    }
+    return null;
+  }
+
+  // Task #72 — Returns full snap detail so the drag handler can show
+  // visual feedback (border glow + snap guide line + toast) when an
+  // edge magnetises onto a neighbour or the playhead. applySnap stays
+  // a thin wrapper for legacy callers that only need the number.
+  function findSnapResult(candidateLeft, clipWidth, ignoreClip){
+    if (!_timelineState.snap){
+      return { left: candidateLeft, snapped: false };
+    }
+    // 20px feels magnetic without being sticky — user can still place a clip
+    // freely by dragging it far from any neighbor.
+    var threshold = 20;
+    var targets = collectSnapTargets(ignoreClip);
+    var edges = [
+      { val: candidateLeft,             name: 'left'  },
+      { val: candidateLeft + clipWidth, name: 'right' }
+    ];
+    var best = null;
+    targets.forEach(function(t){
+      edges.forEach(function(e){
+        var d = Math.abs(t - e.val);
+        if (d < threshold && (best === null || d < best.dist)){
+          best = { dist: d, shift: t - e.val, target: t, edge: e.name };
+        }
+      });
+    });
+    if (best === null) return { left: candidateLeft, snapped: false };
+    return {
+      left:    candidateLeft + best.shift,
+      snapped: true,
+      target:  best.target,    // the timeline-x the clip-edge locked to
+      edge:    best.edge,      // 'left' or 'right' (which edge of the clip)
+      dist:    best.dist
+    };
+  }
+
+  function applySnap(candidateLeft, clipWidth, ignoreClip){
+    return findSnapResult(candidateLeft, clipWidth, ignoreClip).left;
+  }
+  // Expose for the drag handler.
+  try { window.findSnapResult = findSnapResult; } catch(_){}
+
+  // ── Snap visual feedback helpers ─────────────────────────────────────
+  // Maintains a single absolutely-positioned guide-line under the tracks
+  // area. show() positions it at a timeline-x and reveals it; hide()
+  // makes it invisible without deleting it. clearSnapDecor() resets the
+  // dragged clip's border + hides the guide.
+  function getOrCreateSnapGuide(){
+    var area = document.querySelector('.mt-tracks-area');
+    if (!area) return null;
+    if (window.getComputedStyle && window.getComputedStyle(area).position === 'static'){
+      area.style.position = 'relative';
+    }
+    var g = area.querySelector('.mt-snap-guide');
+    if (!g){
+      g = document.createElement('div');
+      g.className = 'mt-snap-guide';
+      area.appendChild(g);
+    }
+    return g;
+  }
+  function showSnapGuide(timelineX){
+    var g = getOrCreateSnapGuide();
+    if (!g) return;
+    g.style.left = (timelineX - 1) + 'px';   // center the 2px line on the target
+    g.classList.add('show');
+  }
+  function hideSnapGuide(){
+    var area = document.querySelector('.mt-tracks-area');
+    if (!area) return;
+    var g = area.querySelector('.mt-snap-guide');
+    if (g) g.classList.remove('show');
+  }
+  function clearSnapDecor(clips){
+    if (clips){
+      (Array.isArray(clips) ? clips : [clips]).forEach(function(c){
+        if (c && c.classList) c.classList.remove('snap-active');
+      });
+    }
+    hideSnapGuide();
+    // Allow the next drag to announce again immediately.
+    announceSnap._fired = false;
+  }
+  // Lightweight "snap toast" — fires once per drag when the first snap
+  // happens. Uses the existing showToast if available, otherwise a small
+  // floating pill positioned over the timeline.
+  function announceSnap(message){
+    if (announceSnap._fired) return;
+    announceSnap._fired = true;
+    if (typeof showToast === 'function'){
+      try { showToast(message, 'info'); } catch(_){}
+    }
+    // Reset the once-flag after the drag ends so each new drag can announce.
+    setTimeout(function(){ announceSnap._fired = false; }, 1200);
+  }
+  // Expose so other drag paths (group, trim) can clear decor on mouseup.
+  try {
+    window.clearSnapDecor = clearSnapDecor;
+    window.showSnapGuide  = showSnapGuide;
+    window.hideSnapGuide  = hideSnapGuide;
+    window.announceSnap   = announceSnap;
+  } catch(_){}
+
+  // Split a clip at cutXInClip (in clip-local pixels) into two clips.
+  // The right half inherits mediaUrl and stores sourceOffset so when played
+  // it seeks to the correct point inside the original source.
+  function razorSplit(clip, cutXInClip){
+    var width = parseFloat(clip.style.width) || clip.offsetWidth || 0;
+    // Ignore clicks within 6px of either edge — don't create tiny slivers.
+    if (cutXInClip < 6 || cutXInClip > width - 6) return false;
+    var left = parseFloat(clip.style.left) || 0;
+    var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+    var dur = parseFloat(clip.dataset.duration) || (width / TIMELINE_PX_PER_SEC);
+    var cutSec = cutXInClip / TIMELINE_PX_PER_SEC;
+    var leftDur  = cutSec;
+    var rightDur = dur - cutSec;
+    if (leftDur <= 0 || rightDur <= 0) return false;
+
+    // Shrink original (becomes the left half)
+    clip.style.width = cutXInClip + 'px';
+    clip.dataset.duration = String(leftDur);
+
+    // Build the right half
+    var right = document.createElement('div');
+    right.className = clip.className.replace(/\s*selected\s*/, ' ');
+    right.textContent = clip.dataset.fileName || '';
+    right.dataset.fileName = clip.dataset.fileName || '';
+    if (clip.dataset.mediaUrl)        right.dataset.mediaUrl = clip.dataset.mediaUrl;
+    if (clip.dataset.serverFilename)  right.dataset.serverFilename = clip.dataset.serverFilename;
+    right.dataset.duration = String(rightDur);
+    right.dataset.sourceOffset = String(sourceOffset + cutSec);
+    // Task #49 — razor-split halves inherit the ORIGINAL addedAt so a
+    // split clip doesn't accidentally jump to "newest" in overlap layers
+    if (clip.dataset.addedAt) right.dataset.addedAt = clip.dataset.addedAt;
+    if (clip.style.zIndex)    right.style.zIndex    = clip.style.zIndex;
+    // Position + style — match original
+    right.style.left = (left + cutXInClip) + 'px';
+    right.style.width = (width - cutXInClip) + 'px';
+    right.style.padding = '4px 8px';
+    right.style.fontSize = '10px';
+    right.style.overflow = 'hidden';
+    right.style.textOverflow = 'ellipsis';
+    right.style.whiteSpace = 'nowrap';
+    right.style.userSelect = 'none';
+    right.style.background = clip.style.background;
+    right.style.color = clip.style.color;
+    clip.parentNode.insertBefore(right, clip.nextSibling);
+    makeClipInteractive(right);
+
+    updateTimelineInfo();
+    // Split changed which clip is under the playhead — refresh preview.
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+    pushTimelineHistory();
+    showToast('Clip split');
+    return true;
+  }
+  // Task #38/#39 — expose razor + compact helpers so the AI smart-cut
+  // and scene-detect handlers in v10-editor-redesign.js can split clips
+  // at returned timestamps without having to reimplement the trim math.
+  try { window.razorSplit = razorSplit; } catch(_){}
+
+  function makeClipInteractive(clip){
+    if (clip.dataset.interactive) return;
+    clip.dataset.interactive = '1';
+
+    // Tool-aware click behaviour:
+    //   - Razor: split this clip at the click x position.
+    //   - Select: select it (add .selected highlight).
+    //   - Otherwise (default): let the timeline-area click handler run to
+    //     move the playhead.
+    clip.addEventListener('click', function(e){
+      if (_timelineState.tool === 'razor'){
+        e.stopPropagation();
+        var rect = clip.getBoundingClientRect();
+        razorSplit(clip, e.clientX - rect.left);
+        return;
+      }
+      if (_timelineState.tool !== 'select') return;
+      e.stopPropagation();
+      if (e.shiftKey){
+        // Shift+click toggles this clip in/out of the selection without
+        // disturbing the other selected clips \u2014 enables additive
+        // multi-select so broadcast edits can target a curated set.
+        clip.classList.toggle('selected');
+      } else {
+        document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+        clip.classList.add('selected');
+      }
+    });
+
+    // Double-click opens the slip editor for media clips (video/audio).
+    // Slip = slide the in/out window across the source while keeping
+    // the clip's timeline duration fixed.
+    clip.addEventListener('dblclick', function(e){
+      var ct = clip.dataset.clipType || '';
+      if (ct !== 'vid' && ct !== 'aud') return;
+      if (!clip.dataset.mediaUrl) return;
+      e.stopPropagation();
+      e.preventDefault();
+      openSlipEditor(clip);
+    });
+
+    // Drag to move — only when Select tool active.
+    // Task #45 — Supports multi-clip drag: if the clicked clip is already
+    // part of a multi-selection, ALL selected clips move together by the
+    // same delta. Shift+click adds/removes clips from the selection
+    // without starting a drag.
+    clip.addEventListener('mousedown', function(e){
+      if (_timelineState.tool !== 'select') return;
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Shift+click: toggle this clip in the selection, don't drag
+      if (e.shiftKey){
+        clip.classList.toggle('selected');
+        return;
+      }
+
+      // Determine the DRAG GROUP:
+      //   - If this clip is already selected AND other clips are also
+      //     selected → drag the whole group.
+      //   - Otherwise → make this the sole selection and drag it alone.
+      var allSelected = Array.from(document.querySelectorAll('.mt-clip.selected'));
+      var alreadyInMultiSel = clip.classList.contains('selected') && allSelected.length > 1;
+      var group;
+      if (alreadyInMultiSel){
+        group = allSelected;
+      } else {
+        document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+        clip.classList.add('selected');
+        group = [clip];
+      }
+
+      var startX = e.clientX;
+      // Snapshot each group-member's starting position so we can restore
+      // or offset cleanly on each mousemove.
+      var groupState = group.map(function(c){
+        return {
+          clip: c,
+          startLeft: parseFloat(c.style.left) || 0,
+          width:     parseFloat(c.style.width) || c.offsetWidth || 100,
+          track:     c.parentElement,
+          isAudio:   c.classList.contains('mt-clip-audio')
+        };
+      });
+
+      function onMove(ev){
+        var rawDx = ev.clientX - startX;
+        // Task #48 — V1 clips may now overlap freely. Only AUDIO clips
+        // still hop to a free sub-track on collision. Video clips just
+        // slide to wherever the user drags them.
+        var minLeft = groupState.reduce(function(m, g){ return Math.min(m, g.startLeft); }, Infinity);
+        var effectiveDx = rawDx;
+        if (minLeft + effectiveDx < 0) effectiveDx = -minLeft;
+
+        // Task #72 — track if any group-member snapped this frame so we
+        // can paint feedback. We use the leader (clip) as the visual
+        // anchor for the snap-active class + guide-line.
+        var anySnap = false;
+        var snapTargetX = null;
+
+        groupState.forEach(function(g){
+          var rawTarget = g.startLeft + effectiveDx;
+          var snap = findSnapResult(rawTarget, g.width, g.clip);
+          var target = snap.left;
+          if (snap.snapped){
+            anySnap = true;
+            // Prefer the leader-clip's snap target for the guide line,
+            // otherwise fall back to whichever member snapped first.
+            if (g.clip === clip || snapTargetX === null){
+              snapTargetX = snap.target;
+            }
+          }
+          var track = g.track;
+          if (g.isAudio && clipOverlapsExcludingGroup(track, target, g.width, g.clip, group)){
+            // Audio: try to hop to a free audio sub-track; if none, clamp
+            var freeTrack = findFreeAudioTrack(target, g.width, track, g.clip);
+            if (!freeTrack){
+              var clamped = clampAwayFromOverlap(track, target, g.width, g.clip);
+              effectiveDx = clamped - g.startLeft;
+            }
+          }
+          // Video (V1): overlap is allowed — no clamp.
+        });
+
+        groupState.forEach(function(g){
+          var target = Math.max(0, g.startLeft + effectiveDx);
+          g.clip.style.left = target + 'px';
+        });
+
+        // Paint / clear snap feedback on the leader clip.
+        if (anySnap){
+          clip.classList.add('snap-active');
+          if (snapTargetX !== null) showSnapGuide(snapTargetX);
+          announceSnap('Snapped to clip edge');
+        } else {
+          clip.classList.remove('snap-active');
+          hideSnapGuide();
+        }
+      }
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        // Task #72 — clear the snap glow + guide on every group-member.
+        clearSnapDecor(group);
+        if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        pushTimelineHistory();
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Helper — like clipOverlaps but ignores every clip in the group set.
+    function clipOverlapsExcludingGroup(track, left, width, self, group){
+      if (!track) return false;
+      var peers = Array.from(track.children);
+      for (var i = 0; i < peers.length; i++){
+        var p = peers[i];
+        if (!p.classList || !p.classList.contains('mt-clip')) continue;
+        if (p === self) continue;
+        if (group.indexOf(p) !== -1) continue;
+        var pl = parseFloat(p.style.left) || 0;
+        var pw = parseFloat(p.style.width) || 0;
+        if (left + width > pl && left < pl + pw) return true;
+      }
+      return false;
     }
 
-    var track = document.querySelector(trackSelector);
+    attachTrimHandles(clip);
+    refreshKeyframeMarkers(clip);
+    attachFilmstripOrWaveform(clip);
+  }
+
+  // ── Filmstrip + waveform rendering ────────────────────────────────
+  // V1 video clips get a strip of thumbnail frames extracted from the
+  // video at evenly-spaced timestamps within the clip's source range.
+  // A1 audio clips get a decoded-and-peaked waveform. Both are rendered
+  // ONCE per (URL, width) combo to a data URL cached on the clip, then
+  // set as the clip's backgroundImage. When trim handles resize the
+  // clip we re-render with the new bucket count.
+  var _filmstripCache = {}; // url@width → dataURL Promise
+  var _waveformCache  = {}; // url@width → dataURL Promise
+  var _decodedAudioCache = {}; // url → AudioBuffer Promise
+
+  // Task #57 — expose makeClipInteractive on window so the AI-added
+  // clips (B-Roll, AI Hook, Freeze Frame, Brand Logo) get the same
+  // drag/trim/delete handlers the upload-flow clips have. Without this,
+  // AI-inserted clips couldn't be deleted via the Delete key or the
+  // selection-context menu.
+  try { window.makeClipInteractive = makeClipInteractive; } catch(_){}
+
+  function attachFilmstripOrWaveform(clip){
+    if (!clip) return;
+    var type = clip.dataset.clipType || '';
+    var url  = clip.dataset.mediaUrl || '';
+    if (!url) return;
+    if (type === 'vid'){
+      renderFilmstripOnClip(clip);
+    } else if (type === 'aud'){
+      renderWaveformOnClip(clip);
+    } else if (type === 'img' && url){
+      // Image clips: just use the image as the clip bg, stretched across
+      clip.style.backgroundImage = 'url(' + JSON.stringify(url).slice(1, -1) + ')';
+      clip.style.backgroundSize = 'cover';
+      clip.style.backgroundPosition = 'center';
+      clip.style.textShadow = '0 1px 3px rgba(0,0,0,0.8)';
+    }
+  }
+
+  // Dimensions of each thumbnail frame (rendering density trade-off)
+  var THUMB_W = 60;
+  var THUMB_H = 30;
+
+  function renderFilmstripOnClip(clip){
+    var url    = clip.dataset.mediaUrl;
+    var width  = Math.round(parseFloat(clip.style.width) || 100);
+    var srcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+    var clipDurSec = width / TIMELINE_PX_PER_SEC;
+    if (!url || width < 20) return;
+    var cacheKey = url + '@' + width;
+    if (_filmstripCache[cacheKey]){
+      _filmstripCache[cacheKey].then(function(dataURL){ applyClipBg(clip, dataURL); });
+      return;
+    }
+    var p = new Promise(function(resolve){
+      var vid = document.createElement('video');
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'auto';
+      vid.src = url;
+      var onErr = function(){ resolve(null); };
+      vid.addEventListener('error', onErr, { once: true });
+      vid.addEventListener('loadedmetadata', function(){
+        var vw = vid.videoWidth, vh = vid.videoHeight;
+        if (!vw || !vh){ resolve(null); return; }
+        var vDur = vid.duration || 0;
+        var maxSlotTime = Math.min(vDur, srcOff + clipDurSec);
+        var slotCount = Math.max(1, Math.floor(width / THUMB_W));
+        var canvas = document.createElement('canvas');
+        canvas.width  = slotCount * THUMB_W;
+        canvas.height = THUMB_H;
+        var ctx = canvas.getContext('2d');
+        // Fill each slot in sequence by seeking the video
+        var slotIdx = 0;
+        function drawNext(){
+          if (slotIdx >= slotCount){
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            return;
+          }
+          var t = srcOff + ((slotIdx + 0.5) / slotCount) * clipDurSec;
+          t = Math.min(Math.max(0, t), Math.max(0, maxSlotTime - 0.05));
+          var onSeeked = function(){
+            vid.removeEventListener('seeked', onSeeked);
+            try {
+              // Preserve aspect: fit video frame into THUMB_W x THUMB_H
+              var srcAR = vw / vh;
+              var dstAR = THUMB_W / THUMB_H;
+              var sx, sy, sw, sh;
+              if (srcAR > dstAR){
+                sh = vh;
+                sw = Math.round(sh * dstAR);
+                sx = Math.round((vw - sw) / 2);
+                sy = 0;
+              } else {
+                sw = vw;
+                sh = Math.round(sw / dstAR);
+                sx = 0;
+                sy = Math.round((vh - sh) / 2);
+              }
+              ctx.drawImage(vid, sx, sy, sw, sh, slotIdx * THUMB_W, 0, THUMB_W, THUMB_H);
+            } catch(_){}
+            slotIdx++;
+            drawNext();
+          };
+          vid.addEventListener('seeked', onSeeked);
+          try { vid.currentTime = t; } catch(_){
+            // If seek throws (zero-duration / malformed source), skip
+            slotIdx = slotCount;
+            drawNext();
+          }
+          // Safety timeout if 'seeked' never fires (some codecs stall)
+          setTimeout(function(){
+            if (slotIdx <= slotCount){
+              vid.removeEventListener('seeked', onSeeked);
+              slotIdx++;
+              drawNext();
+            }
+          }, 2500);
+        }
+        drawNext();
+      }, { once: true });
+      // If the video never loads metadata, bail after 6s
+      setTimeout(function(){ resolve(null); }, 6000);
+    });
+    _filmstripCache[cacheKey] = p;
+    p.then(function(dataURL){ if (dataURL) applyClipBg(clip, dataURL); });
+  }
+
+  function renderWaveformOnClip(clip){
+    var url   = clip.dataset.mediaUrl;
+    var width = Math.round(parseFloat(clip.style.width) || 100);
+    if (!url || width < 20) return;
+    var cacheKey = url + '@' + width;
+    if (_waveformCache[cacheKey]){
+      _waveformCache[cacheKey].then(function(dataURL){ applyClipBg(clip, dataURL); });
+      return;
+    }
+    var p = decodeAudioBuffer(url).then(function(buffer){
+      if (!buffer) return null;
+      var ch = buffer.getChannelData(0);
+      var samplesPerBucket = Math.max(1, Math.floor(ch.length / width));
+      var canvas = document.createElement('canvas');
+      canvas.width  = width;
+      canvas.height = THUMB_H;
+      var ctx = canvas.getContext('2d');
+      // Translucent gradient background
+      var grad = ctx.createLinearGradient(0, 0, 0, THUMB_H);
+      grad.addColorStop(0, 'rgba(5,150,105,0.95)');
+      grad.addColorStop(1, 'rgba(16,185,129,0.85)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, THUMB_H);
+      // Peaks
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      var mid = THUMB_H / 2;
+      for (var x = 0; x < width; x++){
+        var start = x * samplesPerBucket;
+        var end   = Math.min(ch.length, start + samplesPerBucket);
+        var peak = 0;
+        for (var i = start; i < end; i++){
+          var v = Math.abs(ch[i]);
+          if (v > peak) peak = v;
+        }
+        var h = Math.round(peak * (THUMB_H - 4));
+        ctx.moveTo(x + 0.5, mid - h / 2);
+        ctx.lineTo(x + 0.5, mid + h / 2);
+      }
+      ctx.stroke();
+      return canvas.toDataURL('image/png');
+    }).catch(function(err){
+      console.warn('[waveform] decode failed for', url, err);
+      return null;
+    });
+    _waveformCache[cacheKey] = p;
+    p.then(function(dataURL){ if (dataURL) applyClipBg(clip, dataURL); });
+  }
+
+  function decodeAudioBuffer(url){
+    if (_decodedAudioCache[url]) return _decodedAudioCache[url];
+    ensureAudioSystem();
+    if (!_audioCtx) return Promise.reject(new Error('no AudioContext'));
+    var p = fetch(url, { credentials: (url.indexOf('blob:') === 0) ? 'omit' : 'same-origin' })
+      .then(function(r){
+        if (!r.ok) throw new Error('fetch ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function(buf){
+        return new Promise(function(resolve, reject){
+          _audioCtx.decodeAudioData(buf, resolve, reject);
+        });
+      });
+    _decodedAudioCache[url] = p;
+    return p;
+  }
+
+  function applyClipBg(clip, dataURL){
+    if (!clip || !dataURL) return;
+    clip.style.backgroundImage = 'url(' + dataURL + ')';
+    clip.style.backgroundRepeat = 'no-repeat';
+    clip.style.backgroundSize = '100% 100%';
+    clip.style.backgroundPosition = 'left center';
+    // Ensure text (filename) stays readable on top of the filmstrip
+    clip.style.textShadow = '0 1px 2px rgba(0,0,0,0.85)';
+  }
+  try {
+    window.attachFilmstripOrWaveform = attachFilmstripOrWaveform;
+  } catch(_){}
+
+  // ── Trim handles ────────────────────────────────────────────────
+  // Left and right 8px grip zones inside each clip. Hidden at rest,
+  // visible on clip hover (or while it's selected). Drag behaviors:
+  //   • Left handle:  shifts `left` + shrinks `width` + advances
+  //                   `sourceOffset` so the clip's right edge stays
+  //                   anchored to the same source frame.
+  //   • Right handle: adjusts `width` only (trims the tail).
+  // Both clamp to a 15px minimum, respect track boundaries, prevent
+  // overlap with neighbors, respect the source's remaining length for
+  // media clips, and apply timeline snap when enabled.
+  function attachTrimHandles(clip){
+    if (clip.querySelector('.mt-clip-trim')) return;
+
+    var lh = document.createElement('div');
+    lh.className = 'mt-clip-trim mt-trim-l';
+    var rh = document.createElement('div');
+    rh.className = 'mt-clip-trim mt-trim-r';
+    clip.appendChild(lh);
+    clip.appendChild(rh);
+
+    // Prevent clicks on handles from propagating to clip (razor/select)
+    ['click','dblclick'].forEach(function(ev){
+      lh.addEventListener(ev, function(e){ e.stopPropagation(); });
+      rh.addEventListener(ev, function(e){ e.stopPropagation(); });
+    });
+
+    function startTrim(side, e){
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      var startX      = e.clientX;
+      var startLeft   = parseFloat(clip.style.left)  || 0;
+      var startWidth  = parseFloat(clip.style.width) || clip.offsetWidth || 100;
+      var startSrcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+      var srcDur      = parseFloat(clip.dataset.duration)     || 0;
+      var clipType    = clip.dataset.clipType || '';
+      var isMedia     = (clipType === 'vid' || clipType === 'aud');
+      var track       = clip.parentElement;
+      var MIN_W       = 15;
+      clip.classList.add('mt-trimming');
+
+      function onMove(ev){
+        var dx = ev.clientX - startX;
+
+        if (side === 'l'){
+          var newLeft   = startLeft + dx;
+          var newWidth  = startWidth - dx;
+          var newSrcOff = startSrcOff + dx / TIMELINE_PX_PER_SEC;
+
+          // Clamp: min width (clamps dx via reverse-computation)
+          if (newWidth < MIN_W){
+            dx = startWidth - MIN_W;
+            newLeft = startLeft + dx;
+            newWidth = MIN_W;
+            newSrcOff = startSrcOff + dx / TIMELINE_PX_PER_SEC;
+          }
+          // Clamp: can't expose source content before time 0
+          if (isMedia && newSrcOff < 0){
+            dx = -startSrcOff * TIMELINE_PX_PER_SEC;
+            newLeft = startLeft + dx;
+            newWidth = startWidth - dx;
+            newSrcOff = 0;
+          }
+          // Clamp: track boundary
+          if (newLeft < 0){
+            var boundaryDx = -startLeft;
+            newLeft = 0;
+            newWidth = startWidth - boundaryDx;
+            newSrcOff = startSrcOff + boundaryDx / TIMELINE_PX_PER_SEC;
+          }
+          // Snap left edge (if snap is on) — Task #72: visual feedback.
+          var leftSnap = findSnapResult(newLeft, newWidth, clip);
+          if (leftSnap.snapped){
+            var snapDx = leftSnap.left - startLeft;
+            newLeft   = leftSnap.left;
+            newWidth  = startWidth - snapDx;
+            newSrcOff = startSrcOff + snapDx / TIMELINE_PX_PER_SEC;
+            if (newWidth < MIN_W){ newLeft = startLeft + (startWidth - MIN_W); newWidth = MIN_W; }
+            clip.classList.add('snap-active');
+            showSnapGuide(leftSnap.target);
+            announceSnap('Snapped to clip edge');
+          } else {
+            clip.classList.remove('snap-active');
+            hideSnapGuide();
+          }
+          // Overlap with neighbors
+          if (clipOverlaps(track, newLeft, newWidth, clip)) return;
+
+          clip.style.left  = newLeft  + 'px';
+          clip.style.width = newWidth + 'px';
+          clip.dataset.sourceOffset = newSrcOff.toFixed(3);
+          // For NON-media clips (text/image/motion) keep duration in sync
+          // with timeline width since they don't track a source length.
+          if (!isMedia) clip.dataset.duration = (newWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+        } else {
+          // Right handle: width = startWidth + dx
+          var newW = startWidth + dx;
+          if (newW < MIN_W) newW = MIN_W;
+          // Clamp: max width = remaining source
+          if (isMedia && srcDur > 0){
+            var maxW = (srcDur - startSrcOff) * TIMELINE_PX_PER_SEC;
+            if (maxW > 0 && newW > maxW) newW = maxW;
+          }
+          // Overlap with right neighbor
+          if (clipOverlaps(track, startLeft, newW, clip)) return;
+
+          clip.style.width = newW + 'px';
+          if (!isMedia) clip.dataset.duration = (newW / TIMELINE_PX_PER_SEC).toFixed(3);
+        }
+      }
+
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        clip.classList.remove('mt-trimming');
+        // Task #72 — clear snap feedback on edge release.
+        clearSnapDecor(clip);
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+        // Keyframe markers are positioned as % of clip width; refresh
+        // their placement now that the width may have changed.
+        try { refreshKeyframeMarkers(clip); } catch(_){}
+        // Re-render filmstrip / waveform at the new width
+        try { attachFilmstripOrWaveform(clip); } catch(_){}
+        pushTimelineHistory();
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+
+    lh.addEventListener('mousedown', function(e){ startTrim('l', e); });
+    rh.addEventListener('mousedown', function(e){ startTrim('r', e); });
+  }
+
+  // Retrofit trim handles onto clips that existed before this code loaded
+  // (e.g. restored-from-snapshot clips). Re-run on every snapshot restore
+  // via the existing makeClipInteractive path.
+  try {
+    document.querySelectorAll('.mt-clip').forEach(attachTrimHandles);
+  } catch(_){}
+
+  // ── Task #18: Real-frame filmstrip inside V1 video clips ─────────
+  // Builds a .v10-filmstrip child with N frames captured asynchronously
+  // from a hidden <video> element. Each frame is an <img> with
+  // object-fit:cover so the source aspect is preserved (no stretching).
+  // Frames beyond the number that fit are clipped by overflow:hidden.
+  // A per-URL memo cache prevents re-capturing the same source.
+  var _filmstripCache = {}; // url -> [dataUrl, dataUrl, ...]
+  function buildClipFilmstrip(clip, mediaUrl, secs){
+    if (!clip || !mediaUrl) return;
+    // Mount the filmstrip host immediately with gradient-palette placeholders
+    // so the clip never looks blank. Real frames overwrite them.
+    var PALETTE = [
+      ['#1e1b4b','#7c3aed'], ['#312e81','#8b5cf6'],
+      ['#4c1d95','#a78bfa'], ['#581c87','#a855f7']
+    ];
+    var NUM_FRAMES = 8;
+    var fs = document.createElement('div');
+    fs.className = 'v10-filmstrip';
+    fs.setAttribute('data-v10', 'clip-filmstrip');
+    fs.style.cssText = 'position:absolute;inset:2px;display:flex;gap:1px;' +
+      'border-radius:4px;overflow:hidden;pointer-events:none;z-index:1;' +
+      'background:#0a0815';
+    for (var i = 0; i < NUM_FRAMES; i++){
+      var pal = PALETTE[i % PALETTE.length];
+      var frame = document.createElement('div');
+      frame.className = 'v10-frame';
+      frame.setAttribute('data-frame-idx', String(i));
+      // Placeholder gradient; real frame replaces background on capture.
+      // object-fit semantics are emulated via background-size:cover so the
+      // source aspect is preserved inside each variable-width cell.
+      frame.style.cssText = 'flex:1;min-width:0;background:linear-gradient(' +
+        (i * 37) + 'deg,' + pal[0] + ',' + pal[1] +
+        ');background-size:cover;background-position:center;' +
+        'background-repeat:no-repeat;border-right:1px solid rgba(0,0,0,.35)';
+      fs.appendChild(frame);
+    }
+    // Filename label on top of the filmstrip so the user can still
+    // identify the clip. Small, text-shadow for legibility.
+    var label = document.createElement('span');
+    label.className = 'v10-fs-label';
+    label.textContent = '\ud83c\udfac ' + (clip.dataset.fileName || 'Video');
+    label.style.cssText = 'position:absolute;left:6px;top:50%;' +
+      'transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;' +
+      'text-shadow:0 1px 3px rgba(0,0,0,.8);z-index:4;pointer-events:none;' +
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+      'max-width:calc(100% - 12px)';
+    clip.appendChild(fs);
+    clip.appendChild(label);
+
+    // Cache hit — paint cached frames without any video seek work
+    if (_filmstripCache[mediaUrl]){
+      var cached = _filmstripCache[mediaUrl];
+      var els = fs.querySelectorAll('.v10-frame');
+      for (var k = 0; k < els.length && k < cached.length; k++){
+        if (cached[k]) els[k].style.background = 'url(' + cached[k] + ') center/cover no-repeat';
+      }
+      return;
+    }
+
+    // Capture real frames from a hidden <video>
+    var duration = parseFloat(secs) || 0;
+    var probe = document.createElement('video');
+    probe.crossOrigin = 'anonymous';
+    probe.preload = 'auto';
+    probe.muted = true;
+    probe.playsInline = true;
+    probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:120px;height:68px;pointer-events:none;opacity:0';
+    probe.src = mediaUrl;
+    document.body.appendChild(probe);
+
+    var cv = document.createElement('canvas');
+    var ctx = cv.getContext('2d');
+    var capturedUrls = new Array(NUM_FRAMES);
+    var idx = 0;
+    var started = false;
+    var cleaned = false;
+    function cleanup(){
+      if (cleaned) return; cleaned = true;
+      try { probe.removeEventListener('seeked', onSeeked); } catch(_){}
+      try { probe.removeEventListener('loadedmetadata', onMeta); } catch(_){}
+      try { probe.pause(); } catch(_){}
+      try { probe.src = ''; } catch(_){}
+      try { probe.remove(); } catch(_){}
+      _filmstripCache[mediaUrl] = capturedUrls;
+    }
+    var safety = setTimeout(cleanup, 20000);
+
+    function onSeeked(){
+      try {
+        var vw = probe.videoWidth || 120;
+        var vh = probe.videoHeight || 68;
+        // Fixed capture dims — cells are flex:1 so the DIV width varies,
+        // but the captured image uses background-size:cover to fill.
+        cv.width = 120;
+        cv.height = Math.max(36, Math.round(120 * vh / vw));
+        // Direct drawImage (source aspect preserved via canvas size)
+        ctx.drawImage(probe, 0, 0, vw, vh, 0, 0, cv.width, cv.height);
+        var dataUrl = cv.toDataURL('image/jpeg', 0.6);
+        capturedUrls[idx] = dataUrl;
+        var frameEls = fs.querySelectorAll('.v10-frame');
+        if (frameEls[idx]){
+          frameEls[idx].style.background = 'url(' + dataUrl + ') center/cover no-repeat';
+        }
+      } catch(e){ /* tainted / cross-origin — leave placeholder */ }
+      idx++;
+      if (idx >= NUM_FRAMES){
+        clearTimeout(safety);
+        cleanup();
+        return;
+      }
+      var d = probe.duration > 0 && isFinite(probe.duration) ? probe.duration : (duration > 0 ? duration : 10);
+      var t = ((idx + 0.5) / NUM_FRAMES) * d;
+      try { probe.currentTime = t; } catch(_){}
+    }
+    function onMeta(){
+      if (started) return;
+      started = true;
+      var d = probe.duration > 0 && isFinite(probe.duration) ? probe.duration : (duration > 0 ? duration : 10);
+      var t = (0.5 / NUM_FRAMES) * d;
+      try { probe.currentTime = t; } catch(_){}
+    }
+    probe.addEventListener('loadedmetadata', onMeta);
+    probe.addEventListener('seeked', onSeeked);
+    probe.addEventListener('error', function(){ clearTimeout(safety); cleanup(); });
+  }
+  try { window.buildClipFilmstrip = buildClipFilmstrip; } catch(_){}
+
+  // ── Task #30: Fade In/Out volume-ramp visualization ──────────────
+  // Paints an SVG polyline on A1 and V1 clips showing the current
+  // volume envelope across the clip (rising during fadeIn, flat at
+  // the clip's native volume, falling during fadeOut). Exposed on
+  // window so the fade slider handler in v10-editor-redesign.js can
+  // call it after every slider move. Also called from addClipToTimeline
+  // at creation time, and re-run by an attribute observer whenever
+  // dataset fade/volume/width changes.
+  function refreshClipFadeOverlay(clip){
+    if (!clip || !clip.classList) return;
+    var isAudio = clip.classList.contains('mt-clip-audio');
+    var isVideo = clip.classList.contains('mt-clip-video');
+    if (!isAudio && !isVideo) return;
+    // Remove any prior overlay
+    var old = clip.querySelector(':scope > svg[data-v10-fade]');
+    if (old) old.remove();
+
+    var fadeIn  = Math.max(0, parseFloat(clip.dataset.fadeIn)  || 0);
+    var fadeOut = Math.max(0, parseFloat(clip.dataset.fadeOut) || 0);
+    if (fadeIn <= 0 && fadeOut <= 0) return; // nothing to draw
+
+    var widthPx = parseFloat(clip.style.width) || 0;
+    if (widthPx <= 0) return;
+    var HEIGHT = 30;
+    // Volume (0–1) — captures user-set level; visualization scales with it
+    var vol = parseFloat(clip.dataset.volume);
+    if (!isFinite(vol)) vol = 100;
+    if (clip.dataset.muted === 'true') vol = 0;
+    var volFrac = Math.max(0, Math.min(2, vol / 100)); // 0–2 maps to 0–1 of the y range
+    var topY = HEIGHT - Math.min(HEIGHT - 2, (HEIGHT - 2) * Math.min(1, volFrac)); // baseline y at "full volume"
+    // Convert fade seconds to pixels. When TIMELINE_PX_PER_SEC global
+    // isn't defined, fall back to 10 (matches the default elsewhere).
+    var PPS = (typeof TIMELINE_PX_PER_SEC === 'number') ? TIMELINE_PX_PER_SEC : 10;
+    var inPx  = Math.min(widthPx / 2, fadeIn  * PPS);
+    var outPx = Math.min(widthPx / 2, fadeOut * PPS);
+
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('data-v10-fade', '1');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('viewBox', '0 0 ' + widthPx + ' ' + HEIGHT);
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;' +
+      'pointer-events:none;z-index:3';
+
+    // Build the envelope polyline. Start at bottom-left (silent), climb
+    // to top at inPx, hold until (width - outPx), drop to bottom-right.
+    var points = [
+      [0, HEIGHT - 1],
+      [inPx, topY],
+      [widthPx - outPx, topY],
+      [widthPx, HEIGHT - 1]
+    ];
+    // Filled area UNDER the envelope (translucent yellow for A1, violet for V1)
+    var fillClr = isAudio ? 'rgba(253,224,71,.28)' : 'rgba(168,85,247,.22)';
+    var lineClr = isAudio ? '#fde047' : '#c084fc';
+    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points',
+      points.map(function(p){ return p.join(','); }).join(' ') +
+      ' ' + widthPx + ',' + HEIGHT + ' 0,' + HEIGHT
+    );
+    poly.setAttribute('fill', fillClr);
+    poly.setAttribute('stroke', 'none');
+    svg.appendChild(poly);
+
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    line.setAttribute('points', points.map(function(p){ return p.join(','); }).join(' '));
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', lineClr);
+    line.setAttribute('stroke-width', '1.5');
+    line.setAttribute('stroke-linejoin', 'round');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(line);
+
+    // Ensure clip is positioned relative so SVG absolute-positions correctly
+    if (clip.style.position !== 'absolute' && clip.style.position !== 'relative'){
+      clip.style.position = 'absolute';
+    }
+    clip.appendChild(svg);
+  }
+  try { window.refreshClipFadeOverlay = refreshClipFadeOverlay; } catch(_){}
+
+  // Redraw overlays for every clip on a track (call after a broadcast FX update)
+  function refreshAllFadeOverlays(){
+    document.querySelectorAll('.mt-track-audio .mt-clip, .mt-track-video .mt-clip')
+      .forEach(function(c){ try { refreshClipFadeOverlay(c); } catch(_){} });
+  }
+  try { window.refreshAllFadeOverlays = refreshAllFadeOverlays; } catch(_){}
+
+  function addClipToTimeline(fileName, mediaType, duration, mediaUrl) {
+    var track = findTargetTrack(mediaType);
     if (!track) { showToast('Timeline track not found'); return; }
 
-    var clip = document.createElement('div');
-    clip.className = clipClass;
-    clip.textContent = fileName;
-    clip.draggable = true;
-    clip.style.cssText = 'width:20%;min-width:80px;padding:4px 8px;font-size:10px;border-radius:4px;cursor:grab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    // Images default to 5 seconds when no explicit duration is provided
+    // (no real duration on an image file). Videos/audio use the passed
+    // duration or fall back to a 200px placeholder if unknown.
+    var secs = parseFloat(duration) || 0;
+    if (mediaType === 'img' && secs <= 0) secs = 5;
+    var width = secs > 0 ? Math.max(40, secs * TIMELINE_PX_PER_SEC) : 200;
+    var leftPos = findRightmostClipEnd(track);
 
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip ' + (mediaType === 'aud' ? 'mt-clip-audio' : 'mt-clip-video');
+    clip.dataset.fileName = fileName;
+    clip.dataset.clipType = mediaType; // 'vid' | 'aud' | 'img'
+    // Task #49 — stamp creation order so overlap layering can pick a winner.
+    // Multiplier ensures distinct values even when many clips are added in
+    // the same millisecond.
+    clip.dataset.addedAt = String(Date.now() * 1000 + (addClipToTimeline._seq = ((addClipToTimeline._seq || 0) + 1)));
+    clip.style.zIndex = String(100 + (addClipToTimeline._seq % 1000));
+    if (secs > 0)    clip.dataset.duration = String(secs);
+    if (mediaUrl)    clip.dataset.mediaUrl = mediaUrl;
+    // position:absolute + top:3px + height:30px come from the base .mt-clip rule in CSS.
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.userSelect = 'none';
     if (mediaType === 'aud') {
       clip.style.background = 'linear-gradient(135deg, #059669, #10b981)';
       clip.style.color = '#fff';
+      clip.style.padding = '4px 8px';
+      clip.style.fontSize = '10px';
+      clip.style.overflow = 'hidden';
+      clip.style.textOverflow = 'ellipsis';
+      clip.style.whiteSpace = 'nowrap';
+      clip.textContent = fileName;
+    } else if (mediaType === 'img') {
+      // Distinct green/teal gradient so image clips are visually recognizable
+      // against video clips on the same track.
+      clip.style.background = 'linear-gradient(135deg, #22c55e, #06b6d4)';
+      clip.style.color = '#fff';
+      clip.style.padding = '4px 8px';
+      clip.style.fontSize = '10px';
+      clip.style.overflow = 'hidden';
+      clip.style.textOverflow = 'ellipsis';
+      clip.style.whiteSpace = 'nowrap';
+      clip.textContent = fileName;
     } else {
+      // Video clip — build a filmstrip of real frames (Task #18).
+      // Clip keeps a purple fallback background for pre-load state; once
+      // frames are captured asynchronously, a .v10-filmstrip child is
+      // inserted with one .v10-frame per capture, each using background
+      // size:cover so aspect is preserved (no stretching).
       clip.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
       clip.style.color = '#fff';
+      clip.style.overflow = 'hidden';
+      // Build filmstrip lazily (after clip is in DOM so width/host measure
+      // correctly), passing the mediaUrl so a hidden video element can
+      // seek and capture frames without touching the Program Monitor.
+      clip.__v10FilmstripPending = true;
     }
 
     track.appendChild(clip);
-    showToast('Added to timeline: ' + fileName);
-
-    // Update track info
-    var info = document.querySelector('.mt-info');
-    if (info) {
-      var clips = document.querySelectorAll('.mt-clip');
-      info.textContent = document.querySelectorAll('.mt-track').length + ' tracks \u2022 ' + clips.length + ' clips';
+    if (mediaType === 'vid' || mediaType === '' || (!mediaType && mediaUrl)){
+      try { buildClipFilmstrip(clip, mediaUrl, secs); } catch(_){}
+    } else if (mediaType !== 'aud' && mediaType !== 'img'){
+      // Unknown type — attempt filmstrip if mediaUrl looks like a video
+      try { buildClipFilmstrip(clip, mediaUrl, secs); } catch(_){}
     }
+    makeClipInteractive(clip);
+    updateTimelineInfo();
+    // If Snap is on, enforce no-gap invariant for video clips.
+    if (mediaType !== 'aud' && _timelineState.snap){ compactVideoTrack(); }
+    pushTimelineHistory();
+    showToast('Added to timeline: ' + fileName);
+    // Auto-enable the Program Monitor the first time the user adds any
+    // content to the timeline — makes PGM the default view for uploads.
+    if (!_progAutoEnabledOnce && !_progEnabled){
+      _progAutoEnabledOnce = true;
+      try { toggleProgramMonitor(); } catch(_){}
+    }
+  }
+
+  // Toolbar: Razor / Select (mutually exclusive) + Snap (independent boolean).
+  function setActiveTool(tool){
+    _timelineState.tool = tool;
+    document.body.dataset.timelineTool = tool;
+    var razor = document.getElementById('mtRazorBtn');
+    var sel   = document.getElementById('mtSelectBtn');
+    if (razor) razor.classList.toggle('active', tool === 'razor');
+    if (sel)   sel.classList.toggle('active',   tool === 'select');
+    if (tool !== 'select'){
+      // Leaving select clears any highlighted clips.
+      document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+    }
+  }
+
+  function setSnapEnabled(on){
+    _timelineState.snap = !!on;
+    var btn = document.getElementById('mtSnapBtn');
+    if (btn) btn.classList.toggle('active', !!on);
+  }
+
+  // ── Timeline history (Undo / Redo) ─────────────────────────────
+  // Full-snapshot history of all tracks' clips. Pushed after every
+  // mutation (add / delete / move / split / compact). Undo pops back one
+  // snapshot; Redo advances forward. Cap at 50 entries so we don't leak
+  // memory on long sessions.
+  var _tlHistory = [];
+  var _tlHistoryIndex = -1;
+  var _tlRestoring = false; // suppress history push while restoring
+  var HISTORY_LIMIT = 50;
+
+  function snapshotTimelineHistory(){
+    var tracksAll = Array.from(document.querySelectorAll('#mtTracksArea .mt-track'));
+    return tracksAll.map(function(track){
+      return {
+        type: track.getAttribute('data-type') || '',
+        cls:  track.className,
+        clips: Array.from(track.querySelectorAll('.mt-clip')).map(function(c){
+          return {
+            className: c.className,
+            text: c.textContent,
+            left: c.style.left,
+            width: c.style.width,
+            bg: c.style.background,
+            color: c.style.color,
+            fileName: c.dataset.fileName || '',
+            mediaUrl: c.dataset.mediaUrl || '',
+            serverFilename: c.dataset.serverFilename || '',
+            duration: c.dataset.duration || '',
+            sourceOffset: c.dataset.sourceOffset || '',
+            clipType: c.dataset.clipType || '',
+            textContent: c.dataset.textContent || '',
+            fontSize: c.dataset.fontSize || '',
+            textColor: c.dataset.textColor || '',
+            position: c.dataset.position || '',
+            textOffsetX: c.dataset.textOffsetX || '',
+            textOffsetY: c.dataset.textOffsetY || '',
+            motionEffect: c.dataset.motionEffect || '',
+            scale: c.dataset.scale || '',
+            rotate: c.dataset.rotate || '',
+            flipH: c.dataset.flipH || '',
+            flipV: c.dataset.flipV || '',
+            offsetX: c.dataset.offsetX || '',
+            offsetY: c.dataset.offsetY || '',
+            speed: c.dataset.speed || '',
+            reverse: c.dataset.reverse || '',
+            loop: c.dataset.loop || '',
+            freeze: c.dataset.freeze || '',
+            trimIn: c.dataset.trimIn || '',
+            trimOut: c.dataset.trimOut || '',
+            crop: c.dataset.crop || '',
+            fxBrightness: c.dataset.fxBrightness || '',
+            fxContrast:   c.dataset.fxContrast   || '',
+            fxSaturate:   c.dataset.fxSaturate   || '',
+            fxBlur:       c.dataset.fxBlur       || '',
+            fxHue:        c.dataset.fxHue        || '',
+            fxColorGrade: c.dataset.fxColorGrade || '',
+            fxGlow:       c.dataset.fxGlow       || '',
+            fxVignette:   c.dataset.fxVignette   || '',
+            fxGrain:      c.dataset.fxGrain      || '',
+            fxSharpen:    c.dataset.fxSharpen    || '',
+            fxChromatic:  c.dataset.fxChromatic  || '',
+            fxPixelate:   c.dataset.fxPixelate   || '',
+            volume:       c.dataset.volume       || '',
+            muted:        c.dataset.muted        || '',
+            solo:         c.dataset.solo         || '',
+            preSoloMuted: c.dataset.preSoloMuted || '',
+            fadeIn:         c.dataset.fadeIn         || '',
+            fadeOut:        c.dataset.fadeOut        || '',
+            audioDenoise:   c.dataset.audioDenoise   || '',
+            audioNormalize: c.dataset.audioNormalize || '',
+            keyframes:      c.dataset.keyframes      || ''
+          };
+        })
+      };
+    });
+  }
+  function restoreTimelineSnapshot(snap){
+    if (!snap) return;
+    _tlRestoring = true;
+    try {
+      var tracksArea = document.getElementById('mtTracksArea');
+      var labelsArea = document.querySelector('.mt-labels');
+      if (!tracksArea) return;
+      // Remove any audio tracks beyond A1 that aren't in the snapshot —
+      // simplest way to match user-added-track deletions.
+      var desiredAudioCount = snap.filter(function(t){ return t.type === 'audio'; }).length;
+      var existingAudioTracks = tracksArea.querySelectorAll('.mt-track-audio');
+      while (existingAudioTracks.length > desiredAudioCount){
+        var last = existingAudioTracks[existingAudioTracks.length - 1];
+        last.remove();
+        existingAudioTracks = tracksArea.querySelectorAll('.mt-track-audio');
+      }
+      var existingAudioLabels = labelsArea ? labelsArea.querySelectorAll('.mt-label-audio') : [];
+      while (existingAudioLabels.length > desiredAudioCount){
+        existingAudioLabels[existingAudioLabels.length - 1].remove();
+        existingAudioLabels = labelsArea.querySelectorAll('.mt-label-audio');
+      }
+      // Recreate any missing audio tracks (beyond A1) — call Add Track repeatedly
+      while (tracksArea.querySelectorAll('.mt-track-audio').length < desiredAudioCount){
+        var addBtn = document.querySelector('.mt-add-track-btn');
+        if (addBtn) addBtn.click();
+        else break;
+      }
+      // Clear all clips
+      tracksArea.querySelectorAll('.mt-clip').forEach(function(c){ c.remove(); });
+      // Map snapshot tracks to actual tracks and rebuild clips
+      var allTracks = tracksArea.querySelectorAll('.mt-track');
+      snap.forEach(function(trackSpec, i){
+        var track = allTracks[i];
+        if (!track) return;
+        trackSpec.clips.forEach(function(spec){
+          var c = document.createElement('div');
+          c.className = spec.className;
+          c.textContent = spec.text;
+          c.style.left = spec.left;
+          c.style.width = spec.width;
+          c.style.padding = '4px 8px';
+          c.style.fontSize = '10px';
+          c.style.overflow = 'hidden';
+          c.style.textOverflow = 'ellipsis';
+          c.style.whiteSpace = 'nowrap';
+          c.style.userSelect = 'none';
+          if (spec.bg)    c.style.background = spec.bg;
+          if (spec.color) c.style.color = spec.color;
+          if (spec.fileName)       c.dataset.fileName = spec.fileName;
+          if (spec.mediaUrl)       c.dataset.mediaUrl = spec.mediaUrl;
+          if (spec.serverFilename) c.dataset.serverFilename = spec.serverFilename;
+          if (spec.duration)       c.dataset.duration = spec.duration;
+          if (spec.sourceOffset)   c.dataset.sourceOffset = spec.sourceOffset;
+          if (spec.clipType)       c.dataset.clipType = spec.clipType;
+          if (spec.textContent)    c.dataset.textContent = spec.textContent;
+          if (spec.fontSize)       c.dataset.fontSize = spec.fontSize;
+          if (spec.textColor)      c.dataset.textColor = spec.textColor;
+          if (spec.position)       c.dataset.position = spec.position;
+          if (spec.textOffsetX)    c.dataset.textOffsetX = spec.textOffsetX;
+          if (spec.textOffsetY)    c.dataset.textOffsetY = spec.textOffsetY;
+          if (spec.motionEffect)   c.dataset.motionEffect = spec.motionEffect;
+          if (spec.scale)          c.dataset.scale   = spec.scale;
+          if (spec.rotate)         c.dataset.rotate  = spec.rotate;
+          if (spec.flipH)          c.dataset.flipH   = spec.flipH;
+          if (spec.flipV)          c.dataset.flipV   = spec.flipV;
+          if (spec.offsetX)        c.dataset.offsetX = spec.offsetX;
+          if (spec.offsetY)        c.dataset.offsetY = spec.offsetY;
+          if (spec.speed)          c.dataset.speed   = spec.speed;
+          if (spec.reverse)        c.dataset.reverse = spec.reverse;
+          if (spec.loop)           c.dataset.loop    = spec.loop;
+          if (spec.freeze)         c.dataset.freeze  = spec.freeze;
+          if (spec.trimIn)         c.dataset.trimIn  = spec.trimIn;
+          if (spec.trimOut)        c.dataset.trimOut = spec.trimOut;
+          if (spec.crop)           c.dataset.crop    = spec.crop;
+          if (spec.fxBrightness)   c.dataset.fxBrightness = spec.fxBrightness;
+          if (spec.fxContrast)     c.dataset.fxContrast   = spec.fxContrast;
+          if (spec.fxSaturate)     c.dataset.fxSaturate   = spec.fxSaturate;
+          if (spec.fxBlur)         c.dataset.fxBlur       = spec.fxBlur;
+          if (spec.fxHue)          c.dataset.fxHue        = spec.fxHue;
+          if (spec.fxColorGrade)   c.dataset.fxColorGrade = spec.fxColorGrade;
+          if (spec.fxGlow)         c.dataset.fxGlow       = spec.fxGlow;
+          if (spec.fxVignette)     c.dataset.fxVignette   = spec.fxVignette;
+          if (spec.fxGrain)        c.dataset.fxGrain      = spec.fxGrain;
+          if (spec.fxSharpen)      c.dataset.fxSharpen    = spec.fxSharpen;
+          if (spec.fxChromatic)    c.dataset.fxChromatic  = spec.fxChromatic;
+          if (spec.fxPixelate)     c.dataset.fxPixelate   = spec.fxPixelate;
+          if (spec.volume)         c.dataset.volume       = spec.volume;
+          if (spec.muted)          c.dataset.muted        = spec.muted;
+          if (spec.solo)           c.dataset.solo         = spec.solo;
+          if (spec.preSoloMuted)   c.dataset.preSoloMuted = spec.preSoloMuted;
+          if (spec.fadeIn)         c.dataset.fadeIn         = spec.fadeIn;
+          if (spec.fadeOut)        c.dataset.fadeOut        = spec.fadeOut;
+          if (spec.audioDenoise)   c.dataset.audioDenoise   = spec.audioDenoise;
+          if (spec.audioNormalize) c.dataset.audioNormalize = spec.audioNormalize;
+          if (spec.keyframes)      c.dataset.keyframes      = spec.keyframes;
+          track.appendChild(c);
+          makeClipInteractive(c);
+        });
+      });
+      updateTimelineInfo();
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+    } finally { _tlRestoring = false; }
+  }
+  function pushTimelineHistory(){
+    if (_tlRestoring) return;
+    _tlHistory = _tlHistory.slice(0, _tlHistoryIndex + 1);
+    _tlHistory.push(snapshotTimelineHistory());
+    if (_tlHistory.length > HISTORY_LIMIT){
+      _tlHistory.shift();
+    }
+    _tlHistoryIndex = _tlHistory.length - 1;
+  }
+  function tlUndo(){
+    if (_tlHistoryIndex <= 0){ showToast('Nothing to undo'); return; }
+    _tlHistoryIndex--;
+    restoreTimelineSnapshot(_tlHistory[_tlHistoryIndex]);
+    showToast('Undo');
+  }
+  function tlRedo(){
+    if (_tlHistoryIndex >= _tlHistory.length - 1){ showToast('Nothing to redo'); return; }
+    _tlHistoryIndex++;
+    restoreTimelineSnapshot(_tlHistory[_tlHistoryIndex]);
+    showToast('Redo');
+  }
+  // Capture initial empty state so first undo has somewhere to go.
+  setTimeout(pushTimelineHistory, 200);
+
+  // ── Snap compaction (no-gap enforcement on V1 when Snap ON) ────
+  function compactVideoTrack(){
+    var track = document.querySelector('.mt-track-video');
+    if (!track) return;
+    var clips = Array.from(track.querySelectorAll('.mt-clip'))
+      .sort(function(a, b){ return (parseFloat(a.style.left)||0) - (parseFloat(b.style.left)||0); });
+    var cursor = 0;
+    clips.forEach(function(c){
+      c.style.left = cursor + 'px';
+      cursor += (parseFloat(c.style.width) || 0);
+    });
+  }
+  try { window.compactVideoTrack = compactVideoTrack; } catch(_){}
+
+  // ── Program Monitor simulation ──────────────────────────────────
+  // A toggleable <canvas> overlay that COMPOSITES the timeline frame-by-frame.
+  // Unlike the main <video> element (which only ever plays one source), the
+  // PGM canvas reads the clip at the current playhead position every frame
+  // and renders it — so cuts between clips, razor splits, image clips, and
+  // gaps all show up on a single output surface the way they would in a
+  // program monitor.
+  //
+  // Limits of this simulation (flagged in the watermark):
+  //   - Audio is not mixed: the main <video>'s own audio still plays.
+  //   - No transitions / effects / layering — just the topmost clip.
+  //   - Image sources are drawn statically; video sources seek to the right
+  //     frame each RAF tick using video.currentTime = offsetSec.
+  var _progEnabled = false;
+  var _progRAF = null;
+  var _progMediaCache = {};        // key = 'type|url' -> <video>|<img>
+  var _progSeekPending = {};       // suppress redundant seeks
+  var _progHasFrame = false;       // keep last frame while a seek is loading
+  var _progLastClipKey = null;     // identity of last-rendered clip — clear on transition
+  var _progAutoEnabledOnce = false; // auto-turn PGM on the first time content arrives
+
+  // ── Audio system: master bus + AnalyserNode for the PGM meter ──
+  // Master GainNode ── Analyser ── destination
+  //   ↑                ↑
+  //   <video> source   scheduled AudioBufferSources (audio clips on A1+)
+  //
+  // All audio paths route through _audioMaster so the PGM meter (and the
+  // user's speakers) hear the SUM of the video's own audio + any audio
+  // clips scheduled on the timeline.
+  var _audioCtx = null;
+  var _audioMaster = null;        // GainNode — master mix bus
+  var _audioAnalyser = null;
+  var _audioSourceEl = null;      // the <video> we connected via createMediaElementSource
+  var _audioTimeBuf = null;
+  var _audioBufferCache = {};     // mediaUrl -> decoded AudioBuffer (Promise<AudioBuffer>)
+  var _audioActiveSources = [];   // currently-playing AudioBufferSourceNodes (audio clips)
+
+  function ensureAudioSystem(){
+    var video = document.getElementById('videoPlayer') || document.querySelector('video');
+    try {
+      if (!_audioCtx){
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        _audioMaster = _audioCtx.createGain();
+        _audioMaster.gain.value = 1.0;
+        _audioAnalyser = _audioCtx.createAnalyser();
+        _audioAnalyser.fftSize = 512;
+        _audioAnalyser.smoothingTimeConstant = 0.6;
+        _audioTimeBuf = new Uint8Array(_audioAnalyser.fftSize);
+        _audioMaster.connect(_audioAnalyser);
+        _audioAnalyser.connect(_audioCtx.destination);
+      }
+      // Hook the <video>'s audio into the master bus exactly once per element.
+      if (video instanceof HTMLMediaElement && _audioSourceEl !== video){
+        try {
+          var src = _audioCtx.createMediaElementSource(video);
+          src.connect(_audioMaster);
+          _audioSourceEl = video;
+        } catch(_){ /* may already be connected by a prior session */ }
+      }
+      if (_audioCtx.state === 'suspended'){
+        _audioCtx.resume().catch(function(){});
+      }
+      return _audioCtx;
+    } catch(_){
+      return null;
+    }
+  }
+  // Backward-compatible name used by the PGM meter draw fn.
+  function ensureAudioAnalyser(){ ensureAudioSystem(); return _audioAnalyser; }
+
+  // Decode and cache an audio file (returns Promise<AudioBuffer>).
+  function loadAudioBuffer(url){
+    if (!url) return Promise.reject(new Error('no url'));
+    if (_audioBufferCache[url]) return _audioBufferCache[url];
+    var p = fetch(url, { credentials: 'include' })
+      .then(function(r){
+        if (!r.ok) throw new Error('fetch ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function(buf){
+        return new Promise(function(resolve, reject){
+          _audioCtx.decodeAudioData(buf, resolve, reject);
+        });
+      })
+      .catch(function(err){
+        delete _audioBufferCache[url]; // allow retry
+        throw err;
+      });
+    _audioBufferCache[url] = p;
+    return p;
+  }
+
+  // HTMLAudioElement pool for A1 clips. Each element is ALSO routed
+  // through WebAudio (createMediaElementSource → gain → _audioMaster)
+  // so A1 mixes with the video's audio at the master bus and shows
+  // up in the PGM meter. We still use audio.play()/pause() for timing
+  // since it's reliable across browsers.
+  var _a1AudioEls = {};     // url -> HTMLAudioElement
+  var _a1Routes   = {};     // url -> { mes, gain }
+  var _a1Timers   = [];
+  var _a1Playing  = [];
+
+  // Task #28 — expose the A1 audio cache so the sidebar's volume slider can
+  // look up the exact live <audio> element by URL (no flaky CSS attribute
+  // match against normalized/blob src). Per-URL ref is 100% reliable.
+  try { window.__v10GetA1Audio = function(url){ return (url && _a1AudioEls[url]) || null; }; } catch(_){}
+
+  function getOrCreateA1Audio(url){
+    if (!url) return null;
+    var audio = _a1AudioEls[url];
+    if (audio) return audio;
+    audio = document.createElement('audio');
+    audio.preload = 'auto';
+    audio.src = url;
+    audio.style.cssText = 'display:none';
+    audio.setAttribute('data-v10-a1', '1');
+    audio.addEventListener('error', function(){
+      var e = audio.error;
+      var codeTxt = e && e.code === 2 ? 'NETWORK'
+                 : e && e.code === 3 ? 'DECODE'
+                 : e && e.code === 4 ? 'NOT_SUPPORTED'
+                 : (e ? 'err' + e.code : 'unknown');
+      console.warn('[a1] audio element error for', url, codeTxt);
+    });
+    document.body.appendChild(audio);
+    _a1AudioEls[url] = audio;
+    // NOT routed through WebAudio's createMediaElementSource. Live
+    // testing showed the MES routing was leaving A1 audible-in-data
+    // (audio.currentTime advances, paused=false, no errors) but
+    // INAUDIBLE at the speakers — the WebAudio graph somehow loses
+    // the A1 path even though it reaches video's MES correctly. By
+    // leaving the <audio> element unwrapped, its native output reaches
+    // the OS audio device directly and mixes with V1's WebAudio
+    // destination output at the device level.
+    //
+    // Trade-off: the PGM meter (which taps WebAudio master) won't
+    // reflect A1 levels. Video's own audio is still metered.
+    return audio;
+  }
+
+  function stopAudioMixing(){
+    _a1Timers.forEach(function(id){ clearTimeout(id); });
+    _a1Timers = [];
+    // Await pending play() Promises before pausing to avoid Chrome's
+    // AbortError race where pause() before play() settles drops playback.
+    _a1Playing.forEach(function(entry){
+      var a = entry.audio;
+      var doPause = function(){ try { a.pause(); } catch(_){} };
+      if (entry.playPromise && typeof entry.playPromise.then === 'function'){
+        entry.playPromise.then(doPause, doPause);
+      } else {
+        doPause();
+      }
+    });
+    _a1Playing = [];
+    _audioActiveSources.forEach(function(src){
+      try { src.stop(); } catch(_){}
+      try { src.disconnect(); } catch(_){}
+    });
+    _audioActiveSources = [];
+  }
+
+  function startAudioMixing(startPlayheadSec){
+    // AudioContext still matters for video audio (MES routing) + meter.
+    ensureAudioSystem();
+    stopAudioMixing();
+    var clips = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
+    clips.forEach(function(clip){
+      var url = clip.dataset.mediaUrl;
+      if (!url) return;
+      if (clip.dataset.muted === 'true') return;
+      var leftSec  = (parseFloat(clip.style.left)  || 0) / TIMELINE_PX_PER_SEC;
+      var widthSec = (parseFloat(clip.style.width) || 0) / TIMELINE_PX_PER_SEC;
+      var srcOff   = parseFloat(clip.dataset.sourceOffset) || 0;
+      var clipEndSec = leftSec + widthSec;
+      if (clipEndSec <= startPlayheadSec) return;
+      var scheduleDelay, offsetInSource, playDur;
+      if (startPlayheadSec <= leftSec){
+        scheduleDelay  = leftSec - startPlayheadSec;
+        offsetInSource = srcOff;
+        playDur        = widthSec;
+      } else {
+        var into = startPlayheadSec - leftSec;
+        scheduleDelay  = 0;
+        offsetInSource = srcOff + into;
+        playDur        = widthSec - into;
+      }
+      if (playDur <= 0) return;
+
+      // Volume is LIVE-READ on every tick so the user can drag the
+      // volume slider during playback and hear the change instantly.
+      // The old code captured `nativeVol` in closure at schedule time,
+      // which meant any slider drag after Play was clobbered by the
+      // next fade-in tick or the scheduled start setTimeout.
+      function getNativeVol(){
+        if (clip.dataset.muted === 'true') return 0;
+        var v = parseFloat(clip.dataset.volume);
+        var scaled = isFinite(v) ? Math.max(0, v / 100) : 1;
+        return Math.min(1, scaled);
+      }
+      var fadeIn  = Math.max(0, parseFloat(clip.dataset.fadeIn)  || 0);
+      var fadeOut = Math.max(0, parseFloat(clip.dataset.fadeOut) || 0);
+
+      var audio = getOrCreateA1Audio(url);
+      if (!audio) return;
+      var playingEntry = { audio: audio, playPromise: null };
+      _a1Playing.push(playingEntry);
+
+      var startTimer = setTimeout(function(){
+        if (!_transport || !_transport.playing) return;
+        try {
+          if (audio.readyState < 1){ try { audio.load(); } catch(_){} }
+          audio.currentTime = Math.max(0, offsetInSource);
+          audio.muted = false;
+          // Fade-in: linear ramp via setInterval — each tick re-reads
+          // the live volume so slider drags during a fade are honored.
+          if (fadeIn > 0){
+            audio.volume = 0;
+            var fSteps = Math.max(1, Math.round(fadeIn * 30));
+            var fStep = 0;
+            var fadeInId = setInterval(function(){
+              fStep++;
+              var liveVol = getNativeVol();
+              audio.volume = Math.min(liveVol, (fStep / fSteps) * liveVol);
+              if (fStep >= fSteps){ clearInterval(fadeInId); audio.volume = liveVol; }
+            }, (fadeIn / fSteps) * 1000);
+            _a1Timers.push(fadeInId);
+          } else {
+            audio.volume = getNativeVol();
+          }
+          if (fadeOut > 0){
+            var foDur = Math.min(fadeOut, playDur);
+            var foStartOffset = Math.max(0, (playDur - foDur) * 1000);
+            var foScheduleTimer = setTimeout(function(){
+              var oSteps = Math.max(1, Math.round(foDur * 30));
+              var oStep = 0;
+              var foId = setInterval(function(){
+                oStep++;
+                // Re-read live volume every tick so drags during fade-out
+                // don't get clobbered.
+                var liveVol = getNativeVol();
+                audio.volume = Math.max(0, liveVol * (1 - oStep / oSteps));
+                if (oStep >= oSteps){ clearInterval(foId); audio.volume = 0; }
+              }, (foDur / oSteps) * 1000);
+              _a1Timers.push(foId);
+            }, foStartOffset);
+            _a1Timers.push(foScheduleTimer);
+          }
+          var p = audio.play();
+          if (p && typeof p.then === 'function'){
+            playingEntry.playPromise = p;
+            p.then(function(){
+              // Visible confirmation the pipeline is running — if the
+              // user can't hear it, the problem is downstream (tab
+              // mute, output device, system volume, etc.)
+              var name = (clip.dataset.fileName || 'audio').slice(0, 28);
+              console.log('[a1] playing:', url);
+              try { showToast('\ud83d\udd0a A1 playing: ' + name); } catch(_){}
+            }).catch(function(err){
+              if (err && err.name !== 'AbortError'){
+                console.warn('[a1] play() failed for', url, err);
+                try { showToast('A1 play failed: ' + (err.message || err.name)); } catch(_){}
+              }
+            });
+          }
+        } catch(err){
+          console.warn('[a1] schedule error for', url, err);
+        }
+      }, Math.max(0, scheduleDelay * 1000));
+      _a1Timers.push(startTimer);
+
+      var stopTimer = setTimeout(function(){
+        var doPause = function(){ try { audio.pause(); } catch(_){} };
+        if (playingEntry.playPromise && typeof playingEntry.playPromise.then === 'function'){
+          playingEntry.playPromise.then(doPause, doPause);
+        } else {
+          doPause();
+        }
+      }, Math.max(0, (scheduleDelay + playDur) * 1000));
+      _a1Timers.push(stopTimer);
+    });
+  }
+
+  // ── Transport (Play/Pause) ──
+  var _transport = { playing: false, startTimestamp: 0, startPlayheadSec: 0, raf: null };
+  function getTimelineEndSec(){
+    var maxEnd = 0;
+    document.querySelectorAll('.mt-clip').forEach(function(c){
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (l + w > maxEnd) maxEnd = l + w;
+    });
+    return maxEnd / TIMELINE_PX_PER_SEC;
+  }
+  function tlIsPlaying(){ return !!_transport.playing; }
+  function tlPlay(){
+    if (_transport.playing) return;
+    ensureAudioSystem(); // user-gesture context
+    var ph = document.getElementById('mtPlayhead');
+    var phSec = ph ? ((parseFloat(ph.style.left) || 0) / TIMELINE_PX_PER_SEC) : 0;
+    var endSec = getTimelineEndSec();
+    if (phSec >= endSec - 0.05) {
+      // Wrap to start so pressing play at the end replays from 0
+      phSec = 0;
+      if (ph) ph.style.left = '0px';
+    }
+    _transport.playing         = true;
+    _transport.startPlayheadSec = phSec;
+    _transport.startTimestamp   = performance.now();
+    startAudioMixing(phSec);
+    // Drive whatever's at the playhead right now — video plays itself
+    // (its audio path is already on the master bus); image overlay shows
+    // for image clips; black for gaps.
+    transportTickAndRender(phSec);
+    _transport.raf = requestAnimationFrame(tlTransportRAF);
+    updateTransportBtnUI();
+  }
+  function tlPause(){
+    if (!_transport.playing) return;
+    _transport.playing = false;
+    stopAudioMixing();
+    var video = document.getElementById('videoPlayer');
+    if (video){
+      if (!video.paused){ try { video.pause(); } catch(_){} }
+      // Reset transport-owned playback flags so a Speed / Loop / Freeze
+      // from the last-played clip doesn't leak into manual playback.
+      try { video.playbackRate = 1; } catch(_){}
+      try { video.loop = false; } catch(_){}
+    }
+    if (_transport.raf){ cancelAnimationFrame(_transport.raf); _transport.raf = null; }
+    updateTransportBtnUI();
+  }
+  function tlTogglePlay(){ if (_transport.playing) tlPause(); else tlPlay(); }
+
+  function transportTickAndRender(phSec){
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = (phSec * TIMELINE_PX_PER_SEC) + 'px';
+    var phPx = phSec * TIMELINE_PX_PER_SEC;
+    var hit = getClipAtPlayheadX(phPx);
+    var video = document.getElementById('videoPlayer');
+    var clipType = hit ? (hit.clip.dataset.clipType || (hit.clip.classList.contains('mt-clip-audio') ? 'aud' : 'vid')) : null;
+    if (!hit || clipType === 'aud'){
+      // No video clip here — gap (or audio-only). Pause video, show black.
+      if (video && !video.paused){ try { video.pause(); } catch(_){} }
+      hideImagePreview();
+      showBlackPreview();
+      return;
+    }
+    if (clipType === 'img'){
+      if (video && !video.paused){ try { video.pause(); } catch(_){} }
+      hideBlackPreview();
+      if (hit.clip.dataset.mediaUrl) showImagePreview(hit.clip.dataset.mediaUrl);
+      return;
+    }
+    // Video clip — keep the <video> element pointed at the right src and time
+    hideImagePreview();
+    hideBlackPreview();
+    if (!video) return;
+    var clip = hit.clip;
+    var url = clip.dataset.mediaUrl;
+    if (!url) return;
+    var srcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+    var offIn  = hit.offsetPx / TIMELINE_PX_PER_SEC;
+
+    // Timing flags from the EDIT-tab Timing section
+    var speed  = parseFloat(clip.dataset.speed);
+    if (!isFinite(speed) || speed <= 0) speed = 1;
+    var freeze = clip.dataset.freeze === 'true';
+    var loop   = clip.dataset.loop   === 'true';
+
+    // Speed scales source playback inside the clip's fixed timeline width:
+    // when wall-clock advances 1s, source advances `speed` seconds.
+    var wantSec = freeze ? srcOff : (srcOff + offIn * speed);
+
+    var normCurrent = video.src;
+    var normTarget  = normalizeUrl(url);
+    if (normCurrent !== normTarget){
+      _lastPreviewUrl = url;
+      try { video.src = url; video.load(); } catch(_){}
+      var playSeek = function(){
+        try { video.currentTime = Math.max(0, wantSec); } catch(_){}
+        try { video.playbackRate = freeze ? 1 : speed; } catch(_){}
+        try { video.loop = !!loop; } catch(_){}
+        if (freeze){
+          try { video.pause(); } catch(_){}
+        } else if (_transport.playing){
+          try { video.play(); } catch(_){}
+        }
+      };
+      video.addEventListener('loadedmetadata', playSeek, {once:true});
+    } else {
+      // Sync playbackRate + loop flag each frame (cheap)
+      try { if (video.playbackRate !== (freeze ? 1 : speed)) video.playbackRate = freeze ? 1 : speed; } catch(_){}
+      try { if (video.loop !== !!loop) video.loop = !!loop; } catch(_){}
+      // Drift correction. With freeze we ALWAYS want the exact srcOff frame.
+      var drift = Math.abs((video.currentTime || 0) - wantSec);
+      if (drift > 0.3 || (freeze && drift > 0.05)){
+        try { video.currentTime = wantSec; } catch(_){}
+      }
+      if (freeze){
+        if (!video.paused){ try { video.pause(); } catch(_){} }
+      } else if (_transport.playing && video.paused){
+        try { video.play(); } catch(_){}
+      }
+    }
+  }
+
+  function tlTransportRAF(){
+    if (!_transport.playing){ _transport.raf = null; return; }
+    var elapsed = (performance.now() - _transport.startTimestamp) / 1000;
+    var phSec = _transport.startPlayheadSec + elapsed;
+    var endSec = getTimelineEndSec();
+    if (phSec > endSec){
+      // Stop at the end of the sequence (and snap playhead exactly).
+      var ph = document.getElementById('mtPlayhead');
+      if (ph) ph.style.left = (endSec * TIMELINE_PX_PER_SEC) + 'px';
+      tlPause();
+      return;
+    }
+    transportTickAndRender(phSec);
+    _transport.raf = requestAnimationFrame(tlTransportRAF);
+  }
+
+  function ensureTransportBtn(){
+    var existing = document.getElementById('tlTransportBtn');
+    if (existing instanceof HTMLButtonElement && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var btn = (existing instanceof HTMLButtonElement) ? existing : document.createElement('button');
+    btn.id = 'tlTransportBtn';
+    btn.type = 'button';
+    btn.title = 'Play / pause the timeline (Space)';
+    btn.textContent = '\u25B6 Play';
+    btn.style.cssText = 'position:absolute;top:10px;right:74px;z-index:8;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(34,197,94,.55);border-radius:6px;cursor:pointer;backdrop-filter:blur(4px)';
+    if (!btn.dataset.v14){
+      btn.dataset.v14 = '1';
+      btn.addEventListener('click', function(){ tlTogglePlay(); });
+    }
+    try { container.appendChild(btn); } catch(_){ return null; }
+    return btn;
+  }
+  function updateTransportBtnUI(){
+    var btn = ensureTransportBtn();
+    if (!btn) return;
+    if (_transport.playing){
+      btn.textContent = '\u275A\u275A Pause';
+      btn.style.background = 'rgba(239,68,68,.85)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'rgba(239,68,68,.55)';
+    } else {
+      btn.textContent = '\u25B6 Play';
+      btn.style.background = 'rgba(15,10,30,.75)';
+      btn.style.color = '#e2e0f0';
+      btn.style.borderColor = 'rgba(34,197,94,.55)';
+    }
+  }
+  // Spacebar shortcut
+  if (!document.body.dataset.v14Space){
+    document.body.dataset.v14Space = '1';
+    document.addEventListener('keydown', function(e){
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      var t = e.target;
+      var tag = (t && t.tagName) || '';
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (t && t.isContentEditable)) return;
+      if (e.target instanceof HTMLButtonElement) return;
+      e.preventDefault();
+      tlTogglePlay();
+    });
+  }
+  // Lazily mount the button (waits for the player to exist).
+  (function retryMountTransport(){
+    if (ensureTransportBtn()) { updateTransportBtnUI(); return; }
+    var tries = 0;
+    var iv = setInterval(function(){
+      tries++;
+      if (ensureTransportBtn()){ updateTransportBtnUI(); clearInterval(iv); }
+      else if (tries > 40) clearInterval(iv);
+    }, 250);
+  })();
+  // Expose for other scripts / debugging
+  try { window.tlPlay = tlPlay; window.tlPause = tlPause; window.tlTogglePlay = tlTogglePlay; } catch(_){}
+  function progDrawAudioMeters(ctx, W, H){
+    var analyser = ensureAudioAnalyser();
+    if (!analyser || !_audioTimeBuf) return;
+    analyser.getByteTimeDomainData(_audioTimeBuf);
+    var buf = _audioTimeBuf;
+    // Peak + RMS on time-domain
+    var peak = 0, sumSq = 0;
+    for (var i = 0; i < buf.length; i++){
+      var v = Math.abs(buf[i] - 128);
+      if (v > peak) peak = v;
+      sumSq += v * v;
+    }
+    var peakN = Math.min(1, peak / 128);
+    var rmsN  = Math.min(1, Math.sqrt(sumSq / buf.length) / 128);
+
+    // Waveform: bottom strip spanning near-full width
+    var wfPad = 20;
+    var wfW = W - wfPad * 2;
+    var wfH = 46;
+    var wfX = wfPad;
+    var wfY = H - 92;
+    // Backdrop
+    ctx.fillStyle = 'rgba(8,6,18,.55)';
+    ctx.fillRect(wfX - 6, wfY - 6, wfW + 12, wfH + 12);
+    ctx.strokeStyle = 'rgba(139,92,246,.95)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    var step = wfW / buf.length;
+    for (var j = 0; j < buf.length; j++){
+      var norm = (buf[j] - 128) / 128;
+      var px = wfX + j * step;
+      var py = wfY + wfH/2 + norm * (wfH/2 - 2);
+      if (j === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Level meter + peak indicator under the waveform
+    var mW = Math.min(280, W - wfPad * 2);
+    var mH = 14;
+    var mX = W - wfPad - mW;
+    var mY = H - 36;
+    ctx.fillStyle = 'rgba(8,6,18,.7)';
+    ctx.fillRect(mX - 2, mY - 2, mW + 4, mH + 4);
+    var rmsW = rmsN * mW;
+    var color = rmsN < 0.7 ? '#22c55e' : (rmsN < 0.9 ? '#fbbf24' : '#ef4444');
+    ctx.fillStyle = color;
+    ctx.fillRect(mX, mY, rmsW, mH);
+    // Peak hold line
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(mX + Math.min(mW - 2, peakN * mW), mY, 2, mH);
+    // Label
+    ctx.fillStyle = 'rgba(255,255,255,.7)';
+    ctx.font = 'bold 10px -apple-system,system-ui,sans-serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('A1 · ' + Math.round(rmsN * 100) + '%  peak ' + Math.round(peakN * 100) + '%', mX, mY - 4);
+  }
+  function getOrCreateProgSource(url, type){
+    if (!url) return null;
+    var key = type + '|' + url;
+    if (_progMediaCache[key]) return _progMediaCache[key];
+    var el;
+    if (type === 'img'){
+      // No crossOrigin — we only DRAW to the canvas, never read pixels out.
+      // Setting crossOrigin='anonymous' causes servers without CORS headers
+      // to fail the load entirely, which was painting the canvas black.
+      el = new Image();
+      el.src = url;
+    } else {
+      el = document.createElement('video');
+      el.muted = true;
+      el.playsInline = true;
+      el.preload = 'auto';
+      el.src = url;
+      el.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
+      document.body.appendChild(el);
+    }
+    _progMediaCache[key] = el;
+    return el;
+  }
+  function progContainRect(W, H, sW, sH){
+    if (!sW || !sH) return null;
+    var srcAspect = sW / sH;
+    var dstAspect = W / H;
+    var dw, dh;
+    if (srcAspect > dstAspect){ dw = W; dh = W / srcAspect; }
+    else                     { dh = H; dw = H * srcAspect; }
+    return { dx: (W - dw) / 2, dy: (H - dh) / 2, dw: dw, dh: dh };
+  }
+  function progDrawContain(ctx, src, W, H, sW, sH){
+    var r = progContainRect(W, H, sW, sH);
+    if (!r) return;
+    ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+  }
+  // Draw a source (video or image) through a motion offset transform, with
+  // the drawing region CLIPPED to the source's letterbox-fit rect. Motion
+  // pans/zooms/rotates inside that rect; any pixels that would fall into
+  // the pillar/letter boxes are clipped away, leaving the pre-painted
+  // black fill visible in those regions. Returns the motion state so the
+  // caller can draw the 'Motion queued' badge on top of the unclipped canvas.
+  function progDrawWithMotion(ctx, src, W, H, sW, sH, activeMotion, clip, clipTimeSec){
+    var r = progContainRect(W, H, sW, sH);
+    if (!r) return null;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.dx, r.dy, r.dw, r.dh);
+    ctx.clip();
+    // Resolve the effective FX for this clip at the current playhead
+    // position — merges the V1 clip's own dataset with any FX-track
+    // clips whose time range overlaps the playhead (user drags an FX
+    // clip across multiple V1 clips to broadcast the effect).
+    var ph_ = document.getElementById('mtPlayhead');
+    var phXNow = ph_ ? (parseFloat(ph_.style.left) || 0) : 0;
+    var fxD = resolveEffectiveFx(clip, phXNow);
+    var fxFilter = progBuildClipFilter(clip, fxD);
+    if (fxFilter) ctx.filter = fxFilter;
+    progApplyClipTransforms(ctx, W, H, clip, clipTimeSec);
+    var state = progApplyMotion(ctx, W, H, activeMotion);
+    // Crop support: when clip.dataset.crop is 'x,y,w,h' percent, use
+    // drawImage's 9-arg source-rect form so only that region of the
+    // source is rendered — scaled to fill the letterbox rect.
+    var hasCrop = clip && clip.dataset.crop;
+    var cropArgs = null;
+    if (hasCrop){
+      var cp = String(clip.dataset.crop).split(',').map(function(s){ return parseFloat(s); });
+      if (cp.length === 4 && cp.every(function(v){ return isFinite(v); })){
+        cropArgs = {
+          sx: Math.max(0, Math.min(sW, sW * cp[0] / 100)),
+          sy: Math.max(0, Math.min(sH, sH * cp[1] / 100)),
+          sw: Math.max(1, Math.min(sW - 0, sW * cp[2] / 100)),
+          sh: Math.max(1, Math.min(sH - 0, sH * cp[3] / 100))
+        };
+      }
+    }
+    var pixelate = fxD && fxD.fxPixelate === 'true';
+    if (pixelate){
+      // Downsample source to a tiny offscreen canvas then blit back at
+      // target size with smoothing off. Creates a blocky pixel look.
+      if (!window._v10PixOSC) window._v10PixOSC = document.createElement('canvas');
+      var osc = window._v10PixOSC;
+      var block = 10;
+      osc.width  = Math.max(4, Math.floor(r.dw / block));
+      osc.height = Math.max(4, Math.floor(r.dh / block));
+      var octx = osc.getContext('2d');
+      octx.imageSmoothingEnabled = false;
+      octx.clearRect(0, 0, osc.width, osc.height);
+      if (cropArgs){
+        octx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, 0, 0, osc.width, osc.height);
+      } else {
+        octx.drawImage(src, 0, 0, osc.width, osc.height);
+      }
+      var prevSmooth = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(osc, r.dx, r.dy, r.dw, r.dh);
+      ctx.imageSmoothingEnabled = prevSmooth;
+    } else if (cropArgs){
+      ctx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, r.dx, r.dy, r.dw, r.dh);
+    } else {
+      ctx.drawImage(src, r.dx, r.dy, r.dw, r.dh);
+    }
+    // Chromatic aberration: overlay the frame TWICE at small horizontal
+    // offsets through red/cyan tint filters using 'lighter' composite.
+    // Not true RGB channel shift (canvas doesn't expose that cheaply) but
+    // visually gives the fringing effect. Real rgbashift runs on export.
+    if (fxD && fxD.fxChromatic === 'true'){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.35;
+      // Red fringe — shift +3px
+      ctx.filter = 'sepia(1) saturate(6) hue-rotate(-50deg)';
+      if (cropArgs) ctx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, r.dx + 3, r.dy, r.dw, r.dh);
+      else ctx.drawImage(src, r.dx + 3, r.dy, r.dw, r.dh);
+      // Cyan fringe — shift -3px
+      ctx.filter = 'sepia(1) saturate(6) hue-rotate(150deg)';
+      if (cropArgs) ctx.drawImage(src, cropArgs.sx, cropArgs.sy, cropArgs.sw, cropArgs.sh, r.dx - 3, r.dy, r.dw, r.dh);
+      else ctx.drawImage(src, r.dx - 3, r.dy, r.dw, r.dh);
+      ctx.restore();
+    }
+    progExitMotionTransform(ctx, state);
+    if (fxFilter) ctx.filter = 'none';
+    progDrawClipPostFX(ctx, W, H, r, clip, fxD);
+    ctx.restore();
+    return state;
+  }
+  function ensureProgramMonitor(){
+    var existing = document.getElementById('tlProgMonitor');
+    if (existing instanceof HTMLCanvasElement && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var canvas = (existing instanceof HTMLCanvasElement) ? existing : document.createElement('canvas');
+    canvas.id = 'tlProgMonitor';
+    canvas.width  = 1280;
+    canvas.height = 720;
+    // Pointer events enabled so the text-drag handler can receive
+    // mouse events. The canvas covers the video element for display
+    // anyway, so we're not blocking anything the user could use.
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;background:#000;z-index:7;display:none;pointer-events:auto';
+    try { container.appendChild(canvas); } catch(_){ return null; }
+    try { wirePgmTextDrag(canvas); } catch(_){}
+    try { wirePgmCropDrag(canvas); } catch(_){}
+    return canvas;
+  }
+  function ensureProgramToggleBtn(){
+    var existing = document.getElementById('tlProgBtn');
+    if (existing instanceof HTMLButtonElement && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var btn = (existing instanceof HTMLButtonElement) ? existing : document.createElement('button');
+    btn.id = 'tlProgBtn';
+    btn.type = 'button';
+    btn.title = 'Program Monitor — composited preview of the full timeline';
+    btn.textContent = 'PGM';
+    btn.style.cssText = 'position:absolute;top:10px;right:10px;z-index:8;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(139,92,246,.55);border-radius:6px;cursor:pointer;backdrop-filter:blur(4px)';
+    if (!btn.dataset.v14){
+      btn.dataset.v14 = '1';
+      btn.addEventListener('click', toggleProgramMonitor);
+    }
+    try { container.appendChild(btn); } catch(_){ return null; }
+    return btn;
+  }
+  function progLoop(){
+    if (!_progEnabled) { if (_progRAF){ cancelAnimationFrame(_progRAF); _progRAF = null; } return; }
+    var canvas = ensureProgramMonitor();
+    if (!canvas){ _progRAF = requestAnimationFrame(progLoop); return; }
+    var ctx = canvas.getContext('2d');
+    // LAYER STACK RESET: force the canvas transform back to identity and
+    // alpha to 1 at the top of every frame. This is the BASE layer — the
+    // video's default position (centered) and original size are rendered
+    // through this identity transform. Any motion effect from M1 is
+    // layered ON TOP via save/transform/restore inside progApplyMotion,
+    // so it can only ever offset the rendered pixels — never the clip's
+    // underlying data. If a prior frame accidentally left a transform
+    // dangling, this line rolls it back.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    // Sync internal buffer to CSS-rendered size so drawing isn't stretched
+    // by CSS's 100%×100% sizing of the canvas.
+    var rect = canvas.getBoundingClientRect();
+    var targetW = Math.max(320, Math.round(rect.width  || 1280));
+    var targetH = Math.max(180, Math.round(rect.height || 720));
+    if (canvas.width !== targetW || canvas.height !== targetH){
+      canvas.width  = targetW;
+      canvas.height = targetH;
+    }
+    var W = canvas.width, H = canvas.height;
+
+    // Figure out what to render first (before clearing) so that if the
+    // source isn't ready we keep the previous frame on screen instead of
+    // flashing black.
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var hit = getClipAtPlayheadX(phX);
+
+    // Active motion effects on M1 at this instant (if any). We wrap the
+    // visual draw in save/restore so the transform only affects V1 pixels.
+    var activeMotion = getActiveMotionEffectsAtPlayheadX(phX);
+
+    var drawn = false;
+    if (hit){
+      var clip = hit.clip;
+      var type = clip.dataset.clipType || (clip.classList.contains('mt-clip-audio') ? 'aud' : 'vid');
+      var url  = clip.dataset.mediaUrl;
+      // Clip-local time (0 at clip left edge) — drives keyframe interpolation
+      var clipTimeSec = hit.offsetPx / TIMELINE_PX_PER_SEC;
+      if (type === 'aud'){
+        // On V1 we don't expect audio-only clips; fall through.
+      } else if (type === 'img' && url){
+        var img = getOrCreateProgSource(url, 'img');
+        if (img && img.complete && img.naturalWidth > 0){
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+          var moState1 = progDrawWithMotion(ctx, img, W, H, img.naturalWidth, img.naturalHeight, activeMotion, clip, clipTimeSec);
+          progDrawMotionBadge(ctx, moState1);
+          drawn = true;
+        }
+      } else if (url){
+        // Prefer the MAIN <video> when it's already loaded with this clip's
+        // source — avoids double decoding and keeps the canvas perfectly in
+        // sync with what the video element is playing.
+        var mainVideo = document.getElementById('videoPlayer');
+        var mainUsable = mainVideo && mainVideo.readyState >= 2
+          && mainVideo.videoWidth > 0 && mainVideo.src
+          && normalizeUrl(mainVideo.src) === normalizeUrl(url);
+        if (mainUsable){
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+          var moState2 = progDrawWithMotion(ctx, mainVideo, W, H, mainVideo.videoWidth, mainVideo.videoHeight, activeMotion, clip, clipTimeSec);
+          progDrawMotionBadge(ctx, moState2);
+          drawn = true;
+        } else {
+          var vid = getOrCreateProgSource(url, 'vid');
+          var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+          var seekSec = sourceOffset + (hit.offsetPx / TIMELINE_PX_PER_SEC);
+          if (vid){
+            if (vid.readyState >= 1 && Math.abs((vid.currentTime||0) - seekSec) > 0.1){
+              var pkey = 'vid|'+url;
+              if (!_progSeekPending[pkey]){
+                _progSeekPending[pkey] = true;
+                try { vid.currentTime = Math.max(0, seekSec); } catch(_){}
+                var clear = function(){ _progSeekPending[pkey] = false; vid.removeEventListener('seeked', clear); };
+                vid.addEventListener('seeked', clear, {once:true});
+                setTimeout(function(){ _progSeekPending[pkey] = false; }, 300);
+              }
+            }
+            if (vid.readyState >= 2 && vid.videoWidth){
+              ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+              var moState3 = progDrawWithMotion(ctx, vid, W, H, vid.videoWidth, vid.videoHeight, activeMotion, clip, clipTimeSec);
+              progDrawMotionBadge(ctx, moState3);
+              drawn = true;
+            }
+          }
+        }
+      }
+    }
+
+    // Transition detection: keyed on the clip's filename + url so undo /
+    // redo / drag-to-reorder all register as a "new" clip when appropriate.
+    var currentClipKey = hit
+      ? ((hit.clip.dataset.fileName || '') + '|' + (hit.clip.dataset.mediaUrl || '') + '|' + (hit.clip.dataset.clipType || ''))
+      : null;
+    var transitioned = currentClipKey !== _progLastClipKey;
+
+    if (!drawn){
+      // We're showing a gap OR the new clip's source hasn't loaded yet.
+      // Clear to black when:
+      //   - we've never drawn a frame, OR
+      //   - we're in a gap (hit is null/undefined), OR
+      //   - the clip under the playhead just changed (don't keep painting
+      //     the previous clip's last frame on top of a new clip).
+      // Otherwise (same clip, brief seek in flight): keep the last frame.
+      if (!_progHasFrame || !hit || transitioned){
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
+      }
+    } else {
+      _progHasFrame = true;
+    }
+    _progLastClipKey = currentClipKey;
+
+    // Text overlays (from T1 clips) draw on top of the current visual.
+    try { progDrawTextOverlays(ctx, W, H, phX); } catch(_){}
+
+    // Crop UI (if we're in visual crop mode) sits on top of the frame
+    // and text overlays so the user always sees their crop rect + handles.
+    try { progDrawCropOverlay(ctx, W, H); } catch(_){}
+    // Keep the Apply / Cancel / Reset toolbar attached every frame while
+    // cropping — the editor sometimes re-renders the player container,
+    // and without this the toolbar becomes an orphan no-op.
+    if (_cropMode){ try { ensureCropToolbar(); } catch(_){} }
+
+    // Watermark so the user knows this is a simulation — NOT the final export.
+    ctx.fillStyle = 'rgba(139,92,246,.95)';
+    ctx.font = 'bold 14px -apple-system,system-ui,sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText('PGM \u00B7 simulation', 12, 12);
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    ctx.font = '11px -apple-system,system-ui,sans-serif';
+    ctx.fillText('not final export (audio / transitions not rendered)', 12, 30);
+
+    // Live audio metering — waveform + level meter for whatever is playing
+    // through the main <video>. Skips cleanly if WebAudio is unavailable or
+    // the source hasn't been attached yet.
+    try { progDrawAudioMeters(ctx, W, H); } catch(_){}
+
+    _progRAF = requestAnimationFrame(progLoop);
+  }
+  function toggleProgramMonitor(){
+    _progEnabled = !_progEnabled;
+    var canvas = ensureProgramMonitor();
+    var btn = ensureProgramToggleBtn();
+    if (canvas) canvas.style.display = _progEnabled ? 'block' : 'none';
+    if (btn){
+      btn.textContent = _progEnabled ? 'PGM \u25CF' : 'PGM';
+      btn.style.background = _progEnabled ? 'rgba(139,92,246,.85)' : 'rgba(15,10,30,.75)';
+      btn.style.color = _progEnabled ? '#fff' : '#e2e0f0';
+    }
+    if (_progEnabled){
+      // User-gesture-initiated: OK to create / resume the AudioContext here.
+      ensureAudioAnalyser();
+      _progHasFrame = false; // force a proper first-frame clear
+      progLoop();
+      showToast('Program Monitor on \u2014 composited timeline preview');
+    } else {
+      if (_progRAF){ cancelAnimationFrame(_progRAF); _progRAF = null; }
+      _progHasFrame = false;
+      showToast('Program Monitor off');
+    }
+  }
+  // Create the toggle button as soon as the video player is reachable.
+  (function retryWireProgBtn(){
+    if (ensureProgramToggleBtn()) return;
+    var tries = 0;
+    var iv = setInterval(function(){
+      tries++;
+      if (ensureProgramToggleBtn() || tries > 40) clearInterval(iv);
+    }, 250);
+  })();
+
+  // ── Black overlay + continuous playback through gaps ───────────
+  function ensureBlackOverlay(){
+    var existing = document.getElementById('tlBlackOverlay');
+    if (existing instanceof Element && existing.isConnected) return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    var overlay = (existing instanceof Element) ? existing : document.createElement('div');
+    overlay.id = 'tlBlackOverlay';
+    overlay.style.cssText = 'position:absolute;inset:0;background:#000;z-index:5;pointer-events:none;display:none';
+    try { container.appendChild(overlay); } catch(_){ return null; }
+    return overlay;
+  }
+  // Image preview: an <img> overlay layered above the video element for when
+  // the playhead is over an image clip (HTML <video> can't render images).
+  function ensureImageOverlay(){
+    var existing = document.getElementById('tlImageOverlay');
+    if (existing && existing.isConnected && existing.tagName === 'IMG') return existing;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player || !(player instanceof Element)) return null;
+    var container = player.parentElement;
+    if (!container || !(container instanceof Element)) return null;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    // If there's a stale non-IMG element holding that id, replace it.
+    if (existing && existing.tagName !== 'IMG'){
+      try { existing.remove(); } catch(_){}
+      existing = null;
+    }
+    var img;
+    if (existing instanceof Element && existing.tagName === 'IMG'){
+      img = existing;
+    } else {
+      img = document.createElement('img');
+    }
+    img.id = 'tlImageOverlay';
+    img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:6;pointer-events:none;display:none';
+    try { container.appendChild(img); } catch(_){ return null; }
+    return img;
+  }
+  function showImagePreview(url){
+    var img = ensureImageOverlay();
+    if (!img) return;
+    if (img.src !== url) img.src = url;
+    img.style.display = 'block';
+  }
+  function hideImagePreview(){
+    var img = document.getElementById('tlImageOverlay');
+    if (img) img.style.display = 'none';
+  }
+  function showBlackPreview(){
+    var o = ensureBlackOverlay();
+    if (o) o.style.display = 'block';
+  }
+  function hideBlackPreview(){
+    var o = document.getElementById('tlBlackOverlay');
+    if (o) o.style.display = 'none';
+  }
+
+  // Animate the playhead across an empty gap, then auto-play the next clip.
+  var _gapTimer = null;
+  function advancePlayheadThroughGap(startX){
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'))
+      .sort(function(a,b){ return (parseFloat(a.style.left)||0)-(parseFloat(b.style.left)||0); });
+    var next = null;
+    for (var i = 0; i < clips.length; i++){
+      var l = parseFloat(clips[i].style.left)||0;
+      if (l > startX + 0.5) { next = clips[i]; break; }
+    }
+    if (!next){
+      showBlackPreview();
+      return;
+    }
+    showBlackPreview();
+    var endX = parseFloat(next.style.left);
+    var gapPx = endX - startX;
+    if (gapPx <= 1){
+      loadAndPlayClipAt(next, 0);
+      return;
+    }
+    var gapMs = (gapPx / TIMELINE_PX_PER_SEC) * 1000;
+    var tStart = Date.now();
+    if (_gapTimer) clearInterval(_gapTimer);
+    _gapTimer = setInterval(function(){
+      var elapsed = Date.now() - tStart;
+      if (elapsed >= gapMs){
+        clearInterval(_gapTimer); _gapTimer = null;
+        ph.style.left = endX + 'px';
+        loadAndPlayClipAt(next, 0);
+        return;
+      }
+      ph.style.left = (startX + (elapsed / gapMs) * gapPx) + 'px';
+    }, 33);
+  }
+  function loadAndPlayClipAt(clip, offsetPx){
+    if (!clip) return;
+    var url = clip.dataset.mediaUrl;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player) return;
+    var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+    var seekSec = sourceOffset + (offsetPx / TIMELINE_PX_PER_SEC);
+    hideBlackPreview();
+    var normalizedCurrent = player.src;
+    var normalizedTarget = url ? normalizeUrl(url) : '';
+    if (url && normalizedCurrent !== normalizedTarget){
+      _lastPreviewUrl = url;
+      player.src = url;
+      player.load();
+      player.addEventListener('loadedmetadata', function once(){
+        player.removeEventListener('loadedmetadata', once);
+        try { player.currentTime = seekSec; } catch(_){}
+        try { player.play(); } catch(_){}
+      }, {once:true});
+    } else {
+      try { player.currentTime = seekSec; } catch(_){}
+      try { player.play(); } catch(_){}
+    }
+  }
+
+  // Proxy used only as a fallback in case the direct timeline undo/redo
+  // hasn't been set up yet (shouldn't happen in practice).
+  function clickIfExists(id){
+    var el = document.getElementById(id);
+    if (el) el.click();
+    else if (typeof showToast === 'function') showToast('Nothing to do');
+  }
+
+  function wireTimelineTools(){
+    var razor = document.getElementById('mtRazorBtn');
+    var sel   = document.getElementById('mtSelectBtn');
+    var snap  = document.getElementById('mtSnapBtn');
+    var undo  = document.getElementById('mtUndoBtn');
+    var redo  = document.getElementById('mtRedoBtn');
+    var snapshot = document.getElementById('mtSnapshotBtn');
+    var linkTracks = document.getElementById('mtLinkTracksBtn');
+    if (razor && !razor.dataset.v14){
+      razor.dataset.v14 = '1';
+      razor.addEventListener('click', function(){ setActiveTool('razor'); showToast('Razor tool'); });
+    }
+    if (sel && !sel.dataset.v14){
+      sel.dataset.v14 = '1';
+      sel.addEventListener('click', function(){
+        // Toggle behaviour: click Select when active to switch back to Razor.
+        if (_timelineState.tool === 'select') {
+          setActiveTool('razor');
+          showToast('Select tool off');
+        } else {
+          setActiveTool('select');
+          showToast('Select tool \u2014 click a clip to highlight, drag to move');
+        }
+      });
+    }
+    // ESC also deactivates Select (maps to Razor, which is the default).
+    if (!document.body.dataset.v14Esc) {
+      document.body.dataset.v14Esc = '1';
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape' && _timelineState.tool === 'select'){
+          setActiveTool('razor');
+        }
+      });
+    }
+    if (snap && !snap.dataset.v14){
+      snap.dataset.v14 = '1';
+      snap.addEventListener('click', function(){
+        _timelineState.snap = !_timelineState.snap;
+        setSnapEnabled(_timelineState.snap);
+        showToast('Snap ' + (_timelineState.snap ? 'on' : 'off'));
+        if (_timelineState.snap){
+          // When Snap toggles ON, immediately close all gaps on V1 so clips
+          // are side-by-side (Albert's "Gap Management" requirement).
+          compactVideoTrack();
+          _lastPreviewUrl = null;
+          try { syncPreviewToPlayhead(); } catch(_){}
+          pushTimelineHistory();
+        }
+      });
+    }
+    if (undo && !undo.dataset.v14){
+      undo.dataset.v14 = '1';
+      // Use the timeline history stack so Undo reverts clip add/move/
+      // delete/split. The editor's own undo (inside the tools-section) is
+      // still reachable via its original #undoBtn button.
+      undo.addEventListener('click', tlUndo);
+    }
+    if (redo && !redo.dataset.v14){
+      redo.dataset.v14 = '1';
+      redo.addEventListener('click', tlRedo);
+    }
+    if (snapshot && !snapshot.dataset.v14){
+      snapshot.dataset.v14 = '1';
+      snapshot.addEventListener('click', function(){
+        var player = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (!player || !player.videoWidth || !player.videoHeight){
+          showToast('Cannot snapshot \u2014 no video loaded');
+          return;
+        }
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width  = player.videoWidth;
+          canvas.height = player.videoHeight;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(player, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function(blob){
+            if (!blob){ showToast('Snapshot failed'); return; }
+            var url = URL.createObjectURL(blob);
+            // Counter persists across snapshots in this page session so the
+            // filenames increment sequentially (screenshot_01, _02, ...).
+            window.__snapshotCounter = (window.__snapshotCounter || 0) + 1;
+            var n = window.__snapshotCounter;
+            var name = 'screenshot_' + (n < 10 ? '0' + n : n) + '.png';
+            // Push to Media library via the shared helper — this makes the
+            // new image show up under both Images and All tabs immediately
+            // AND auto-place on V1 (same flow as a regular upload).
+            if (typeof window.addUploadedMediaItem === 'function'){
+              var item = window.addUploadedMediaItem({
+                name: name,
+                filename: name,
+                serveUrl: url,
+                mediaType: 'img'
+              });
+              // Also auto-place on V1 as a 5s clip.
+              try { addClipToTimeline(name, 'img', 5, url); } catch(_){}
+            }
+            showToast('Snapshot saved: ' + name);
+          }, 'image/png');
+        } catch(err){
+          showToast('Snapshot failed: ' + (err && err.message || 'unknown error'));
+        }
+      });
+    }
+    if (linkTracks && !linkTracks.dataset.v14){
+      linkTracks.dataset.v14 = '1';
+      linkTracks.addEventListener('click', function(){
+        linkTracks.classList.toggle('active');
+        showToast('Tracks ' + (linkTracks.classList.contains('active') ? 'linked' : 'unlinked'));
+      });
+    }
+    // Apply initial visual state (Razor active, Snap on by default).
+    setActiveTool(_timelineState.tool);
+    setSnapEnabled(_timelineState.snap);
+  }
+  wireTimelineTools();
+
+  // Save as Draft button — serialize timeline state into the Drafts localStorage
+  // store (window.addDraftEntry, already defined in v10-editor-redesign.js).
+  // The Projects UI that renders drafts is hidden for now per Albert's earlier
+  // request, but the data still persists so it can be restored when a Drafts
+  // view is added back.
+  function snapshotTimelineState(){
+    var clips = Array.from(document.querySelectorAll('.mt-clip')).map(function(c){
+      var track = c.parentElement;
+      return {
+        track:        (track && track.getAttribute('data-type')) || 'video',
+        trackIndex:   track ? Array.from(track.parentElement.querySelectorAll('.mt-track')).indexOf(track) : 0,
+        left:         c.style.left,
+        width:        c.style.width,
+        duration:     c.dataset.duration || '',
+        sourceOffset: c.dataset.sourceOffset || '0',
+        mediaUrl:     c.dataset.mediaUrl || '',
+        filename:     c.dataset.fileName || ''
+      };
+    });
+    var current = (typeof window.currentVideoFile === 'object' && window.currentVideoFile) || null;
+    var firstVid = clips.find(function(c){ return c.track === 'video'; });
+    return {
+      id:       'd_' + Date.now(),
+      name:     (current && current.filename) || (firstVid && firstVid.filename) || 'Untitled draft',
+      filename: current && current.filename,
+      serveUrl: current && current.serveUrl,
+      duration: current && current.duration,
+      date:     new Date().toLocaleDateString(undefined, {month:'short', day:'numeric'}),
+      timelineClips: clips
+    };
+  }
+  function wireSaveAsDraft(){
+    var btn = document.getElementById('saveAsDraftBtn');
+    if (!btn || btn.dataset.v14) return;
+    btn.dataset.v14 = '1';
+    btn.addEventListener('click', function(){
+      var state = snapshotTimelineState();
+      if (!state.timelineClips.length && !state.filename){
+        showToast('Nothing to save yet \u2014 add a clip or upload a video first');
+        return;
+      }
+      if (typeof window.addDraftEntry === 'function'){
+        try { window.addDraftEntry(state); } catch(_){}
+      }
+      showToast('Draft saved (' + state.timelineClips.length + ' clip' + (state.timelineClips.length === 1 ? '' : 's') + ')');
+    });
+  }
+  wireSaveAsDraft();
+
+  // Keyboard: Delete / Backspace removes selected clips from the timeline.
+  // Only fires when the user is NOT typing in a real input — so the backspace
+  // doesn't delete a clip while someone edits a text field.
+  if (!document.body.dataset.v14Del){
+    document.body.dataset.v14Del = '1';
+    document.addEventListener('keydown', function(e){
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      var t = e.target;
+      var tag = (t && t.tagName) || '';
+      var isTyping = /^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (t && t.isContentEditable);
+      if (isTyping) return;
+      var selected = document.querySelectorAll('.mt-clip.selected');
+      if (!selected.length) return;
+      e.preventDefault();
+      var removedVideo = Array.from(selected).some(function(c){ return c.classList.contains('mt-clip-video'); });
+      selected.forEach(function(c){ c.remove(); });
+      updateTimelineInfo();
+      if (removedVideo && _timelineState.snap){ compactVideoTrack(); }
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast(selected.length === 1 ? 'Clip removed' : (selected.length + ' clips removed'));
+    });
+  }
+
+  // Expose so v10 draft loader and other callers reuse the sequenced version.
+  try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
+  try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
+  try { window.getActiveClips = getActiveClips; } catch(_){}
+  try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
+  try { window.updateTimelineInfo = updateTimelineInfo; } catch(_){}
+  try { window.getActiveClip = getActiveClip; } catch(_){}
+  try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
+
+  // ── WYSIWYG capture helpers ──────────────────────────────────────
+  // For the Export button's "capture the PGM canvas + master audio as
+  // a real-time recording" path. Exposes an audio MediaStream that
+  // mirrors exactly what the user hears (video's MES-routed audio +
+  // A1 MES-routed audio + any WebAudio-scheduled sources).
+  function getAudioMasterStream(){
+    if (!ensureAudioSystem()) return null;
+    if (!_audioMaster || !_audioCtx) return null;
+    var dest = _audioCtx.createMediaStreamDestination();
+    try { _audioMaster.connect(dest); } catch(_){ return null; }
+    return { stream: dest.stream, destination: dest };
+  }
+  function disconnectFromMaster(node){
+    if (!node || !_audioMaster) return;
+    try { _audioMaster.disconnect(node); } catch(_){}
+  }
+  function getPgmCanvas(){
+    return document.getElementById('tlProgMonitor') || null;
+  }
+  try {
+    window.getAudioMasterStream = getAudioMasterStream;
+    window.disconnectFromAudioMaster = disconnectFromMaster;
+    window.getPgmCanvas = getPgmCanvas;
+  } catch(_){}
+
+  // ── Timeline zoom ──────────────────────────────────────────────
+  // Rescales every clip's left/width and the playhead in pixels while
+  // keeping all second-domain data (sourceOffset, keyframes, fades,
+  // motion clip times) untouched. factor > 1 zooms in, factor < 1
+  // zooms out. Cumulative zoom is clamped so pxPerSec stays in
+  // [1, 200] — more than enough for frame-level editing at 30fps.
+  var MIN_PX_PER_SEC = 1;
+  var MAX_PX_PER_SEC = 200;
+  function setTimelineZoom(factor){
+    if (!isFinite(factor) || factor <= 0) return;
+    var current = TIMELINE_PX_PER_SEC;
+    var target  = current * factor;
+    target = Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, target));
+    var ratio = target / current;
+    if (Math.abs(ratio - 1) < 0.001) return;
+    TIMELINE_PX_PER_SEC = target;
+    try { window.TIMELINE_PX_PER_SEC = TIMELINE_PX_PER_SEC; } catch(_){}
+    // Rescale every clip
+    Array.from(document.querySelectorAll('.mt-clip')).forEach(function(c){
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      c.style.left  = (l * ratio) + 'px';
+      c.style.width = (w * ratio) + 'px';
+      try { refreshKeyframeMarkers(c); } catch(_){}
+      try { attachFilmstripOrWaveform(c); } catch(_){}
+    });
+    // Rescale the playhead x-position
+    var ph = document.getElementById('mtPlayhead');
+    if (ph){
+      var phLeft = parseFloat(ph.style.left) || 0;
+      ph.style.left = (phLeft * ratio) + 'px';
+    }
+    try { updateTimelineInfo(); } catch(_){}
+    try { syncPreviewToPlayhead(); } catch(_){}
+    showToast('Zoom: ' + Math.round(target) + 'px/s');
+  }
+  try { window.setTimelineZoom = setTimelineZoom; } catch(_){}
+
+  // ── Task #79 — Toolbar zoom slider (upper-right of the timeline) ──
+  // Slider value is the absolute px/sec target; − and + buttons step
+  // multiplicatively (×0.8 / ×1.25) so power users can zoom without
+  // dragging the slider. Live readout shows current px/sec.
+  (function wireZoomControls(){
+    var slider = document.getElementById('mtZoomSlider');
+    var minus  = document.getElementById('mtZoomOut');
+    var plus   = document.getElementById('mtZoomIn');
+    var readout= document.getElementById('mtZoomVal');
+    if (!slider || !minus || !plus || !readout) return;
+    if (slider.dataset.zoomWired === '1') return;
+    slider.dataset.zoomWired = '1';
+
+    function refreshUI(){
+      try {
+        slider.value = String(Math.round(TIMELINE_PX_PER_SEC));
+        readout.textContent = Math.round(TIMELINE_PX_PER_SEC) + ' px/s';
+      } catch(_){}
+    }
+    function applyAbsolute(targetPps){
+      var current = TIMELINE_PX_PER_SEC || 1;
+      var target  = Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, targetPps));
+      var ratio   = target / current;
+      if (Math.abs(ratio - 1) < 0.001) { refreshUI(); return; }
+      setTimelineZoom(ratio);
+      refreshUI();
+    }
+    slider.addEventListener('input', function(){
+      var v = parseFloat(slider.value);
+      if (!isFinite(v) || v <= 0) return;
+      applyAbsolute(v);
+    });
+    minus.addEventListener('click', function(){ setTimelineZoom(0.8); refreshUI(); });
+    plus .addEventListener('click', function(){ setTimelineZoom(1.25); refreshUI(); });
+
+    refreshUI();
+  })();
+
+  // ── Marquee selection ─────────────────────────────────────────
+  // Drag on an empty area of the tracks to rubber-band select all
+  // overlapping clips. Shift adds to the existing selection; without
+  // Shift the previous selection is cleared on mousedown.
+  (function wireMarquee(){
+    var tracksArea = document.getElementById('mtTracksArea');
+    if (!tracksArea || tracksArea.dataset.v14Marquee) return;
+    tracksArea.dataset.v14Marquee = '1';
+
+    var marq = null;
+    var start = null;
+
+    tracksArea.addEventListener('mousedown', function(e){
+      // Only start marquee when the pointer isn't on a clip, handle,
+      // playhead, or track label — and only in Select tool mode.
+      if (_timelineState.tool !== 'select') return;
+      if (e.button !== 0) return;
+      if (e.target !== tracksArea && !e.target.classList.contains('mt-track')) return;
+
+      var rect = tracksArea.getBoundingClientRect();
+      start = {
+        x: e.clientX - rect.left + tracksArea.scrollLeft,
+        y: e.clientY - rect.top  + tracksArea.scrollTop
+      };
+
+      if (!e.shiftKey){
+        Array.from(document.querySelectorAll('.mt-clip.selected'))
+          .forEach(function(c){ c.classList.remove('selected'); });
+      }
+
+      marq = document.createElement('div');
+      marq.className = 'mt-marquee';
+      marq.style.left   = start.x + 'px';
+      marq.style.top    = start.y + 'px';
+      marq.style.width  = '0px';
+      marq.style.height = '0px';
+      tracksArea.appendChild(marq);
+      e.preventDefault();
+
+      function onMove(ev){
+        if (!marq || !start) return;
+        var r = tracksArea.getBoundingClientRect();
+        var cx = ev.clientX - r.left + tracksArea.scrollLeft;
+        var cy = ev.clientY - r.top  + tracksArea.scrollTop;
+        var x = Math.min(start.x, cx);
+        var y = Math.min(start.y, cy);
+        var w = Math.abs(cx - start.x);
+        var h = Math.abs(cy - start.y);
+        marq.style.left   = x + 'px';
+        marq.style.top    = y + 'px';
+        marq.style.width  = w + 'px';
+        marq.style.height = h + 'px';
+      }
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (!marq){ return; }
+        // Select every clip whose bounding box overlaps the marquee
+        var mx = parseFloat(marq.style.left)   || 0;
+        var my = parseFloat(marq.style.top)    || 0;
+        var mw = parseFloat(marq.style.width)  || 0;
+        var mh = parseFloat(marq.style.height) || 0;
+        var taBB = tracksArea.getBoundingClientRect();
+        Array.from(document.querySelectorAll('.mt-clip')).forEach(function(c){
+          var bb = c.getBoundingClientRect();
+          var cx1 = bb.left - taBB.left + tracksArea.scrollLeft;
+          var cy1 = bb.top  - taBB.top  + tracksArea.scrollTop;
+          var cx2 = cx1 + bb.width;
+          var cy2 = cy1 + bb.height;
+          var mx2 = mx + mw, my2 = my + mh;
+          var overlaps = !(cx2 < mx || cx1 > mx2 || cy2 < my || cy1 > my2);
+          if (overlaps && mw > 4 && mh > 4){
+            c.classList.add('selected');
+          }
+        });
+        // Only swallow the click if the marquee was more than a tiny
+        // drag — otherwise it's just a click on empty timeline area
+        // which should move the playhead (handled elsewhere).
+        if (mw > 4 || mh > 4){
+          // Prevent the subsequent click from firing on the tracks area
+          var swallow = function(ev2){
+            ev2.stopPropagation();
+            document.removeEventListener('click', swallow, true);
+          };
+          document.addEventListener('click', swallow, true);
+        }
+        if (marq.parentNode) marq.parentNode.removeChild(marq);
+        marq = null;
+        start = null;
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
+
+  // ── Text clips ──
+  // Text lives on T1 (.mt-track-text). It's rendered as an overlay on top
+  // of whatever visual clip is below it on V1. Text clips behave like any
+  // other .mt-clip — draggable (Select tool), deletable (Delete key), and
+  // recorded in the undo history.
+  function addTextClipToTimeline(text, opts){
+    opts = opts || {};
+    var track = document.querySelector('.mt-track-text');
+    if (!track){ showToast('Text track not found'); return null; }
+    var safeText = String(text || '').slice(0, 200) || 'Text';
+    var dur = parseFloat(opts.duration) || 5;
+    if (dur < 1) dur = 1;
+    // opts.left / opts.width (strings like '120px') let callers drop a
+    // text clip at a specific timeline position — used by the inline
+    // captions flow to align each phrase to its transcript time.
+    var explicitWidth = parseFloat(opts.width);
+    var width = isFinite(explicitWidth) && explicitWidth > 0
+      ? explicitWidth
+      : Math.max(40, dur * TIMELINE_PX_PER_SEC);
+    var explicitLeft = parseFloat(opts.left);
+    var leftPos = isFinite(explicitLeft) && explicitLeft >= 0
+      ? explicitLeft
+      : findRightmostClipEnd(track);
+
+    // ── Task #19: Auto-trim preceding captions to prevent overlap ──
+    // Any existing T1 clip whose right edge extends past the new clip's
+    // left boundary gets trimmed so it ends exactly at (or just before)
+    // the new clip's start. Minimum width floor: 40px (2 frames at 20fps
+    // default pxPerSec) — if trimming would leave less than that, we
+    // shift the new clip's left instead.
+    var MIN_CAP_WIDTH = 40;
+    Array.from(track.querySelectorAll('.mt-clip')).forEach(function(existing){
+      var eL = parseFloat(existing.style.left)  || 0;
+      var eW = parseFloat(existing.style.width) || 0;
+      var eR = eL + eW;
+      if (eR > leftPos && eL < leftPos){
+        // Existing caption's end extends into (or overlaps with the start of)
+        // the new caption. Trim its width.
+        var newW = leftPos - eL;
+        if (newW >= MIN_CAP_WIDTH){
+          existing.style.width = newW + 'px';
+          // Update duration dataset to reflect the trimmed width
+          if (existing.dataset.duration){
+            existing.dataset.duration = String(newW / TIMELINE_PX_PER_SEC);
+          }
+        } else {
+          // Trimming would leave it too short — keep existing intact and
+          // push the new caption to start after it instead.
+          leftPos = eR;
+        }
+      }
+    });
+
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip mt-clip-text';
+    clip.textContent = safeText.slice(0, 30);
+    clip.dataset.fileName    = safeText;
+    clip.dataset.clipType    = 'text';
+    clip.dataset.textContent = safeText;
+    clip.dataset.duration    = String(dur);
+    // Task #49 — creation-order stamp (text clips stack by arrival too)
+    clip.dataset.addedAt = String(Date.now() * 1000 + (addTextClipToTimeline._seq = ((addTextClipToTimeline._seq || 0) + 1)));
+    clip.style.zIndex = String(100 + (addTextClipToTimeline._seq % 1000));
+    // Task #70 — Brand Kit caption style is the default for new T1 clips
+    // unless the caller explicitly overrode any of the typography fields.
+    var bcs = (window.__brandCaptionStyle) || null;
+    var defFontSize = (opts.fontSize != null) ? opts.fontSize : (bcs && bcs.size) || null;
+    var defTextColor = opts.textColor || (bcs && bcs.color) || null;
+    var defFontFamily = opts.fontFamily || (bcs && bcs.font) || null;
+    if (defFontSize != null) clip.dataset.fontSize = String(defFontSize);
+    if (defTextColor)        clip.dataset.textColor = defTextColor;
+    if (defFontFamily)       clip.dataset.fontFamily = defFontFamily;
+    if (opts.position)       clip.dataset.position = opts.position;
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.padding = '4px 8px';
+    clip.style.fontSize = '10px';
+    clip.style.overflow = 'hidden';
+    clip.style.textOverflow = 'ellipsis';
+    clip.style.whiteSpace = 'nowrap';
+    clip.style.userSelect = 'none';
+    clip.style.background = 'linear-gradient(135deg, #facc15, #eab308)';
+    clip.style.color = '#0b0816';
+    clip.style.fontWeight = '700';
+    track.appendChild(clip);
+    makeClipInteractive(clip);
+    updateTimelineInfo();
+    pushTimelineHistory();
+    // Auto-enable PGM on first clip (same behaviour as addClipToTimeline).
+    if (!_progAutoEnabledOnce && !_progEnabled){
+      _progAutoEnabledOnce = true;
+      try { toggleProgramMonitor(); } catch(_){}
+    }
+    showToast('Text added: ' + safeText.slice(0, 30));
+    return clip;
+  }
+  try { window.addTextClipToTimeline = addTextClipToTimeline; } catch(_){}
+
+  // ── Motion effects on M1 ──
+  // A "motion effect" is a time-varying transform applied to whatever V1
+  // visual is at the playhead: zoom, pan, fade, rotate, shake, etc. Each
+  // motion effect lives as its own clip on the .mt-track-music row (M1)
+  // so the user can place / drag / delete them like any other clip.
+  var MOTION_EFFECTS = {
+    'zoom-in':    { label: 'Zoom In',    icon: '\ud83d\udd0d' },
+    'zoom-out':   { label: 'Zoom Out',   icon: '\ud83d\udd0e' },
+    'pan-left':   { label: 'Pan Left',   icon: '\u2b05\ufe0f' },
+    'pan-right':  { label: 'Pan Right',  icon: '\u27a1\ufe0f' },
+    'fade-in':    { label: 'Fade In',    icon: '\ud83c\udf11' },
+    'fade-out':   { label: 'Fade Out',   icon: '\ud83c\udf15' },
+    'shake':      { label: 'Shake',      icon: '\ud83c\udf00' },
+    'rotate':     { label: 'Rotate',     icon: '\ud83d\udd04' }
+  };
+
+  function addMotionClipToTimeline(effectKey, opts){
+    opts = opts || {};
+    var effect = MOTION_EFFECTS[effectKey];
+    if (!effect){ showToast('Unknown motion effect'); return null; }
+    var track = document.querySelector('.mt-track-music');
+    if (!track){ showToast('Motion track not found'); return null; }
+    var dur = parseFloat(opts.duration) || 3;
+    if (dur < 0.5) dur = 0.5;
+    var width = Math.max(40, dur * TIMELINE_PX_PER_SEC);
+    var leftPos = findRightmostClipEnd(track);
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip mt-clip-motion';
+    clip.textContent = effect.icon + ' ' + effect.label;
+    clip.dataset.fileName     = effect.label;
+    clip.dataset.clipType     = 'motion';
+    clip.dataset.motionEffect = effectKey;
+    clip.dataset.duration     = String(dur);
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.padding = '4px 8px';
+    clip.style.fontSize = '10px';
+    clip.style.overflow = 'hidden';
+    clip.style.textOverflow = 'ellipsis';
+    clip.style.whiteSpace = 'nowrap';
+    clip.style.userSelect = 'none';
+    clip.style.background = 'linear-gradient(135deg, #ec4899, #f472b6)';
+    clip.style.color = '#fff';
+    clip.style.fontWeight = '700';
+    track.appendChild(clip);
+    makeClipInteractive(clip);
+    updateTimelineInfo();
+    pushTimelineHistory();
+    if (!_progAutoEnabledOnce && !_progEnabled){
+      _progAutoEnabledOnce = true;
+      try { toggleProgramMonitor(); } catch(_){}
+    }
+    showToast('Motion: ' + effect.label);
+    return clip;
+  }
+  try { window.addMotionClipToTimeline = addMotionClipToTimeline; } catch(_){}
+
+  // ── FX track clips ─────────────────────────────────────────────
+  // When the user toggles a Visual Effect (Vignette/Glow/Grain/Sharpen/
+  // Chromatic/Pixelate) or picks a Color Grade preset, we ALSO drop a
+  // labeled clip onto the .mt-track-fx row so the effect is visible on
+  // the timeline. The actual effect still rides on the V1 clip's dataset
+  // (that's what the render + export pipelines read); the FX-track clip
+  // is purely an indicator the user can drag, delete, etc.
+  function addFxIndicatorClip(label, icon, opts){
+    opts = opts || {};
+    var track = document.querySelector('.mt-track-fx');
+    if (!track) return null;
+    // Span the ACTIVE clip's time range when possible (so the FX marker
+    // visually aligns with the V1 clip the effect applies to).
+    var active = opts.active || getActiveClip();
+    var leftPos, width;
+    if (active){
+      leftPos = parseFloat(active.style.left)  || 0;
+      width   = parseFloat(active.style.width) || (3 * TIMELINE_PX_PER_SEC);
+    } else {
+      width   = Math.max(40, (opts.duration || 3) * TIMELINE_PX_PER_SEC);
+      leftPos = findRightmostClipEnd(track);
+    }
+    var clip = document.createElement('div');
+    clip.className = 'mt-clip mt-clip-fx';
+    clip.textContent = (icon ? icon + ' ' : '') + label;
+    clip.dataset.fileName = label;
+    clip.dataset.clipType = 'fx';
+    clip.dataset.fxLabel  = label;
+    // fxKey / fxValue carry the actual dataset flag this clip represents
+    // so preview + export can apply the effect to every V1 clip whose
+    // time range overlaps this FX-track clip (drag it to span multiple
+    // V1 clips to broadcast the effect).
+    if (opts.fxKey)   clip.dataset.fxKey   = opts.fxKey;
+    if (opts.fxValue) clip.dataset.fxValue = String(opts.fxValue);
+    clip.dataset.duration = String(width / TIMELINE_PX_PER_SEC);
+    clip.style.left = leftPos + 'px';
+    clip.style.width = width + 'px';
+    clip.style.padding = '4px 8px';
+    clip.style.fontSize = '10px';
+    clip.style.overflow = 'hidden';
+    clip.style.textOverflow = 'ellipsis';
+    clip.style.whiteSpace = 'nowrap';
+    clip.style.userSelect = 'none';
+    clip.style.background = 'linear-gradient(135deg, #34d399, #10b981)';
+    clip.style.color = '#0b0816';
+    clip.style.fontWeight = '700';
+    track.appendChild(clip);
+    makeClipInteractive(clip);
+    updateTimelineInfo();
+    return clip;
+  }
+  try { window.addFxIndicatorClip = addFxIndicatorClip; } catch(_){}
+
+  // ── Clip-scope actions for the EDIT sidebar ──
+  // Every EDIT tool operates on the "active clip" — preference order:
+  //   1. The .mt-clip.selected on any track (from the Select tool).
+  //   2. The clip under the playhead on V1.
+  // If neither exists, the tool shows a friendly "Select a clip first" toast.
+  function getActiveClip(){
+    var sel = document.querySelector('.mt-clip.selected');
+    if (sel) return sel;
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return null;
+    var phX = parseFloat(ph.style.left) || 0;
+    var hit = getClipAtPlayheadX(phX);
+    return hit ? hit.clip : null;
+  }
+  // Multi-clip target: every .selected clip; falls back to the single
+  // clip under the playhead so single-clip workflows keep working when
+  // nothing is explicitly selected.
+  function getActiveClips(){
+    var sels = Array.from(document.querySelectorAll('.mt-clip.selected'));
+    if (sels.length) return sels;
+    var one = getActiveClip();
+    return one ? [one] : [];
+  }
+  function withActiveClip(successMsg, fn){
+    // Single-clip path preserved for handlers that contain their own
+    // prompt() calls — broadcasting an interactive prompt N times is
+    // worse UX than editing one clip. Handlers that WANT multi-clip
+    // broadcast should call promptToActiveClips / toggleDatasetForAll
+    // directly (see e.g. clipActionFxBlur, toggleClipFlag).
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return null; }
+    fn(clip);
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    if (successMsg) showToast(successMsg);
+    return clip;
+  }
+  // Prompt-once helper: gathers ONE input from the user (using the first
+  // active clip's current value as the default), then applies the
+  // resulting value to every selected clip via applyFn(clip, value).
+  // Used by all numeric / preset handlers so the user isn't asked the
+  // same question N times when broadcasting an edit.
+  function promptToActiveClips(promptFn, applyFn, successFmt){
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    var value = promptFn(clips[0]);
+    if (value === null || value === undefined) return;
+    clips.forEach(function(c){ try { applyFn(c, value); } catch(_){} });
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    if (successFmt){
+      var msg = String(successFmt).replace('{val}', value);
+      var suffix = clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : '';
+      showToast(msg + suffix);
+    }
+  }
+  // Flip sign / toggle helpers
+  function boolDatasetToggle(clip, key){
+    var cur = clip.dataset[key] === 'true';
+    clip.dataset[key] = cur ? 'false' : 'true';
+    return !cur;
+  }
+  // Multi-clip toggle: target state is the opposite of the FIRST clip's
+  // current state (predictable "turn this on for everyone" behaviour).
+  function toggleDatasetForAll(clips, key){
+    if (!clips.length) return false;
+    var first = clips[0];
+    var on = first.dataset[key] !== 'true';
+    clips.forEach(function(c){ c.dataset[key] = on ? 'true' : 'false'; });
+    return on;
+  }
+
+  // ── Clip Tools ──
+  function clipActionTrim(){
+    withActiveClip(null, function(clip){
+      var curIn  = parseFloat(clip.dataset.trimIn)  || 0;
+      var curOut = parseFloat(clip.dataset.trimOut) || parseFloat(clip.dataset.duration) || 0;
+      var input = prompt('Trim in/out in seconds (e.g. 2,10 — leave blank to reset)',
+        curIn + ',' + curOut);
+      if (input === null) return;
+      if (!input.trim()){ delete clip.dataset.trimIn; delete clip.dataset.trimOut; showToast('Trim reset'); return; }
+      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
+      if (!isFinite(parts[0]) || !isFinite(parts[1]) || parts[1] <= parts[0]){
+        showToast('Invalid trim values'); return;
+      }
+      clip.dataset.trimIn  = String(parts[0]);
+      clip.dataset.trimOut = String(parts[1]);
+      showToast('Trim ' + parts[0] + 's \u2192 ' + parts[1] + 's');
+    });
+  }
+  // Visual Slip Edit: shift the media WITHIN the clip's duration
+  // (i.e. trimIn and trimOut move together by the same amount), so the
+  // clip keeps its timeline length but shows a different portion of the
+  // source media. Useful when you've locked down clip duration for a
+  // beat-sync or caption cue but still want to nudge which frames play.
+  //
+  // Opens a slider popover: dragging left rewinds the visible window,
+  // right fast-forwards. Range is clamped by the source media's
+  // duration so you can't slip off either end.
+  function clipActionSlipEdit(){
+    var existing = document.getElementById('slipPopover');
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    if (typeof closeOtherPopovers === 'function') closeOtherPopovers('slipPopover');
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+
+    var duration = parseFloat(clip.dataset.duration) || 0;   // clip's on-timeline length
+    var srcDur   = parseFloat(clip.dataset.srcDuration)
+                || parseFloat(clip.dataset.sourceDuration)
+                || duration;
+    var origIn   = parseFloat(clip.dataset.trimIn)  || 0;
+    var origOut  = parseFloat(clip.dataset.trimOut) || duration;
+    var span     = origOut - origIn;                         // stays constant across slips
+
+    // Slip range: how far we can push trimIn without overflowing source
+    var minIn = 0;
+    var maxIn = Math.max(0, srcDur - span);
+    if (maxIn <= 0){
+      showToast('Source media is too short to slip');
+      return;
+    }
+
+    var pop = document.createElement('div');
+    pop.id = 'slipPopover';
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
+      'border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:280px;' +
+      'box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+    pop.innerHTML =
+      '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:6px">SLIP EDIT</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Shift which part of the source plays without changing clip length.</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+        '<span style="font-size:10px;color:#8886a0;min-width:46px">In (s)</span>' +
+        '<input type="range" id="slipRange" min="' + minIn.toFixed(3) + '" max="' + maxIn.toFixed(3) +
+        '" step="0.01" value="' + origIn.toFixed(3) + '" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="slipValue" style="font-size:11px;font-weight:600;color:#fde047;min-width:46px;text-align:right">' + origIn.toFixed(2) + '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button id="slipReset" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Reset</button>' +
+        '<button id="slipClose" style="flex:1;padding:6px;background:rgba(139,92,246,.3);border:1px solid #a78bfa;border-radius:6px;color:#fff;font-size:11px;font-weight:600;cursor:pointer">Done</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+
+    var range  = pop.querySelector('#slipRange');
+    var value  = pop.querySelector('#slipValue');
+    var reset  = pop.querySelector('#slipReset');
+    var close  = pop.querySelector('#slipClose');
+
+    // Live-update trimIn/trimOut as user drags; preview rebakes on 'change'
+    // (not 'input') to avoid hammering the server with rebake requests
+    // during the drag.
+    range.addEventListener('input', function(){
+      var newIn = parseFloat(range.value);
+      var newOut = newIn + span;
+      clip.dataset.trimIn  = newIn.toFixed(3);
+      clip.dataset.trimOut = newOut.toFixed(3);
+      value.textContent = newIn.toFixed(2);
+    });
+    range.addEventListener('change', function(){
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+    });
+    reset.addEventListener('click', function(){
+      clip.dataset.trimIn  = origIn.toFixed(3);
+      clip.dataset.trimOut = origOut.toFixed(3);
+      range.value = origIn.toFixed(3);
+      value.textContent = origIn.toFixed(2);
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Slip reset');
+    });
+    close.addEventListener('click', function(){ pop.remove(); showToast('Slip applied'); });
+  }
+  function clipActionSplit(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var phX = parseFloat(ph.style.left) || 0;
+    var l = parseFloat(clip.style.left) || 0;
+    var w = parseFloat(clip.style.width) || 0;
+    if (phX <= l + 6 || phX >= l + w - 6){
+      showToast('Move the playhead into the clip to split');
+      return;
+    }
+    razorSplit(clip, phX - l);
+  }
+  function clipActionSpeed(){
+    promptToActiveClips(
+      function(c){
+        var cur = parseFloat(c.dataset.speed) || 1;
+        var input = prompt('Playback speed (1.0 = normal, 0.5 = half, 2.0 = 2x)', String(cur));
+        if (input === null) return null;
+        var val = parseFloat(input);
+        if (!isFinite(val) || val <= 0){ showToast('Invalid speed'); return null; }
+        return val;
+      },
+      function(c, v){ c.dataset.speed = String(v); },
+      'Speed {val}x'
+    );
+  }
+  function clipActionCrop(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (clip.dataset.clipType !== 'vid' && clip.dataset.clipType !== 'img'){
+      showToast('Crop is only supported on video / image clips');
+      return;
+    }
+    enterCropMode(clip);
+    return;
+    // Original prompt fallback (kept commented for reference)
+    /* eslint-disable no-unreachable */
+    promptToActiveClips(
+      function(c){
+        var input = prompt('Crop as x,y,w,h percent (0-100) \u2014 blank to reset',
+          c.dataset.crop || '0,0,100,100');
+        if (input === null) return null;
+        if (!input.trim()) return 'reset';
+        var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
+        if (parts.length !== 4 || parts.some(function(v){ return !isFinite(v); })){
+          showToast('Invalid crop'); return null;
+        }
+        return parts.join(',');
+      },
+      function(c, v){
+        if (v === 'reset') delete c.dataset.crop;
+        else c.dataset.crop = v;
+      },
+      'Crop {val}'
+    );
+  }
+  // ── Transform ──
+  // Task #54 — Resize uses the same slider popover as the FX sliders
+  // (Blur/Brightness/Contrast/Saturation). Live preview on drag, neutral
+  // of 1.0 clears the dataset key, multi-clip broadcast, Reset button,
+  // toggle-close. Range: 0.1× to 3.0× in 0.05 steps.
+  function clipActionResize(){
+    openFxSliderPopover('scale', 'Resize', 0.1, 3.0, 0.05, 1, '\u00d7', '\ud83d\udcd0');
+  }
+  function clipActionRotate(){
+    // Relative 90\u00B0 step \u2014 each clip rotates by +90 from its own
+    // current value (rather than all set to the same absolute degree).
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    clips.forEach(function(c){
+      var cur = parseFloat(c.dataset.rotate) || 0;
+      c.dataset.rotate = String((cur + 90) % 360);
+    });
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    showToast('Rotated 90\u00B0' + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+  }
+  function clipActionFlip(){
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    // All clips flip to the inverse of the FIRST clip's current state
+    var on = toggleDatasetForAll(clips, 'flipH');
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    showToast('Flipped' + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+  }
+  // Direct Position: enters a "drag-to-position" mode on the Program
+  // Monitor. While active, the user can grab the preview frame and drag
+  // it anywhere inside the PGM — live CSS transform gives instant visual
+  // feedback, and on mouseup we bake the new offsetX/offsetY into the
+  // active clip's dataset (pixels in source-media coordinates) and
+  // request a server-side preview rebake so the change sticks.
+  //
+  // Click the Position button once to enter, again to exit. ESC also
+  // exits. We intentionally avoid the old prompt() flow because typing
+  // pixel coordinates by hand is a bad UX for creators.
+  function clipActionPosition(){
+    // Toggle off if we're already in drag-position mode
+    if (window.__posDragCleanup){
+      window.__posDragCleanup();
+      return;
+    }
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+
+    var container = document.querySelector('.video-container') || document.getElementById('videoPreviewArea');
+    var preview   = document.querySelector('#previewImage') ||
+                    document.querySelector('.video-container img') ||
+                    document.getElementById('videoPlayer');
+    if (!container || !preview){ showToast('Preview not ready'); return; }
+
+    // Overlay hint so the user knows they're in drag mode
+    var hint = document.createElement('div');
+    hint.id = 'posDragHint';
+    hint.textContent = '🤚 Drag to reposition — click Position again (or press Esc) to exit';
+    hint.style.cssText = 'position:absolute;top:6px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(108,58,237,.92);color:#fff;padding:6px 12px;border-radius:14px;' +
+      'font-size:11px;font-weight:600;letter-spacing:.3px;z-index:100;pointer-events:none;' +
+      'box-shadow:0 4px 14px rgba(0,0,0,.4)';
+    var origContainerPos = container.style.position || '';
+    if (!origContainerPos) container.style.position = 'relative';
+    container.appendChild(hint);
+
+    // Visual cue: grab cursor on the preview
+    var origCursor = preview.style.cursor || '';
+    preview.style.cursor = 'grab';
+
+    var startX, startY, origX, origY, dragging = false;
+    // Conversion factor: PGM pixels → source-media pixels
+    // We approximate by the ratio of the clip's source resolution
+    // (if known) to the on-screen preview size.
+    function conversionFactor(){
+      var pr = preview.getBoundingClientRect();
+      var srcW = clip.dataset.srcWidth  ? parseFloat(clip.dataset.srcWidth)  : (preview.naturalWidth  || pr.width);
+      var srcH = clip.dataset.srcHeight ? parseFloat(clip.dataset.srcHeight) : (preview.naturalHeight || pr.height);
+      return {
+        sx: (srcW && pr.width)  ? srcW / pr.width  : 1,
+        sy: (srcH && pr.height) ? srcH / pr.height : 1
+      };
+    }
+
+    function onDown(e){
+      if (e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      origX = parseFloat(clip.dataset.offsetX) || 0;
+      origY = parseFloat(clip.dataset.offsetY) || 0;
+      preview.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
+    function onMove(e){
+      if (!dragging) return;
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+      // Live CSS transform for instant visual feedback (the server
+      // doesn't need to know — we re-bake on mouseup)
+      preview.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    }
+    function onUp(e){
+      if (!dragging) return;
+      dragging = false;
+      preview.style.cursor = 'grab';
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+      // Convert PGM-pixel delta into source-media pixels and bake
+      var conv = conversionFactor();
+      var newX = origX + Math.round(dx * conv.sx);
+      var newY = origY + Math.round(dy * conv.sy);
+      clip.dataset.offsetX = String(newX);
+      clip.dataset.offsetY = String(newY);
+      // Clear the live transform now that the bake applies
+      preview.style.transform = '';
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Position: ' + newX + ', ' + newY);
+      if (typeof pushTimelineHistory === 'function'){
+        try { pushTimelineHistory(); } catch(_){}
+      }
+    }
+    function onKey(e){
+      if (e.key === 'Escape' && window.__posDragCleanup){ window.__posDragCleanup(); }
+    }
+
+    preview.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+    window.addEventListener('keydown',   onKey);
+
+    window.__posDragCleanup = function(){
+      try { hint.remove(); } catch(_){}
+      preview.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup',   onUp);
+      window.removeEventListener('keydown',   onKey);
+      preview.style.cursor = origCursor;
+      preview.style.transform = '';
+      if (!origContainerPos && container.style.position === 'relative'){
+        container.style.position = '';
+      }
+      window.__posDragCleanup = null;
+      showToast('Position mode off');
+    };
+
+    showToast('Drag to reposition the clip');
+  }
+  // ── Text clip editors ──
+  // Target selection rules:
+  //   • If 2+ text clips are .selected, edit ALL of them.
+  //   • Else if exactly 1 text clip is .selected, edit just it.
+  //   • Else (nothing selected), confirm before applying to EVERY text
+  //     clip on T1 — useful for styling an entire caption run at once.
+  function withTextClipsTarget(fn){
+    var selAll = Array.from(document.querySelectorAll('.mt-clip.mt-clip-text.selected'));
+    var all    = Array.from(document.querySelectorAll('.mt-track-text .mt-clip'));
+    if (selAll.length >= 1){ fn(selAll); return; }
+    if (all.length === 0){ showToast('Add a text clip first'); return; }
+    if (confirm('No text clip is selected. Apply to ALL ' + all.length + ' text clips on T1?')){
+      fn(all);
+    }
+  }
+  function clipActionTextFontSize(){
+    withTextClipsTarget(function(clips){
+      var first = clips[0];
+      var cur = parseInt(first.dataset.fontSize, 10) || 10;
+      var input = prompt('Font size in pixels (8-200)', String(cur));
+      if (input === null) return;
+      var v = parseInt(input, 10);
+      if (!isFinite(v) || v < 8 || v > 200){
+        showToast('Enter a number between 8 and 200');
+        return;
+      }
+      clips.forEach(function(c){ c.dataset.fontSize = String(v); });
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast('Font size: ' + v + 'px' + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+    });
+  }
+  function clipActionTextColor(){
+    withTextClipsTarget(function(clips){
+      var first = clips[0];
+      var cur = first.dataset.textColor || '#ffffff';
+      var input = prompt('Text color (hex, e.g. #ffffff, #ffcc00)', cur);
+      if (input === null) return;
+      var v = String(input).trim();
+      if (!/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)){
+        showToast('Invalid color \u2014 use #rgb or #rrggbb');
+        return;
+      }
+      clips.forEach(function(c){ c.dataset.textColor = v; });
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast('Text color: ' + v + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+    });
+  }
+  // Task #64 \u2014 Text Position 3\u00d73 grid popover.
+  // Replaces the prompt() with a visual 9-cell grid. Each cell maps to
+  // a `vertical-horizontal` position string (e.g. 'top-left', 'center',
+  // 'bottom-right'). Click instantly applies + previews.
+  // Schema: dataset.position is one of:
+  //   top-left | top | top-right
+  //   left     | center | right
+  //   bottom-left | bottom | bottom-right
+  // Legacy values 'top'/'center'/'bottom' continue to work (horizontal
+  // defaults to center).
+  function clipActionTextPosition(){
+    var existing = document.getElementById('textPositionPopover');
+    if (existing instanceof Element && existing.isConnected){ existing.remove(); return; }
+    if (existing){ try { existing.remove(); } catch(_){} }
+    if (typeof closeOtherPopovers === 'function') closeOtherPopovers('textPositionPopover');
+
+    withTextClipsTarget(function(clips){
+      var first = clips[0];
+      var cur = String(first.dataset.position || 'bottom').toLowerCase();
+      // Normalize legacy single-word values
+      if (cur === 'top')    cur = 'top';
+      else if (cur === 'center') cur = 'center';
+      else if (cur === 'bottom') cur = 'bottom';
+
+      var pop = document.createElement('div');
+      pop.id = 'textPositionPopover';
+      pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
+        'border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:240px;' +
+        'box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+      // 9 cells: [v,h,id,label,iconChar]
+      var CELLS = [
+        ['top','left','top-left','\u2196','Top Left'],
+        ['top','center','top','\u2191','Top'],
+        ['top','right','top-right','\u2197','Top Right'],
+        ['center','left','left','\u2190','Left'],
+        ['center','center','center','\u25cf','Center'],
+        ['center','right','right','\u2192','Right'],
+        ['bottom','left','bottom-left','\u2199','Bottom Left'],
+        ['bottom','center','bottom','\u2193','Bottom'],
+        ['bottom','right','bottom-right','\u2198','Bottom Right']
+      ];
+      var html = '<div style="font-size:11px;color:#fde047;font-weight:700;letter-spacing:.5px;margin-bottom:8px">' +
+        '\ud83d\udccd TEXT POSITION</div>' +
+        '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Pick where the caption sits inside the video frame.</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:rgba(0,0,0,.25);padding:8px;border-radius:8px">';
+      CELLS.forEach(function(cell){
+        var on = (cell[2] === cur);
+        html += '<button data-tpos="' + cell[2] + '" title="' + cell[4] + '" ' +
+          'style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;' +
+          'background:' + (on ? 'rgba(139,92,246,.35)' : 'rgba(255,255,255,.04)') + ';' +
+          'border:1px solid ' + (on ? '#a78bfa' : 'rgba(255,255,255,.1)') + ';' +
+          'border-radius:6px;color:' + (on ? '#fff' : '#a78bfa') + ';font-size:18px;cursor:pointer;' +
+          'transition:all .15s">' + cell[3] + '</button>';
+      });
+      html += '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:10px">' +
+          '<button id="tpClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '</div>';
+      pop.innerHTML = html;
+      document.body.appendChild(pop);
+
+      Array.from(pop.querySelectorAll('[data-tpos]')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var pos = btn.getAttribute('data-tpos');
+          clips.forEach(function(c){ c.dataset.position = pos; });
+          try { syncPreviewToPlayhead(); } catch(_){}
+          pushTimelineHistory();
+          // Update visual selection state
+          Array.from(pop.querySelectorAll('[data-tpos]')).forEach(function(o){
+            var sel = o.getAttribute('data-tpos') === pos;
+            o.style.background  = sel ? 'rgba(139,92,246,.35)' : 'rgba(255,255,255,.04)';
+            o.style.borderColor = sel ? '#a78bfa' : 'rgba(255,255,255,.1)';
+            o.style.color       = sel ? '#fff' : '#a78bfa';
+          });
+          var label = pos.replace(/-/g, ' ');
+          showToast('Text position: ' + label + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+        });
+      });
+      pop.querySelector('#tpClose').addEventListener('click', function(){ pop.remove(); });
+    });
+  }
+  // ── Timing ──
+  // Reverse: toggles clip.dataset.reverse. FFmpeg export pipeline reads
+  // this flag and applies `reverse` to video + `areverse` to audio at
+  // export time (routes/video-editor.js buildScalePad block, line ~6684).
+  // We also:
+  //   • invalidate the preview cache so the next preview render re-bakes
+  //     the clip (preview is server-side per-clip, so reverse DOES show
+  //     up in the PGM once the cache refreshes).
+  //   • stamp a CSS class on the timeline clip so users see a visible
+  //     indicator (◀ badge) when reverse is enabled.
+  // Task #55 — Toggle reverse playback.
+  // ON  → POST /reverse-clip to build a reversed MP4 + swap the clip's
+  //       mediaUrl to the reversed file so the <video> element plays it
+  //       forward (which LOOKS reversed). Stashes the original URL on
+  //       dataset.originalMediaUrl for the toggle-off path.
+  // OFF → restore dataset.originalMediaUrl.
+  // Export side already handles dataset.reverse via the `reverse` +
+  // `areverse` FFmpeg filters, so re-toggling ON at export time is idempotent.
+  async function clipActionReverse(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (!clip.classList.contains('mt-clip-video')){ showToast('Reverse is for video clips'); return; }
+    var wasOn = clip.dataset.reverse === 'true';
+    if (wasOn){
+      // Restore original mediaUrl if we previously swapped in a reversed copy
+      if (clip.dataset.originalMediaUrl){
+        clip.dataset.mediaUrl = clip.dataset.originalMediaUrl;
+        delete clip.dataset.originalMediaUrl;
+      }
+      delete clip.dataset.reverse;
+      clip.classList.remove('clip-reverse-on');
+      _lastPreviewUrl = null;
+      // Rebuild filmstrip from the restored source
+      try {
+        var oldFS = clip.querySelector('.v10-filmstrip');
+        var oldLb = clip.querySelector('.v10-fs-label');
+        if (oldFS) oldFS.remove();
+        if (oldLb) oldLb.remove();
+        if (typeof window.buildClipFilmstrip === 'function'){
+          window.buildClipFilmstrip(clip, clip.dataset.mediaUrl, parseFloat(clip.dataset.duration) || 0);
+        }
+      } catch(_){}
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Reverse off');
+      pushTimelineHistory();
+      return;
+    }
+    // Turning ON — render reversed copy server-side
+    var mediaUrl = clip.dataset.mediaUrl;
+    if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+      showToast('Upload this file via the sidebar first, then try again');
+      return;
+    }
+    showToast('Reversing clip\u2026 (this can take a moment)');
+    try {
+      var r = await fetch('/video-editor/reverse-clip', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: mediaUrl })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Reverse failed');
+      // Stash original + swap to reversed
+      clip.dataset.originalMediaUrl = mediaUrl;
+      clip.dataset.mediaUrl = d.mediaUrl;
+      clip.dataset.reverse = 'true';
+      clip.classList.add('clip-reverse-on');
+      // Rebuild filmstrip from the reversed source
+      try {
+        var oldFS2 = clip.querySelector('.v10-filmstrip');
+        var oldLb2 = clip.querySelector('.v10-fs-label');
+        if (oldFS2) oldFS2.remove();
+        if (oldLb2) oldLb2.remove();
+        if (typeof window.buildClipFilmstrip === 'function'){
+          window.buildClipFilmstrip(clip, d.mediaUrl, d.duration || parseFloat(clip.dataset.duration) || 0);
+        }
+      } catch(_){}
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      showToast('Reverse on \u2014 preview plays backward');
+      pushTimelineHistory();
+    } catch (err){
+      showToast('Reverse error: ' + (err.message || err));
+    }
+  }
+  function clipActionLoop(){
+    withActiveClip(null, function(clip){
+      var now = boolDatasetToggle(clip, 'loop');
+      showToast('Loop ' + (now ? 'on' : 'off'));
+    });
+  }
+
+  // ── Smart Resize (output aspect-ratio presets + optional face track) ──
+  // Opens a small popover with social-media aspect ratio presets. Selecting
+  // a preset:
+  //   1. stores the aspect on window.__exportAspect so the export handler
+  //      swaps the hardcoded 16:9 calc for the chosen ratio;
+  //   2. paints a letterbox mask over the PGM preview so the creator can
+  //      see what their final crop window will look like;
+  //   3. if "AI Face Track" is on, runs face detection on the active V1
+  //      video clip (browser FaceDetector when available, else a center
+  //      fallback) and bakes a clip.dataset.crop that frames the face.
+  // ── Popover manager (Task #25) ───────────────────────────────────
+  // Closes any competing floating popover before opening a new one, so
+  // users never see two right-anchored popovers stacked on top of each
+  // other. Also hardens against ghost-DOM references that pass a truthy
+  // check but aren't real Elements (a Chrome isolated-world artifact).
+  function closeOtherPopovers(keepId){
+    ['srPopover', 'kfPopover', 'fxSliderPopover', 'slipPopover'].forEach(function(id){
+      if (id === keepId) return;
+      var el = document.getElementById(id);
+      if (el && el instanceof Element){ try { el.remove(); } catch(_){} }
+    });
+  }
+
+  function clipActionSmartResize(){
+    // Toggle off if already open — Element check guards against the
+    // Chrome isolated-world ghost-DOM where getElementById can return
+    // a truthy non-Element shim that breaks isConnected checks.
+    var existing = document.getElementById('srPopover');
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    // Close any competing right-anchored popovers so only one is visible
+    closeOtherPopovers('srPopover');
+
+    var cur = window.__exportAspect || '16:9';
+    var pop = document.createElement('div');
+    pop.id = 'srPopover';
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:250px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+    pop.innerHTML =
+      '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:8px">SMART RESIZE</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Sets the output aspect for your export.</div>' +
+      '<div id="srPresetRow" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>' +
+      '<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#e2e0f0;cursor:pointer;padding:8px;background:rgba(124,58,237,.08);border-radius:6px">' +
+        '<input type="checkbox" id="srFaceTrack" style="accent-color:#a78bfa"/>' +
+        '<span>\ud83c\udfaf AI Face Track <span style="color:#8886a0;font-size:9px">(centers on subject)</span></span>' +
+      '</label>' +
+      '<div style="display:flex;gap:6px;margin-top:10px">' +
+        '<button id="srClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+
+    var presets = [
+      { ratio:'16:9', label:'16:9 YouTube',  w:1280, h:720  },
+      { ratio:'9:16', label:'9:16 Reels',    w:720,  h:1280 },
+      { ratio:'1:1',  label:'1:1 Square',    w:1080, h:1080 },
+      { ratio:'4:5',  label:'4:5 Portrait',  w:1080, h:1350 }
+    ];
+    var row = pop.querySelector('#srPresetRow');
+    presets.forEach(function(p){
+      var b = document.createElement('button');
+      var on = (p.ratio === cur);
+      b.style.cssText = 'padding:8px 6px;background:' + (on ? 'rgba(139,92,246,.3)' : 'rgba(255,255,255,.04)') +
+        ';border:1px solid ' + (on ? '#a78bfa' : 'rgba(255,255,255,.1)') +
+        ';border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;text-align:left';
+      b.textContent = p.label;
+      b.addEventListener('click', function(){
+        window.__exportAspect = p.ratio;
+        window.__exportWidth  = p.w;
+        window.__exportHeight = p.h;
+        applySmartResizePreview(p.ratio);
+        var faceTrack = pop.querySelector('#srFaceTrack').checked;
+        if (faceTrack){
+          runFaceTrackCrop(p.ratio).then(function(msg){
+            showToast('Smart Resize ' + p.ratio + ' \u00b7 ' + msg);
+          }).catch(function(err){
+            showToast('Smart Resize ' + p.ratio + ' \u00b7 face track unavailable');
+          });
+        } else {
+          showToast('Smart Resize: ' + p.label);
+        }
+        // Redraw preset highlights
+        pop.remove();
+        clipActionSmartResize();
+      });
+      row.appendChild(b);
+    });
+
+    pop.querySelector('#srClose').addEventListener('click', function(){ pop.remove(); });
+  }
+
+  // Paint a letterbox/pillarbox mask over the PGM so the user can see
+  // the target crop window relative to the source aspect.
+  function applySmartResizePreview(ratio){
+    var container = document.querySelector('.video-container') || document.getElementById('videoPreviewArea');
+    if (!container) return;
+    var mask = document.getElementById('srAspectMask');
+    if (!mask){
+      mask = document.createElement('div');
+      mask.id = 'srAspectMask';
+      mask.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:50;box-shadow:inset 0 0 0 9999px rgba(0,0,0,0);transition:box-shadow .2s';
+      container.style.position = container.style.position || 'relative';
+      container.appendChild(mask);
+    }
+    var parts = ratio.split(':').map(Number);
+    var targetRatio = parts[0] / parts[1];
+    var cr = container.getBoundingClientRect();
+    var containerRatio = cr.width / cr.height;
+    var innerW, innerH;
+    if (targetRatio > containerRatio){
+      innerW = cr.width;
+      innerH = cr.width / targetRatio;
+    } else {
+      innerH = cr.height;
+      innerW = cr.height * targetRatio;
+    }
+    var padX = Math.max(0, (cr.width  - innerW) / 2);
+    var padY = Math.max(0, (cr.height - innerH) / 2);
+    // Use a box-shadow cutout to dim the outside-crop region
+    mask.style.left   = padX + 'px';
+    mask.style.top    = padY + 'px';
+    mask.style.right  = padX + 'px';
+    mask.style.bottom = padY + 'px';
+    mask.style.border = '2px solid rgba(167,139,250,.8)';
+    mask.style.boxShadow = '0 0 0 9999px rgba(0,0,0,.55)';
+  }
+
+  // Face-track crop: grabs a few frames from the active V1 clip's video,
+  // runs browser FaceDetector, computes an average face center, and bakes
+  // clip.dataset.crop so the export crops to frame the subject in the new
+  // aspect ratio. Fallback: graceful center crop if FaceDetector isn't
+  // available in this browser/platform.
+  async function runFaceTrackCrop(aspectStr){
+    var clip = getActiveClip();
+    if (!clip){ throw new Error('no active clip'); }
+    var vid = document.getElementById('videoPlayer');
+    if (!vid || !vid.videoWidth){ throw new Error('no video loaded'); }
+
+    var parts = aspectStr.split(':').map(Number);
+    var targetRatio = parts[0] / parts[1];
+    var srcW = vid.videoWidth, srcH = vid.videoHeight;
+    var srcRatio = srcW / srcH;
+
+    // Compute crop rect in source pixels framing the target aspect
+    var cropW, cropH;
+    if (targetRatio < srcRatio){
+      // Narrower target → pillarbox the source → crop horizontal
+      cropH = srcH;
+      cropW = srcH * targetRatio;
+    } else {
+      // Wider target → letterbox the source → crop vertical
+      cropW = srcW;
+      cropH = srcW / targetRatio;
+    }
+
+    // Default center crop
+    var centerX = srcW / 2, centerY = srcH / 2;
+    var usedFace = false;
+
+    if (typeof window.FaceDetector === 'function'){
+      try {
+        var detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
+        var canvas = document.createElement('canvas');
+        canvas.width = srcW; canvas.height = srcH;
+        var ctx = canvas.getContext('2d');
+        // Sample 3 frames: start, 1/3, 2/3 through the clip
+        var wasTime = vid.currentTime;
+        var samples = [];
+        var probes = [0.1, 0.4, 0.7].map(function(f){ return vid.duration * f; });
+        for (var i = 0; i < probes.length; i++){
+          await new Promise(function(res){
+            var onSeek = function(){ vid.removeEventListener('seeked', onSeek); res(); };
+            vid.addEventListener('seeked', onSeek);
+            vid.currentTime = probes[i];
+          });
+          ctx.drawImage(vid, 0, 0, srcW, srcH);
+          try {
+            var faces = await detector.detect(canvas);
+            if (faces && faces.length){
+              // Largest face only
+              faces.sort(function(a,b){ return b.boundingBox.width * b.boundingBox.height - a.boundingBox.width * a.boundingBox.height; });
+              var bb = faces[0].boundingBox;
+              samples.push({ x: bb.x + bb.width/2, y: bb.y + bb.height/2 });
+            }
+          } catch(e){}
+        }
+        vid.currentTime = wasTime;
+        if (samples.length){
+          centerX = samples.reduce(function(a,s){ return a + s.x; }, 0) / samples.length;
+          centerY = samples.reduce(function(a,s){ return a + s.y; }, 0) / samples.length;
+          usedFace = true;
+        }
+      } catch(e){}
+    }
+
+    // Snap crop to keep inside source bounds
+    var x = Math.max(0, Math.min(srcW - cropW, centerX - cropW/2));
+    var y = Math.max(0, Math.min(srcH - cropH, centerY - cropH/2));
+
+    // Export expects crop as x,y,w,h in %
+    var pct = [
+      (x / srcW * 100).toFixed(2),
+      (y / srcH * 100).toFixed(2),
+      (cropW / srcW * 100).toFixed(2),
+      (cropH / srcH * 100).toFixed(2)
+    ].join(',');
+    clip.dataset.crop = pct;
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    return usedFace ? 'face-centered crop set' : 'center crop set (FaceDetector unavailable)';
+  }
+  // Task #55 — Freeze Frame (spec): capture a PNG of the frame at the
+  // current playhead, split the active V1 clip at that timestamp, shift
+  // the second half + all subsequent V1 clips right by freezeDur (3s),
+  // and insert the captured still as an image clip into the resulting gap.
+  async function clipActionFreeze(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (!clip.classList.contains('mt-clip-video')){ showToast('Freeze is for video clips'); return; }
+    var mediaUrl = clip.dataset.mediaUrl;
+    if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+      showToast('Upload this file via the sidebar first, then try again');
+      return;
+    }
+    // Compute the playhead's clip-local time + source-time
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var clipLeft = parseFloat(clip.style.left) || 0;
+    var clipW    = parseFloat(clip.style.width) || 0;
+    var cutXInClip = phX - clipLeft;
+    if (cutXInClip < 6 || cutXInClip > clipW - 6){
+      showToast('Move the playhead over the clip first (not at the edges)');
+      return;
+    }
+    var PPS = (typeof TIMELINE_PX_PER_SEC === 'number') ? TIMELINE_PX_PER_SEC : 10;
+    var srcOff  = parseFloat(clip.dataset.sourceOffset) || 0;
+    var cutSec  = cutXInClip / PPS;
+    var sourceT = srcOff + cutSec;
+    var FREEZE_DUR_SEC = 3.0;  // default freeze hold duration
+
+    showToast('Capturing frame\u2026');
+    try {
+      var r = await fetch('/video-editor/freeze-frame', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: mediaUrl, sourceTime: sourceT })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Frame capture failed');
+
+      // Split the active clip at cutXInClip (creates left half + right half)
+      razorSplit(clip, cutXInClip);
+      // After razorSplit, `clip` is now the LEFT half and the right half
+      // is the next DOM sibling. Shift the right half + every V1 clip to
+      // its right by freezePx so a 3-second gap opens at the cut point.
+      var track = clip.parentNode;
+      var rightHalf = clip.nextSibling;
+      var freezePx = Math.round(FREEZE_DUR_SEC * PPS);
+      // Collect all V1 clips whose left >= original cut position
+      var cutTimelinePx = clipLeft + cutXInClip;
+      Array.from(track.querySelectorAll('.mt-clip')).forEach(function(c){
+        if (c === clip) return;  // don't shift the left half
+        var l = parseFloat(c.style.left) || 0;
+        if (l >= cutTimelinePx - 0.5){
+          c.style.left = (l + freezePx) + 'px';
+        }
+      });
+
+      // Insert the captured still as an image clip into the gap
+      var still = document.createElement('div');
+      still.className = 'mt-clip mt-clip-video clip-freeze-on';
+      still.style.position = 'absolute';
+      still.style.top = '3px';
+      still.style.left = cutTimelinePx + 'px';
+      still.style.width = freezePx + 'px';
+      still.style.overflow = 'hidden';
+      still.style.background = 'linear-gradient(135deg,#fde047,#f59e0b)';
+      still.style.color = '#0b0816';
+      still.dataset.fileName = '\u2744\ufe0f Freeze';
+      still.dataset.clipType = 'img';
+      still.dataset.mediaUrl = d.mediaUrl;
+      still.dataset.duration = String(FREEZE_DUR_SEC);
+      still.dataset.sourceOffset = '0';
+      still.dataset.srcDuration  = String(FREEZE_DUR_SEC);
+      still.dataset.freeze = '1';  // marker for the badge CSS + export
+      still.dataset.addedAt = String(Date.now() * 1000);
+      still.style.zIndex = '850';
+      // Thumbnail preview background
+      still.style.backgroundImage = 'url("' + d.mediaUrl + '")';
+      still.style.backgroundSize = 'cover';
+      still.style.backgroundPosition = 'center';
+      // Freeze badge label overlay
+      var label = document.createElement('span');
+      label.className = 'v10-fs-label';
+      label.textContent = '\u2744\ufe0f FREEZE';
+      label.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);' +
+        'font-size:10px;font-weight:700;color:#0b0816;background:rgba(255,255,255,.78);' +
+        'padding:2px 6px;border-radius:3px;pointer-events:none;z-index:4';
+      still.appendChild(label);
+      track.appendChild(still);
+      makeClipInteractive(still);
+      updateTimelineInfo();
+      pushTimelineHistory();
+      showToast('Freeze frame inserted (' + FREEZE_DUR_SEC + 's)');
+    } catch (err){
+      showToast('Freeze error: ' + (err.message || err));
+    }
+  }
+  // ── Keyframes ───────────────────────────────────────────────────
+  // Per-clip animation of scale / offsetX / offsetY over clip-local time.
+  // Keyframes live on clip.dataset.keyframes as a JSON array:
+  //   [{ t: number, scale?, offsetX?, offsetY? }, ...]
+  // where t is seconds from the clip's left edge. Any property absent
+  // from a keyframe is ignored for that keyframe (not animated).
+  //
+  // At clip-time `tnow`:
+  //   • 0 KFs for prop  → use the clip's static dataset value
+  //   • 1 KF  for prop  → constant = that KF's value
+  //   • surrounded by 2 → linear interpolation between bracketing KFs
+  //   • before first    → use first KF's value
+  //   • after  last     → use last  KF's value
+  //
+  // Export is preview-only for now — keyframes would need per-clip
+  // filter expressions in Stage A. That's a follow-up.
+  function readClipKeyframes(clip){
+    if (!clip || !clip.dataset.keyframes) return [];
+    try {
+      var arr = JSON.parse(clip.dataset.keyframes);
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(function(k){ return k && isFinite(k.t); })
+                .sort(function(a,b){ return a.t - b.t; });
+    } catch(_){ return []; }
+  }
+  function writeClipKeyframes(clip, arr){
+    if (!arr || !arr.length){ delete clip.dataset.keyframes; return; }
+    clip.dataset.keyframes = JSON.stringify(arr);
+  }
+  function interpolateKeyframeProp(keyframes, prop, tnow, fallback){
+    var kfs = keyframes.filter(function(k){ return typeof k[prop] !== 'undefined' && k[prop] !== null && isFinite(k[prop]); });
+    if (kfs.length === 0) return fallback;
+    if (kfs.length === 1) return kfs[0][prop];
+    if (tnow <= kfs[0].t) return kfs[0][prop];
+    if (tnow >= kfs[kfs.length - 1].t) return kfs[kfs.length - 1][prop];
+    for (var i = 0; i < kfs.length - 1; i++){
+      var a = kfs[i], b = kfs[i+1];
+      if (tnow >= a.t && tnow <= b.t){
+        var span = b.t - a.t;
+        if (span <= 0) return a[prop];
+        var p = (tnow - a.t) / span;
+        return a[prop] + (b[prop] - a[prop]) * p;
+      }
+    }
+    return fallback;
+  }
+  // Draw yellow keyframe markers along the top of each clip element. Called
+  // whenever the keyframes change or a clip is restored from a snapshot.
+  function refreshKeyframeMarkers(clip){
+    if (!clip) return;
+    Array.from(clip.querySelectorAll('.mt-kf-marker')).forEach(function(m){ m.remove(); });
+    var kfs = readClipKeyframes(clip);
+    if (kfs.length === 0) return;
+    var width = parseFloat(clip.style.width) || clip.offsetWidth || 1;
+    var clipDurSec = width / TIMELINE_PX_PER_SEC;
+    if (clipDurSec <= 0) return;
+    kfs.forEach(function(k){
+      var m = document.createElement('div');
+      m.className = 'mt-kf-marker';
+      var leftPct = Math.max(0, Math.min(1, k.t / clipDurSec)) * 100;
+      m.style.left = leftPct + '%';
+      clip.appendChild(m);
+    });
+  }
+  function clipActionKeyframe(){
+    // Toggle-close if the popover is already open (hardened against ghost-DOM)
+    var existing = document.getElementById('kfPopover');
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    closeOtherPopovers('kfPopover');
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+    if (clip.classList.contains('mt-clip-audio')){ showToast('Keyframes not supported on audio'); return; }
+    // Current playhead time within the clip
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var clipLeft = parseFloat(clip.style.left) || 0;
+    var clipW    = parseFloat(clip.style.width) || 1;
+    var tnowPx   = phX - clipLeft;
+    var tnow = Math.max(0, tnowPx / TIMELINE_PX_PER_SEC);
+    var overClip = (tnowPx >= 0 && tnowPx <= clipW);
+
+    function renderPop(){
+      var scale = parseFloat(clip.dataset.scale)   || 1;
+      var offX  = parseFloat(clip.dataset.offsetX) || 0;
+      var offY  = parseFloat(clip.dataset.offsetY) || 0;
+      var kfs   = readClipKeyframes(clip);
+
+      var pop = document.createElement('div');
+      pop.id = 'kfPopover';
+      pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:300px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+
+      var header =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+          '<div style="font-size:11px;color:#fde047;font-weight:700;letter-spacing:.5px">\ud83c\udfaf KEYFRAMES</div>' +
+          '<div style="font-size:10px;color:#8886a0">t = ' + tnow.toFixed(2) + 's</div>' +
+        '</div>' +
+        '<div style="font-size:10px;color:#8886a0;margin-bottom:10px;line-height:1.4">' +
+          (overClip
+            ? 'Drop a keyframe at the playhead capturing the clip\'s current values.'
+            : '<span style="color:#f59e0b">Move playhead over this clip to drop keyframes.</span>') +
+        '</div>';
+
+      var dropBtnStyle = 'flex:1;padding:8px 6px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.4);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:2px';
+      var disabledStyle = ';opacity:.4;cursor:not-allowed;pointer-events:none';
+      function dBtn(id, icon, label, sub){
+        return '<button id="' + id + '" style="' + dropBtnStyle + (overClip ? '' : disabledStyle) + '">' +
+          '<span style="font-size:14px">' + icon + '</span>' +
+          '<span style="font-weight:600">' + label + '</span>' +
+          '<span style="font-size:9px;color:#8886a0">' + sub + '</span>' +
+        '</button>';
+      }
+
+      var dropRow =
+        '<div style="display:flex;gap:6px;margin-bottom:12px">' +
+          dBtn('kfDropScale',    '\ud83d\udd0d', 'Scale',    scale.toFixed(2) + '\u00d7') +
+          dBtn('kfDropPosition', '\ud83d\udccd', 'Position', 'x=' + offX.toFixed(0) + ' y=' + offY.toFixed(0)) +
+          dBtn('kfDropBoth',     '\ud83c\udfaf', 'Both',     'Scale + Pos') +
+        '</div>';
+
+      var listHtml = '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:6px">EXISTING KEYFRAMES (' + kfs.length + ')</div>';
+      if (kfs.length === 0){
+        listHtml += '<div style="padding:10px;background:rgba(255,255,255,.02);border:1px dashed rgba(255,255,255,.1);border-radius:6px;font-size:11px;color:#5c5a70;text-align:center">No keyframes yet — drop one above.</div>';
+      } else {
+        listHtml += '<div style="max-height:160px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:6px">';
+        kfs.forEach(function(k, i){
+          var bits = [];
+          if (typeof k.scale   === 'number') bits.push('s=' + k.scale.toFixed(2));
+          if (typeof k.offsetX === 'number') bits.push('x=' + k.offsetX.toFixed(0));
+          if (typeof k.offsetY === 'number') bits.push('y=' + k.offsetY.toFixed(0));
+          listHtml +=
+            '<div data-kf-row="' + i + '" style="display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:11px;border-bottom:1px solid rgba(255,255,255,.05)">' +
+              '<span style="color:#fde047;font-weight:600;width:52px">t=' + k.t.toFixed(2) + 's</span>' +
+              '<span style="flex:1;color:#8886a0;font-size:10px">' + bits.join(' \u00b7 ') + '</span>' +
+              '<button data-kf-seek="' + i + '" title="Seek to this keyframe" style="padding:2px 6px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:4px;color:#a78bfa;font-size:10px;cursor:pointer">\u27a4</button>' +
+              '<button data-kf-del="' + i + '" title="Delete this keyframe" style="padding:2px 6px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:4px;color:#f87171;font-size:10px;cursor:pointer">\u00d7</button>' +
+            '</div>';
+        });
+        listHtml += '</div>';
+      }
+
+      var footer =
+        '<div style="display:flex;gap:6px;margin-top:10px">' +
+          '<button id="kfClear" style="flex:1;padding:6px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer"' + (kfs.length === 0 ? ' disabled style="opacity:.4;cursor:not-allowed"' : '') + '>Clear All</button>' +
+          '<button id="kfClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '</div>';
+
+      pop.innerHTML = header + dropRow + listHtml + footer;
+      document.body.appendChild(pop);
+
+      // Replace-at-near-time + resort helper, shared by all drops
+      function dropKF(props){
+        if (!overClip){ showToast('Move playhead over this clip first'); return; }
+        var cur = readClipKeyframes(clip);
+        var replaced = false;
+        for (var i = 0; i < cur.length; i++){
+          if (Math.abs(cur[i].t - tnow) < 0.05){
+            Object.assign(cur[i], { t: tnow }, props);
+            replaced = true;
+            break;
+          }
+        }
+        if (!replaced) cur.push(Object.assign({ t: tnow }, props));
+        cur.sort(function(a,b){ return a.t - b.t; });
+        writeClipKeyframes(clip, cur);
+        refreshKeyframeMarkers(clip);
+        pushTimelineHistory();
+        showToast('Keyframe ' + (replaced ? 'updated' : 'added') + ' at ' + tnow.toFixed(2) + 's');
+        pop.remove();
+        // Re-open to reflect the new list
+        clipActionKeyframe();
+      }
+
+      var dScale = pop.querySelector('#kfDropScale');
+      var dPos   = pop.querySelector('#kfDropPosition');
+      var dBoth  = pop.querySelector('#kfDropBoth');
+      if (dScale) dScale.addEventListener('click', function(){ dropKF({ scale: scale }); });
+      if (dPos)   dPos.addEventListener('click',   function(){ dropKF({ offsetX: offX, offsetY: offY }); });
+      if (dBoth)  dBoth.addEventListener('click',  function(){ dropKF({ scale: scale, offsetX: offX, offsetY: offY }); });
+
+      // Seek + delete per-row actions
+      Array.from(pop.querySelectorAll('[data-kf-seek]')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var idx = parseInt(btn.getAttribute('data-kf-seek'), 10);
+          var cur = readClipKeyframes(clip);
+          if (!cur[idx]) return;
+          var seekX = clipLeft + cur[idx].t * TIMELINE_PX_PER_SEC;
+          if (ph) ph.style.left = seekX + 'px';
+          // Scrub the live player too, so the PGM reflects the jump
+          var player = document.getElementById('videoPlayer') || document.querySelector('video');
+          var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+          if (player){ try { player.currentTime = sourceOffset + cur[idx].t; } catch(_){} }
+          showToast('Seek t=' + cur[idx].t.toFixed(2) + 's');
+        });
+      });
+      Array.from(pop.querySelectorAll('[data-kf-del]')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var idx = parseInt(btn.getAttribute('data-kf-del'), 10);
+          var cur = readClipKeyframes(clip);
+          if (!cur[idx]) return;
+          cur.splice(idx, 1);
+          writeClipKeyframes(clip, cur);
+          refreshKeyframeMarkers(clip);
+          pushTimelineHistory();
+          showToast('Keyframe removed');
+          pop.remove();
+          clipActionKeyframe();
+        });
+      });
+
+      pop.querySelector('#kfClose').addEventListener('click', function(){ pop.remove(); });
+      var clearBtn = pop.querySelector('#kfClear');
+      if (clearBtn) clearBtn.addEventListener('click', function(){
+        if (readClipKeyframes(clip).length === 0) return;
+        writeClipKeyframes(clip, []);
+        refreshKeyframeMarkers(clip);
+        pushTimelineHistory();
+        showToast('All keyframes cleared');
+        pop.remove();
+        clipActionKeyframe();
+      });
+    }
+
+    renderPop();
+  }
+
+  // Solo this audio clip by muting every OTHER audio clip. Toggling solo
+  // off restores previous mute states (stored on each clip's dataset.preSoloMuted).
+  function clipActionSolo(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select an audio clip first'); return; }
+    if (!clip.classList.contains('mt-clip-audio')){
+      showToast('Solo works on audio clips');
+      return;
+    }
+    var allAudio = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
+    var wasSolo = clip.dataset.solo === 'true';
+    if (wasSolo){
+      // Un-solo: restore previous mute states
+      allAudio.forEach(function(c){
+        if (c.dataset.preSoloMuted !== undefined){
+          if (c.dataset.preSoloMuted === 'true') c.dataset.muted = 'true';
+          else delete c.dataset.muted;
+          delete c.dataset.preSoloMuted;
+        }
+      });
+      delete clip.dataset.solo;
+      showToast('Un-soloed');
+    } else {
+      // Solo: remember current mute states, mute everything except this clip
+      allAudio.forEach(function(c){
+        c.dataset.preSoloMuted = (c.dataset.muted === 'true') ? 'true' : 'false';
+        if (c === clip) delete c.dataset.muted;
+        else c.dataset.muted = 'true';
+      });
+      clip.dataset.solo = 'true';
+      showToast('Soloed: ' + (clip.dataset.fileName || 'clip'));
+    }
+    pushTimelineHistory();
+  }
+  try { window.clipActionSolo = clipActionSolo; } catch(_){}
+
+  // ── FX: Visual Effects (toggles) ──
+  // When a visual effect toggles ON, also drop an indicator clip onto
+  // the .mt-track-fx row so the user can see what FX are active and
+  // when they apply. The underlying effect still lives on the V1 clip's
+  // dataset; the FX-track clip is a visual marker only.
+  var FX_TOGGLE_LABELS = {
+    fxGlow:       { label: 'Glow',       icon: '\u2728' },
+    fxVignette:   { label: 'Vignette',   icon: '\ud83d\udd06' },
+    fxGrain:      { label: 'Film Grain', icon: '\ud83d\udcfa' },
+    fxSharpen:    { label: 'Sharpen',    icon: '\ud83d\udd2a' },
+    fxChromatic:  { label: 'Chromatic',  icon: '\ud83c\udf08' },
+    fxPixelate:   { label: 'Pixelate',   icon: '\ud83d\udd32' },
+    fxNoise:      { label: 'Noise',      icon: '\ud83d\udcfd\ufe0f' }
+  };
+  function toggleClipFlag(label, key){
+    var clips = getActiveClips();
+    if (!clips.length){ showToast('Select a clip first'); return; }
+    var on = toggleDatasetForAll(clips, key);
+    // Drop an indicator clip on the FX track when toggling ON, tagged
+    // with the dataset key so preview/export pick up the effect for any
+    // V1 clip the FX clip overlaps (users can drag it across multiple
+    // V1 clips to broadcast the effect).
+    if (on && FX_TOGGLE_LABELS[key]){
+      var meta = FX_TOGGLE_LABELS[key];
+      addFxIndicatorClip(meta.label, meta.icon, {
+        active: clips[0],
+        fxKey: key,
+        fxValue: 'true'
+      });
+    }
+    pushTimelineHistory();
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+    var suffix = clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : '';
+    showToast(label + ' ' + (on ? 'on' : 'off') + suffix);
+  }
+  // ── Task #21: FX Slider popover ───────────────────────────────────
+  // Shared opener used by Blur / Brightness / Contrast / Saturation.
+  // Writes clip.dataset[fxKey] on every 'input' event (live preview),
+  // with a "Reset" button that clears the key (restoring neutral).
+  // Broadcasts across every currently-selected .mt-clip target.
+  //
+  //   key      : dataset key to write (e.g. 'fxBlur', 'fxBrightness')
+  //   label    : popover title ('Blur', 'Brightness', ...)
+  //   min, max : slider range
+  //   step     : slider granularity
+  //   neutral  : value at which the key is DELETED (so export is clean)
+  //   unit     : label suffix ('px', '×')
+  //   icon     : emoji prefix for the indicator clip
+  function openFxSliderPopover(key, label, min, max, step, neutral, unit, icon){
+    // Toggle-close if already open (hardened against ghost-DOM)
+    var existing = document.getElementById('fxSliderPopover');
+    if (existing instanceof Element && existing.isConnected){
+      existing.remove();
+      return;
+    }
+    if (existing && typeof existing.remove === 'function'){
+      try { existing.remove(); } catch(_){}
+    }
+    closeOtherPopovers('fxSliderPopover');
+
+    var targets = Array.from(document.querySelectorAll('.mt-clip.selected'));
+    if (!targets.length){
+      var active = (typeof getActiveClip === 'function') ? getActiveClip() : null;
+      if (active) targets = [active];
+    }
+    if (!targets.length){ showToast('Select a clip first'); return; }
+    var first = targets[0];
+    var initRaw = parseFloat(first.dataset[key]);
+    var initVal = isFinite(initRaw) ? initRaw : neutral;
+
+    var pop = document.createElement('div');
+    pop.id = 'fxSliderPopover';
+    pop.dataset.fxKey = key;
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;' +
+      'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;' +
+      'padding:14px;width:280px;box-shadow:0 10px 40px rgba(0,0,0,.6);' +
+      'color:#e2e0f0;font-family:system-ui,sans-serif';
+
+    var multiMsg = targets.length > 1 ? ('Applies to ' + targets.length + ' selected clips.') : '';
+    pop.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
+        '<div style="font-size:11px;color:#fde047;font-weight:700;letter-spacing:.5px">' + (icon || '') + ' ' + label.toUpperCase() + '</div>' +
+        '<div id="fxSlVal" style="font-size:11px;color:#a78bfa;font-weight:600">' + initVal.toFixed(step < 1 ? 2 : 0) + (unit || '') + '</div>' +
+      '</div>' +
+      (multiMsg ? '<div style="font-size:10px;color:#8886a0;margin-bottom:8px">' + multiMsg + '</div>' : '') +
+      '<input id="fxSlRange" type="range" min="' + min + '" max="' + max + '" step="' + step + '" value="' + initVal + '" ' +
+        'style="width:100%;accent-color:#a78bfa"/>' +
+      '<div style="display:flex;justify-content:space-between;font-size:9px;color:#5c5a70;margin-top:4px">' +
+        '<span>' + min + (unit || '') + '</span>' +
+        '<span style="color:#8886a0">neutral ' + neutral + (unit || '') + '</span>' +
+        '<span>' + max + (unit || '') + '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:12px">' +
+        '<button id="fxSlReset" style="flex:1;padding:6px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#f87171;font-size:11px;cursor:pointer">Reset</button>' +
+        '<button id="fxSlDone"  style="flex:1;padding:6px;background:rgba(139,92,246,.2);border:1px solid rgba(139,92,246,.4);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Done</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+
+    var range = pop.querySelector('#fxSlRange');
+    var valEl = pop.querySelector('#fxSlVal');
+    function apply(){
+      var v = parseFloat(range.value);
+      if (!isFinite(v)) v = neutral;
+      if (valEl) valEl.textContent = v.toFixed(step < 1 ? 2 : 0) + (unit || '');
+      targets.forEach(function(c){
+        if (Math.abs(v - neutral) < 1e-6){
+          delete c.dataset[key];
+        } else {
+          c.dataset[key] = String(v);
+        }
+      });
+      try { syncPreviewToPlayhead(); } catch(_){}
+    }
+    range.addEventListener('input', apply);
+    range.addEventListener('change', function(){
+      apply();
+      if (typeof pushTimelineHistory === 'function') pushTimelineHistory();
+    });
+    pop.querySelector('#fxSlReset').addEventListener('click', function(){
+      range.value = String(neutral);
+      apply();
+      if (typeof pushTimelineHistory === 'function') pushTimelineHistory();
+    });
+    pop.querySelector('#fxSlDone').addEventListener('click', function(){
+      pop.remove();
+    });
+  }
+
+  function clipActionFxBlur(){
+    var wasNeutral = (function(){
+      var c = (typeof getActiveClip === 'function') ? getActiveClip() : null;
+      return !c || !parseFloat(c.dataset.fxBlur);
+    })();
+    openFxSliderPopover('fxBlur', 'Blur', 0, 20, 0.5, 0, 'px', '\ud83c\udf2b\ufe0f');
+    // Drop the timeline indicator chip the first time blur is enabled on a clip
+    if (wasNeutral){
+      var active = (typeof getActiveClip === 'function') ? getActiveClip() : null;
+      // Defer to let the slider touch first
+      setTimeout(function(){
+        if (active && parseFloat(active.dataset.fxBlur) > 0){
+          addFxIndicatorClip('Blur', '\ud83c\udf2b\ufe0f', {
+            active: active,
+            fxKey: 'fxBlur',
+            fxValue: active.dataset.fxBlur || ''
+          });
+        }
+      }, 150);
+    }
+  }
+  function clipActionFxGlow(){     toggleClipFlag('Glow',     'fxGlow');     }
+  function clipActionFxVignette(){ toggleClipFlag('Vignette', 'fxVignette'); }
+  function clipActionFxGrain(){    toggleClipFlag('Film grain','fxGrain');   }
+  function clipActionFxSharpen(){  toggleClipFlag('Sharpen',             'fxSharpen');   }
+  function clipActionFxChromatic(){toggleClipFlag('Chromatic aberration','fxChromatic'); }
+  function clipActionFxPixelate(){ toggleClipFlag('Pixelate',            'fxPixelate');  }
+  function clipActionFxNoise(){    toggleClipFlag('Noise',    'fxGrain');    } // alias for grain
+
+  // ── FX: Color ──
+  function promptColorProp(key, cur, label){
+    return function(){
+      promptToActiveClips(
+        function(c){
+          var curVal = parseFloat(c.dataset[key]) || 1;
+          var input = prompt(label, String(curVal));
+          if (input === null) return null;
+          var v = parseFloat(input);
+          if (!isFinite(v) || v < 0){ showToast('Invalid'); return null; }
+          return v;
+        },
+        function(c, v){
+          if (v === 1) delete c.dataset[key];
+          else c.dataset[key] = String(v);
+        },
+        cur + ' {val}'
+      );
+    };
+  }
+  // Task #21: Brightness / Contrast / Saturation now use the shared
+  // FX slider popover instead of prompt() text entry.
+  function clipActionFxBrightness(){
+    openFxSliderPopover('fxBrightness', 'Brightness', 0, 2, 0.05, 1, '\u00d7', '\u2600\ufe0f');
+  }
+  function clipActionFxContrast(){
+    openFxSliderPopover('fxContrast',   'Contrast',   0, 2, 0.05, 1, '\u00d7', '\u25d1');
+  }
+  function clipActionFxSaturation(){
+    openFxSliderPopover('fxSaturate',   'Saturation', 0, 2, 0.05, 1, '\u00d7', '\ud83c\udfa8');
+  }
+  function clipActionFxColorGrade(){
+    var gradeApplied = null;
+    var activeSnapshot = null;
+    promptToActiveClips(
+      function(c){
+        activeSnapshot = c;
+        var cur = c.dataset.fxColorGrade || '';
+        var input = prompt(
+          'Color grade preset (warm, cool, vintage, bw, punch, or blank to clear)',
+          cur);
+        if (input === null) return null;
+        var v = (input || '').trim().toLowerCase();
+        if (!v) return 'clear';
+        if (['warm','cool','vintage','bw','punch'].indexOf(v) === -1){
+          showToast('Unknown preset'); return null;
+        }
+        gradeApplied = v;
+        return v;
+      },
+      function(c, v){
+        if (v === 'clear') delete c.dataset.fxColorGrade;
+        else c.dataset.fxColorGrade = v;
+      },
+      'Grade: {val}'
+    );
+    if (gradeApplied){
+      var pretty = gradeApplied.charAt(0).toUpperCase() + gradeApplied.slice(1);
+      addFxIndicatorClip('Grade: ' + pretty, '\ud83c\udfa8', {
+        active: activeSnapshot,
+        fxKey: 'fxColorGrade',
+        fxValue: gradeApplied
+      });
+    }
+  }
+
+  try {
+    window.clipActionFxBlur       = clipActionFxBlur;
+    window.clipActionFxGlow       = clipActionFxGlow;
+    window.clipActionFxVignette   = clipActionFxVignette;
+    window.clipActionFxGrain      = clipActionFxGrain;
+    window.clipActionFxSharpen    = clipActionFxSharpen;
+    window.clipActionFxChromatic  = clipActionFxChromatic;
+    window.clipActionFxPixelate   = clipActionFxPixelate;
+    window.clipActionFxNoise      = clipActionFxNoise;
+    window.clipActionFxBrightness = clipActionFxBrightness;
+    window.clipActionFxContrast   = clipActionFxContrast;
+    window.clipActionFxSaturation = clipActionFxSaturation;
+    window.clipActionFxColorGrade = clipActionFxColorGrade;
+  } catch(_){}
+
+  // Expose so v10-editor-redesign.js EDIT-tab buttons can call them.
+  try {
+    window.clipActionTrim     = clipActionTrim;
+    window.clipActionSlipEdit = clipActionSlipEdit;
+    window.clipActionSplit    = clipActionSplit;
+    window.clipActionSpeed    = clipActionSpeed;
+    window.clipActionCrop     = clipActionCrop;
+    window.clipActionResize   = clipActionResize;
+    window.clipActionSmartResize = clipActionSmartResize;
+    window.clipActionRotate   = clipActionRotate;
+    window.clipActionFlip     = clipActionFlip;
+    window.clipActionPosition = clipActionPosition;
+    window.clipActionReverse  = clipActionReverse;
+    window.clipActionLoop     = clipActionLoop;
+    window.clipActionFreeze   = clipActionFreeze;
+    window.clipActionKeyframe = clipActionKeyframe;
+    window.clipActionTextFontSize = clipActionTextFontSize;
+    window.clipActionTextColor    = clipActionTextColor;
+    window.clipActionTextPosition = clipActionTextPosition;
+  } catch(_){}
+
+  // Merge the clip's own FX dataset with any FX-track clips whose time
+  // range overlaps `playheadPx`. Returns a plain object the render
+  // functions read from (instead of reading clip.dataset directly) so a
+  // single FX-track clip dragged across multiple V1 clips broadcasts
+  // its effect to every V1 clip it covers.
+  function resolveEffectiveFx(clip, playheadPx){
+    var eff = {};
+    if (clip){
+      eff.fxBrightness = clip.dataset.fxBrightness;
+      eff.fxContrast   = clip.dataset.fxContrast;
+      eff.fxSaturate   = clip.dataset.fxSaturate;
+      eff.fxBlur       = clip.dataset.fxBlur;
+      eff.fxHue        = clip.dataset.fxHue;
+      eff.fxColorGrade = clip.dataset.fxColorGrade;
+      eff.fxSharpen    = clip.dataset.fxSharpen;
+      eff.fxVignette   = clip.dataset.fxVignette;
+      eff.fxGlow       = clip.dataset.fxGlow;
+      eff.fxGrain      = clip.dataset.fxGrain;
+      eff.fxChromatic  = clip.dataset.fxChromatic;
+      eff.fxPixelate   = clip.dataset.fxPixelate;
+    }
+    if (!isFinite(playheadPx)) return eff;
+    Array.from(document.querySelectorAll('.mt-track-fx .mt-clip')).forEach(function(fx){
+      var l = parseFloat(fx.style.left)  || 0;
+      var w = parseFloat(fx.style.width) || 0;
+      if (playheadPx < l || playheadPx > l + w) return;
+      var key = fx.dataset.fxKey;
+      var val = fx.dataset.fxValue;
+      if (!key) return;
+      // Only override if the FX-track clip has a meaningful value
+      if (val === undefined || val === '' || val === 'false') return;
+      eff[key] = val;
+    });
+    return eff;
+  }
+  try { window.resolveEffectiveFx = resolveEffectiveFx; } catch(_){}
+
+  // Build a ctx.filter CSS-filter string from the active clip's FX flags.
+  // Returns '' when no filters are active so the caller can skip setting.
+  // `fxFlags` is optional — when provided it overrides clip.dataset so
+  // callers can inject FX-track effects that apply to this clip.
+  function progBuildClipFilter(clip, fxFlags){
+    if (!clip) return '';
+    var d = fxFlags || clip.dataset;
+    var parts = [];
+    var b = parseFloat(d.fxBrightness);
+    var c = parseFloat(d.fxContrast);
+    var s = parseFloat(d.fxSaturate);
+    var blur = parseFloat(d.fxBlur);
+    var hue = parseFloat(d.fxHue);
+    var grad = d.fxColorGrade;
+    if (isFinite(b) && b !== 1) parts.push('brightness(' + b + ')');
+    if (isFinite(c) && c !== 1) parts.push('contrast(' + c + ')');
+    if (isFinite(s) && s !== 1) parts.push('saturate(' + s + ')');
+    if (isFinite(blur) && blur > 0) parts.push('blur(' + blur + 'px)');
+    if (isFinite(hue) && hue !== 0) parts.push('hue-rotate(' + hue + 'deg)');
+    if (d.fxSharpen === 'true') parts.push('contrast(1.15)', 'saturate(1.05)');
+    if (grad === 'warm')       parts.push('sepia(.25)','saturate(1.15)','hue-rotate(-10deg)');
+    else if (grad === 'cool')  parts.push('saturate(1.1)','hue-rotate(8deg)','brightness(.97)');
+    else if (grad === 'vintage') parts.push('sepia(.45)','contrast(1.05)','saturate(.85)');
+    else if (grad === 'bw')    parts.push('grayscale(1)','contrast(1.1)');
+    else if (grad === 'punch') parts.push('contrast(1.18)','saturate(1.25)');
+    return parts.join(' ');
+  }
+  // Post-draw FX overlays (vignette / grain / pixelate-indicator / glow
+  // ring) that can't be expressed as ctx.filter. Drawn INSIDE the clip
+  // rect so they never bleed into pillar/letterboxes.
+  function progDrawClipPostFX(ctx, W, H, rect, clip, fxFlags){
+    if (!clip || !rect) return;
+    var d = fxFlags || clip.dataset;
+    // Vignette: radial gradient overlay centered on the video rect
+    if (d.fxVignette === 'true'){
+      var cx = rect.dx + rect.dw/2, cy = rect.dy + rect.dh/2;
+      var rMax = Math.max(rect.dw, rect.dh) * 0.75;
+      var grad = ctx.createRadialGradient(cx, cy, rMax * 0.45, cx, cy, rMax);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(rect.dx, rect.dy, rect.dw, rect.dh);
+    }
+    // Film grain: pepper the rect with tiny random translucent dots
+    if (d.fxGrain === 'true'){
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      for (var i = 0; i < 180; i++){
+        var rx = rect.dx + Math.random() * rect.dw;
+        var ry = rect.dy + Math.random() * rect.dh;
+        ctx.fillStyle = Math.random() < 0.5 ? '#ffffff' : '#000000';
+        ctx.fillRect(rx, ry, 1, 1);
+      }
+      ctx.restore();
+    }
+    // Glow: purple rim glow inside the rect edges
+    if (d.fxGlow === 'true'){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      var g = ctx.createLinearGradient(rect.dx, rect.dy, rect.dx + rect.dw, rect.dy + rect.dh);
+      g.addColorStop(0, 'rgba(139,92,246,0.15)');
+      g.addColorStop(1, 'rgba(236,72,153,0.15)');
+      ctx.fillStyle = g;
+      ctx.fillRect(rect.dx, rect.dy, rect.dw, rect.dh);
+      ctx.restore();
+    }
+  }
+
+  // Per-clip transform offsets composed UNDER motion in the render stack.
+  // Applied inside the video-rect clip so pillar/letterboxes stay black.
+  // If the clip has keyframes and clipTimeSec is provided, scale/offsetX/
+  // offsetY interpolate from the keyframe track at that time.
+  function progApplyClipTransforms(ctx, W, H, clip, clipTimeSec){
+    if (!clip) return;
+    var scale = parseFloat(clip.dataset.scale)   || 1;
+    var rot   = parseFloat(clip.dataset.rotate)  || 0;
+    var flipH = clip.dataset.flipH === 'true';
+    var flipV = clip.dataset.flipV === 'true';
+    var offX  = parseFloat(clip.dataset.offsetX) || 0;
+    var offY  = parseFloat(clip.dataset.offsetY) || 0;
+    // Keyframe interpolation overrides statics for scale / offsetX / offsetY
+    var kfs = readClipKeyframes(clip);
+    if (kfs.length > 0 && isFinite(clipTimeSec)){
+      scale = interpolateKeyframeProp(kfs, 'scale',   clipTimeSec, scale);
+      offX  = interpolateKeyframeProp(kfs, 'offsetX', clipTimeSec, offX);
+      offY  = interpolateKeyframeProp(kfs, 'offsetY', clipTimeSec, offY);
+    }
+    if (scale === 1 && rot === 0 && !flipH && !flipV && offX === 0 && offY === 0) return;
+    var cx = W/2, cy = H/2;
+    ctx.translate(cx + offX, cy + offY);
+    if (rot)   ctx.rotate(rot * Math.PI / 180);
+    if (scale !== 1) ctx.scale(scale, scale);
+    if (flipH || flipV) ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+    ctx.translate(-cx, -cy);
+  }
+
+  // Find motion clips on M1 whose timeline range contains playhead x,
+  // and return {clip, progress 0..1 across clip} for each.
+  function getActiveMotionEffectsAtPlayheadX(phX){
+    var out = [];
+    document.querySelectorAll('.mt-track-music .mt-clip').forEach(function(c){
+      if (c.dataset.clipType !== 'motion') return;
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w){
+        out.push({ clip: c, progress: (phX - l) / Math.max(1, w) });
+      }
+    });
+    return out;
+  }
+
+  // Given an array of active motion effects, apply the combined transform +
+  // alpha to ctx BEFORE drawing the visual. Returns the alpha value to use
+  // (so fades work correctly) and whether we wrapped ctx in a save/restore.
+  // Callers must call progExitMotion(ctx, state) after drawing the visual.
+  // Motion effects are render-time TRANSFORM OFFSETS composed on top of
+  // the video's base state. The underlying data model never mutates:
+  //   - The video element is always centered at its original size.
+  //   - The clip's "position" and "scale" properties stay at default.
+  // Each RAF we ctx.save() → apply offsets (translate/scale/rotate/alpha)
+  // → draw video → ctx.restore() so the canvas transform returns to
+  // identity. The offsets animate via sin(progress·π) so the effect
+  // peaks in the middle and returns to 0-offset at both clip endpoints
+  // (clean entry + exit, no permanent shift).
+  //
+  // progExitMotion additionally paints a compact badge naming the active
+  // motion(s) — useful feedback on long timelines when the viewer might
+  // otherwise miss a subtle pan / shake / rotate starting up.
+  function progApplyMotion(ctx, W, H, active){
+    if (!active || !active.length) return null;
+    ctx.save();
+    var alpha = 1;
+    var cx = W / 2, cy = H / 2;
+    var effects = [];
+    active.forEach(function(mo){
+      var key  = mo.clip.dataset.motionEffect;
+      if (key) effects.push(key);
+      var p    = Math.max(0, Math.min(1, mo.progress));
+      // Pulse: 0 → 1 → 0 across the clip. Offsets start and end at zero.
+      var pulse = Math.sin(p * Math.PI);
+      if (key === 'zoom-in'){
+        var s = 1 + 0.3 * pulse;      // scale offset: +30% at midpoint
+        ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
+      } else if (key === 'zoom-out'){
+        var s2 = 1 - 0.2 * pulse;      // scale offset: -20% at midpoint
+        ctx.translate(cx, cy); ctx.scale(s2, s2); ctx.translate(-cx, -cy);
+      } else if (key === 'pan-left'){
+        ctx.translate(-W * 0.2 * pulse, 0);
+      } else if (key === 'pan-right'){
+        ctx.translate( W * 0.2 * pulse, 0);
+      } else if (key === 'fade-in'){
+        // Linear one-way — alpha 0 → 1 (base state at clip end is 1).
+        alpha *= p;
+      } else if (key === 'fade-out'){
+        // Linear one-way — alpha 1 → 0 (base state at clip start is 1).
+        alpha *= (1 - p);
+      } else if (key === 'shake'){
+        var amp = 6 * pulse;
+        ctx.translate((Math.random()*2-1)*amp, (Math.random()*2-1)*amp);
+      } else if (key === 'rotate'){
+        var deg = 10 * pulse;          // rotation offset: 10° at midpoint
+        ctx.translate(cx, cy); ctx.rotate(deg * Math.PI/180); ctx.translate(-cx, -cy);
+      }
+    });
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    return { active: true, effects: effects };
+  }
+  // Transform-only restore — used inside the clipped region before the
+  // outer clip save/restore unwinds. Separated from badge-draw so the
+  // badge can paint on the unclipped canvas AFTER the outer restore.
+  function progExitMotionTransform(ctx, state){
+    if (state && state.active) ctx.restore();
+  }
+  function progDrawMotionBadge(ctx, state){
+    if (!state || !state.effects || !state.effects.length) return;
+    var W = ctx.canvas.width;
+    var names = state.effects.map(function(k){
+      return ({
+        'zoom-in':'Zoom In', 'zoom-out':'Zoom Out',
+        'pan-left':'Pan Left', 'pan-right':'Pan Right',
+        'fade-in':'Fade In', 'fade-out':'Fade Out',
+        'shake':'Shake', 'rotate':'Rotate'
+      })[k] || k;
+    }).filter(Boolean);
+    if (!names.length) return;
+    var label = names.join(' + ');
+    ctx.save();
+    ctx.font = '600 11px -apple-system,system-ui,sans-serif';
+    ctx.textBaseline = 'top';
+    var padX = 8, padY = 5;
+    var textW = ctx.measureText(label).width;
+    var badgeW = textW + padX * 2;
+    var badgeH = 11 + padY * 2;
+    var bx = W - badgeW - 14;
+    var by = 50;
+    ctx.fillStyle = 'rgba(236,72,153,.85)';
+    ctx.beginPath();
+    var r = 5;
+    ctx.moveTo(bx + r, by);
+    ctx.arcTo(bx + badgeW, by, bx + badgeW, by + badgeH, r);
+    ctx.arcTo(bx + badgeW, by + badgeH, bx, by + badgeH, r);
+    ctx.arcTo(bx, by + badgeH, bx, by, r);
+    ctx.arcTo(bx, by, bx + badgeW, by, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, bx + padX, by + padY);
+    ctx.restore();
+  }
+
+  // Return every text clip whose timeline range contains playhead x.
+  function getTextClipsAtPlayheadX(phX){
+    var out = [];
+    document.querySelectorAll('.mt-track-text .mt-clip').forEach(function(c){
+      var l = parseFloat(c.style.left)  || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w) out.push(c);
+    });
+    return out;
+  }
+
+  // Tracks the last-rendered bounding box of each text clip on the PGM
+  // canvas so the drag handler can hit-test pointer events against it.
+  // Rebuilt every frame by progDrawTextOverlays.
+  var _textHitBoxes = []; // [{ clip, x, y, w, h }]
+
+  // Visual-crop mode state. When set, the PGM canvas renders the active
+  // clip's FULL source frame (with the clip's existing crop temporarily
+  // suspended), then overlays an interactive crop rectangle with 8 drag
+  // handles + interior pan + dim mask + rule-of-thirds guides. Apply
+  // commits the new crop into clip.dataset.crop; Cancel restores.
+  // Shape: { clip, rect: {x,y,w,h in % 0-100}, originalCrop: 'x,y,w,h' | null }
+  var _cropMode = null;
+
+  // Draw text overlays from T1 clips on top of the PGM canvas. Respects
+  // per-clip textOffsetX / textOffsetY (in canvas pixels) set by the
+  // drag-to-position handler below.
+  //
+  // Typography rules (Category 5):
+  //   #14 Responsive scaling: fontSize is treated as a px-at-1280-wide
+  //       reference and scaled by (W / 1280), so captions look the same
+  //       size at every output resolution (9:16 Reels, 1080p, 4K, etc.).
+  //   #15 Safe-area padding: horizontal max-width is 85% of W (7.5%
+  //       padding on each side) and the text box is clamped to stay
+  //       inside that safe zone even when dragged near the edge.
+  //   #16 Overlap prevention: when multiple T1 clips share a position
+  //       zone at the playhead, they stack vertically with a gap instead
+  //       of piling on top of each other.
+  //   #20 Video-rect constraint: when the source video is letterboxed or
+  //       pillarboxed inside the canvas, the safe area is computed from
+  //       the VIDEO rect (not the canvas rect), so captions stay inside
+  //       the visible picture instead of bleeding onto black bars. Plus
+  //       if a wrapped line still exceeds SAFE_W (e.g. a single unbreakable
+  //       word), the font shrinks dynamically until it fits (14px floor).
+  function _computeVideoRectForText(W, H){
+    var mainVideo = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!mainVideo || !mainVideo.videoWidth || !mainVideo.videoHeight){
+      return { x: 0, y: 0, w: W, h: H };
+    }
+    var srcAspect = mainVideo.videoWidth / mainVideo.videoHeight;
+    var dstAspect = W / H;
+    if (Math.abs(srcAspect - dstAspect) < 0.001){
+      return { x: 0, y: 0, w: W, h: H };
+    }
+    if (srcAspect > dstAspect){
+      var visH = W / srcAspect;
+      return { x: 0, y: (H - visH) / 2, w: W, h: visH };
+    }
+    var visW = H * srcAspect;
+    return { x: (W - visW) / 2, y: 0, w: visW, h: H };
+  }
+  function progDrawTextOverlays(ctx, W, H, phX){
+    _textHitBoxes.length = 0;
+    var clips = getTextClipsAtPlayheadX(phX);
+    if (!clips.length) return;
+
+    // #15 + #20 Safe-area padding — computed from the VIDEO rect inside
+    // the canvas so letterboxed/pillarboxed content doesn't push text
+    // into the black bars. Falls back to canvas rect if no video loaded.
+    var VR = _computeVideoRectForText(W, H);
+    var SAFE_L = VR.x + VR.w * 0.075;
+    var SAFE_R = VR.x + VR.w * 0.925;
+    var SAFE_W = SAFE_R - SAFE_L;
+    var SAFE_T = VR.y + VR.h * 0.08;
+    var SAFE_B = VR.y + VR.h * 0.92;
+
+    // #16 Stack-by-position-zone: bucket clips by their position zone so
+    // clips in the same zone can be stacked. Order within a zone follows
+    // clip timeline order (getTextClipsAtPlayheadX returns DOM order, which
+    // matches track order left-to-right).
+    //
+    // Task #64 — position now supports a vertical-horizontal compound
+    // (top-left, top, top-right, left, center, right, bottom-left,
+    // bottom, bottom-right). Legacy 'top'/'center'/'bottom' kept as
+    // shorthand for the corresponding center column.
+    function _parseTextPosition(p){
+      p = String(p || 'bottom').toLowerCase();
+      if (p === 'top')    return { v: 'top',    h: 'center' };
+      if (p === 'center') return { v: 'center', h: 'center' };
+      if (p === 'bottom') return { v: 'bottom', h: 'center' };
+      if (p === 'left')   return { v: 'center', h: 'left' };
+      if (p === 'right')  return { v: 'center', h: 'right' };
+      var parts = p.split('-');
+      var v = (parts[0] === 'top' || parts[0] === 'center' || parts[0] === 'bottom') ? parts[0] : 'bottom';
+      var h = (parts[1] === 'left' || parts[1] === 'center' || parts[1] === 'right') ? parts[1] : 'center';
+      return { v: v, h: h };
+    }
+    var zones = { top: [], center: [], bottom: [] };
+    clips.forEach(function(c){
+      var pp = _parseTextPosition(c.dataset.position);
+      c._hAlign = pp.h;
+      zones[pp.v].push(c);
+    });
+
+    function drawZone(zoneClips, pos){
+      // Pre-compute each clip's layout (lines + metrics) so we can stack
+      // them vertically before rendering.
+      var layouts = zoneClips.map(function(clip){
+        var text = clip.dataset.textContent || clip.dataset.fileName || '';
+        if (!text) return null;
+        // #14 Responsive scaling — fontSize is px-at-reference-width (1280).
+        // Fall back to ~6.5% of W if unset, which reads well at any aspect.
+        var REF_W = 1280;
+        var rawSize = parseInt(clip.dataset.fontSize, 10);
+        var size;
+        if (isFinite(rawSize) && rawSize > 0){
+          size = Math.round(rawSize * (W / REF_W));
+        } else {
+          size = Math.round(W * 0.065);
+        }
+        // Clamp to a sane range so extreme aspect ratios don't produce
+        // microscopic or hero-sized captions.
+        size = Math.max(14, Math.min(size, Math.round(H * 0.22)));
+        var color = clip.dataset.textColor || '#ffffff';
+        // Task #70 — caption-style font-family, defaulting to the system
+        // sans-serif stack. Clip's own dataset wins, then the brand-kit
+        // global, then the legacy default.
+        var fontFamily = clip.dataset.fontFamily
+          || (window.__brandCaptionStyle && window.__brandCaptionStyle.font)
+          || '-apple-system, system-ui, "Segoe UI", Roboto, sans-serif';
+        var offXFrac = parseFloat(clip.dataset.textOffsetX) || 0;
+        var offYFrac = parseFloat(clip.dataset.textOffsetY) || 0;
+        var offX = offXFrac * W;
+        var offY = offYFrac * H;
+
+        ctx.save();
+        var maxW = SAFE_W;
+        // Word-wrap + dynamic font-shrink loop (#20). If any wrapped line's
+        // width exceeds maxW at the current font size, shrink the font and
+        // re-wrap. Bottoms out at the 14px floor.
+        var lines = [];
+        var widest = 0;
+        var MIN_SIZE = 14;
+        while (true){
+          ctx.font = '700 ' + size + 'px ' + fontFamily;
+          var words = String(text).split(/\s+/);
+          lines = [];
+          var current = '';
+          words.forEach(function(w){
+            var test = current ? (current + ' ' + w) : w;
+            if (ctx.measureText(test).width > maxW && current){
+              lines.push(current); current = w;
+            } else { current = test; }
+          });
+          if (current) lines.push(current);
+          widest = 0;
+          lines.forEach(function(ln){
+            var w = ctx.measureText(ln).width;
+            if (w > widest) widest = w;
+          });
+          if (widest <= maxW || size <= MIN_SIZE) break;
+          // Shrink and retry — one px at a time to stay close to the target.
+          size = Math.max(MIN_SIZE, size - 2);
+        }
+        ctx.restore();
+        var lineH = Math.round(size * 1.15);
+        var totalH = lineH * lines.length;
+        return {
+          clip: clip, text: text, size: size, color: color,
+          offX: offX, offY: offY,
+          // Task #64 — preserve horizontal alignment from parsed position
+          hAlign: clip._hAlign || 'center',
+          // Task #70 — pass font-family through to the fill stage
+          fontFamily: fontFamily,
+          lines: lines, widest: widest, lineH: lineH, totalH: totalH
+        };
+      }).filter(Boolean);
+
+      if (!layouts.length) return;
+
+      // Stacking baseline for this zone:
+      //   top zone — stack downward from SAFE_T
+      //   bottom zone — stack upward from SAFE_B
+      //   center zone — center the whole stack vertically
+      var GAP = Math.round(H * 0.012); // 1.2% gap between stacked caps
+      var totalStackH = layouts.reduce(function(s, L){ return s + L.totalH; }, 0) + GAP * (layouts.length - 1);
+
+      var cursorY;
+      if (pos === 'top'){
+        cursorY = SAFE_T;
+      } else if (pos === 'bottom'){
+        cursorY = SAFE_B - totalStackH;
+      } else {
+        cursorY = Math.max(SAFE_T, (H - totalStackH) / 2);
+      }
+
+      layouts.forEach(function(L){
+        var size   = L.size;
+        var lines  = L.lines;
+        var lineH  = L.lineH;
+        var totalH = L.totalH;
+        var widest = L.widest;
+
+        // Zone baseline y (before per-clip offset). y is the box CENTER.
+        var y = cursorY + totalH / 2 + L.offY;
+        // #15 Clamp vertical so the text box stays in the safe zone
+        if (y - totalH / 2 < SAFE_T) y = SAFE_T + totalH / 2;
+        if (y + totalH / 2 > SAFE_B) y = SAFE_B - totalH / 2;
+
+        // Horizontal: anchor based on the parsed hAlign (Task #64), then
+        // add user drag offset, then clamp inside SAFE_L / SAFE_R.
+        // ctx.textAlign = 'center' so x is the CENTER of the text box.
+        var halfW = widest / 2;
+        var anchorX;
+        if (L.hAlign === 'left')       anchorX = SAFE_L + halfW;
+        else if (L.hAlign === 'right') anchorX = SAFE_R - halfW;
+        else                            anchorX = (SAFE_L + SAFE_R) / 2;
+        var x = anchorX + L.offX;
+        var minCenterX = SAFE_L + halfW;
+        var maxCenterX = SAFE_R - halfW;
+        if (widest <= SAFE_W){
+          if (x < minCenterX) x = minCenterX;
+          if (x > maxCenterX) x = maxCenterX;
+        } else {
+          x = W / 2; // oversized line — keep centered, wrap took care of width
+        }
+
+        ctx.save();
+        // Task #70 — use the per-clip font family computed during layout.
+        ctx.font = '700 ' + size + 'px ' + (L.fontFamily || '-apple-system, system-ui, "Segoe UI", Roboto, sans-serif');
+        ctx.textAlign = 'center';
+        ctx.fillStyle = L.color;
+        ctx.shadowColor = 'rgba(0,0,0,.65)';
+        ctx.shadowBlur = size * 0.4;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = Math.round(size * 0.08);
+        var startY = y - totalH / 2 + lineH / 2;
+        lines.forEach(function(ln, i){
+          ctx.fillText(ln, x, startY + i * lineH);
+        });
+        ctx.restore();
+
+        _textHitBoxes.push({
+          clip: L.clip,
+          x: x - widest / 2,
+          y: y - totalH / 2,
+          w: widest,
+          h: totalH
+        });
+
+        cursorY += totalH + GAP;
+      });
+    }
+
+    drawZone(zones.top,    'top');
+    drawZone(zones.center, 'center');
+    drawZone(zones.bottom, 'bottom');
+  }
+
+  // ── Drag-to-position text on the Program Monitor ─────────────────
+  // Pointer down on a rendered text overlay starts a drag; move events
+  // update the clip's textOffsetX / textOffsetY (canvas-space px) and
+  // the RAF loop redraws the next frame at the new position. Pointer
+  // coords are converted from screen px to canvas px using the canvas
+  // element's internal width/height vs its rendered CSS size.
+  function wirePgmTextDrag(canvas){
+    if (!canvas || canvas.dataset.v10TextDragWired) return;
+    canvas.dataset.v10TextDragWired = '1';
+    var dragState = null;
+    function canvasCoords(ev){
+      var rect = canvas.getBoundingClientRect();
+      var sx = (canvas.width || rect.width) / rect.width;
+      var sy = (canvas.height || rect.height) / rect.height;
+      return {
+        x: (ev.clientX - rect.left) * sx,
+        y: (ev.clientY - rect.top)  * sy
+      };
+    }
+    function hitTest(pt){
+      // Last hit-box wins so clicks on stacked text hit the top one
+      for (var i = _textHitBoxes.length - 1; i >= 0; i--){
+        var b = _textHitBoxes[i];
+        if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h){
+          return b;
+        }
+      }
+      return null;
+    }
+    canvas.addEventListener('mousedown', function(e){
+      if (e.button !== 0) return;
+      // Crop mode owns the canvas while active — don't grab text drags.
+      if (_cropMode) return;
+      var pt = canvasCoords(e);
+      var hit = hitTest(pt);
+      if (!hit) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragState = {
+        clip: hit.clip,
+        startX: pt.x,
+        startY: pt.y,
+        // Store fractional offset so drag math scales across canvas sizes
+        startOffFracX: parseFloat(hit.clip.dataset.textOffsetX) || 0,
+        startOffFracY: parseFloat(hit.clip.dataset.textOffsetY) || 0
+      };
+      canvas.style.cursor = 'grabbing';
+    });
+    // Hover cursor feedback + drag move
+    canvas.addEventListener('mousemove', function(e){
+      if (_cropMode) return;
+      if (dragState){
+        var pt = canvasCoords(e);
+        var dx = pt.x - dragState.startX;
+        var dy = pt.y - dragState.startY;
+        // Convert the pixel delta to a canvas-size-invariant fraction
+        var cw = canvas.width  || 1;
+        var ch = canvas.height || 1;
+        dragState.clip.dataset.textOffsetX = (dragState.startOffFracX + dx / cw).toFixed(5);
+        dragState.clip.dataset.textOffsetY = (dragState.startOffFracY + dy / ch).toFixed(5);
+      } else {
+        var ptHover = canvasCoords(e);
+        canvas.style.cursor = hitTest(ptHover) ? 'grab' : '';
+      }
+    });
+    function endDrag(){
+      if (!dragState) return;
+      dragState = null;
+      canvas.style.cursor = '';
+      try { if (typeof pushTimelineHistory === 'function') pushTimelineHistory(); } catch(_){}
+    }
+    canvas.addEventListener('mouseup',    endDrag);
+    canvas.addEventListener('mouseleave', endDrag);
+  }
+
+  // ── Visual Crop on PGM ───────────────────────────────────────────
+  // Click Crop in the EDIT sidebar → enterCropMode(activeClip). The PGM
+  // canvas now renders the clip's untrimmed source, with an interactive
+  // crop rectangle layered on top. The user drags any of 8 handles
+  // (4 corners + 4 edge midpoints) to reshape the rect, or drags the
+  // interior to pan it. A floating Apply / Cancel / Reset toolbar sits
+  // at the bottom of the PGM. Apply commits clip.dataset.crop in the
+  // 'x,y,w,h' percent format already understood by progDrawWithMotion
+  // (preview) and the FFmpeg crop= filter (export). Cancel restores.
+  function _cropClamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+  function _cropHandlesAt(cx, cy, cw, ch){
+    return {
+      nw: { x: cx,         y: cy         },
+      n:  { x: cx + cw/2,  y: cy         },
+      ne: { x: cx + cw,    y: cy         },
+      e:  { x: cx + cw,    y: cy + ch/2  },
+      se: { x: cx + cw,    y: cy + ch    },
+      s:  { x: cx + cw/2,  y: cy + ch    },
+      sw: { x: cx,         y: cy + ch    },
+      w:  { x: cx,         y: cy + ch/2  }
+    };
+  }
+  var _cropCursor = {
+    nw: 'nwse-resize', se: 'nwse-resize',
+    ne: 'nesw-resize', sw: 'nesw-resize',
+    n:  'ns-resize',   s:  'ns-resize',
+    e:  'ew-resize',   w:  'ew-resize',
+    move: 'move'
+  };
+
+  // Compute the active clip's content rect (the letterboxed region where
+  // the source is drawn within the canvas) so crop coords can be mapped
+  // to / from canvas pixels. Falls back to the full canvas when source
+  // dimensions aren't loaded yet.
+  function _cropContentRect(canvas){
+    if (!_cropMode || !canvas) return null;
+    var clip = _cropMode.clip;
+    var url  = clip.dataset.mediaUrl;
+    var type = clip.dataset.clipType || 'vid';
+    var src  = url ? getOrCreateProgSource(url, (type === 'img') ? 'img' : 'vid') : null;
+    var sW = 0, sH = 0;
+    if (src){
+      sW = src.naturalWidth  || src.videoWidth  || 0;
+      sH = src.naturalHeight || src.videoHeight || 0;
+    }
+    if (!sW || !sH){
+      // Fall back to a 16:9 frame so the crop UI is still usable
+      sW = 1280; sH = 720;
+    }
+    return progContainRect(canvas.width, canvas.height, sW, sH);
+  }
+
+  // Draw the dim mask + crop rectangle + 8 handles + rule-of-thirds
+  // guides on top of the already-rendered video frame. Called from
+  // progLoop once per frame while _cropMode is set.
+  function progDrawCropOverlay(ctx, W, H){
+    if (!_cropMode) return;
+    var canvas = ctx && ctx.canvas;
+    var r = _cropContentRect(canvas);
+    if (!r) return;
+    var cr = _cropMode.rect;
+    var cx = r.dx + r.dw * cr.x / 100;
+    var cy = r.dy + r.dh * cr.y / 100;
+    var cw = r.dw * cr.w / 100;
+    var ch = r.dh * cr.h / 100;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    // Dim everything outside the crop rect (clipped to content area only —
+    // the letterbox gutters stay solid black from the base draw).
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    var top    = cy - r.dy;          if (top    > 0) ctx.fillRect(r.dx, r.dy, r.dw, top);
+    var bottom = (r.dy + r.dh) - (cy + ch); if (bottom > 0) ctx.fillRect(r.dx, cy + ch, r.dw, bottom);
+    var left   = cx - r.dx;          if (left   > 0) ctx.fillRect(r.dx, cy, left, ch);
+    var right  = (r.dx + r.dw) - (cx + cw); if (right  > 0) ctx.fillRect(cx + cw, cy, right, ch);
+    // Rule-of-thirds guides
+    ctx.strokeStyle = 'rgba(255,255,255,.28)';
+    ctx.lineWidth = 1;
+    for (var i = 1; i < 3; i++){
+      ctx.beginPath();
+      ctx.moveTo(cx + cw * i/3, cy);
+      ctx.lineTo(cx + cw * i/3, cy + ch);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + ch * i/3);
+      ctx.lineTo(cx + cw, cy + ch * i/3);
+      ctx.stroke();
+    }
+    // Crop border (purple)
+    ctx.strokeStyle = 'rgba(167,139,250,.95)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx + 0.5, cy + 0.5, Math.max(1, cw - 1), Math.max(1, ch - 1));
+    // 8 handles — filled purple squares with white outline
+    var hs = 7; // half-size in canvas px
+    var handles = _cropHandlesAt(cx, cy, cw, ch);
+    Object.keys(handles).forEach(function(k){
+      var hh = handles[k];
+      ctx.fillStyle = '#a78bfa';
+      ctx.fillRect(hh.x - hs, hh.y - hs, hs * 2, hs * 2);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(hh.x - hs + 0.5, hh.y - hs + 0.5, hs * 2 - 1, hs * 2 - 1);
+    });
+    // Dimension label
+    var label = Math.round(cr.w) + '% \u00D7 ' + Math.round(cr.h) + '%';
+    ctx.font = '700 12px -apple-system,system-ui,sans-serif';
+    var tw = ctx.measureText(label).width + 14;
+    var lx = cx + 6, ly = cy + 6;
+    if (lx + tw > r.dx + r.dw - 4) lx = r.dx + r.dw - tw - 4;
+    if (ly + 22 > r.dy + r.dh - 4) ly = r.dy + r.dh - 26;
+    ctx.fillStyle = 'rgba(15,10,30,.92)';
+    ctx.fillRect(lx, ly, tw, 22);
+    ctx.strokeStyle = 'rgba(167,139,250,.55)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(lx + 0.5, ly + 0.5, tw - 1, 21);
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, lx + 7, ly + 5);
+    ctx.restore();
+  }
+
+  // Pointer handler that owns the canvas while _cropMode is set. Uses
+  // the capture phase so it runs before wirePgmTextDrag. Hit-tests the
+  // 8 handles + interior of the crop rect; updates _cropMode.rect on
+  // drag; the next progLoop frame redraws the overlay at the new shape.
+  function wirePgmCropDrag(canvas){
+    if (!canvas || canvas.dataset.v10CropDragWired) return;
+    canvas.dataset.v10CropDragWired = '1';
+    var dragState = null;
+    function canvasCoords(ev){
+      var rect = canvas.getBoundingClientRect();
+      var sx = (canvas.width  || rect.width)  / rect.width;
+      var sy = (canvas.height || rect.height) / rect.height;
+      return { x: (ev.clientX - rect.left) * sx, y: (ev.clientY - rect.top) * sy };
+    }
+    function getCropPx(){
+      var r = _cropContentRect(canvas);
+      if (!r) return null;
+      var cr = _cropMode.rect;
+      return {
+        r: r,
+        x: r.dx + r.dw * cr.x / 100,
+        y: r.dy + r.dh * cr.y / 100,
+        w: r.dw * cr.w / 100,
+        h: r.dh * cr.h / 100
+      };
+    }
+    function hitHandle(pt){
+      var cp = getCropPx();
+      if (!cp) return null;
+      var handles = _cropHandlesAt(cp.x, cp.y, cp.w, cp.h);
+      var hs = 12; // generous hit radius
+      var keys = Object.keys(handles);
+      for (var i = 0; i < keys.length; i++){
+        var hh = handles[keys[i]];
+        if (pt.x >= hh.x - hs && pt.x <= hh.x + hs && pt.y >= hh.y - hs && pt.y <= hh.y + hs){
+          return keys[i];
+        }
+      }
+      if (pt.x > cp.x && pt.x < cp.x + cp.w && pt.y > cp.y && pt.y < cp.y + cp.h){
+        return 'move';
+      }
+      return null;
+    }
+    canvas.addEventListener('mousedown', function(e){
+      if (!_cropMode || e.button !== 0) return;
+      var pt = canvasCoords(e);
+      var h = hitHandle(pt);
+      if (!h) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var cp = getCropPx();
+      var cr = _cropMode.rect;
+      dragState = {
+        handle: h,
+        startPt: pt,
+        startRect: { x: cr.x, y: cr.y, w: cr.w, h: cr.h },
+        contentRect: cp.r
+      };
+      canvas.style.cursor = _cropCursor[h] || 'crosshair';
+    }, true);
+    canvas.addEventListener('mousemove', function(e){
+      if (!_cropMode) return;
+      if (dragState){
+        e.preventDefault();
+        e.stopPropagation();
+        var pt = canvasCoords(e);
+        var dx = pt.x - dragState.startPt.x;
+        var dy = pt.y - dragState.startPt.y;
+        var rRect = dragState.contentRect;
+        var dxPct = (dx / rRect.dw) * 100;
+        var dyPct = (dy / rRect.dh) * 100;
+        var s = dragState.startRect;
+        var nx = s.x, ny = s.y, nw = s.w, nh = s.h;
+        var minSize = 5; // 5% minimum so the rect is always grabbable
+        switch (dragState.handle){
+          case 'move':
+            nx = _cropClamp(s.x + dxPct, 0, 100 - s.w);
+            ny = _cropClamp(s.y + dyPct, 0, 100 - s.h);
+            break;
+          case 'nw':
+            nx = _cropClamp(s.x + dxPct, 0, s.x + s.w - minSize);
+            ny = _cropClamp(s.y + dyPct, 0, s.y + s.h - minSize);
+            nw = s.w - (nx - s.x);
+            nh = s.h - (ny - s.y);
+            break;
+          case 'n':
+            ny = _cropClamp(s.y + dyPct, 0, s.y + s.h - minSize);
+            nh = s.h - (ny - s.y);
+            break;
+          case 'ne':
+            ny = _cropClamp(s.y + dyPct, 0, s.y + s.h - minSize);
+            nw = _cropClamp(s.w + dxPct, minSize, 100 - s.x);
+            nh = s.h - (ny - s.y);
+            break;
+          case 'e':
+            nw = _cropClamp(s.w + dxPct, minSize, 100 - s.x);
+            break;
+          case 'se':
+            nw = _cropClamp(s.w + dxPct, minSize, 100 - s.x);
+            nh = _cropClamp(s.h + dyPct, minSize, 100 - s.y);
+            break;
+          case 's':
+            nh = _cropClamp(s.h + dyPct, minSize, 100 - s.y);
+            break;
+          case 'sw':
+            nx = _cropClamp(s.x + dxPct, 0, s.x + s.w - minSize);
+            nh = _cropClamp(s.h + dyPct, minSize, 100 - s.y);
+            nw = s.w - (nx - s.x);
+            break;
+          case 'w':
+            nx = _cropClamp(s.x + dxPct, 0, s.x + s.w - minSize);
+            nw = s.w - (nx - s.x);
+            break;
+        }
+        _cropMode.rect = { x: nx, y: ny, w: nw, h: nh };
+      } else {
+        var ptH = canvasCoords(e);
+        var hh = hitHandle(ptH);
+        canvas.style.cursor = hh ? (_cropCursor[hh] || 'crosshair') : 'crosshair';
+      }
+    }, true);
+    function endCropDrag(){
+      if (!dragState) return;
+      dragState = null;
+      canvas.style.cursor = _cropMode ? 'crosshair' : '';
+    }
+    canvas.addEventListener('mouseup',    endCropDrag, true);
+    canvas.addEventListener('mouseleave', endCropDrag, true);
+  }
+
+  // Force the PGM preview region to be visible so the canvas (and the
+  // crop UI overlaid on it) is actually rendered. The editor hides
+  // #videoPreviewArea until video playback starts, but for visual crop
+  // we need the canvas visible regardless.
+  function _showPreviewArea(){
+    var area = document.getElementById('videoPreviewArea');
+    if (area){
+      if (getComputedStyle(area).display === 'none') area.style.display = 'block';
+      if (getComputedStyle(area).visibility === 'hidden') area.style.visibility = 'visible';
+    }
+    // Hide the upload zone while we're cropping so it doesn't sit on
+    // top of the canvas with the same parent stacking context.
+    var uz = document.getElementById('uploadZone');
+    if (uz) uz.dataset._cropHidPrev = uz.style.display || '', uz.style.display = 'none';
+  }
+  function _restorePreviewArea(){
+    var uz = document.getElementById('uploadZone');
+    if (uz && '_cropHidPrev' in uz.dataset){
+      uz.style.display = uz.dataset._cropHidPrev || '';
+      delete uz.dataset._cropHidPrev;
+    }
+  }
+
+  // Position the toolbar on top of the PGM canvas using fixed
+  // positioning so re-renders of any intermediate ancestor can never
+  // orphan it. We recompute the screen rect of the canvas every frame.
+  function _positionCropToolbar(bar){
+    if (!bar) return;
+    var canvas = document.getElementById('tlProgMonitor');
+    var ref = canvas || document.querySelector('.video-container');
+    if (!ref){ bar.style.display = 'none'; return; }
+    var r = ref.getBoundingClientRect();
+    if (!r || r.width < 10 || r.height < 10){ bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    bar.style.position = 'fixed';
+    bar.style.left = (r.left + r.width / 2) + 'px';
+    bar.style.bottom = Math.max(8, window.innerHeight - r.bottom + 14) + 'px';
+    bar.style.transform = 'translateX(-50%)';
+    bar.style.top = '';
+    bar.style.right = '';
+  }
+
+  // Floating Apply / Cancel / Reset toolbar that lives ON TOP of the PGM.
+  // Anchored to document.body with position:fixed and repositioned every
+  // frame from the canvas rect — this survives any re-render of the
+  // editor's preview wrapper (which would otherwise orphan the toolbar).
+  function ensureCropToolbar(){
+    // Make sure the canvas is also attached so we have something to
+    // position relative to.
+    try { ensureProgramMonitor(); } catch(_){}
+    // Look for an EXISTING attached toolbar via querySelectorAll — note
+    // that getElementById can return stale orphaned references in some
+    // browsers after a removeChild, so we explicitly check isConnected.
+    var attached = null;
+    var matches = document.querySelectorAll('#tlCropToolbar');
+    for (var i = 0; i < matches.length; i++){
+      if (matches[i].isConnected && matches[i].parentElement === document.body){
+        attached = matches[i]; break;
+      }
+    }
+    if (attached){
+      _positionCropToolbar(attached);
+      return attached;
+    }
+    // No live toolbar — purge any stale fragments and create a fresh one.
+    Array.prototype.forEach.call(matches, function(el){
+      try { el.parentNode && el.parentNode.removeChild(el); } catch(_){}
+    });
+    var bar = document.createElement('div');
+    bar.id = 'tlCropToolbar';
+    bar.style.cssText = 'position:fixed;z-index:99999;display:flex;gap:8px;background:rgba(15,10,30,.92);border:1px solid rgba(139,92,246,.55);border-radius:10px;padding:7px 9px;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.45);pointer-events:auto';
+    var resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.textContent = 'Reset';
+    resetBtn.style.cssText = 'padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;color:#e2e0f0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:7px;cursor:pointer';
+    resetBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      if (_cropMode) _cropMode.rect = { x: 0, y: 0, w: 100, h: 100 };
+    });
+    var cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:.5px;color:#e2e0f0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:7px;cursor:pointer';
+    cancelBtn.addEventListener('click', function(e){ e.preventDefault(); exitCropMode(false); });
+    var applyBtn = document.createElement('button');
+    applyBtn.type = 'button';
+    applyBtn.textContent = 'Apply Crop';
+    applyBtn.style.cssText = 'padding:7px 16px;font-size:11px;font-weight:800;letter-spacing:.5px;color:#fff;background:linear-gradient(135deg,#8b5cf6,#a78bfa);border:0;border-radius:7px;cursor:pointer;box-shadow:0 4px 12px rgba(139,92,246,.35)';
+    applyBtn.addEventListener('click', function(e){ e.preventDefault(); exitCropMode(true); });
+    bar.appendChild(resetBtn);
+    bar.appendChild(cancelBtn);
+    bar.appendChild(applyBtn);
+    try { document.body.appendChild(bar); } catch(_){ return null; }
+    _positionCropToolbar(bar);
+    return bar;
+  }
+  function removeCropToolbar(){
+    var matches = document.querySelectorAll('#tlCropToolbar');
+    Array.prototype.forEach.call(matches, function(el){
+      try { el.parentNode && el.parentNode.removeChild(el); } catch(_){}
+    });
+  }
+
+  // Move the playhead inside the clip if it's not already, so progLoop
+  // renders THIS clip while we crop it.
+  function _snapPlayheadIntoClip(clip){
+    if (!clip) return;
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var l = parseFloat(clip.style.left)  || 0;
+    var w = parseFloat(clip.style.width) || 0;
+    var phX = parseFloat(ph.style.left)  || 0;
+    if (phX < l + 4 || phX > l + w - 4){
+      ph.style.left = (l + w / 2) + 'px';
+      try { syncPreviewToPlayhead(); } catch(_){}
+    }
+  }
+
+  function enterCropMode(clip){
+    if (!clip){ showToast('Select a clip first'); return; }
+    if (_cropMode){
+      // Already cropping a different clip — cancel the previous session.
+      exitCropMode(false);
+    }
+    // Make sure PGM is on so the user can see what they're cropping.
+    if (!_progEnabled){
+      try { toggleProgramMonitor(); } catch(_){}
+    }
+    var orig = clip.dataset.crop || null;
+    var cur  = orig ? orig.split(',').map(function(s){ return parseFloat(s); }) : [0, 0, 100, 100];
+    if (cur.length !== 4 || cur.some(function(v){ return !isFinite(v); })) cur = [0, 0, 100, 100];
+    _cropMode = {
+      clip: clip,
+      rect: { x: cur[0], y: cur[1], w: cur[2], h: cur[3] },
+      originalCrop: orig
+    };
+    // Render the FULL source while editing — the overlay represents what
+    // will be kept. We re-apply on Apply / restore on Cancel.
+    if (orig) delete clip.dataset.crop;
+    _snapPlayheadIntoClip(clip);
+    // Force the PGM preview region to be visible — by default the editor
+    // hides it until video plays, and we need the canvas visible to crop.
+    try { _showPreviewArea(); } catch(_){}
+    // Make sure the PGM canvas is attached BEFORE we position the
+    // toolbar — ensureCropToolbar internally calls ensureProgramMonitor
+    // but we also want to make sure its RAF loop is spinning so the
+    // crop overlay actually draws.
+    try { ensureProgramMonitor(); } catch(_){}
+    ensureCropToolbar();
+    // Wire crop drag now that the canvas exists.
+    var canvas = document.getElementById('tlProgMonitor');
+    if (canvas) wirePgmCropDrag(canvas);
+    if (canvas) canvas.style.cursor = 'crosshair';
+    // Debug hook — lets us inspect state from DevTools.
+    try { window._cropModeState = _cropMode; } catch(_){}
+    showToast('Drag the handles to crop \u00B7 Apply when done');
+    try { syncPreviewToPlayhead(); } catch(_){}
+    // Kick the RAF loop in case PGM was already on but idle.
+    if (_progEnabled && !_progRAF){ _progRAF = requestAnimationFrame(progLoop); }
+  }
+
+  function exitCropMode(commit){
+    if (!_cropMode) return;
+    var clip = _cropMode.clip;
+    var rect = _cropMode.rect;
+    if (commit){
+      var isFull = (rect.x <= 0.5 && rect.y <= 0.5 && rect.w >= 99.5 && rect.h >= 99.5);
+      if (isFull){
+        delete clip.dataset.crop;
+      } else {
+        clip.dataset.crop = (
+          rect.x.toFixed(2) + ',' +
+          rect.y.toFixed(2) + ',' +
+          rect.w.toFixed(2) + ',' +
+          rect.h.toFixed(2)
+        );
+      }
+      try { if (typeof pushTimelineHistory === 'function') pushTimelineHistory(); } catch(_){}
+      try { _lastPreviewUrl = null; } catch(_){}
+      showToast(isFull ? 'Crop cleared' : 'Crop applied \u00B7 ' + Math.round(rect.w) + '\u00D7' + Math.round(rect.h) + '%');
+    } else {
+      // Restore original crop (or leave uncropped)
+      if (_cropMode.originalCrop){
+        clip.dataset.crop = _cropMode.originalCrop;
+      }
+      showToast('Crop cancelled');
+    }
+    _cropMode = null;
+    try { window._cropModeState = null; } catch(_){}
+    removeCropToolbar();
+    try { _restorePreviewArea(); } catch(_){}
+    var canvas = document.getElementById('tlProgMonitor');
+    if (canvas) canvas.style.cursor = '';
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+
+  // ESC to cancel crop, Enter to apply — convenience hotkeys.
+  document.addEventListener('keydown', function(e){
+    if (!_cropMode) return;
+    if (e.key === 'Escape'){ e.preventDefault(); exitCropMode(false); }
+    else if (e.key === 'Enter'){ e.preventDefault(); exitCropMode(true); }
+  }, true);
+
+  // Expose for the EDIT sidebar's data-v10-clip-action="Crop" route.
+  try { window.enterCropMode = enterCropMode; } catch(_){}
+  try { window.exitCropMode  = exitCropMode;  } catch(_){}
+
+  // Small modal for entering text + choosing size / color / duration / position.
+  // ── Slip editor modal ────────────────────────────────────────────
+  // Opens when the user double-clicks a V1/A1 clip. Shows the full
+  // source as a filmstrip (video) or decoded-peaks waveform (audio)
+  // with a draggable window representing the current in/out slice.
+  // Sliding the window changes sourceOffset while keeping the clip's
+  // timeline duration fixed — classic "slip" edit. Apply commits,
+  // Cancel rolls back.
+  function openSlipEditor(clip){
+    if (!clip) return;
+    var url   = clip.dataset.mediaUrl;
+    var type  = clip.dataset.clipType || 'vid';
+    if (!url) return;
+    var srcOff0  = parseFloat(clip.dataset.sourceOffset) || 0;
+    var srcDur   = parseFloat(clip.dataset.duration)     || 0;
+    var clipW    = parseFloat(clip.style.width)          || 0;
+    var clipDur  = clipW / TIMELINE_PX_PER_SEC;
+    if (clipDur <= 0){ showToast('Clip has no duration'); return; }
+
+    // Measure source duration (fall back to current clip.duration if
+    // the dataset has the source total)
+    var ensureSrcDur = new Promise(function(resolve){
+      if (srcDur > clipDur + 0.01){ resolve(srcDur); return; }
+      if (type === 'vid'){
+        var v = document.createElement('video');
+        v.preload = 'metadata';
+        v.muted = true;
+        v.src = url;
+        v.addEventListener('loadedmetadata', function(){
+          resolve(v.duration && isFinite(v.duration) ? v.duration : clipDur);
+        }, { once: true });
+        v.addEventListener('error', function(){ resolve(clipDur); }, { once: true });
+        setTimeout(function(){ resolve(clipDur); }, 5000);
+      } else {
+        var a = document.createElement('audio');
+        a.preload = 'metadata';
+        a.src = url;
+        a.addEventListener('loadedmetadata', function(){
+          resolve(a.duration && isFinite(a.duration) ? a.duration : clipDur);
+        }, { once: true });
+        a.addEventListener('error', function(){ resolve(clipDur); }, { once: true });
+        setTimeout(function(){ resolve(clipDur); }, 5000);
+      }
+    });
+
+    ensureSrcDur.then(function(effectiveSrcDur){
+      if (effectiveSrcDur <= clipDur + 0.01){
+        showToast('Source is the same length as the clip \u2014 nothing to slip');
+        return;
+      }
+      buildSlipModal(clip, url, type, srcOff0, clipDur, effectiveSrcDur);
+    });
+  }
+
+  function buildSlipModal(clip, url, type, initialSrcOff, clipDur, srcDur){
+    // Modal scaffolding
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,6,18,.75);z-index:100001;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+
+    var STRIP_W = Math.min(720, window.innerWidth - 80);
+    var STRIP_H = type === 'vid' ? 90 : 60;
+    var winW    = Math.max(12, Math.round((clipDur / srcDur) * STRIP_W));
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#110d1c;border:1px solid rgba(139,92,246,.4);border-radius:12px;padding:14px;width:' + (STRIP_W + 40) + 'px;max-width:95vw;color:#e2e0f0';
+    panel.innerHTML =
+      '<h3 style="margin:0 0 4px;font-size:14px;font-weight:800">Slip edit</h3>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:10px">' +
+        'Drag the highlighted window across the source. Clip length stays ' + clipDur.toFixed(2) + 's.' +
+      '</div>' +
+      '<div id="slipStripWrap" style="position:relative;width:' + STRIP_W + 'px;height:' + STRIP_H + 'px;background:#0a0612;border-radius:6px;overflow:hidden;margin:0 auto;user-select:none">' +
+        '<div id="slipStrip" style="position:absolute;inset:0;background:#1a1028"></div>' +
+        '<div id="slipWindow" style="position:absolute;top:0;height:100%;width:' + winW + 'px;background:rgba(139,92,246,.25);border:2px solid #a78bfa;border-radius:4px;cursor:grab;box-shadow:0 0 18px rgba(139,92,246,.45)"></div>' +
+      '</div>' +
+      '<div id="slipMeta" style="font-size:11px;color:#a78bfa;margin-top:10px;text-align:center;font-variant-numeric:tabular-nums">In: 0.00s \u2192 Out: 0.00s</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button id="slipCancel" type="button" style="padding:7px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#e2e0f0;cursor:pointer;font-weight:600">Cancel</button>' +
+        '<button id="slipApply" type="button" style="padding:7px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:7px;color:#fff;cursor:pointer;font-weight:700">Apply</button>' +
+      '</div>';
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    var stripWrap = panel.querySelector('#slipStripWrap');
+    var stripBg   = panel.querySelector('#slipStrip');
+    var winEl     = panel.querySelector('#slipWindow');
+    var meta      = panel.querySelector('#slipMeta');
+
+    // Populate strip background with thumbnails (video) or waveform (audio)
+    renderSlipStrip(type, url, STRIP_W, STRIP_H, srcDur).then(function(dataURL){
+      if (!dataURL) return;
+      stripBg.style.backgroundImage = 'url(' + dataURL + ')';
+      stripBg.style.backgroundSize = '100% 100%';
+    });
+
+    // Position the window based on the current sourceOffset
+    function offToPx(off){
+      return Math.max(0, Math.min(STRIP_W - winW, (off / srcDur) * STRIP_W));
+    }
+    function pxToOff(px){
+      return Math.max(0, Math.min(srcDur - clipDur, (px / STRIP_W) * srcDur));
+    }
+    var currentOff = initialSrcOff;
+    function renderWindow(){
+      winEl.style.left = offToPx(currentOff) + 'px';
+      var inS  = currentOff;
+      var outS = currentOff + clipDur;
+      meta.textContent = 'In: ' + inS.toFixed(2) + 's \u2192 Out: ' + outS.toFixed(2) + 's  (length ' + clipDur.toFixed(2) + 's of ' + srcDur.toFixed(2) + 's source)';
+    }
+    renderWindow();
+
+    // Drag-to-slip
+    var dragData = null;
+    winEl.addEventListener('mousedown', function(e){
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragData = { startX: e.clientX, startOff: currentOff };
+      winEl.style.cursor = 'grabbing';
+    });
+    function onMove(e){
+      if (!dragData) return;
+      var dx = e.clientX - dragData.startX;
+      var newPx = offToPx(dragData.startOff) + dx;
+      currentOff = pxToOff(newPx);
+      renderWindow();
+    }
+    function onUp(){
+      if (!dragData) return;
+      dragData = null;
+      winEl.style.cursor = 'grab';
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+
+    function close(){
+      try { document.removeEventListener('mousemove', onMove); } catch(_){}
+      try { document.removeEventListener('mouseup', onUp); } catch(_){}
+      try { overlay.remove(); } catch(_){}
+    }
+    panel.querySelector('#slipCancel').addEventListener('click', close);
+    overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+    panel.querySelector('#slipApply').addEventListener('click', function(){
+      clip.dataset.sourceOffset = currentOff.toFixed(3);
+      // Keep dataset.duration (source's total) unchanged. clipDur is
+      // encoded in style.width × TIMELINE_PX_PER_SEC; width stays the
+      // same, so the clip's timeline duration is preserved.
+      try { attachFilmstripOrWaveform(clip); } catch(_){}
+      try { syncPreviewToPlayhead(); } catch(_){}
+      try { pushTimelineHistory(); } catch(_){}
+      showToast('Slipped \u2014 in ' + currentOff.toFixed(2) + 's');
+      close();
+    });
+    // ESC closes
+    overlay.tabIndex = 0;
+    overlay.focus();
+    overlay.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
+  }
+
+  // Render the slip strip background for a given source URL. Returns
+  // a data-URL (JPEG for video, PNG for audio) or null on failure.
+  function renderSlipStrip(type, url, W, H, srcDur){
+    if (type === 'aud'){
+      return decodeAudioBuffer(url).then(function(buffer){
+        if (!buffer) return null;
+        var ch = buffer.getChannelData(0);
+        var samplesPerBucket = Math.max(1, Math.floor(ch.length / W));
+        var canvas = document.createElement('canvas');
+        canvas.width  = W;
+        canvas.height = H;
+        var ctx = canvas.getContext('2d');
+        var grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, 'rgba(5,150,105,0.85)');
+        grad.addColorStop(1, 'rgba(16,185,129,0.55)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        var mid = H / 2;
+        for (var x = 0; x < W; x++){
+          var start = x * samplesPerBucket;
+          var end   = Math.min(ch.length, start + samplesPerBucket);
+          var peak = 0;
+          for (var i = start; i < end; i++){
+            var v = Math.abs(ch[i]);
+            if (v > peak) peak = v;
+          }
+          var h = Math.round(peak * (H - 6));
+          ctx.moveTo(x + 0.5, mid - h / 2);
+          ctx.lineTo(x + 0.5, mid + h / 2);
+        }
+        ctx.stroke();
+        return canvas.toDataURL('image/png');
+      }).catch(function(){ return null; });
+    }
+    // Video: seek to evenly-spaced timestamps and draw frames
+    return new Promise(function(resolve){
+      var vid = document.createElement('video');
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'auto';
+      vid.src = url;
+      vid.addEventListener('error', function(){ resolve(null); }, { once: true });
+      vid.addEventListener('loadedmetadata', function(){
+        var vw = vid.videoWidth, vh = vid.videoHeight;
+        if (!vw || !vh){ resolve(null); return; }
+        var dur = vid.duration && isFinite(vid.duration) ? vid.duration : srcDur;
+        var thumbW = 60;
+        var slots = Math.max(1, Math.floor(W / thumbW));
+        var canvas = document.createElement('canvas');
+        canvas.width = slots * thumbW;
+        canvas.height = H;
+        var ctx = canvas.getContext('2d');
+        var slotIdx = 0;
+        function drawNext(){
+          if (slotIdx >= slots){
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            return;
+          }
+          var t = ((slotIdx + 0.5) / slots) * dur;
+          t = Math.min(Math.max(0, t), Math.max(0, dur - 0.05));
+          var onSeeked = function(){
+            vid.removeEventListener('seeked', onSeeked);
+            try {
+              var srcAR = vw / vh;
+              var dstAR = thumbW / H;
+              var sx, sy, sw, sh;
+              if (srcAR > dstAR){
+                sh = vh; sw = Math.round(sh * dstAR); sx = Math.round((vw - sw) / 2); sy = 0;
+              } else {
+                sw = vw; sh = Math.round(sw / dstAR); sx = 0; sy = Math.round((vh - sh) / 2);
+              }
+              ctx.drawImage(vid, sx, sy, sw, sh, slotIdx * thumbW, 0, thumbW, H);
+            } catch(_){}
+            slotIdx++;
+            drawNext();
+          };
+          vid.addEventListener('seeked', onSeeked);
+          try { vid.currentTime = t; } catch(_){ slotIdx = slots; drawNext(); }
+          setTimeout(function(){
+            if (slotIdx <= slots){
+              vid.removeEventListener('seeked', onSeeked);
+              slotIdx++;
+              drawNext();
+            }
+          }, 2500);
+        }
+        drawNext();
+      }, { once: true });
+      setTimeout(function(){ resolve(null); }, 8000);
+    });
+  }
+
+  function openTextInputModal(cb){
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,6,18,.72);z-index:100000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    overlay.innerHTML = ''+
+      '<div style="background:#1a1028;border:1px solid rgba(139,92,246,.5);border-radius:14px;padding:18px 18px 14px;width:360px;max-width:92vw;color:#e2e0f0;font-family:-apple-system,system-ui,sans-serif">'+
+        '<h3 style="margin:0 0 12px;font-size:15px;font-weight:800;letter-spacing:.3px">Add Text</h3>'+
+        '<label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">TEXT</label>'+
+        '<textarea id="mtTxtIn" rows="3" placeholder="Type your text here..." style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:8px 10px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">DURATION (s)</label>'+
+          '<input id="mtTxtDur" type="number" min="1" max="120" value="5" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:6px 8px;font-size:13px;box-sizing:border-box"/></div>'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">FONT SIZE (px)</label>'+
+          '<input id="mtTxtSize" type="number" min="8" max="200" value="10" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:6px 8px;font-size:13px;box-sizing:border-box"/></div>'+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">COLOR</label>'+
+          '<input id="mtTxtColor" type="color" value="#ffffff" style="width:100%;height:34px;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;padding:2px;cursor:pointer"/></div>'+
+          '<div><label style="display:block;font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px">POSITION</label>'+
+          '<select id="mtTxtPos" style="width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.35);border-radius:7px;color:#fff;padding:7px 8px;font-size:13px"><option value="top">Top</option><option value="center">Center</option><option value="bottom" selected>Bottom</option></select></div>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">'+
+          '<button id="mtTxtCancel" style="padding:7px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#e2e0f0;cursor:pointer;font-weight:600">Cancel</button>'+
+          '<button id="mtTxtOk" style="padding:7px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:7px;color:#fff;cursor:pointer;font-weight:700">Add</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(overlay);
+    var ta = overlay.querySelector('#mtTxtIn');
+    var durI = overlay.querySelector('#mtTxtDur');
+    var sizeI = overlay.querySelector('#mtTxtSize');
+    var colorI = overlay.querySelector('#mtTxtColor');
+    var posI = overlay.querySelector('#mtTxtPos');
+    var ok = overlay.querySelector('#mtTxtOk');
+    var cancel = overlay.querySelector('#mtTxtCancel');
+    setTimeout(function(){ try { ta.focus(); } catch(_){} }, 50);
+    function close(){ try { overlay.remove(); } catch(_){} }
+    cancel.addEventListener('click', close);
+    overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+    ok.addEventListener('click', function(){
+      var text = (ta.value || '').trim();
+      if (!text){ ta.focus(); return; }
+      var spec = {
+        duration:  Math.max(1, Math.min(120, parseInt(durI.value, 10) || 5)),
+        fontSize:  Math.max(8, Math.min(200, parseInt(sizeI.value, 10) || 10)),
+        textColor: colorI.value || '#ffffff',
+        position:  posI.value || 'bottom'
+      };
+      close();
+      if (typeof cb === 'function') cb(text, spec);
+    });
+    // ESC closes, Ctrl/Cmd+Enter submits
+    overlay.addEventListener('keydown', function(e){
+      if (e.key === 'Escape'){ e.stopPropagation(); close(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); ok.click(); }
+    });
+    return overlay;
+  }
+  try { window.openTextInputModal = openTextInputModal; } catch(_){}
+
+  // Active preview: when the playhead is over a video clip, load that clip's
+  // media into the preview window at the correct time offset. This makes the
+  // playhead a real scrub bar across the whole sequence rather than being
+  // stuck on the first uploaded clip.
+  var _lastPreviewUrl = null;
+  function getClipAtPlayheadX(phX){
+    // Task #49 — when V1 clips overlap, prefer the most recently added
+    // one (highest dataset.addedAt). Falls back to DOM order for clips
+    // that predate the addedAt stamping.
+    var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+    var best = null, bestRank = -Infinity;
+    for (var i = 0; i < clips.length; i++){
+      var c = clips[i];
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w){
+        // Rank = addedAt if present, else DOM index (later siblings beat earlier)
+        var rank = parseFloat(c.dataset.addedAt);
+        if (!isFinite(rank)) rank = i;
+        if (rank > bestRank){
+          best = { clip: c, offsetPx: phX - l };
+          bestRank = rank;
+        }
+      }
+    }
+    return best;
+  }
+  function syncPreviewToPlayhead(){
+    var ph = document.getElementById('mtPlayhead');
+    if (!ph) return;
+    var phX = parseFloat(ph.style.left) || 0;
+    var hit = getClipAtPlayheadX(phX);
+    if (!hit){
+      // Playhead is over a gap — show black overlay.
+      hideImagePreview();
+      showBlackPreview();
+      return;
+    }
+    hideBlackPreview();
+    var clip = hit.clip;
+    var url = clip.dataset.mediaUrl;
+    // Image clips render as an <img> overlay above the video preview.
+    if (clip.dataset.clipType === 'img'){
+      if (url) showImagePreview(url);
+      return;
+    }
+    hideImagePreview();
+    if (!url) return;
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!player) return;
+    // Respect the source-offset stored on razor-split pieces so each half
+    // plays from the correct point inside the original source.
+    var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+    var seekTime = sourceOffset + (hit.offsetPx / TIMELINE_PX_PER_SEC);
+    if (_lastPreviewUrl !== url){
+      _lastPreviewUrl = url;
+      try { player.src = url; player.load(); } catch(_){}
+      var trySeek = function(){
+        try { player.currentTime = Math.max(0, Math.min((player.duration||seekTime), seekTime)); } catch(_){}
+      };
+      player.addEventListener('loadedmetadata', trySeek, {once:true});
+      trySeek();
+      try {
+        window.currentVideoFile = {
+          filename: clip.dataset.serverFilename || clip.dataset.fileName,
+          serveUrl: url,
+          duration: parseFloat(clip.dataset.duration) || 0
+        };
+      } catch(_){}
+    } else {
+      try { player.currentTime = Math.max(0, Math.min((player.duration||seekTime), seekTime)); } catch(_){}
+    }
+  }
+  try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
+
+  // Reverse sync: as the video plays, walk the playhead across the timeline
+  // so the user can visually track where they are in the sequence. Matches
+  // the loaded video.src back to a clip on V1 by dataset.mediaUrl, then
+  // positions the playhead at clip.left + currentTime * PX_PER_SEC.
+  // HTMLMediaElement.src is always absolute; dataset.mediaUrl may be a
+  // relative path like '/uploads/abc.mp4'. Normalize both to compare.
+  function normalizeUrl(u){
+    try { return new URL(u, location.href).href; } catch(_){ return u; }
+  }
+  function findClipForPlayer(video){
+    if (!video || !video.src) return null;
+    var src = video.src;
+    var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+    var ct = video.currentTime || 0;
+    // Task #49 — prefer the MOST RECENTLY ADDED matching clip so when
+    // clips overlap, the newer one is the canonical "current" clip.
+    var best = null, bestRank = -Infinity;
+    for (var i = 0; i < clips.length; i++){
+      var c = clips[i];
+      if (!c.dataset.mediaUrl) continue;
+      if (normalizeUrl(c.dataset.mediaUrl) !== src) continue;
+      var srcOff = parseFloat(c.dataset.sourceOffset) || 0;
+      var dur    = parseFloat(c.dataset.duration)    || 0;
+      if (ct >= srcOff - 0.01 && ct <= srcOff + dur + 0.01){
+        var rank = parseFloat(c.dataset.addedAt);
+        if (!isFinite(rank)) rank = i;
+        if (rank > bestRank){ best = c; bestRank = rank; }
+      }
+    }
+    if (best) return best;
+    // Fallback: latest clip with matching src (again by addedAt).
+    var bestFb = null, bestFbRank = -Infinity;
+    for (var j = 0; j < clips.length; j++){
+      if (clips[j].dataset.mediaUrl && normalizeUrl(clips[j].dataset.mediaUrl) === src){
+        var r = parseFloat(clips[j].dataset.addedAt);
+        if (!isFinite(r)) r = j;
+        if (r > bestFbRank){ bestFb = clips[j]; bestFbRank = r; }
+      }
+    }
+    return bestFb;
+  }
+  function syncPlayheadToVideo(){
+    // Transport owns the playhead when it's playing — skip passive sync
+    // so wall-clock and video-driven updates don't fight each other.
+    if (_transport && _transport.playing) return;
+    var video = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!video) return;
+    var clip = findClipForPlayer(video);
+    if (!clip) return;
+    var clipLeft = parseFloat(clip.style.left) || 0;
+    var srcOff   = parseFloat(clip.dataset.sourceOffset) || 0;
+    var timeInClip = (video.currentTime || 0) - srcOff;
+    var x = clipLeft + Math.max(0, timeInClip) * TIMELINE_PX_PER_SEC;
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = x + 'px';
+  }
+  function wireVideoPlayheadSync(){
+    var video = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (!video || video.dataset.v14PlayheadSync) return;
+    video.dataset.v14PlayheadSync = '1';
+    video.addEventListener('timeupdate', syncPlayheadToVideo);
+    video.addEventListener('seeked',     syncPlayheadToVideo);
+    video.addEventListener('play',       syncPlayheadToVideo);
+    // Continuous playback: when this clip ends, auto-advance through any
+    // gap to the next video clip and resume. If the playhead is already at
+    // the end of the sequence, just show the black overlay.
+    video.addEventListener('ended', function(){
+      // Transport manages sequencing during its own playback — don't
+      // double up the gap animation.
+      if (_transport && _transport.playing) return;
+      var ph = document.getElementById('mtPlayhead');
+      if (!ph) return;
+      // Align playhead exactly to the end of the currently-playing clip.
+      var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+      var src = video.src;
+      var endedClip = null;
+      for (var i = 0; i < clips.length; i++){
+        var c = clips[i];
+        if (!c.dataset.mediaUrl) continue;
+        if (normalizeUrl(c.dataset.mediaUrl) !== src) continue;
+        var srcOff = parseFloat(c.dataset.sourceOffset) || 0;
+        var dur    = parseFloat(c.dataset.duration)    || 0;
+        // Pick the clip whose range we were playing
+        if (video.duration && Math.abs(video.currentTime - (srcOff + dur)) < 0.6){ endedClip = c; break; }
+      }
+      var startX;
+      if (endedClip){
+        startX = (parseFloat(endedClip.style.left)||0) + (parseFloat(endedClip.style.width)||0);
+      } else {
+        startX = parseFloat(ph.style.left) || 0;
+      }
+      ph.style.left = startX + 'px';
+      advancePlayheadThroughGap(startX);
+    });
+  }
+  wireVideoPlayheadSync();
+  // If the <video> element is injected/replaced later, re-wire once it exists.
+  var _playheadSyncTries = 0;
+  var _playheadSyncInterval = setInterval(function(){
+    wireVideoPlayheadSync();
+    _playheadSyncTries++;
+    if (_playheadSyncTries > 40) clearInterval(_playheadSyncInterval); // 40 * 250ms = 10s
+  }, 250);
+
+  // Load a clicked Media item into the main preview so the user sees it
+  // IMMEDIATELY upon placement — without waiting for the playhead to cross
+  // into its range on the timeline.
+  //
+  //   video → set videoPlayer.src + mount editor state (existing behavior)
+  //   image → show the image overlay on the preview window
+  //   audio → skip (no visual to show)
+  function loadMediaItemIntoPreview(item){
+    var mediaType = item.dataset.mediaType || 'vid';
+    var url = item.dataset.mediaUrl;
+    if (!url) return;
+    if (mediaType === 'img'){
+      // Image overlay takes over the preview; hide black if it was showing.
+      hideBlackPreview();
+      showImagePreview(url);
+      // If the PGM canvas is on, it's already drawing the image per-frame
+      // via the RAF loop — nothing more needed.
+      return;
+    }
+    if (mediaType !== 'vid') return; // audio: no visual change
+    var player = document.getElementById('videoPlayer') || document.querySelector('video');
+    if (player){
+      try { player.src = url; player.load(); } catch(_){}
+    }
+    // If this came from a server upload (has server filename), update
+    // currentVideoFile so the editor's export/trim/etc. call the right file.
+    var serverFilename = item.dataset.serverFilename;
+    if (serverFilename){
+      try {
+        window.currentVideoFile = {
+          filename: serverFilename,
+          serveUrl: url,
+          duration: parseFloat(item.dataset.duration || '0') || 0
+        };
+      } catch(_){}
+    }
+    // Hide the #uploadZone once a real video is active (mirrors the
+    // behavior of the draft-loader in v10-editor-redesign.js).
+    var uz = document.getElementById('uploadZone');
+    if (uz && getComputedStyle(uz).display !== 'none'){
+      uz.style.display = 'none';
+      uz.dataset.v10HiddenForDraft = '1';
+    }
+    // Enable editor action buttons that the upload handler normally enables.
+    ['trimButton','exportButton','splitButton','filterButton','speedButton',
+     'audioButton','previewVoiceButton','voiceoverButton','vtPreviewBtn',
+     'vtApplyBtn','textButton','speedSelect','addMusicButton',
+     'removeFillerWordsBtn','removePausesBtn','applyTransitionButton',
+     'applyCaptionsBtn'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.disabled = false;
+    });
   }
 
   function wireItem(item) {
@@ -211,11 +6215,18 @@
     item.dataset.wiredV13 = '1';
     item.style.cursor = 'pointer';
 
-    // Click to select
+    // Click anywhere on the item (except the +Timeline button) to select, add
+    // it to the timeline, AND load it into the preview so the video actually
+    // renders in the preview window immediately.
     item.addEventListener('click', function(e) {
       if (e.target.classList.contains('ml-add')) return;
       document.querySelectorAll('.ml-fitem').forEach(function(c) { c.classList.remove('selected'); });
       this.classList.add('selected');
+      var nameEl = item.querySelector('.ml-fname');
+      var fileName = nameEl ? nameEl.textContent.trim() : (item.dataset.fileName || 'clip');
+      var mediaType = item.dataset.mediaType || 'vid';
+      loadMediaItemIntoPreview(item);
+      addClipToTimeline(fileName, mediaType, item.dataset.duration, item.dataset.mediaUrl);
     });
 
     // Wire +Timeline button — clone to strip any v1.0 listeners
@@ -229,7 +6240,8 @@
         var nameEl = item.querySelector('.ml-fname');
         var fileName = nameEl ? nameEl.textContent.trim() : 'clip';
         var mediaType = item.dataset.mediaType || 'vid';
-        addClipToTimeline(fileName, mediaType);
+        loadMediaItemIntoPreview(item);
+        addClipToTimeline(fileName, mediaType, item.dataset.duration, item.dataset.mediaUrl);
       });
     }
   }
@@ -470,12 +6482,11 @@
       }, true);
     }
 
-    if (text.indexOf('B-Roll') !== -1) {
-      btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        showAIBRollPanel();
-      }, true);
-    }
+    // Task #76 — AI B-Roll: legacy "AI B-Roll Generator" mockup retired.
+    // The bottom-of-Media button now opens the transcript-driven
+    // openBRollModal defined in v10-editor-redesign.js. The handler
+    // wired by routes/video-editor.js already calls window.openBRollModal,
+    // so we deliberately do NOT register a competing handler here.
   });
 
   // ââ 6b. Custom folder name dialog (replaces prompt()) ââ
@@ -542,63 +6553,22 @@
   }
 
   // ââ 8. AI B-Roll panel ââ
-  function showAIBRollPanel() {
-    var existing = document.getElementById('aiBrollOverlay');
-    if (existing && existing.parentElement && existing.style.display !== '') {
-      // Already visible — toggle off
-      existing.style.display = 'none'; return;
+  // Task #76 — Old "AI B-Roll Generator" mockup retired. The function
+  // is kept as a thin shim that delegates to the transcript-driven
+  // openBRollModal in v10-editor-redesign.js so any other caller still
+  // referencing showAIBRollPanel() lands on the real flow. Also evicts
+  // any stale aiBrollOverlay node left in the DOM by the previous build.
+  function showAIBRollPanel(triggerBtn) {
+    var stale = document.getElementById('aiBrollOverlay');
+    if (stale) { try { stale.remove(); } catch(_){} }
+    if (typeof window.openBRollModal === 'function'){
+      try { window.openBRollModal(triggerBtn || null); }
+      catch (e){
+        if (typeof showToast === 'function') showToast('Could not open B-Roll modal: ' + e.message, 'error');
+      }
+    } else if (typeof showToast === 'function'){
+      showToast('Editor still loading — try again in a moment');
     }
-    if (existing) existing.remove(); // Remove stale/hidden overlay and recreate fresh
-
-    // Create overlay backdrop for guaranteed visibility
-    var overlay = document.createElement('div');
-    overlay.id = 'aiBrollOverlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;';
-
-    var panel = document.createElement('div');
-    panel.id = 'aiBrollPanel';
-    panel.style.cssText = 'background:#1a1028;border:2px solid #7c3aed;border-radius:16px;padding:24px;width:400px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.6);';
-    panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'
-      + '<h3 style="color:#fff;margin:0;font-size:16px">\u2728 AI B-Roll Generator</h3>'
-      + '<span id="closeBroll" style="color:#999;cursor:pointer;font-size:20px">&times;</span>'
-      + '</div>'
-      + '<p style="color:#a78bfa;font-size:12px;margin-bottom:12px">AI will analyze your video content and suggest relevant B-Roll footage to enhance your edit.</p>'
-      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83C\uDFD9 Urban</button>'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83C\uDF3F Nature</button>'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83D\uDCBB Tech</button>'
-      + '<button class="broll-cat" style="padding:8px 16px;background:#7c3aed22;border:1px solid #7c3aed44;border-radius:8px;color:#a78bfa;cursor:pointer;font-size:11px">\uD83D\uDC65 People</button>'
-      + '</div>'
-      + '<button id="analyzeBroll" style="width:100%;padding:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;border-radius:10px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">\uD83D\uDD0D Analyze Video for B-Roll</button>'
-      + '<div id="brollResults" style="margin-top:12px"></div>';
-
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-
-    document.getElementById('closeBroll').addEventListener('click', function() { overlay.style.display = 'none'; });
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.style.display = 'none'; });
-
-    document.getElementById('analyzeBroll').addEventListener('click', function() {
-      var results = document.getElementById('brollResults');
-      results.innerHTML = '<div style="text-align:center;padding:16px;color:#a78bfa"><div style="font-size:24px;margin-bottom:8px">\u23F3</div>Analyzing video content...</div>';
-
-      setTimeout(function() {
-        results.innerHTML = '<div style="font-size:11px;font-weight:600;color:#fff;margin-bottom:8px">Suggested B-Roll:</div>'
-          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: City Skyline\')"><div style="font-size:20px">\uD83C\uDFD9</div><div style="font-size:9px;color:#c4bfda">City Skyline</div></div>'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: Team Meeting\')"><div style="font-size:20px">\uD83D\uDC65</div><div style="font-size:9px;color:#c4bfda">Team Meeting</div></div>'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: Data Visuals\')"><div style="font-size:20px">\uD83D\uDCCA</div><div style="font-size:9px;color:#c4bfda">Data Visuals</div></div>'
-          + '<div style="background:#0c0814;padding:8px;border-radius:8px;cursor:pointer;text-align:center" onclick="showToast(\'Added B-Roll: Abstract Tech\')"><div style="font-size:20px">\u2728</div><div style="font-size:9px;color:#c4bfda">Abstract Tech</div></div>'
-          + '</div>';
-      }, 1500);
-    });
-
-    panel.querySelectorAll('.broll-cat').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        panel.querySelectorAll('.broll-cat').forEach(function(b) { b.style.background = '#7c3aed22'; });
-        this.style.background = '#7c3aed44';
-      });
-    });
   }
 
   // ââ 9. Search input - filter media items ââ

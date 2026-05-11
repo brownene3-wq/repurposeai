@@ -6,6 +6,8 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
+const { requireCredits } = require('../middleware/credits');
+const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -41,11 +43,27 @@ const YTDLP_COMMON_ARGS = [
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-  '--js-runtimes', 'node',
-  '--remote-components', 'ejs:github',
   '--retries', '3',
   '--extractor-retries', '3',
+];
+
+// YouTube ships frequent anti-bot updates; no single yt-dlp strategy stays
+// reliable for long. We cycle through several player_client backends and
+// keep the first one that produces a real file. Order is fastest/most-
+// reliable first. The bgutil POT provider plugin is the historical default
+// but breaks the moment its localhost server goes down — keep it as a last
+// resort, not the first choice.
+const YTDLP_CLIENT_STRATEGIES = [
+  { name: 'ios',                args: ['--extractor-args', 'youtube:player_client=ios'] },
+  { name: 'mweb',               args: ['--extractor-args', 'youtube:player_client=mweb'] },
+  { name: 'tv',                 args: ['--extractor-args', 'youtube:player_client=tv'] },
+  { name: 'android',            args: ['--extractor-args', 'youtube:player_client=android'] },
+  { name: 'web_safari',         args: ['--extractor-args', 'youtube:player_client=web_safari'] },
+  { name: 'bgutil-pot-provider', args: [
+      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+    ] },
 ];
 
 // Validate YouTube URL
@@ -66,6 +84,33 @@ function extractVideoId(url) {
 }
 
 // Download YouTube video using yt-dlp with ytdl-core fallback
+function tryYtDlpStrategy(strategy, videoUrl, outputPath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--no-playlist',
+      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+      '--merge-output-format', 'mp4',
+      '-o', outputPath,
+      '--no-part',
+      '--force-overwrites',
+      ...YTDLP_COMMON_ARGS,
+      ...strategy.args,
+      videoUrl,
+    ];
+    const proc = spawn(ytdlpPath, args);
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', reject);
+    proc.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error('exit ' + code + ': ' + stderr.slice(-500).trim()));
+    });
+    // 90s per strategy — six strategies × 90s = 9min worst case, but most
+    // either succeed in <20s or fail fast.
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('strategy timed out')); }, 90000);
+  });
+}
+
 async function downloadYouTubeVideo(videoUrl) {
   const videoId = extractVideoId(videoUrl) || uuidv4().slice(0, 8);
   const outputPath = path.join(uploadDir, `yt-reframe-${videoId}.mp4`);
@@ -73,56 +118,49 @@ async function downloadYouTubeVideo(videoUrl) {
   // Clean up any existing file
   try { fs.unlinkSync(outputPath); } catch (e) {}
 
-  // Strategy 1: yt-dlp
-  if (ytdlpPath) {
-    try {
-      console.log(`[AI Reframe] Downloading ${videoUrl} via yt-dlp...`);
-      await new Promise((resolve, reject) => {
-        const proc = spawn(ytdlpPath, [
-          '--no-playlist',
-          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-          '--merge-output-format', 'mp4',
-          '-o', outputPath,
-          '--no-part',
-          '--force-overwrites',
-          ...YTDLP_COMMON_ARGS,
-          videoUrl
-        ]);
-        let stderr = '';
-        proc.stderr.on('data', (d) => { stderr += d.toString(); });
-        proc.on('error', reject);
-        proc.on('close', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error('yt-dlp exit ' + code + ': ' + stderr.slice(-300)));
-        });
-        // Timeout after 3 minutes
-        setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} reject(new Error('Download timed out')); }, 180000);
-      });
-
-      // yt-dlp may change extension
-      if (!fs.existsSync(outputPath)) {
-        const base = path.join(uploadDir, `yt-reframe-${videoId}`);
-        for (const ext of ['.mp4', '.mkv', '.webm']) {
-          if (fs.existsSync(base + ext)) {
-            fs.renameSync(base + ext, outputPath);
-            break;
-          }
-        }
-      }
-
-      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
-        console.log(`[AI Reframe] yt-dlp download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+  function findOutputFile() {
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) return outputPath;
+    // yt-dlp may have written a different extension
+    const base = path.join(uploadDir, `yt-reframe-${videoId}`);
+    for (const ext of ['.mp4', '.mkv', '.webm', '.m4a']) {
+      const p = base + ext;
+      if (fs.existsSync(p) && fs.statSync(p).size > 10000) {
+        if (p !== outputPath) try { fs.renameSync(p, outputPath); } catch (_) {}
         return outputPath;
       }
-    } catch (err) {
-      console.log(`[AI Reframe] yt-dlp failed: ${err.message.slice(0, 200)}`);
+    }
+    return null;
+  }
+
+  const failures = [];
+
+  // Strategy 1: yt-dlp, cycling through player_client backends
+  if (ytdlpPath) {
+    for (const strat of YTDLP_CLIENT_STRATEGIES) {
+      try {
+        console.log(`[AI Reframe] yt-dlp ${strat.name} → ${videoUrl}`);
+        await tryYtDlpStrategy(strat, videoUrl, outputPath);
+        const got = findOutputFile();
+        if (got) {
+          console.log(`[AI Reframe] yt-dlp ${strat.name} succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
+          return got;
+        }
+        failures.push(`${strat.name}: no file produced`);
+      } catch (err) {
+        const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
+        console.log(`[AI Reframe] yt-dlp ${strat.name} failed: ${msg}`);
+        failures.push(`${strat.name}: ${msg}`);
+        // Keep going — try the next strategy
+      }
+      // Clean up partials between strategies
+      try { fs.unlinkSync(outputPath); } catch (e) {}
     }
   }
 
-  // Strategy 2: @distube/ytdl-core fallback
+  // Strategy 2: @distube/ytdl-core fallback (different extraction code path)
   if (ytdl) {
     try {
-      console.log(`[AI Reframe] Trying ytdl-core fallback for ${videoUrl}...`);
+      console.log(`[AI Reframe] ytdl-core fallback → ${videoUrl}`);
       await new Promise((resolve, reject) => {
         const stream = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
         const writeStream = fs.createWriteStream(outputPath);
@@ -130,19 +168,25 @@ async function downloadYouTubeVideo(videoUrl) {
         stream.on('error', reject);
         writeStream.on('finish', resolve);
         writeStream.on('error', reject);
-        setTimeout(() => { stream.destroy(); reject(new Error('ytdl-core download timed out')); }, 180000);
+        setTimeout(() => { stream.destroy(); reject(new Error('ytdl-core timed out')); }, 180000);
       });
-
-      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
-        console.log(`[AI Reframe] ytdl-core download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
-        return outputPath;
+      const got = findOutputFile();
+      if (got) {
+        console.log(`[AI Reframe] ytdl-core succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
+        return got;
       }
+      failures.push('ytdl-core: no file produced');
     } catch (err) {
-      console.log(`[AI Reframe] ytdl-core fallback failed: ${err.message.slice(0, 200)}`);
+      const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
+      console.log(`[AI Reframe] ytdl-core failed: ${msg}`);
+      failures.push(`ytdl-core: ${msg}`);
     }
   }
 
-  throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or unavailable.');
+  // All strategies exhausted. Log the full failure trail server-side so we
+  // can diagnose from Railway logs without leaking it to the user.
+  console.error(`[AI Reframe] ALL download strategies failed for ${videoUrl}:\n  - ` + failures.join('\n  - '));
+  throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or YouTube may be blocking automated downloads. Try uploading the file directly.');
 }
 
 // Setup directories
@@ -219,7 +263,10 @@ function calculateCropDimensions(inputWidth, inputHeight, targetWidth, targetHei
 function detectFaces(videoPath) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, '..', 'scripts', 'face-detect.py');
-    const proc = spawn('python3', [scriptPath, videoPath, '0.5']);
+    // 0.25s sample interval: dense enough that a face moving a face-width
+    // (~100px) between samples is well under the centroid-distance match
+    // radius, keeping tracks attached through fast shifts.
+    const proc = spawn('python3', [scriptPath, videoPath, '0.25']);
     let stdout = '';
     let stderr = '';
 
@@ -447,6 +494,849 @@ function processVideo(inputPath, outputPath, aspectRatio, cropMode, faceData) {
   }
   return processVideoCenterCrop(inputPath, outputPath, aspectRatio);
 }
+
+// =====================================================================
+// MULTI-SUBJECT GRID RENDERER  (Deploy 2)
+// =====================================================================
+
+// Output dimensions for the grid (always 9:16 "short-form" canvas)
+const GRID_OUT_W = 1080;
+const GRID_OUT_H = 1920;
+
+// Defaults
+const BRAND_PURPLE_HEX = '0x6c3aed';
+const DEFAULT_BG_SOLID_HEX = '0x181426';
+
+// In-memory job cache: jobId -> { videoPath, detection, createdAt }
+// Keeps the already-downloaded/detected video around so /render-grid doesn't
+// need to re-download or re-detect. Jobs expire after 20 minutes.
+const gridJobs = new Map();
+const GRID_JOB_TTL_MS = 20 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of gridJobs.entries()) {
+    if (now - job.createdAt > GRID_JOB_TTL_MS) {
+      try { if (job.videoPath && fs.existsSync(job.videoPath)) fs.unlinkSync(job.videoPath); } catch (e) {}
+      gridJobs.delete(id);
+    }
+  }
+}, 60 * 1000).unref();
+
+// Normalize a "#rrggbb" / "rrggbb" / "0xrrggbb" color to "0xrrggbb" for FFmpeg.
+function normalizeHexColor(c, fallback) {
+  if (!c) return fallback;
+  const s = String(c).trim().toLowerCase();
+  const m1 = s.match(/^#?([0-9a-f]{6})$/);
+  if (m1) return '0x' + m1[1];
+  const m2 = s.match(/^0x([0-9a-f]{6})$/);
+  if (m2) return s;
+  return fallback;
+}
+
+// Catalog of layouts per person count. Each entry is { id, label, description }.
+// The `id` is what callers pass to computeGridCells(n, padding, layoutId) and
+// what the client sends as the `layout` field to /render-grid.
+// Order matters: the first entry per count is the default.
+const GRID_LAYOUTS = {
+  1: [
+    { id: 'full',        label: 'Full Frame',  description: 'Single centered cell' },
+  ],
+  2: [
+    { id: 'stacked',     label: 'Stacked',     description: 'Two equal squares, top & bottom' },
+    { id: 'hero',        label: 'Hero',        description: 'Big main cell, smaller cell below' },
+  ],
+  3: [
+    { id: 'spotlight',   label: 'Spotlight',   description: 'Wide top cell, two squares below' },
+    { id: 'strip',       label: 'Strip',       description: 'Three equal horizontal bands' },
+  ],
+  4: [
+    { id: 'grid',        label: 'Grid',        description: '2×2 squares' },
+    { id: 'feature',     label: 'Feature',     description: 'Big top cell, three smaller below' },
+  ],
+};
+
+function defaultLayoutFor(n) {
+  const list = GRID_LAYOUTS[n] || GRID_LAYOUTS[4];
+  return list[0].id;
+}
+
+// Compute grid cell rectangles (pixel coords in a 1080x1920 viewport).
+// `layout` selects a named layout from GRID_LAYOUTS; when unknown, falls back
+// to the default layout for the given count.
+function computeGridCells(n, padding, layout) {
+  const p = Math.max(0, Math.min(80, Math.round(padding)));
+  const W = GRID_OUT_W, H = GRID_OUT_H;
+  const valid = (GRID_LAYOUTS[n] || []).some(l => l.id === layout);
+  const lay = valid ? layout : defaultLayoutFor(n);
+
+  if (n === 1) {
+    return [{ x: p, y: p, w: W - 2 * p, h: H - 2 * p }];
+  }
+
+  if (n === 2) {
+    if (lay === 'hero') {
+      // Big top cell (fills width, fills ~70% height) + smaller square below
+      const smallSide = Math.min(Math.floor(W / 2), Math.floor(H / 4));
+      const topH = H - 3 * p - smallSide;
+      const topW = W - 2 * p;
+      const smallLeft = Math.floor((W - smallSide) / 2);
+      return [
+        { x: p,         y: p,                   w: topW,     h: topH },
+        { x: smallLeft, y: p + topH + p,        w: smallSide,h: smallSide },
+      ];
+    }
+    // 'stacked' — two 1:1 squares, size to whichever dimension limits
+    const cell = Math.min(W - 2 * p, Math.floor((H - 3 * p) / 2));
+    const totalH = 2 * cell + p;
+    const top = Math.max(p, Math.floor((H - totalH) / 2));
+    const left = Math.floor((W - cell) / 2);
+    return [
+      { x: left, y: top,              w: cell, h: cell },
+      { x: left, y: top + cell + p,   w: cell, h: cell },
+    ];
+  }
+
+  if (n === 3) {
+    if (lay === 'strip') {
+      // Three equal horizontal bands, each full-width landscape.
+      const bandH = Math.floor((H - 4 * p) / 3);
+      const bandW = W - 2 * p;
+      return [
+        { x: p, y: p,                     w: bandW, h: bandH },
+        { x: p, y: p + bandH + p,         w: bandW, h: bandH },
+        { x: p, y: p + 2 * (bandH + p),   w: bandW, h: bandH },
+      ];
+    }
+    // 'spotlight' — wide top + two squares below
+    const bottom = Math.floor((W - 3 * p) / 2);
+    const topW = W - 2 * p;
+    const topH = Math.max(200, H - 3 * p - bottom);
+    return [
+      { x: p,               y: p,                w: topW,   h: topH },
+      { x: p,               y: p + topH + p,     w: bottom, h: bottom },
+      { x: p + bottom + p,  y: p + topH + p,     w: bottom, h: bottom },
+    ];
+  }
+
+  // n >= 4
+  if (lay === 'feature') {
+    // Big hero cell on top + three equal smaller cells below.
+    const smallW = Math.floor((W - 4 * p) / 3);
+    const smallH = Math.floor(smallW * 1.3); // slightly portrait — nice for faces
+    const topH = H - 3 * p - smallH;
+    const topW = W - 2 * p;
+    const yBottom = p + topH + p;
+    return [
+      { x: p,                             y: p,       w: topW,   h: topH   },
+      { x: p,                             y: yBottom, w: smallW, h: smallH },
+      { x: p + smallW + p,                y: yBottom, w: smallW, h: smallH },
+      { x: p + 2 * (smallW + p),          y: yBottom, w: smallW, h: smallH },
+    ];
+  }
+  // 'grid' — default 2x2
+  const cellW = Math.floor((W - 3 * p) / 2);
+  const cellH = Math.floor((H - 3 * p) / 2);
+  return [
+    { x: p,             y: p,             w: cellW, h: cellH },
+    { x: p * 2 + cellW, y: p,             w: cellW, h: cellH },
+    { x: p,             y: p * 2 + cellH, w: cellW, h: cellH },
+    { x: p * 2 + cellW, y: p * 2 + cellH, w: cellW, h: cellH },
+  ];
+}
+
+// Compute a per-subject time-varying crop expression.
+// Uses a fixed crop size based on the subject's max face width so the crop
+// dimensions stay constant (FFmpeg's crop filter requires constant w/h); only
+// the x/y positions interpolate. Aspect-matches the target cell.
+function computeSubjectCropExpr(subject, inputW, inputH, cellW, cellH, options) {
+  // Back-compat: old callers passed a numeric tightness as the 6th arg.
+  // It's now interpreted as heightMult (the equivalent sizing knob).
+  if (typeof options === 'number') options = { heightMult: options };
+  options = options || {};
+  // Ratio of crop height to face height. ~3.0 = shoulder-up composition
+  // (face fills ~1/3 of crop height, shoulders + some breathing room).
+  const heightMult = typeof options.heightMult === 'number' ? options.heightMult : 3.0;
+
+  const samples = (subject.samples || []).slice();
+  let maxFaceW = 0, maxFaceH = 0, sumCx = 0, sumCy = 0;
+  for (const s of samples) {
+    if (s.w > maxFaceW) maxFaceW = s.w;
+    if (s.h > maxFaceH) maxFaceH = s.h;
+    sumCx += s.cx; sumCy += s.cy;
+  }
+  if (maxFaceW <= 0) maxFaceW = 0.18;
+  if (maxFaceH <= 0) maxFaceH = 0.22;
+  const avgCx = samples.length ? sumCx / samples.length : 0.5;
+  const avgCy = samples.length ? sumCy / samples.length : 0.5;
+
+  const cellAspect = cellW / cellH;
+
+  // Height-driven sizing: compose for shoulder-up by making crop height a
+  // multiple of face height. Width is then derived from the cell aspect.
+  let cropH = Math.round(maxFaceH * inputH * heightMult);
+  let cropW = Math.round(cropH * cellAspect);
+
+  // Multi-subject overlap guard: cropW must be STRICTLY less than the gap
+  // to the nearest neighbor's center, or both cells will bleed into each
+  // other and end up showing the same middle-of-frame content.
+  if (typeof options.neighborCx === 'number') {
+    const gapPx = Math.abs(options.neighborCx - avgCx) * inputW;
+    if (gapPx > 0) {
+      // Leave 60px buffer so each subject's crop ends well before the
+      // neighbor's center. Min 240 to avoid absurdly tiny crops when
+      // subjects are unavoidably close.
+      const maxByNeighbor = Math.max(240, Math.round(gapPx - 60));
+      if (cropW > maxByNeighbor) {
+        cropW = maxByNeighbor;
+        cropH = Math.round(cropW / cellAspect);
+      }
+    }
+  }
+
+  // Don't let the crop be so tiny that we'd have to scale it up >2.5x
+  // (visibly pixelated). This also rescues small-face wide-shot cases.
+  const minCropW = Math.round(cellW / 2.5);
+  const minCropH = Math.round(cellH / 2.5);
+  if (cropW < minCropW) { cropW = minCropW; cropH = Math.round(cropW / cellAspect); }
+  if (cropH < minCropH) { cropH = minCropH; cropW = Math.round(cropH * cellAspect); }
+
+  // Bound by source dims, then re-enforce aspect
+  cropW = Math.min(inputW, cropW);
+  cropH = Math.min(inputH, cropH);
+  if (cropW / cropH > cellAspect) cropW = Math.round(cropH * cellAspect);
+  else                            cropH = Math.round(cropW / cellAspect);
+
+  // Ensure even dimensions for yuv420p
+  if (cropW % 2 === 1) cropW -= 1;
+  if (cropH % 2 === 1) cropH -= 1;
+
+  // Shoulder-up composition: place the face center at ~30% from the top of
+  // the crop. (Before: sign was inverted and face sat at ~62% from top,
+  // giving headroom-heavy framing that cut off shoulders.)
+  const FACE_TOP_FRACTION = 0.30;
+  const positions = samples.map(s => {
+    const fx = s.cx * inputW;
+    // We want: face_center_y (in source) = y + FACE_TOP_FRACTION * cropH
+    //     so: y = s.cy * inputH - FACE_TOP_FRACTION * cropH
+    let x = Math.round(fx - cropW / 2);
+    let y = Math.round(s.cy * inputH - FACE_TOP_FRACTION * cropH);
+    x = Math.max(0, Math.min(inputW - cropW, x));
+    y = Math.max(0, Math.min(inputH - cropH, y));
+    return { time: s.time, x, y };
+  });
+
+  if (positions.length === 0) {
+    const cx = Math.floor((inputW - cropW) / 2);
+    const cy = Math.floor((inputH - cropH) / 2);
+    return { cropW, cropH, xExpr: String(cx), yExpr: String(cy), avgCx, avgCy };
+  }
+
+  // Moving average smoothing (window=5) to prevent jitter.
+  const smoothed = positions.map((pos, i) => {
+    const half = 2;
+    let sx = 0, sy = 0, c = 0;
+    for (let j = Math.max(0, i - half); j <= Math.min(positions.length - 1, i + half); j++) {
+      sx += positions[j].x; sy += positions[j].y; c++;
+    }
+    return { time: pos.time, x: Math.round(sx / c), y: Math.round(sy / c) };
+  });
+
+  // Decimate the keyframes used for the piecewise expression. FFmpeg's
+  // expression evaluator chokes on very deep `if(between(...), a, if(...))`
+  // chains: the user's 48s clip with 0.25s sampling produced 192 nested
+  // if() calls per subject (~12KB expression), which triggered
+  // "Failed to configure input pad ... Error reinitializing filters!"
+  // at runtime. 60 keyframes is plenty — the moving average above already
+  // dampens sub-second jitter, and face tracking doesn't need finer
+  // interpolation than ~1Hz.
+  const MAX_KEYFRAMES = 60;
+  let keyframes = smoothed;
+  if (smoothed.length > MAX_KEYFRAMES) {
+    keyframes = [];
+    const step = smoothed.length / MAX_KEYFRAMES;
+    for (let i = 0; i < smoothed.length; i += step) {
+      keyframes.push(smoothed[Math.floor(i)]);
+    }
+    const last = smoothed[smoothed.length - 1];
+    if (keyframes[keyframes.length - 1] !== last) keyframes.push(last);
+  }
+
+  // Piecewise-linear FFmpeg expression (same technique as single-subject tracking).
+  const xParts = [], yParts = [];
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    const t0 = keyframes[i].time, t1 = keyframes[i + 1].time;
+    const x0 = keyframes[i].x,    x1 = keyframes[i + 1].x;
+    const y0 = keyframes[i].y,    y1 = keyframes[i + 1].y;
+    const dt = (t1 - t0) || 0.001;
+    xParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${x0}+(${x1}-${x0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
+    yParts.push(`if(between(t\\,${t0.toFixed(3)}\\,${t1.toFixed(3)})\\,${y0}+(${y1}-${y0})*(t-${t0.toFixed(3)})/${dt.toFixed(3)}`);
+  }
+  const lastX = keyframes[keyframes.length - 1].x;
+  const lastY = keyframes[keyframes.length - 1].y;
+  let xExpr = String(lastX), yExpr = String(lastY);
+  if (xParts.length > 0) {
+    xExpr = xParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastX));
+    yExpr = yParts.reduceRight((acc, part) => `${part}\\,${acc})`, String(lastY));
+  }
+  return { cropW, cropH, xExpr, yExpr, avgCx, avgCy };
+}
+
+// Build the FFmpeg filter_complex graph for an N-subject grid.
+// Per-subject pipeline: split source -> crop (following face) -> scale to cell
+// inner size -> pad for colored border -> overlay onto background layer.
+function buildGridFilterGraph(subjects, cells, inputDims, config) {
+  const { width: inputW, height: inputH } = inputDims;
+  const n = subjects.length;
+  const borderEnabled = !!(config.border && config.border.enabled);
+  const borderThickness = borderEnabled ? Math.max(1, Math.min(12, config.border.width || 3)) : 0;
+  const borderColor = normalizeHexColor(config.border && config.border.color, BRAND_PURPLE_HEX);
+  const bgMode = (config.background && config.background.mode) || 'solid';
+  const bgColor = normalizeHexColor(config.background && config.background.color, DEFAULT_BG_SOLID_HEX);
+
+  const parts = [];
+  const splitLabels = ['bg_src'];
+  for (let i = 0; i < n; i++) splitLabels.push(`s${i}`);
+  parts.push(`[0:v]split=${n + 1}[${splitLabels.join('][')}]`);
+
+  // Background layer
+  if (bgMode === 'blur') {
+    parts.push(
+      `[bg_src]scale=${GRID_OUT_W}:${GRID_OUT_H}:force_original_aspect_ratio=increase,` +
+      `crop=${GRID_OUT_W}:${GRID_OUT_H},boxblur=30:3,eq=brightness=-0.15:saturation=1.05[bg]`
+    );
+  } else {
+    parts.push(
+      `[bg_src]scale=${GRID_OUT_W}:${GRID_OUT_H}:force_original_aspect_ratio=increase,` +
+      `crop=${GRID_OUT_W}:${GRID_OUT_H},drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@1:t=fill[bg]`
+    );
+  }
+
+  // Pre-compute each subject's average (cx, cy) so we can clamp crop widths
+  // by nearest-neighbor distance (prevents adjacent subjects from bleeding
+  // into each other's crops).
+  const subjAvg = subjects.map(s => {
+    const sam = s.samples || [];
+    if (!sam.length) return { cx: 0.5, cy: 0.5 };
+    let sx = 0, sy = 0;
+    for (const x of sam) { sx += x.cx; sy += x.cy; }
+    return { cx: sx / sam.length, cy: sy / sam.length };
+  });
+
+  // Per-subject cells
+  for (let i = 0; i < n; i++) {
+    const cell = cells[i];
+    const innerW = Math.max(20, cell.w - 2 * borderThickness);
+    const innerH = Math.max(20, cell.h - 2 * borderThickness);
+    // Ensure even
+    const innerWE = innerW - (innerW % 2);
+    const innerHE = innerH - (innerH % 2);
+
+    // Nearest-neighbor cx across other selected subjects
+    let neighborCx;
+    let minDist = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const d = Math.abs(subjAvg[j].cx - subjAvg[i].cx);
+      if (d < minDist) { minDist = d; neighborCx = subjAvg[j].cx; }
+    }
+
+    const { cropW, cropH, xExpr, yExpr } = computeSubjectCropExpr(
+      subjects[i], inputW, inputH, cell.w, cell.h, { neighborCx }
+    );
+
+    let chain = `[s${i}]crop=${cropW}:${cropH}:${xExpr}:${yExpr},scale=${innerWE}:${innerHE}`;
+    if (borderThickness > 0) {
+      chain += `,pad=${cell.w}:${cell.h}:${borderThickness}:${borderThickness}:color=${borderColor}`;
+    }
+    chain += `[cell${i}]`;
+    parts.push(chain);
+  }
+
+  // Overlay cells onto background
+  let lastLabel = 'bg';
+  for (let i = 0; i < n; i++) {
+    const cell = cells[i];
+    const outLabel = (i === n - 1) ? 'vout' : `v${i}`;
+    parts.push(`[${lastLabel}][cell${i}]overlay=x=${cell.x}:y=${cell.y}[${outLabel}]`);
+    lastLabel = outLabel;
+  }
+
+  return parts.join(';');
+}
+
+// Render an N-subject grid MP4 from a source video + detection data + config.
+function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubjects, config) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const dims = await getVideoDimensions(inputPath);
+      const n = selectedSubjects.length;
+      if (n < 1 || n > 4) return reject(new Error('Grid requires 1-4 subjects'));
+
+      const padding = (typeof config.padding === 'number') ? config.padding : 16;
+      const cells = computeGridCells(n, padding, config.layout);
+      const filterComplex = buildGridFilterGraph(selectedSubjects, cells, dims, config);
+
+      // Diagnostic: per-subject avg position + sample count, helps debug
+      // "both cells show the same person" style regressions.
+      try {
+        const diag = selectedSubjects.map(s => {
+          const sam = s.samples || [];
+          let sx = 0, sy = 0, mw = 0;
+          for (const x of sam) { sx += x.cx; sy += x.cy; if (x.w > mw) mw = x.w; }
+          return {
+            id: s.id,
+            samples: sam.length,
+            avg_cx: sam.length ? +(sx/sam.length).toFixed(3) : null,
+            avg_cy: sam.length ? +(sy/sam.length).toFixed(3) : null,
+            max_w: +mw.toFixed(3),
+            first: s.first_seen, last: s.last_seen,
+          };
+        });
+        console.log('[AI Reframe Grid] input', dims, 'cells', cells);
+        console.log('[AI Reframe Grid] subjects', JSON.stringify(diag));
+        console.log('[AI Reframe Grid] graph\n' + filterComplex);
+      } catch (_) {}
+
+      // Long crop expressions can exceed shell argv limits; write the graph
+      // to a temp script and use -/filter_complex_script for safety.
+      const scriptPath = outputPath + '.filtergraph.txt';
+      fs.writeFileSync(scriptPath, filterComplex, 'utf8');
+
+      const args = [
+        '-i', inputPath,
+        '-filter_complex_script', scriptPath,
+        '-map', '[vout]',
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y',
+        outputPath,
+      ];
+
+      const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
+      let errorOutput = '';
+      ffmpeg.stderr.on('data', d => { errorOutput += d.toString(); });
+      ffmpeg.on('close', code => {
+        try { fs.unlinkSync(scriptPath); } catch (e) {}
+        if (code === 0) return resolve();
+        // Log the full ffmpeg output server-side for debugging, but send a
+        // clean user-facing message so we never leak filter graphs into
+        // status text / alerts on the frontend.
+        console.error(`[AI Reframe Grid] ffmpeg exit ${code}\n${errorOutput.slice(-2000)}`);
+        reject(new Error('Grid render failed. Please try a different style or a shorter clip.'));
+      });
+      ffmpeg.on('error', (err) => {
+        try { fs.unlinkSync(scriptPath); } catch (e) {}
+        reject(err);
+      });
+      // 8-minute safety timeout
+      setTimeout(() => {
+        try { ffmpeg.kill('SIGKILL'); } catch (e) {}
+        reject(new Error('Grid render timed out'));
+      }, 8 * 60 * 1000);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// ---------- GRID ENDPOINTS ----------
+
+// GET /ai-reframe/subject-thumb/:jobId/:subjectId.jpg
+// Extracts a head-and-shoulders thumbnail JPEG at the subject's strongest
+// detection moment. Cached for the life of the job so repeated requests
+// are instant.
+router.get('/subject-thumb/:jobId/:subjectId.jpg', requireAuth, async (req, res) => {
+  try {
+    const job = gridJobs.get(req.params.jobId);
+    if (!job) return res.status(404).send('job not found');
+    const subjId = parseInt(req.params.subjectId, 10);
+    const subject = (job.detection.subjects || []).find(s => s.id === subjId);
+    if (!subject) return res.status(404).send('subject not found');
+
+    if (!job.thumbCache) job.thumbCache = new Map();
+    if (job.thumbCache.has(subjId)) {
+      res.set('Content-Type', 'image/jpeg');
+      return res.send(job.thumbCache.get(subjId));
+    }
+
+    const dims = await getVideoDimensions(job.videoPath);
+    // Find sample closest to thumbnail_time for accurate crop position
+    const samples = subject.samples || [];
+    let bestSample = samples[0];
+    let bestDelta = Infinity;
+    for (const s of samples) {
+      const d = Math.abs(s.time - subject.thumbnail_time);
+      if (d < bestDelta) { bestDelta = d; bestSample = s; }
+    }
+    if (!bestSample) return res.status(404).send('no samples');
+
+    // Tight head-and-shoulders thumb: ~2.5 * face_h
+    const side = Math.round(Math.max(bestSample.h * dims.height, bestSample.w * dims.width) * 2.5);
+    const cx = bestSample.cx * dims.width;
+    const cy = bestSample.cy * dims.height;
+    let x = Math.round(cx - side / 2);
+    let y = Math.round(cy - side * 0.35); // face in upper portion
+    x = Math.max(0, Math.min(dims.width - side, x));
+    y = Math.max(0, Math.min(dims.height - side, y));
+    const evenSide = side - (side % 2);
+
+    const ff = spawn(ffmpegPath || 'ffmpeg', [
+      '-ss', String(subject.thumbnail_time),
+      '-i', job.videoPath,
+      '-vf', `crop=${evenSide}:${evenSide}:${x}:${y},scale=180:180`,
+      '-frames:v', '1', '-q:v', '4', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-',
+    ]);
+    const chunks = [];
+    ff.stdout.on('data', d => chunks.push(d));
+    let err = '';
+    ff.stderr.on('data', d => { err += d.toString(); });
+    ff.on('close', code => {
+      if (code !== 0 || !chunks.length) {
+        console.error('thumb extract failed:', err.slice(-300));
+        return res.status(500).send('thumb failed');
+      }
+      const buf = Buffer.concat(chunks);
+      job.thumbCache.set(subjId, buf);
+      res.set('Content-Type', 'image/jpeg');
+      res.set('Cache-Control', 'private, max-age=1200');
+      res.send(buf);
+    });
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// POST /ai-reframe/detect-subjects
+// Accepts multipart (videoFile) OR form data with youtubeUrl+inputMode.
+// Runs detection, caches the video path + detection under a new jobId,
+// and responds with the trimmed subjects array for the UI to render.
+router.post('/detect-subjects', requireAuth, requireCredits('ai-reframe'), requireStorageHeadroom(), upload.single('videoFile'), trackUploadBytes('ai-reframe'), async (req, res) => {
+  let downloadedPath = null;
+  try {
+    const youtubeUrl = req.body.youtubeUrl || '';
+    const inputMode  = req.body.inputMode  || 'upload';
+    let inputPath = null;
+
+    if (inputMode === 'url' && youtubeUrl) {
+      if (!isValidYouTubeUrl(youtubeUrl)) {
+        return res.status(400).json({ success: false, message: 'Invalid YouTube URL' });
+      }
+      try {
+        inputPath = await downloadYouTubeVideo(youtubeUrl);
+        downloadedPath = inputPath;
+      } catch (e) {
+        return res.status(400).json({ success: false, message: e.message });
+      }
+    } else if (req.file) {
+      inputPath = req.file.path;
+    }
+
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      return res.status(400).json({ success: false, message: 'No video input provided' });
+    }
+
+    console.log('[AI Reframe Grid] Running detection on', inputPath);
+    const detection = await detectFaces(inputPath);
+    const jobId = uuidv4();
+    gridJobs.set(jobId, { videoPath: inputPath, detection, createdAt: Date.now() });
+
+    const trimmed = {
+      width: detection.width,
+      height: detection.height,
+      fps: detection.fps,
+      duration: detection.duration,
+      detector: detection.detector,
+      subjects: detection.subjects || [],
+    };
+    res.json({ success: true, jobId, detection: trimmed });
+  } catch (e) {
+    if (downloadedPath) { try { fs.unlinkSync(downloadedPath); } catch (_) {} }
+    console.error('detect-subjects error:', e);
+    res.status(500).json({ success: false, message: e.message || 'Detection failed' });
+  }
+});
+
+// Named style presets for the simplified UI. Users pick a style name;
+// the server translates to the underlying padding/border/background knobs.
+const GRID_STYLE_PRESETS = {
+  clean: {
+    label: 'Clean',
+    padding: 16,
+    border: { enabled: true, color: '#ffffff', width: 3 },
+    background: { mode: 'blur' },
+  },
+  bold: {
+    label: 'Bold',
+    padding: 16,
+    border: { enabled: true, color: '#6c3aed', width: 4 },
+    background: { mode: 'blur' },
+  },
+  minimal: {
+    label: 'Minimal',
+    padding: 12,
+    border: { enabled: false },
+    background: { mode: 'solid', color: '#181426' },
+  },
+};
+
+// GET /ai-reframe/grid-layouts
+// Returns the layout catalog for the UI. Grouped by person count.
+router.get('/grid-layouts', requireAuth, (req, res) => {
+  res.json({ layouts: GRID_LAYOUTS });
+});
+
+// POST /ai-reframe/render-grid
+// Body: { jobId, selectedSubjectIds, style?, layout? | padding?, border?, background? }
+router.post('/render-grid', requireAuth, async (req, res) => {
+  try {
+    const { jobId, selectedSubjectIds, style, layout, padding, border, background } = req.body || {};
+    if (!jobId) return res.status(400).json({ success: false, message: 'jobId required' });
+    const job = gridJobs.get(jobId);
+    if (!job) return res.status(404).json({ success: false, message: 'Job not found or expired' });
+    if (!Array.isArray(selectedSubjectIds) || selectedSubjectIds.length < 1 || selectedSubjectIds.length > 4) {
+      return res.status(400).json({ success: false, message: 'Select 1-4 people' });
+    }
+
+    const allSubjects = job.detection.subjects || [];
+    const selected = selectedSubjectIds
+      .map(id => allSubjects.find(s => s.id === id))
+      .filter(Boolean);
+    if (selected.length !== selectedSubjectIds.length) {
+      return res.status(400).json({ success: false, message: 'One or more selections not found' });
+    }
+
+    // Prefer the style preset for simplified clients; fall back to explicit
+    // padding/border/background for back-compat with the internal QA page.
+    let config;
+    if (typeof style === 'string' && GRID_STYLE_PRESETS[style]) {
+      config = { ...GRID_STYLE_PRESETS[style] };
+    } else {
+      config = {
+        padding: (typeof padding === 'number') ? padding : 16,
+        border: border && typeof border === 'object' ? border : { enabled: false },
+        background: background && typeof background === 'object' ? background : { mode: 'solid' },
+      };
+    }
+
+    // Attach chosen layout (validated downstream in computeGridCells).
+    if (typeof layout === 'string') config.layout = layout;
+
+    const filename = `${jobId}-grid-${selected.length}up-${Date.now()}.mp4`;
+    const outputPath = path.join(outputDir, filename);
+    console.log(`[AI Reframe Grid] Rendering ${selected.length}-up grid -> ${filename}`);
+    await processVideoMultiGrid(job.videoPath, outputPath, job.detection, selected, config);
+
+    res.json({
+      success: true,
+      filename,
+      dimensions: `${GRID_OUT_W}x${GRID_OUT_H}`,
+      subjects: selected.length,
+    });
+    featureUsageOps.log(req.user.id, 'ai_reframe_grid').catch(() => {});
+  } catch (e) {
+    console.error('render-grid error:', e);
+    res.status(500).json({ success: false, message: e.message || 'Grid render failed' });
+  }
+});
+
+// GET /ai-reframe/grid-test  — minimal internal QA page for Deploy 2.
+// Not linked from the main UI. Lets us verify detect + render end-to-end
+// without the full Multi-Subject mode UI (which lands in Deploy 3).
+router.get('/grid-test', requireAuth, (req, res) => {
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>AI Reframe Grid Test</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, sans-serif; background:#0f0b1a; color:#e8e6f0; padding:2rem; max-width:900px; margin:0 auto; }
+  h1 { color:#c4a9ff; }
+  button, input, select, textarea { font:inherit; }
+  input[type=text], input[type=number] { background:#1c1630; border:1px solid #3b2d5f; color:#e8e6f0; padding:.5rem; border-radius:6px; width:100%; box-sizing:border-box; }
+  button { background:#6c3aed; color:#fff; border:none; padding:.6rem 1rem; border-radius:6px; cursor:pointer; margin-top:.5rem; font-weight:600; transition: background .15s; }
+  button:hover:not(:disabled) { background:#7d4af5; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { margin-bottom:1rem; }
+  .subjects { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:.75rem; margin-top:.5rem; }
+  .subject { background:#1c1630; border:2px solid #3b2d5f; border-radius:8px; padding:.75rem; cursor:pointer; text-align:center; }
+  .subject.sel { border-color:#6c3aed; background:#2a1f4e; }
+  label { display:block; font-weight:600; margin-bottom:.25rem; color:#b2a6d4; }
+
+  /* Themed file picker (replaces the browser-default "Choose File" look) */
+  .file-picker { display:flex; align-items:center; gap:.75rem; }
+  .file-picker input[type=file] { position:absolute; left:-9999px; opacity:0; pointer-events:none; }
+  .file-picker .file-btn {
+    display:inline-flex; align-items:center; gap:.5rem;
+    background:#1c1630; color:#e8e6f0;
+    border:1px solid #3b2d5f; border-radius:6px;
+    padding:.55rem 1rem; font-weight:600; cursor:pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .file-picker .file-btn:hover { border-color:#6c3aed; background:#231940; }
+  .file-picker .file-name { color:#b2a6d4; font-size:.9rem; flex:1; word-break:break-all; }
+
+  /* Themed select (replaces the browser-default dropdown chrome) */
+  select {
+    -webkit-appearance:none; -moz-appearance:none; appearance:none;
+    background:#1c1630; color:#e8e6f0;
+    border:1px solid #3b2d5f; border-radius:6px;
+    padding:.55rem 2.25rem .55rem .75rem;
+    width:100%; box-sizing:border-box; font-weight:500; cursor:pointer;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1.5L6 6.5L11 1.5' stroke='%23c4a9ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat; background-position:right .85rem center;
+    transition: border-color .15s;
+  }
+  select:hover, select:focus { border-color:#6c3aed; outline:none; }
+  select option { background:#1c1630; color:#e8e6f0; }
+</style></head><body>
+<h1>AI Reframe — Grid Renderer Test (Deploy 2 QA)</h1>
+<p>Internal test page. Upload a clip with multiple faces, run detection, pick subjects, render the grid.</p>
+
+<div class="row">
+  <label>Input</label>
+  <div class="file-picker">
+    <label class="file-btn" for="file">📁 Choose file</label>
+    <input type="file" id="file" accept="video/*">
+    <span class="file-name" id="fileLabel">No file chosen</span>
+  </div>
+  <div style="margin-top:.5rem">or YouTube URL:</div>
+  <input type="text" id="url" placeholder="https://youtube.com/...">
+  <button id="detectBtn">Run Detection</button>
+</div>
+
+<div id="status"></div>
+<div id="subjectsWrap" style="display:none" class="row">
+  <label>Detected subjects (click to toggle, up to 4)</label>
+  <div class="subjects" id="subjects"></div>
+</div>
+
+<div id="renderWrap" style="display:none">
+  <div class="row"><label>Layout</label>
+    <select id="layoutPreset"></select>
+  </div>
+  <div class="row"><label>Style</label>
+    <select id="stylePreset">
+      <option value="clean">Clean — white border, blurred background</option>
+      <option value="bold">Bold — purple border, blurred background</option>
+      <option value="minimal">Minimal — no border, solid background</option>
+    </select>
+  </div>
+  <button id="renderBtn">Render Grid</button>
+  <div id="renderStatus"></div>
+</div>
+
+<script>
+let jobId = null; let subjects = []; let selected = new Set();
+const $ = (id) => document.getElementById(id);
+
+// Simple HTML escaper + error sanitizer. Backend errors sometimes contain
+// multi-kilobyte ffmpeg filter graphs — we must never dump those into the
+// DOM verbatim. Trim to a short, user-friendly message.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function friendlyError(msg) {
+  let s = String(msg || 'Something went wrong');
+  // Drop ffmpeg filter-graph spew: strip anything after the first "(code ...)"
+  s = s.replace(/\\(code \\d+\\):.*$/s, '(render failed)');
+  // Drop expressions/filter chains that sneak through
+  s = s.replace(/if\\(between[^]*$/, '...');
+  if (s.length > 180) s = s.slice(0, 180) + '…';
+  return s;
+}
+function setStatus(msg, color) { $('status').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+escapeHtml(msg)+'</div>'; }
+function rsStatus(html, color) { $('renderStatus').innerHTML = '<div style="margin:.5rem 0;color:'+(color||'#c4a9ff')+'">'+html+'</div>'; }
+
+// Keep the filename label in sync with the chosen file
+$('file').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  $('fileLabel').textContent = f ? f.name : 'No file chosen';
+});
+
+$('detectBtn').addEventListener('click', async () => {
+  $('detectBtn').disabled = true;
+  setStatus('Detecting subjects…');
+  const f = $('file').files[0]; const url = $('url').value.trim();
+  const fd = new FormData();
+  if (f) { fd.set('inputMode','upload'); fd.set('videoFile', f); }
+  else if (url) { fd.set('inputMode','url'); fd.set('youtubeUrl', url); }
+  else { setStatus('Provide a file or URL', '#ff7a7a'); $('detectBtn').disabled = false; return; }
+  try {
+    const r = await fetch('/ai-reframe/detect-subjects', { method:'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok || !data.success) throw new Error(data.message || 'Detection failed');
+    jobId = data.jobId; subjects = data.detection.subjects || [];
+    renderSubjects();
+    setStatus('Detected '+subjects.length+' subject(s). Pick up to 4 and choose a style.', '#7bd88f');
+    $('subjectsWrap').style.display='block'; $('renderWrap').style.display='block';
+  } catch (e) { setStatus(friendlyError(e.message), '#ff7a7a'); }
+  finally { $('detectBtn').disabled = false; }
+});
+
+let layoutCatalog = null;
+async function ensureLayoutCatalog() {
+  if (layoutCatalog) return layoutCatalog;
+  try { layoutCatalog = (await (await fetch('/ai-reframe/grid-layouts')).json()).layouts || {}; }
+  catch (_) { layoutCatalog = {}; }
+  return layoutCatalog;
+}
+function refreshLayoutOptions() {
+  const sel = $('layoutPreset'); if (!sel) return;
+  const n = selected.size;
+  const opts = (layoutCatalog || {})[n] || [];
+  sel.innerHTML = opts.length
+    ? opts.map(o => '<option value="'+o.id+'">'+o.label+' — '+o.description+'</option>').join('')
+    : '<option value="">(no layouts for this count)</option>';
+}
+
+function renderSubjects() {
+  const wrap = $('subjects'); wrap.innerHTML = '';
+  subjects.forEach((s, idx) => {
+    const d = document.createElement('div');
+    d.className = 'subject' + (selected.has(s.id) ? ' sel' : '');
+    d.innerHTML = '<img src="/ai-reframe/subject-thumb/'+jobId+'/'+s.id+'.jpg" ' +
+                  'style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;margin-bottom:.5rem;background:#1c1630" ' +
+                  'onerror="this.style.display=\\'none\\'">' +
+                  '<strong>Person '+(idx+1)+'</strong>';
+    d.addEventListener('click', () => {
+      if (selected.has(s.id)) selected.delete(s.id);
+      else if (selected.size < 4) selected.add(s.id);
+      renderSubjects();
+      refreshLayoutOptions();
+    });
+    wrap.appendChild(d);
+  });
+  refreshLayoutOptions();
+}
+ensureLayoutCatalog();
+
+$('renderBtn').addEventListener('click', async () => {
+  if (!jobId || selected.size < 1) { rsStatus('Select at least 1 subject', '#ff7a7a'); return; }
+  $('renderBtn').disabled = true;
+  rsStatus('Rendering… (may take 30s–2min)');
+  const body = {
+    jobId,
+    selectedSubjectIds: [...selected],
+    style: $('stylePreset').value,
+    layout: $('layoutPreset') ? $('layoutPreset').value : null,
+  };
+  try {
+    const r = await fetch('/ai-reframe/render-grid', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok || !data.success) throw new Error(data.message || 'Render failed');
+    const safeName = encodeURIComponent(data.filename);
+    rsStatus('Rendered: <a href="/ai-reframe/download/' + safeName + '" style="color:#c4a9ff">Download</a> · ' + escapeHtml(data.dimensions), '#7bd88f');
+  } catch (e) { rsStatus(escapeHtml(friendlyError(e.message)), '#ff7a7a'); }
+  finally { $('renderBtn').disabled = false; }
+});
+</script></body></html>`;
+  res.send(html);
+});
 
 // GET - Main page
 router.get('/', requireAuth, (req, res) => {
@@ -770,7 +1660,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1>AI Reframe</h1>
+        <h1>&#x1F4D0; AI Reframe</h1>
         <p>Resize any video for every platform in 1 click</p>
       </div>
 
@@ -804,13 +1694,59 @@ ${pageStyles}
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeFaceLabel">
                 <input type="radio" name="cropMode" value="face-tracking" style="accent-color:var(--primary)"> 🧠 AI Face Tracking
               </label>
+              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
+                <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)"> 🎬 Multi-Person Grid
+              </label>
             </div>
             <div id="faceTrackingInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
               <strong>🧠 AI Face Tracking</strong> — The AI will detect faces in your video and dynamically adjust the crop window to keep people centered in every frame. Perfect for interviews, podcasts, and talking-head videos where subjects aren't always in the center.
             </div>
+            <div id="gridModeInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
+              <strong>🎬 Multi-Person Grid</strong> — Detect everyone in your clip, pick up to 4, and get a vertical video with each person in their own tile. Great for podcast highlights and panel reactions.
+            </div>
           </div>
 
-          <div class="aspect-ratio-section">
+          <!-- Multi-Person Grid flow (replaces the aspect-ratio grid when that mode is picked) -->
+          <div id="gridFlow" style="display:none">
+            <div class="aspect-ratio-section">
+              <label class="aspect-ratio-label">Step 1 — Find people in your video</label>
+              <button type="button" id="detectBtn" class="action-button" style="margin-top:0">Detect People</button>
+              <div id="detectStatus" style="margin-top:.75rem;font-size:.9rem;color:var(--text-muted);min-height:1.2em"></div>
+            </div>
+
+            <div id="subjectPickSection" class="aspect-ratio-section" style="display:none">
+              <label class="aspect-ratio-label">Step 2 — Pick who to include (up to 4)</label>
+              <div id="subjectGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem"></div>
+            </div>
+
+            <div id="layoutSection" class="aspect-ratio-section" style="display:none">
+              <label class="aspect-ratio-label">Step 3 — Layout</label>
+              <div id="layoutCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem"></div>
+            </div>
+
+            <div id="styleSection" class="aspect-ratio-section" style="display:none">
+              <label class="aspect-ratio-label">Step 4 — Style</label>
+              <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+                <label class="grid-style" data-style="clean"   style="flex:1;min-width:140px;cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;color:var(--text);text-align:center">
+                  <input type="radio" name="gridStyle" value="clean" checked style="display:none">
+                  <div style="font-weight:700;margin-bottom:.25rem">Clean</div>
+                  <div style="font-size:.8rem;color:var(--text-muted)">White border · blurred bg</div>
+                </label>
+                <label class="grid-style" data-style="bold"    style="flex:1;min-width:140px;cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);text-align:center">
+                  <input type="radio" name="gridStyle" value="bold" style="display:none">
+                  <div style="font-weight:700;margin-bottom:.25rem">Bold</div>
+                  <div style="font-size:.8rem;color:var(--text-muted)">Purple border · blurred bg</div>
+                </label>
+                <label class="grid-style" data-style="minimal" style="flex:1;min-width:140px;cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);text-align:center">
+                  <input type="radio" name="gridStyle" value="minimal" style="display:none">
+                  <div style="font-weight:700;margin-bottom:.25rem">Minimal</div>
+                  <div style="font-size:.8rem;color:var(--text-muted)">No border · solid bg</div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="aspect-ratio-section" id="aspectRatioSection">
             <label class="aspect-ratio-label">Select Aspect Ratios to Generate</label>
             <div class="aspect-ratio-grid">
               <div class="aspect-ratio-card">
@@ -983,14 +1919,294 @@ ${pageStyles}
       reframeBtn.disabled = !(hasUrl || hasFile) || !hasAspectRatio;
     }
 
-    // Crop mode toggle styling
+    // Crop mode toggle styling + show/hide mode-specific sections
     document.querySelectorAll('input[name="cropMode"]').forEach(radio => {
       radio.addEventListener('change', function() {
         document.getElementById('modeCenterLabel').style.borderColor = this.value === 'center' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
         document.getElementById('modeFaceLabel').style.borderColor = this.value === 'face-tracking' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        document.getElementById('modeGridLabel').style.borderColor = this.value === 'grid' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
         document.getElementById('faceTrackingInfo').style.display = this.value === 'face-tracking' ? 'block' : 'none';
+        document.getElementById('gridModeInfo').style.display = this.value === 'grid' ? 'block' : 'none';
+
+        const inGrid = this.value === 'grid';
+        document.getElementById('aspectRatioSection').style.display = inGrid ? 'none' : 'block';
+        document.getElementById('gridFlow').style.display = inGrid ? 'block' : 'none';
+        // Main submit button disabled in grid mode — the grid flow has its own
+        // "Create Grid Video" action that fires after subjects are picked.
+        reframeBtn.style.display = inGrid ? 'none' : 'flex';
+        if (inGrid) resetGridFlow();
+        checkInputs();
       });
     });
+
+    // ---- Multi-Person Grid flow (simplified UX) ----
+    let gridJobId = null;
+    let gridSubjects = [];
+    const gridSelected = new Set();
+    let gridRenderBtn = null; // lazily created when the user picks subjects
+    let gridLayouts = null;   // catalog fetched once from /ai-reframe/grid-layouts
+    let selectedLayout = null;
+
+    // Protect the UI from raw ffmpeg error spew. Server errors sometimes
+    // contain multi-KB filter graphs ("if(between(t,...))..." chains); we
+    // must never render those verbatim — escape HTML and trim aggressively.
+    function escapeHtmlGrid(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function friendlyGridError(msg) {
+      let s = String(msg || 'Something went wrong');
+      s = s.replace(/\\(code \\d+\\):.*$/s, '(render failed)');
+      s = s.replace(/if\\(between[^]*$/, '...');
+      if (s.length > 180) s = s.slice(0, 180) + '…';
+      return s;
+    }
+
+    function setDetectStatus(msg, color) {
+      const col = color || 'var(--text-muted)';
+      document.getElementById('detectStatus').innerHTML =
+        msg ? '<span style="color:'+col+'">' + escapeHtmlGrid(msg) + '</span>' : '';
+    }
+
+    function resetGridFlow() {
+      gridJobId = null; gridSubjects = []; gridSelected.clear(); selectedLayout = null;
+      document.getElementById('subjectPickSection').style.display = 'none';
+      document.getElementById('layoutSection').style.display = 'none';
+      document.getElementById('layoutCards').innerHTML = '';
+      document.getElementById('styleSection').style.display = 'none';
+      document.getElementById('subjectGrid').innerHTML = '';
+      const old = document.getElementById('gridRenderBtnContainer');
+      if (old) old.remove();
+      setDetectStatus('');
+    }
+
+    // Lazy-loaded layout catalog. Fetched once per page, then rendered as
+    // SVG mini previews whose set swaps based on the current selection count.
+    async function ensureLayouts() {
+      if (gridLayouts) return gridLayouts;
+      try {
+        const r = await fetch('/ai-reframe/grid-layouts');
+        const data = await r.json();
+        gridLayouts = data.layouts || {};
+      } catch (_) { gridLayouts = {}; }
+      return gridLayouts;
+    }
+
+    // Tiny SVG preview per layout — a 1080x1920 miniature with tiles drawn
+    // the same way the server will compose them. Keeps the UI honest: what
+    // users see in the picker is what they'll get in the render.
+    function layoutPreviewSvg(n, layoutId) {
+      const W = 60, H = 106, pad = 3;
+      let cells = [];
+      const cell = (x, y, w, h) => ({ x, y, w, h });
+      if (n === 1) cells = [cell(pad, pad, W - 2*pad, H - 2*pad)];
+      else if (n === 2 && layoutId === 'hero') {
+        const ss = Math.min(Math.floor(W/2), Math.floor(H/4));
+        const topH = H - 3*pad - ss;
+        cells = [cell(pad, pad, W - 2*pad, topH), cell(Math.floor((W-ss)/2), pad + topH + pad, ss, ss)];
+      } else if (n === 2) {
+        const c = Math.min(W - 2*pad, Math.floor((H - 3*pad)/2));
+        const top = Math.max(pad, Math.floor((H - (2*c + pad))/2));
+        const left = Math.floor((W - c)/2);
+        cells = [cell(left, top, c, c), cell(left, top + c + pad, c, c)];
+      } else if (n === 3 && layoutId === 'strip') {
+        const bh = Math.floor((H - 4*pad)/3), bw = W - 2*pad;
+        cells = [cell(pad, pad, bw, bh), cell(pad, pad + bh + pad, bw, bh), cell(pad, pad + 2*(bh + pad), bw, bh)];
+      } else if (n === 3) {
+        const b = Math.floor((W - 3*pad)/2), tw = W - 2*pad, th = Math.max(12, H - 3*pad - b);
+        cells = [cell(pad, pad, tw, th), cell(pad, pad + th + pad, b, b), cell(pad + b + pad, pad + th + pad, b, b)];
+      } else if (n === 4 && layoutId === 'feature') {
+        const sw = Math.floor((W - 4*pad)/3), sh = Math.floor(sw * 1.3), topH = H - 3*pad - sh;
+        const yb = pad + topH + pad;
+        cells = [cell(pad, pad, W - 2*pad, topH), cell(pad, yb, sw, sh), cell(pad + sw + pad, yb, sw, sh), cell(pad + 2*(sw + pad), yb, sw, sh)];
+      } else {
+        const cw = Math.floor((W - 3*pad)/2), ch = Math.floor((H - 3*pad)/2);
+        cells = [cell(pad, pad, cw, ch), cell(pad*2 + cw, pad, cw, ch), cell(pad, pad*2 + ch, cw, ch), cell(pad*2 + cw, pad*2 + ch, cw, ch)];
+      }
+      const rects = cells.map(c =>
+        '<rect x="' + c.x + '" y="' + c.y + '" width="' + c.w + '" height="' + c.h + '" rx="3" fill="var(--primary)" fill-opacity="0.55"/>').join('');
+      return '<svg width="60" height="106" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+             '<rect x="0" y="0" width="' + W + '" height="' + H + '" rx="4" fill="rgba(255,255,255,0.04)"/>' +
+             rects + '</svg>';
+    }
+
+    function renderLayoutCards() {
+      const n = gridSelected.size;
+      const wrap = document.getElementById('layoutCards');
+      const section = document.getElementById('layoutSection');
+      if (n < 1 || !gridLayouts) {
+        section.style.display = 'none';
+        wrap.innerHTML = '';
+        return;
+      }
+      const options = gridLayouts[n] || [];
+      if (options.length < 2) {
+        // Only one layout for this count — no picker needed; still set the default.
+        selectedLayout = options[0] ? options[0].id : null;
+        section.style.display = 'none';
+        wrap.innerHTML = '';
+        return;
+      }
+      // If the current selection doesn't apply to this count, reset to default.
+      if (!options.some(o => o.id === selectedLayout)) selectedLayout = options[0].id;
+      section.style.display = 'block';
+      wrap.innerHTML = '';
+      options.forEach(opt => {
+        const card = document.createElement('div');
+        const isSel = opt.id === selectedLayout;
+        card.style.cssText = 'cursor:pointer;padding:1rem;background:var(--dark-2);border:2px solid ' +
+          (isSel ? 'var(--primary)' : 'rgba(255,255,255,0.1)') +
+          ';border-radius:8px;color:var(--text);text-align:center;transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:.5rem';
+        card.innerHTML = layoutPreviewSvg(n, opt.id) +
+          '<div style="font-weight:700">' + escapeHtmlGrid(opt.label) + '</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted);line-height:1.3">' + escapeHtmlGrid(opt.description || '') + '</div>';
+        card.addEventListener('click', () => {
+          selectedLayout = opt.id;
+          renderLayoutCards();
+        });
+        wrap.appendChild(card);
+      });
+    }
+
+    function getCurrentInput() {
+      // Returns { kind: 'url'|'file', value, valid }
+      if (activeInputTab === 'url') {
+        const v = youtubeUrl.value.trim();
+        return { kind: 'url', value: v, valid: v.length > 0 };
+      }
+      return { kind: 'file', value: fileInput.files[0], valid: fileInput.files.length > 0 };
+    }
+
+    // Style preset cards
+    document.querySelectorAll('.grid-style').forEach(label => {
+      label.addEventListener('click', () => {
+        document.querySelectorAll('.grid-style').forEach(l => l.style.borderColor = 'rgba(255,255,255,0.1)');
+        label.style.borderColor = 'var(--primary)';
+        label.querySelector('input').checked = true;
+      });
+    });
+
+    function ensureRenderBtn() {
+      if (document.getElementById('gridRenderBtnContainer')) return;
+      const wrap = document.createElement('div');
+      wrap.id = 'gridRenderBtnContainer';
+      wrap.innerHTML = '<button type="button" id="gridRenderBtn" class="action-button" style="margin-top:1.5rem">Create Grid Video</button>' +
+                       '<div id="gridRenderStatus" style="margin-top:.75rem;font-size:.9rem;color:var(--text-muted);min-height:1.2em"></div>';
+      document.getElementById('gridFlow').appendChild(wrap);
+      gridRenderBtn = document.getElementById('gridRenderBtn');
+      gridRenderBtn.addEventListener('click', renderGridNow);
+    }
+
+    function updateRenderBtnState() {
+      if (!gridRenderBtn) return;
+      gridRenderBtn.disabled = gridSelected.size < 1;
+      gridRenderBtn.textContent = gridSelected.size
+        ? 'Create Grid Video (' + gridSelected.size + ' ' + (gridSelected.size === 1 ? 'person' : 'people') + ')'
+        : 'Pick at least 1 person';
+    }
+
+    function renderSubjectCards() {
+      const wrap = document.getElementById('subjectGrid');
+      wrap.innerHTML = '';
+      gridSubjects.forEach((s, idx) => {
+        const card = document.createElement('div');
+        const isSel = gridSelected.has(s.id);
+        card.style.cssText = 'position:relative;padding:.75rem;background:var(--dark-2);border:2px solid ' +
+          (isSel ? 'var(--primary)' : 'rgba(255,255,255,0.1)') +
+          ';border-radius:10px;cursor:pointer;text-align:center;transition:all .2s;' +
+          (isSel ? 'box-shadow:0 0 20px rgba(108,58,237,0.25)' : '');
+        card.innerHTML =
+          '<div style="width:120px;height:120px;margin:0 auto .5rem;border-radius:50%;overflow:hidden;background:#1c1630;position:relative;border:2px solid rgba(255,255,255,0.05)">' +
+            '<img src="/ai-reframe/subject-thumb/' + gridJobId + '/' + s.id + '.jpg" ' +
+                 'alt="Person ' + (idx+1) + '" style="width:100%;height:100%;object-fit:cover" ' +
+                 'onerror="this.style.display=\\'none\\';this.nextElementSibling.style.display=\\'flex\\'">' +
+            '<div style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:2.5rem;font-weight:700;color:var(--primary);background:#1c1630">' + (idx+1) + '</div>' +
+          '</div>' +
+          '<div style="font-weight:700;color:var(--text)">Person ' + (idx+1) + '</div>' +
+          (isSel ? '<div style="position:absolute;top:8px;right:8px;background:var(--primary);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem">✓</div>' : '');
+        card.addEventListener('click', () => {
+          if (gridSelected.has(s.id)) gridSelected.delete(s.id);
+          else if (gridSelected.size < 4) gridSelected.add(s.id);
+          renderSubjectCards();
+          renderLayoutCards();
+          updateRenderBtnState();
+        });
+        wrap.appendChild(card);
+      });
+    }
+
+    document.getElementById('detectBtn').addEventListener('click', async () => {
+      clearError();
+      const input = getCurrentInput();
+      if (!input.valid) { setDetectStatus(input.kind === 'url' ? 'Paste a YouTube URL first.' : 'Upload a video first.', '#ff7a7a'); return; }
+      const btn = document.getElementById('detectBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Detecting people…';
+      setDetectStatus('Analyzing video — this may take a minute.');
+      try {
+        const fd = new FormData();
+        if (input.kind === 'url') { fd.set('inputMode', 'url'); fd.set('youtubeUrl', input.value); }
+        else                      { fd.set('inputMode', 'upload'); fd.set('videoFile', input.value); }
+        const r = await fetch('/ai-reframe/detect-subjects', { method: 'POST', body: fd });
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.message || 'Detection failed');
+        gridJobId = data.jobId;
+        gridSubjects = (data.detection.subjects || []).slice(0, 4);
+        gridSelected.clear();
+        // Auto-select up to the top 2 subjects as a sensible default.
+        gridSubjects.slice(0, Math.min(2, gridSubjects.length)).forEach(s => gridSelected.add(s.id));
+        if (!gridSubjects.length) {
+          setDetectStatus('No people detected. Try a clip with clearly visible faces.', '#ff7a7a');
+          return;
+        }
+        setDetectStatus('Found ' + gridSubjects.length + ' ' + (gridSubjects.length === 1 ? 'person' : 'people') + '. Pick who to include below.', '#7bd88f');
+        document.getElementById('subjectPickSection').style.display = 'block';
+        document.getElementById('styleSection').style.display = 'block';
+        renderSubjectCards();
+        await ensureLayouts();
+        renderLayoutCards();
+        ensureRenderBtn();
+        updateRenderBtnState();
+      } catch (e) {
+        setDetectStatus(friendlyGridError(e.message), '#ff7a7a');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Detect People';
+      }
+    });
+
+    async function renderGridNow() {
+      if (!gridJobId || gridSelected.size < 1) return;
+      const btn = gridRenderBtn;
+      const status = document.getElementById('gridRenderStatus');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Creating your grid video…';
+      status.textContent = 'Rendering — 30s to 2min for most clips.';
+      const style = document.querySelector('input[name="gridStyle"]:checked').value;
+      try {
+        const r = await fetch('/ai-reframe/render-grid', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: gridJobId,
+            selectedSubjectIds: [...gridSelected],
+            style,
+            layout: selectedLayout,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.message || 'Render failed');
+        status.innerHTML = '<span style="color:#7bd88f">Done.</span>';
+        displayResults([{
+          ratio: 'Multi-Person Grid (' + gridSelected.size + '-up)',
+          dimensions: data.dimensions,
+          filename: data.filename,
+        }]);
+        showToast('Grid video ready!', 4000);
+      } catch (e) {
+        status.innerHTML = '<span style="color:#ff7a7a">' + escapeHtmlGrid(friendlyGridError(e.message)) + '</span>';
+      } finally {
+        updateRenderBtnState();
+      }
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();

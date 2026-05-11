@@ -18,7 +18,8 @@ function getStyles() {
 body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-serif;background:var(--dark);color:var(--text);overflow-x:hidden;line-height:1.6}
 .nav{position:fixed;top:0;left:0;right:0;z-index:1000;padding:1.2rem 2rem;background:rgba(15,15,26,0.8);backdrop-filter:blur(20px);border-bottom:var(--border-subtle);transition:all .3s}
 .nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
-.nav-logo{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none}
+.nav-logo{display:inline-flex;align-items:center;text-decoration:none}
+.nav-logo img{display:block}
 .nav-links{display:flex;align-items:center;gap:2rem}
 .nav-links a{color:var(--text-muted);text-decoration:none;font-size:.9rem;font-weight:500;transition:color .3s}
 .nav-links a:hover{color:var(--text)}
@@ -267,7 +268,7 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="AI-powered video creation platform.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <style>${published.content_css || ''}</style>
@@ -289,18 +290,18 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="AI-powered video creation platform. 10 tools in one: Smart Shorts, Video Editor, AI Captions, AI Hooks, B-Roll, Music Library, Reframe, Brand Voice, Repurposing &amp; Content Calendar. Turn one video into unlimited content.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Splicora">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/images/icon-192.png">
   <style>${getStyles()}</style>
 </head>
 <body>
  <nav class="nav"><div class="nav-inner">
-    <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
+    <a href="/" class="nav-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:36px;"></a>
     <button class="mobile-nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mobile-open')">&#9776;</button>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -790,7 +791,7 @@ router.get('/', async (req, res) => {
   <footer class="footer">
     <div class="footer-grid">
       <div class="footer-brand">
-        <a href="/" class="nav-logo">&#x26A1; ${BRAND.name}</a>
+        <a href="/" class="nav-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:36px;"></a>
         <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)">&#x1F4F1; Get the App</a></div>

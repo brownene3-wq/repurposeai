@@ -112,7 +112,15 @@
     '.media-library .ml-search{display:none!important}',
     '.media-library .ml-body>.ml-upload{display:none!important}',
     '.media-library .ml-body>.ml-section:not([data-v10]){display:none!important}',
-    '.media-library .ml-body>.ml-fgrid{display:none!important}',
+    /* Folders disabled for now — Projects section removed per request */
+    '.media-library .ml-folder{display:none!important}',
+    '.media-library [data-v10-folder]{display:none!important}',
+    /* #mediaFileGrid (.ml-fgrid) is the container where sidebar uploads land
+       (media-panel-fix.js appendMediaItem) and where the real /video-editor/
+       upload handler injects items via window.addUploadedMediaItem. Keep it
+       visible so uploaded files actually appear in the Media library. */
+    '.media-library .ml-body>.ml-fgrid{display:flex;flex-direction:column;gap:5px;padding:4px 12px 8px}',
+    '.media-library .ml-body>.ml-fgrid:empty{display:none}',
     '/* v10 full-height media library sidebar */',
     '.editor-container .media-library{grid-row:2/4!important;overflow-y:hidden;display:flex;flex-direction:column}',
     '.editor-container .media-library .ml-body{flex:1 1 0;overflow-y:auto;min-height:0}',
@@ -200,6 +208,12 @@
       return pickAllMediaInput();
     }
     function triggerUpload(){
+      // Throttle: if another upload was just triggered in the last 500ms,
+      // ignore this call. Prevents a second file dialog opening when the
+      // click path fires more than once for a single user click.
+      var now = Date.now();
+      if (window.__v10LastUploadTrigger && (now - window.__v10LastUploadTrigger) < 500) return;
+      window.__v10LastUploadTrigger = now;
       var input = pickAllMediaInput();
       if (input){ try { input.click(); } catch(_){} return; }
       var up = Array.from(document.querySelectorAll('.media-library button, .media-library .ml-fb'))
@@ -305,22 +319,28 @@
         }
       }
     });
-    // Auto-expand folders that contain a search hit; hide empty folders entirely
+    // Auto-expand folders that contain a search hit; hide folders where all
+    // items got filtered out. An empty folder (0 items, only an empty-state
+    // note) stays visible — same rule as applyFilter.
     document.querySelectorAll('.media-library [data-v10-folder]').forEach(function(wrap){
       var header = wrap.querySelector('.ml-folder.v10-proj');
       var list = wrap.querySelector('.v10-folder-list');
       if (!header || !list) return;
-      var visible = Array.from(list.querySelectorAll('.v10-folder-item')).filter(function(e){
+      var allItems = list.querySelectorAll('.v10-folder-item');
+      var visible = Array.from(allItems).filter(function(e){
         return e.style.display !== 'none';
       }).length;
+      var isEmptyFolder = allItems.length === 0;
       if (q){
-        if (visible === 0){
-          wrap.style.display = 'none';
-        } else {
+        if (isEmptyFolder || visible > 0){
           wrap.style.display = '';
-          // Auto-expand while searching so hits are visible
-          header.classList.add('open');
-          list.classList.add('open');
+          if (visible > 0){
+            // Auto-expand while searching so hits are visible
+            header.classList.add('open');
+            list.classList.add('open');
+          }
+        } else {
+          wrap.style.display = 'none';
         }
       } else {
         wrap.style.display = '';
@@ -390,14 +410,18 @@
         fi.style.display = 'none';
       }
     });
-    // Hide whole folder if nothing inside it matches
+    // Hide whole folder only if it has real items that are all filtered out.
+    // Folders that are truly empty (showing just an empty-state note) should
+    // stay visible so the user can see the section header.
     document.querySelectorAll('.media-library [data-v10-folder]').forEach(function(wrap){
       var list = wrap.querySelector('.v10-folder-list');
       if (!list) return;
-      var visible = Array.from(list.querySelectorAll('.v10-folder-item')).filter(function(e){
+      var allItems = list.querySelectorAll('.v10-folder-item');
+      var visible = Array.from(allItems).filter(function(e){
         return e.style.display !== 'none';
       }).length;
-      wrap.style.display = visible === 0 ? 'none' : '';
+      var isEmptyFolder = allItems.length === 0;
+      wrap.style.display = (isEmptyFolder || visible > 0) ? '' : 'none';
     });
     // Also filter v10 virtual media items
     filterMediaList(kind);
@@ -439,22 +463,9 @@
     });
   }
 
-  var MEDIA_LIB = {
-    videos: [
-      {name:'intro_clip.mp4', size:'42 MB', dur:'0:18'},
-      {name:'product_demo.mp4', size:'128 MB', dur:'1:24'},
-      {name:'bRoll_warehouse.mp4', size:'76 MB', dur:'0:42'}
-    ],
-    audio: [
-      {name:'Voiceover.mp3', size:'4.2 MB', dur:'1:05'},
-      {name:'Background Music.mp3', size:'8.6 MB', dur:'2:10'},
-      {name:'SFX Whoosh.wav', size:'0.3 MB', dur:'0:08'}
-    ],
-    images: [
-      {name:'logo_white.png', size:'124 KB', dur:'\u2014'},
-      {name:'hero_banner.jpg', size:'2.1 MB', dur:'\u2014'}
-    ]
-  };
+  // Media library starts empty — only genuine user uploads populate it
+  // (via media-panel-fix.js handleFiles / the real upload flow).
+  var MEDIA_LIB = { videos: [], audio: [], images: [] };
 
   function buildMediaItemEl(m, type){
     var cls = type==='vid'?'vid':(type==='aud'?'aud':'img');
@@ -469,7 +480,15 @@
       '<div class="v10-mi-thumb '+cls+'">'+icon+'</div>'+
       '<div class="v10-mi-info"><h5>'+escapeHtml(m.name)+'</h5><small>'+escapeHtml(sub)+'</small></div>'+
       '<span class="v10-mi-badge '+cls+'">'+label+'</span>';
-    el.addEventListener('click', function(){ toast('Selected: '+m.name); });
+    el.addEventListener('click', function(){
+      // Route through the shared addClipToTimeline if available so this item
+      // actually lands on the timeline (not just a toast).
+      var kind = type === 'vid' ? 'vid' : (type === 'aud' ? 'aud' : 'img');
+      if (typeof window.addClipToTimeline === 'function'){
+        try { window.addClipToTimeline(m.name, kind); return; } catch(_){}
+      }
+      toast('Selected: '+m.name);
+    });
     return el;
   }
 
@@ -527,19 +546,28 @@
       var cls = t === 'video' ? 'vid' : (t === 'audio' ? 'aud' : 'img');
       var icon = t === 'video' ? '\u25b6' : (t === 'audio' ? '\u266a' : '\ud83d\uddbc');
       var label = t === 'video' ? 'VID' : (t === 'audio' ? 'AUD' : 'IMG');
+      // Prefer the clean filename stored on the dataset (set by
+      // media-panel-fix.js appendMediaItem). Fall back to parsing the
+      // textContent for legacy/server-rendered items.
       var parsed = parseMediaItemText(it);
-      it.setAttribute('data-search-name', parsed.name.toLowerCase());
+      var displayName = it.dataset.fileName || parsed.name;
+      it.setAttribute('data-search-name', String(displayName || '').toLowerCase());
       // Build restyled content
       var size = '';
-      // Try to pull size string like "42 MB" from original
       var sizeMatch = (it.textContent||'').match(/(\d+(\.\d+)?\s?(KB|MB|GB))/i);
       if (sizeMatch) size = sizeMatch[1];
-      var subtitle = size ? (parsed.dur ? (size + ' \u00b7 ' + parsed.dur) : size) : (parsed.dur || '');
+      var durFromDs = '';
+      if (it.dataset.duration){
+        var d = parseFloat(it.dataset.duration);
+        if (d > 0) durFromDs = Math.floor(d/60) + ':' + String(Math.floor(d%60)).padStart(2,'0');
+      }
+      var dur = durFromDs || parsed.dur;
+      var subtitle = size ? (dur ? (size + ' \u00b7 ' + dur) : size) : (dur || '');
       it.classList.add('v10-styled');
       it.innerHTML =
         '<div class="v10-mi-thumb '+cls+'">'+icon+'</div>'+
         '<div class="v10-mi-info">'+
-          '<h5>'+escapeHtml(parsed.name)+'</h5>'+
+          '<h5>'+escapeHtml(displayName)+'</h5>'+
           (subtitle ? '<small>'+escapeHtml(subtitle)+'</small>' : '')+
         '</div>'+
         '<span class="v10-mi-badge '+cls+'">'+label+'</span>';
@@ -554,16 +582,55 @@
 
   /* ===================== PROJECT FOLDERS ===================== */
 
-  var COMPLETED = [
-    { name: 'Brand Intro Final.mp4',   date: 'Apr 10', size: '124 MB' },
-    { name: 'Product Demo v2.mp4',     date: 'Apr 8',  size: '89 MB'  },
-    { name: 'Social Ad - Summer.mp4',  date: 'Apr 5',  size: '45 MB'  }
-  ];
-  var DRAFTS = [
-    { id:'d1', name:'Landing Page Promo (WIP)', date:'Apr 12', size:'62 MB',  dur:'0:45' },
-    { id:'d2', name:'Spring Launch Teaser',     date:'Apr 11', size:'34 MB',  dur:'0:22' },
-    { id:'d3', name:'Q2 Investor Update',       date:'Apr 9',  size:'118 MB', dur:'2:05' }
-  ];
+  /* Projects are persisted per-user in localStorage. They start empty
+   * and are populated by the real upload / export flows (see
+   * window.addDraftEntry / window.addCompletedEntry below). */
+  var DRAFTS_KEY    = 'v10_projects_drafts_v1';
+  var COMPLETED_KEY = 'v10_projects_completed_v1';
+
+  function readStore(key){
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch(_){ return []; }
+  }
+  function writeStore(key, arr){
+    try { localStorage.setItem(key, JSON.stringify(arr || [])); } catch(_){}
+  }
+
+  function getDrafts(){ return readStore(DRAFTS_KEY); }
+  function getCompleted(){ return readStore(COMPLETED_KEY); }
+
+  function addDraft(entry){
+    if (!entry || !entry.name) return;
+    var list = getDrafts();
+    // dedupe on filename (server-side filename is unique per upload)
+    var filtered = list.filter(function(d){ return d.filename !== entry.filename; });
+    filtered.unshift(entry);
+    writeStore(DRAFTS_KEY, filtered);
+    try { rebuildFolders(); } catch(_){}
+  }
+  function removeDraftByFilename(filename){
+    if (!filename) return;
+    var list = getDrafts().filter(function(d){ return d.filename !== filename; });
+    writeStore(DRAFTS_KEY, list);
+    try { rebuildFolders(); } catch(_){}
+  }
+  function addCompleted(entry){
+    if (!entry || !entry.name) return;
+    var list = getCompleted();
+    list.unshift(entry);
+    writeStore(COMPLETED_KEY, list);
+    try { rebuildFolders(); } catch(_){}
+  }
+
+  // Expose so the real upload/export handlers (in routes/video-editor.js)
+  // can feed real data into the Projects section.
+  window.addDraftEntry = addDraft;
+  window.removeDraftByFilename = removeDraftByFilename;
+  window.addCompletedEntry = addCompleted;
 
   function buildProjFolder(opts){
     // opts: { label, count, icon, openByDefault, buildList }
@@ -598,37 +665,55 @@
   }
 
   function buildCompletedList(list){
-    COMPLETED.forEach(function(v){
+    var completed = getCompleted();
+    if (completed.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'v10-folder-note';
+      empty.textContent = 'No exported videos yet. Your exports will appear here.';
+      list.appendChild(empty);
+      return;
+    }
+    completed.forEach(function(v){
       var item = document.createElement('div');
       item.className = 'v10-folder-item clickable';
+      var meta = [v.date, v.size].filter(Boolean).join(' \u00b7 ');
       item.innerHTML =
         '<span class="v10-fi-ico" style="color:#f59e0b">\ud83c\udfac</span>'+
         '<div class="v10-fi-body">'+
           '<div class="v10-fi-name">'+escapeHtml(v.name)+'</div>'+
-          '<span class="v10-fi-meta">'+escapeHtml(v.date+' \u00b7 '+v.size)+'</span>'+
+          (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
         '</div>'+
         '<span class="v10-fi-hint">OPEN</span>';
       item.addEventListener('click', function(e){
         e.stopPropagation();
-        loadDraftIntoEditor({ name: v.name, date: v.date, size: v.size, kind: 'completed' });
+        loadDraftIntoEditor({
+          name: v.name, date: v.date, size: v.size,
+          filename: v.filename, serveUrl: v.serveUrl || v.downloadUrl,
+          kind: 'completed'
+        });
       });
       list.appendChild(item);
     });
-    var note = document.createElement('div');
-    note.className = 'v10-folder-note';
-    note.textContent = 'Click to preview a finished project';
-    list.appendChild(note);
   }
 
   function buildDraftsListInto(list){
-    DRAFTS.forEach(function(d){
+    var drafts = getDrafts();
+    if (drafts.length === 0){
+      var empty = document.createElement('div');
+      empty.className = 'v10-folder-note';
+      empty.textContent = 'No drafts yet. Uploaded projects will appear here until you export them.';
+      list.appendChild(empty);
+      return;
+    }
+    drafts.forEach(function(d){
       var item = document.createElement('div');
       item.className = 'v10-folder-item clickable';
+      var meta = [d.date, d.size, d.dur].filter(Boolean).join(' \u00b7 ');
       item.innerHTML =
         '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83c\udf9e\ufe0f</span>'+
         '<div class="v10-fi-body">'+
           '<div class="v10-fi-name">'+escapeHtml(d.name)+'</div>'+
-          '<span class="v10-fi-meta">'+escapeHtml(d.date+' \u00b7 '+d.size+' \u00b7 '+d.dur)+'</span>'+
+          (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
         '</div>'+
         '<span class="v10-fi-hint">LOAD</span>';
       item.addEventListener('click', function(e){
@@ -637,10 +722,6 @@
       });
       list.appendChild(item);
     });
-    var note = document.createElement('div');
-    note.className = 'v10-folder-note';
-    note.textContent = 'Click a draft to load it in the editor';
-    list.appendChild(note);
   }
 
   function rebuildFolders(){
@@ -671,9 +752,12 @@
     }
     toRemove.forEach(function(n){ n.remove(); });
 
+    var completedCount = getCompleted().length;
+    var draftsCount    = getDrafts().length;
+
     var completedFolder = buildProjFolder({
       label: 'Completed Videos',
-      count: COMPLETED.length,
+      count: completedCount,
       icon: '\ud83d\udce6',
       iconColor: '#f59e0b',
       openByDefault: false,
@@ -681,10 +765,10 @@
     });
     var draftsFolder = buildProjFolder({
       label: 'Drafts',
-      count: DRAFTS.length,
+      count: draftsCount,
       icon: '\ud83d\udcdd',
       iconColor: '#8b5cf6',
-      openByDefault: true,
+      openByDefault: draftsCount > 0,
       buildList: buildDraftsListInto
     });
 
@@ -706,6 +790,50 @@
   }
 
   function loadDraftIntoEditor(draft){
+    // If this draft has a real server-uploaded file, load it into the
+    // real video player / editor state instead of the fake preview overlay.
+    var realUrl = draft && (draft.serveUrl || draft.downloadUrl);
+    if (realUrl){
+      var player = document.getElementById('videoPlayer') || document.querySelector('video');
+      if (player){
+        try { player.src = realUrl; player.load(); } catch(_){}
+      }
+      // Wire the editor's currentVideoFile so export / tools can operate on it
+      if (draft.filename){
+        try {
+          window.currentVideoFile = {
+            filename: draft.filename,
+            serveUrl: realUrl,
+            duration: draft.duration || 0
+          };
+        } catch(_){}
+      }
+      // Hide the upload zone now that there's a real video loaded
+      var uz = document.getElementById('uploadZone');
+      if (uz){
+        uz.style.display = 'none';
+        uz.dataset.v10HiddenForDraft = '1';
+      }
+      // Enable editor buttons the upload flow normally enables
+      ['trimButton','exportButton','splitButton','filterButton','speedButton',
+       'audioButton','previewVoiceButton','voiceoverButton','vtPreviewBtn',
+       'vtApplyBtn','textButton','speedSelect','addMusicButton',
+       'removeFillerWordsBtn','removePausesBtn','applyTransitionButton',
+       'applyCaptionsBtn'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el) el.disabled = false;
+      });
+      // Drop the video onto the timeline as a clip, using the real duration
+      // so it takes up the right amount of track width AND the serveUrl so
+      // the playhead-follow logic can swap the preview to this clip.
+      if (typeof window.addClipToTimeline === 'function'){
+        try { window.addClipToTimeline(draft.name, 'vid', draft.duration, realUrl); } catch(_){}
+      }
+      toast('Loaded '+(draft.kind === 'completed' ? 'export' : 'draft')+': '+draft.name);
+      return;
+    }
+
+    // Fallback (e.g. a completed export with only metadata): show preview overlay
     // Hide the REAL V9 upload panel (the "Upload Your Video" card).
     // Primary selector is #uploadZone on the live site; keep legacy fallbacks for resilience.
     var uploadPanelSelectors = [
@@ -807,13 +935,18 @@
     wireOrphanSearchInputs();
     removeImportFolderButtons();
     restyleMediaItems();
-    rebuildFolders();
-    injectMediaItems();
+    // Projects section (Completed Videos + Drafts folders) intentionally not
+    // rendered right now — Albert wants uploaded files to live in the area
+    // between the search bar and where Projects was. rebuildFolders() and
+    // injectMediaItems() are left defined so a future iteration can re-enable
+    // the Projects section as a separate, opt-in feature. The window hooks
+    // (addDraftEntry, addCompletedEntry, removeDraftByFilename) still work;
+    // they just won't render anything until the section is re-enabled.
     // Apply the currently active filter (default: all)
     var active = ml.querySelector('.ml-tab.active');
     var kind = (active && active.getAttribute('data-v10-kind')) || 'all';
     applyFilter(kind);
-    // Re-apply any existing search term (so newly-built folder items respect it)
+    // Re-apply any existing search term
     var existingSearch = document.querySelector('.media-library .v10-search input, .media-library .ml-search input');
     if (existingSearch && existingSearch.value) applySearch(existingSearch.value);
     return true;
@@ -1034,48 +1167,26 @@
   }
 
   function patchTimelineVisibility(){
+    // Timeline is now ALWAYS visible — users want to place clips / preview
+    // the timeline even before uploading a video. Defensive cleanup of any
+    // leftover empty-state class/placeholder from earlier sessions.
     var tc = document.querySelector('.timeline-container');
     if (!tc) return;
-    var uploadVisible = isUploadPanelVisible();
-    if (uploadVisible){
-      if (!tc.classList.contains('v10-tl-empty')){
-        tc.classList.add('v10-tl-empty');
-        if (!tc.querySelector('.v10-tl-placeholder')){
-          var ph = document.createElement('div');
-          ph.className = 'v10-tl-placeholder';
-          ph.setAttribute('data-v10','tl-placeholder');
-          ph.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20M8 4v4M16 4v4"/></svg>Upload a video to start editing';
-          tc.appendChild(ph);
-        }
-      }
-    } else {
-      tc.classList.remove('v10-tl-empty');
-      var ph = tc.querySelector('.v10-tl-placeholder');
-      if (ph) ph.remove();
-    }
+    tc.classList.remove('v10-tl-empty');
+    var ph = tc.querySelector('.v10-tl-placeholder');
+    if (ph) ph.remove();
   }
 
   function patchTimelineTracks(){
-    if (!videoIsLoaded()){
-      document.querySelectorAll('[data-v10="filmstrip"], [data-v10="wf"]').forEach(function(n){ n.remove(); });
-      _lastCapturedSrc = '';
-      _lastWaveformSrc = '';
-      return;
-    }
-    var vTrack = document.querySelector('.mt-track-video') || document.querySelector('.fs-track.video-track');
-    var aTrack = document.querySelector('.mt-track-audio') || document.querySelector('.fs-track.audio-track');
-
-    if (vTrack && !vTrack.querySelector('[data-v10="filmstrip"]')){
-      if (getComputedStyle(vTrack).position === 'static') vTrack.style.position = 'relative';
-      vTrack.appendChild(buildFilmstrip(currentVideoName()));
-    }
-    if (aTrack && !aTrack.querySelector('[data-v10="wf"]')){
-      if (getComputedStyle(aTrack).position === 'static') aTrack.style.position = 'relative';
-      aTrack.appendChild(buildDenseWaveform());
-    }
-    // Attempt to capture real video frames and audio waveform
-    captureVideoFrames();
-    captureAudioWaveform();
+    // Track-level filmstrip/waveform was placed inside .mt-track-video /
+    // .mt-track-audio with inset:4px 4px — it spanned the ENTIRE track and
+    // visually masked every individual clip on it. Albert wants each clip
+    // to have its own preview. For now we just ensure the old overlay is
+    // removed so clips are visible individually. (Real per-clip thumbnails
+    // can be layered back in a later iteration.)
+    document.querySelectorAll('[data-v10="filmstrip"], [data-v10="wf"]').forEach(function(n){ n.remove(); });
+    _lastCapturedSrc = '';
+    _lastWaveformSrc = '';
   }
 
   /* ===================== RIGHT PANEL ===================== */
@@ -1092,62 +1203,1136 @@
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-edit');
+
+    // Every button here operates on the currently-SELECTED clip (fallback:
+    // the clip under the playhead). Data-v10-clip-action attribute routes
+    // to window.clipAction* on click.
+    //
+    // ic | label             | data-v10-clip-action
+    function rpBtn(ic, label, action){
+      return '<button class="v10-rp-btn" data-v10-clip-action="' + action +
+        '"><span class="v10-rp-ic">' + ic + '</span>' + label + '</button>';
+    }
+
+    // Inline font-size slider + number input (replaces the prompt).
+    // Updates clip.dataset.fontSize on every drag/input, applies to
+    // all selected text clips via window.clipActionTextFontSizeApply.
+    var textControls =
+      '<div class="v10-rp-inline" style="padding:8px 6px;background:rgba(108,58,237,.05);border-radius:8px;margin-top:6px">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+          '<span style="font-size:10px;color:#8886a0;flex:1;letter-spacing:.3px">FONT SIZE</span>' +
+          '<input type="number" id="v10TextSizeNum" min="8" max="200" value="10" ' +
+            'style="width:52px;background:#0c0814;border:1px solid rgba(108,58,237,.35);color:#fff;font-size:11px;padding:3px 5px;border-radius:4px"/>' +
+          '<span style="font-size:10px;color:#8886a0">px</span>' +
+        '</div>' +
+        '<input type="range" id="v10TextSizeSlider" min="8" max="200" value="10" ' +
+          'style="width:100%;accent-color:#a78bfa"/>' +
+      '</div>' +
+      '<div class="v10-rp-inline" style="padding:8px 6px;background:rgba(108,58,237,.05);border-radius:8px;margin-top:6px">' +
+        '<div style="font-size:10px;color:#8886a0;letter-spacing:.3px;margin-bottom:6px">TEXT COLOR</div>' +
+        '<div id="v10TextColorGrid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px"></div>' +
+      '</div>';
+
+    // Inline speed slider — 0.25x to 4x
+    var speedControl =
+      '<div class="v10-rp-inline" style="padding:8px 6px;background:rgba(108,58,237,.05);border-radius:8px;margin-top:6px">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+          '<span style="font-size:10px;color:#8886a0;flex:1;letter-spacing:.3px">SPEED</span>' +
+          '<input type="number" id="v10SpeedNum" min="0.25" max="4" step="0.05" value="1" ' +
+            'style="width:52px;background:#0c0814;border:1px solid rgba(108,58,237,.35);color:#fff;font-size:11px;padding:3px 5px;border-radius:4px"/>' +
+          '<span style="font-size:10px;color:#8886a0">x</span>' +
+        '</div>' +
+        '<input type="range" id="v10SpeedSlider" min="25" max="400" step="5" value="100" ' +
+          'style="width:100%;accent-color:#a78bfa"/>' +
+      '</div>';
+
     div.innerHTML =
-      '<div class="v10-rp-section-title">CLIP TOOLS</div>'+
+      '<div class="v10-rp-section-title">TEXT</div>'+
       '<div class="v10-rp-grid">'+
-        buildRPButtons([['\u2702\ufe0f','Trim'],['\ud83d\udd2a','Split'],['\u26a1','Speed'],['\u2b1c','Crop']])+
+        '<button class="v10-rp-btn" data-v10-action="add-text"><span class="v10-rp-ic">\ud83c\udd97</span>Add Text</button>'+
+        '<button class="v10-rp-btn" data-v10-action="add-title"><span class="v10-rp-ic">\ud83d\udcdd</span>Add Title</button>'+
+        rpBtn('\ud83d\udccd','Text Position','TextPosition')+
       '</div>'+
+      textControls +
+      '<div class="v10-rp-section-title">CLIP TOOLS <span id="v10ClipToolsHint" style="font-weight:400;color:#8886a0;font-size:10px;margin-left:8px">select a V1 clip</span></div>'+
+      '<div class="v10-rp-grid" data-v10-clip-tools-group>'+
+        rpBtn('\u2702\ufe0f','Trim','Trim')+
+        rpBtn('\u27a1\ufe0f','Slip','SlipEdit')+
+        rpBtn('\ud83d\udd2a','Split','Split')+
+        rpBtn('\u2b1c','Crop','Crop')+
+      '</div>'+
+      speedControl +
       '<div class="v10-rp-section-title">TRANSFORM</div>'+
       '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83d\udcd0','Resize'],['\ud83d\udd04','Rotate'],['\ud83e\ude9e','Flip'],['\ud83d\udccd','Position']])+
+        rpBtn('\ud83d\udcd0','Resize','Resize')+
+        rpBtn('\ud83d\udcf1','Smart Resize','SmartResize')+
+        rpBtn('\ud83d\udd04','Rotate','Rotate')+
+        rpBtn('\ud83e\ude9e','Flip','Flip')+
+        rpBtn('\ud83d\udccd','Position','Position')+
       '</div>'+
       '<div class="v10-rp-section-title">TIMING</div>'+
+      // Loop removed per product decision — created more confusion than
+      // value and Freeze + Trim cover the same use-cases.
       '<div class="v10-rp-grid">'+
-        buildRPButtons([['\u23ea','Reverse'],['\ud83d\udd01','Loop'],['\u2744\ufe0f','Freeze'],['\ud83c\udfaf','Keyframe']])+
+        rpBtn('\u23ea','Reverse','Reverse')+
+        rpBtn('\u2744\ufe0f','Freeze','Freeze')+
+        rpBtn('\ud83c\udfaf','Keyframe','Keyframe')+
       '</div>';
+
+    // Wire all clip-action buttons FIRST so wireRPToast doesn't overwrite
+    // them with the generic toast handler.
+    Array.from(div.querySelectorAll('[data-v10-clip-action]')).forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        var act = btn.getAttribute('data-v10-clip-action');
+        var fn  = window['clipAction' + act];
+        if (typeof fn === 'function'){ fn(); }
+        else { toast(act + ' not wired'); }
+      }, true); // capture phase so wireRPToast's bubble handler is pre-empted
+    });
+
+    // ── Inline font-size slider + number ──────────────────────────
+    // Drag OR type to update the selected text clip(s). Falls back to
+    // all text clips on T1 when nothing specific is selected — same
+    // targeting rule as the old prompt-based clipActionTextFontSize.
+    var fsSlider = div.querySelector('#v10TextSizeSlider');
+    var fsNum    = div.querySelector('#v10TextSizeNum');
+    function getTargetTextClips(){
+      var selected = Array.from(document.querySelectorAll('.mt-clip.mt-clip-text.selected'));
+      if (selected.length) return selected;
+      return Array.from(document.querySelectorAll('.mt-track-text .mt-clip'));
+    }
+    function applyFontSize(v){
+      var clips = getTargetTextClips();
+      if (!clips.length) return;
+      clips.forEach(function(c){ c.dataset.fontSize = String(v); });
+      try { if (typeof window.syncPreviewToPlayhead === 'function') window.syncPreviewToPlayhead(); } catch(_){}
+      if (typeof window.pushTimelineHistory === 'function'){
+        try { window.pushTimelineHistory(); } catch(_){}
+      }
+    }
+    if (fsSlider && fsNum){
+      // Keep slider + number in lockstep
+      fsSlider.addEventListener('input', function(){
+        fsNum.value = fsSlider.value;
+        applyFontSize(parseInt(fsSlider.value, 10));
+      });
+      fsNum.addEventListener('input', function(){
+        var v = parseInt(fsNum.value, 10);
+        if (!isFinite(v)) return;
+        v = Math.max(8, Math.min(200, v));
+        fsSlider.value = String(v);
+        applyFontSize(v);
+      });
+      // Reflect the first selected text clip's current size on panel
+      // entry so the slider isn't lying about the state.
+      var tc = document.querySelector('.mt-clip.mt-clip-text.selected')
+            || document.querySelector('.mt-track-text .mt-clip');
+      if (tc && tc.dataset.fontSize){
+        var cur = parseInt(tc.dataset.fontSize, 10);
+        if (isFinite(cur)){ fsSlider.value = cur; fsNum.value = cur; }
+      }
+    }
+
+    // ── Inline text color grid ─────────────────────────────────────
+    var COLOR_SWATCHES = [
+      '#ffffff', '#000000', '#ef4444', '#f59e0b',
+      '#facc15', '#10b981', '#06b6d4', '#3b82f6',
+      '#8b5cf6', '#ec4899', '#f97316', '#14b8a6',
+      '#a855f7', '#64748b', '#78716c', '#92400e'
+    ];
+    var colorGrid = div.querySelector('#v10TextColorGrid');
+    if (colorGrid){
+      COLOR_SWATCHES.forEach(function(hex){
+        var sw = document.createElement('button');
+        sw.type = 'button';
+        sw.style.cssText =
+          'width:22px;height:22px;border-radius:4px;cursor:pointer;' +
+          'background:' + hex + ';' +
+          'border:1px solid rgba(255,255,255,0.15);padding:0';
+        sw.title = hex;
+        sw.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation();
+          var clips = getTargetTextClips();
+          if (!clips.length){ toast('Add a text clip first'); return; }
+          clips.forEach(function(c){ c.dataset.textColor = hex; });
+          try { window.syncPreviewToPlayhead && window.syncPreviewToPlayhead(); } catch(_){}
+          if (typeof window.pushTimelineHistory === 'function'){
+            try { window.pushTimelineHistory(); } catch(_){}
+          }
+          toast('Text color: ' + hex + (clips.length > 1 ? ' \u00b7 ' + clips.length + ' clips' : ''));
+        });
+        colorGrid.appendChild(sw);
+      });
+    }
+
+    // ── Inline speed slider + number ──────────────────────────────
+    // Applies to every active (selected or under-playhead) clip via
+    // the same multi-clip broadcast pattern as other edits.
+    var spSlider = div.querySelector('#v10SpeedSlider');
+    var spNum    = div.querySelector('#v10SpeedNum');
+    function applySpeed(v){
+      if (typeof window.getActiveClips !== 'function') return;
+      var clips = window.getActiveClips();
+      if (!clips || !clips.length) return;
+      clips.forEach(function(c){
+        if (c.classList.contains('mt-clip-text') || c.classList.contains('mt-clip-fx')) return;
+        // Visually shorten (or lengthen) the clip width to match the
+        // new playback rate. We don't cache a "base" width — we recover
+        // the 1×-speed width from (currentWidth × currentSpeed) each
+        // time, so the math is correct regardless of timeline zoom or
+        // prior speed adjustments.
+        var curW = parseFloat(c.style.width) || 0;
+        var prevSpeed = parseFloat(c.dataset.speed) || 1;
+        var oneXWidth = curW * prevSpeed;
+        c.dataset.speed = String(v);
+        var newW = oneXWidth / v;
+        if (newW < 20) newW = 20; // keep clip visible
+        c.style.width = newW + 'px';
+        // Force a filmstrip/waveform re-render at the new width so the
+        // preview reflects the new timeline footprint.
+        try { if (typeof window.attachFilmstripOrWaveform === 'function') window.attachFilmstripOrWaveform(c); } catch(_){}
+      });
+      try { if (typeof window.updateTimelineInfo === 'function') window.updateTimelineInfo(); } catch(_){}
+      try { window.syncPreviewToPlayhead && window.syncPreviewToPlayhead(); } catch(_){}
+      if (typeof window.pushTimelineHistory === 'function'){
+        try { window.pushTimelineHistory(); } catch(_){}
+      }
+    }
+    if (spSlider && spNum){
+      spSlider.addEventListener('input', function(){
+        var v = parseInt(spSlider.value, 10) / 100;
+        spNum.value = v.toFixed(2);
+        applySpeed(v);
+      });
+      spNum.addEventListener('input', function(){
+        var v = parseFloat(spNum.value);
+        if (!isFinite(v) || v <= 0) return;
+        v = Math.max(0.25, Math.min(4, v));
+        spSlider.value = String(Math.round(v * 100));
+        applySpeed(v);
+      });
+    }
+
+    // Wire the Add Text / Add Title buttons (same as before).
+    Array.from(div.querySelectorAll('[data-v10-action="add-text"],[data-v10-action="add-title"]'))
+      .forEach(function(btn){
+        var isTitle = btn.getAttribute('data-v10-action') === 'add-title';
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof window.openTextInputModal !== 'function'){ toast('Text tool not ready'); return; }
+          window.openTextInputModal(function(text, opts){
+            opts = opts || {};
+            if (isTitle && !opts.fontSize) opts.fontSize = 84;
+            if (isTitle && !opts.position) opts.position = 'top';
+            if (typeof window.addTextClipToTimeline === 'function'){
+              window.addTextClipToTimeline(text, opts);
+            }
+          });
+        }, true);
+      });
+
     wireRPToast(div);
+
+    // ── Selection-driven gating of Clip Tools ────────────────────
+    // Trim / Split / Crop + Speed slider are only meaningful on a V1
+    // video clip. Grey them out until the user has one selected (or
+    // the playhead sits over one). Observe the timeline's .selected
+    // changes + playhead moves to flip enabled/disabled state.
+    var clipToolsGroup = div.querySelector('[data-v10-clip-tools-group]');
+    var speedInline   = div.querySelector('#v10SpeedSlider') && div.querySelector('#v10SpeedSlider').closest('.v10-rp-inline');
+    var hintEl        = div.querySelector('#v10ClipToolsHint');
+    function hasV1Target(){
+      var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+      if (sel) return true;
+      // Fallback: clip under playhead on V1
+      var ph = document.getElementById('mtPlayhead');
+      var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+      var v1Clips = document.querySelectorAll('.mt-track-video .mt-clip');
+      for (var i = 0; i < v1Clips.length; i++){
+        var c = v1Clips[i];
+        var l = parseFloat(c.style.left)  || 0;
+        var w = parseFloat(c.style.width) || 0;
+        if (phX >= l && phX <= l + w) return true;
+      }
+      return false;
+    }
+    function updateClipToolsState(){
+      var enabled = hasV1Target();
+      [clipToolsGroup, speedInline].forEach(function(el){
+        if (!el) return;
+        el.style.opacity = enabled ? '' : '0.45';
+        el.style.pointerEvents = enabled ? '' : 'none';
+      });
+      if (hintEl){
+        hintEl.style.display = enabled ? 'none' : '';
+      }
+    }
+    updateClipToolsState();
+    // Watch timeline DOM for selection + playhead changes
+    try {
+      var ta = document.getElementById('mtTracksArea');
+      if (ta){
+        var mo = new MutationObserver(function(){
+          updateClipToolsState();
+        });
+        mo.observe(ta, { subtree: true, childList: true, attributes: true,
+          attributeFilter: ['class', 'style'] });
+      }
+    } catch(_){}
+
     return div;
+  }
+
+  // ── One-click denoise / normalize via server FFmpeg ─────────────
+  // Takes a list of audio clip elements, POSTs each to
+  // /video-editor/process-audio-clip, replaces clip.dataset.mediaUrl
+  // with the returned processed file. Shows an indeterminate progress
+  // bar while the fleet is processing.
+  async function applyOneClickEnhancement(action, clips, btn){
+    if (!clips || !clips.length){ toast('No audio clip selected'); return; }
+    var pretty = action === 'denoise' ? 'Denoise' : 'Normalize';
+    var bar = showInlineProgress(btn, 'Processing ' + pretty + '\u2026');
+    try {
+      for (var i = 0; i < clips.length; i++){
+        var clip = clips[i];
+        bar.setLabel('Processing ' + pretty + ' (' + (i+1) + '/' + clips.length + ')\u2026');
+        var mediaUrl = clip.dataset.mediaUrl;
+        if (!mediaUrl){ continue; }
+        // Pre-upload blob URLs so the server can resolve them
+        if (mediaUrl.indexOf('blob:') === 0){
+          try {
+            var blob = await (await fetch(mediaUrl)).blob();
+            var fd = new FormData();
+            fd.append('file', blob, (clip.dataset.fileName || 'clip') + '.bin');
+            var upResp = await fetch('/video-editor/upload-blob', { method:'POST', body: fd, credentials:'same-origin' });
+            var upData = await upResp.json();
+            if (upResp.ok && upData.success){
+              mediaUrl = upData.serveUrl;
+              clip.dataset.mediaUrl = mediaUrl;
+            }
+          } catch (upErr){ console.warn('[enhance] blob upload failed', upErr); }
+        }
+        // Process via server
+        try {
+          var resp = await fetch('/video-editor/process-audio-clip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mediaUrl: mediaUrl, action: action })
+          });
+          var data = await resp.json();
+          if (!resp.ok || !data.success){
+            throw new Error((data && data.error) || (pretty + ' failed'));
+          }
+          var oldUrl = clip.dataset.mediaUrl;
+          clip.dataset.mediaUrl = data.serveUrl;
+          // Task #66 — if the server returned a video (V1 clip path),
+          // also hot-swap the <video> element src if this clip is the
+          // one currently loaded in the Program Monitor, and rebuild
+          // the filmstrip from the new URL. For audio-only output the
+          // existing waveform refresh is enough.
+          if (data.kind === 'video' && clip.classList.contains('mt-clip-video')){
+            var player = document.getElementById('videoPlayer') || document.querySelector('video');
+            if (player && oldUrl){
+              var curSrc = player.currentSrc || player.src || '';
+              var oldName = oldUrl.split('?')[0].split('/').pop();
+              if (oldName && curSrc.indexOf(oldName) !== -1){
+                var t = player.currentTime;
+                var wasPlaying = !player.paused;
+                try { player.src = data.serveUrl; player.load(); } catch(_){}
+                player.addEventListener('loadedmetadata', function once(){
+                  player.removeEventListener('loadedmetadata', once);
+                  try { player.currentTime = t; } catch(_){}
+                  if (wasPlaying){ try { player.play(); } catch(_){} }
+                }, { once: true });
+              }
+            }
+            if (typeof window.buildClipFilmstrip === 'function'){
+              var oldFS = clip.querySelector('.v10-filmstrip');
+              var oldLb = clip.querySelector('.v10-fs-label');
+              if (oldFS) oldFS.remove();
+              if (oldLb) oldLb.remove();
+              try {
+                window.buildClipFilmstrip(clip, data.serveUrl,
+                  parseFloat(clip.dataset.duration) || 0);
+              } catch(_){}
+            }
+          } else {
+            try { if (typeof window.attachFilmstripOrWaveform === 'function') window.attachFilmstripOrWaveform(clip); } catch(_){}
+          }
+        } catch (procErr){
+          console.warn('[enhance]', procErr);
+          toast(pretty + ' error: ' + (procErr.message || procErr));
+        }
+      }
+      bar.complete();
+      toast(pretty + ' applied \u2014 ' + clips.length + ' clip' + (clips.length === 1 ? '' : 's'));
+      if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+    } catch (err){
+      bar.complete();
+      toast(pretty + ' failed: ' + (err.message || err));
+    }
+  }
+
+  // Small inline progress strip attached above a button. Used by the
+  // one-click enhancement + voice-over recording. Returns
+  // { setLabel, complete } for the caller to drive.
+  function showInlineProgress(anchorBtn, label){
+    var host = anchorBtn && anchorBtn.parentElement && anchorBtn.parentElement.parentElement;
+    if (!host) return { setLabel: function(){}, complete: function(){} };
+    var bar = document.createElement('div');
+    bar.className = 'v10-inline-progress';
+    bar.style.cssText =
+      'margin:6px 0;padding:8px 10px;background:rgba(124,58,237,.12);' +
+      'border:1px solid rgba(139,92,246,.4);border-radius:8px;' +
+      'font-size:11px;color:#e2e0f0;display:flex;align-items:center;gap:8px';
+    bar.innerHTML =
+      '<span class="v10-spinner" style="width:12px;height:12px;border:2px solid rgba(167,139,250,.3);border-top-color:#a78bfa;border-radius:50%;animation:v10spin 0.7s linear infinite;flex-shrink:0"></span>' +
+      '<span class="v10-ip-lbl">' + label + '</span>';
+    // One-shot keyframes for the spinner
+    if (!document.getElementById('v10SpinKF')){
+      var s = document.createElement('style');
+      s.id = 'v10SpinKF';
+      s.textContent = '@keyframes v10spin { to { transform: rotate(360deg); } }';
+      document.head.appendChild(s);
+    }
+    host.insertBefore(bar, host.firstChild);
+    return {
+      setLabel: function(t){ var el = bar.querySelector('.v10-ip-lbl'); if (el) el.textContent = t; },
+      complete: function(){ try { bar.remove(); } catch(_){} }
+    };
+  }
+
+  // ── Voice Over recording ────────────────────────────────────────
+  var _voLive = null; // active recorder instance
+  async function startVoiceOverRecording(btn){
+    if (_voLive){
+      // Second click stops the recording
+      try { _voLive.stop(); } catch(_){}
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      toast('This browser does not support microphone access');
+      return;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      var mime = ['audio/webm;codecs=opus','audio/webm','audio/mp4']
+        .find(function(m){ return typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m); });
+      var rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      var chunks = [];
+      rec.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+      // Visually flag the button as recording
+      var origLabel = btn.innerHTML;
+      btn.style.background = 'rgba(239,68,68,.85)';
+      btn.style.color = '#fff';
+      btn.innerHTML = '<span class="v10-rp-ic">\u23fa\ufe0f</span>Stop';
+      rec.onstop = function(){
+        btn.innerHTML = origLabel;
+        btn.style.background = '';
+        btn.style.color = '';
+        try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
+        _voLive = null;
+        var blob = new Blob(chunks, { type: mime || 'audio/webm' });
+        var url = URL.createObjectURL(blob);
+        // Drop a clip onto A1 at the current playhead
+        var ph = document.getElementById('mtPlayhead');
+        var PX_PER_SEC = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+        // Duration estimation — use recorded time
+        var recDurSec = rec._recDurSec || 3;
+        if (typeof window.addClipToTimeline === 'function'){
+          window.addClipToTimeline('voiceover.webm', 'aud', recDurSec, url);
+          // addClipToTimeline places at the rightmost; move it to phX
+          var audioTracks = document.querySelectorAll('.mt-track-audio');
+          var newest = null;
+          audioTracks.forEach(function(trk){
+            var clips = trk.querySelectorAll('.mt-clip');
+            if (clips.length) newest = clips[clips.length - 1];
+          });
+          if (newest){
+            newest.style.left = phX + 'px';
+          }
+        }
+        toast('Voice-over added at ' + (phX / PX_PER_SEC).toFixed(2) + 's');
+      };
+      _voLive = rec;
+      var startTs = performance.now();
+      rec.start(200);
+      // Track duration
+      var tick = setInterval(function(){
+        if (!_voLive){ clearInterval(tick); return; }
+        rec._recDurSec = (performance.now() - startTs) / 1000;
+      }, 500);
+    } catch (err){
+      toast('Voice-over error: ' + (err.message || err));
+    }
+  }
+
+  // ── Music upload (local files) ──────────────────────────────────
+  function openMusicUpload(){
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'audio/*';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', function(){
+      var f = input.files && input.files[0];
+      if (f && typeof window.addClipToTimeline === 'function'){
+        var url = URL.createObjectURL(f);
+        // Estimate duration via an <audio> metadata load
+        var a = new Audio();
+        a.preload = 'metadata';
+        a.src = url;
+        a.addEventListener('loadedmetadata', function(){
+          var dur = isFinite(a.duration) ? a.duration : 30;
+          window.addClipToTimeline(f.name, 'aud', dur, url);
+        }, { once: true });
+        a.addEventListener('error', function(){
+          window.addClipToTimeline(f.name, 'aud', 30, url);
+        }, { once: true });
+      }
+      try { input.remove(); } catch(_){}
+    });
+    input.click();
   }
 
   function buildAudioContent(){
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-audio');
-    var audioLayers = [
-      {name:'Voiceover.mp3', color:'#06b6d4', vol:78},
-      {name:'Background Music.mp3', color:'#3b82f6', vol:55},
-      {name:'SFX Whoosh.wav', color:'#8b5cf6', vol:90}
-    ];
-    var html = '<div class="v10-rp-section-title">AUDIO LAYERS</div>';
-    audioLayers.forEach(function(l){
-      html +=
-        '<div class="v10-audio-card">'+
-          '<div class="v10-ac-head"><div class="v10-ac-dot" style="background:'+l.color+'"></div><h5>'+l.name+'</h5></div>'+
-          '<div class="v10-ac-vol"><span>\ud83d\udd0a</span><div class="v10-ac-volbar"><div class="v10-ac-volfill" style="width:'+l.vol+'%;background:'+l.color+'"></div></div><span class="v10-ac-voltxt">'+l.vol+'%</span></div>'+
-          '<div class="v10-ac-btns">'+
-            '<button data-action="Solo: '+l.name+'">Solo</button>'+
-            '<button data-action="Mute: '+l.name+'">Mute</button>'+
-            '<button data-action="Fade: '+l.name+'">Fade</button>'+
-          '</div>'+
-        '</div>';
-    });
-    html +=
-      '<div class="v10-rp-section-title" style="margin-top:14px">AUDIO TOOLS</div>'+
-      '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83c\udfa4','Voice Over'],['\ud83c\udfb5','Music'],['\ud83d\udd07','Denoise'],['\ud83d\udcc8','Normalize']])+
-      '</div>'+
-      '<div class="v10-rp-section-title">MIXING</div>'+
-      '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83c\udfda\ufe0f','Fade In'],['\ud83c\udf05','Fade Out'],['\ud83d\udd17','Link Audio'],['\u2702\ufe0f','Split Audio']])+
-      '</div>';
-    div.innerHTML = html;
-    div.querySelectorAll('.v10-ac-btns button').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        e.preventDefault();
-        toast(btn.getAttribute('data-action') || btn.textContent);
+    function escAudio(s){
+      return String(s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
       });
+    }
+    function renderLayers(){
+      var clips = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip'));
+      var vClips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
+      var html = '<div class="v10-rp-section-title">AUDIO LAYERS</div>';
+      if (!clips.length){
+        html += '<div style="padding:12px 4px;color:#8886a0;font-size:12px;line-height:1.5">No audio clips on the timeline yet. Upload an audio file or click an audio item in the Media panel to add one.</div>';
+      } else {
+        clips.forEach(function(clip, i){
+          var name  = clip.dataset.fileName || ('Audio ' + (i + 1));
+          var vol   = parseFloat(clip.dataset.volume); if (!isFinite(vol)) vol = 100;
+          var muted = clip.dataset.muted === 'true';
+          var color = ['#06b6d4','#3b82f6','#8b5cf6','#ec4899','#22c55e'][i % 5];
+          html +=
+            '<div class="v10-audio-card" data-clip-idx="' + i + '">'+
+              '<div class="v10-ac-head"><div class="v10-ac-dot" style="background:' + color + '"></div><h5>' + escAudio(name) + '</h5></div>'+
+              '<div class="v10-ac-vol"><span>\ud83d\udd0a</span>'+
+                '<input type="range" min="0" max="200" value="' + vol + '" class="v10-ac-volrange" style="flex:1;margin:0 6px;accent-color:' + color + '"/>'+
+                '<span class="v10-ac-voltxt">' + Math.round(vol) + '%</span>'+
+              '</div>'+
+              '<div class="v10-ac-btns">'+
+                // Solo and Fade hidden per product decision; Mute is the
+                // only per-clip toggle in the card.
+                '<button data-ac-action="mute"' + (muted ? ' style="background:rgba(239,68,68,.85);color:#fff"' : '') + '>' + (muted ? 'Unmute' : 'Mute') + '</button>'+
+              '</div>'+
+            '</div>';
+        });
+      }
+      // VIDEO AUDIO — embedded audio from V1 clips. Each V1 video clip has
+      // its own muxed audio track; the export pipeline already reads
+      // clip.dataset.volume / muted for every .mt-clip regardless of track,
+      // so we just expose the same controls here. Volume slider applies
+      // live to the <video> element when the clip is currently loaded.
+      if (vClips.length){
+        html += '<div class="v10-rp-section-title" style="margin-top:14px">VIDEO AUDIO <span style="color:#8886a0;font-weight:400;margin-left:6px">(V1 embedded)</span></div>';
+        vClips.forEach(function(clip, i){
+          var name  = clip.dataset.fileName || ('Video ' + (i + 1));
+          var vol   = parseFloat(clip.dataset.volume); if (!isFinite(vol)) vol = 100;
+          var muted = clip.dataset.muted === 'true';
+          var color = '#a78bfa'; // violet to distinguish from A1 cards
+          html +=
+            '<div class="v10-audio-card" data-video-idx="' + i + '">'+
+              '<div class="v10-ac-head"><div class="v10-ac-dot" style="background:' + color + '"></div><h5>\ud83c\udfac ' + escAudio(name) + '</h5></div>'+
+              '<div class="v10-ac-vol"><span>\ud83d\udd0a</span>'+
+                '<input type="range" min="0" max="200" value="' + vol + '" class="v10-vc-volrange" style="flex:1;margin:0 6px;accent-color:' + color + '"/>'+
+                '<span class="v10-vc-voltxt">' + Math.round(vol) + '%</span>'+
+              '</div>'+
+              '<div class="v10-ac-btns">'+
+                '<button data-vc-action="mute"' + (muted ? ' style="background:rgba(239,68,68,.85);color:#fff"' : '') + '>' + (muted ? 'Unmute' : 'Mute') + '</button>'+
+              '</div>'+
+            '</div>';
+        });
+      }
+      // AUDIO TOOLS — Voice Over + Music are placeholders (routed to toast
+      // via wireRPToast); Denoise + Normalize toggle per-selected-audio-clip
+      // dataset flags that bake into the export.
+      function afxBtn(ic, label, fx){
+        return '<button class="v10-rp-btn" data-audio-fx="' + fx + '"><span class="v10-rp-ic">' + ic + '</span>' + label + '</button>';
+      }
+      html +=
+        '<div class="v10-rp-section-title" style="margin-top:14px">AUDIO TOOLS</div>'+
+        '<div class="v10-rp-grid">'+
+          '<button class="v10-rp-btn" data-v10-audio-tool="voiceover"><span class="v10-rp-ic">\ud83c\udfa4</span>Voice Over</button>'+
+          '<button class="v10-rp-btn" data-v10-audio-tool="music-upload"><span class="v10-rp-ic">\ud83c\udfb5</span>Music</button>'+
+          afxBtn('\ud83d\udd07', 'Denoise',   'denoise')+
+          afxBtn('\ud83d\udcc8', 'Normalize', 'normalize')+
+        '</div>'+
+        '<div class="v10-rp-section-title">MIXING</div>'+
+        // Inline fade sliders — replace the old prompt('Fade-in duration')
+        // flow with a drag-to-set range (0-5s, 0.1s step). Applies to the
+        // currently-targeted audio clip (selected > first on timeline).
+        // The numeric readout updates live and the value is baked into
+        // clip.dataset.fadeIn / fadeOut on 'input' so preview + export
+        // pick it up immediately.
+        (function(){
+          // Read current values from the target audio clip, if any
+          // #24 — Fade sliders read from any selected A1/V1 clip or the
+          // first A1 clip (fallback) or first V1 clip (final fallback).
+          var tgt =
+            document.querySelector('.mt-track-audio .mt-clip.selected') ||
+            document.querySelector('.mt-track-video .mt-clip.selected') ||
+            document.querySelector('.mt-track-audio .mt-clip') ||
+            document.querySelector('.mt-track-video .mt-clip');
+          var curIn  = tgt ? (parseFloat(tgt.dataset.fadeIn)  || 0) : 0;
+          var curOut = tgt ? (parseFloat(tgt.dataset.fadeOut) || 0) : 0;
+          function fadeRow(lbl, fx, val, icon){
+            return '<div style="padding:10px;background:rgba(255,255,255,.03);border:1px solid #2a2545;border-radius:8px;margin-bottom:6px">' +
+              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+                '<span>' + icon + '</span>' +
+                '<span style="font-size:11px;font-weight:500;flex:1">' + lbl + '</span>' +
+                '<span class="v10-fade-val" data-fx="' + fx + '" style="font-size:11px;font-weight:600;color:#fde047;min-width:36px;text-align:right">' + val.toFixed(1) + 's</span>' +
+              '</div>' +
+              '<input type="range" min="0" max="5" step="0.1" value="' + val.toFixed(1) +
+                '" data-audio-fx-slider="' + fx + '" style="width:100%;accent-color:#a78bfa"/>' +
+            '</div>';
+          }
+          return fadeRow('Fade In',  'fadein',  curIn,  '\ud83c\udfda\ufe0f') +
+                 fadeRow('Fade Out', 'fadeout', curOut, '\ud83c\udf05');
+        })() +
+        '<div class="v10-rp-grid" style="margin-top:4px">'+
+          '<button class="v10-rp-btn" data-audio-mix="link"><span class="v10-rp-ic">\ud83d\udd17</span>Link Audio</button>'+
+          '<button class="v10-rp-btn" data-audio-mix="split"><span class="v10-rp-ic">\u2702\ufe0f</span>Split Audio</button>'+
+        '</div>';
+      div.innerHTML = html;
+
+      Array.from(div.querySelectorAll('.v10-audio-card')).forEach(function(card){
+        var idx = parseInt(card.getAttribute('data-clip-idx'), 10);
+        var clip = document.querySelectorAll('.mt-track-audio .mt-clip')[idx];
+        if (!clip) return;
+        var range = card.querySelector('.v10-ac-volrange');
+        var label = card.querySelector('.v10-ac-voltxt');
+        // Reach into the live <audio> element for this URL so volume /
+        // mute changes take effect IMMEDIATELY (not just on next play).
+        //
+        // Task #28 — Uploaded local audio files get stored in the
+        // _a1AudioEls URL-keyed cache in media-panel-fix.js. The cache
+        // lookup via window.__v10GetA1Audio() is 100% reliable because
+        // it uses the same URL string the caller stored. The old
+        // CSS.escape-based querySelector was unreliable for blob: URLs
+        // (browser normalizes them) and its `|| querySelector('[data-v10-a1]')`
+        // fallback returned an ARBITRARY audio element, silently applying
+        // volume changes to the wrong clip.
+        function getLiveAudio(){
+          var url = clip.dataset.mediaUrl;
+          if (!url) return null;
+          if (typeof window.__v10GetA1Audio === 'function'){
+            var hit = window.__v10GetA1Audio(url);
+            if (hit) return hit;
+          }
+          // Secondary: exact src match on audio elements (only as a safety
+          // net for clips created before the cache existed).
+          try {
+            var bySrc = document.querySelector('audio[data-v10-a1][src="' + CSS.escape(url) + '"]');
+            if (bySrc) return bySrc;
+          } catch(_){}
+          return null; // no ambiguous fallback — don't touch random clips
+        }
+        if (range){
+          range.addEventListener('input', function(){
+            var v = parseInt(range.value, 10);
+            clip.dataset.volume = String(v);
+            if (label) label.textContent = v + '%';
+            // Apply to the currently-playing audio element (if any)
+            var live = getLiveAudio();
+            if (live){ live.volume = Math.min(1, Math.max(0, v / 100)); }
+            // Task #30 — envelope viz scales with volume
+            if (typeof window.refreshClipFadeOverlay === 'function'){
+              try { window.refreshClipFadeOverlay(clip); } catch(_){}
+            }
+          });
+        }
+        Array.from(card.querySelectorAll('[data-ac-action]')).forEach(function(btn){
+          btn.addEventListener('click', function(e){
+            e.preventDefault();
+            var act = btn.getAttribute('data-ac-action');
+            if (act === 'mute'){
+              var wasMuted = clip.dataset.muted === 'true';
+              var nowMuted = !wasMuted;
+              clip.dataset.muted = nowMuted ? 'true' : 'false';
+              btn.textContent = nowMuted ? 'Unmute' : 'Mute';
+              btn.style.background = nowMuted ? 'rgba(239,68,68,.85)' : '';
+              btn.style.color      = nowMuted ? '#fff' : '';
+              // Kill / restore the signal on the live <audio> element
+              var live = getLiveAudio();
+              if (live){
+                live.muted = nowMuted;
+                if (nowMuted){ try { live.pause(); } catch(_){} }
+              }
+              toast((nowMuted ? 'Muted' : 'Unmuted') + ': ' + (clip.dataset.fileName || 'clip'));
+              if (typeof window.refreshClipFadeOverlay === 'function'){
+                try { window.refreshClipFadeOverlay(clip); } catch(_){}
+              }
+            } else if (act === 'solo'){
+              // Select this clip so clipActionSolo operates on it
+              document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
+              clip.classList.add('selected');
+              if (typeof window.clipActionSolo === 'function') window.clipActionSolo();
+              setTimeout(renderLayers, 50); // re-render card states
+            } else if (act === 'fade'){
+              toast('Fade — drag the slider to taper volume');
+            }
+          });
+        });
+      });
+
+      // VIDEO AUDIO cards — wire volume/mute for embedded V1 audio. The
+      // dataset writes are always authoritative for export; the live
+      // <video> element is updated only when the card's clip is the one
+      // currently loaded in the Program Monitor.
+      function getVideoPlayer(){
+        return document.getElementById('videoPlayer') || document.querySelector('video');
+      }
+      function normalizeUrlLocal(u){
+        if (!u) return '';
+        try { return new URL(u, window.location.href).href; } catch(_){ return String(u); }
+      }
+      function isClipLoaded(clip){
+        var p = getVideoPlayer();
+        if (!p || !clip) return false;
+        var src = p.currentSrc || p.src;
+        return !!src && normalizeUrlLocal(src) === normalizeUrlLocal(clip.dataset.mediaUrl || '');
+      }
+      Array.from(div.querySelectorAll('[data-video-idx]')).forEach(function(card){
+        var idx = parseInt(card.getAttribute('data-video-idx'), 10);
+        var clip = document.querySelectorAll('.mt-track-video .mt-clip')[idx];
+        if (!clip) return;
+        var range = card.querySelector('.v10-vc-volrange');
+        var label = card.querySelector('.v10-vc-voltxt');
+        if (range){
+          range.addEventListener('input', function(){
+            var v = parseInt(range.value, 10);
+            clip.dataset.volume = String(v);
+            if (label) label.textContent = v + '%';
+            if (isClipLoaded(clip)){
+              var p = getVideoPlayer();
+              if (p) p.volume = Math.min(1, Math.max(0, v / 100));
+            }
+          });
+          range.addEventListener('change', function(){
+            if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+          });
+        }
+        Array.from(card.querySelectorAll('[data-vc-action]')).forEach(function(btn){
+          btn.addEventListener('click', function(e){
+            e.preventDefault();
+            var act = btn.getAttribute('data-vc-action');
+            if (act === 'mute'){
+              var wasMuted = clip.dataset.muted === 'true';
+              var nowMuted = !wasMuted;
+              clip.dataset.muted = nowMuted ? 'true' : 'false';
+              btn.textContent = nowMuted ? 'Unmute' : 'Mute';
+              btn.style.background = nowMuted ? 'rgba(239,68,68,.85)' : '';
+              btn.style.color      = nowMuted ? '#fff' : '';
+              if (isClipLoaded(clip)){
+                var p = getVideoPlayer();
+                if (p) p.muted = nowMuted;
+              }
+              toast((nowMuted ? 'Muted' : 'Unmuted') + ': ' + (clip.dataset.fileName || 'clip'));
+              if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+            }
+          });
+        });
+      });
+
+      // Hook the <video> element so whenever it swaps to a new V1 clip's
+      // src (via loadAndPlayClipAt) it picks up that clip's saved
+      // dataset.volume / muted state. Installed once per page.
+      //
+      // Task #65 — Also drives a real-time fade envelope during playback.
+      // On every timeupdate, compute where currentTime sits inside the
+      // active clip and apply fadeIn / fadeOut ramps to video.volume so
+      // the user can HEAR the fade in the preview, not just see it on
+      // the export. Math:
+      //   • clipT = currentTime − sourceOffset  (seconds into the clip)
+      //   • clipDur                                 (seconds the clip plays)
+      //   • base = dataset.volume/100 (or 1 if unset, 0 if muted)
+      //   • fadeIn  > 0  AND  clipT < fadeIn   → volume = base * (clipT / fadeIn)
+      //   • fadeOut > 0  AND  clipT > clipDur - fadeOut
+      //                                        → volume = base * ((clipDur - clipT) / fadeOut)
+      //   • else → volume = base
+      (function installV1AudioHydrator(){
+        var p = getVideoPlayer();
+        if (!p || p.__v1AudioHooked) return;
+        p.__v1AudioHooked = true;
+        var _activeClip = null;
+
+        // Task #73 — B-Roll preserves primary audio (V1 underlay).
+        // When the active clip is a B-Roll, a hidden <audio> element
+        // plays the underlying older V1 clip's audio at full volume,
+        // and the visible video's own audio is ducked to ~0.2× so the
+        // primary dialogue remains the focus. Mirrors the FFmpeg amix
+        // the export pipeline runs, so preview matches export.
+        var BROLL_DUCK = 0.20;
+        var _underlayAudio = null;
+        function ensureUnderlayAudio(){
+          if (_underlayAudio) return _underlayAudio;
+          _underlayAudio = document.createElement('audio');
+          _underlayAudio.id = 'brollUnderlayAudio';
+          _underlayAudio.preload = 'auto';
+          _underlayAudio.style.display = 'none';
+          document.body.appendChild(_underlayAudio);
+          return _underlayAudio;
+        }
+        function findUnderlayForBroll(brollClip){
+          if (!brollClip) return null;
+          var bL = parseFloat(brollClip.style.left)  || 0;
+          var bW = parseFloat(brollClip.style.width) || 0;
+          var bAdded = parseFloat(brollClip.dataset.addedAt) || 0;
+          var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+          var midPx = bL + bW / 2;
+          var best = null, bestAdded = -Infinity;
+          var clips = document.querySelectorAll('.mt-track-video .mt-clip');
+          for (var i = 0; i < clips.length; i++){
+            var c = clips[i];
+            if (c === brollClip) continue;
+            if (c.dataset.broll === '1') continue;
+            var cAdded = parseFloat(c.dataset.addedAt) || 0;
+            if (cAdded >= bAdded) continue;
+            var cL = parseFloat(c.style.left)  || 0;
+            var cW = parseFloat(c.style.width) || 0;
+            if (midPx < cL || midPx > cL + cW) continue;
+            if (cAdded > bestAdded){ best = c; bestAdded = cAdded; }
+          }
+          if (!best) return null;
+          var bSrcOff = parseFloat(best.dataset.sourceOffset) || 0;
+          var bMediaUrl = best.dataset.mediaUrl || '';
+          var brollSrcOff = parseFloat(brollClip.dataset.sourceOffset) || 0;
+          var pps = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+          // Compute the underlay's source-time offset that lines up with
+          // the b-roll's start in timeline terms.
+          var underTimelineStart = bL / pps;        // seconds
+          var bestTimelineStart  = (parseFloat(best.style.left) || 0) / pps;
+          var underBaseSrc       = bSrcOff + (underTimelineStart - bestTimelineStart);
+          return {
+            clip:      best,
+            mediaUrl:  bMediaUrl,
+            baseSrc:   underBaseSrc,   // underlay source-time at b-roll t=0
+            brollSrcOff: brollSrcOff
+          };
+        }
+        function syncUnderlayPlayback(){
+          if (!_underlayAudio) return;
+          if (!_activeClip || _activeClip.dataset.broll !== '1'){
+            try { _underlayAudio.pause(); } catch(_){}
+            return;
+          }
+          if (p.paused){ try { _underlayAudio.pause(); } catch(_){} }
+          else { try { _underlayAudio.play(); } catch(_){} }
+        }
+        function configureUnderlayForActive(){
+          var c = _activeClip;
+          if (!c || c.dataset.broll !== '1'){
+            // Not a b-roll — clear any existing underlay playback.
+            if (_underlayAudio){
+              try { _underlayAudio.pause(); _underlayAudio.removeAttribute('src'); _underlayAudio.load(); } catch(_){}
+            }
+            return;
+          }
+          var u = findUnderlayForBroll(c);
+          if (!u || !u.mediaUrl){
+            if (_underlayAudio){
+              try { _underlayAudio.pause(); _underlayAudio.removeAttribute('src'); _underlayAudio.load(); } catch(_){}
+            }
+            return;
+          }
+          var ua = ensureUnderlayAudio();
+          // Stash so applyVolume / time sync can read it without relooking.
+          c.__underlay = u;
+          if (ua.dataset.url !== u.mediaUrl){
+            ua.dataset.url = u.mediaUrl;
+            try { ua.src = u.mediaUrl; ua.load(); } catch(_){}
+          }
+          // Per-underlay base volume (respect older clip's volume + mute).
+          var rawV = parseFloat(u.clip.dataset.volume);
+          var baseV = isFinite(rawV) ? Math.min(1, Math.max(0, rawV / 100)) : 1;
+          if (u.clip.dataset.muted === 'true') baseV = 0;
+          ua.volume = baseV;
+          // Seek + play/pause to match main player.
+          var brollClipT = Math.max(0, (p.currentTime || 0) - u.brollSrcOff);
+          var targetSrc  = u.baseSrc + brollClipT;
+          try { ua.currentTime = Math.max(0, targetSrc); } catch(_){}
+          syncUnderlayPlayback();
+        }
+
+        function findActiveClip(){
+          var src = p.currentSrc || p.src;
+          if (!src) return null;
+          var norm = normalizeUrlLocal(src);
+          var vcs = document.querySelectorAll('.mt-track-video .mt-clip');
+          // When several clips share a mediaUrl, prefer the one the
+          // playhead is actually on so the b-roll branch resolves to
+          // the b-roll instance, not the underlay below it.
+          var ph = document.getElementById('mtPlayhead');
+          var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
+          if (phPx >= 0){
+            var best = null, bestAdded = -Infinity;
+            for (var i = 0; i < vcs.length; i++){
+              var c = vcs[i];
+              if (normalizeUrlLocal(c.dataset.mediaUrl || '') !== norm) continue;
+              var cL = parseFloat(c.style.left)  || 0;
+              var cW = parseFloat(c.style.width) || 0;
+              if (phPx < cL || phPx > cL + cW) continue;
+              var ad = parseFloat(c.dataset.addedAt) || 0;
+              if (ad > bestAdded){ best = c; bestAdded = ad; }
+            }
+            if (best) return best;
+          }
+          for (var j = 0; j < vcs.length; j++){
+            if (normalizeUrlLocal(vcs[j].dataset.mediaUrl || '') === norm) return vcs[j];
+          }
+          return null;
+        }
+        function hydrate(){
+          _activeClip = findActiveClip();
+          configureUnderlayForActive();
+          applyVolume();
+        }
+        function applyVolume(){
+          if (!_activeClip) return;
+          var c = _activeClip;
+          if (c.dataset.muted === 'true'){ p.volume = 0; return; }
+          var rawVol = parseFloat(c.dataset.volume);
+          var base = isFinite(rawVol) ? Math.min(1, Math.max(0, rawVol / 100)) : 1;
+          var fadeIn  = Math.max(0, parseFloat(c.dataset.fadeIn)  || 0);
+          var fadeOut = Math.max(0, parseFloat(c.dataset.fadeOut) || 0);
+          // Task #73 — duck B-Roll's own audio when an underlay is in play.
+          var duck = (c.dataset.broll === '1' && c.__underlay) ? BROLL_DUCK : 1;
+          if (fadeIn === 0 && fadeOut === 0){ p.volume = base * duck; return; }
+          var srcOff  = parseFloat(c.dataset.sourceOffset) || 0;
+          var clipDur = parseFloat(c.dataset.duration) || (p.duration || 0);
+          if (clipDur <= 0){ p.volume = base * duck; return; }
+          var clipT = Math.max(0, (p.currentTime || 0) - srcOff);
+          var ramp = 1;
+          if (fadeIn > 0 && clipT < fadeIn){
+            ramp = clipT / fadeIn;
+          } else if (fadeOut > 0 && clipT > clipDur - fadeOut){
+            ramp = Math.max(0, (clipDur - clipT) / fadeOut);
+          }
+          p.volume = Math.max(0, Math.min(1, base * ramp * duck));
+        }
+        // Keep underlay <audio> aligned with main player's currentTime
+        // so seeks land in the right place.
+        function reSyncUnderlayTime(){
+          if (!_activeClip || _activeClip.dataset.broll !== '1' || !_activeClip.__underlay) return;
+          if (!_underlayAudio) return;
+          var u = _activeClip.__underlay;
+          var brollClipT = Math.max(0, (p.currentTime || 0) - u.brollSrcOff);
+          var target = u.baseSrc + brollClipT;
+          // Tolerate small drift; only seek when off by >0.15s.
+          if (Math.abs((_underlayAudio.currentTime || 0) - target) > 0.15){
+            try { _underlayAudio.currentTime = Math.max(0, target); } catch(_){}
+          }
+        }
+        p.addEventListener('loadedmetadata', hydrate);
+        p.addEventListener('play', hydrate);
+        p.addEventListener('seeking', reSyncUnderlayTime);
+        p.addEventListener('seeked',  reSyncUnderlayTime);
+        // Drive the ramp during playback. timeupdate fires ~4×/sec which
+        // is rough; we also kick off a rAF loop for smoother fade audio.
+        p.addEventListener('timeupdate', function(){ applyVolume(); reSyncUnderlayTime(); });
+        var rafId = null;
+        function rampLoop(){
+          if (p.paused){ rafId = null; return; }
+          applyVolume();
+          rafId = requestAnimationFrame(rampLoop);
+        }
+        p.addEventListener('play', function(){
+          if (!rafId) rampLoop();
+          syncUnderlayPlayback();
+        });
+        p.addEventListener('pause', function(){
+          if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
+          // After pause, restore base volume so a manual seek doesn't leave
+          // the player at a faded value.
+          applyVolume();
+          syncUnderlayPlayback();
+        });
+        // Volume rampLoop also re-syncs underlay so it tracks at frame rate.
+      })();
+
+      // AUDIO FX handlers — operate on the currently selected audio clip,
+      // or fall back to the first audio clip on A1. Wired BEFORE wireRPToast
+      // (capture phase) so the generic toast handler doesn't fire first.
+      // Task #24 — Audio FX scope extends to V1 video clips too. Denoise,
+      // Normalize, Fade In, Fade Out, Link/Split all accept any .mt-clip
+      // that carries embedded audio (V1) or dedicated audio (A1). Priority
+      // for target resolution:
+      //   1. Any SELECTED audio-or-video clips on the timeline
+      //   2. If none selected: the first A1 clip (legacy default)
+      //   3. If no A1 clips at all: the first V1 clip
+      function getTargetAudioClip(){
+        var selAny = document.querySelector('.mt-track-audio .mt-clip.selected, .mt-track-video .mt-clip.selected');
+        if (selAny) return selAny;
+        var firstA1 = document.querySelector('.mt-track-audio .mt-clip');
+        if (firstA1) return firstA1;
+        return document.querySelector('.mt-track-video .mt-clip') || null;
+      }
+      function getAudioFXTargets(){
+        // Every selected clip on EITHER audio or video tracks counts as
+        // an audio FX target. Broadcast-style: one prompt, applies to all.
+        var selAny = Array.from(document.querySelectorAll(
+          '.mt-track-audio .mt-clip.selected, .mt-track-video .mt-clip.selected'
+        ));
+        if (selAny.length) return selAny;
+        var one = getTargetAudioClip();
+        return one ? [one] : [];
+      }
+      Array.from(div.querySelectorAll('[data-audio-fx]')).forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          var fx = btn.getAttribute('data-audio-fx');
+          var targets = getAudioFXTargets();
+          if (!targets.length){
+            toast('No audio clip on timeline');
+            return;
+          }
+          if (fx === 'denoise' || fx === 'normalize'){
+            // One-click: actually PROCESS the audio now (not just a
+            // flag for export). Uses /video-editor/process-audio-clip
+            // which runs afftdn / loudnorm and returns a new URL. Swap
+            // the clip's mediaUrl on success so the preview + export
+            // both pick up the processed file.
+            applyOneClickEnhancement(fx, targets, btn);
+            return;
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        }, true);
+      });
+
+      // FADE SLIDERS — live drag sets clip.dataset.fadeIn / fadeOut on each
+      // 'input' event and updates the numeric readout. Multi-clip: broadcast
+      // the same value across all selected audio clips (or first-A1 fallback).
+      // 'change' at the end pushes a single history snapshot.
+      Array.from(div.querySelectorAll('[data-audio-fx-slider]')).forEach(function(slider){
+        var fx = slider.getAttribute('data-audio-fx-slider'); // fadein | fadeout
+        var readout = div.querySelector('.v10-fade-val[data-fx="' + fx + '"]');
+        function apply(live){
+          var v = parseFloat(slider.value);
+          if (!isFinite(v) || v < 0) v = 0;
+          var targets = getAudioFXTargets();
+          targets.forEach(function(c){
+            if (fx === 'fadein'){
+              if (v === 0) delete c.dataset.fadeIn;
+              else c.dataset.fadeIn = String(v);
+            } else {
+              if (v === 0) delete c.dataset.fadeOut;
+              else c.dataset.fadeOut = String(v);
+            }
+            // Task #30 — refresh the volume-envelope visualization on
+            // each target clip (A1 or V1) so the ramp line updates live.
+            if (typeof window.refreshClipFadeOverlay === 'function'){
+              try { window.refreshClipFadeOverlay(c); } catch(_){}
+            }
+          });
+          if (readout) readout.textContent = v.toFixed(1) + 's';
+        }
+        slider.addEventListener('input', function(){ apply(true); });
+        slider.addEventListener('change', function(){
+          apply(false);
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        });
+      });
+
+      // LINK / SPLIT AUDIO — Link tags every selected audio clip with a shared
+      // audioGroup id so operations (fade, volume, mute) can broadcast across
+      // them in the future; Split clears the group tag. Visual marker is a
+      // cyan ring on grouped clips (added via CSS class below).
+      Array.from(div.querySelectorAll('[data-audio-mix]')).forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          var mode = btn.getAttribute('data-audio-mix');
+          var sel = Array.from(document.querySelectorAll('.mt-track-audio .mt-clip.selected'));
+          if (mode === 'link'){
+            if (sel.length < 2){
+              toast('Select 2+ audio clips to link (Shift-click on timeline)');
+              return;
+            }
+            var gid = 'ag_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e4).toString(36);
+            sel.forEach(function(c){
+              c.dataset.audioGroup = gid;
+              c.classList.add('audio-linked');
+            });
+            toast('Linked ' + sel.length + ' audio clips');
+          } else if (mode === 'split'){
+            // Split: clear audioGroup on selected clips (or all if none selected)
+            var targets = sel.length ? sel : Array.from(document.querySelectorAll('.mt-track-audio .mt-clip[data-audio-group]'));
+            if (!targets.length){
+              toast('No linked audio clips to split');
+              return;
+            }
+            targets.forEach(function(c){
+              delete c.dataset.audioGroup;
+              c.classList.remove('audio-linked');
+            });
+            toast('Split ' + targets.length + ' audio clip' + (targets.length === 1 ? '' : 's'));
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        }, true);
+      });
+
+      // Voice Over + Music Upload handlers
+      Array.from(div.querySelectorAll('[data-v10-audio-tool]')).forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation();
+          var tool = btn.getAttribute('data-v10-audio-tool');
+          if (tool === 'voiceover'){
+            startVoiceOverRecording(btn);
+          } else if (tool === 'music-upload'){
+            openMusicUpload();
+          }
+        }, true);
+      });
+
+      wireRPToast(div);
+      // Task #30 — repaint the volume-envelope overlay on every A1/V1
+      // clip so existing fades are visible when the panel renders.
+      if (typeof window.refreshAllFadeOverlays === 'function'){
+        try { window.refreshAllFadeOverlays(); } catch(_){}
+      }
+    }
+    renderLayers();
+
+    // Re-render when the timeline's clips change, OR when selection
+    // flips (Task #23). Without the attribute watch, selecting an A1
+    // clip wouldn't retarget the MIXING fade sliders + Link/Split /
+    // V1 embedded-audio cards — they'd stay bound to whichever clip
+    // was first in DOM, making the controls feel unresponsive.
+    var timer = null;
+    var mo = new MutationObserver(function(mutations){
+      // Ignore mutations caused by our own re-render of div.innerHTML
+      // (which the outer tracksArea observer doesn't see anyway), but
+      // also debounce bursty selection drags.
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(renderLayers, 120);
     });
-    wireRPToast(div);
+    var ta = document.getElementById('mtTracksArea');
+    if (ta){
+      mo.observe(ta, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class', 'data-muted', 'data-volume']
+      });
+    }
     return div;
   }
 
@@ -1155,53 +2340,2398 @@
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-ai');
-    div.innerHTML =
-      '<div class="v10-rp-section-title">AI GENERATION</div>'+
-      '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn active"><span class="v10-rp-ic">\u2728</span>Enhance</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udcac</span>Captions</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa3</span>AI Hook</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa8</span>Brand Kit</button>'+
-      '</div>'+
-      '<div class="v10-rp-section-title">AI ANALYSIS</div>'+
-      '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udcdd</span>Transcript</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfac</span>B-Roll</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\u2702</span>Smart Cut</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\udd0d</span>Scene Detect</button>'+
-      '</div>'+
-      '<div class="v10-rp-section-title">AI CREATIVE</div>'+
-      '<div class="v10-rp-grid">'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83e\ude84</span>Style Transfer</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83d\uddbc</span>BG Remove</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udfa4</span>AI Voice</button>'+
-        '<button class="v10-rp-btn"><span class="v10-rp-ic">\ud83c\udf10</span>Translate</button>'+
-      '</div>';
-    wireRPToast(div);
+    // Each button maps to a dedicated tool URL (existing full-page routes
+    // in the app). 'route' = URL to open in a new tab. A few don't have
+    // dedicated pages yet — those get a helpful toast.
+    // Order matches Figma reference (May 2026 redesign):
+    //   1) Top group, no header — Style Transfer / BG Remove / AI Voice / Translate
+    //   2) AI CREATIVE — B-Roll / Smart Cut / Scene Detect
+    //   3) AI ANALYSIS — Enhance Audio / Captions / AI Hook / Brand Kit
+    // Empty-string `g` renders the section without a section-title row.
+    var aiTools = [
+      // Tasks #50-#53 — AI Creative tools wired to real inline modals
+      { g:'',              ic:'\ud83e\ude84',  label:'Style Transfer',route:'#style-transfer' },
+      { g:'',              ic:'\ud83d\uddbc',  label:'BG Remove',     route:'#bg-remove' },
+      { g:'',              ic:'\ud83c\udfa4',  label:'AI Voice',      route:'#ai-voice' },
+      { g:'',              ic:'\ud83c\udf10',  label:'Translate',     route:'#translate' },
+      { g:'AI CREATIVE',   ic:'\ud83c\udfac',  label:'B-Roll',        route:'/ai-broll' },
+      { g:'AI CREATIVE',   ic:'\u2702',        label:'Smart Cut',     route:'#smart-cut' },
+      { g:'AI CREATIVE',   ic:'\ud83d\udd0d',  label:'Scene Detect',  route:'#scene-detect' },
+      // Transcript removed (Task #36) — redundant with Captions
+      { g:'AI ANALYSIS',   ic:'\u2728',        label:'Enhance Audio', route:'/enhance-speech' },
+      { g:'AI ANALYSIS',   ic:'\ud83d\udcac',  label:'Captions',      route:'/ai-captions' },
+      { g:'AI ANALYSIS',   ic:'\ud83c\udfa3',  label:'AI Hook',       route:'/ai-hook' },
+      { g:'AI ANALYSIS',   ic:'\ud83c\udfa8',  label:'Brand Kit',     route:'/brand-kits' }
+    ];
+    var html = '';
+    var lastGroup = null;
+    aiTools.forEach(function(t, i){
+      if (t.g !== lastGroup){
+        if (lastGroup !== null) html += '</div>';
+        if (t.g) {
+          html += '<div class="v10-rp-section-title"' +
+            (i === 0 ? '' : ' style="margin-top:14px"') + '>' + t.g + '</div>';
+        }
+        html += '<div class="v10-rp-grid">';
+        lastGroup = t.g;
+      }
+      html += '<button class="v10-rp-btn" data-v10-ai-route="' + (t.route || '') + '" data-v10-ai-label="' + t.label + '"><span class="v10-rp-ic">' + t.ic + '</span>' + t.label + '</button>';
+    });
+    html += '</div>';
+    div.innerHTML = html;
+
+    // AI wiring:
+    //   Enhance / Captions — DIRECT inline actions (no navigation at all)
+    //     • Enhance: runs afftdn+highpass+EQ on the selected clip's audio,
+    //                drops the cleaned-up audio onto A1 as a new clip
+    //     • Captions: transcribes the active video with Whisper and drops
+    //                 phrase-chunked text clips onto T1 at matching times
+    //   AI Hook / Brand Kit — still iframe-modal (those tools need a UI)
+    //   AI ANALYSIS / AI CREATIVE — new tab if route, toast otherwise
+    // Task #31 — AI Hook runs inline (no new window). Timeline content is
+    // summarized, TTS + title-card video rendered server-side, and the
+    // resulting clip is inserted at the START of V1 (shifting existing
+    // clips right by the hook's duration).
+    var DIRECT_ACTIONS = { 'Enhance Audio': 'enhance', 'Captions': 'captions', 'AI Hook': 'aihook' };
+    var MODAL_LABELS   = {};  // Brand Kit moved to INLINE_MODAL_LABELS (Task #56)
+    // Labels that trigger inline modals built into v10-editor-redesign.js
+    // (no new tab, no iframe).
+    var INLINE_MODAL_LABELS = {
+      'B-Roll': 1, 'Smart Cut': 1, 'Scene Detect': 1,
+      // Tasks #50-#53 — AI Creative tools
+      'AI Voice': 1, 'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1,
+      // Task #56 — Brand Kit now uses an inline modal too
+      'Brand Kit': 1
+    };
+    // Actions that require a selected clip with a server-side mediaUrl.
+    // AI Voice is the exception — user types text, no clip needed.
+    var REQUIRES_CLIP = {
+      'Enhance Audio': 1, 'Captions': 1, 'AI Hook': 1, 'B-Roll': 1,
+      'Smart Cut': 1, 'Scene Detect': 1,
+      'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1
+    };
+
+    // Task #33 — Gate clip-dependent AI buttons. Disables + dims them
+    // whenever there's no clip selected / on the timeline. Re-evaluates
+    // on every timeline mutation + selection change.
+    function updateAIButtonStates(){
+      var hasSelectedVideo = !!document.querySelector('.mt-track-video .mt-clip.selected');
+      var hasAnyVideo      = !!document.querySelector('.mt-track-video .mt-clip');
+      Array.from(div.querySelectorAll('[data-v10-ai-label]')).forEach(function(b){
+        var lbl = b.getAttribute('data-v10-ai-label');
+        if (!REQUIRES_CLIP[lbl]) return;
+        // AI Hook can run with an empty timeline (summary falls back).
+        // Enhance Audio, Captions, B-Roll all need a real clip.
+        var needsSelection = (lbl !== 'AI Hook');
+        var ok = needsSelection ? (hasSelectedVideo || hasAnyVideo) : true;
+        // Prefer SELECTED, but allow any V1 as long as something exists.
+        // If absolutely nothing on V1, keep it disabled.
+        if (!hasAnyVideo) ok = (lbl === 'AI Hook');
+        b.disabled = !ok;
+        b.style.opacity = ok ? '' : '0.45';
+        b.style.cursor  = ok ? '' : 'not-allowed';
+        b.title = ok ? '' : 'Select a V1 clip first';
+      });
+    }
+    // Kick off an initial pass + watch the tracks for changes
+    updateAIButtonStates();
+    try {
+      var ta = document.getElementById('mtTracksArea');
+      if (ta && !ta.__v10AIBtnObs){
+        ta.__v10AIBtnObs = new MutationObserver(function(){
+          updateAIButtonStates();
+        });
+        ta.__v10AIBtnObs.observe(ta, {
+          subtree: true, childList: true,
+          attributes: true, attributeFilter: ['class', 'data-media-url']
+        });
+      }
+    } catch(_){}
+
+    Array.from(div.querySelectorAll('[data-v10-ai-route]')).forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        // Task #33 — aggressive event containment so no downstream or
+        // same-target handler can trigger a navigation side-effect.
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function'){
+          try { e.stopImmediatePropagation(); } catch(_){}
+        }
+        if (btn.disabled){
+          toast('Select a V1 clip on the timeline first');
+          return;
+        }
+        var route = btn.getAttribute('data-v10-ai-route');
+        var label = btn.getAttribute('data-v10-ai-label');
+        if (DIRECT_ACTIONS[label]){
+          // Pre-flight validation: require a real clip with a server-side
+          // mediaUrl (no blob:) for enhance / captions / aihook. This
+          // prevents the 400-from-server fallback path that Albert saw
+          // trigger a redirect on newly-added clips.
+          if (label !== 'AI Hook'){
+            var probe = pickSourceClipForAI(DIRECT_ACTIONS[label]);
+            if (!probe){
+              toast('Add a V1 video clip to the timeline first');
+              return;
+            }
+            var mu = probe.dataset.mediaUrl || '';
+            if (!mu){
+              toast('This clip has no server media yet \u2014 wait for upload to finish');
+              return;
+            }
+            if (mu.indexOf('blob:') === 0){
+              toast('Upload this file via the sidebar first, then try again');
+              return;
+            }
+          }
+          runInlineAIAction(DIRECT_ACTIONS[label], btn);
+          return;
+        }
+        if (!route){
+          toast(label + ' \u2014 not available yet');
+          return;
+        }
+        if (MODAL_LABELS[label]){
+          openAIToolModal(label, route);
+        } else if (INLINE_MODAL_LABELS[label]){
+          // Tasks #37-#39, #50-#53 — inline modals (no new tab, no iframe)
+          if (label === 'B-Roll'){
+            if (typeof openBRollModal === 'function') openBRollModal(btn);
+          } else if (label === 'Smart Cut'){
+            if (typeof openSmartCutModal === 'function') openSmartCutModal();
+          } else if (label === 'Scene Detect'){
+            var tgt = pickSourceClipForAI('scene');
+            if (!tgt){ toast('Select a V1 clip first'); return; }
+            if (typeof runSmartCut === 'function'){
+              runSmartCut(tgt, 'silence', 1.0, /* splitOnly */ true);
+            }
+          } else if (label === 'AI Voice'){
+            if (typeof openAIVoiceModal === 'function') openAIVoiceModal();
+          } else if (label === 'Translate'){
+            if (typeof openTranslateModal === 'function') openTranslateModal();
+          } else if (label === 'BG Remove'){
+            if (typeof openBGRemoveModal === 'function') openBGRemoveModal();
+          } else if (label === 'Style Transfer'){
+            if (typeof openStyleTransferModal === 'function') openStyleTransferModal();
+          } else if (label === 'Brand Kit'){
+            if (typeof openBrandKitModal === 'function') openBrandKitModal();
+          }
+        } else {
+          try { window.open(route, '_blank'); } catch(_){ location.href = route; }
+          toast('Opening ' + label + ' \u2026');
+        }
+      }, true);
+    });
     return div;
+  }
+
+  // ── Direct inline AI actions ──────────────────────────────────────
+  // Picks the right clip for the action, POSTs to the inline endpoint,
+  // integrates the result back into the timeline.
+  function pickSourceClipForAI(action){
+    // Prefer selected clip if it has a media URL
+    var sel = document.querySelector('.mt-clip.selected');
+    if (sel && sel.dataset.mediaUrl && sel.dataset.clipType !== 'text' && sel.dataset.clipType !== 'motion'){
+      return sel;
+    }
+    // Otherwise prefer clip under playhead on V1
+    var ph = document.getElementById('mtPlayhead');
+    var phX = ph ? (parseFloat(ph.style.left) || 0) : 0;
+    var v1Clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
+    for (var i = 0; i < v1Clips.length; i++){
+      var c = v1Clips[i];
+      var l = parseFloat(c.style.left) || 0;
+      var w = parseFloat(c.style.width) || 0;
+      if (phX >= l && phX <= l + w && c.dataset.mediaUrl) return c;
+    }
+    // Fallback: first V1 clip with media URL
+    var first = v1Clips.find(function(c){ return !!c.dataset.mediaUrl; });
+    if (first) return first;
+    // Final fallback for Enhance: first A1 clip
+    if (action === 'enhance'){
+      var a1 = document.querySelector('.mt-track-audio .mt-clip');
+      if (a1 && a1.dataset.mediaUrl) return a1;
+    }
+    return null;
+  }
+
+  function setAIButtonLoading(btn, loading, labelOverride){
+    if (!btn) return;
+    if (loading){
+      btn.dataset.v10AiBusy = '1';
+      btn.dataset.v10AiLabel = btn.innerHTML;
+      btn.disabled = true;
+      btn.style.opacity = '0.7';
+      btn.innerHTML = '<span class="v10-rp-ic">\u23f3</span>' + (labelOverride || 'Working\u2026');
+    } else {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      if (btn.dataset.v10AiLabel){
+        btn.innerHTML = btn.dataset.v10AiLabel;
+        delete btn.dataset.v10AiLabel;
+      }
+      delete btn.dataset.v10AiBusy;
+    }
+  }
+
+  async function runInlineAIAction(action, btn){
+    if (btn && btn.dataset.v10AiBusy === '1') return;  // re-entrancy guard
+
+    var clip = pickSourceClipForAI(action);
+    if (!clip){
+      toast('Add a video clip to the timeline first');
+      return;
+    }
+    var mediaUrl = clip.dataset.mediaUrl;
+    if (!mediaUrl){
+      toast('This clip has no server-side media to process');
+      return;
+    }
+    if (mediaUrl.indexOf('blob:') === 0){
+      toast('Upload this file via the sidebar first, then try again');
+      return;
+    }
+
+    if (action === 'enhance'){
+      setAIButtonLoading(btn, true, 'Enhancing\u2026');
+      toast('Enhancing audio\u2026');
+      try {
+        var resp = await fetch('/video-editor/ai-enhance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: mediaUrl, noiseLevel: '2', voiceBoost: true })
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.success){
+          throw new Error(data.error || 'Enhance failed');
+        }
+        // Preferred path: server re-muxed the enhanced audio back into
+        // the source video. Swap the V1 clip's mediaUrl in place so the
+        // same clip now plays with the cleaned audio. No new A1 clip.
+        if (data.enhancedVideoUrl){
+          var oldUrl = clip.dataset.mediaUrl;
+          clip.dataset.mediaUrl = data.enhancedVideoUrl;
+          clip.dataset.audioEnhanced = 'true';
+          clip.dataset.serverFilename = (data.enhancedVideoUrl.split('/').pop() || '');
+
+          // If this clip is currently loaded in the Program Monitor, swap
+          // the <video> element's src and resume at the same time offset.
+          var player = document.getElementById('videoPlayer') || document.querySelector('video');
+          if (player && oldUrl){
+            var curSrc = player.currentSrc || player.src || '';
+            if (curSrc.indexOf(oldUrl.split('?')[0].split('/').pop()) !== -1){
+              var t = player.currentTime;
+              var wasPlaying = !player.paused;
+              player.src = data.enhancedVideoUrl;
+              player.load();
+              player.addEventListener('loadedmetadata', function once(){
+                player.removeEventListener('loadedmetadata', once);
+                try { player.currentTime = t; } catch(_){}
+                if (wasPlaying){ try { player.play(); } catch(_){} }
+              }, { once: true });
+            }
+          }
+
+          // Refresh the filmstrip from the new URL (frames are visually
+          // identical but the URL-keyed cache needs re-seeding).
+          if (typeof window.buildClipFilmstrip === 'function'){
+            // Remove old filmstrip + label first
+            var oldFS = clip.querySelector('.v10-filmstrip');
+            var oldLb = clip.querySelector('.v10-fs-label');
+            if (oldFS) oldFS.remove();
+            if (oldLb) oldLb.remove();
+            try {
+              window.buildClipFilmstrip(clip, data.enhancedVideoUrl,
+                parseFloat(clip.dataset.duration) || parseFloat(clip.dataset.srcDuration) || 0);
+            } catch(_){}
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+          toast('\u2728 Audio enhanced \u2014 original clip updated');
+        } else {
+          // Fallback: server couldn't re-mux (e.g., source is audio-only
+          // or ffmpeg copy failed). Drop the cleaned audio on A1 so the
+          // user still gets the enhancement.
+          if (typeof window.addClipToTimeline === 'function'){
+            window.addClipToTimeline(data.filename || 'Enhanced audio', 'aud', data.duration || 0, data.enhancedUrl);
+            toast('Enhanced audio added to A1 (couldn\u2019t re-mux into video)');
+          } else {
+            toast('Enhanced audio saved: ' + data.filename);
+          }
+        }
+      } catch (err){
+        toast('Enhance error: ' + (err.message || err));
+      } finally {
+        setAIButtonLoading(btn, false);
+      }
+      return;
+    }
+
+    if (action === 'captions'){
+      setAIButtonLoading(btn, true, 'Transcribing\u2026');
+      toast('Transcribing video\u2026 (this can take a moment)');
+      try {
+        var respC = await fetch('/video-editor/ai-captions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: mediaUrl })
+        });
+        var dataC = await respC.json();
+        if (!respC.ok || !dataC.success){
+          throw new Error(dataC.error || 'Transcription failed');
+        }
+        var chunks = Array.isArray(dataC.chunks) ? dataC.chunks : [];
+        if (chunks.length === 0){
+          toast('No speech detected in this clip');
+          return;
+        }
+        // Anchor captions to the V1 clip's left edge on the timeline so
+        // the text's timeline-t matches the clip's playback time.
+        //
+        // Task #22 — Proper sync math:
+        //   Whisper timestamps are seconds from the start of the AUDIO
+        //   the server extracted (full source file, not trimmed). If the
+        //   clip is trimmed (sourceOffset > 0), captions whose ch.start
+        //   lands before sourceOffset are out of view and those after
+        //   must be shifted left by sourceOffset.
+        //
+        //   Plus: window.__captionLeadSec is a developer-tunable lead
+        //   (in seconds) that nudges all captions earlier. Defaults to 0
+        //   since the server-side FFmpeg fix (-avoid_negative_ts make_zero
+        //   + aresample first_pts=0) should eliminate the systemic 2s lag
+        //   on most containers. Can be set live from the console.
+        var clipLeftPx = parseFloat(clip.style.left) || 0;
+        var clipWidthPx= parseFloat(clip.style.width) || 0;
+        var clipRightPx= clipLeftPx + clipWidthPx;  // T1 must not extend past this (#34)
+        var PX_PER_SEC = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var sourceOffset = parseFloat(clip.dataset.sourceOffset) || 0;
+        // Task #42 — Default captions 0.2s earlier than Whisper says to
+        // compensate for the remaining transcription drift. User can
+        // override via window.__captionLeadSec from the console.
+        var leadSec = parseFloat(window.__captionLeadSec);
+        if (!isFinite(leadSec)) leadSec = 0.2;
+        var added = 0, truncated = 0, droppedPastEnd = 0;
+        chunks.forEach(function(ch){
+          if (!ch.text || !isFinite(ch.start) || !isFinite(ch.end)) return;
+          // Shift by sourceOffset and subtract the lead. Drop chunks that
+          // now land before the clip's left edge (pre-trim speech).
+          var adjStart = ch.start - sourceOffset - leadSec;
+          var adjEnd   = ch.end   - sourceOffset - leadSec;
+          if (adjEnd <= 0) return;
+          if (adjStart < 0) adjStart = 0;
+          var leftPx  = clipLeftPx + Math.round(adjStart * PX_PER_SEC);
+          var widthPx = Math.max(20, Math.round((adjEnd - adjStart) * PX_PER_SEC));
+          // Task #34 — T1 must never extend past V1's right edge. Drop
+          // captions that start past the clip, and truncate widths for
+          // captions that span the end boundary.
+          if (leftPx >= clipRightPx){ droppedPastEnd++; return; }
+          if (leftPx + widthPx > clipRightPx){
+            widthPx = Math.max(20, clipRightPx - leftPx);
+            truncated++;
+          }
+          if (typeof window.addTextClipToTimeline === 'function'){
+            window.addTextClipToTimeline(ch.text, {
+              left:  leftPx + 'px',
+              width: widthPx + 'px',
+              fontSize: 48,
+              // Task #56 — pick up brand caption color when a Brand Template is applied
+              textColor: (window.__brandCaptionStyle && window.__brandCaptionStyle.color) || '#ffffff',
+              position: 'bottom'
+            });
+            added++;
+          }
+        });
+        if (droppedPastEnd){
+          console.log('[ai-captions] ' + droppedPastEnd + ' caption(s) dropped (past V1 end)');
+        }
+        if (truncated){
+          console.log('[ai-captions] ' + truncated + ' caption(s) truncated at V1 end');
+        }
+        toast('Captions added: ' + added + ' phrase' + (added === 1 ? '' : 's'));
+      } catch (err){
+        toast('Captions error: ' + (err.message || err));
+      } finally {
+        setAIButtonLoading(btn, false);
+      }
+      return;
+    }
+
+    // ─── Task #31: AI Hook inline pipeline ──────────────────────────
+    // 1. Summarize timeline content (T1 captions + V1 filenames + duration)
+    // 2. Show BLOCKING progress modal (+ beforeunload guard)
+    // 3. POST /ai-hook/generate → returns {hookText, audioUrl}
+    // 4. POST /ai-hook/compose-clip → returns {mediaUrl, duration}
+    // 5. Shift all V1 clips right by hook duration (in px)
+    // 6. Insert hook clip at the start of V1
+    if (action === 'aihook'){
+      var hookBusy = showBlockingProgressModal('AI Hook', [
+        'Reading timeline\u2026',
+        'Writing hook text\u2026',
+        'Generating voiceover\u2026',
+        'Rendering clip\u2026',
+        'Inserting into V1\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        hookBusy.advance(0);
+        // Summarize timeline: concatenate T1 captions + V1 filenames
+        var t1Texts = Array.from(document.querySelectorAll('.mt-track-text .mt-clip'))
+          .map(function(c){ return (c.dataset.textContent || '').trim(); })
+          .filter(Boolean);
+        var v1Clips = Array.from(document.querySelectorAll('.mt-track-video .mt-clip'));
+        var v1Names = v1Clips.map(function(c){ return c.dataset.fileName || ''; }).filter(Boolean);
+        var summary = (t1Texts.join(' ') || v1Names.join(', ') || 'video content')
+          .slice(0, 1000);
+
+        hookBusy.advance(1);
+        var gFd = new FormData();
+        gFd.append('inputType', 'text');
+        gFd.append('transcript', summary);
+        gFd.append('style', 'bold');
+        gFd.append('voice', 'free_alloy');
+        gFd.append('platform', 'youtube');
+        var genR = await fetch('/ai-hook/generate', { method: 'POST', body: gFd });
+        var genD = await genR.json();
+        if (!genR.ok) throw new Error(genD.error || 'Hook generation failed');
+
+        hookBusy.advance(2); // voiceover in progress on server (already included in /generate)
+        hookBusy.advance(3);
+        // Task #35 — Match hook resolution to the FIRST V1 clip's native
+        // video dimensions so the hook composites cleanly with no
+        // letterbox / scale mismatch. Priority:
+        //   1) <video> element's videoWidth/Height (if first V1 clip
+        //      has been loaded in the Program Monitor at least once)
+        //   2) window.__exportWidth/__exportHeight (from Smart Resize)
+        //   3) 1280×720 fallback
+        var W, H;
+        var firstV1 = v1Clips[0];
+        var mainVid = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (mainVid && mainVid.videoWidth && mainVid.videoHeight){
+          W = mainVid.videoWidth;
+          H = mainVid.videoHeight;
+        } else if (firstV1 && firstV1.dataset.srcWidth && firstV1.dataset.srcHeight){
+          W = parseInt(firstV1.dataset.srcWidth,  10);
+          H = parseInt(firstV1.dataset.srcHeight, 10);
+        } else if (window.__exportWidth && window.__exportHeight){
+          W = window.__exportWidth;
+          H = window.__exportHeight;
+        } else {
+          W = 1280; H = 720;
+        }
+        // Clamp to something reasonable + keep even dims (H.264 requirement)
+        W = Math.max(320, Math.min(3840, W));
+        H = Math.max(240, Math.min(2160, H));
+        if (W % 2) W += 1;
+        if (H % 2) H += 1;
+        var compR = await fetch('/ai-hook/compose-clip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hookText: genD.hookText,
+            audioUrl: genD.audioUrl,
+            width: W, height: H,
+            // Task #41 — forward the cinematic spec
+            impactWords:    genD.impactWords    || [],
+            sfx:            genD.sfx            || 'whoosh',
+            visualStyle:    genD.visualStyle    || 'cinematic_warm',
+            cameraMovement: genD.cameraMovement || 'fast_zoom_in'
+          })
+        });
+        var compD = await compR.json();
+        if (!compR.ok || !compD.success) throw new Error(compD.error || 'Hook compose failed');
+
+        hookBusy.advance(4);
+        // Task #44 — Shift EVERY timeline clip right by the hook's
+        // duration so the user's V1 + A1 + T1 + M1 + FX assets all
+        // stay aligned with each other. The new hook clip gets left=0
+        // on V1 and nothing else is buried.
+        var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var shiftPx = Math.round(compD.duration * PPS);
+        Array.from(document.querySelectorAll('.mt-clip')).forEach(function(c){
+          var l = parseFloat(c.style.left) || 0;
+          c.style.left = (l + shiftPx) + 'px';
+        });
+
+        // Insert the hook clip at V1 left=0. addClipToTimeline appends to
+        // the rightmost end — we need to force left=0 and re-add instead.
+        // Simplest: use a direct DOM create that matches addClipToTimeline's
+        // output schema, then call makeClipInteractive if exposed.
+        var track = document.querySelector('.mt-track-video');
+        if (track){
+          var hookClip = document.createElement('div');
+          hookClip.className = 'mt-clip mt-clip-video';
+          hookClip.style.position = 'absolute';
+          hookClip.style.left  = '0px';
+          hookClip.style.width = shiftPx + 'px';
+          hookClip.style.top   = '3px';
+          hookClip.dataset.fileName = 'AI Hook';
+          hookClip.dataset.clipType = 'vid';
+          hookClip.dataset.mediaUrl = compD.mediaUrl;
+          hookClip.dataset.duration = String(compD.duration);
+          hookClip.dataset.sourceOffset = '0';
+          hookClip.dataset.srcDuration = String(compD.duration);
+          hookClip.dataset.aiHook = '1';
+          // Task #49 — creation-order stamp
+          hookClip.dataset.addedAt = String(Date.now() * 1000);
+          hookClip.style.zIndex = '950';
+          hookClip.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
+          hookClip.style.color = '#fff';
+          hookClip.style.overflow = 'hidden';
+          track.appendChild(hookClip);
+          // Build a filmstrip for the hook clip
+          if (typeof window.buildClipFilmstrip === 'function'){
+            try { window.buildClipFilmstrip(hookClip, compD.mediaUrl, compD.duration); } catch(_){}
+          }
+          // Task #57 — make the hook clip drag/trim/deletable
+          if (typeof window.makeClipInteractive === 'function'){
+            try { window.makeClipInteractive(hookClip); } catch(_){}
+          }
+          if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        }
+
+        hookBusy.finish('Hook inserted \u2014 "' + (genD.hookText || '').slice(0, 48) + '\u2026"');
+      } catch (err){
+        hookBusy.fail(err.message || String(err));
+      } finally {
+        window.removeEventListener('beforeunload', beforeUnload);
+        setAIButtonLoading(btn, false);
+      }
+      return;
+    }
+  }
+
+  // Task #31 — Blocking progress modal for long-running AI ops.
+  // Renders a non-dismissible overlay with a step list + spinner.
+  // advance(i) lights up step i, finish(msg)/fail(msg) close the modal.
+  // ═════════════════════════════════════════════════════════════════
+  // Task #37 — B-Roll inline modal (Stock search + AI-Generated).
+  // Opens a modal with two tabs:
+  //   • "Stock"     — user types a query, server searches Pixabay, grid
+  //                   of previewable clips shown. Click to insert.
+  //   • "AI Search" — server runs Whisper on the selected V1 clip, picks
+  //                   top keywords, auto-searches Pixabay with them.
+  // Selected clip gets downloaded server-side to the editor's upload dir,
+  // then added as a NEW V1 clip positioned after the currently-selected
+  // clip (shifting all following clips right to make room).
+  // ═════════════════════════════════════════════════════════════════
+  function openBRollModal(triggerBtn){
+    var existing = document.getElementById('v10BRollModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+
+    // Two precondition checks before the modal opens.
+    //   1. V1 must contain at least one server-resolvable video clip.
+    //   2. The user must have a V1 clip SELECTED (so we know which clip
+    //      to analyse). Selection is set by clicking on a clip in the
+    //      timeline — adds the .selected CSS class.
+    function hasResolvableV1(){
+      var v1 = document.querySelectorAll('.mt-track-video .mt-clip');
+      for (var i = 0; i < v1.length; i++){
+        var u = v1[i].dataset.mediaUrl || '';
+        if (u && u.indexOf('blob:') !== 0 &&
+            v1[i].dataset.clipType !== 'text' &&
+            v1[i].dataset.clipType !== 'motion'){
+          return true;
+        }
+      }
+      return false;
+    }
+    if (!hasResolvableV1()){
+      toast('Add a video to the V1 track first');
+      return;
+    }
+    var selectedV1 = (function(){
+      var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+      if (sel && sel.dataset.mediaUrl &&
+          sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+          sel.dataset.clipType !== 'text' &&
+          sel.dataset.clipType !== 'motion'){
+        return sel;
+      }
+      return null;
+    })();
+    if (!selectedV1){
+      toast('Select a V1 clip on the timeline, then click AI B-Roll');
+      return;
+    }
+    var target = selectedV1;
+
+    var bk = document.createElement('div');
+    bk.id = 'v10BRollModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;' +
+      'background:rgba(8,6,18,.75);display:flex;align-items:center;' +
+      'justify-content:center;backdrop-filter:blur(4px)';
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#0c0814;border:1px solid rgba(124,58,237,.35);' +
+      'border-radius:14px;width:min(760px,95vw);height:min(640px,88vh);' +
+      'display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.6);' +
+      'overflow:hidden;color:#e2e0f0;font-family:system-ui,sans-serif';
+
+    panel.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;padding:14px 20px;' +
+        'background:linear-gradient(90deg,rgba(124,58,237,.18),rgba(236,72,153,.08));' +
+        'border-bottom:1px solid rgba(124,58,237,.28)">' +
+        '<span style="font-size:18px">\ud83c\udfac</span>' +
+        '<span style="font-weight:600;font-size:14px">B-Roll Library</span>' +
+        '<span style="flex:1"></span>' +
+        '<button id="broClose" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);' +
+          'border-radius:6px;color:#e2e0f0;padding:5px 10px;font-size:12px;cursor:pointer">Close</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:4px;padding:10px 16px 0">' +
+        // Task #74 \u2014 AI tab is now the default since the transcript-driven
+        // flow is the recommended way to add B-Roll. Stock stays for users
+        // who already know what they want.
+        '<button class="broTab on" data-bro-tab="ai"    style="flex:none;padding:8px 16px;background:rgba(139,92,246,.25);border:1px solid rgba(139,92,246,.5);border-radius:6px 6px 0 0;color:#fff;font-size:12px;font-weight:600;cursor:pointer">\u2728 AI</button>' +
+        '<button class="broTab"    data-bro-tab="stock" style="flex:none;padding:8px 16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px 6px 0 0;color:#a78bfa;font-size:12px;font-weight:600;cursor:pointer">\ud83d\udd0d Stock</button>' +
+      '</div>' +
+      // Stock tab content \u2014 query input + grid
+      '<div id="broStockArea" style="display:none;flex:1;flex-direction:column;min-height:0">' +
+        '<div style="padding:0 16px 10px;border-bottom:1px solid rgba(124,58,237,.2);display:flex;gap:8px">' +
+          '<input id="broQuery" type="text" placeholder="Search stock footage\u2026" ' +
+            'style="flex:1;padding:8px 12px;background:#160f2a;border:1px solid rgba(124,58,237,.3);' +
+            'border-radius:6px;color:#e2e0f0;font-size:13px;outline:none"/>' +
+          '<button id="broGo" style="padding:8px 16px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
+            'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Search</button>' +
+        '</div>' +
+        '<div id="broGrid" style="flex:1;overflow-y:auto;padding:14px 16px;' +
+          'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">' +
+          '<div style="grid-column:1/-1;color:#5c5a70;font-size:12px;text-align:center;padding:40px 0">' +
+            'Type a search term (e.g. \u201cocean sunset\u201d) and hit Search.' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      // AI tab content \u2014 Analyze button + transcript with highlights
+      '<div id="broAiArea" style="display:flex;flex:1;flex-direction:column;min-height:0">' +
+        '<div id="broAiHeader" style="padding:14px 16px;border-bottom:1px solid rgba(124,58,237,.2);' +
+          'display:flex;align-items:center;gap:10px">' +
+          '<button id="broAnalyzeBtn" style="flex:none;padding:9px 18px;' +
+            'background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:8px;' +
+            'color:#fff;font-size:13px;font-weight:600;cursor:pointer;' +
+            'box-shadow:0 4px 12px rgba(124,58,237,.4)">' +
+            '\u2728 Analyze Video for B-Roll' +
+          '</button>' +
+          '<span id="broAiStatus" style="font-size:11px;color:#8886a0;flex:1"></span>' +
+        '</div>' +
+        '<div id="broAiBody" style="flex:1;overflow-y:auto;padding:16px 18px;line-height:1.7;' +
+          'font-size:13px;color:#cdc8e0">' +
+          '<div style="color:#5c5a70;font-size:12px;text-align:center;padding:40px 20px">' +
+            'Click <b>Analyze Video for B-Roll</b> to transcribe your clip and let the AI ' +
+            'highlight moments where adding stock footage would boost the video.' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#broClose').addEventListener('click', function(){ bk.remove(); });
+    var grid    = panel.querySelector('#broGrid');
+    var query   = panel.querySelector('#broQuery');
+    var goBtn   = panel.querySelector('#broGo');
+    var stockArea = panel.querySelector('#broStockArea');
+    var aiArea    = panel.querySelector('#broAiArea');
+
+    function renderLoading(msg){
+      grid.innerHTML = '<div style="grid-column:1/-1;color:#a78bfa;font-size:12px;text-align:center;padding:40px 0">' +
+        '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle"></span>' +
+        (msg || 'Searching\u2026') +
+      '</div>';
+    }
+    function renderError(msg){
+      grid.innerHTML = '<div style="grid-column:1/-1;color:#ef4444;font-size:12px;text-align:center;padding:40px 20px">' + msg + '</div>';
+    }
+    function renderResults(results){
+      if (!results.length){
+        renderError('No results. Try a different search term.');
+        return;
+      }
+      grid.innerHTML = results.map(function(r){
+        var thumb = r.thumbnailUrl || '';
+        var preview = r.previewUrl || '';
+        var dur = r.duration ? Math.round(r.duration) + 's' : '';
+        return '<div class="broCard" data-download="' + encodeURIComponent(r.downloadUrl) + '" ' +
+            'data-name="' + (r.name || 'broll').replace(/"/g, '') + '" ' +
+            'data-duration="' + (r.duration || 0) + '" ' +
+            'style="background:#160f2a;border:1px solid rgba(124,58,237,.2);border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s;position:relative">' +
+          '<div style="aspect-ratio:16/10;background:#0a0815;position:relative;overflow:hidden">' +
+            (preview
+              ? '<video src="' + preview + '" muted loop playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover" onmouseenter="this.play()" onmouseleave="this.pause()"></video>'
+              : ('<img src="' + thumb + '" style="width:100%;height:100%;object-fit:cover"/>')
+            ) +
+            (dur ? '<span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.7);color:#fff;font-size:10px;padding:2px 6px;border-radius:3px">' + dur + '</span>' : '') +
+          '</div>' +
+          '<div style="padding:6px 8px;font-size:11px;color:#e2e0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+            (r.name || 'B-Roll') +
+          '</div>' +
+        '</div>';
+      }).join('');
+      Array.from(grid.querySelectorAll('.broCard')).forEach(function(card){
+        card.addEventListener('click', function(){ pickBRoll(card, target, bk); });
+        card.addEventListener('mouseenter', function(){ card.style.borderColor = '#a78bfa'; card.style.transform = 'translateY(-2px)'; });
+        card.addEventListener('mouseleave', function(){ card.style.borderColor = ''; card.style.transform = ''; });
+      });
+    }
+
+    async function doSearch(q){
+      if (!q || !q.trim()){ toast('Enter a search term'); return; }
+      renderLoading('Searching Pixabay\u2026');
+      try {
+        var r = await fetch('/ai-broll/search-inline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q })
+        });
+        var d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Search failed');
+        renderResults(d.results || []);
+      } catch (err){ renderError(err.message || 'Search error'); }
+    }
+
+    goBtn.addEventListener('click', function(){ doSearch(query.value); });
+    query.addEventListener('keydown', function(e){ if (e.key === 'Enter') doSearch(query.value); });
+    // Task #74 — AI tab is the default now, so don't auto-focus the
+    // (hidden) Stock search input. The user can switch tabs to use it.
+
+    // Task #74 — Tab switcher just toggles panel visibility now. The
+    // AI tab's "Analyze Video for B-Roll" button kicks off the new
+    // transcript-driven flow on demand (no auto-fire on tab switch).
+    Array.from(panel.querySelectorAll('.broTab')).forEach(function(t){
+      t.addEventListener('click', function(){
+        Array.from(panel.querySelectorAll('.broTab')).forEach(function(o){
+          o.classList.remove('on');
+          o.style.background = 'rgba(255,255,255,.05)';
+          o.style.borderColor = 'rgba(255,255,255,.1)';
+          o.style.color = '#a78bfa';
+        });
+        t.classList.add('on');
+        t.style.background = 'rgba(139,92,246,.25)';
+        t.style.borderColor = 'rgba(139,92,246,.5)';
+        t.style.color = '#fff';
+        var kind = t.getAttribute('data-bro-tab');
+        if (kind === 'ai'){
+          aiArea.style.display    = 'flex';
+          stockArea.style.display = 'none';
+        } else {
+          aiArea.style.display    = 'none';
+          stockArea.style.display = 'flex';
+        }
+      });
+    });
+
+    // ── Task #74/#75 — AI flow: Analyze, highlight, hover-pick ──
+    // The selected V1 clip is the analysis source. Re-resolve at click
+    // time so the user can change selection while the modal is open.
+    var analyzeBtn = panel.querySelector('#broAnalyzeBtn');
+    var aiBody     = panel.querySelector('#broAiBody');
+    var aiStatus   = panel.querySelector('#broAiStatus');
+
+    function getSelectedV1Clip(){
+      // Strict: only the .selected V1 clip qualifies, with a server-
+      // resolvable mediaUrl. The B-Roll modal explicitly requires the
+      // user to pick a clip — no playhead / first-clip fallbacks.
+      var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+      if (sel && sel.dataset.mediaUrl &&
+          sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+          sel.dataset.clipType !== 'text' &&
+          sel.dataset.clipType !== 'motion'){
+        return sel;
+      }
+      return null;
+    }
+    function clipDisplayName(c){
+      if (!c) return '';
+      return c.dataset.fileName || c.dataset.serverFilename || 'clip';
+    }
+    function refreshSourceLabel(){
+      var sel = getSelectedV1Clip();
+      if (sel){
+        target = sel;
+        aiStatus.style.color = '#8886a0';
+        aiStatus.textContent = 'Source: ' + clipDisplayName(sel);
+        if (analyzeBtn && !analyzeBtn.dataset.broAnalyzing){
+          analyzeBtn.disabled = false;
+          analyzeBtn.style.opacity = '';
+          analyzeBtn.style.cursor = 'pointer';
+        }
+      } else {
+        aiStatus.style.color = '#fb923c';
+        aiStatus.textContent = 'Select a V1 video clip on the timeline to analyze';
+        if (analyzeBtn && !analyzeBtn.dataset.broAnalyzing){
+          analyzeBtn.disabled = true;
+          analyzeBtn.style.opacity = '0.5';
+          analyzeBtn.style.cursor = 'not-allowed';
+        }
+      }
+    }
+    try { refreshSourceLabel(); } catch(_){}
+    // Keep the source-label in sync if the user clicks a different
+    // clip (or deselects) while the modal is open.
+    var _broSelPoll = setInterval(function(){
+      try { refreshSourceLabel(); } catch(_){}
+    }, 600);
+    // Clean up the poller when the modal node is detached.
+    var _broCleanupObs = null;
+    try {
+      _broCleanupObs = new MutationObserver(function(){
+        if (!document.body.contains(bk)){
+          clearInterval(_broSelPoll);
+          try { _broCleanupObs.disconnect(); } catch(_){}
+        }
+      });
+      _broCleanupObs.observe(document.body, { childList: true });
+    } catch(_){}
+
+    if (!analyzeBtn){
+      console.warn('[broll] analyze button not found — modal HTML mismatch');
+    }
+    analyzeBtn && analyzeBtn.addEventListener('click', async function(){
+      if (analyzeBtn.disabled) return;
+      // Re-pick the source clip RIGHT NOW so changing selection while
+      // the modal is open is reflected in the analysis.
+      var src = getSelectedV1Clip();
+      if (!src){
+        aiStatus.style.color = '#fb923c';
+        aiStatus.textContent = 'Select a V1 video clip on the timeline first, then click Analyze';
+        toast('Select a V1 clip on the timeline to analyze');
+        return;
+      }
+      target = src;
+      analyzeBtn.dataset.broAnalyzing = '1';
+      analyzeBtn.disabled = true;
+      analyzeBtn.style.opacity = '0.6';
+      aiStatus.style.color = '#a78bfa';
+      aiStatus.textContent = 'Transcribing + analyzing ' + clipDisplayName(src) + '…';
+      aiBody.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;color:#a78bfa;font-size:12px;padding:30px 0;justify-content:center">' +
+          '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></span>' +
+          'Whisper is transcribing your clip…' +
+        '</div>';
+      try {
+        var rA = await fetch('/ai-broll/analyze-segments', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl })
+        });
+        var dA = await rA.json();
+        if (!rA.ok || !dA.success) throw new Error(dA.error || 'Analysis failed');
+        renderTranscriptWithHighlights(dA.chunks || [], dA.suggestions || []);
+        var nSug = (dA.suggestions || []).length;
+        aiStatus.style.color = '#8886a0';
+        aiStatus.textContent = nSug
+          ? (nSug + ' B-Roll suggestion' + (nSug === 1 ? '' : 's') + ' — click any highlight to preview')
+          : 'No B-Roll suggestions found for this clip';
+      } catch (errA){
+        aiBody.innerHTML =
+          '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
+            'Analysis failed: ' + escBHtmlSafe(errA.message || String(errA)) +
+          '</div>';
+        aiStatus.style.color = '#ef4444';
+        aiStatus.textContent = '';
+      } finally {
+        delete analyzeBtn.dataset.broAnalyzing;
+        // Defer to refreshSourceLabel for re-enable so we don't enable
+        // the button when selection has been cleared mid-analysis.
+        try { refreshSourceLabel(); } catch(_){}
+      }
+    });
+
+    function escBHtmlSafe(s){
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function renderTranscriptWithHighlights(chunks, suggestions){
+      var sugByIndex = {};
+      suggestions.forEach(function(s){ sugByIndex[s.chunkIndex] = s; });
+      var html = chunks.map(function(c, i){
+        var sug = sugByIndex[i];
+        if (sug){
+          return '<span class="broHi" data-chunk="' + i + '" ' +
+            'data-query="' + escBHtmlSafe(sug.query) + '" ' +
+            'data-start="' + sug.startSec + '" ' +
+            'data-end="'   + sug.endSec   + '" ' +
+            'title="' + escBHtmlSafe(sug.reason || ('Search: ' + sug.query)) + '" ' +
+            'style="background:linear-gradient(180deg,rgba(245,158,11,.18),rgba(245,158,11,.32));' +
+              'border-bottom:2px solid #f59e0b;cursor:pointer;padding:2px 4px;border-radius:3px;' +
+              'transition:background .15s">' +
+            escBHtmlSafe(c.text) +
+          '</span>';
+        }
+        return escBHtmlSafe(c.text);
+      }).join(' ');
+      aiBody.innerHTML = '<div style="font-size:13px;line-height:1.85">' + html + '</div>';
+      Array.from(aiBody.querySelectorAll('.broHi')).forEach(function(el){
+        el.addEventListener('mouseenter', function(){
+          el.style.background = 'linear-gradient(180deg,rgba(245,158,11,.34),rgba(245,158,11,.5))';
+        });
+        el.addEventListener('mouseleave', function(){
+          el.style.background = 'linear-gradient(180deg,rgba(245,158,11,.18),rgba(245,158,11,.32))';
+        });
+        el.addEventListener('click', function(e){
+          openSuggestionTooltip(el, e);
+        });
+      });
+    }
+
+    var _activeTooltip = null;
+    function closeTooltip(){
+      if (_activeTooltip){
+        try { _activeTooltip.remove(); } catch(_){}
+        _activeTooltip = null;
+      }
+    }
+    document.addEventListener('click', function(e){
+      if (!_activeTooltip) return;
+      if (_activeTooltip.contains(e.target)) return;
+      if (e.target.closest && e.target.closest('.broHi')) return;
+      closeTooltip();
+    }, true);
+
+    async function openSuggestionTooltip(highlightEl, evt){
+      closeTooltip();
+      var qry      = highlightEl.getAttribute('data-query') || '';
+      var startSec = parseFloat(highlightEl.getAttribute('data-start')) || 0;
+      var endSec   = parseFloat(highlightEl.getAttribute('data-end'))   || (startSec + 5);
+
+      var rect = highlightEl.getBoundingClientRect();
+      var tip  = document.createElement('div');
+      tip.style.cssText = 'position:fixed;z-index:99999;background:#1a1230;' +
+        'border:1px solid rgba(124,58,237,.5);border-radius:10px;' +
+        'box-shadow:0 12px 36px rgba(0,0,0,.5);padding:12px;width:380px;' +
+        'color:#e2e0f0;font-family:system-ui,sans-serif;' +
+        'left:' + Math.max(12, Math.min(window.innerWidth - 392, rect.left)) + 'px;' +
+        'top:'  + Math.max(12, rect.bottom + 6) + 'px';
+      tip.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+          '<span style="font-size:11px;color:#fde047;font-weight:600">SEARCH</span>' +
+          '<span style="font-size:11px;color:#cdc8e0">' + escBHtmlSafe(qry) + '</span>' +
+          '<span style="flex:1"></span>' +
+          '<span style="font-size:10px;color:#8886a0">' + startSec.toFixed(1) + 's-' + endSec.toFixed(1) + 's</span>' +
+        '</div>' +
+        '<div id="broTipBody" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px">' +
+          '<div style="grid-column:1/-1;color:#a78bfa;font-size:11px;text-align:center;padding:36px 0">' +
+            '<span style="display:inline-block;width:12px;height:12px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:6px;vertical-align:middle"></span>' +
+            'Loading 2 suggestions…' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(tip);
+      _activeTooltip = tip;
+      if (evt) evt.stopPropagation();
+
+      try {
+        var rS = await fetch('/ai-broll/search-inline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: qry, max: 2 })
+        });
+        var dS = await rS.json();
+        if (!rS.ok) throw new Error(dS.error || 'Search failed');
+        var results = (dS.results || []).slice(0, 2);
+        var body = tip.querySelector('#broTipBody');
+        if (!results.length){
+          body.innerHTML =
+            '<div style="grid-column:1/-1;color:#8886a0;font-size:11px;text-align:center;padding:30px 10px">' +
+              'No matches for “' + escBHtmlSafe(qry) + '”.' +
+            '</div>';
+          return;
+        }
+        body.innerHTML = results.map(function(rs){
+          var thumb = rs.thumbnailUrl || '';
+          var preview = rs.previewUrl || '';
+          var dur = rs.duration ? Math.round(rs.duration) + 's' : '';
+          return '<div class="broTipCard" data-download="' + encodeURIComponent(rs.downloadUrl) + '" ' +
+              'data-name="' + (rs.name || 'broll').replace(/"/g, '') + '" ' +
+              'data-duration="' + (rs.duration || 0) + '" ' +
+              'data-start-sec="' + startSec + '" ' +
+              'style="background:#0c0814;border:1px solid rgba(124,58,237,.3);border-radius:8px;' +
+                'overflow:hidden;cursor:pointer;transition:transform .12s,border-color .12s;position:relative">' +
+            '<div style="aspect-ratio:16/10;background:#0a0815;position:relative;overflow:hidden">' +
+              (preview
+                ? '<video src="' + preview + '" muted loop playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover" onmouseenter="this.play()" onmouseleave="this.pause()"></video>'
+                : ('<img src="' + thumb + '" style="width:100%;height:100%;object-fit:cover"/>')
+              ) +
+              (dur ? '<span style="position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.7);color:#fff;font-size:10px;padding:1px 5px;border-radius:3px">' + dur + '</span>' : '') +
+            '</div>' +
+            '<div style="padding:6px 8px;font-size:11px;color:#e2e0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+              escBHtmlSafe(rs.name || 'B-Roll') +
+            '</div>' +
+          '</div>';
+        }).join('');
+        Array.from(body.querySelectorAll('.broTipCard')).forEach(function(card){
+          card.addEventListener('click', function(){
+            pickBRoll(card, target, bk);
+            closeTooltip();
+          });
+          card.addEventListener('mouseenter', function(){ card.style.borderColor = '#a78bfa'; card.style.transform = 'translateY(-2px)'; });
+          card.addEventListener('mouseleave', function(){ card.style.borderColor = ''; card.style.transform = ''; });
+        });
+      } catch (errS){
+        var b2 = tip.querySelector('#broTipBody');
+        if (b2){
+          b2.innerHTML = '<div style="grid-column:1/-1;color:#ef4444;font-size:11px;text-align:center;padding:24px 10px">' +
+            escBHtmlSafe(errS.message || 'Search failed') + '</div>';
+        }
+      }
+    }
+
+  }
+  try { window.openBRollModal = openBRollModal; } catch(_){}
+
+// Legacy AI-search block removed by Task #74 (transcript-driven flow above replaces it).
+
+  async function pickBRoll(card, targetClip, modalEl){
+    var url = decodeURIComponent(card.getAttribute('data-download') || '');
+    var name = card.getAttribute('data-name') || 'broll';
+    var dur  = parseFloat(card.getAttribute('data-duration')) || 0;
+    if (!url){ toast('This clip has no downloadable URL'); return; }
+    card.style.opacity = '0.5';
+    card.style.pointerEvents = 'none';
+    var spinner = document.createElement('div');
+    spinner.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);font-size:11px;color:#fff';
+    spinner.textContent = 'Downloading\u2026';
+    card.appendChild(spinner);
+    try {
+      var r = await fetch('/ai-broll/download-inline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: url, name: name })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Download failed');
+      // Task #57 — Insert b-roll OVERLAID on the existing V1 clip so it
+      // plays on top of the original footage during the overlap (cut-away
+      // style). Position priority:
+      //   1. Playhead position, IF the playhead is currently inside the
+      //      target clip (most natural — drop b-roll where the user is
+      //      looking).
+      //   2. Otherwise, the target clip's start.
+      // No clips get shifted right — overlap is allowed (Task #48) and
+      // "latest added wins" (Task #49) makes the new b-roll show during
+      // the overlap region in preview AND export.
+      var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+      var insertDur = parseFloat(d.duration) || dur || 5;
+      var insertWidthPx = Math.max(60, Math.round(insertDur * PPS));
+      var targetLeft = parseFloat(targetClip.style.left) || 0;
+      var targetWidth= parseFloat(targetClip.style.width) || 0;
+      // Task #74 — when called from the transcript tooltip, the card
+      // carries data-start-sec — the timeline-time of the highlighted
+      // segment. Convert to pixels and place the b-roll exactly there
+      // so it lines up with the moment the user clicked. Falls back to
+      // the playhead/target-start heuristic for the Stock-tab flow.
+      var explicitStart = parseFloat(card.getAttribute('data-start-sec'));
+      var insertLeftPx;
+      if (isFinite(explicitStart) && explicitStart >= 0){
+        insertLeftPx = Math.max(0, Math.round(explicitStart * PPS));
+      } else {
+        var ph = document.getElementById('mtPlayhead');
+        var phPx = ph ? (parseFloat(ph.style.left) || 0) : -1;
+        if (phPx >= targetLeft && phPx <= targetLeft + targetWidth){
+          insertLeftPx = phPx;
+        } else {
+          insertLeftPx = targetLeft;
+        }
+      }
+
+      // Build the new clip inline (matching addClipToTimeline's schema)
+      var v1Track = document.querySelector('.mt-track-video');
+      var nc = document.createElement('div');
+      nc.className = 'mt-clip mt-clip-video';
+      nc.style.position = 'absolute';
+      nc.style.left  = insertLeftPx + 'px';
+      nc.style.width = insertWidthPx + 'px';
+      nc.style.top   = '3px';
+      nc.dataset.fileName = '\ud83c\udfac ' + name;
+      nc.dataset.clipType = 'vid';
+      nc.dataset.mediaUrl = d.mediaUrl;
+      nc.dataset.duration = String(insertDur);
+      nc.dataset.sourceOffset = '0';
+      nc.dataset.srcDuration = String(insertDur);
+      nc.dataset.broll = '1';
+      // Task #49 — latest clip wins overlap, so b-rolls layer on top
+      nc.dataset.addedAt = String(Date.now() * 1000);
+      nc.style.zIndex = '900';
+      nc.style.background = 'linear-gradient(135deg,#06b6d4,#0ea5e9)';
+      nc.style.color = '#fff';
+      nc.style.overflow = 'hidden';
+      v1Track.appendChild(nc);
+      if (typeof window.buildClipFilmstrip === 'function'){
+        try { window.buildClipFilmstrip(nc, d.mediaUrl, insertDur); } catch(_){}
+      }
+      // Task #57 — wire drag/trim/delete handlers like upload-flow clips have
+      if (typeof window.makeClipInteractive === 'function'){
+        try { window.makeClipInteractive(nc); } catch(_){}
+      }
+      if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+      toast('B-Roll added: ' + name + ' (' + insertDur.toFixed(1) + 's)');
+      if (modalEl && modalEl.isConnected) modalEl.remove();
+    } catch (err){
+      spinner.textContent = 'Error';
+      card.style.opacity = '';
+      card.style.pointerEvents = '';
+      setTimeout(function(){ spinner.remove(); }, 1800);
+      toast('B-Roll error: ' + err.message);
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #50 — AI Voice inline modal
+  // User types text, picks a voice, adjusts speed, server synthesizes
+  // the voiceover via OpenAI TTS and the resulting MP3 is dropped on A1
+  // at the playhead (or appended after the current A1 end if playhead
+  // is past the current A1 content).
+  // ═════════════════════════════════════════════════════════════════
+  function openAIVoiceModal(){
+    var existing = document.getElementById('v10AiVoiceModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+
+    var bk = document.createElement('div');
+    bk.id = 'v10AiVoiceModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);' +
+      'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;' +
+      'padding:18px;width:min(480px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83c\udfa4 AI VOICE</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Type text \u2014 OpenAI TTS synthesizes a natural voiceover and drops it on A1.</div>' +
+      '<textarea id="avText" rows="5" placeholder="Enter text for the voiceover\u2026" ' +
+        'style="width:100%;padding:10px;background:#0c0814;border:1px solid rgba(124,58,237,.3);' +
+        'border-radius:6px;color:#e2e0f0;font-size:13px;font-family:inherit;outline:none;resize:vertical;box-sizing:border-box"></textarea>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin:10px 0 4px">VOICE</div>' +
+      '<div id="avVoices" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11px">' +
+        '<span style="color:#8886a0;flex:none">Speed</span>' +
+        '<input id="avSpeed" type="range" min="0.5" max="2" step="0.05" value="1" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="avSpeedVal" style="color:#fde047;font-weight:600;min-width:40px;text-align:right">1.00x</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="avCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="avRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Generate \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+
+    var VOICES = [
+      { id:'alloy',   label:'Alloy',   desc:'Balanced, neutral' },
+      { id:'echo',    label:'Echo',    desc:'Warm, friendly' },
+      { id:'fable',   label:'Fable',   desc:'British, narrative' },
+      { id:'onyx',    label:'Onyx',    desc:'Deep, authoritative' },
+      { id:'nova',    label:'Nova',    desc:'Bright, expressive' },
+      { id:'shimmer', label:'Shimmer', desc:'Soft, gentle' }
+    ];
+    var selectedVoice = 'alloy';
+    var voiceGrid = panel.querySelector('#avVoices');
+    VOICES.forEach(function(v){
+      var b = document.createElement('button');
+      b.dataset.voice = v.id;
+      b.style.cssText = 'padding:8px 6px;background:' + (v.id === selectedVoice ? 'rgba(139,92,246,.25)' : 'rgba(255,255,255,.04)') +
+        ';border:1px solid ' + (v.id === selectedVoice ? '#a78bfa' : 'rgba(255,255,255,.1)') +
+        ';border-radius:6px;color:#e2e0f0;font-size:10px;cursor:pointer;text-align:center';
+      b.innerHTML = '<b style="font-size:11px">' + v.label + '</b><br><span style="color:#8886a0;font-size:9px">' + v.desc + '</span>';
+      b.addEventListener('click', function(){
+        selectedVoice = v.id;
+        Array.from(voiceGrid.querySelectorAll('button')).forEach(function(o){
+          var on = o.dataset.voice === selectedVoice;
+          o.style.background  = on ? 'rgba(139,92,246,.25)' : 'rgba(255,255,255,.04)';
+          o.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
+        });
+      });
+      voiceGrid.appendChild(b);
+    });
+
+    var speed = panel.querySelector('#avSpeed');
+    var speedVal = panel.querySelector('#avSpeedVal');
+    speed.addEventListener('input', function(){ speedVal.textContent = parseFloat(speed.value).toFixed(2) + 'x'; });
+    panel.querySelector('#avCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    setTimeout(function(){ panel.querySelector('#avText').focus(); }, 50);
+
+    panel.querySelector('#avRun').addEventListener('click', async function(){
+      var text = panel.querySelector('#avText').value.trim();
+      if (!text){ toast('Enter some text first'); return; }
+      var sp = parseFloat(speed.value) || 1;
+      bk.remove();
+      var prog = showBlockingProgressModal('AI Voice', ['Synthesizing voice\u2026', 'Adding to A1\u2026']);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/ai-voice', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text, voice: selectedVoice, speed: sp })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'TTS failed');
+        prog.advance(1);
+        if (typeof window.addClipToTimeline === 'function'){
+          window.addClipToTimeline('AI Voice (' + selectedVoice + ')', 'aud', d.duration, d.mediaUrl);
+        }
+        prog.finish('Voiceover added (' + d.duration.toFixed(1) + 's)');
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #51 — Translate modal
+  // Whispers the selected V1 clip, translates each caption phrase into
+  // the target language, drops the translated phrases onto T1 at the
+  // matching timestamps (same positioning logic as Captions).
+  // ═════════════════════════════════════════════════════════════════
+  function openTranslateModal(){
+    var existing = document.getElementById('v10TranslateModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('translate');
+    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Select a V1 clip with a server-uploaded source first');
+      return;
+    }
+
+    var bk = document.createElement('div');
+    bk.id = 'v10TranslateModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(480px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+
+    var LANGS = [
+      ['es','\ud83c\uddea\ud83c\uddf8 Spanish'], ['fr','\ud83c\uddeb\ud83c\uddf7 French'],
+      ['de','\ud83c\udde9\ud83c\uddea German'],  ['pt','\ud83c\uddf5\ud83c\uddf9 Portuguese'],
+      ['it','\ud83c\uddee\ud83c\uddf9 Italian'], ['nl','\ud83c\uddf3\ud83c\uddf1 Dutch'],
+      ['pl','\ud83c\uddf5\ud83c\uddf1 Polish'],  ['ru','\ud83c\uddf7\ud83c\uddfa Russian'],
+      ['tr','\ud83c\uddf9\ud83c\uddf7 Turkish'], ['ar','\ud83c\uddf8\ud83c\udde6 Arabic'],
+      ['hi','\ud83c\uddee\ud83c\uddf3 Hindi'],   ['vi','\ud83c\uddfb\ud83c\uddf3 Vietnamese'],
+      ['id','\ud83c\uddee\ud83c\udde9 Indonesian'], ['ja','\ud83c\uddef\ud83c\uddf5 Japanese'],
+      ['ko','\ud83c\uddf0\ud83c\uddf7 Korean'],  ['zh','\ud83c\udde8\ud83c\uddf3 Chinese (Simplified)']
+    ];
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83c\udf10 TRANSLATE CAPTIONS</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Transcribes the selected V1 clip, translates each phrase, drops translated captions onto T1.</div>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px">TARGET LANGUAGE</div>' +
+      '<div id="trLangs" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;max-height:220px;overflow-y:auto"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="trCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="trRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer" disabled>Translate \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    var selectedLang = null;
+    var grid = panel.querySelector('#trLangs');
+    LANGS.forEach(function(pair){
+      var code = pair[0], label = pair[1];
+      var b = document.createElement('button');
+      b.dataset.code = code;
+      b.style.cssText = 'padding:8px 10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;text-align:left;cursor:pointer';
+      b.textContent = label;
+      b.addEventListener('click', function(){
+        selectedLang = code;
+        Array.from(grid.querySelectorAll('button')).forEach(function(o){
+          var on = o.dataset.code === code;
+          o.style.background  = on ? 'rgba(139,92,246,.25)' : 'rgba(255,255,255,.04)';
+          o.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
+        });
+        panel.querySelector('#trRun').disabled = false;
+        panel.querySelector('#trRun').style.opacity = '1';
+      });
+      grid.appendChild(b);
+    });
+    panel.querySelector('#trCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+
+    panel.querySelector('#trRun').addEventListener('click', async function(){
+      if (!selectedLang){ toast('Pick a language first'); return; }
+      bk.remove();
+      var prog = showBlockingProgressModal('Translate', [
+        'Transcribing audio\u2026', 'Translating phrases\u2026', 'Placing T1 captions\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/translate-captions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl, targetLang: selectedLang })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Translate failed');
+        prog.advance(1);
+        prog.advance(2);
+        if (!d.chunks || !d.chunks.length){
+          prog.finish('No speech detected in this clip.');
+          return;
+        }
+        var clipLeftPx = parseFloat(target.style.left) || 0;
+        var clipWidthPx= parseFloat(target.style.width) || 0;
+        var clipRightPx= clipLeftPx + clipWidthPx;
+        var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+        var srcOff = parseFloat(target.dataset.sourceOffset) || 0;
+        var leadSec = parseFloat(window.__captionLeadSec); if (!isFinite(leadSec)) leadSec = 0.2;
+        var added = 0;
+        d.chunks.forEach(function(ch){
+          if (!ch.text || !isFinite(ch.start) || !isFinite(ch.end)) return;
+          var adjS = ch.start - srcOff - leadSec;
+          var adjE = ch.end   - srcOff - leadSec;
+          if (adjE <= 0) return;
+          if (adjS < 0) adjS = 0;
+          var leftPx = clipLeftPx + Math.round(adjS * PPS);
+          var widthPx = Math.max(20, Math.round((adjE - adjS) * PPS));
+          if (leftPx >= clipRightPx) return;
+          if (leftPx + widthPx > clipRightPx) widthPx = Math.max(20, clipRightPx - leftPx);
+          if (typeof window.addTextClipToTimeline === 'function'){
+            window.addTextClipToTimeline(ch.text, {
+              left: leftPx + 'px', width: widthPx + 'px',
+              fontSize: 48,
+              textColor: (window.__brandCaptionStyle && window.__brandCaptionStyle.color) || '#ffffff',
+              position: 'bottom'
+            });
+            added++;
+          }
+        });
+        prog.finish('Added ' + added + ' ' + (d.languageName || selectedLang) + ' caption' + (added === 1 ? '' : 's'));
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #52 — BG Remove modal
+  // Chroma-key via FFmpeg colorkey. Server swaps the V1 clip's mediaUrl
+  // in place (same pattern as Enhance Audio).
+  // ═════════════════════════════════════════════════════════════════
+  function openBGRemoveModal(){
+    var existing = document.getElementById('v10BGRemoveModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('bgremove');
+    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Select a V1 clip with a server-uploaded source first');
+      return;
+    }
+    var bk = document.createElement('div');
+    bk.id = 'v10BGRemoveModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(480px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83d\uddbc\ufe0f BACKGROUND REMOVAL</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Chroma-key your footage \u2014 picks a background color and replaces it with a solid fill. Best for green/blue-screen or uniform backgrounds.</div>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px">BACKGROUND COLOR</div>' +
+      '<div id="bgPresets" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:10px"></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px">' +
+        '<span style="color:#8886a0;flex:none;min-width:82px">Similarity</span>' +
+        '<input id="bgSim" type="range" min="0.05" max="0.5" step="0.01" value="0.25" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="bgSimVal" style="color:#fde047;font-weight:600;min-width:48px;text-align:right">0.25</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px">' +
+        '<span style="color:#8886a0;flex:none;min-width:82px">Edge blend</span>' +
+        '<input id="bgBlend" type="range" min="0" max="0.3" step="0.01" value="0.10" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="bgBlendVal" style="color:#fde047;font-weight:600;min-width:48px;text-align:right">0.10</span>' +
+      '</div>' +
+      '<div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px">REPLACE WITH</div>' +
+      '<div id="bgReplace" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:4px"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="bgCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="bgRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Remove \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    var keyPreset = 'green';
+    var replaceColor = '0x000000';
+    var PRESETS = [
+      { id:'green', label:'\ud83d\udfe9 Green',  bg:'#2fa644' },
+      { id:'blue',  label:'\ud83d\udfe6 Blue',   bg:'#3478d3' },
+      { id:'dark',  label:'\u26ab Dark',         bg:'#151515' },
+      { id:'light', label:'\u26aa Light',        bg:'#f0f0f0' }
+    ];
+    var REPLACE_OPTIONS = [
+      { hex:'0x000000', label:'Black', bg:'#000' },
+      { hex:'0xffffff', label:'White', bg:'#fff' },
+      { hex:'0x7c3aed', label:'Brand', bg:'#7c3aed' },
+      { hex:'0x22c55e', label:'Green screen', bg:'#22c55e' }
+    ];
+    var pRow = panel.querySelector('#bgPresets');
+    PRESETS.forEach(function(p){
+      var b = document.createElement('button');
+      b.dataset.id = p.id;
+      b.style.cssText = 'padding:10px 6px;background:' + p.bg + ';border:2px solid ' + (p.id === keyPreset ? '#a78bfa' : 'transparent') +
+        ';border-radius:6px;color:#fff;font-size:10px;font-weight:600;cursor:pointer;text-shadow:0 1px 2px rgba(0,0,0,.6)';
+      b.textContent = p.label;
+      b.addEventListener('click', function(){
+        keyPreset = p.id;
+        Array.from(pRow.querySelectorAll('button')).forEach(function(o){
+          o.style.borderColor = o.dataset.id === keyPreset ? '#a78bfa' : 'transparent';
+        });
+      });
+      pRow.appendChild(b);
+    });
+    var rRow = panel.querySelector('#bgReplace');
+    REPLACE_OPTIONS.forEach(function(r){
+      var b = document.createElement('button');
+      b.dataset.hex = r.hex;
+      b.style.cssText = 'padding:8px 6px;background:' + r.bg + ';border:2px solid ' + (r.hex === replaceColor ? '#a78bfa' : 'transparent') +
+        ';border-radius:6px;color:' + (r.bg === '#fff' ? '#000' : '#fff') + ';font-size:10px;font-weight:600;cursor:pointer';
+      b.textContent = r.label;
+      b.addEventListener('click', function(){
+        replaceColor = r.hex;
+        Array.from(rRow.querySelectorAll('button')).forEach(function(o){
+          o.style.borderColor = o.dataset.hex === replaceColor ? '#a78bfa' : 'transparent';
+        });
+      });
+      rRow.appendChild(b);
+    });
+    var sim = panel.querySelector('#bgSim'), simV = panel.querySelector('#bgSimVal');
+    var blend = panel.querySelector('#bgBlend'), blendV = panel.querySelector('#bgBlendVal');
+    sim.addEventListener('input',   function(){ simV.textContent   = parseFloat(sim.value).toFixed(2); });
+    blend.addEventListener('input', function(){ blendV.textContent = parseFloat(blend.value).toFixed(2); });
+    panel.querySelector('#bgCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#bgRun').addEventListener('click', async function(){
+      bk.remove();
+      var prog = showBlockingProgressModal('Remove Background', [
+        'Processing footage\u2026', 'Swapping into V1\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/bg-remove', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mediaUrl: target.dataset.mediaUrl,
+            preset: keyPreset,
+            replaceColor: replaceColor,
+            similarity: parseFloat(sim.value),
+            blend: parseFloat(blend.value)
+          })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'BG remove failed');
+        prog.advance(1);
+        // Swap in place (like Enhance Audio does)
+        target.dataset.mediaUrl = d.mediaUrl;
+        target.dataset.bgRemoved = '1';
+        var player = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (player){ try { player.src = d.mediaUrl; player.load(); } catch(_){} }
+        if (typeof window.buildClipFilmstrip === 'function'){
+          var oldFS = target.querySelector('.v10-filmstrip');
+          var oldLb = target.querySelector('.v10-fs-label');
+          if (oldFS) oldFS.remove();
+          if (oldLb) oldLb.remove();
+          try { window.buildClipFilmstrip(target, d.mediaUrl, d.duration); } catch(_){}
+        }
+        if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        prog.finish('Background removed \u2014 V1 clip updated');
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #53 — Style Transfer modal
+  // Picks a preset look; server bakes an FFmpeg filter chain that
+  // approximates it (EQ + curves + noise + hue/saturation combos).
+  // Output replaces the V1 clip's mediaUrl in place.
+  // ═════════════════════════════════════════════════════════════════
+  function openStyleTransferModal(){
+    var existing = document.getElementById('v10StyleModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('style');
+    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Select a V1 clip with a server-uploaded source first');
+      return;
+    }
+    var bk = document.createElement('div');
+    bk.id = 'v10StyleModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(520px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    var STYLES = [
+      { id:'cyberpunk',    label:'Cyberpunk',    bg:'linear-gradient(135deg,#ec4899,#7c3aed,#22d3ee)' },
+      { id:'film_noir',    label:'Film Noir',    bg:'linear-gradient(135deg,#1f2937,#111827)' },
+      { id:'oil_painting', label:'Oil Painting', bg:'linear-gradient(135deg,#92400e,#f59e0b,#b91c1c)' },
+      { id:'watercolor',   label:'Watercolor',   bg:'linear-gradient(135deg,#dbeafe,#93c5fd,#ddd6fe)' },
+      { id:'comic',        label:'Comic Book',   bg:'linear-gradient(135deg,#fbbf24,#ef4444,#3b82f6)' },
+      { id:'neon',         label:'Neon',         bg:'linear-gradient(135deg,#06b6d4,#7c3aed,#ec4899)' },
+      { id:'vintage_film', label:'Vintage Film', bg:'linear-gradient(135deg,#a16207,#b45309,#78350f)' },
+      { id:'sepia',        label:'Sepia',        bg:'linear-gradient(135deg,#a16207,#d97706,#fbbf24)' }
+    ];
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83e\ude84 STYLE TRANSFER</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Bakes a cinematic look into the selected V1 clip via a preset FFmpeg filter chain. Not neural style transfer, but works in seconds and no API key needed.</div>' +
+      '<div id="styleGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
+        '<button id="stCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="stRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer" disabled>Apply \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    var selectedStyle = null;
+    var grid = panel.querySelector('#styleGrid');
+    STYLES.forEach(function(s){
+      var b = document.createElement('button');
+      b.dataset.id = s.id;
+      b.style.cssText = 'padding:14px 6px;background:' + s.bg + ';border:2px solid transparent' +
+        ';border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;text-shadow:0 1px 3px rgba(0,0,0,.8);min-height:60px';
+      b.textContent = s.label;
+      b.addEventListener('click', function(){
+        selectedStyle = s.id;
+        Array.from(grid.querySelectorAll('button')).forEach(function(o){
+          o.style.borderColor = o.dataset.id === selectedStyle ? '#fde047' : 'transparent';
+        });
+        panel.querySelector('#stRun').disabled = false;
+      });
+      grid.appendChild(b);
+    });
+    panel.querySelector('#stCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#stRun').addEventListener('click', async function(){
+      if (!selectedStyle){ toast('Pick a style first'); return; }
+      bk.remove();
+      var prog = showBlockingProgressModal('Style Transfer', [
+        'Rendering style\u2026', 'Updating V1 clip\u2026'
+      ]);
+      var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', beforeUnload);
+      try {
+        prog.advance(0);
+        var r = await fetch('/video-editor/style-transfer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl, style: selectedStyle })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Style transfer failed');
+        prog.advance(1);
+        target.dataset.mediaUrl = d.mediaUrl;
+        target.dataset.styleTransfer = selectedStyle;
+        var player = document.getElementById('videoPlayer') || document.querySelector('video');
+        if (player){ try { player.src = d.mediaUrl; player.load(); } catch(_){} }
+        if (typeof window.buildClipFilmstrip === 'function'){
+          var oldFS = target.querySelector('.v10-filmstrip');
+          var oldLb = target.querySelector('.v10-fs-label');
+          if (oldFS) oldFS.remove();
+          if (oldLb) oldLb.remove();
+          try { window.buildClipFilmstrip(target, d.mediaUrl, d.duration); } catch(_){}
+        }
+        if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+        prog.finish('Style applied \u2014 ' + selectedStyle.replace(/_/g, ' '));
+      } catch (err){ prog.fail(err.message || String(err)); }
+      finally { window.removeEventListener('beforeunload', beforeUnload); }
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #56 — Brand Kit: pick a saved Brand Template, apply its
+  // settings to the current project.
+  //
+  // Fetches GET /brand-templates/list (returns templates saved from
+  // the standalone /brand-templates wizard page). The modal shows one
+  // card per saved template with a colored caption-style swatch and
+  // the aspect-ratio label. Clicking Apply:
+  //   1. Sets window.__exportAspect/Width/Height so export + Smart
+  //      Resize preview pick up the template's output dims.
+  //   2. Sets window.__brandCaptionStyle = { color, styleName } so
+  //      future T1 captions inherit the brand color.
+  //   3. If the template has a logo, inserts a new V1 clip
+  //      (clipType='img') at left=0 spanning the current timeline with
+  //      the logo as its background; user can resize/reposition.
+  // ═════════════════════════════════════════════════════════════════
+  function openBrandKitModal(){
+    var existing = document.getElementById('v10BrandKitModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var bk = document.createElement('div');
+    bk.id = 'v10BrandKitModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(560px,92vw);max-height:82vh;overflow-y:auto;color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+        '<span style="font-size:18px">\ud83c\udfa8</span>' +
+        '<span style="font-weight:700;font-size:14px;color:#fde047">BRAND KIT</span>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:14px;line-height:1.5">' +
+        'Pick a saved Brand Template to apply its aspect ratio, caption style, and logo to this project.' +
+      '</div>' +
+      '<div id="bkList" style="min-height:100px"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px">' +
+        '<a href="/brand-templates" target="_blank" rel="noopener" ' +
+          'style="color:#a78bfa;font-size:11px;text-decoration:none">\u27a4 Create / edit templates</a>' +
+        '<button id="bkClose" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Close</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    panel.querySelector('#bkClose').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+
+    var list = panel.querySelector('#bkList');
+    list.innerHTML = '<div style="color:#a78bfa;font-size:12px;text-align:center;padding:24px 0">' +
+      '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle"></span>Loading templates\u2026</div>';
+
+    (async function(){
+      try {
+        var r = await fetch('/brand-templates/list');
+        var d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed to load');
+        renderTemplates(d.templates || [], d.captionStyles || {}, d.aspectRatios || {}, list);
+      } catch (err){
+        list.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
+          (err.message || 'Failed to load templates') + '</div>';
+      }
+    })();
+
+    // Local HTML escape (escAudio is scoped inside buildAudioContent)
+    function bkEsc(s){
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+    function renderTemplates(templates, captionStyles, aspectRatios, listEl){
+      if (!templates.length){
+        listEl.innerHTML =
+          '<div style="padding:24px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.15);border-radius:8px;text-align:center;font-size:12px;color:#8886a0;line-height:1.5">' +
+            'No saved templates yet.<br>' +
+            '<a href="/brand-templates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Go to Brand Templates</a> to create one.' +
+          '</div>';
+        return;
+      }
+      listEl.innerHTML = '';
+      templates.forEach(function(t){
+        var capStyle = (captionStyles && captionStyles[t.captionStyle]) || {};
+        var aspect   = (aspectRatios   && aspectRatios[t.aspectRatio])  || {};
+        var capColor = capStyle.color || '#a78bfa';
+        var capName  = capStyle.name  || (t.captionStyle || 'Default');
+        var aspName  = (aspect.label ? (aspect.icon + ' ' + aspect.label) : (t.aspectRatio || ''));
+        var card = document.createElement('div');
+        card.style.cssText = 'background:rgba(255,255,255,.03);border:1px solid rgba(124,58,237,.25);' +
+          'border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px';
+        card.innerHTML =
+          // Color swatch (caption style preview)
+          '<div style="flex:none;width:72px;height:72px;border-radius:8px;background:linear-gradient(135deg,' +
+            capColor + ',' + capColor + '80);display:flex;align-items:center;justify-content:center;' +
+            'color:#fff;font-weight:800;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6)">Aa</div>' +
+          // Details
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:13px;font-weight:700;color:#e2e0f0;margin-bottom:4px">' + bkEsc(capName) + '</div>' +
+            '<div style="font-size:11px;color:#8886a0">' + bkEsc(aspName) + '</div>' +
+            (t.logoUrl
+              ? ('<div style="font-size:10px;color:#22c55e;margin-top:4px">\u2713 Logo attached</div>')
+              : ('<div style="font-size:10px;color:#5c5a70;margin-top:4px">No logo</div>')
+            ) +
+          '</div>' +
+          (t.logoUrl
+            ? ('<img src="' + t.logoUrl + '" style="flex:none;width:44px;height:44px;object-fit:contain;background:rgba(255,255,255,.06);border-radius:6px;padding:4px" onerror="this.remove()"/>')
+            : ''
+          ) +
+          // Apply button
+          '<button class="bkApply" data-template-id="' + (t.id || '') + '" ' +
+            'style="flex:none;padding:8px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">' +
+            'Apply \u2192</button>';
+        listEl.appendChild(card);
+      });
+      Array.from(listEl.querySelectorAll('.bkApply')).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var tid = btn.getAttribute('data-template-id');
+          var tmpl = templates.find(function(t){ return (t.id || '') === tid; }) || templates[0];
+          applyBrandTemplate(tmpl, captionStyles, aspectRatios);
+          bk.remove();
+        });
+      });
+    }
+  }
+
+  function applyBrandTemplate(tmpl, captionStyles, aspectRatios){
+    if (!tmpl) return;
+    var summary = [];
+
+    // 1. Aspect ratio → export dims (same globals Smart Resize uses)
+    if (tmpl.aspectRatio && aspectRatios && aspectRatios[tmpl.aspectRatio]){
+      var a = aspectRatios[tmpl.aspectRatio];
+      window.__exportAspect = tmpl.aspectRatio;
+      window.__exportWidth  = a.width;
+      window.__exportHeight = a.height;
+      summary.push('Aspect ' + tmpl.aspectRatio);
+      // Repaint PGM aspect mask if Smart Resize left one up
+      if (typeof window.applySmartResizePreview === 'function'){
+        try { window.applySmartResizePreview(tmpl.aspectRatio); } catch(_){}
+      }
+    }
+
+    // 2. Caption style — set a global that T1 inserts will read as their
+    //    default color. (addTextClipToTimeline accepts opts.textColor,
+    //    opts.fontSize; we set the globals here and each add-caption call
+    //    can pick them up.)
+    if (tmpl.captionStyle && captionStyles && captionStyles[tmpl.captionStyle]){
+      var cs = captionStyles[tmpl.captionStyle];
+      // Task #70 \u2014 full caption style (font + size + color) lives here so
+      // future T1 inserts inherit the brand identity, not just the colour.
+      window.__brandCaptionStyle = {
+        id:    tmpl.captionStyle,
+        name:  cs.name,
+        color: cs.color,
+        font:  cs.font || 'system-ui, "Segoe UI", Roboto, sans-serif',
+        size:  parseInt(cs.size, 10) || 60
+      };
+      summary.push('Caption style \u201c' + cs.name + '\u201d');
+
+      // Retroactively update every existing T1 clip on the timeline.
+      // Per-clip user overrides are respected via *UserSet flags so that
+      // explicit edits aren't overwritten by a later template apply.
+      var bcs = window.__brandCaptionStyle;
+      Array.from(document.querySelectorAll('.mt-track-text .mt-clip')).forEach(function(t){
+        if (!t.dataset.textColorUserSet){
+          t.dataset.textColor = bcs.color;
+        }
+        if (!t.dataset.fontFamilyUserSet){
+          t.dataset.fontFamily = bcs.font;
+        }
+        if (!t.dataset.fontSizeUserSet){
+          t.dataset.fontSize = String(bcs.size);
+        }
+      });
+      // Repaint the program monitor so the new typography shows up
+      // without needing a play/seek nudge.
+      if (typeof window.repaintProgramMonitor === 'function'){
+        try { window.repaintProgramMonitor(); } catch(_){}
+      } else if (typeof window.renderPGM === 'function'){
+        try { window.renderPGM(); } catch(_){}
+      }
+    }
+
+    // 3. Logo → render as a TRANSPARENT CSS overlay on the preview area
+    //    (NOT a V1 clip — that would obscure the underlying footage).
+    //    Stored in window.__brandLogo so the export pipeline can apply
+    //    an FFmpeg `overlay=` filter on each V1 segment.
+    // Evict any legacy V1 brand-logo clips left over from previous versions
+    // of this code so re-applying templates doesn't accumulate stale clips.
+    Array.from(document.querySelectorAll('.mt-clip[data-brand-logo="1"]')).forEach(function(stale){
+      try { stale.remove(); } catch(_){}
+    });
+    if (tmpl.logoUrl){
+      window.__brandLogo = {
+        url:      tmpl.logoUrl,
+        position: tmpl.logoPosition || 'top-right',
+        size:     parseFloat(tmpl.logoSize) || 100
+      };
+      if (typeof window.applyBrandLogoOverlay === 'function'){
+        try { window.applyBrandLogoOverlay(); } catch(_){}
+      }
+      summary.push('Logo overlay');
+    } else {
+      // Template explicitly has no logo — clear any prior overlay.
+      window.__brandLogo = null;
+      if (typeof window.applyBrandLogoOverlay === 'function'){
+        try { window.applyBrandLogoOverlay(); } catch(_){}
+      }
+    }
+
+    if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+    toast('Brand template applied: ' + summary.join(' \u00b7 '));
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #69 — Brand Kit logo as TRANSPARENT preview overlay.
+  // Reads window.__brandLogo = { url, position, size } and renders
+  // a positioned <img> over the preview area. The export pipeline
+  // applies the equivalent FFmpeg overlay= filter so the rendered
+  // file matches what the user sees.
+  // ═════════════════════════════════════════════════════════════════
+  function applyBrandLogoOverlay(){
+    // Anchor on the video preview area so the logo sits over the
+    // actual <video> element rather than the wider container that also
+    // includes the filmstrip/timeline rows.
+    var previewWrap =
+      document.getElementById('videoPreviewArea') ||
+      document.querySelector('.video-preview-area') ||
+      document.querySelector('.video-container') ||
+      document.querySelector('.preview-wrap') ||
+      document.querySelector('#previewWrap') ||
+      document.querySelector('.video-preview-wrap');
+    if (!previewWrap) return;
+
+    // Make sure the host can position the absolute overlay child.
+    var cs = window.getComputedStyle ? window.getComputedStyle(previewWrap) : null;
+    if (cs && cs.position === 'static'){
+      previewWrap.style.position = 'relative';
+    }
+
+    // Tear down any previous overlay so the next apply replaces it.
+    var prev = previewWrap.querySelector('[data-brand-logo-overlay="1"]');
+    if (prev) { try { prev.remove(); } catch(_){} }
+
+    var bl = window.__brandLogo;
+    if (!bl || !bl.url) return;
+
+    // Task #71 — Compute the actual displayed video rect inside the
+    // preview wrapper (object-fit: contain math) so the logo lands on
+    // the video frame, not on letterbox/pillarbox black bars.
+    var videoEl =
+      document.getElementById('videoPlayer') ||
+      previewWrap.querySelector('video');
+    var hostRect = previewWrap.getBoundingClientRect();
+    var innerLeft = 0, innerTop = 0;
+    var innerW = previewWrap.clientWidth  || hostRect.width  || 720;
+    var innerH = previewWrap.clientHeight || hostRect.height || 405;
+
+    if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0){
+      var vRect = videoEl.getBoundingClientRect();
+      var elW = vRect.width, elH = vRect.height;
+      if (elW > 0 && elH > 0){
+        var aV = videoEl.videoWidth / videoEl.videoHeight;
+        var aE = elW / elH;
+        var dispW, dispH, offX, offY;
+        if (aV > aE){
+          // Source wider than the player box — letterbox top/bottom.
+          dispW = elW;
+          dispH = elW / aV;
+          offX  = 0;
+          offY  = (elH - dispH) / 2;
+        } else {
+          // Source taller than the player box — pillarbox left/right.
+          dispH = elH;
+          dispW = elH * aV;
+          offX  = (elW - dispW) / 2;
+          offY  = 0;
+        }
+        innerLeft = (vRect.left - hostRect.left) + offX;
+        innerTop  = (vRect.top  - hostRect.top)  + offY;
+        innerW    = dispW;
+        innerH    = dispH;
+      }
+    }
+
+    var img = document.createElement('img');
+    img.src = bl.url;
+    img.setAttribute('data-brand-logo-overlay', '1');
+    img.setAttribute('alt', '');
+    img.setAttribute('draggable', 'false');
+
+    // Size is px-at-720-wide; scale to the actual video width so the
+    // on-screen logo tracks the export size proportionally.
+    var sizePx = parseFloat(bl.size) || 100;
+    var scaledW = Math.round(sizePx * (innerW / 720));
+    if (scaledW < 24) scaledW = 24;
+
+    var pos = String(bl.position || 'top-right');
+    // Default safe-area inset: 4% of the actual video width.
+    var pad = Math.max(8, Math.round(innerW * 0.04));
+
+    // All four corners are computed against the inner video rect, NOT
+    // the preview wrapper, so a 9:16 video shown in a wide monitor still
+    // anchors the logo to the visible video frame.
+    var top, left;
+    if (pos === 'top-left'){
+      top  = innerTop + pad;
+      left = innerLeft + pad;
+    } else if (pos === 'bottom-left'){
+      top  = innerTop + innerH - pad - scaledW; // est height ~= scaledW
+      left = innerLeft + pad;
+    } else if (pos === 'bottom-right'){
+      top  = innerTop + innerH - pad - scaledW;
+      left = innerLeft + innerW - pad - scaledW;
+    } else if (pos === 'center'){
+      top  = innerTop + (innerH - scaledW) / 2;
+      left = innerLeft + (innerW - scaledW) / 2;
+    } else {
+      // default: top-right
+      top  = innerTop + pad;
+      left = innerLeft + innerW - pad - scaledW;
+    }
+
+    img.style.cssText =
+      'position:absolute;width:' + scaledW + 'px;height:auto;' +
+      'top:' + Math.round(top) + 'px;left:' + Math.round(left) + 'px;' +
+      'pointer-events:none;user-select:none;z-index:50;' +
+      'filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));';
+
+    // After the image natural size is known, re-anchor bottom/right so
+    // the actual rendered height (not estW=scaledW) is used.
+    img.addEventListener('load', function(){
+      var actualH = img.naturalHeight && img.naturalWidth
+        ? Math.round(scaledW * (img.naturalHeight / img.naturalWidth))
+        : scaledW;
+      var t2 = top, l2 = left;
+      if (pos === 'bottom-left' || pos === 'bottom-right'){
+        t2 = innerTop + innerH - pad - actualH;
+      } else if (pos === 'center'){
+        t2 = innerTop + (innerH - actualH) / 2;
+      }
+      img.style.top = Math.round(t2) + 'px';
+      img.style.left = Math.round(l2) + 'px';
+    });
+    img.addEventListener('error', function(){ try { img.remove(); } catch(_){} });
+    previewWrap.appendChild(img);
+
+    // Re-anchor when the underlying video reports new metadata (source
+    // change, aspect change). We only attach once per call; the prev/
+    // remove path above guarantees we don't accumulate listeners.
+    if (videoEl && !videoEl.__brandLogoListenerAttached){
+      videoEl.__brandLogoListenerAttached = true;
+      videoEl.addEventListener('loadedmetadata', function(){
+        if (window.__brandLogo){
+          try { applyBrandLogoOverlay(); } catch(_){}
+        }
+      });
+    }
+  }
+  window.applyBrandLogoOverlay = applyBrandLogoOverlay;
+
+  // Re-apply the overlay when the preview resizes so the logo stays
+  // proportional to the container width.
+  if (typeof window !== 'undefined'){
+    var _blResizeT = null;
+    window.addEventListener('resize', function(){
+      if (_blResizeT) clearTimeout(_blResizeT);
+      _blResizeT = setTimeout(function(){
+        if (window.__brandLogo) {
+          try { applyBrandLogoOverlay(); } catch(_){}
+        }
+      }, 150);
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #38 — Smart Cut (silence / filler / scene) + #39 Scene Detect
+  // Opens a small mode-picker modal, POSTs to /video-editor/smart-cut,
+  // then razors the selected V1 clip at the returned cut boundaries.
+  // • silence + filler modes — razor into pieces, delete the cut ranges
+  // • scene mode — razor only (keeps all pieces)
+  // • sceneDetectOnly=true — same as scene mode, no deletion
+  // ═════════════════════════════════════════════════════════════════
+  function openSmartCutModal(initialMode){
+    var existing = document.getElementById('v10SmartCutModal');
+    if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
+    var target = pickSourceClipForAI('enhance');
+    if (!target || !target.dataset.mediaUrl){
+      toast('Select a V1 clip first');
+      return;
+    }
+    if ((target.dataset.mediaUrl || '').indexOf('blob:') === 0){
+      toast('Upload this file via the sidebar first');
+      return;
+    }
+    var bk = document.createElement('div');
+    bk.id = 'v10SmartCutModal';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);' +
+      'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;' +
+      'padding:18px;width:min(460px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\u2702\ufe0f SMART CUT</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Choose a mode \u2014 Smart Cut will analyze and edit the selected V1 clip.</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:8px;cursor:pointer">' +
+          '<input type="radio" name="scMode" value="silence" ' + (initialMode === 'filler' ? '' : 'checked') + ' style="margin-top:3px;accent-color:#a78bfa"/>' +
+          '<span><b>Remove silences</b><br><span style="font-size:10px;color:#8886a0">Whisper finds pauses longer than the threshold, razors + deletes them.</span></span>' +
+        '</label>' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:8px;cursor:pointer">' +
+          '<input type="radio" name="scMode" value="filler" ' + (initialMode === 'filler' ? 'checked' : '') + ' style="margin-top:3px;accent-color:#a78bfa"/>' +
+          '<span><b>Remove filler words</b><br><span style="font-size:10px;color:#8886a0">Cuts out "uh, um, like, you know" and similar.</span></span>' +
+        '</label>' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);border-radius:8px;cursor:pointer">' +
+          '<input type="radio" name="scMode" value="scene" style="margin-top:3px;accent-color:#a78bfa"/>' +
+          '<span><b>Split at scene changes</b><br><span style="font-size:10px;color:#8886a0">Uses perceptual diff to razor the clip at visual cuts (keeps all content).</span></span>' +
+        '</label>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px" id="scThreshRow">' +
+        '<span style="color:#8886a0;flex:none">Silence threshold</span>' +
+        '<input id="scThresh" type="range" min="0.5" max="3" step="0.1" value="1" style="flex:1;accent-color:#a78bfa"/>' +
+        '<span id="scThreshVal" style="color:#fde047;font-weight:600;min-width:32px;text-align:right">1.0s</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button id="scCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
+        '<button id="scRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Run \u2192</button>' +
+      '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+
+    var thresh = panel.querySelector('#scThresh');
+    var threshVal = panel.querySelector('#scThreshVal');
+    thresh.addEventListener('input', function(){ threshVal.textContent = parseFloat(thresh.value).toFixed(1) + 's'; });
+    panel.querySelector('#scCancel').addEventListener('click', function(){ bk.remove(); });
+    bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+    panel.querySelector('#scRun').addEventListener('click', async function(){
+      var mode = panel.querySelector('input[name="scMode"]:checked').value;
+      bk.remove();
+      await runSmartCut(target, mode, parseFloat(thresh.value) || 1.0, false);
+    });
+  }
+
+  async function runSmartCut(clip, mode, thresholdSec, splitOnly){
+    var prog = showBlockingProgressModal(splitOnly ? 'Scene Detect' : 'Smart Cut', [
+      'Analyzing audio / video\u2026',
+      'Finding cut points\u2026',
+      'Applying edits\u2026'
+    ]);
+    var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
+    window.addEventListener('beforeunload', beforeUnload);
+    try {
+      prog.advance(0);
+      var r = await fetch('/video-editor/smart-cut', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: clip.dataset.mediaUrl, mode: mode, thresholdSec: thresholdSec })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Smart cut failed');
+
+      prog.advance(1);
+      var cuts = (d.cuts || []).slice().sort(function(a,b){ return a.start - b.start; });
+      if (!cuts.length){
+        prog.finish('No ' + mode + ' moments found in this clip.');
+        return;
+      }
+
+      prog.advance(2);
+      // Convert each cut's seconds to px-within-clip, adjusting for the
+      // clip's sourceOffset. Discard cuts that fall outside the visible
+      // clip range.
+      var PPS = (typeof window.TIMELINE_PX_PER_SEC === 'number') ? window.TIMELINE_PX_PER_SEC : 10;
+      var srcOff = parseFloat(clip.dataset.sourceOffset) || 0;
+      var clipDur= parseFloat(clip.dataset.duration) || (parseFloat(clip.style.width) / PPS);
+      var srcDur = parseFloat(clip.dataset.srcDuration) || (clipDur + srcOff);
+
+      // Build a working list of (startPx, endPx) relative to the clip's left edge
+      var cutPx = cuts.map(function(c){
+        var s = Math.max(0, c.start - srcOff);
+        var e = Math.max(0, c.end   - srcOff);
+        // Clamp to the clip's visible duration
+        if (s > clipDur) return null;
+        if (e > clipDur) e = clipDur;
+        return { startPx: s * PPS, endPx: e * PPS, reason: c.reason };
+      }).filter(Boolean);
+      if (!cutPx.length){
+        prog.finish('No cut points fall within this clip.');
+        return;
+      }
+
+      if (mode === 'scene' || splitOnly){
+        // Razor-only mode — split at each start, keep all pieces.
+        // Walk in reverse so earlier cuts don't invalidate later offsets.
+        cutPx.slice().reverse().forEach(function(cp){
+          // After each reverse iteration, clip may have been split; the
+          // piece we care about is whichever one contains cp.startPx.
+          var curClip = clip;
+          var curLeft = parseFloat(curClip.style.left) || 0;
+          if (cp.startPx > 0 && cp.startPx < parseFloat(curClip.style.width)){
+            try { window.razorSplit(curClip, cp.startPx); } catch(_){}
+          }
+        });
+        prog.finish('Split at ' + cutPx.length + ' scene boundary' + (cutPx.length === 1 ? '' : 'ies'));
+        return;
+      }
+
+      // silence / filler — razor at each cut's start + end, then delete the
+      // middle segment. Iterate reverse order so pixel offsets remain valid.
+      var originalLeft = parseFloat(clip.style.left) || 0;
+      var totalRemovedPx = 0;
+      // Map cut ranges sorted ascending
+      var rangesAsc = cutPx.slice().sort(function(a,b){ return a.startPx - b.startPx; });
+
+      // For clean multi-cut handling, rebuild the clip as a sequence of
+      // KEEP segments (the inverse of the cut ranges). Then replace the
+      // clip with N new clips.
+      var keepRanges = [];
+      var cursor = 0;
+      rangesAsc.forEach(function(cp){
+        if (cp.startPx > cursor + 4) keepRanges.push([cursor, cp.startPx]);
+        cursor = Math.max(cursor, cp.endPx);
+      });
+      var clipEndPx = parseFloat(clip.style.width) || (clipDur * PPS);
+      if (cursor < clipEndPx - 4) keepRanges.push([cursor, clipEndPx]);
+
+      if (!keepRanges.length){
+        prog.fail('The entire clip would be removed. Widen the threshold.');
+        return;
+      }
+
+      // Replace the original clip with keep-range children
+      var parent = clip.parentNode;
+      var baseAttrs = {
+        fileName: clip.dataset.fileName,
+        mediaUrl: clip.dataset.mediaUrl,
+        clipType: clip.dataset.clipType || 'vid',
+        srcDuration: clip.dataset.srcDuration || ''
+      };
+      // Shift any clips that were to the RIGHT of the original clip LEFT
+      // by the total removed duration (so the timeline stays compact).
+      var totalRemovedSec = 0;
+      rangesAsc.forEach(function(cp){ totalRemovedSec += (cp.endPx - cp.startPx) / PPS; });
+      var origRight = originalLeft + clipEndPx;
+      Array.from(document.querySelectorAll('.mt-track-video .mt-clip')).forEach(function(c){
+        if (c === clip) return;
+        var l = parseFloat(c.style.left) || 0;
+        if (l >= origRight){ c.style.left = (l - totalRemovedSec * PPS) + 'px'; }
+      });
+
+      // Remove the original
+      clip.remove();
+      // Insert the keep-range clips at their compact positions
+      var writeCursor = originalLeft;
+      keepRanges.forEach(function(k){
+        var segStartPx = k[0], segEndPx = k[1];
+        var segW = segEndPx - segStartPx;
+        if (segW < 4) return;
+        var seg = document.createElement('div');
+        seg.className = 'mt-clip mt-clip-video';
+        seg.style.position = 'absolute';
+        seg.style.top = '3px';
+        seg.style.left = writeCursor + 'px';
+        seg.style.width = segW + 'px';
+        seg.style.overflow = 'hidden';
+        seg.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
+        seg.style.color = '#fff';
+        seg.dataset.fileName = baseAttrs.fileName;
+        seg.dataset.mediaUrl = baseAttrs.mediaUrl;
+        seg.dataset.clipType = baseAttrs.clipType;
+        seg.dataset.duration = String(segW / PPS);
+        seg.dataset.sourceOffset = String(srcOff + segStartPx / PPS);
+        if (baseAttrs.srcDuration) seg.dataset.srcDuration = baseAttrs.srcDuration;
+        parent.appendChild(seg);
+        if (typeof window.buildClipFilmstrip === 'function'){
+          try { window.buildClipFilmstrip(seg, baseAttrs.mediaUrl, segW / PPS); } catch(_){}
+        }
+        writeCursor += segW;
+      });
+
+      if (typeof window.pushTimelineHistory === 'function') window.pushTimelineHistory();
+      var removedLabel = mode === 'filler' ? 'filler word' : 'silence';
+      prog.finish('Removed ' + cutPx.length + ' ' + removedLabel + (cutPx.length === 1 ? '' : 's') +
+                  ' \u00b7 saved ' + totalRemovedSec.toFixed(1) + 's');
+    } catch (err){
+      prog.fail(err.message || String(err));
+    } finally {
+      window.removeEventListener('beforeunload', beforeUnload);
+    }
+  }
+
+  function showBlockingProgressModal(title, steps){
+    var old = document.getElementById('v10BlockingProgress');
+    if (old instanceof Element) old.remove();
+    var bk = document.createElement('div');
+    bk.id = 'v10BlockingProgress';
+    bk.style.cssText = 'position:fixed;inset:0;z-index:99999;' +
+      'background:rgba(8,6,18,.82);display:flex;align-items:center;' +
+      'justify-content:center;backdrop-filter:blur(6px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.45);' +
+      'border-radius:14px;padding:22px 26px;width:min(440px,92vw);color:#e2e0f0;' +
+      'font-family:system-ui,sans-serif;box-shadow:0 30px 80px rgba(0,0,0,.6)';
+    var stepsHtml = steps.map(function(s, i){
+      return '<div data-step="' + i + '" style="display:flex;align-items:center;gap:10px;' +
+        'padding:6px 0;color:#8886a0;font-size:12px">' +
+          '<span class="v10-bp-dot" style="width:10px;height:10px;border-radius:50%;' +
+            'background:#2a2545;flex:none"></span>' +
+          '<span class="v10-bp-txt">' + s + '</span>' +
+        '</div>';
+    }).join('');
+    panel.innerHTML =
+      '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\u2728 ' + title + '</div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:14px">Please wait — don\u2019t close this window.</div>' +
+      '<div>' + stepsHtml + '</div>';
+    bk.appendChild(panel);
+    document.body.appendChild(bk);
+    // Task #43 — Swallow clicks on the BACKDROP only (not its children).
+    // The previous version captured every click on bk and its subtree,
+    // which meant the Close button (inside the panel) was never hearing
+    // its own click. e.target === bk isolates true backdrop clicks.
+    bk.addEventListener('click', function(e){
+      if (e.target === bk){ e.preventDefault(); e.stopPropagation(); }
+    }, true);
+    // Swallow Escape key
+    function killKey(e){ if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); } }
+    document.addEventListener('keydown', killKey, true);
+
+    return {
+      advance: function(i){
+        Array.from(panel.querySelectorAll('[data-step]')).forEach(function(row){
+          var idx = parseInt(row.getAttribute('data-step'), 10);
+          var dot = row.querySelector('.v10-bp-dot');
+          var txt = row.querySelector('.v10-bp-txt');
+          if (idx < i){
+            dot.style.background = '#22c55e';
+            row.style.color = '#e2e0f0';
+          } else if (idx === i){
+            dot.style.background = '#a78bfa';
+            dot.style.boxShadow = '0 0 8px rgba(167,139,250,.8)';
+            row.style.color = '#fff';
+            row.style.fontWeight = '600';
+          } else {
+            dot.style.background = '#2a2545';
+            dot.style.boxShadow = '';
+            row.style.color = '#8886a0';
+            row.style.fontWeight = '';
+          }
+        });
+      },
+      finish: function(msg){
+        document.removeEventListener('keydown', killKey, true);
+        panel.innerHTML =
+          '<div style="font-size:13px;font-weight:700;color:#22c55e;margin-bottom:6px">\u2713 Done</div>' +
+          '<div style="font-size:11px;color:#c2e4d3;margin-bottom:14px">' + msg + '</div>' +
+          '<button id="v10BpClose" style="width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#a855f7);' +
+            'border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Close</button>';
+        panel.querySelector('#v10BpClose').addEventListener('click', function(){ bk.remove(); });
+        setTimeout(function(){ if (bk.isConnected) bk.remove(); }, 3500);
+      },
+      fail: function(msg){
+        document.removeEventListener('keydown', killKey, true);
+        panel.innerHTML =
+          '<div style="font-size:13px;font-weight:700;color:#ef4444;margin-bottom:6px">\u26A0 Error</div>' +
+          '<div style="font-size:11px;color:#fca5a5;margin-bottom:14px;word-break:break-word">' + msg + '</div>' +
+          '<button id="v10BpClose" style="width:100%;padding:8px;background:rgba(255,255,255,.08);' +
+            'border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Close</button>';
+        panel.querySelector('#v10BpClose').addEventListener('click', function(){ bk.remove(); });
+      }
+    };
+  }
+
+  // ── AI Tool Modal ─────────────────────────────────────────────────
+  // Overlay the editor with an iframe'd AI tool page so the user can
+  // work on captions / enhance / hooks / brand kits without navigating
+  // away. Dismissible via close button, Escape key, or backdrop click.
+  function openAIToolModal(label, route){
+    // Re-use existing modal if already open
+    var existing = document.getElementById('v10AiModal');
+    if (existing) existing.remove();
+
+    var backdrop = document.createElement('div');
+    backdrop.id = 'v10AiModal';
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:9998;' +
+      'background:rgba(8,6,18,.75);display:flex;align-items:center;' +
+      'justify-content:center;backdrop-filter:blur(4px);animation:v10AiFade .16s ease';
+
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:#0c0814;border:1px solid rgba(124,58,237,.35);' +
+      'border-radius:14px;width:min(1180px,95vw);height:min(860px,92vh);' +
+      'display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.6);' +
+      'overflow:hidden';
+
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 18px;' +
+      'background:linear-gradient(90deg,rgba(124,58,237,.15),rgba(236,72,153,.08));' +
+      'border-bottom:1px solid rgba(124,58,237,.25);color:#e8e0ff;font-weight:600;font-size:14px';
+    head.innerHTML =
+      '<span style="font-size:18px">\u2728</span>' +
+      '<span>' + label + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<a href="' + route + '" target="_blank" rel="noopener" ' +
+        'style="color:#a78bfa;text-decoration:none;font-size:12px;padding:6px 10px;' +
+        'border:1px solid rgba(167,139,250,.35);border-radius:6px">Open in new tab \u2197</a>' +
+      '<button id="v10AiCloseBtn" title="Close" ' +
+        'style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);' +
+        'color:#f87171;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px">\u2715 Close</button>';
+
+    var body = document.createElement('div');
+    body.style.cssText = 'flex:1;position:relative;background:#050308';
+    var iframe = document.createElement('iframe');
+    iframe.src = route;
+    iframe.style.cssText = 'width:100%;height:100%;border:0;display:block';
+    iframe.setAttribute('title', label);
+    body.appendChild(iframe);
+
+    panel.appendChild(head);
+    panel.appendChild(body);
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+
+    function close(){
+      document.removeEventListener('keydown', onKey);
+      if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+    }
+    function onKey(e){ if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+
+    backdrop.addEventListener('click', function(e){
+      // Only close when the backdrop itself is clicked — not when the
+      // click bubbled up from the panel/iframe.
+      if (e.target === backdrop) close();
+    });
+    head.querySelector('#v10AiCloseBtn').addEventListener('click', close);
+
+    // Inject the fade keyframes once
+    if (!document.getElementById('v10AiModalStyles')){
+      var s = document.createElement('style');
+      s.id = 'v10AiModalStyles';
+      s.textContent = '@keyframes v10AiFade{from{opacity:0}to{opacity:1}}';
+      document.head.appendChild(s);
+    }
   }
 
   function buildFXContent(){
     var div = document.createElement('div');
     div.className = 'v10-rp-content';
     div.setAttribute('data-v10', 'rp-fx');
-    var effects = ['Blur','Glow','Vignette','Film Grain','Sharpen','Chromatic Aberration','Pixelate','Noise'];
-    var html = '<div class="v10-rp-section-title">VISUAL EFFECTS</div>';
-    effects.forEach(function(f){
-      html += '<button class="v10-fx-btn" data-action="'+f+' applied">'+f+'</button>';
+
+    // Motion menu — each button drops a 3-second motion clip onto M1 that
+    // the Program Monitor canvas animates over its duration.
+    var motions = [
+      {k:'zoom-in',    ic:'\ud83d\udd0d', label:'Zoom In'},
+      {k:'zoom-out',   ic:'\ud83d\udd0e', label:'Zoom Out'},
+      {k:'pan-left',   ic:'\u2b05\ufe0f', label:'Pan Left'},
+      {k:'pan-right',  ic:'\u27a1\ufe0f', label:'Pan Right'},
+      {k:'fade-in',    ic:'\ud83c\udf11', label:'Fade In'},
+      {k:'fade-out',   ic:'\ud83c\udf15', label:'Fade Out'},
+      {k:'shake',      ic:'\ud83c\udf00', label:'Shake'},
+      {k:'rotate',     ic:'\ud83d\udd04', label:'Rotate'}
+    ];
+    var motionHtml = '<div class="v10-rp-section-title">MOTION</div><div class="v10-rp-grid">';
+    motions.forEach(function(m){
+      motionHtml += '<button class="v10-rp-btn" data-v10-motion="' + m.k +
+        '"><span class="v10-rp-ic">' + m.ic + '</span>' + m.label + '</button>';
     });
-    html +=
-      '<div class="v10-rp-section-title" style="margin-top:14px">COLOR</div>'+
-      '<div class="v10-rp-grid">'+
-        buildRPButtons([['\ud83c\udfa8','Color Grade'],['\u2600\ufe0f','Brightness'],['\ud83c\udf17','Contrast'],['\ud83d\udca7','Saturation']])+
-      '</div>';
+    motionHtml += '</div>';
+
+    // Visual Effects: each button maps to a clipAction*. Blur is a prompt
+    // (numeric), the rest are toggles that the PGM render honours via
+    // ctx.filter or post-FX overlays.
+    var fxButtons = [
+      {a:'FxBlur',      label:'Blur'},
+      {a:'FxGlow',      label:'Glow'},
+      {a:'FxVignette',  label:'Vignette'},
+      {a:'FxGrain',     label:'Film Grain'},
+      {a:'FxSharpen',   label:'Sharpen'},
+      {a:'FxChromatic', label:'Chromatic'},
+      {a:'FxPixelate',  label:'Pixelate'},
+      {a:'FxNoise',     label:'Noise'}
+    ];
+    var html = motionHtml + '<div class="v10-rp-section-title" style="margin-top:14px">VISUAL EFFECTS</div>';
+    fxButtons.forEach(function(b){
+      html += '<button class="v10-fx-btn" data-v10-clip-action="' + b.a + '">' + b.label + '</button>';
+    });
+    var colorButtons = [
+      {ic:'\ud83c\udfa8', label:'Color Grade', a:'FxColorGrade'},
+      {ic:'\u2600\ufe0f', label:'Brightness',  a:'FxBrightness'},
+      {ic:'\ud83c\udf17', label:'Contrast',    a:'FxContrast'},
+      {ic:'\ud83d\udca7', label:'Saturation',  a:'FxSaturation'}
+    ];
+    html += '<div class="v10-rp-section-title" style="margin-top:14px">COLOR</div><div class="v10-rp-grid">';
+    colorButtons.forEach(function(b){
+      html += '<button class="v10-rp-btn" data-v10-clip-action="' + b.a + '"><span class="v10-rp-ic">' + b.ic + '</span>' + b.label + '</button>';
+    });
+    html += '</div>';
     div.innerHTML = html;
-    div.querySelectorAll('.v10-fx-btn').forEach(function(btn){
+
+    // Wire motion buttons (drops a motion clip onto M1)
+    Array.from(div.querySelectorAll('[data-v10-motion]')).forEach(function(btn){
       btn.addEventListener('click', function(e){
-        e.preventDefault();
-        toast(btn.getAttribute('data-action') || btn.textContent + ' applied');
-      });
+        e.preventDefault(); e.stopPropagation();
+        var key = btn.getAttribute('data-v10-motion');
+        if (typeof window.addMotionClipToTimeline === 'function'){
+          window.addMotionClipToTimeline(key, {duration: 3});
+        } else {
+          toast('Motion tool not ready');
+        }
+      }, true);
     });
+
+    // Wire every clip-action button (Visual Effects + Color). These call
+    // window.clipActionFx* defined in media-panel-fix.js, which operate
+    // on the currently selected clip / fallback to clip under playhead.
+    Array.from(div.querySelectorAll('[data-v10-clip-action]')).forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        var act = btn.getAttribute('data-v10-clip-action');
+        var fn  = window['clipAction' + act];
+        if (typeof fn === 'function') fn();
+        else toast(act + ' not wired');
+      }, true);
+    });
+
     wireRPToast(div);
     return div;
   }
@@ -1267,10 +4797,11 @@
       }
     });
 
-    // Show/hide export section based on tab (export only visible on AI)
+    // Export section is always visible — the user can export from any
+    // tab without having to switch to AI first.
     var expSec = es.querySelector('.exp-section');
     if (expSec){
-      expSec.style.display = (tabName === 'AI') ? '' : 'none';
+      expSec.style.display = '';
     }
   }
 
@@ -1369,6 +4900,44 @@
   } else {
     setTimeout(boot, 50);
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  // Task #75 — AI B-Roll button stays disabled until a V1 clip is
+  // .selected. Greys out the button visually + blocks pointer events
+  // so the user can't click into the modal without first picking a
+  // source clip on the timeline.
+  // ═════════════════════════════════════════════════════════════════
+  function refreshAIBrollButtonState(){
+    var btns = document.querySelectorAll('.ml-fb.ai');
+    if (!btns.length) return;
+    var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+    var ok = !!(sel && sel.dataset.mediaUrl &&
+      sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
+      sel.dataset.clipType !== 'text' &&
+      sel.dataset.clipType !== 'motion');
+    Array.from(btns).forEach(function(b){
+      if (ok){
+        b.disabled = false;
+        b.classList.remove('is-disabled');
+        b.style.pointerEvents = '';
+        b.style.opacity = '';
+        b.style.cursor = 'pointer';
+        b.title = 'Open the AI B-Roll picker for the selected V1 clip';
+      } else {
+        b.disabled = true;
+        b.classList.add('is-disabled');
+        b.style.pointerEvents = 'none';
+        b.style.opacity = '0.4';
+        b.style.cursor = 'not-allowed';
+        b.title = 'Select a V1 clip on the timeline first';
+      }
+    });
+  }
+  // Run continuously so any selection change (clip click, deselect via
+  // background click, clip delete) flips the button state without us
+  // needing to wire into every selection code path.
+  setInterval(refreshAIBrollButtonState, 250);
+  refreshAIBrollButtonState();
 })();
 
 
