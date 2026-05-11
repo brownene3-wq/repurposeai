@@ -218,3 +218,4 @@ router.post('/test-api-calls', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+// Threads OAuth secret rotation - force redeploy at 2026-05-09T22:58:26Z
