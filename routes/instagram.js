@@ -424,7 +424,7 @@ router.post('/test-api-calls', requireAuth, async (req, res) => {
     try {
       const create = await httpsPost(
         `https://graph.instagram.com/v21.0/${userId}/media`,
-        { image_url: 'https://splicora.ai/static/img/placeholder-1080.jpg', caption: 'Splicora API test', access_token: accessToken }
+        { image_url: 'https://splicora.ai/icons/icon-1024.png', caption: 'Splicora API test', access_token: accessToken }
       );
       results.instagram_business_content_publish = create.error ? `error: ${create.error.message || 'unknown'}` : ('container_id:' + (create.id || '?'));
 
