@@ -57,7 +57,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .carousel-screen-body{flex:1;display:flex;position:relative;overflow:hidden}
 .carousel-video-area{flex:1;background:#0d0d14;position:relative;display:flex;align-items:center;justify-content:center}
 .carousel-video-placeholder{width:100%;height:100%;background:linear-gradient(135deg,#151525 0%,#1a1a30 50%,#151525 100%);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-.carousel-video-placeholder img,.carousel-video-placeholder video{width:100%;height:100%;object-fit:cover}
+.carousel-video-placeholder img,.carousel-video-placeholder video{width:100%;height:100%;object-fit:contain}
 .carousel-video-play{width:64px;height:64px;border-radius:50%;background:rgba(108,58,237,0.9);display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#fff;box-shadow:0 8px 30px rgba(108,58,237,0.4);position:absolute;z-index:2;cursor:pointer;transition:transform .2s}
 .carousel-video-play:hover{transform:scale(1.1)}
 .carousel-caption-bar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);padding:10px 20px;border-radius:8px;font-size:.95rem;color:#fff;font-weight:600;z-index:3;white-space:nowrap;border:1px solid rgba(255,255,255,0.08)}
@@ -76,7 +76,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .cs-device-landscape{width:520px;aspect-ratio:16/10}
 .cs-device-portrait{width:240px;aspect-ratio:9/16}
 .cs-device-inner{width:100%;height:100%;background:linear-gradient(135deg,#151525,#1a1a30);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-.cs-device-inner img,.cs-device-inner video{width:100%;height:100%;object-fit:cover}
+.cs-device-inner img,.cs-device-inner video{width:100%;height:100%;object-fit:contain}
 .cs-device-label{text-align:center;margin-top:12px;font-size:.85rem;color:var(--text-muted);font-weight:600}
 .cs-device-caption{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-size:1.1rem;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,0.8);white-space:nowrap;z-index:2}
 .cs-device-caption .highlight{color:#f59e0b;text-transform:uppercase}
