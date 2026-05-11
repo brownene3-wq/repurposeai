@@ -298,7 +298,7 @@ router.get('/editor', requireAuth, requirePageEditorAccess, async (req, res) => 
   <!-- Toolbar -->
   <div class="editor-toolbar">
     <div class="left">
-      <a href="/admin" class="logo" style="text-decoration:none;"><img src="/images/splicora-logo.png" alt="Splicora" style="height:32px;"></a>
+      <a href="/admin" class="logo" style="text-decoration:none;"><img src="/images/splicora-logo.png" alt="Splicora" style="height:40px;border-radius:6px;"></a>
       <div class="page-name">
         <span class="dot" id="statusDot"></span>
         <span>Editing: <strong>${slug}</strong></span>
