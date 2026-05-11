@@ -165,7 +165,8 @@ function authStyles() {
  .auth-right-content h2{font-family:'Playfair Display',serif;font-size:2.5rem;font-weight:800;margin-bottom:1rem;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
  .auth-right-content p{color:var(--text-muted);font-size:1rem;line-height:1.7}
  .auth-form-container{width:100%;max-width:420px}
- .auth-logo{font-family:'Playfair Display',serif;font-size:1.8rem;font-weight:800;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;display:block;margin-bottom:2rem}
+ .auth-logo{display:block;text-decoration:none;margin-bottom:2rem}
+ .auth-logo img{display:block}
  .auth-form-container h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem}
  .auth-form-container .subtitle{color:var(--text-muted);margin-bottom:2rem;font-size:.95rem}
  .form-group{margin-bottom:1.2rem}
@@ -209,7 +210,7 @@ function authPage(type) {
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
  <title>${isLogin ? 'Log In' : 'Sign Up'} - Splicora</title>
- <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+ <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
  <style>${authStyles()}</style>
 </head>
 <body>
@@ -217,7 +218,7 @@ function authPage(type) {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo">&#x26A1; Splicora</a>
+ <a href="/" class="auth-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:36px;"></a>
  <h1>${isLogin ? 'Welcome Back' : 'Create Account'}</h1>
  <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start creating content in seconds'}</p>
  <div class="error-msg ${new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('error') ? 'show' : ''}" id="errorMsg"></div>
@@ -458,7 +459,7 @@ router.get('/forgot-password', (req, res) => {
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
  <title>Forgot Password - Splicora</title>
- <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+ <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
  <style>${authStyles()}</style>
 </head>
 <body>
@@ -466,7 +467,7 @@ router.get('/forgot-password', (req, res) => {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo">&#x26A1; Splicora</a>
+ <a href="/" class="auth-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:36px;"></a>
  <h1>Reset Password</h1>
  <p class="subtitle">Enter your email and we'll send you a link to reset your password</p>
  <div class="error-msg" id="errorMsg"></div>
@@ -554,7 +555,7 @@ router.get('/reset-password', (req, res) => {
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
  <title>Reset Password - Splicora</title>
- <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+ <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
  <style>${authStyles()}</style>
 </head>
 <body>
@@ -562,7 +563,7 @@ router.get('/reset-password', (req, res) => {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo">&#x26A1; Splicora</a>
+ <a href="/" class="auth-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:36px;"></a>
  <h1>Create New Password</h1>
  <p class="subtitle">Enter your new password below</p>
  <div class="error-msg" id="errorMsg"></div>

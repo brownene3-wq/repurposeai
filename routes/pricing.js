@@ -38,7 +38,8 @@ router.get('/', optionalAuth, (req, res) => {
       .faq-item h4{font-weight:600;margin-bottom:.5rem;font-size:1rem}
       .faq-item p{color:var(--text-muted);font-size:.9rem;line-height:1.6}
       .nav-bar{display:flex;justify-content:space-between;align-items:center;padding:1.5rem 3rem;max-width:1200px;margin:0 auto;width:100%}
-      .nav-logo{font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:800;color:var(--text);text-decoration:none}
+      .nav-logo{display:inline-flex;align-items:center;text-decoration:none}
+      .nav-logo img{display:block}
       .nav-links{display:flex;gap:2rem;align-items:center}
       .nav-links a{color:var(--text-muted);text-decoration:none;font-size:.9rem;font-weight:500}
       .nav-links a:hover{color:var(--primary-light)}
@@ -49,7 +50,7 @@ router.get('/', optionalAuth, (req, res) => {
   </head>
   <body>
     <nav class="nav-bar">
-      <a href="/" class="nav-logo">Splicora</a>
+      <a href="/" class="nav-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:36px;"></a>
       <div class="nav-links">
         <a href="/#features">Features</a>
         <a href="/pricing">Pricing</a>

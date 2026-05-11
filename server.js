@@ -299,13 +299,13 @@ app.get('/manifest.json', (req, res) => {
     theme_color: '#6C3AED',
     orientation: 'portrait-primary',
     icons: [
-      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      { src: '/images/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/images/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
     ],
     categories: ['productivity', 'social'],
     shortcuts: [
-      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] },
-      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }] }
+      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] },
+      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] }
     ]
   });
 });
@@ -352,17 +352,8 @@ app.get('/offline', (req, res) => {
     '</head><body><div class="box"><h1>You\'re Offline</h1><p>Check your internet connection and try again.</p><button onclick="location.reload()">Retry</button></div></body></html>');
 });
 
-// Generate PWA icons dynamically (SVG-based)
-app.get('/icons/:filename', (req, res) => {
-  const size = req.params.filename.includes('512') ? 512 : 192;
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
-    '<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#6C3AED"/><stop offset="100%" style="stop-color:#EC4899"/></linearGradient></defs>' +
-    '<rect width="' + size + '" height="' + size + '" rx="' + (size * 0.2) + '" fill="url(#g)"/>' +
-    '<text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="Arial,sans-serif" font-weight="800" font-size="' + (size * 0.35) + '" fill="white">R</text>' +
-    '</svg>';
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.send(svg);
-});
+// Serve logo and icon images from public/images
+app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {

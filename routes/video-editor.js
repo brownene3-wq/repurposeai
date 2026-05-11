@@ -631,11 +631,12 @@ async function renderEditor(req, res) {
     /* ═══ TOP BAR ═══ */
     /* Task #62 — Editor topbar sized to match the standard dashboard
        header: 56px tall (was 38px), 24px horizontal padding (was 12px),
-       1.4rem logo (was 13px), proportional button sizing. The grid
-       still allocates a single 'auto' row for it so the editor body
-       below resizes to fill the remaining viewport height. */
+       proportional button sizing. The grid still allocates a single
+       'auto' row for it so the editor body below resizes to fill the
+       remaining viewport height. */
     .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px;gap:12px;height:56px;z-index:100}
-    .e-logo{font-size:1.4rem;font-weight:800;background:linear-gradient(135deg,#7c3aed,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-right:14px;cursor:pointer;letter-spacing:.2px}
+    .e-logo{margin-right:14px;cursor:pointer}
+    .e-logo img{display:block}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
     .e-tb{padding:8px 16px;font-size:13px;font-weight:600;color:#a78bfa;background:transparent;border:1px solid rgba(108,58,237,.25);border-radius:8px;cursor:pointer;transition:all .2s}
     .e-tb:hover{color:#fff;border-color:#7c3aed;background:rgba(108,58,237,.12)}
@@ -820,7 +821,12 @@ async function renderEditor(req, res) {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo">Splicora</span></a>
+            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
+            <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
+            <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
+            <button class="e-tb on">\ud83e\uddf2 Snap</button>
+            <button class="e-tb">\ud83d\udcf7 Snapshot</button>
+            <button class="e-tb">\ud83d\udd17 Link Tracks</button>
             <div class="e-sp"></div>
             <!-- Task #76 \u2014 Editable project filename. Prefills "Untitled Project"
                  so a fresh project always has a usable default. Export reads

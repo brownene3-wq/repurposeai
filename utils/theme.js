@@ -16,11 +16,14 @@ function getBaseCSS() {
     .sidebar.collapsed .sidebar-header{padding:0 8px 14px;justify-content:center;gap:0}
     .sidebar.collapsed .sidebar-toggle{display:none}
     .sidebar.collapsed .logo-mini{cursor:pointer}
-    .sidebar .logo{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;line-height:1;white-space:nowrap;overflow:hidden}
+    .sidebar .logo{display:flex;align-items:center;text-decoration:none;line-height:1;white-space:nowrap;overflow:hidden}
+    .sidebar .logo img{display:block}
     .sidebar .logo-full{flex:1;min-width:0;opacity:1;max-width:200px;transition:opacity .15s ease,max-width .25s ease,margin .25s ease}
-    .sidebar.collapsed .logo-full{opacity:0;max-width:0;margin:0;flex:0 0 0;width:0;padding:0;border:none;pointer-events:none}
-    .sidebar .logo-mini{flex:0 0 auto;font-size:1.3em;font-weight:800;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-decoration:none;line-height:1;text-align:center;width:0;opacity:0;overflow:hidden;pointer-events:none;transition:opacity .25s ease .08s,width .25s ease}
-    .sidebar.collapsed .logo-mini{width:24px;opacity:1;pointer-events:auto}
+    .sidebar.collapsed .logo-full{opacity:0;max-width:0;margin:0;flex:0 0 0;width:0;padding:0;border:none;pointer-events:none;display:none}
+    .sidebar .logo-mini{display:flex;align-items:center;flex:0 0 auto;text-decoration:none;line-height:1;text-align:center;width:0;opacity:0;overflow:hidden;pointer-events:none;transition:opacity .25s ease .08s,width .25s ease}
+    .sidebar .logo-mini img{display:block}
+    .sidebar:not(.collapsed) .logo-mini{display:none}
+    .sidebar.collapsed .logo-mini{width:28px;opacity:1;pointer-events:auto;display:flex}
     .sidebar-nav{flex:1;overflow-y:auto;min-height:0;padding:4px 0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
     .sidebar-nav::-webkit-scrollbar{width:6px}
     .sidebar-nav::-webkit-scrollbar-track{background:transparent}
@@ -153,13 +156,13 @@ function getHeadHTML(title) {
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>${title} - Splicora</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26A1;</text></svg>">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Splicora">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/images/icon-192.png">
   <script>
     // Task #82 — Light-mode toggle was removed. Always force dark mode
     // and clear any stale "light" preference from localStorage so users
@@ -249,8 +252,8 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
-        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard">Splicora</a>
-        <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}">S</a>
+        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img src="/images/splicora-logo.png" alt="Splicora" style="height:32px;"></a>
+        <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png" alt="S" style="height:28px;"></a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
       <nav class="sidebar-nav">
