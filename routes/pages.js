@@ -121,7 +121,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .feature-content h2{font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:800;margin-bottom:1.5rem;line-height:1.2}
 .feature-content p{font-size:1.05rem;color:var(--text-muted);line-height:1.8;margin-bottom:2rem}
 .feature-content .feature-tag{display:inline-flex;align-items:center;gap:.4rem;padding:.4rem 1rem;border-radius:50px;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.2);color:var(--primary-light);font-size:.8rem;font-weight:600}
-.feature-mockup{width:100%;aspect-ratio:3/2;background:#1c1c32;border-radius:16px;border:1px solid rgba(108,58,237,0.25);position:relative;overflow:hidden;box-shadow:0 20px 70px rgba(0,0,0,0.5),0 0 40px rgba(108,58,237,0.1)}
+.feature-mockup{width:100%;aspect-ratio:4/3;background:#1c1c32;border-radius:16px;border:1px solid rgba(108,58,237,0.25);position:relative;overflow:hidden;box-shadow:0 20px 70px rgba(0,0,0,0.5),0 0 40px rgba(108,58,237,0.1)}
 .feature-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.08) 0%,rgba(236,72,153,0.04) 50%,rgba(59,130,246,0.06) 100%);z-index:1}
 .feature-mockup::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(108,58,237,0.3),transparent);z-index:1}
 .feature-mock-inner{position:relative;z-index:2;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:0}
@@ -400,7 +400,7 @@ router.get('/', async (req, res) => {
             <p>Upload any long-form video or paste a YouTube link. Our AI analyzes engagement patterns, detects the most compelling moments, and automatically cuts them into perfectly timed short-form clips optimized for TikTok, Instagram Reels, and YouTube Shorts. Each clip is scored by viral potential so you know which ones to post first.</p>
             <span class="feature-tag">&#x2728; Most Popular</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/smart-shorts-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/smart-shorts-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 2: Video Editor -->
@@ -411,7 +411,7 @@ router.get('/', async (req, res) => {
             <p>No more switching between apps. Our built-in video editor features a full multi-track timeline with real audio waveform visualization, a curated music library with 123 royalty-free tracks across 11 genres, AI-powered captions, and precision playhead seeking. Trim, add music, overlay captions, and export — all without leaving Splicora.</p>
             <span class="feature-tag">&#x1F3AC; Full Editor</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/video-editor-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/video-editor-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 3: AI Captions -->
@@ -422,7 +422,7 @@ router.get('/', async (req, res) => {
             <p>Powered by OpenAI Whisper with word-level timestamp accuracy. Choose from 6 stunning caption presets — Karaoke, Bold Pop, Minimal, Neon Glow, Typewriter, and Cinematic — each with unique animations. Upload your own video or paste a YouTube URL. Position captions anywhere on screen and preview them in real-time before exporting.</p>
             <span class="feature-tag">&#x1F4C8; +40% Engagement</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-caption-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-caption-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 4: AI Hook Generator -->
@@ -433,7 +433,7 @@ router.get('/', async (req, res) => {
             <p>Generate irresistible video hooks in 5 styles: Controversial, Question, Story, Statistic, and Bold Statement. Each hook is crafted for your specific platform and content. Choose from 6 free built-in AI voices or connect your own ElevenLabs account for premium voice synthesis. Get the hook text and audio file ready to drop into your video.</p>
             <span class="feature-tag">&#x1F3A4; Free AI Voices</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-hooks-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-hooks-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 5: AI B-Roll -->
@@ -444,7 +444,7 @@ router.get('/', async (req, res) => {
             <p>Stop spending hours searching for the perfect B-roll. Paste a YouTube link or describe your scene, and our AI searches millions of HD stock clips from the Pixabay Video library. Preview clips with full video player, see metadata like resolution and duration, and insert them directly into your project with one click.</p>
             <span class="feature-tag">&#x1F3AC; Pixabay HD Library</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-b-roll_section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-b-roll_section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 6: Music Library -->
@@ -455,7 +455,7 @@ router.get('/', async (req, res) => {
             <p>Find the perfect background music for any content. Browse our curated library of 123 tracks spanning Ambient, Lo-Fi, Corporate, Cinematic, Upbeat, Hip-Hop, Electronic, Acoustic, Jazz, Classical, and Nature. Preview every track before adding it to your video. All tracks are 100% royalty-free — use them on any platform without copyright worries.</p>
             <span class="feature-tag">&#x1F3B5; Royalty-Free</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/music-library-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/music-library-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 7: AI Reframe -->
@@ -466,7 +466,7 @@ router.get('/', async (req, res) => {
             <p>Automatically convert your 16:9 landscape videos to 9:16 vertical for TikTok and Reels, 1:1 square for Instagram feed, 4:5 for Facebook, and any custom ratio you need. Our AI intelligently tracks the main subject so faces and key content stay perfectly centered — no manual cropping needed.</p>
             <span class="feature-tag">&#x1F680; One Click</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-reframe-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-reframe-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 8: Brand Voice -->
@@ -477,7 +477,7 @@ router.get('/', async (req, res) => {
             <p>Train our AI on your best-performing content, and it learns your unique tone, vocabulary, and style. Every created post — whether it's a tweet, LinkedIn article, or Instagram caption — comes out sounding authentically you. Set up custom tone profiles for different brands, clients, or content types.</p>
             <span class="feature-tag">&#x1F399; Custom AI Voice</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/brand-voice-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/brand-voice-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 9: Content Repurposing -->
@@ -488,7 +488,7 @@ router.get('/', async (req, res) => {
             <p>Paste any YouTube link and our AI generates platform-optimized posts for Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube, and your blog. Choose from 5 content tones — Professional, Casual, Humorous, Inspirational, or Educational — or use your Brand Voice for perfectly consistent messaging across all platforms.</p>
             <span class="feature-tag">&#x1F504; Multi-Platform AI</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/repurpose-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/repurpose-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 10: Content Calendar -->
@@ -499,7 +499,7 @@ router.get('/', async (req, res) => {
             <p>Organize all your content on a visual calendar. Pick the exact date and time you want to upload to each platform, and choose to receive email reminders 30 minutes before, 1 hour before, or 1 day before. Stay on top of your content schedule without needing a separate planning tool.</p>
             <span class="feature-tag">&#x1F4C5; Email Reminders</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/calendar-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/calendar-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
       </div>
