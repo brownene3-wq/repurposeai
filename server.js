@@ -353,7 +353,7 @@ app.get('/offline', (req, res) => {
 });
 
 // Serve logo and icon images from public/images
-app.use('/images', express.static(path.join(__dirname, 'public/images')));
+app.use('/images', express.static(path.join(__dirname, 'public/images'), { maxAge: '1h' }));
 
 // Admin endpoint - upgrade user plan by email (secured by admin secret)
 app.post('/admin/upgrade-plan', async (req, res) => {
