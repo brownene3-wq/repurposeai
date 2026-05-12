@@ -490,7 +490,7 @@ router.get('/', async (req, res) => {
           <!-- Slide 9: Content Repurposing -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Content Repurposing — One Link, Every Platform</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/repurpose-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:contain;display:block"></video></div></div></div></div>
           <!-- Slide 10: Content Calendar -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Content Calendar — Plan &amp; Schedule</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/calendar-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:contain;display:block"></video></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Content Calendar — Plan &amp; Schedule</span></div><div style="flex:1;overflow:hidden;background:transparent;display:flex;align-items:center;justify-content:center"><img src="/images/calendar-feature.svg" alt="Content Calendar" style="width:100%;height:100%;object-fit:contain;display:block"></div></div></div></div>
         </div>
       </div>
       <div class="carousel-counter-wrap">
@@ -643,7 +643,7 @@ router.get('/', async (req, res) => {
             <p>Organize all your content on a visual calendar. Pick the exact date and time you want to upload to each platform, and choose to receive email reminders 30 minutes before, 1 hour before, or 1 day before. Stay on top of your content schedule without needing a separate planning tool.</p>
             <span class="feature-tag">&#x1F4C5; Email Reminders</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/calendar-feature.mp4" muted playsinline loop preload="none" style="width:100%;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><img src="/images/calendar-feature.svg" alt="Content Calendar" style="width:100%;display:block;border-radius:12px"></div></div>
         </div>
 
       </div>
