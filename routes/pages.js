@@ -400,7 +400,7 @@ router.get('/', async (req, res) => {
             <p>Upload any long-form video or paste a YouTube link. Our AI analyzes engagement patterns, detects the most compelling moments, and automatically cuts them into perfectly timed short-form clips optimized for TikTok, Instagram Reels, and YouTube Shorts. Each clip is scored by viral potential so you know which ones to post first.</p>
             <span class="feature-tag">&#x2728; Most Popular</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/smart-shorts-section.mp4" muted playsinline loop preload="none" style="width:100%;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/smart-shorts-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 2: Video Editor -->
