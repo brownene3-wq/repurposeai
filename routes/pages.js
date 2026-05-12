@@ -321,7 +321,7 @@ router.get('/', async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
-  <meta name="description" content="AI-powered video creation platform.">
+  <meta name="description" content="Splicora auto-repurposes one video into unlimited content across 8 platforms — TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest, X. AI tools for clips, captions, hooks, B-roll & scheduling.">
   <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
@@ -343,7 +343,7 @@ router.get('/', async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
-  <meta name="description" content="AI-powered video creation platform. 10 tools in one: Smart Shorts, Video Editor, AI Captions, AI Hooks, B-Roll, Music Library, Reframe, Brand Voice, Repurposing &amp; Content Calendar. Turn one video into unlimited content.">
+  <meta name="description" content="One video, every platform — automatically. Splicora connects to TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X and auto-publishes platform-tuned versions. Plus 10 AI tools: Smart Shorts, Captions, Hooks, B-Roll, Reframe, Music, Brand Voice, Editor & Calendar.">
   <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
@@ -360,6 +360,7 @@ router.get('/', async (req, res) => {
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#how-it-works">How It Works</a>
+      <a href="#repurpose">Repurpose</a>
       <a href="#pricing">Pricing</a>
       <a href="/auth/login" class="btn btn-outline">Log In</a>
       <a href="/auth/register" class="btn btn-primary">Start Free</a>
@@ -372,12 +373,13 @@ router.get('/', async (req, res) => {
     <div class="hero-content">
       <div class="hero-badge">&#x2728; AI-Powered Content Engine</div>
       <h1>Turn One Video Into<br><span class="gradient-text">Unlimited Content</span></h1>
-      <p>10 AI tools in one platform. Smart Shorts, Video Editor, AI Captions, Hooks, B-Roll, Music Library, Reframe, Brand Voice, Content Repurposing, and Calendar. Paste a link and let AI do the rest.</p>
+      <p>One video → 8 platforms, automatically. Connect TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X — Splicora auto-clips, captions, and publishes platform-tuned versions of every upload. Plus 10 AI tools to make every video pop.</p>
       <div class="hero-input-group">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
         <button class="btn btn-primary">Create &#x26A1;</button>
         <button class="btn btn-outline">Upload Files</button>
       </div>
+      <div style="margin-top:14px;display:flex;justify-content:center"><a href="#repurpose" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;background:rgba(108,58,237,0.12);border:1px solid rgba(108,58,237,0.35);color:#c4b5fd;font-size:.85rem;font-weight:600;text-decoration:none;transition:all .25s" onmouseover="this.style.background='rgba(108,58,237,0.22)';this.style.color='#fff'" onmouseout="this.style.background='rgba(108,58,237,0.12)';this.style.color='#c4b5fd'"><span style="width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:repPulse 1.8s ease-in-out infinite"></span>NEW · See the Repurpose Engine ↓</a></div>
       <div class="carousel-container">
         <button class="carousel-nav prev" onclick="prevSlide()" aria-label="Previous slide"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
         <button class="carousel-nav next" onclick="nextSlide()" aria-label="Next slide"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
@@ -423,7 +425,7 @@ router.get('/', async (req, res) => {
   </section>
 
   <!-- ★ Repurpose Engine Section ★ -->
-  <section class="repurpose-section">
+  <section class="repurpose-section" id="repurpose">
     <div class="section-inner">
       <div class="section-header">
         <div class="badge-live"><span class="pulse"></span>NOW LIVE · 8 PLATFORMS CONNECTED</div>
