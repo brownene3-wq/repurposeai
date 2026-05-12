@@ -248,6 +248,60 @@ section{padding:6rem 2rem}.section-inner{max-width:1400px;margin:0 auto}
   .marquee-testimonials{padding:2rem 0}
   .testimonial-marquee-card{flex:0 0 90vw}
 }
+
+/* ★ Repurpose Engine Section ★ */
+.repurpose-section{position:relative;padding:100px 2rem 120px;background:linear-gradient(180deg,var(--dark) 0%,var(--dark-2) 50%,var(--dark) 100%);overflow:hidden}
+.repurpose-section::before{content:'';position:absolute;top:20%;left:50%;transform:translateX(-50%);width:1200px;height:800px;background:radial-gradient(circle at 30% 40%,rgba(108,58,237,0.18) 0%,transparent 50%),radial-gradient(circle at 70% 60%,rgba(236,72,153,0.15) 0%,transparent 50%);pointer-events:none;z-index:0}
+.repurpose-section::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.025) 1px,transparent 1px);background-size:80px 80px;mask-image:radial-gradient(ellipse at center,black 20%,transparent 70%);-webkit-mask-image:radial-gradient(ellipse at center,black 20%,transparent 70%);pointer-events:none;z-index:0}
+.repurpose-section .section-inner{max-width:1400px;margin:0 auto;position:relative;z-index:1}
+.repurpose-section .section-header{text-align:center;margin-bottom:60px}
+.repurpose-section .badge-live{display:inline-flex;align-items:center;gap:10px;padding:8px 18px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);border-radius:100px;font-size:.82rem;color:#86efac;font-weight:700;margin-bottom:22px;letter-spacing:0.05em}
+.repurpose-section .badge-live .pulse{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 0 rgba(74,222,128,0.5);animation:repPulse 2s infinite}
+@keyframes repPulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,0.5)}70%{box-shadow:0 0 0 12px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+.repurpose-section .section-label{color:var(--primary-light);font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.2em;margin-bottom:12px}
+.repurpose-section .section-title{font-size:clamp(2.2rem,4.5vw,4rem);font-weight:800;line-height:1.05;letter-spacing:-0.02em;margin-bottom:20px}
+.repurpose-section .section-subtitle{color:var(--text-muted);font-size:1.2rem;max-width:760px;margin:0 auto;line-height:1.5}
+.repurpose-section .mission-grid{display:grid;grid-template-columns:280px 1fr 280px;gap:24px;align-items:stretch}
+.repurpose-section .stat-panel{display:flex;flex-direction:column;gap:14px}
+.repurpose-section .stat-card{background:rgba(30,30,50,0.6);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:22px 20px;position:relative;overflow:hidden}
+.repurpose-section .stat-card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:linear-gradient(180deg,var(--primary),#EC4899)}
+.repurpose-section .stat-card .stat-label{font-size:.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.15em;font-weight:700;margin-bottom:10px}
+.repurpose-section .stat-card .stat-value{font-size:2.2rem;font-weight:800;line-height:1;background:linear-gradient(135deg,var(--primary),#EC4899);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:6px}
+.repurpose-section .stat-card .stat-meta{font-size:.78rem;color:var(--text-muted)}
+.repurpose-section .stat-card .live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#4ade80;margin-right:6px;animation:repBlink 1.5s infinite}
+@keyframes repBlink{50%{opacity:0.3}}
+.repurpose-section .platform-status-card{background:rgba(30,30,50,0.6);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:20px}
+.repurpose-section .platform-status-card h4{font-size:.7rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.15em;font-weight:700;margin-bottom:14px}
+.repurpose-section .platform-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:.85rem}
+.repurpose-section .platform-row:last-child{border-bottom:none}
+.repurpose-section .platform-row .name{color:var(--text);font-weight:500}
+.repurpose-section .platform-row .badge{font-size:.7rem;padding:3px 8px;border-radius:6px;font-weight:700}
+.repurpose-section .badge-on{background:rgba(74,222,128,0.15);color:#86efac}
+.repurpose-section .badge-rev{background:rgba(245,158,11,0.15);color:#fbbf24}
+.repurpose-section .badge-soon{background:rgba(160,174,192,0.12);color:#a0aec0}
+.repurpose-section .center-stage{position:relative;border-radius:24px;overflow:hidden;background:linear-gradient(135deg,#1a1a2e 0%,#2d1b4e 50%,#16213e 100%);border:1px solid rgba(255,255,255,0.1);box-shadow:0 30px 100px rgba(108,58,237,0.35),inset 0 0 80px rgba(236,72,153,0.08);min-height:560px;display:flex;flex-direction:column}
+.repurpose-section .stage-header{display:flex;align-items:center;gap:10px;padding:14px 20px;background:rgba(0,0,0,0.35);border-bottom:1px solid rgba(255,255,255,0.05)}
+.repurpose-section .stage-header .dot{width:11px;height:11px;border-radius:50%}
+.repurpose-section .stage-header .dot:nth-child(1){background:#ff5f56}
+.repurpose-section .stage-header .dot:nth-child(2){background:#ffbd2e}
+.repurpose-section .stage-header .dot:nth-child(3){background:#27c93f}
+.repurpose-section .stage-header .title{flex:1;text-align:center;color:rgba(255,255,255,0.6);font-size:.8rem;font-weight:500}
+.repurpose-section .stage-header .rec{display:flex;align-items:center;gap:6px;color:#ef4444;font-size:.75rem;font-weight:700}
+.repurpose-section .stage-header .rec .rdot{width:6px;height:6px;border-radius:50%;background:#ef4444;animation:repBlink 1.5s infinite}
+.repurpose-section .stage-body{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.repurpose-section .stage-body::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 25% 30%,rgba(108,58,237,0.4) 0%,transparent 50%),radial-gradient(circle at 75% 70%,rgba(236,72,153,0.4) 0%,transparent 50%);filter:blur(80px);opacity:0.5}
+.repurpose-section .stage-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.repurpose-section .play-mega{width:130px;height:130px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#EC4899);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 30px 100px rgba(108,58,237,0.6);animation:repPulsePlay 2.5s infinite;position:relative;z-index:2;border:none}
+@keyframes repPulsePlay{0%,100%{transform:scale(1);box-shadow:0 30px 100px rgba(108,58,237,0.6)}50%{transform:scale(1.05);box-shadow:0 30px 120px rgba(236,72,153,0.8)}}
+.repurpose-section .play-mega::after{content:'';width:0;height:0;border-left:38px solid white;border-top:24px solid transparent;border-bottom:24px solid transparent;margin-left:10px}
+.repurpose-section .stage-footer{padding:18px 24px;background:rgba(0,0,0,0.4);backdrop-filter:blur(10px);border-top:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:center}
+.repurpose-section .stage-footer .title-strong{color:white;font-weight:600;font-size:1rem}
+.repurpose-section .stage-footer .subtitle{color:rgba(255,255,255,0.6);font-size:.82rem;margin-top:3px}
+.repurpose-section .stage-footer .duration{background:rgba(255,255,255,0.08);padding:6px 14px;border-radius:100px;font-size:.85rem;color:white;font-weight:600}
+.repurpose-section .bottom-cta{margin-top:40px;text-align:center}
+.repurpose-section .btn-pri{background:linear-gradient(135deg,var(--primary),#EC4899);color:white;font-weight:700;padding:16px 36px;border-radius:14px;border:none;font-size:1.05rem;cursor:pointer;box-shadow:var(--shadow-glow)}
+@media (max-width:1100px){.repurpose-section .mission-grid{grid-template-columns:1fr}}
+
 `;
 }
 
@@ -368,16 +422,94 @@ router.get('/', async (req, res) => {
     </div>
   </section>
 
+  <!-- ★ Repurpose Engine Section ★ -->
+  <section class="repurpose-section">
+    <div class="section-inner">
+      <div class="section-header">
+        <div class="badge-live"><span class="pulse"></span>NOW LIVE · 8 PLATFORMS CONNECTED</div>
+        <div class="section-label">The New Repurpose Engine</div>
+        <h2 class="section-title">Your content, <span class="gradient-text">launched everywhere</span> — automatically.</h2>
+        <p class="section-subtitle">Connect your social accounts once. Splicora now publishes natively to TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest, and X from one dashboard.</p>
+      </div>
+      <div class="mission-grid">
+        <div class="stat-panel">
+          <div class="stat-card">
+            <div class="stat-label">Reach Multiplier</div>
+            <div class="stat-value">8×</div>
+            <div class="stat-meta">native posts per video</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Time to Publish</div>
+            <div class="stat-value">60s</div>
+            <div class="stat-meta">from upload to live</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Hours Saved</div>
+            <div class="stat-value">20+</div>
+            <div class="stat-meta">per week, per creator</div>
+          </div>
+        </div>
+        <div class="center-stage">
+          <div class="stage-header">
+            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+            <span class="title">splicora.ai/repurpose</span>
+            <div class="rec"><span class="rdot"></span>LIVE</div>
+          </div>
+          <div class="stage-body">
+            <video class="stage-video" muted loop playsinline preload="none" poster="" data-src="/videos/repurpose-feature.mp4"></video>
+            <button class="play-mega" aria-label="Play repurpose demo" onclick="playRepurposeDemo(this)"></button>
+          </div>
+          <div class="stage-footer">
+            <div>
+              <div class="title-strong">▶ Watch the new Repurpose flow</div>
+              <div class="subtitle">YouTube → 8 platforms in under 60 seconds</div>
+            </div>
+            <div class="duration">1:24</div>
+          </div>
+        </div>
+        <div class="stat-panel">
+          <div class="platform-status-card">
+            <h4><span class="live-dot"></span>Platform Status</h4>
+            <div class="platform-row"><span class="name">LinkedIn</span><span class="badge badge-on">LIVE</span></div>
+            <div class="platform-row"><span class="name">Instagram</span><span class="badge badge-rev">REVIEW</span></div>
+            <div class="platform-row"><span class="name">Facebook</span><span class="badge badge-rev">REVIEW</span></div>
+            <div class="platform-row"><span class="name">Threads</span><span class="badge badge-rev">REVIEW</span></div>
+            <div class="platform-row"><span class="name">TikTok</span><span class="badge badge-rev">REVIEW</span></div>
+            <div class="platform-row"><span class="name">Pinterest</span><span class="badge badge-rev">REVIEW</span></div>
+            <div class="platform-row"><span class="name">YouTube</span><span class="badge badge-soon">SOON</span></div>
+            <div class="platform-row"><span class="name">X / Twitter</span><span class="badge badge-soon">SOON</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">AI-Tuned Per Platform</div>
+            <div class="stat-value" style="font-size:1.2rem;line-height:1.3">Captions · Hooks · Hashtags · Sizes</div>
+          </div>
+        </div>
+      </div>
+      <div class="bottom-cta">
+        <a href="/auth/register" class="btn-pri">Try Repurpose Free →</a>
+      </div>
+    </div>
+  </section>
+  <script>
+    function playRepurposeDemo(btn){
+      var v = btn.parentElement.querySelector('video');
+      if(!v) return;
+      if(!v.src && v.dataset.src){ v.src = v.dataset.src; }
+      v.play().catch(function(){});
+      btn.style.display = 'none';
+    }
+  </script>
+
   <div class="stats-marquee">
     <div class="marquee-content">
       <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Created</div>
       <div class="marquee-item"><span class="marquee-num">50,000+</span> Posts Generated</div>
-      <div class="marquee-item"><span class="marquee-num">7</span> Platforms Supported</div>
+      <div class="marquee-item"><span class="marquee-num">8</span> Platforms Supported</div>
       <div class="marquee-item"><span class="marquee-num">99%</span> Time Saved</div>
       <div class="marquee-item"><span class="marquee-num">AI-Powered</span> Engine</div>
       <div class="marquee-item"><span class="marquee-num">10,000+</span> Videos Created</div>
       <div class="marquee-item"><span class="marquee-num">50,000+</span> Posts Generated</div>
-      <div class="marquee-item"><span class="marquee-num">7</span> Platforms Supported</div>
+      <div class="marquee-item"><span class="marquee-num">8</span> Platforms Supported</div>
       <div class="marquee-item"><span class="marquee-num">99%</span> Time Saved</div>
       <div class="marquee-item"><span class="marquee-num">AI-Powered</span> Engine</div>
     </div>
