@@ -691,22 +691,22 @@ router.get('/', async (req, res) => {
       </div>
       <div class="teams-grid">
         <div class="team-card">
-          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-1.png" alt="" width="56" height="56" style="display:block"></div>
+          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-1.png?v=2" alt="" width="56" height="56" style="display:block"></div>
           <h3>10 AI Tools in One</h3>
           <p>Smart Shorts, Video Editor, AI Captions, AI Hooks, AI B-Roll, Music Library, AI Reframe, Brand Voice, Content Repurposing, and Content Calendar — all under one roof. No juggling between 5 different apps.</p>
-          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-4.png" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
+          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-4.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
         </div>
         <div class="team-card">
-          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-2.png" alt="" width="56" height="56" style="display:block"></div>
+          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-2.png?v=2" alt="" width="56" height="56" style="display:block"></div>
           <h3>No Hidden Costs</h3>
           <p>Free AI voices built in. 123 royalty-free music tracks included. Millions of stock B-roll clips. You bring your own ElevenLabs key only if you want premium voices — everything else is included.</p>
-          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-5.png" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
+          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-5.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
         </div>
         <div class="team-card">
-          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-3.png" alt="" width="56" height="56" style="display:block"></div>
+          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-3.png?v=2" alt="" width="56" height="56" style="display:block"></div>
           <h3>Built for Teams</h3>
           <p>Invite your team, assign brand voices, share content libraries, and publish from one workspace. From solo creators to agencies managing 20+ clients — Splicora scales with you.</p>
-          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-6.png" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
+          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-6.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
         </div>
       </div>
     </div>
