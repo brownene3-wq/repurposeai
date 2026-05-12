@@ -164,17 +164,26 @@ function getHeadHTML(title) {
   <meta name="apple-mobile-web-app-title" content="Splicora">
   <link rel="apple-touch-icon" href="/images/icon-192.png">
   <script>
-    // Task #82 — Light-mode toggle was removed. Always force dark mode
-    // and clear any stale "light" preference from localStorage so users
-    // who had it saved aren't stuck without a way to flip back.
+    // Restore saved theme preference for dashboard pages
     (function(){
       try {
-        if (localStorage.getItem('theme') === 'light') localStorage.removeItem('theme');
-      } catch(_){}
-      document.documentElement.classList.remove('light');
-      document.documentElement.setAttribute('data-theme','dark');
+        var t = localStorage.getItem('theme') || 'dark';
+        if (t === 'light') {
+          document.documentElement.classList.add('light');
+          document.documentElement.setAttribute('data-theme','light');
+        } else {
+          document.documentElement.classList.remove('light');
+          document.documentElement.setAttribute('data-theme','dark');
+        }
+      } catch(_){
+        document.documentElement.setAttribute('data-theme','dark');
+      }
       document.addEventListener('DOMContentLoaded', function(){
-        document.body.classList.remove('light');
+        try {
+          var t = localStorage.getItem('theme') || 'dark';
+          if (t === 'light') document.body.classList.add('light');
+          else document.body.classList.remove('light');
+        } catch(_){}
         // Enable transitions only AFTER first paint to prevent flash
         requestAnimationFrame(function(){ requestAnimationFrame(function(){
           document.body.classList.add('theme-ready');
@@ -280,12 +289,8 @@ ${navLinks}
 }
 
 function getThemeToggle() {
-  // Task #82 — Light-mode toggle button removed. The theme-toggle
-  // element no longer renders. The toggleTheme()/localStorage logic
-  // is kept in getThemeScript() for now in case it's invoked elsewhere
-  // and so existing light-mode preferences don't break — but no UI
-  // can flip it, and getThemeScript also resets to dark on load.
   return `<div class="ptr-indicator" id="ptrIndicator">&#x21BB;</div>
+    <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
     <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileMenu()"></div>`;
 }
@@ -441,14 +446,16 @@ function getThemeScript() {
       const btn = document.querySelector('.theme-toggle');
       if(btn) btn.innerHTML = isLight ? '&#x2600;&#xFE0F;' : '&#x1F319;';
     }
-    // Task #82 — Light-mode toggle removed. Force dark on every load
-    // and clear any persisted "light" preference so users who had light
-    // mode saved from before don't get stuck in it.
+    // Restore saved theme preference on dashboard pages
     try {
-      document.body.classList.remove('light');
-      document.documentElement.classList.remove('light');
-      document.documentElement.setAttribute('data-theme', 'dark');
-      if (localStorage.getItem('theme') === 'light') localStorage.removeItem('theme');
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'light') {
+        document.body.classList.add('light');
+        document.documentElement.classList.add('light');
+        document.documentElement.setAttribute('data-theme', 'light');
+        const btn = document.querySelector('.theme-toggle');
+        if(btn) btn.innerHTML = '&#x2600;&#xFE0F;';
+      }
     } catch(_){}
   
     // Load v9 buttons fix
