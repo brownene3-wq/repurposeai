@@ -79,9 +79,21 @@ function getBaseCSS() {
        clipped by the sidebar's overflow:hidden. */
     .splicora-tt.splicora-tt-right::after{top:50%;left:calc(100% + 8px);transform:translateY(-50%)}
     .theme-toggle{background:#222;border:1px solid #333;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1em;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:fixed;top:1.2rem;right:1.5rem;z-index:100}
+    body.light .sidebar,html.light .sidebar{background:#f8f8f8;border-color:#e0e0e0}
+    body.light .sidebar a,html.light .sidebar a{color:#666}
+    body.light .sidebar a.active,html.light .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.08)}
+    body.light .sidebar .logo-full .logo-dark,html.light .sidebar .logo-full .logo-dark{display:block}
+    body.light .sidebar .logo-full .logo-light,html.light .sidebar .logo-full .logo-light{display:none}
+    body.light .user-card,html.light .user-card{background:rgba(0,0,0,0.03);border-color:rgba(0,0,0,0.06)}
+    body.light .user-card:hover,html.light .user-card:hover{background:rgba(0,0,0,0.05);border-color:rgba(108,58,237,0.25)}
+    body.light .user-card.open,html.light .user-card.open{background:rgba(108,58,237,0.08);border-color:rgba(108,58,237,0.35)}
+    body.light .user-name,html.light .user-name{color:#1A1A2E}
     body.light .user-popover,html.light .user-popover{background:#fff;border-color:rgba(0,0,0,0.08);box-shadow:0 12px 40px rgba(0,0,0,0.15)}
     body.light .user-popover a,html.light .user-popover a{color:#1A1A2E !important}
     body.light .user-popover hr,html.light .user-popover hr{border-top-color:rgba(0,0,0,0.08)}
+    body.light .sidebar-footer,html.light .sidebar-footer{border-top-color:rgba(0,0,0,0.06)}
+    body.light .sidebar-nav,html.light .sidebar-nav{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light .sidebar-nav::-webkit-scrollbar-thumb,html.light .sidebar-nav::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
     body.light .theme-toggle,html.light .theme-toggle{background:#fff;border-color:#ddd}
     .main-content{flex:1;margin-left:250px;padding:2rem;overflow-y:auto;height:100vh;transition:margin-left .25s ease}
     .sidebar.collapsed ~ .main-content,.sidebar-collapsed .main-content{margin-left:68px}
@@ -251,7 +263,7 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
-        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img src="/images/splicora-logo-wide.png?v=3" alt="Splicora" style="height:32px;"></a>
+        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=4" alt="Splicora" style="height:32px;display:none;"></a>
         <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png?v=3" alt="S" style="height:32px;border-radius:6px;"></a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
