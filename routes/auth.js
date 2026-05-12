@@ -214,7 +214,6 @@ function authPage(type) {
  <style>${authStyles()}</style>
 </head>
 <body>
- <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
@@ -265,8 +264,9 @@ function authPage(type) {
  if (btn) btn.textContent = isLight ? '☀️' : '🌙';
  }
  (function() {
- var s = localStorage.getItem('theme');
- if (s === 'light') { document.body.classList.add('light'); document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
+ /* Public auth pages are dark-mode only */
+ document.body.classList.remove('light');
+ document.documentElement.setAttribute('data-theme', 'dark');
  var params = new URLSearchParams(window.location.search);
  var err = params.get('error');
  if (err) { var el = document.getElementById('errorMsg'); el.textContent = decodeURIComponent(err); el.classList.add('show'); }
@@ -463,7 +463,6 @@ router.get('/forgot-password', (req, res) => {
  <style>${authStyles()}</style>
 </head>
 <body>
- <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
@@ -509,7 +508,7 @@ router.get('/forgot-password', (req, res) => {
  }
  (function() {
  var s = localStorage.getItem('theme');
- if (s === 'light') { document.body.classList.add('light'); document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
+ document.body.classList.remove('light'); document.documentElement.setAttribute('data-theme', 'dark'); /* public auth = dark only */
  })();
 
  async function handleForgot(e) {
@@ -559,7 +558,6 @@ router.get('/reset-password', (req, res) => {
  <style>${authStyles()}</style>
 </head>
 <body>
- <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
@@ -598,7 +596,7 @@ router.get('/reset-password', (req, res) => {
  }
  (function() {
  var s = localStorage.getItem('theme');
- if (s === 'light') { document.body.classList.add('light'); document.documentElement.setAttribute('data-theme', 'light'); var btn = document.querySelector('.theme-toggle'); if (btn) btn.textContent = '☀️'; }
+ document.body.classList.remove('light'); document.documentElement.setAttribute('data-theme', 'dark'); /* public auth = dark only */
  })();
 
  async function handleReset(e) {

@@ -363,7 +363,7 @@ router.get('/', async (req, res) => {
       <a href="#pricing">Pricing</a>
       <a href="/auth/login" class="btn btn-outline">Log In</a>
       <a href="/auth/register" class="btn btn-primary">Start Free</a>
-      <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
+
     </div>
   </div></nav>
 
@@ -1123,7 +1123,8 @@ router.get('/', async (req, res) => {
       navigator.serviceWorker.register('/sw.js').catch(function(){});
     }
 
-    function toggleTheme(){var isLight=!document.body.classList.contains('light');document.body.classList.toggle('light',isLight);document.documentElement.setAttribute('data-theme',isLight?'light':'dark');localStorage.setItem('theme',isLight?'light':'dark');var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent=isLight?'☀️':'🌙'}(function(){var s=localStorage.getItem('theme');if(s==='light'){document.body.classList.add('light');document.documentElement.setAttribute('data-theme','light');var btn=document.querySelector('.theme-toggle');if(btn)btn.textContent='☀️'}})();
+    /* Public homepage is dark-mode only. Force-clear any saved light theme. */
+    (function(){document.body.classList.remove('light');document.documentElement.setAttribute('data-theme','dark');})();
     document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => { e.preventDefault(); const t = document.querySelector(a.getAttribute('href')); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); });
     });
