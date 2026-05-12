@@ -190,6 +190,7 @@ function getSidebar(activePage, user, teamPermissions) {
   const allLinks = [
     // --- Core Content Tools ---
     { href: '/dashboard', icon: '\u{1F3E0}', label: 'Dashboard', key: 'dashboard', perm: null },
+    { href: '/distribute', icon: '\u{26A1}', label: 'Repurpose', key: 'distribute', perm: null },
     { href: '/repurpose', icon: '\u{1F504}', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/repurpose/history', icon: '\u{1F4DA}', label: 'Library', key: 'library', perm: 'use_repurpose' },
     { href: '/shorts', icon: '\u{2702}\u{FE0F}', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
@@ -207,7 +208,6 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/brand-templates', icon: '\u{1F3A8}', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
     { href: '/dashboard/calendar', icon: '\u{1F4C5}', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
     { href: '/dashboard/analytics', icon: '\u{1F4CA}', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
-    { href: '/distribute', icon: '\u{26A1}', label: 'Repurpose', key: 'distribute', perm: null },
     // --- Account ---
   ];
 
