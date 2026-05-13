@@ -124,7 +124,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .feature-mockup{width:100%;aspect-ratio:16/10;background:#1c1c32;border-radius:16px;border:1px solid rgba(108,58,237,0.25);position:relative;overflow:hidden;box-shadow:0 20px 70px rgba(0,0,0,0.5),0 0 40px rgba(108,58,237,0.1)}
 .feature-mockup::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,58,237,0.08) 0%,rgba(236,72,153,0.04) 50%,rgba(59,130,246,0.06) 100%);z-index:1}
 .feature-mockup::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(108,58,237,0.3),transparent);z-index:1}
-.feature-mock-inner{position:relative;z-index:2;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:0}.feature-mock-inner video,.feature-mock-inner img{width:100%;height:100%;object-fit:cover;display:block;border-radius:12px}
+.feature-mock-inner{position:absolute;inset:0;z-index:2;overflow:hidden;padding:0}.feature-mock-inner video,.feature-mock-inner img{width:100%;height:100%;object-fit:cover;display:block}
 .feature-mock-inner .fm-icon{display:none}
 .feature-mock-inner .fm-label{display:none}
 .feature-mock-inner .fm-preview{display:none}
@@ -643,7 +643,7 @@ router.get('/', async (req, res) => {
             <p>Organize all your content on a visual calendar. Pick the exact date and time you want to upload to each platform, and choose to receive email reminders 30 minutes before, 1 hour before, or 1 day before. Stay on top of your content schedule without needing a separate planning tool.</p>
             <span class="feature-tag">&#x1F4C5; Email Reminders</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><img src="/public/videos/Calendar.png" alt="Content Calendar" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><img src="/public/videos/Calendar.png" alt="Content Calendar" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></div></div>
         </div>
 
       </div>
