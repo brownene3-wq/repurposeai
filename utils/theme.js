@@ -165,7 +165,7 @@ function getHeadHTML(title) {
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Splicora">
-  <link rel="apple-touch-icon" href="/images/icon-192.png?v=3">
+  <link rel="apple-touch-icon" href="/images/icon-192.png">
   <script>
     // Restore saved theme preference for dashboard pages
     (function(){
@@ -201,17 +201,17 @@ function getSidebar(activePage, user, teamPermissions) {
   // null permission = always visible
   const allLinks = [
     // --- Core Content Tools ---
-    { href: '/dashboard', icon: '\u{1F3E0}', label: 'Dashboard', key: 'dashboard', perm: null },
-    { href: '/distribute', icon: '\u{26A1}', label: 'Repurpose', key: 'distribute', perm: null },
-    { href: '/repurpose', icon: '\u{1F504}', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
-    { href: '/repurpose/history', icon: '\u{1F4DA}', label: 'Library', key: 'library', perm: 'use_repurpose' },
-    { href: '/shorts', icon: '\u{2702}\u{FE0F}', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
-    { href: '/video-editor', icon: '\u{1F3AC}', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
+    { href: '/dashboard', icon: '<img src="/images/dashboard-icons/dashboard.png" alt="" style="width:20px;height:20px;">', label: 'Dashboard', key: 'dashboard', perm: null },
+    { href: '/distribute', icon: '<img src="/images/dashboard-icons/repurpose.png" alt="" style="width:20px;height:20px;">', label: 'Repurpose', key: 'distribute', perm: null },
+    { href: '/repurpose', icon: '<img src="/images/dashboard-icons/create.png" alt="" style="width:20px;height:20px;">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
+    { href: '/repurpose/history', icon: '<img src="/images/dashboard-icons/library.png" alt="" style="width:20px;height:20px;">', label: 'Library', key: 'library', perm: 'use_repurpose' },
+    { href: '/shorts', icon: '<img src="/images/dashboard-icons/smart-shorts.png" alt="" style="width:20px;height:20px;">', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
+    { href: '/video-editor', icon: '<img src="/images/dashboard-icons/video-editor.png" alt="" style="width:22px;height:22px;">', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
     // --- AI & Creative Tools ---
-    { href: '/ai-captions', icon: '\u{1F4AC}', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
-    { href: '/caption-presets', icon: '\u{1F4DD}', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
-    { href: '/ai-hook', icon: '\u{1F3A3}', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
-    { href: '/ai-reframe', icon: '\u{1F4D0}', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
+    { href: '/ai-captions', icon: '<img src="/images/dashboard-icons/ai-captions.png" alt="" style="width:20px;height:20px;">', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
+    { href: '/caption-presets', icon: '<img src="/images/dashboard-icons/caption-styles.png" alt="" style="width:20px;height:20px;">', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
+    { href: '/ai-hook', icon: '<img src="/images/dashboard-icons/ai-hooks.png" alt="" style="width:20px;height:20px;">', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
+    { href: '/ai-reframe', icon: '<img src="/images/dashboard-icons/ai-reframe.png" alt="" style="width:20px;height:20px;">', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
     { href: '/ai-thumbnail', icon: '\u{1F5BC}\u{FE0F}', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
     { href: '/ai-broll', icon: '\u{1F3A5}', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
     { href: '/enhance-speech', icon: '\u{1F399}\u{FE0F}', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
@@ -265,7 +265,7 @@ function getSidebar(activePage, user, teamPermissions) {
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
         <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=4" alt="Splicora" style="height:32px;"></a>
-        <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png?v=3" alt="S" style="height:32px;border-radius:6px;"></a>
+        <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png" alt="S" style="height:32px;border-radius:6px;"></a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
       <nav class="sidebar-nav">

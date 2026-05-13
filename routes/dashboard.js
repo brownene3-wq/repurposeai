@@ -139,7 +139,7 @@ router.get('/', requireAuth, async (req, res) => {
     .tool-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(108,58,237,0.15);border-color:rgba(108,58,237,0.3)}
     .tool-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--gradient-1);opacity:0;transition:opacity .25s}
     .tool-card:hover::before{opacity:1}
-    .tool-icon{font-size:2rem;margin-bottom:.6rem;display:block}
+    .tool-icon{font-size:2rem;margin-bottom:.6rem;display:block}.tool-icon img{width:40px;height:40px;object-fit:contain}
     .tool-label{font-size:.8rem;font-weight:600;color:var(--text-muted)}
     .tool-badge{position:absolute;top:.6rem;right:.6rem;font-size:.55rem;font-weight:700;background:var(--gradient-1);color:#fff;padding:2px 6px;border-radius:50px;text-transform:uppercase;letter-spacing:.5px}
 
@@ -246,7 +246,7 @@ router.get('/', requireAuth, async (req, res) => {
       .stats-row{grid-template-columns:repeat(2,1fr)}
       .tools-grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}
       .tool-card{padding:1rem .7rem}
-      .tool-icon{font-size:1.6rem}
+      .tool-icon{font-size:1.6rem}.tool-icon img{width:32px;height:32px}
       .tool-label{font-size:.72rem}
       .input-row{flex-direction:column}
       .hero-input{padding:1.5rem}
@@ -341,35 +341,32 @@ router.get('/', requireAuth, async (req, res) => {
         <h3>&#x1F9E0; AI Tools</h3>
         <div class="tools-grid">
           <a href="/repurpose" class="tool-card">
-            <span class="tool-icon">&#x1F504;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/create.png" alt="Create"></span>
             <span class="tool-label">Create</span>
           </a>
           <a href="/shorts" class="tool-card">
-            <span class="tool-icon">&#x2702;&#xFE0F;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/smart-shorts.png" alt="Smart Shorts"></span>
             <span class="tool-label">Smart Shorts</span>
           </a>
           <a href="/video-editor" class="tool-card">
-            <span class="tool-icon">&#x1F3AC;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/video-editor.png" alt="Video Editor" style="width:44px;height:44px;"></span>
             <span class="tool-label">Video Editor</span>
           </a>
           <a href="/ai-captions" class="tool-card">
-            <span class="tool-icon">&#x1F4AC;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/ai-captions.png" alt="AI Captions"></span>
             <span class="tool-label">AI Captions</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/caption-presets" class="tool-card">
-            <span class="tool-icon">&#x1F4DD;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/caption-styles.png" alt="Caption Styles"></span>
             <span class="tool-label">Caption Styles</span>
           </a>
           <a href="/ai-hook" class="tool-card">
-            <span class="tool-icon">&#x1F3A3;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/ai-hooks.png" alt="AI Hooks"></span>
             <span class="tool-label">AI Hooks</span>
           </a>
           <a href="/ai-reframe" class="tool-card">
-            <!-- Task #77 — distinct from AI Thumbnails: triangular ruler
-                 (📐) reads as "framing / aspect ratio" rather than the
-                 generic framed-picture icon. -->
-            <span class="tool-icon">&#x1F4D0;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/ai-reframe.png" alt="AI Reframe"></span>
             <span class="tool-label">AI Reframe</span>
           </a>
           <a href="/ai-thumbnail" class="tool-card">

@@ -154,7 +154,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .feature-voice-slider-label{font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
 .feature-voice-slider-bar{height:6px;background:rgba(108,58,237,0.15);border-radius:3px;overflow:hidden;border:1px solid rgba(108,58,237,0.2)}
 .feature-voice-slider-fill{height:100%;background:linear-gradient(90deg,var(--primary),var(--accent));width:55%}
-.workflow-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;margin-top:3rem;max-width:1200px;margin-left:auto;margin-right:auto}
+.workflow-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3rem;margin-top:3rem;max-width:1000px;margin-left:auto;margin-right:auto}
 .workflow-card{text-align:center}
 .workflow-number{width:60px;height:60px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem;margin:0 auto 1.5rem}
 .workflow-card h3{font-size:1.3rem;font-weight:700;margin-bottom:.8rem}
@@ -322,7 +322,7 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="Splicora auto-repurposes one video into unlimited content across 8 platforms — TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest, X. AI tools for clips, captions, hooks, B-roll & scheduling.">
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=3">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=4">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <style>${published.content_css || ''}</style>
@@ -344,18 +344,18 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="One video, every platform — automatically. Splicora connects to TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X and auto-publishes platform-tuned versions. Plus 10 AI tools: Smart Shorts, Captions, Hooks, B-Roll, Reframe, Music, Brand Voice, Editor & Calendar.">
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=3">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=4">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Splicora">
-  <link rel="apple-touch-icon" href="/images/icon-192.png?v=3">
+  <link rel="apple-touch-icon" href="/images/icon-192.png?v=4">
   <style>${getStyles()}</style>
 </head>
 <body>
  <nav class="nav"><div class="nav-inner">
-    <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=3" alt="Splicora" style="height:46px;"></a>
+    <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:46px;"></a>
     <button class="mobile-nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mobile-open')">&#9776;</button>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -490,7 +490,7 @@ router.get('/', async (req, res) => {
           <!-- Slide 9: Content Repurposing -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Content Repurposing — One Link, Every Platform</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/repurpose-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:contain;display:block"></video></div></div></div></div>
           <!-- Slide 10: Content Calendar -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Content Calendar — Plan &amp; Schedule</span></div><div style="flex:1;overflow:hidden;background:transparent;display:flex;align-items:center;justify-content:center"><img src="/images/calendar-feature.svg" alt="Content Calendar" style="width:100%;height:100%;object-fit:contain;display:block"></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Content Calendar — Plan &amp; Schedule</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/calendar-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:contain;display:block"></video></div></div></div></div>
         </div>
       </div>
       <div class="carousel-counter-wrap">
@@ -643,7 +643,7 @@ router.get('/', async (req, res) => {
             <p>Organize all your content on a visual calendar. Pick the exact date and time you want to upload to each platform, and choose to receive email reminders 30 minutes before, 1 hour before, or 1 day before. Stay on top of your content schedule without needing a separate planning tool.</p>
             <span class="feature-tag">&#x1F4C5; Email Reminders</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><img src="/images/calendar-feature.svg" alt="Content Calendar" style="width:100%;display:block;border-radius:12px"></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/calendar-feature.mp4" muted playsinline loop preload="none" style="width:100%;display:block;border-radius:12px"></video></div></div>
         </div>
 
       </div>
@@ -935,7 +935,7 @@ router.get('/', async (req, res) => {
   <footer class="footer">
     <div class="footer-grid">
       <div class="footer-brand">
-        <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=3" alt="Splicora" style="height:46px;"></a>
+        <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:46px;"></a>
         <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)"><img src="/images/splicora-app-icon.png" alt="" style="height:14px;border-radius:3px;vertical-align:middle;margin-right:4px;">Get the App</a></div>
