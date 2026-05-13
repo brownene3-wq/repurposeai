@@ -322,7 +322,7 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="Splicora auto-repurposes one video into unlimited content across 8 platforms — TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest, X. AI tools for clips, captions, hooks, B-roll & scheduling.">
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=4">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <style>${published.content_css || ''}</style>
@@ -344,18 +344,18 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="One video, every platform — automatically. Splicora connects to TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X and auto-publishes platform-tuned versions. Plus 10 AI tools: Smart Shorts, Captions, Hooks, B-Roll, Reframe, Music, Brand Voice, Editor & Calendar.">
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=4">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Splicora">
-  <link rel="apple-touch-icon" href="/images/icon-192.png">
+  <link rel="apple-touch-icon" href="/images/icon-192.png?v=4">
   <style>${getStyles()}</style>
 </head>
 <body>
  <nav class="nav"><div class="nav-inner">
-    <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:46px;"></a>
+    <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:46px;"></a>
     <button class="mobile-nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mobile-open')">&#9776;</button>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -935,7 +935,7 @@ router.get('/', async (req, res) => {
   <footer class="footer">
     <div class="footer-grid">
       <div class="footer-brand">
-        <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:46px;"></a>
+        <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:46px;"></a>
         <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)"><img src="/images/splicora-app-icon.png" alt="" style="height:14px;border-radius:3px;vertical-align:middle;margin-right:4px;">Get the App</a></div>
