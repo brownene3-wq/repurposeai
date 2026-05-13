@@ -951,7 +951,7 @@ router.get('/', async (req, res) => {
   <!-- Mobile Install Banner -->
   <div id="installBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#6C3AED,#EC4899);padding:14px 20px;text-align:center;box-shadow:0 -4px 20px rgba(0,0,0,0.3);">
     <div style="display:flex;align-items:center;justify-content:center;gap:12px;max-width:600px;margin:0 auto;">
-      <div style="font-size:1.5rem;">&#x26A1;</div>
+      <div><img src="/images/splicora-app-icon.png" alt="Splicora" style="height:32px;border-radius:6px;"></div>
       <div style="flex:1;text-align:left;">
         <div style="font-weight:700;font-size:.9rem;color:#fff;">Get the Splicora App</div>
         <div style="font-size:.75rem;color:rgba(255,255,255,0.8);" id="installHint">Install for the best experience</div>
