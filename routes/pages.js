@@ -910,7 +910,7 @@ router.get('/', async (req, res) => {
       </p>
       <div style="display:flex;gap:1.5rem;justify-content:center;flex-wrap:wrap;margin-bottom:2.5rem;">
         <div style="background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:24px 28px;flex:1;min-width:250px;max-width:320px;text-align:left;">
-          <div style="font-size:1.8rem;margin-bottom:.8rem;">&#xF8FF;</div>
+          <div style="margin-bottom:.8rem;"><img src="/images/apple-icon.png" alt="Apple" style="height:36px;"></div>
           <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">iPhone / iPad</div>
           <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
             <li>Open <strong style="color:var(--text)">splicora.ai</strong> in Safari</li>
