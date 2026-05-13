@@ -154,7 +154,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .feature-voice-slider-label{font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
 .feature-voice-slider-bar{height:6px;background:rgba(108,58,237,0.15);border-radius:3px;overflow:hidden;border:1px solid rgba(108,58,237,0.2)}
 .feature-voice-slider-fill{height:100%;background:linear-gradient(90deg,var(--primary),var(--accent));width:55%}
-.workflow-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3rem;margin-top:3rem;max-width:1000px;margin-left:auto;margin-right:auto}
+.workflow-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;margin-top:3rem;max-width:1200px;margin-left:auto;margin-right:auto}
 .workflow-card{text-align:center}
 .workflow-number{width:60px;height:60px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem;margin:0 auto 1.5rem}
 .workflow-card h3{font-size:1.3rem;font-weight:700;margin-bottom:.8rem}
