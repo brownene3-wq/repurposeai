@@ -919,7 +919,7 @@ router.get('/', async (req, res) => {
           </ol>
         </div>
         <div style="background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:24px 28px;flex:1;min-width:250px;max-width:320px;text-align:left;">
-          <div style="margin-bottom:.8rem;"><img src="/images/splicora-app-icon.png" alt="Splicora App" style="height:36px;border-radius:8px;"></div>
+          <div style="margin-bottom:.8rem;"><img src="/images/android-icon.png" alt="Android" style="height:36px;border-radius:8px;"></div>
           <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">Android</div>
           <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
             <li>Open <strong style="color:var(--text)">splicora.ai</strong> in Chrome</li>
