@@ -903,14 +903,14 @@ router.get('/', async (req, res) => {
   <!-- Get the App Section -->
   <section id="get-app" style="padding:80px 2rem;text-align:center;background:linear-gradient(180deg,var(--dark) 0%,rgba(108,58,237,0.08) 50%,var(--dark) 100%);">
     <div style="max-width:700px;margin:0 auto;">
-      <div style="font-size:3rem;margin-bottom:1rem;">&#x1F4F1;</div>
+      <div style="margin-bottom:1rem;"><img src="/images/splicora-app-icon.png" alt="Splicora App" style="height:80px;border-radius:16px;"></div>
       <h2 class="section-title" style="margin-bottom:.8rem;">Get the Splicora App</h2>
       <p style="color:var(--text-dim);font-size:1.05rem;line-height:1.8;margin-bottom:2rem;">
         Install Splicora on your phone for the full app experience — no app store needed. Access all features, get notifications, and create content on the go.
       </p>
       <div style="display:flex;gap:1.5rem;justify-content:center;flex-wrap:wrap;margin-bottom:2.5rem;">
         <div style="background:var(--surface);border:var(--border-subtle);border-radius:16px;padding:24px 28px;flex:1;min-width:250px;max-width:320px;text-align:left;">
-          <div style="font-size:1.8rem;margin-bottom:.8rem;">&#xF8FF;</div>
+          <div style="margin-bottom:.8rem;"><img src="/images/apple-icon.png" alt="Apple" style="height:36px;"></div>
           <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text);">iPhone / iPad</div>
           <ol style="color:var(--text-muted);font-size:.88rem;line-height:2;padding-left:1.2rem;">
             <li>Open <strong style="color:var(--text)">splicora.ai</strong> in Safari</li>
@@ -938,7 +938,7 @@ router.get('/', async (req, res) => {
         <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:46px;"></a>
         <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
-      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)">&#x1F4F1; Get the App</a></div>
+      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)"><img src="/images/splicora-app-icon.png" alt="" style="height:14px;border-radius:3px;vertical-align:middle;margin-right:4px;">Get the App</a></div>
       <div><h4>Company</h4><a href="/contact">Contact</a><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
       <div><h4>Legal</h4><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/cookies">Cookie Policy</a></div>
     </div>
@@ -951,7 +951,7 @@ router.get('/', async (req, res) => {
   <!-- Mobile Install Banner -->
   <div id="installBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#6C3AED,#EC4899);padding:14px 20px;text-align:center;box-shadow:0 -4px 20px rgba(0,0,0,0.3);">
     <div style="display:flex;align-items:center;justify-content:center;gap:12px;max-width:600px;margin:0 auto;">
-      <div style="font-size:1.5rem;">&#x26A1;</div>
+      <div><img src="/images/splicora-app-icon.png" alt="Splicora" style="height:32px;border-radius:6px;"></div>
       <div style="flex:1;text-align:left;">
         <div style="font-weight:700;font-size:.9rem;color:#fff;">Get the Splicora App</div>
         <div style="font-size:.75rem;color:rgba(255,255,255,0.8);" id="installHint">Install for the best experience</div>
