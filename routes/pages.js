@@ -643,7 +643,7 @@ router.get('/', async (req, res) => {
             <p>Organize all your content on a visual calendar. Pick the exact date and time you want to upload to each platform, and choose to receive email reminders 30 minutes before, 1 hour before, or 1 day before. Stay on top of your content schedule without needing a separate planning tool.</p>
             <span class="feature-tag">&#x1F4C5; Email Reminders</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/calendar-feature.mp4" muted playsinline loop preload="none" style="width:100%;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><img src="/public/videos/Calendar.png" alt="Content Calendar" style="width:100%;display:block;border-radius:12px"></div></div>
         </div>
 
       </div>
