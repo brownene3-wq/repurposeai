@@ -903,7 +903,7 @@ router.get('/', async (req, res) => {
   <!-- Get the App Section -->
   <section id="get-app" style="padding:80px 2rem;text-align:center;background:linear-gradient(180deg,var(--dark) 0%,rgba(108,58,237,0.08) 50%,var(--dark) 100%);">
     <div style="max-width:700px;margin:0 auto;">
-      <div style="font-size:3rem;margin-bottom:1rem;">&#x1F4F1;</div>
+      <div style="margin-bottom:1rem;"><img src="/images/splicora-app-icon.png" alt="Splicora App" style="height:80px;border-radius:16px;"></div>
       <h2 class="section-title" style="margin-bottom:.8rem;">Get the Splicora App</h2>
       <p style="color:var(--text-dim);font-size:1.05rem;line-height:1.8;margin-bottom:2rem;">
         Install Splicora on your phone for the full app experience — no app store needed. Access all features, get notifications, and create content on the go.
