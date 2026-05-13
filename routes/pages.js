@@ -588,7 +588,7 @@ router.get('/', async (req, res) => {
             <p>Stop spending hours searching for the perfect B-roll. Paste a YouTube link or describe your scene, and our AI searches millions of HD stock clips from the Pixabay Video library. Preview clips with full video player, see metadata like resolution and duration, and insert them directly into your project with one click.</p>
             <span class="feature-tag">&#x1F3AC; Pixabay HD Library</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-b-roll_section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-b-roll_section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 6: Music Library -->
@@ -599,7 +599,7 @@ router.get('/', async (req, res) => {
             <p>Find the perfect background music for any content. Browse our curated library of 123 tracks spanning Ambient, Lo-Fi, Corporate, Cinematic, Upbeat, Hip-Hop, Electronic, Acoustic, Jazz, Classical, and Nature. Preview every track before adding it to your video. All tracks are 100% royalty-free — use them on any platform without copyright worries.</p>
             <span class="feature-tag">&#x1F3B5; Royalty-Free</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/music-library-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/music-library-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 7: AI Reframe -->
@@ -610,7 +610,7 @@ router.get('/', async (req, res) => {
             <p>Automatically convert your 16:9 landscape videos to 9:16 vertical for TikTok and Reels, 1:1 square for Instagram feed, 4:5 for Facebook, and any custom ratio you need. Our AI intelligently tracks the main subject so faces and key content stay perfectly centered — no manual cropping needed.</p>
             <span class="feature-tag">&#x1F680; One Click</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-reframe-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></video></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-reframe-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
 
         <!-- Feature 8: Brand Voice -->
@@ -643,7 +643,7 @@ router.get('/', async (req, res) => {
             <p>Organize all your content on a visual calendar. Pick the exact date and time you want to upload to each platform, and choose to receive email reminders 30 minutes before, 1 hour before, or 1 day before. Stay on top of your content schedule without needing a separate planning tool.</p>
             <span class="feature-tag">&#x1F4C5; Email Reminders</span>
           </div>
-          <div class="feature-mockup"><div class="feature-mock-inner"><img src="/public/videos/Calendar.png" alt="Content Calendar" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></div></div>
+          <div class="feature-mockup"><div class="feature-mock-inner"><img src="/public/videos/Calendar.png" alt="Content Calendar" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:12px"></div></div>
         </div>
 
       </div>
