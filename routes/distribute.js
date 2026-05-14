@@ -120,7 +120,10 @@ function getDistributeCSS() {
 function platformIconHTML(platform, size = '') {
   if (!platform) return '<div class="platform-icon-circle ' + size + '" style="background:rgba(255,255,255,0.06);color:#666"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="16" text-anchor="middle" font-size="12">?</text></svg></div>';
   const darkColor = platform.colorDark || platform.color;
-  return `<div class="platform-icon-circle ${size} pi-${platform.id}" style="background:${darkColor}18;color:${darkColor}">${platform.svg}</div>`;
+  // For white/near-white dark icons (Threads, X), use a stronger background so the icon is visible
+  const isWhiteDark = darkColor.toUpperCase() === '#FFFFFF' || darkColor.toUpperCase() === '#FFF';
+  const bgStyle = isWhiteDark ? 'background:rgba(255,255,255,0.15)' : `background:${darkColor}18`;
+  return `<div class="platform-icon-circle ${size} pi-${platform.id}" style="${bgStyle};color:${darkColor}">${platform.svg}</div>`;
 }
 
 // Shared toast script
