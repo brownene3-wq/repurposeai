@@ -10,7 +10,7 @@ router.get('/', requireAuth, (req, res) => {
   <style>
     ${getBaseCSS()}
     .notif-page{padding:32px;max-width:760px}
-    .notif-header h1{font-size:1.8rem;font-weight:800;margin:0 0 .4rem;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .notif-header h1{font-size:1.8rem;font-weight:800;margin:0 0 .4rem;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .notif-header p{color:var(--text-muted);font-size:.9rem;margin:0 0 24px}
     .notif-empty{padding:40px;text-align:center;color:var(--text-muted);background:var(--surface);border:1px dashed rgba(255,255,255,.10);border-radius:12px}
     body.light .notif-empty,html.light .notif-empty{border-color:rgba(0,0,0,.10)}

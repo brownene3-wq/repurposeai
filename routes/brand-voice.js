@@ -22,7 +22,7 @@ router.get('/', requireAuth, (req, res) => {
         .header h1 {
           font-size: 32px;
           margin-bottom: 10px;
-          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
+          background: var(--gradient-1);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -61,7 +61,7 @@ router.get('/', requireAuth, (req, res) => {
         .form-section h2 {
           font-size: 20px;
           margin-bottom: 25px;
-          background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%);
+          background: var(--gradient-1);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -69,7 +69,7 @@ router.get('/', requireAuth, (req, res) => {
         }
 
         body.light .form-section h2 {
-          background: linear-gradient(135deg, #5B21B6 0%, #DB2777 100%);
+          background: var(--gradient-1);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;

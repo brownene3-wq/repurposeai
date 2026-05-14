@@ -28,7 +28,7 @@ router.get('/', requireAuth, (req, res) => {
     body.light .sidebar a.active { color: #6c5ce7; background: rgba(108,92,231,0.08); }
     .main { margin-left: 250px; flex: 1; padding: 30px; }
     .page-header { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; }
-    .page-title { font-size: 1.8em; font-weight: 700; }
+    .page-title { font-size: 1.8em; font-weight: 800; background: linear-gradient(90deg, #7C3AED 0%, #A855F7 30%, #EC4899 65%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     .badge { background: #6c5ce7; color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 0.7em; font-weight: 600; }
     .section { background: #161616; border: 1px solid #222; border-radius: 12px; padding: 40px; margin-bottom: 24px; text-align: center; }
     .empty-icon { font-size: 3em; margin-bottom: 16px; }

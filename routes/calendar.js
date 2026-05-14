@@ -10,7 +10,7 @@ router.get('/', requireAuth, (req, res) => {
     ${getBaseCSS()}
     .calendar-page{padding:32px}
     .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;gap:16px;flex-wrap:wrap}
-    .cal-header h1{font-size:1.8rem;font-weight:800;margin:0;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .cal-header h1{font-size:1.8rem;font-weight:800;margin:0;background:var(--gradient-1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .cal-header p{color:var(--text-muted);font-size:.9rem;margin:.4rem 0 0}
     .cal-nav{display:flex;align-items:center;gap:10px}
     .cal-nav button{background:var(--surface);border:1px solid rgba(255,255,255,0.08);color:var(--text);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:14px}
