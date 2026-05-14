@@ -1103,7 +1103,7 @@ router.get('/', requireAuth, (req, res) => {
       --text: #ffffff;
       --text-muted: #a0aec0;
       --border-subtle: #2d2d4a;
-      --gradient-1: linear-gradient(135deg, #6C3AED, #ec4899);
+      --gradient-1: linear-gradient(90deg, #6C3AED, #ec4899);
       --gradient-wave: linear-gradient(90deg, #a855f7, #ec4899);
       --neon-green: #39ff14;
       --neon-cyan: #00ffff;
@@ -1116,7 +1116,7 @@ router.get('/', requireAuth, (req, res) => {
       --text: #1a1a2e;
       --text-muted: #64748b;
       --border-subtle: #e2e8f0;
-      --gradient-1: linear-gradient(135deg, #6C3AED, #ec4899);
+      --gradient-1: linear-gradient(90deg, #6C3AED, #ec4899);
       --golden: #b8860b;
     }
 

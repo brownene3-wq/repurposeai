@@ -73,7 +73,7 @@ router.get('/', requireAuth, async (req, res) => {
     ${getBaseCSS()}
     .layout { display: flex; min-height: 100vh; }
     .main { margin-left: 250px; flex: 1; padding: 30px; }
-    .page-title { font-size: 1.8em; font-weight: 800; margin-bottom: 30px; background: linear-gradient(135deg, #6C3AED 0%, #EC4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .page-title { font-size: 1.8em; font-weight: 800; margin-bottom: 30px; background: linear-gradient(90deg, #6C3AED 0%, #EC4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
     .stat-card { background: #161616; border: 1px solid #222; border-radius: 16px; padding: 24px; position: relative; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
     .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }

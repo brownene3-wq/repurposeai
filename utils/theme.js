@@ -3,7 +3,7 @@
 
 function getBaseCSS() {
   return `
-    :root{--primary:#6C3AED;--primary-light:#8B5CF6;--dark:#0a0a0a;--dark-2:#111111;--surface:#161616;--surface-light:#1e1e1e;--text:#FFF;--text-muted:#A0AEC0;--text-dim:#718096;--gradient-1:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);--border-subtle:1px solid rgba(255,255,255,0.06);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
+    :root{--primary:#6C3AED;--primary-light:#8B5CF6;--dark:#0a0a0a;--dark-2:#111111;--surface:#161616;--surface-light:#1e1e1e;--text:#FFF;--text-muted:#A0AEC0;--text-dim:#718096;--gradient-1:linear-gradient(90deg,#6C3AED 0%,#EC4899 100%);--border-subtle:1px solid rgba(255,255,255,0.06);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
     [data-theme="light"],body.light,html.light{--dark:#F8F9FC;--dark-2:#EDF0F7;--surface:#FFFFFF;--surface-light:#F1F5F9;--text:#1A1A2E;--text-muted:#4A5568;--text-dim:#718096;--border-subtle:1px solid rgba(0,0,0,0.08);--success:#10B981;--warning:#F59E0B;--error:#EF4444}
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;background:var(--dark);color:var(--text);min-height:100vh}
@@ -103,7 +103,7 @@ function getBaseCSS() {
        .header, .workflows-header, .notif-header, plus the .page-title div used
        on Analytics. !important so per-page overrides don't drift. */
     .page-header,.header,.workflows-header,.notif-header{margin-bottom:24px !important}
-    .page-header h1,.page-header h2,.header h1,.header h2,.workflows-header h1,.notif-header h1,.page-header .header-title,.header .header-title,.page-title{font-size:1.8rem !important;font-weight:800 !important;margin:0 0 .4rem !important;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%) !important;-webkit-background-clip:text !important;-webkit-text-fill-color:transparent !important;background-clip:text !important;line-height:1.2 !important;color:transparent}
+    .page-header h1,.page-header h2,.header h1,.header h2,.workflows-header h1,.notif-header h1,.page-header .header-title,.header .header-title,.page-title{font-size:1.8rem !important;font-weight:800 !important;margin:0 0 .4rem !important;background:linear-gradient(90deg,#6C3AED 0%,#EC4899 100%) !important;-webkit-background-clip:text !important;-webkit-text-fill-color:transparent !important;background-clip:text !important;line-height:1.2 !important;color:transparent}
     .page-header p,.header p,.workflows-header p,.notif-header p,.page-header .header-subtitle,.header .header-subtitle{color:var(--text-muted) !important;font-size:.95rem !important;margin:0 !important}
     .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.8rem 1.8rem;border-radius:50px;font-weight:600;font-size:.9rem;cursor:pointer;border:none;transition:all .3s;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;text-decoration:none}
     .btn-primary{background:var(--gradient-1);color:#fff;box-shadow:0 4px 20px rgba(108,58,237,0.4)}
