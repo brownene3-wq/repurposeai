@@ -212,13 +212,13 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/caption-presets', icon: '<img src="/images/dashboard-icons/caption-styles.png" alt="" style="width:20px;height:20px;">', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
     { href: '/ai-hook', icon: '<img src="/images/dashboard-icons/ai-hooks.png" alt="" style="width:20px;height:20px;">', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
     { href: '/ai-reframe', icon: '<img src="/images/dashboard-icons/ai-reframe.png" alt="" style="width:20px;height:20px;">', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
-    { href: '/ai-thumbnail', icon: '\u{1F5BC}\u{FE0F}', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
-    { href: '/ai-broll', icon: '\u{1F3A5}', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
-    { href: '/enhance-speech', icon: '\u{1F399}\u{FE0F}', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
+    { href: '/ai-thumbnail', icon: '<img src="/images/dashboard-icons/ai-thumbnails.png?v=2" alt="" style="width:20px;height:20px;">', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
+    { href: '/ai-broll', icon: '<img src="/images/dashboard-icons/ai-broll.png?v=2" alt="" style="width:20px;height:20px;">', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
+    { href: '/enhance-speech', icon: '<img src="/images/dashboard-icons/enhance-audio.png?v=2" alt="" style="width:20px;height:20px;">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
-    { href: '/brand-voice', icon: '\u{1F3A4}', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
-    { href: '/brand-templates', icon: '\u{1F3A8}', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
-    { href: '/dashboard/calendar', icon: '\u{1F4C5}', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
+    { href: '/brand-voice', icon: '<img src="/images/dashboard-icons/brand-voice.png?v=2" alt="" style="width:20px;height:20px;">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    { href: '/brand-templates', icon: '<img src="/images/dashboard-icons/brand-templates.png?v=2" alt="" style="width:20px;height:20px;">', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
+    { href: '/dashboard/calendar', icon: '<img src="/images/dashboard-icons/calendar.png?v=2" alt="" style="width:20px;height:20px;">', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
     { href: '/dashboard/analytics', icon: '\u{1F4CA}', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
     // --- Account ---
   ];
