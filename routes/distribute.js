@@ -77,6 +77,12 @@ function getDistributeCSS() {
     body.light .pi-libsyn,html.light .pi-libsyn{background:#2BAC7618 !important;color:#2BAC76 !important}
     body.light .pi-captivate,html.light .pi-captivate{background:#1A1A2E18 !important;color:#1A1A2E !important}
 
+    /* Dark-mode overrides for white-icon platforms (Threads, X) */
+    .pi-threads{background:rgba(255,255,255,0.25) !important;color:#FFFFFF !important}
+    .pi-twitter{background:rgba(255,255,255,0.25) !important;color:#FFFFFF !important}
+    body.light .pi-threads,html.light .pi-threads{background:rgba(0,0,0,0.08) !important;color:#000000 !important}
+    body.light .pi-twitter,html.light .pi-twitter{background:rgba(0,0,0,0.08) !important;color:#000000 !important}
+
     /* Ensure clicks always hit the parent card, not child SVGs/spans */
     .platform-card > *,.mode-card > *,.account-card > *,.platform-picker-item > *,.delay-btn > *{pointer-events:none}
 
@@ -122,7 +128,7 @@ function platformIconHTML(platform, size = '') {
   const darkColor = platform.colorDark || platform.color;
   // For white/near-white dark icons (Threads, X), use a stronger background so the icon is visible
   const isWhiteDark = darkColor.toUpperCase() === '#FFFFFF' || darkColor.toUpperCase() === '#FFF';
-  const bgStyle = isWhiteDark ? 'background:rgba(255,255,255,0.15)' : `background:${darkColor}18`;
+  const bgStyle = isWhiteDark ? 'background:rgba(255,255,255,0.25)' : `background:${darkColor}18`;
   return `<div class="platform-icon-circle ${size} pi-${platform.id}" style="${bgStyle};color:${darkColor}">${platform.svg}</div>`;
 }
 
