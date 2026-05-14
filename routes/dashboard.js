@@ -411,16 +411,16 @@ router.get('/', requireAuth, async (req, res) => {
         ${recentShorts.length > 0 ? `
           <div class="recent-shorts-grid" aria-label="Recent Smart Shorts (preview)">${recentShortsHtml}</div>
           <div class="quick-actions-cta">
-            <a href="/repurpose" class="btn btn-primary btn-sm">&#x1F504; Repurpose a Video</a>
-            <a href="/shorts" class="btn btn-outline btn-sm">&#x2702;&#xFE0F; Create Shorts</a>
+            <a href="/repurpose" class="btn btn-primary btn-sm"><img src="/images/dashboard-icons/repurpose.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Repurpose a Video</a>
+            <a href="/shorts" class="btn btn-outline btn-sm"><img src="/images/dashboard-icons/smart-shorts.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Create Shorts</a>
           </div>
         ` : `
           <div class="empty-state" id="emptyState">
             <div class="empty-icon">&#x1F3AC;</div>
             <p>No projects yet. Paste a YouTube URL above to get started!</p>
             <div class="quick-actions">
-              <a href="/repurpose" class="btn btn-primary btn-sm">&#x1F504; Repurpose a Video</a>
-              <a href="/shorts" class="btn btn-outline btn-sm">&#x2702;&#xFE0F; Create Shorts</a>
+              <a href="/repurpose" class="btn btn-primary btn-sm"><img src="/images/dashboard-icons/repurpose.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Repurpose a Video</a>
+              <a href="/shorts" class="btn btn-outline btn-sm"><img src="/images/dashboard-icons/smart-shorts.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Create Shorts</a>
             </div>
           </div>
         `}
