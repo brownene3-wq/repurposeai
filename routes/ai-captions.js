@@ -2663,7 +2663,7 @@ router.get('/', requireAuth, async (req, res) => {
 
       <div class="container">
           <div class="header">
-            <h1>&#x1F4AC; AI Captions</h1>
+            <h1><img src="/images/dashboard-icons/ai-captions.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">AI Captions</h1>
             <p>Generate beautiful animated captions for your videos</p>
           </div>
 
