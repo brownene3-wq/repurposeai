@@ -160,11 +160,11 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .workflow-card h3{font-size:1.3rem;font-weight:700;margin-bottom:.8rem}
 .workflow-card p{color:var(--text-muted);line-height:1.7;font-size:0.88rem}
 .teams-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5rem;margin-top:3rem}
-.team-card{background:var(--surface);border-radius:20px;border:var(--border-subtle);padding:2.5rem;transition:all .3s}
+.team-card{background:var(--surface);border-radius:20px;border:var(--border-subtle);padding:2.5rem;transition:all .3s;display:flex;flex-direction:column}
 .team-card:hover{transform:translateY(-4px);border-color:rgba(108,58,237,0.3)}
 .team-card-icon{font-size:2.5rem;margin-bottom:1.5rem}
 .team-card h3{font-size:1.1rem;font-weight:700;margin-bottom:.8rem}
-.team-card p{color:var(--text-muted);font-size:.95rem;line-height:1.6;margin-bottom:2rem}
+.team-card p{color:var(--text-muted);font-size:.95rem;line-height:1.6;margin-bottom:2rem;flex:1}
 .team-card{background:linear-gradient(145deg,#222240 0%,#282850 100%);border:1px solid rgba(108,58,237,0.2)}
 .team-card:hover{border-color:rgba(108,58,237,0.5);box-shadow:0 10px 40px rgba(108,58,237,0.2)}
 .team-card-mockup{width:100%;height:200px;background:linear-gradient(145deg,rgba(108,58,237,0.15) 0%,rgba(236,72,153,0.08) 50%,rgba(59,130,246,0.1) 100%);border-radius:12px;border:1px solid rgba(108,58,237,0.2);display:flex;align-items:center;justify-content:center;font-size:3rem;color:var(--text-muted);position:relative;overflow:hidden}
