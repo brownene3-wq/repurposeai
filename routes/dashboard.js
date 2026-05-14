@@ -370,33 +370,33 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">AI Reframe</span>
           </a>
           <a href="/ai-thumbnail" class="tool-card">
-            <span class="tool-icon">&#x1F5BC;&#xFE0F;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/ai-thumbnails.png?v=2" alt="AI Thumbnails"></span>
             <span class="tool-label">AI Thumbnails</span>
           </a>
           <a href="/ai-broll" class="tool-card">
-            <span class="tool-icon">&#x1F3A5;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/ai-broll.png?v=2" alt="AI B-Roll"></span>
             <span class="tool-label">AI B-Roll</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/enhance-speech" class="tool-card">
-            <span class="tool-icon">&#x1F399;&#xFE0F;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/enhance-audio.png?v=2" alt="Enhance Audio"></span>
             <span class="tool-label">Enhance Audio</span>
           </a>
           <a href="/brand-voice" class="tool-card">
-            <span class="tool-icon">&#x1F3A4;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/brand-voice.png?v=2" alt="Brand Voice"></span>
             <span class="tool-label">Brand Voice</span>
           </a>
           <a href="/brand-templates" class="tool-card">
-            <span class="tool-icon">&#x1F3A8;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/brand-templates.png?v=2" alt="Brand Templates"></span>
             <span class="tool-label">Brand Templates</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/dashboard/calendar" class="tool-card">
-            <span class="tool-icon">&#x1F4C5;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/calendar.png?v=2" alt="Calendar"></span>
             <span class="tool-label">Calendar</span>
           </a>
           <a href="/dashboard/analytics" class="tool-card">
-            <span class="tool-icon">&#x1F4CA;</span>
+            <span class="tool-icon"><img src="/images/dashboard-icons/analytics.png?v=2" alt="Analytics"></span>
             <span class="tool-label">Analytics</span>
           </a>
         </div>
