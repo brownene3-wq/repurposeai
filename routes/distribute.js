@@ -53,6 +53,30 @@ function getDistributeCSS() {
     .platform-icon-circle.xl{width:64px;height:64px;border-radius:18px}
     .platform-icon-circle.xl svg{width:32px;height:32px}
 
+    /* ─── Platform icon light-mode color overrides ─── */
+    body.light .pi-tiktok,html.light .pi-tiktok{background:#25F4EE18 !important;color:#25F4EE !important}
+    body.light .pi-instagram,html.light .pi-instagram{background:#E4405F18 !important;color:#E4405F !important}
+    body.light .pi-youtube,html.light .pi-youtube{background:#FF000018 !important;color:#FF0000 !important}
+    body.light .pi-facebook,html.light .pi-facebook{background:#1877F218 !important;color:#1877F2 !important}
+    body.light .pi-twitter,html.light .pi-twitter{background:#00000018 !important;color:#000000 !important}
+    body.light .pi-linkedin,html.light .pi-linkedin{background:#0A66C218 !important;color:#0A66C2 !important}
+    body.light .pi-pinterest,html.light .pi-pinterest{background:#E6002318 !important;color:#E60023 !important}
+    body.light .pi-threads,html.light .pi-threads{background:#00000018 !important;color:#000000 !important}
+    body.light .pi-bluesky,html.light .pi-bluesky{background:#0085FF18 !important;color:#0085FF !important}
+    body.light .pi-snapchat,html.light .pi-snapchat{background:#FFFC0018 !important;color:#FFFC00 !important}
+    body.light .pi-googledrive,html.light .pi-googledrive{background:#4285F418 !important;color:#4285F4 !important}
+    body.light .pi-dropbox,html.light .pi-dropbox{background:#0061FF18 !important;color:#0061FF !important}
+    body.light .pi-twitch,html.light .pi-twitch{background:#9146FF18 !important;color:#9146FF !important}
+    body.light .pi-heygen,html.light .pi-heygen{background:#5B4EFF18 !important;color:#5B4EFF !important}
+    body.light .pi-audiopodcast,html.light .pi-audiopodcast{background:#8B5CF618 !important;color:#8B5CF6 !important}
+    body.light .pi-videopodcast,html.light .pi-videopodcast{background:#F9731618 !important;color:#F97316 !important}
+    body.light .pi-zoom,html.light .pi-zoom{background:#2D8CFF18 !important;color:#2D8CFF !important}
+    body.light .pi-webex,html.light .pi-webex{background:#00BCF218 !important;color:#00BCF2 !important}
+    body.light .pi-amazon,html.light .pi-amazon{background:#FF990018 !important;color:#FF9900 !important}
+    body.light .pi-soundcloud,html.light .pi-soundcloud{background:#FF550018 !important;color:#FF5500 !important}
+    body.light .pi-libsyn,html.light .pi-libsyn{background:#2BAC7618 !important;color:#2BAC76 !important}
+    body.light .pi-captivate,html.light .pi-captivate{background:#1A1A2E18 !important;color:#1A1A2E !important}
+
     /* Ensure clicks always hit the parent card, not child SVGs/spans */
     .platform-card > *,.mode-card > *,.account-card > *,.platform-picker-item > *,.delay-btn > *{pointer-events:none}
 
@@ -92,10 +116,11 @@ function getDistributeCSS() {
   `;
 }
 
-// Helper to render a platform icon circle
+// Helper to render a platform icon circle (supports dark/light mode)
 function platformIconHTML(platform, size = '') {
   if (!platform) return '<div class="platform-icon-circle ' + size + '" style="background:rgba(255,255,255,0.06);color:#666"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="16" text-anchor="middle" font-size="12">?</text></svg></div>';
-  return `<div class="platform-icon-circle ${size}" style="background:${platform.color}18;color:${platform.color}">${platform.svg}</div>`;
+  const darkColor = platform.colorDark || platform.color;
+  return `<div class="platform-icon-circle ${size} pi-${platform.id}" style="background:${darkColor}18;color:${darkColor}">${platform.svg}</div>`;
 }
 
 // Shared toast script
