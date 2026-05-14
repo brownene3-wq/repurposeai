@@ -158,7 +158,7 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .workflow-card{text-align:center}
 .workflow-number{width:60px;height:60px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.5rem;margin:0 auto 1.5rem}
 .workflow-card h3{font-size:1.3rem;font-weight:700;margin-bottom:.8rem}
-.workflow-card p{color:var(--text-muted);line-height:1.7}
+.workflow-card p{color:var(--text-muted);line-height:1.7;font-size:0.88rem}
 .teams-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5rem;margin-top:3rem}
 .team-card{background:var(--surface);border-radius:20px;border:var(--border-subtle);padding:2.5rem;transition:all .3s}
 .team-card:hover{transform:translateY(-4px);border-color:rgba(108,58,237,0.3)}
