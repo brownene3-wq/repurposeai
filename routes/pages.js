@@ -183,10 +183,11 @@ body{transition:background .3s,color .3s;font-family:'Inter',-apple-system,sans-
 .faq-header{padding:1.5rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:all .3s}
 .faq-header:hover{background:rgba(108,58,237,0.05)}
 .faq-header h3{font-size:1rem;font-weight:600;margin:0}
-.faq-toggle{font-size:1.5rem;transition:transform .3s}
+.faq-toggle{font-size:1.5rem;transition:transform .3s ease}
 .faq-item.open .faq-toggle{transform:rotate(45deg)}
-.faq-content{max-height:0;overflow:hidden;transition:max-height .3s ease-out;padding:0 1.5rem}
-.faq-item.open .faq-content{max-height:300px;padding:0 1.5rem 1.5rem}
+.faq-content{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s ease,padding .35s ease;overflow:hidden;padding:0 1.5rem}
+.faq-content>div{overflow:hidden}
+.faq-item.open .faq-content{grid-template-rows:1fr;padding:0 1.5rem 1.5rem}
 .faq-content p{color:var(--text-muted);font-size:.95rem;line-height:1.7}
 section{padding:6rem 2rem}.section-inner{max-width:1400px;margin:0 auto}
 .section-label{display:inline-block;font-size:.8rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--primary-light);margin-bottom:1rem}
@@ -817,72 +818,72 @@ router.get('/', async (req, res) => {
             <h3>How does Splicora work?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>Paste a YouTube link, upload a video file, or enter a transcript. Our AI analyzes the content and generates optimized short clips, captions, hooks, text posts, and more for every major platform. Edit everything in our built-in video editor, add music, then schedule and publish — all from one dashboard.</p>
-          </div>
+          </div></div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
             <h3>What formats and platforms do you support?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>Upload MP4, MOV, WebM, AVI, and QuickTime videos of any length. We generate content optimized for Instagram Reels, TikTok, YouTube Shorts, Facebook, LinkedIn, Twitter/X, Pinterest, and more. Each output is automatically formatted for that platform's unique requirements.</p>
-          </div>
+          </div></div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
             <h3>What AI tools are included?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>You get access to 10 powerful tools: Smart Shorts (AI clipping), a full Video Editor with timeline, AI Captions (6 animated styles), AI Hook Generator (with free built-in voices), AI B-Roll (millions of stock clips), a Music Library (123 royalty-free tracks), AI Reframe (auto-resize), Brand Voice AI, Content Repurposing (turn any video into posts for every platform), and a Content Calendar with email reminders.</p>
-          </div>
+          </div></div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
             <h3>Do I need an ElevenLabs API key?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>No! Our AI Hook Generator includes 6 high-quality free AI voices built in — you can generate scroll-stopping hooks with audio immediately, no API key needed. If you want premium ElevenLabs voices, you can optionally connect your own key in Settings.</p>
-          </div>
+          </div></div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
             <h3>Is the music really royalty-free?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>Yes! All 123 tracks in our Music Library are 100% royalty-free. Use them on YouTube, TikTok, Instagram, or any other platform without worrying about copyright claims. Browse across 11 genres including Ambient, Lo-Fi, Corporate, Cinematic, Hip-Hop, and more.</p>
-          </div>
+          </div></div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
             <h3>How do AI Captions work?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>Upload a video or paste a YouTube link. Our AI uses OpenAI Whisper to transcribe speech with word-level timing accuracy, then generates animated captions. Choose from 6 styles — Karaoke, Bold Pop, Minimal, Neon Glow, Typewriter, and Cinematic — position them anywhere on screen, and export the final video.</p>
-          </div>
+          </div></div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
             <h3>Is there a free plan?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>Yes! Our Free plan lets you try Splicora with 3 videos per month. You get access to all core tools including the video editor, AI captions, and free AI voices. Upgrade to unlock more videos, clips, and premium features.</p>
-          </div>
+          </div></div>
         </div>
         <div class="faq-item" onclick="toggleFaq(this)">
           <div class="faq-header">
             <h3>How do I get help?</h3>
             <span class="faq-toggle">+</span>
           </div>
-          <div class="faq-content">
+          <div class="faq-content"><div>
             <p>We offer email support for all users and live chat support for Premium and Teams plans. Check out our help center, video tutorials, and community forum for tips, guides, and best practices.</p>
-          </div>
+          </div></div>
         </div>
       </div>
     </div>
