@@ -201,7 +201,7 @@ function getSidebar(activePage, user, teamPermissions) {
   // null permission = always visible
   const allLinks = [
     // --- Core Content Tools ---
-    { href: '/dashboard', icon: '<img src="/images/dashboard-icons/dashboard.png" alt="" style="width:20px;height:20px;">', label: 'Dashboard', key: 'dashboard', perm: null },
+    { href: '/dashboard', icon: '<img src="/images/dashboard-icons/dashboard.png?v=2" alt="" style="width:20px;height:20px;">', label: 'Dashboard', key: 'dashboard', perm: null },
     { href: '/distribute', icon: '<img src="/images/dashboard-icons/repurpose.png" alt="" style="width:20px;height:20px;">', label: 'Repurpose', key: 'distribute', perm: null },
     { href: '/repurpose', icon: '<img src="/images/dashboard-icons/create.png" alt="" style="width:20px;height:20px;">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/repurpose/history', icon: '<img src="/images/dashboard-icons/library.png" alt="" style="width:20px;height:20px;">', label: 'Library', key: 'library', perm: 'use_repurpose' },
