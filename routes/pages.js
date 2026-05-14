@@ -377,7 +377,7 @@ router.get('/', async (req, res) => {
       <p>One video → 8 platforms, automatically. Connect TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X — Splicora auto-clips, captions, and publishes platform-tuned versions of every upload. Plus 10 AI tools to make every video pop.</p>
       <div class="hero-input-group">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
-        <button class="btn btn-primary">Create &#x26A1;</button>
+        <button class="btn btn-primary">Create</button>
         <button class="btn btn-outline">Upload Files</button>
       </div>
       <div style="margin-top:14px;display:flex;justify-content:center"><a href="#repurpose" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;background:rgba(108,58,237,0.12);border:1px solid rgba(108,58,237,0.35);color:#c4b5fd;font-size:.85rem;font-weight:600;text-decoration:none;transition:all .25s" onmouseover="this.style.background='rgba(108,58,237,0.22)';this.style.color='#fff'" onmouseout="this.style.background='rgba(108,58,237,0.12)';this.style.color='#c4b5fd'"><span style="width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:repPulse 1.8s ease-in-out infinite"></span>NEW · See the Repurpose Engine ↓</a></div>
@@ -895,7 +895,7 @@ router.get('/', async (req, res) => {
       <p class="section-subtitle" style="margin:1rem auto 2rem">10 AI tools. Every platform. One subscription. Join thousands of creators who turn a single video into a week of content in under 5 minutes.</p>
       <div class="hero-input-group" style="margin-bottom:1rem">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
-        <button class="btn btn-primary">Create &#x26A1;</button>
+        <button class="btn btn-primary">Create</button>
       </div>
       <p style="color:var(--text-dim);font-size:.85rem">Free plan available &middot; No credit card required</p>
     </div>
