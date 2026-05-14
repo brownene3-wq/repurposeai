@@ -1379,31 +1379,31 @@ router.get('/', requireAuth, (req, res) => {
               <div class="platform-selector">
                 <div class="platform-card" data-platform="Instagram">
                   <input type="checkbox" name="platform" value="Instagram" />
-                  <span>📷 Instagram</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:4px"><defs><radialGradient id="ig" cx="30%" cy="107%" r="150%"><stop offset="0%" stop-color="#fdf497"/><stop offset="5%" stop-color="#fdf497"/><stop offset="45%" stop-color="#fd5949"/><stop offset="60%" stop-color="#d6249f"/><stop offset="90%" stop-color="#285AEB"/></radialGradient></defs><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#ig)"/><circle cx="12" cy="12" r="5" stroke="#fff" stroke-width="2" fill="none"/><circle cx="17.5" cy="6.5" r="1.5" fill="#fff"/></svg> Instagram</span>
                 </div>
                 <div class="platform-card" data-platform="TikTok">
                   <input type="checkbox" name="platform" value="TikTok" />
-                  <span>🎵 TikTok</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#000"/><path d="M16.5 8.5c1.2.8 2.6 1 3.5 1v-2.5c-.8 0-2-.5-2.7-1.3-.6-.7-.8-1.5-.8-2.2h-2.3v10.8c0 1.5-1.2 2.7-2.7 2.7s-2.7-1.2-2.7-2.7 1.2-2.7 2.7-2.7c.3 0 .5 0 .8.1V9.1c-.3 0-.5-.1-.8-.1-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5V8.5z" fill="#fff"/></svg> TikTok</span>
                 </div>
                 <div class="platform-card" data-platform="Twitter">
                   <input type="checkbox" name="platform" value="Twitter" />
-                  <span>𝕏 Twitter/X</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#000"/><path d="M13.8 10.5L19 4.5h-1.5l-4.5 5.2L9.2 4.5H4.5l5.6 8.1L4.5 19.5H6l4.8-5.6 4 5.6h4.7l-5.7-9zm-1.7 2l-.6-.8L6.5 5.5h1.9l3.6 5.1.6.8 4.7 6.7h-1.9l-3.3-5.6z" fill="#fff"/></svg> Twitter/X</span>
                 </div>
                 <div class="platform-card" data-platform="LinkedIn">
                   <input type="checkbox" name="platform" value="LinkedIn" />
-                  <span>💼 LinkedIn</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#0A66C2"/><path d="M8.5 10v7H6v-7h2.5zM7.25 9c-.8 0-1.25-.55-1.25-1.25S6.45 6.5 7.25 6.5s1.25.55 1.25 1.25S8.05 9 7.25 9zM18 17h-2.5v-3.5c0-1-.4-1.7-1.3-1.7-.7 0-1.1.5-1.3.9-.1.1-.1.3-.1.5V17H10.5s0-6.5 0-7h2.3v1c.3-.5 1-1.2 2.2-1.2 1.6 0 3 1.1 3 3.3V17z" fill="#fff"/></svg> LinkedIn</span>
                 </div>
                 <div class="platform-card" data-platform="Facebook">
                   <input type="checkbox" name="platform" value="Facebook" />
-                  <span>👍 Facebook</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#1877F2"/><path d="M16.5 12.5l.5-3h-3V8c0-.8.4-1.5 1.6-1.5H17V4.1s-1.1-.2-2.2-.2c-2.2 0-3.6 1.3-3.6 3.7v2.4H8.5v3h2.7V20h3.3v-7.5h2z" fill="#fff"/></svg> Facebook</span>
                 </div>
                 <div class="platform-card" data-platform="YouTube">
                   <input type="checkbox" name="platform" value="YouTube" />
-                  <span>🎬 YouTube</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#FF0000"/><path d="M19.6 8.3c-.2-.8-.8-1.4-1.6-1.6C16.8 6.5 12 6.5 12 6.5s-4.8 0-6 .2c-.8.2-1.4.8-1.6 1.6C4.2 9.5 4.2 12 4.2 12s0 2.5.2 3.7c.2.8.8 1.4 1.6 1.6 1.2.2 6 .2 6 .2s4.8 0 6-.2c.8-.2 1.4-.8 1.6-1.6.2-1.2.2-3.7.2-3.7s0-2.5-.2-3.7z" fill="#FF0000"/><path d="M10.5 14.8V9.2L15 12l-4.5 2.8z" fill="#fff"/></svg> YouTube</span>
                 </div>
                 <div class="platform-card" data-platform="Blog">
                   <input type="checkbox" name="platform" value="Blog" />
-                  <span>📝 Blog Post</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#6C3AED"/><path d="M7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h7v2H7v-2z" fill="#fff"/></svg> Blog Post</span>
                 </div>
               </div>
             </div>
