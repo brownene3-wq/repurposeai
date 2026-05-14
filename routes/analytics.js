@@ -128,7 +128,7 @@ router.get('/', requireAuth, async (req, res) => {
     ${getSidebar('analytics', req.user, req.teamPermissions)}
     ${getThemeToggle()}
     <div class="main">
-      <div class="page-header"><h1>&#x1F4CA; Analytics</h1><p>Performance metrics across all your content.</p></div>
+      <div class="page-header"><h1><img src="/images/dashboard-icons/analytics.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Analytics</h1><p>Performance metrics across all your content.</p></div>
       <div class="stats-grid">
         <div class="stat-card"><div class="label">Videos This Month</div><div class="value">${videosThisMonth}</div><div class="change">${videosThisMonth > 0 ? '&#x2705; Active' : '-'}</div></div>
         <div class="stat-card"><div class="label">Posts Generated</div><div class="value">${totalPosts}</div><div class="change">${totalPosts > 0 ? '&#x2705; Active' : '-'}</div></div>

@@ -351,7 +351,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1>&#x1F3A3; AI Hooks</h1>
+        <h1><img src="/images/dashboard-icons/ai-hooks.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">AI Hooks</h1>
         <p>Create scroll-stopping hooks that boost retention</p>
       </div>
 
