@@ -1440,8 +1440,8 @@ router.get('/', requireAuth, (req, res) => {
                 </select>
               </div>
 
-              <div class="button-group">
-                <button class="btn btn-primary" onclick="repurposeContent()">✨ Create Now</button>
+              <div class="button-group" style="display:flex;justify-content:center">
+                <button class="btn btn-primary" style="max-width:280px;width:100%" onclick="repurposeContent()"><img src="/images/splicora-app-icon.png" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:6px">Create Now</button>
               </div>
             </div>
           </div>
