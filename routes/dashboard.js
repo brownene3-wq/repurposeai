@@ -298,11 +298,11 @@ router.get('/', requireAuth, async (req, res) => {
 
       <!-- Hero Input -->
       <div class="hero-input" ${req.isTeamMember && (!req.teamPermissions || !req.teamPermissions.use_repurpose) ? 'style="display:none"' : ''}>
-        <h2>&#x26A1; Start Creating</h2>
+        <h2><img src="/images/splicora-app-icon.png" alt="" style="height:28px;width:28px;vertical-align:middle;margin-right:6px;display:inline-block"> Start Creating</h2>
         <p>Paste a YouTube link, upload a file, or import from cloud storage</p>
         <div class="input-row">
           <input type="url" class="url-input" id="youtubeUrl" name="yt_dashboard_url" autocomplete="one-time-code" data-form-type="other" data-lpignore="true" placeholder="Paste YouTube URL here...">
-          <button class="btn btn-primary" id="processBtn" onclick="processVideo()">&#x26A1; Repurpose</button>
+          <button class="btn btn-primary" id="processBtn" onclick="processVideo()">Repurpose</button>
         </div>
         <div class="or-divider"><span>or import from</span></div>
         <div class="import-btns">
