@@ -985,7 +985,7 @@ router.get('/', requireAuth, (req, res) => {
           border-color: transparent;
         }
         .platform-card[data-platform="Threads"].selected {
-          background: linear-gradient(135deg, #000000, #333333);
+          background: linear-gradient(135deg, #333333, #555555);
           border-color: transparent;
         }
         .platform-card[data-platform="Pinterest"].selected {
@@ -1209,7 +1209,7 @@ router.get('/', requireAuth, (req, res) => {
         .platform-name[data-platform="LinkedIn"] { color: #0A66C2; }
         .platform-name[data-platform="Facebook"] { color: #1877F2; }
         .platform-name[data-platform="YouTube"] { color: #FF0000; }
-        .platform-name[data-platform="Threads"] { color: #000; }
+        .platform-name[data-platform="Threads"] { color: #ccc; }
         body.light .platform-name[data-platform="Threads"] { color: #000; }
         .platform-name[data-platform="Pinterest"] { color: #E60023; }
         .platform-name[data-platform="Blog"] { background: linear-gradient(135deg, #6C3AED, #EC4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -1414,7 +1414,7 @@ router.get('/', requireAuth, (req, res) => {
                 </div>
                 <div class="platform-card" data-platform="Threads">
                   <input type="checkbox" name="platform" value="Threads" />
-                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#000"/><path d="M16.5 11.5c-.1-2.4-1.4-3.8-3.6-3.8-1.3 0-2.4.6-3 1.7l1.3.7c.4-.7 1-1 1.7-1 1.2 0 1.9.7 2 2-.5-.3-1.2-.4-1.9-.4-2 0-3.4 1-3.4 2.6 0 1.5 1.3 2.5 3 2.5 1.3 0 2.2-.6 2.7-1.6.1.5.1 1 .1 1.5h1.5c0-.7-.1-1.4-.2-2-.1-.7-.2-1.5-.2-2.2zm-3.5 3.3c-.8 0-1.4-.4-1.4-1.1 0-.8.7-1.2 1.8-1.2.6 0 1.1.1 1.5.3-.2 1.2-1 2-1.9 2z" fill="#fff"/></svg> Threads</span>
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#333" stroke="#555" stroke-width="1"/><path d="M16.5 11.5c-.1-2.4-1.4-3.8-3.6-3.8-1.3 0-2.4.6-3 1.7l1.3.7c.4-.7 1-1 1.7-1 1.2 0 1.9.7 2 2-.5-.3-1.2-.4-1.9-.4-2 0-3.4 1-3.4 2.6 0 1.5 1.3 2.5 3 2.5 1.3 0 2.2-.6 2.7-1.6.1.5.1 1 .1 1.5h1.5c0-.7-.1-1.4-.2-2-.1-.7-.2-1.5-.2-2.2zm-3.5 3.3c-.8 0-1.4-.4-1.4-1.1 0-.8.7-1.2 1.8-1.2.6 0 1.1.1 1.5.3-.2 1.2-1 2-1.9 2z" fill="#fff"/></svg> Threads</span>
                 </div>
                 <div class="platform-card" data-platform="Pinterest">
                   <input type="checkbox" name="platform" value="Pinterest" />
@@ -2291,7 +2291,7 @@ router.get('/history', requireAuth, (req, res) => {
         .platform-badge[data-platform="LinkedIn"] { background: linear-gradient(135deg, #0A66C2, #004182); }
         .platform-badge[data-platform="Facebook"] { background: linear-gradient(135deg, #1877F2, #42a5f5); }
         .platform-badge[data-platform="YouTube"] { background: linear-gradient(135deg, #FF0000, #CC0000); }
-        .platform-badge[data-platform="Threads"] { background: linear-gradient(135deg, #000000, #333333); }
+        .platform-badge[data-platform="Threads"] { background: linear-gradient(135deg, #333333, #555555); }
         .platform-badge[data-platform="Pinterest"] { background: linear-gradient(135deg, #E60023, #AD081B); }
         .platform-badge[data-platform="Blog"] { background: linear-gradient(135deg, #6C3AED, #EC4899); }
 
