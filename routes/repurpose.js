@@ -984,6 +984,14 @@ router.get('/', requireAuth, (req, res) => {
           background: linear-gradient(135deg, #FF0000, #CC0000);
           border-color: transparent;
         }
+        .platform-card[data-platform="Threads"].selected {
+          background: linear-gradient(135deg, #000000, #333333);
+          border-color: transparent;
+        }
+        .platform-card[data-platform="Pinterest"].selected {
+          background: linear-gradient(135deg, #E60023, #AD081B);
+          border-color: transparent;
+        }
         .platform-card[data-platform="Blog"].selected {
           background: linear-gradient(135deg, #6C3AED, #EC4899);
           border-color: transparent;
@@ -1201,6 +1209,9 @@ router.get('/', requireAuth, (req, res) => {
         .platform-name[data-platform="LinkedIn"] { color: #0A66C2; }
         .platform-name[data-platform="Facebook"] { color: #1877F2; }
         .platform-name[data-platform="YouTube"] { color: #FF0000; }
+        .platform-name[data-platform="Threads"] { color: #000; }
+        body.light .platform-name[data-platform="Threads"] { color: #000; }
+        .platform-name[data-platform="Pinterest"] { color: #E60023; }
         .platform-name[data-platform="Blog"] { background: linear-gradient(135deg, #6C3AED, #EC4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
         .char-count {
@@ -1400,6 +1411,14 @@ router.get('/', requireAuth, (req, res) => {
                 <div class="platform-card" data-platform="YouTube">
                   <input type="checkbox" name="platform" value="YouTube" />
                   <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#FF0000"/><path d="M19.6 8.3c-.2-.8-.8-1.4-1.6-1.6C16.8 6.5 12 6.5 12 6.5s-4.8 0-6 .2c-.8.2-1.4.8-1.6 1.6C4.2 9.5 4.2 12 4.2 12s0 2.5.2 3.7c.2.8.8 1.4 1.6 1.6 1.2.2 6 .2 6 .2s4.8 0 6-.2c.8-.2 1.4-.8 1.6-1.6.2-1.2.2-3.7.2-3.7s0-2.5-.2-3.7z" fill="#FF0000"/><path d="M10.5 14.8V9.2L15 12l-4.5 2.8z" fill="#fff"/></svg> YouTube</span>
+                </div>
+                <div class="platform-card" data-platform="Threads">
+                  <input type="checkbox" name="platform" value="Threads" />
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#000"/><path d="M16.5 11.5c-.1-2.4-1.4-3.8-3.6-3.8-1.3 0-2.4.6-3 1.7l1.3.7c.4-.7 1-1 1.7-1 1.2 0 1.9.7 2 2-.5-.3-1.2-.4-1.9-.4-2 0-3.4 1-3.4 2.6 0 1.5 1.3 2.5 3 2.5 1.3 0 2.2-.6 2.7-1.6.1.5.1 1 .1 1.5h1.5c0-.7-.1-1.4-.2-2-.1-.7-.2-1.5-.2-2.2zm-3.5 3.3c-.8 0-1.4-.4-1.4-1.1 0-.8.7-1.2 1.8-1.2.6 0 1.1.1 1.5.3-.2 1.2-1 2-1.9 2z" fill="#fff"/></svg> Threads</span>
+                </div>
+                <div class="platform-card" data-platform="Pinterest">
+                  <input type="checkbox" name="platform" value="Pinterest" />
+                  <span><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><rect width="24" height="24" rx="6" fill="#E60023"/><path d="M12 5c-3.9 0-7 3.1-7 7 0 2.8 1.6 5.2 4 6.3 0-.5 0-1.1.1-1.6.2-.6 1-4.3 1-4.3s-.3-.5-.3-1.2c0-1.2.7-2 1.5-2 .7 0 1.1.5 1.1 1.2 0 .7-.5 1.8-.7 2.8-.2.8.4 1.5 1.2 1.5 1.5 0 2.5-1.9 2.5-4.2 0-1.7-1.2-3-3.3-3-2.4 0-3.9 1.8-3.9 3.8 0 .7.2 1.2.5 1.5.1.2.2.2.1.4l-.2.6c0 .2-.2.3-.4.2-1.1-.4-1.6-1.7-1.6-3 0-2.5 2.1-5.5 6.2-5.5 3.3 0 5.5 2.4 5.5 5 0 3.4-1.9 6-4.6 6-.9 0-1.8-.5-2.1-1.1l-.6 2.3c-.2.7-.6 1.4-1 2 .8.2 1.6.4 2.5.4 3.9 0 7-3.1 7-7s-3.1-7-7-7z" fill="#fff"/></svg> Pinterest</span>
                 </div>
                 <div class="platform-card" data-platform="Blog">
                   <input type="checkbox" name="platform" value="Blog" />
@@ -2040,6 +2059,8 @@ async function generatePlatformContent(transcript, platform, tone, brandVoice) {
     'LinkedIn': `Write a professional LinkedIn post (200-300 words) based on this transcript. Include relevant industry insights and a call-to-action. Professional tone emphasizing business value.`,
     'Facebook': `Write a Facebook post (150-300 words) that's engaging and encourages discussion. Include a call-to-action and ask a question to boost engagement.`,
     'YouTube': `Create a YouTube video description (200-400 words) based on this transcript. Include: an attention-grabbing first line, timestamps/chapters section, key takeaways, relevant tags, and a call-to-action to like/subscribe. Also suggest a compelling video title (under 70 characters) at the top.`,
+    'Threads': `Create a Threads post (under 500 characters) based on this transcript. Make it conversational, authentic, and engaging. Threads is a text-first platform — keep it punchy and relatable. Include 3-5 relevant hashtags at the end.`,
+    'Pinterest': `Create a Pinterest pin description (150-300 characters) based on this transcript. Make it keyword-rich for search discovery. Include a compelling call-to-action. Add 5-8 relevant hashtags. Also suggest a pin title (under 100 characters) at the top.`,
     'Blog': `Write a complete blog article (800-1200 words) based on this transcript. Include: H2 headings for each section, 3-4 main sections, introduction and conclusion, and actionable insights.`
   };
 
@@ -2270,6 +2291,8 @@ router.get('/history', requireAuth, (req, res) => {
         .platform-badge[data-platform="LinkedIn"] { background: linear-gradient(135deg, #0A66C2, #004182); }
         .platform-badge[data-platform="Facebook"] { background: linear-gradient(135deg, #1877F2, #42a5f5); }
         .platform-badge[data-platform="YouTube"] { background: linear-gradient(135deg, #FF0000, #CC0000); }
+        .platform-badge[data-platform="Threads"] { background: linear-gradient(135deg, #000000, #333333); }
+        .platform-badge[data-platform="Pinterest"] { background: linear-gradient(135deg, #E60023, #AD081B); }
         .platform-badge[data-platform="Blog"] { background: linear-gradient(135deg, #6C3AED, #EC4899); }
 
         body.light .platform-badge {
