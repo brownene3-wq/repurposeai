@@ -833,9 +833,12 @@ async function renderEditor(req, res) {
     .sc-tour-dots{display:flex;gap:5px;align-items:center}
     .sc-tour-dot{width:6px;height:6px;border-radius:50%;background:rgba(168,85,247,.25);transition:background .2s,width .2s}
     .sc-tour-dot.on{background:#a855f7;width:18px;border-radius:3px}
-    /* Help button styling — small accent next to Save as Draft. */
-    #tourHelpBtn{background:rgba(168,85,247,.10);border:1px solid rgba(168,85,247,.35);color:#a78bfa}
-    #tourHelpBtn:hover{background:rgba(168,85,247,.22);color:#fff}
+    /* Help (question-mark) button — compact icon-only sibling to
+       Save as Draft. Square aspect, no text padding, currentColor
+       inherits the gradient theme on hover. */
+    #tourHelpBtn{padding:0;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;background:rgba(168,85,247,.10);border:1px solid rgba(168,85,247,.35);color:#a78bfa;border-radius:50%;flex-shrink:0}
+    #tourHelpBtn:hover{background:rgba(168,85,247,.22);color:#fff;border-color:#a855f7}
+    #tourHelpBtn svg{width:16px;height:16px}
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -880,8 +883,11 @@ async function renderEditor(req, res) {
             <!-- Task #95 \u2014 Re-trigger the interactive coach-mark tour. Clicked
                  manually any time; auto-fires once for first-time visitors via
                  localStorage check in the tour script below. -->
-            <button class="e-tb" id="tourHelpBtn" type="button" title="Show editor walkthrough" aria-label="Show editor walkthrough">\u2753 Tour</button>
             <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
+            <!-- Task #98 — Tour trigger reduced to a themed question-mark
+                 icon; text dropped, button kept compact + circular so it
+                 reads as a 'help' affordance rather than a primary action. -->
+            <button class="e-tb e-tb-help" id="tourHelpBtn" type="button" title="Show editor walkthrough" aria-label="Show editor walkthrough"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.5 2.5 0 1 1 4.4 1.6c-.6.7-1.4 1-1.9 1.6-.3.4-.5.8-.5 1.3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
           </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
               <div class="media-library" id="mediaLibrary">
