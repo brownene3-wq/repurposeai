@@ -943,6 +943,26 @@
       var MIN_W       = 15;
       clip.classList.add('mt-trimming');
 
+      // Task #102 — When Link Tracks is ON, snapshot the clips that
+      // line up against this clip's matching edge so we can apply the
+      // same px delta to them as the leader moves. Left-handle matches
+      // by start position; right-handle matches by end position.
+      var linkedState = (function(){
+        if (!_timelineState.linked) return [];
+        var sources = (side === 'l') ? findLinkedClips(clip) : findLinkedClipsByRight(clip);
+        return sources.map(function(c){
+          var t = c.dataset.clipType || '';
+          return {
+            clip:        c,
+            startLeft:   parseFloat(c.style.left)  || 0,
+            startWidth:  parseFloat(c.style.width) || c.offsetWidth || 100,
+            startSrcOff: parseFloat(c.dataset.sourceOffset) || 0,
+            srcDur:      parseFloat(c.dataset.duration) || 0,
+            isMedia:     (t === 'vid' || t === 'aud')
+          };
+        });
+      })();
+
       function onMove(ev){
         var dx = ev.clientX - startX;
 
@@ -996,6 +1016,26 @@
           // For NON-media clips (text/image/motion) keep duration in sync
           // with timeline width since they don't track a source length.
           if (!isMedia) clip.dataset.duration = (newWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+          // Task #102 — propagate the leader's actual applied delta to
+          // each linked clip. Clamps individually so a shorter linked
+          // clip just stops trimming instead of breaking the leader.
+          if (linkedState.length){
+            var appliedDxL = newLeft - startLeft;
+            linkedState.forEach(function(L){
+              var lLeft  = L.startLeft  + appliedDxL;
+              var lWidth = L.startWidth - appliedDxL;
+              if (lWidth < MIN_W || lLeft < 0) return;
+              if (L.isMedia){
+                var lSrc = L.startSrcOff + appliedDxL / TIMELINE_PX_PER_SEC;
+                if (lSrc < 0) return;
+                L.clip.dataset.sourceOffset = lSrc.toFixed(3);
+              } else {
+                L.clip.dataset.duration = (lWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+              }
+              L.clip.style.left  = lLeft  + 'px';
+              L.clip.style.width = lWidth + 'px';
+            });
+          }
         } else {
           // Right handle: width = startWidth + dx
           var newW = startWidth + dx;
@@ -1010,6 +1050,21 @@
 
           clip.style.width = newW + 'px';
           if (!isMedia) clip.dataset.duration = (newW / TIMELINE_PX_PER_SEC).toFixed(3);
+          // Task #102 — propagate to linked clips. Right-trim only
+          // changes width, never left/sourceOffset.
+          if (linkedState.length){
+            var appliedDw = newW - startWidth;
+            linkedState.forEach(function(L){
+              var lWidth = L.startWidth + appliedDw;
+              if (lWidth < MIN_W) return;
+              if (L.isMedia && L.srcDur > 0){
+                var lMaxW = (L.srcDur - L.startSrcOff) * TIMELINE_PX_PER_SEC;
+                if (lMaxW > 0 && lWidth > lMaxW) lWidth = lMaxW;
+              }
+              L.clip.style.width = lWidth + 'px';
+              if (!L.isMedia) L.clip.dataset.duration = (lWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+            });
+          }
         }
       }
 
@@ -1027,6 +1082,12 @@
         try { refreshKeyframeMarkers(clip); } catch(_){}
         // Re-render filmstrip / waveform at the new width
         try { attachFilmstripOrWaveform(clip); } catch(_){}
+        // Task #102 — refresh the same artifacts on every linked clip
+        // whose width changed in sympathy with the leader.
+        linkedState.forEach(function(L){
+          try { refreshKeyframeMarkers(L.clip); } catch(_){}
+          try { attachFilmstripOrWaveform(L.clip); } catch(_){}
+        });
         pushTimelineHistory();
       }
 
@@ -1389,6 +1450,26 @@
       if (c.parentElement === myTrack) continue;  // same track — not linked
       var lc = parseFloat(c.style.left) || 0;
       if (Math.abs(lc - leftA) < 4) out.push(c);
+    }
+    return out;
+  }
+
+  // Task #102 — Right-edge variant for right-handle trims. Same idea as
+  // findLinkedClips but compares (left + width) instead of left, so a
+  // V1 + A1 pair coming from the same source (right edges aligned)
+  // gets trimmed together when the user grabs the tail handle.
+  function findLinkedClipsByRight(clip){
+    if (!_timelineState.linked) return [];
+    var rightA = (parseFloat(clip.style.left) || 0) + (parseFloat(clip.style.width) || 0);
+    var myTrack = clip.parentElement;
+    var out = [];
+    var all = document.querySelectorAll('.mt-clip');
+    for (var i = 0; i < all.length; i++){
+      var c = all[i];
+      if (c === clip) continue;
+      if (c.parentElement === myTrack) continue;
+      var rc = (parseFloat(c.style.left) || 0) + (parseFloat(c.style.width) || 0);
+      if (Math.abs(rc - rightA) < 4) out.push(c);
     }
     return out;
   }
@@ -2809,14 +2890,27 @@
       var selected = document.querySelectorAll('.mt-clip.selected');
       if (!selected.length) return;
       e.preventDefault();
-      var removedVideo = Array.from(selected).some(function(c){ return c.classList.contains('mt-clip-video'); });
-      selected.forEach(function(c){ c.remove(); });
+      // Task #102 — When Link Tracks is ON, also remove any clip on
+      // another track that starts at the same timeline-x as a selected
+      // clip. This way deleting a V1 video also pulls its A1 audio (and
+      // any T1 caption sitting under it).
+      var toRemove = Array.from(selected);
+      if (_timelineState.linked){
+        var seen = new Set(toRemove);
+        toRemove.slice().forEach(function(c){
+          findLinkedClips(c).forEach(function(l){
+            if (!seen.has(l)){ seen.add(l); toRemove.push(l); }
+          });
+        });
+      }
+      var removedVideo = toRemove.some(function(c){ return c.classList.contains('mt-clip-video'); });
+      toRemove.forEach(function(c){ c.remove(); });
       updateTimelineInfo();
       if (removedVideo && _timelineState.snap){ compactVideoTrack(); }
       _lastPreviewUrl = null;
       try { syncPreviewToPlayhead(); } catch(_){}
       pushTimelineHistory();
-      showToast(selected.length === 1 ? 'Clip removed' : (selected.length + ' clips removed'));
+      showToast(toRemove.length === 1 ? 'Clip removed' : (toRemove.length + ' clips removed'));
     });
   }
 
