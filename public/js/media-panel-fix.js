@@ -870,7 +870,15 @@
     if (!clip || !dataURL) return;
     clip.style.backgroundImage = 'url(' + dataURL + ')';
     clip.style.backgroundRepeat = 'no-repeat';
-    clip.style.backgroundSize = '100% 100%';
+    // Task #96 — Keep frames at their intrinsic px width so trimming
+    // simply HIDES/REVEALS them via the clip's existing overflow:hidden,
+    // instead of horizontally scaling the whole canvas. The image was
+    // baked at slotCount × THUMB_W (60) px wide for the clip's width at
+    // render time, so 'auto' width = exact 1:1 frame size, and '100%'
+    // height stretches the 30px thumb canvas to fill the clip's height.
+    // Trim end re-renders via attachFilmstripOrWaveform() so growing
+    // a clip past its original width still gets enough frames.
+    clip.style.backgroundSize = 'auto 100%';
     clip.style.backgroundPosition = 'left center';
     // Ensure text (filename) stays readable on top of the filmstrip
     clip.style.textShadow = '0 1px 2px rgba(0,0,0,0.85)';
