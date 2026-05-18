@@ -249,7 +249,7 @@
   // timelines scroll naturally.
   var TIMELINE_PX_PER_SEC = 10;
   // Default-on snap so edges magnetize out of the box.
-  var _timelineState = { tool: 'select', snap: true };
+  var _timelineState = { tool: 'select', snap: true, linked: false };
 
   function findRightmostClipEnd(trackEl){
     var maxEnd = 0;
@@ -569,6 +569,20 @@
         document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
         clip.classList.add('selected');
         group = [clip];
+      }
+
+      // Task #100 — When Link Tracks is ON, expand the drag group to
+      // include clips on other tracks that line up under/over this
+      // one. The existing multi-clip drag logic then moves them all
+      // by the same delta.
+      if (_timelineState.linked){
+        var expanded = group.slice();
+        group.forEach(function(g){
+          findLinkedClips(g).forEach(function(l){
+            if (expanded.indexOf(l) === -1) expanded.push(l);
+          });
+        });
+        group = expanded;
       }
 
       var startX = e.clientX;
@@ -1346,6 +1360,37 @@
     _timelineState.snap = !!on;
     var btn = document.getElementById('mtSnapBtn');
     if (btn) btn.classList.toggle('active', !!on);
+  }
+
+  // Task #100 — Link Tracks. When ON, dragging any clip also drags
+  // every clip on the OTHER tracks that starts at the same timeline-x
+  // (within a small tolerance). Models Premiere's "Linked Selection"
+  // so a V1 video and its A1 audio (or a T1 caption sitting under
+  // them) move as one unit.
+  function setLinkTracksEnabled(on){
+    _timelineState.linked = !!on;
+    var btn = document.getElementById('mtLinkTracksBtn');
+    if (btn) btn.classList.toggle('active', !!on);
+  }
+
+  // Find clips on OTHER tracks that start at the same timeline-x as
+  // `clip`. Returns [] when Link Tracks is OFF so the drag path stays
+  // unchanged in the default case. Tolerance is 4px so minor pixel
+  // rounding (compactVideoTrack, snap-to-edge) doesn't break the link.
+  function findLinkedClips(clip){
+    if (!_timelineState.linked) return [];
+    var leftA   = parseFloat(clip.style.left) || 0;
+    var myTrack = clip.parentElement;
+    var out = [];
+    var all = document.querySelectorAll('.mt-clip');
+    for (var i = 0; i < all.length; i++){
+      var c = all[i];
+      if (c === clip) continue;
+      if (c.parentElement === myTrack) continue;  // same track — not linked
+      var lc = parseFloat(c.style.left) || 0;
+      if (Math.abs(lc - leftA) < 4) out.push(c);
+    }
+    return out;
   }
 
   // ── Timeline history (Undo / Redo) ─────────────────────────────
@@ -2688,13 +2733,16 @@
     if (linkTracks && !linkTracks.dataset.v14){
       linkTracks.dataset.v14 = '1';
       linkTracks.addEventListener('click', function(){
-        linkTracks.classList.toggle('active');
-        showToast('Tracks ' + (linkTracks.classList.contains('active') ? 'linked' : 'unlinked'));
+        setLinkTracksEnabled(!_timelineState.linked);
+        showToast(_timelineState.linked
+          ? 'Tracks linked — clips lined up under each other now drag as one'
+          : 'Tracks unlinked');
       });
     }
     // Apply initial visual state (Razor active, Snap on by default).
     setActiveTool(_timelineState.tool);
     setSnapEnabled(_timelineState.snap);
+    setLinkTracksEnabled(_timelineState.linked);
   }
   wireTimelineTools();
 
