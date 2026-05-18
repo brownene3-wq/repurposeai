@@ -602,7 +602,6 @@ async function renderEditor(req, res) {
        editor's full-viewport main-content. The pull-to-refresh, mobile
        menu, and sidebar overlay are still suppressed. */
     .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay{display:none!important}
-    .main-content .theme-toggle{position:fixed;top:1.2rem;right:1.5rem;z-index:99999}
     .feedback-btn{display:none!important}
     /* Hide extra original editor panels inside video-container */
     .video-container>div:not(.upload-zone):not(.video-preview-area):not(.filmstrip-wrap):not(.tools-section){display:none!important}
@@ -814,7 +813,6 @@ async function renderEditor(req, res) {
     ${getSidebar('video-editor', req.user, req.teamPermissions)}
 
     <main class="main-content">
-      ${getThemeToggle()}
       ${getBrandKitModal()}
 
       <div class="editor-container">
@@ -1688,7 +1686,13 @@ async function renderEditor(req, res) {
     if (document.readyState !== 'loading') { populateMediaGrid(); }
 
 
-    ${getThemeScript()}
+    // Editor is dark-only — strip any 'light' class the global toggle
+    // may have stored, and skip the toggle handler entirely.
+    try {
+      document.documentElement.classList.remove('light');
+      document.body && document.body.classList.remove('light');
+      document.documentElement.setAttribute('data-theme','dark');
+    } catch(_){}
 
 
 
