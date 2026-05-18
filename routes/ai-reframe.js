@@ -1688,14 +1688,14 @@ ${pageStyles}
           <div class="aspect-ratio-section" style="margin-top:1.5rem">
             <label class="aspect-ratio-label">Crop Mode</label>
             <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
+                <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)"> 🎬 Multi-Person Grid
+              </label>
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeCenterLabel">
                 <input type="radio" name="cropMode" value="center" checked style="accent-color:var(--primary)"> 🎯 Center Crop
               </label>
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeFaceLabel">
                 <input type="radio" name="cropMode" value="face-tracking" style="accent-color:var(--primary)"> 🧠 AI Face Tracking
-              </label>
-              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
-                <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)"> 🎬 Multi-Person Grid
               </label>
             </div>
             <div id="faceTrackingInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
