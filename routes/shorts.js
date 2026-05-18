@@ -9441,7 +9441,7 @@ ${paginationHtml}
           narrationState.elevenlabsVoiceId = data.voices[0].voice_id;
           select.onchange = function() { narrationState.elevenlabsVoiceId = this.value; };
         } else {
-          select.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Brand Kit</option>';
+          select.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Settings</option>';
         }
       } catch (err) {
         select.innerHTML = '<option value="">Error loading voices</option>';
@@ -9580,7 +9580,7 @@ ${paginationHtml}
         if (data.voices && data.voices.length > 0) {
           sel.innerHTML = data.voices.map(function(v) { return '<option value="' + v.voice_id + '">' + v.name + '</option>'; }).join('');
         } else {
-          sel.innerHTML = '<option value="">No voices — add API key in Brand Kit</option>';
+          sel.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Settings</option>';
         }
       } catch(e) { sel.innerHTML = '<option value="">Error</option>'; }
     }
