@@ -746,7 +746,7 @@
         var slotIdx = 0;
         function drawNext(){
           if (slotIdx >= slotCount){
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
             return;
           }
           var t = srcOff + ((slotIdx + 0.5) / slotCount) * clipDurSec;
