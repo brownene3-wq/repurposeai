@@ -1693,20 +1693,54 @@ ${pageStyles}
                  selection is unchanged; only the visual order moves. -->
             <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
-                <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)"> 🎬 Multi-Person Grid
+                <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)">
+                <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <rect x="2.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="11.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="2.25" y="11.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="11.25" y="11.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                </svg>
+                Multi-Person Grid
               </label>
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeCenterLabel">
-                <input type="radio" name="cropMode" value="center" checked style="accent-color:var(--primary)"> 🎯 Center Crop
+                <input type="radio" name="cropMode" value="center" checked style="accent-color:var(--primary)">
+                <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M5 1.5V14.5H18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M2 5.5H15V18.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="10" cy="10" r="1.2" fill="currentColor"/>
+                </svg>
+                Center Crop
               </label>
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeFaceLabel">
-                <input type="radio" name="cropMode" value="face-tracking" style="accent-color:var(--primary)"> 🧠 AI Face Tracking
+                <input type="radio" name="cropMode" value="face-tracking" style="accent-color:var(--primary)">
+                <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/>
+                  <path d="M3 17.5C3 14.2 5.7 12 9 12C10.6 12 12 12.5 13.1 13.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M16.5 4L17.1 5.4L18.5 6L17.1 6.6L16.5 8L15.9 6.6L14.5 6L15.9 5.4L16.5 4Z" fill="currentColor"/>
+                </svg>
+                AI Face Tracking
               </label>
             </div>
             <div id="faceTrackingInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
-              <strong>🧠 AI Face Tracking</strong> — The AI will detect faces in your video and dynamically adjust the crop window to keep people centered in every frame. Perfect for interviews, podcasts, and talking-head videos where subjects aren't always in the center.
+              <strong style="display:inline-flex;align-items:center;gap:.4rem">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" style="vertical-align:middle;color:var(--primary)">
+                  <circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/>
+                  <path d="M3 17.5C3 14.2 5.7 12 9 12C10.6 12 12 12.5 13.1 13.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M16.5 4L17.1 5.4L18.5 6L17.1 6.6L16.5 8L15.9 6.6L14.5 6L15.9 5.4L16.5 4Z" fill="currentColor"/>
+                </svg>
+                AI Face Tracking
+              </strong> — The AI will detect faces in your video and dynamically adjust the crop window to keep people centered in every frame. Perfect for interviews, podcasts, and talking-head videos where subjects aren't always in the center.
             </div>
             <div id="gridModeInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
-              <strong>🎬 Multi-Person Grid</strong> — Detect everyone in your clip, pick up to 4, and get a vertical video with each person in their own tile. Great for podcast highlights and panel reactions.
+              <strong style="display:inline-flex;align-items:center;gap:.4rem">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" style="vertical-align:middle;color:var(--primary)">
+                  <rect x="2.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="11.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="2.25" y="11.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="11.25" y="11.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                </svg>
+                Multi-Person Grid
+              </strong> — Detect everyone in your clip, pick up to 4, and get a vertical video with each person in their own tile. Great for podcast highlights and panel reactions.
             </div>
           </div>
 
@@ -1923,12 +1957,26 @@ ${pageStyles}
       reframeBtn.disabled = !(hasUrl || hasFile) || !hasAspectRatio;
     }
 
+    // Helper: set border + icon color in lockstep so the SVG mirrors the
+    // selected state instead of always sitting in plain text color.
+    function setModeLabelState(labelId, isSelected) {
+      const lbl = document.getElementById(labelId);
+      if (!lbl) return;
+      lbl.style.borderColor = isSelected ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+      const icon = lbl.querySelector('.mode-icon');
+      if (icon) icon.style.color = isSelected ? 'var(--primary)' : 'var(--text)';
+    }
+    // Initial paint — Center Crop is checked by default, so its icon is purple
+    setModeLabelState('modeCenterLabel', true);
+    setModeLabelState('modeFaceLabel',   false);
+    setModeLabelState('modeGridLabel',   false);
+
     // Crop mode toggle styling + show/hide mode-specific sections
     document.querySelectorAll('input[name="cropMode"]').forEach(radio => {
       radio.addEventListener('change', function() {
-        document.getElementById('modeCenterLabel').style.borderColor = this.value === 'center' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
-        document.getElementById('modeFaceLabel').style.borderColor = this.value === 'face-tracking' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
-        document.getElementById('modeGridLabel').style.borderColor = this.value === 'grid' ? 'var(--primary)' : 'rgba(255,255,255,0.1)';
+        setModeLabelState('modeCenterLabel', this.value === 'center');
+        setModeLabelState('modeFaceLabel',   this.value === 'face-tracking');
+        setModeLabelState('modeGridLabel',   this.value === 'grid');
         document.getElementById('faceTrackingInfo').style.display = this.value === 'face-tracking' ? 'block' : 'none';
         document.getElementById('gridModeInfo').style.display = this.value === 'grid' ? 'block' : 'none';
 
