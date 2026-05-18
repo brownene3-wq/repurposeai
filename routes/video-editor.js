@@ -441,7 +441,7 @@ async function renderEditor(req, res) {
     body.light .mt-track{background:rgba(108,58,237,.04);border-bottom:1px solid rgba(108,58,237,.10)}
     body.light .mt-clip{color:#1a1a2e}
     body.light .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.45),rgba(250,204,21,.28));border-color:rgba(202,138,4,.55);color:#1a1a2e}
-    body.light .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.55),rgba(124,58,237,.35));border-color:rgba(124,58,237,.6);color:#fff}
+    body.light .mt-clip-video{background:transparent;color:#fff}
     body.light .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.55),rgba(56,189,248,.35));border-color:rgba(56,189,248,.6);color:#0a0a0a}
     body.light .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.55),rgba(244,114,182,.35));border-color:rgba(244,114,182,.6);color:#fff}
     body.light .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.55),rgba(52,211,153,.35));border-color:rgba(52,211,153,.6);color:#0a0a0a}
@@ -774,7 +774,7 @@ async function renderEditor(req, res) {
     /* Keyframe markers — yellow diamonds anchored along the top edge
        of the clip at each keyframe's relative t position. */
     .mt-kf-marker{position:absolute;top:-3px;width:7px;height:7px;background:#fde047;border:1px solid #ca8a04;transform:translateX(-50%) rotate(45deg);border-radius:1px;pointer-events:none;z-index:3;box-shadow:0 0 3px rgba(253,224,71,.8)}
-    .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:none}
+    .mt-clip-video{background:transparent;border:none}
     .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:none}
     .mt-clip.selected{outline:2px solid #a78bfa;outline-offset:-2px;box-shadow:0 0 16px rgba(139,92,246,.55)}
     /* Task #72 — Snap feedback while dragging. Border glows cyan when the

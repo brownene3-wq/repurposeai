@@ -87,7 +87,7 @@
     '.mt-label-video,.mt-label-audio{height:52px!important;min-height:52px!important;display:flex!important;align-items:center!important}',
     '.mt-label-music,.mt-label-text,.mt-label-fx{height:36px!important;min-height:36px!important;display:flex!important;align-items:center!important}',
     '/* v10 timeline overlays */',
-    '.v10-filmstrip{position:absolute;inset:4px 4px;border-radius:5px;overflow:hidden;display:flex;z-index:2;pointer-events:none}',
+    '.v10-filmstrip{position:absolute;inset:0;border-radius:6px;overflow:hidden;display:flex;z-index:2;pointer-events:none}',
     '.v10-frame{flex:1;min-width:0;position:relative;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat}',
     '.v10-fs-label{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.7);z-index:4;pointer-events:none}',
     '.v10-wf-dense{position:absolute;inset:4px 8px;display:flex;align-items:center;justify-content:center;gap:1px;z-index:2;pointer-events:none}',
