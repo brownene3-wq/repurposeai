@@ -441,7 +441,15 @@
   // Split a clip at cutXInClip (in clip-local pixels) into two clips.
   // The right half inherits mediaUrl and stores sourceOffset so when played
   // it seeks to the correct point inside the original source.
-  function razorSplit(clip, cutXInClip){
+  //
+  // Options:
+  //   silent (bool) — Task #103. When true, skip the toast / history /
+  //     preview sync side effects. Used for recursive linked-split calls
+  //     so we emit ONE consolidated toast and push ONE history snapshot
+  //     for the whole multi-track split.
+  function razorSplit(clip, cutXInClip, options){
+    options = options || {};
+    var silent = !!options.silent;
     var width = parseFloat(clip.style.width) || clip.offsetWidth || 0;
     // Ignore clicks within 6px of either edge — don't create tiny slivers.
     if (cutXInClip < 6 || cutXInClip > width - 6) return false;
@@ -485,12 +493,43 @@
     makeClipInteractive(right);
 
     updateTimelineInfo();
+
+    // Silent recursive call from the linked-split block below: skip the
+    // preview / history / toast so the leader emits exactly one of each.
+    if (silent) return true;
+
     // Split changed which clip is under the playhead — refresh preview.
     _lastPreviewUrl = null;
     try { syncPreviewToPlayhead(); } catch(_){}
     if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+
+    // Task #103 — When Link Tracks is ON, also split any clip on OTHER
+    // tracks whose horizontal range strictly contains the cut point
+    // (timeline-x = clip.left + cutXInClip). Each linked split recurses
+    // with { silent: true } so its own side effects are suppressed.
+    var linkedSplitCount = 0;
+    if (_timelineState.linked){
+      var cutTimelinePx = left + cutXInClip;
+      var myTrack = clip.parentElement;
+      var candidates = Array.from(document.querySelectorAll('.mt-clip'));
+      candidates.forEach(function(c){
+        if (c === clip || c === right) return;
+        if (c.parentElement === myTrack) return;
+        var cl = parseFloat(c.style.left)  || 0;
+        var cw = parseFloat(c.style.width) || 0;
+        // Strict containment — refuse to split exactly at an edge so we
+        // don't create slivers on linked clips (razorSplit's own 6px
+        // guard would reject those anyway).
+        if (cutTimelinePx > cl + 6 && cutTimelinePx < cl + cw - 6){
+          if (razorSplit(c, cutTimelinePx - cl, { silent: true })) linkedSplitCount++;
+        }
+      });
+    }
+
     pushTimelineHistory();
-    showToast('Clip split');
+    showToast(linkedSplitCount > 0
+      ? ('Split ' + (1 + linkedSplitCount) + ' clips')
+      : 'Clip split');
     return true;
   }
   // Task #38/#39 — expose razor + compact helpers so the AI smart-cut
