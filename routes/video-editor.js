@@ -584,9 +584,9 @@ async function renderEditor(req, res) {
     .fs-row{display:flex;align-items:center;height:56px;position:relative;margin-bottom:2px}
     .fs-row.audio-row{height:38px}
     .fs-label{width:40px;font-size:9px;font-weight:800;color:#5a6a7a;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;text-align:right;padding-right:6px}
-    .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:1px solid rgba(108,58,237,.10)}
+    .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:none}
     .fs-track.video-track{background:#0a1015}
-    .fs-track.audio-track{background:#0a1520;border-color:rgba(56,189,248,.10)}
+    .fs-track.audio-track{background:#0a1520}
     .fs-thumbs{display:flex;height:100%;width:100%;overflow:hidden;gap:0}.fs-thumbs img,.fs-thumb-placeholder{flex:1;height:100%;object-fit:cover;min-width:0;display:block}.fs-thumb-placeholder{background:linear-gradient(135deg,#1a2a3c 0%,#2a1a3c 100%);animation:fsPulse 1.5s ease-in-out infinite alternate}@keyframes fsPulse{0%{opacity:.4}100%{opacity:.7}}
     .fs-thumb{flex:1;background-size:cover;background-position:center;position:relative}
         .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
@@ -774,8 +774,8 @@ async function renderEditor(req, res) {
     /* Keyframe markers — yellow diamonds anchored along the top edge
        of the clip at each keyframe's relative t position. */
     .mt-kf-marker{position:absolute;top:-3px;width:7px;height:7px;background:#fde047;border:1px solid #ca8a04;transform:translateX(-50%) rotate(45deg);border-radius:1px;pointer-events:none;z-index:3;box-shadow:0 0 3px rgba(253,224,71,.8)}
-    .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:1px solid rgba(124,58,237,.4)}
-    .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:1px solid rgba(56,189,248,.35)}
+    .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:none}
+    .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:none}
     .mt-clip.selected{outline:2px solid #a78bfa;outline-offset:-2px;box-shadow:0 0 16px rgba(139,92,246,.55)}
     /* Task #72 — Snap feedback while dragging. Border glows cyan when the
        active clip's edge is locked to a neighbour or playhead. */
@@ -787,9 +787,9 @@ async function renderEditor(req, res) {
     body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}
     /* Razor tool: clicking a clip splits it at the click point */
     body[data-timeline-tool="razor"] .mt-clip{cursor:col-resize}
-    .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:1px solid rgba(244,114,182,.35)}
-    .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
-    .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
+    .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:none}
+    .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:none}
+    .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:none}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     /* Task #63 — playhead must always render above clips. AI-inserted
        clips (Hook=950, Brand Logo=920, B-Roll=900, Freeze=850) and
