@@ -1687,6 +1687,10 @@ ${pageStyles}
 
           <div class="aspect-ratio-section" style="margin-top:1.5rem">
             <label class="aspect-ratio-label">Crop Mode</label>
+            <!-- Task #101 — Reordered: Multi-Person Grid (left) / Center
+                 Crop (center, default) / AI Face Tracking (right). The
+                 'checked' attribute stays on Center Crop so the default
+                 selection is unchanged; only the visual order moves. -->
             <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
                 <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)"> 🎬 Multi-Person Grid
