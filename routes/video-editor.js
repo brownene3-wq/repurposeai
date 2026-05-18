@@ -872,8 +872,13 @@ async function renderEditor(req, res) {
             <button class="e-tb" type="button" id="tbUndoBtn" title="Undo last action">\u21a9 Undo</button>
             <button class="e-tb" type="button" id="tbRedoBtn" title="Redo last action">\u21aa Redo</button><div class="e-sep"></div>
             <button class="e-tb" type="button" id="tbSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Snap</button>
-            <button class="e-tb" type="button" id="tbSnapshotBtn" title="Insert a freeze-frame at the playhead">\ud83d\udcf7 Snapshot</button>
-            <button class="e-tb" type="button" id="tbLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
+            <!-- Task #104 \u2014 Feather-style line-stroke SVGs replace the
+                 \ud83d\udcf7 / \ud83d\udd17 emoji so the topbar reads consistently against
+                 the Snap/help icons. stroke="currentColor" makes them
+                 follow the .e-tb / .e-tb.on / light-mode text colors
+                 automatically. -->
+            <button class="e-tb" type="button" id="tbSnapshotBtn" title="Insert a freeze-frame at the playhead"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Snapshot</button>
+            <button class="e-tb" type="button" id="tbLinkTracksBtn" title="Link Tracks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Link Tracks</button>
             <div class="e-sp"></div>
             <!-- Task #76 \u2014 Editable project filename. Prefills "Untitled Project"
                  so a fresh project always has a usable default. Export reads
@@ -10442,13 +10447,17 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
     const outputFilename = 'yt_import_' + Date.now() + '_' + req.user.id + '.mp4';
     const outputPath = path.join(uploadDir, outputFilename);
 
-    // Task #98 — Multi-tier download chain. YouTube has been blocking
-    // Railway's IP for yt-dlp regardless of player_client variant, so we
-    // try the self-hosted Cobalt API first (which routes through a
-    // different egress) and only fall back to yt-dlp when Cobalt fails.
-    // Mirrors the pattern proven in routes/shorts.js for Quick Narrate.
+    // Task #98 / #105 — Multi-tier download chain. YouTube has been
+    // blocking Railway's IP for yt-dlp regardless of player_client
+    // variant, so we try three downloaders in order:
+    //   1. Self-hosted Cobalt API (different egress)
+    //   2. @distube/ytdl-core (YouTube-only, fast, anti-bot fork)
+    //   3. yt-dlp 10-player-client cascade (legacy fallback)
+    // Each tier captures its own error and the final error message
+    // lists everything that failed so the user sees real diagnostics
+    // instead of a generic "every player failed" string.
     let downloadSuccess = false;
-    let cobaltErr = null;
+    const tierErrors = {};   // { 'Cobalt API': Error, 'ytdl-core': Error, ... }
     const tryWithValidation = async (label, fn) => {
       try {
         await fn();
@@ -10457,37 +10466,80 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
         console.log('[youtube-import] downloaded via ' + label);
         return true;
       } catch (err) {
-        console.log('[youtube-import] ' + label + ' failed: ' + String(err.message || err).slice(0, 300));
+        const msg = String(err && err.message || err).slice(0, 400);
+        console.log('[youtube-import] ' + label + ' failed: ' + msg);
+        tierErrors[label] = msg;
         try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
         return false;
       }
     };
 
-    // 1. Cobalt API (preferred — bypasses YouTube IP blocks on Railway)
-    await tryWithValidation('Cobalt API', () => downloadWithCobalt(url, outputPath))
-      .catch(e => { cobaltErr = e; });
-
-    if (downloadSuccess) {
-      try {
-        const metadata = await getVideoMetadata(outputPath);
-        return res.json({
-          filename: outputFilename,
-          duration: metadata.duration,
-          serveUrl: '/video-editor/download/' + outputFilename
-        });
-      } catch (metaErr) {
-        // Metadata failure on an otherwise-valid file shouldn't kill the import.
-        console.error('[youtube-import] metadata after Cobalt failed:', metaErr);
-        return res.json({
-          filename: outputFilename,
-          duration: 0,
-          serveUrl: '/video-editor/download/' + outputFilename
-        });
-      }
+    function respondSuccess(){
+      // Metadata failure on an otherwise-valid file shouldn't kill the import.
+      return getVideoMetadata(outputPath).then(
+        function(meta){
+          return res.json({
+            filename: outputFilename,
+            duration: meta.duration,
+            serveUrl: '/video-editor/download/' + outputFilename
+          });
+        },
+        function(metaErr){
+          console.error('[youtube-import] metadata probe failed:', metaErr);
+          return res.json({
+            filename: outputFilename,
+            duration: 0,
+            serveUrl: '/video-editor/download/' + outputFilename
+          });
+        }
+      );
     }
 
-    // 2. yt-dlp fallback — kept exactly as before so behavior is unchanged
-    // when Cobalt is unavailable (env issue, endpoint down, etc.).
+    // 1. Cobalt API (preferred — bypasses YouTube IP blocks on Railway)
+    await tryWithValidation('Cobalt API', () => downloadWithCobalt(url, outputPath));
+    if (downloadSuccess) return respondSuccess();
+
+    // 2. ytdl-core (YouTube-only). @distube/ytdl-core has an actively-
+    //    maintained anti-bot story and frequently succeeds when both
+    //    Cobalt and yt-dlp bot-fail. We extract the 11-char video ID;
+    //    if the URL isn't a YouTube link, this tier is skipped.
+    let ytdl = null;
+    try { ytdl = require('@distube/ytdl-core'); }
+    catch (e) { console.log('[youtube-import] @distube/ytdl-core not installed: ' + e.message); }
+    const ytIdMatch = /(?:v=|\/shorts\/|youtu\.be\/|\/embed\/|\/v\/)([A-Za-z0-9_-]{11})/.exec(url);
+    if (ytdl && ytIdMatch){
+      await tryWithValidation('ytdl-core', () => new Promise((resolve, reject) => {
+        const ws = fs.createWriteStream(outputPath);
+        let settled = false;
+        const finish = (err) => {
+          if (settled) return;
+          settled = true;
+          try { ws.destroy(); } catch(_){}
+          if (err) reject(err); else resolve();
+        };
+        let stream;
+        try {
+          stream = ytdl(url, {
+            quality: 'highest',
+            filter: 'audioandvideo',
+            requestOptions: {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+              }
+            }
+          });
+        } catch (e) { return finish(e); }
+        stream.on('error', finish);
+        ws.on('finish', () => finish());
+        ws.on('error', finish);
+        stream.pipe(ws);
+        setTimeout(() => finish(new Error('ytdl-core timed out after 240s')), 240000);
+      }));
+      if (downloadSuccess) return respondSuccess();
+    }
+
+    // 3. yt-dlp fallback — kept exactly as before so behavior is unchanged
+    // when Cobalt + ytdl-core are unavailable (env issue, endpoint down, etc.).
 
     // Use yt-dlp to download the video
     let ytdlpPath = 'yt-dlp';
@@ -10586,17 +10638,24 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
       }
     }
     if (!success){
-      var msg = 'Cobalt API + every yt-dlp player client failed (' + triedList.join(', ') + ').';
-      if (cobaltErr) msg += ' Cobalt error: ' + String(cobaltErr.message || cobaltErr).slice(-200) + '.';
+      // Task #105 \u2014 Surface what every tier actually said so we can
+      // diagnose without server logs. Cobalt/ytdl-core errors live in
+      // tierErrors; yt-dlp's per-attempt fails are summarized via
+      // triedList + lastErr.
+      tierErrors['yt-dlp'] = 'all player clients failed (' + triedList.join(', ') + ')' +
+        (lastErr ? ' \u2014 last stderr: ' + (lastErr.message || '').slice(-200) : '');
+      var msg = 'YouTube download failed on every tier.';
+      Object.keys(tierErrors).forEach(function(k){
+        msg += ' ' + k + ': ' + String(tierErrors[k]).slice(-250) + '.';
+      });
       if (!cookiesPath){
         msg += ' This server\'s IP appears to be rate-limited by YouTube. ' +
                'Set the YT_COOKIES_PATH environment variable to a Netscape-format cookies.txt ' +
                'exported from a logged-in browser (see yt-dlp wiki: "How do I pass cookies to yt-dlp?") ' +
                'and redeploy. As a workaround, download the video locally and use the Upload button.';
       } else {
-        msg += ' Cookies file at ' + cookiesPath + ' may have expired \u2014 re-export from a logged-in browser. ';
+        msg += ' Cookies file at ' + cookiesPath + ' may have expired \u2014 re-export from a logged-in browser.';
       }
-      if (lastErr) msg += ' Last yt-dlp error: ' + (lastErr.message || '').slice(-300);
       throw new Error(msg);
     }
 
