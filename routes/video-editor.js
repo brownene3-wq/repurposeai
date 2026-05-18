@@ -744,8 +744,7 @@ async function renderEditor(req, res) {
     .mt-track-music{background:rgba(244,114,182,.02)}
     .mt-track-text{background:rgba(250,204,21,.02)}
     .mt-track-fx{background:rgba(52,211,153,.02)}
-    .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab;transition:box-shadow .2s}
-    .mt-clip:hover{box-shadow:0 0 12px rgba(124,58,237,.3)}
+    .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab}
     /* Trim handles — 8px grip zones anchored to each clip edge. Become
        visible on hover so they don't clutter the timeline at rest. */
     .mt-clip-trim{position:absolute;top:0;width:8px;height:100%;cursor:ew-resize;z-index:2;opacity:0;transition:opacity .15s;background:rgba(255,255,255,.35);pointer-events:auto}
