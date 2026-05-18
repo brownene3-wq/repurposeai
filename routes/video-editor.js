@@ -801,6 +801,42 @@ async function renderEditor(req, res) {
     .mt-playhead .mt-playhead-handle:hover{background:#a78bfa}
     .mt-playhead.mt-playhead-dragging .mt-playhead-handle{background:#a78bfa}
     .mt-tracks-area{cursor:crosshair}
+
+    /* ════════════════════════════════════════════════════════════
+       Task #95 — Coach Mark / Product Tour
+       9999px box-shadow trick creates a "spotlight" by dimming the
+       entire viewport except the rectangle the cutout sits over.
+       Tooltip card uses the dark/neon palette already established
+       elsewhere in the editor. Step indicator + Back / Next / Skip
+       handle lifecycle; localStorage gates the auto-trigger.
+       ════════════════════════════════════════════════════════════ */
+    .sc-tour-spot{position:fixed;z-index:99991;pointer-events:none;border-radius:12px;box-shadow:0 0 0 9999px rgba(8,6,18,.78);outline:2px solid #a855f7;outline-offset:4px;transition:top .25s ease,left .25s ease,width .25s ease,height .25s ease;animation:scTourPulse 2.2s ease-in-out infinite}
+    @keyframes scTourPulse{0%,100%{outline-color:rgba(168,85,247,.85);box-shadow:0 0 0 9999px rgba(8,6,18,.78),0 0 0 0 rgba(168,85,247,.55)}50%{outline-color:rgba(236,72,153,.95);box-shadow:0 0 0 9999px rgba(8,6,18,.78),0 0 0 8px rgba(168,85,247,0)}}
+    .sc-tour-tip{position:fixed;z-index:99992;width:340px;max-width:calc(100vw - 32px);background:linear-gradient(180deg,rgba(15,12,28,.97),rgba(22,15,42,.97));border:1px solid rgba(168,85,247,.4);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.6),0 0 32px rgba(168,85,247,.18);padding:18px 18px 16px;color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;animation:scTourTipIn .25s ease-out;pointer-events:auto}
+    @keyframes scTourTipIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+    .sc-tour-tip-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .sc-tour-tip-step{font-size:10px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.8px;padding:3px 8px;background:rgba(168,85,247,.14);border:1px solid rgba(168,85,247,.28);border-radius:999px}
+    .sc-tour-tip-spacer{flex:1}
+    .sc-tour-tip-close{background:transparent;border:none;color:#666;font-size:18px;line-height:1;cursor:pointer;padding:0 4px;transition:color .15s}
+    .sc-tour-tip-close:hover{color:#a78bfa}
+    .sc-tour-tip-title{font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;letter-spacing:.1px}
+    .sc-tour-tip-body{font-size:12.5px;line-height:1.55;color:#cdc8e0;margin-bottom:16px}
+    .sc-tour-tip-controls{display:flex;align-items:center;gap:8px}
+    .sc-tour-tip-skip{background:transparent;border:none;color:#888;font-size:11.5px;font-weight:500;cursor:pointer;padding:6px 10px;border-radius:6px;transition:color .15s,background .15s}
+    .sc-tour-tip-skip:hover{color:#a78bfa;background:rgba(168,85,247,.08)}
+    .sc-tour-tip-nav{margin-left:auto;display:flex;gap:6px}
+    .sc-tour-tip-btn{padding:7px 16px;border-radius:7px;border:1px solid rgba(168,85,247,.35);background:rgba(168,85,247,.10);color:#e2e0f0;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s,transform .1s;font-family:inherit}
+    .sc-tour-tip-btn:hover{background:rgba(168,85,247,.22);border-color:rgba(168,85,247,.6)}
+    .sc-tour-tip-btn:active{transform:translateY(1px)}
+    .sc-tour-tip-btn[disabled]{opacity:.35;cursor:not-allowed;pointer-events:none}
+    .sc-tour-tip-btn.primary{background:linear-gradient(135deg,#7c3aed,#a855f7);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(124,58,237,.4)}
+    .sc-tour-tip-btn.primary:hover{box-shadow:0 6px 18px rgba(124,58,237,.6)}
+    .sc-tour-dots{display:flex;gap:5px;align-items:center}
+    .sc-tour-dot{width:6px;height:6px;border-radius:50%;background:rgba(168,85,247,.25);transition:background .2s,width .2s}
+    .sc-tour-dot.on{background:#a855f7;width:18px;border-radius:3px}
+    /* Help button styling — small accent next to Save as Draft. */
+    #tourHelpBtn{background:rgba(168,85,247,.10);border:1px solid rgba(168,85,247,.35);color:#a78bfa}
+    #tourHelpBtn:hover{background:rgba(168,85,247,.22);color:#fff}
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -842,6 +878,10 @@ async function renderEditor(req, res) {
               autocomplete="off" spellcheck="false"
               aria-label="Project filename"
               onfocus="this.select()"/>
+            <!-- Task #95 \u2014 Re-trigger the interactive coach-mark tour. Clicked
+                 manually any time; auto-fires once for first-time visitors via
+                 localStorage check in the tour script below. -->
+            <button class="e-tb" id="tourHelpBtn" type="button" title="Show editor walkthrough" aria-label="Show editor walkthrough">\u2753 Tour</button>
             <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
           </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
@@ -6806,6 +6846,253 @@ setTimeout(function sidebarLayoutFix(){
 </script>
 <script src="/public/js/media-panel-fix.js?v=${Date.now()}"></script>
 <script src="/public/js/v10-editor-redesign.js?v=${Date.now()}"></script>
+
+<!-- Task #95 — Coach Mark / Product Tour controller. -->
+<script>
+(function(){
+  var STORAGE_KEY = 'splicora_editor_tour_v1';
+
+  // Step definitions. Each entry: selector(s) — first match wins — plus
+  // copy and a preferred tooltip side. Selectors are comma-separated so
+  // we can degrade gracefully if a class name shifts.
+  var STEPS = [
+    {
+      sel: '#uploadZone, .upload-zone',
+      title: 'Add Your Video',
+      body:  'Every project starts here. Drop a file, paste a YouTube / Zoom / Twitch / Rumble link, or pull from Dropbox or Google Drive.',
+      side:  'right'
+    },
+    {
+      sel: '.mt-toolbar-left',
+      title: 'Edit Tools',
+      body:  'Razor cuts a clip at the playhead, Select moves clips around, Snap keeps edges aligned. Undo / Redo sit right next door.',
+      side:  'top'
+    },
+    {
+      sel: '#mtTracksArea, .mt-tracks-area',
+      title: 'Multi-Track Timeline',
+      body:  'V1 is video, A1 is audio, M1 is music, T1 is captions, FX is effects. Drag clips between tracks — the playhead follows your every edit.',
+      side:  'top'
+    },
+    {
+      sel: '.editor-sidebar',
+      title: 'AI Toolkit',
+      body:  'Smart Cut trims dead air, Captions auto-transcribes, Brand Kit applies your fonts and logo, B-Roll generates supporting shots. Every shortcut to a polished cut lives here.',
+      side:  'left'
+    },
+    {
+      sel: '#exportButton, .exp-go',
+      title: 'Export Video',
+      body:  'When the edit feels right, render the final file. Filename and format come from the topbar — no popup, just click and go.',
+      side:  'left'
+    }
+  ];
+
+  function findTarget(selectorList){
+    var parts = String(selectorList).split(',');
+    for (var i = 0; i < parts.length; i++){
+      var el = document.querySelector(parts[i].trim());
+      if (el && el.offsetParent !== null) return el;
+    }
+    // Fallback: still return a hidden match if there is one; positioning
+    // logic will handle it via the central-fallback path.
+    for (var j = 0; j < parts.length; j++){
+      var el2 = document.querySelector(parts[j].trim());
+      if (el2) return el2;
+    }
+    return null;
+  }
+
+  function ensureVisible(el){
+    // Bring the target into the viewport before highlighting it.
+    try { el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch(_){
+      try { el.scrollIntoView(); } catch(__){}
+    }
+  }
+
+  function placeTip(rect, tipEl, preferredSide){
+    var gap = 16;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var tipW = tipEl.offsetWidth || 340;
+    var tipH = tipEl.offsetHeight || 200;
+    function compute(side){
+      switch(side){
+        case 'right':  return { x: rect.right + gap,                       y: rect.top + rect.height/2 - tipH/2 };
+        case 'left':   return { x: rect.left  - tipW - gap,                y: rect.top + rect.height/2 - tipH/2 };
+        case 'top':    return { x: rect.left  + rect.width/2 - tipW/2,     y: rect.top  - tipH - gap };
+        case 'bottom':
+        default:       return { x: rect.left  + rect.width/2 - tipW/2,     y: rect.bottom + gap };
+      }
+    }
+    function fits(p){
+      return p.x >= 8 && p.x + tipW <= vw - 8 && p.y >= 8 && p.y + tipH <= vh - 8;
+    }
+    var order = [preferredSide, 'right', 'bottom', 'left', 'top'];
+    var seen = {};
+    for (var i = 0; i < order.length; i++){
+      var s = order[i];
+      if (!s || seen[s]) continue;
+      seen[s] = true;
+      var p = compute(s);
+      if (fits(p)){
+        tipEl.style.left = Math.round(p.x) + 'px';
+        tipEl.style.top  = Math.round(p.y) + 'px';
+        return s;
+      }
+    }
+    // Fallback — center on viewport.
+    tipEl.style.left = Math.round(Math.max(8, (vw - tipW) / 2)) + 'px';
+    tipEl.style.top  = Math.round(Math.max(8, (vh - tipH) / 2)) + 'px';
+    return 'center';
+  }
+
+  function startTour(){
+    var existing = document.getElementById('scTourLayer');
+    if (existing) { try { existing.remove(); } catch(_){} }
+
+    var idx = 0;
+    var layer = document.createElement('div');
+    layer.id = 'scTourLayer';
+    var spot = document.createElement('div');
+    spot.className = 'sc-tour-spot';
+    var tip  = document.createElement('div');
+    tip.className  = 'sc-tour-tip';
+    layer.appendChild(spot);
+    layer.appendChild(tip);
+    document.body.appendChild(layer);
+
+    function buildDots(){
+      var dots = '';
+      for (var i = 0; i < STEPS.length; i++){
+        dots += '<span class="sc-tour-dot' + (i === idx ? ' on' : '') + '"></span>';
+      }
+      return '<div class="sc-tour-dots" aria-hidden="true">' + dots + '</div>';
+    }
+
+    function render(){
+      var step = STEPS[idx];
+      tip.innerHTML =
+        '<div class="sc-tour-tip-head">' +
+          '<span class="sc-tour-tip-step">Step ' + (idx + 1) + ' / ' + STEPS.length + '</span>' +
+          buildDots() +
+          '<span class="sc-tour-tip-spacer"></span>' +
+          '<button class="sc-tour-tip-close" type="button" aria-label="Close tour" data-tour-act="skip">×</button>' +
+        '</div>' +
+        '<div class="sc-tour-tip-title">' + step.title + '</div>' +
+        '<div class="sc-tour-tip-body">'  + step.body  + '</div>' +
+        '<div class="sc-tour-tip-controls">' +
+          '<button class="sc-tour-tip-skip" type="button" data-tour-act="skip">Skip tour</button>' +
+          '<div class="sc-tour-tip-nav">' +
+            '<button class="sc-tour-tip-btn" type="button" data-tour-act="back"' + (idx === 0 ? ' disabled' : '') + '>Back</button>' +
+            '<button class="sc-tour-tip-btn primary" type="button" data-tour-act="next">' +
+              (idx === STEPS.length - 1 ? 'Finish' : 'Next →') +
+            '</button>' +
+          '</div>' +
+        '</div>';
+      // Position spot + tip on the next frame so we can measure tip dims.
+      var target = findTarget(step.sel);
+      if (!target) { finish(true); return; }
+      ensureVisible(target);
+      requestAnimationFrame(function(){
+        var rect = target.getBoundingClientRect();
+        var pad = 8;
+        spot.style.top    = Math.round(rect.top  - pad) + 'px';
+        spot.style.left   = Math.round(rect.left - pad) + 'px';
+        spot.style.width  = Math.round(rect.width  + pad * 2) + 'px';
+        spot.style.height = Math.round(rect.height + pad * 2) + 'px';
+        placeTip(rect, tip, step.side);
+      });
+    }
+
+    function next(){
+      if (idx < STEPS.length - 1){ idx++; render(); }
+      else { finish(false); }
+    }
+    function back(){
+      if (idx > 0){ idx--; render(); }
+    }
+    function finish(silent){
+      try { localStorage.setItem(STORAGE_KEY, '1'); } catch(_){}
+      try { layer.remove(); } catch(_){}
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+      document.removeEventListener('keydown', onKey);
+    }
+
+    function reposition(){
+      var target = findTarget(STEPS[idx].sel);
+      if (!target) return;
+      var rect = target.getBoundingClientRect();
+      var pad = 8;
+      spot.style.top    = Math.round(rect.top  - pad) + 'px';
+      spot.style.left   = Math.round(rect.left - pad) + 'px';
+      spot.style.width  = Math.round(rect.width  + pad * 2) + 'px';
+      spot.style.height = Math.round(rect.height + pad * 2) + 'px';
+      placeTip(rect, tip, STEPS[idx].side);
+    }
+
+    function onKey(e){
+      if (e.key === 'Escape')           { finish(false); }
+      else if (e.key === 'ArrowRight')  { next(); }
+      else if (e.key === 'ArrowLeft')   { back(); }
+      else if (e.key === 'Enter')       { next(); }
+    }
+
+    tip.addEventListener('click', function(e){
+      var t = e.target;
+      while (t && t !== tip && !t.dataset.tourAct) t = t.parentNode;
+      if (!t || !t.dataset.tourAct) return;
+      var act = t.dataset.tourAct;
+      if (act === 'next') next();
+      else if (act === 'back') back();
+      else if (act === 'skip') finish(false);
+    });
+
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll',  reposition, true);
+    document.addEventListener('keydown', onKey);
+
+    render();
+  }
+
+  function alreadySeen(){
+    try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch(_){ return false; }
+  }
+
+  function wireHelpButton(){
+    var btn = document.getElementById('tourHelpBtn');
+    if (!btn || btn.dataset.tourWired) return;
+    btn.dataset.tourWired = '1';
+    btn.addEventListener('click', function(){
+      // Help button always resets the seen flag so re-takes feel intentional.
+      try { localStorage.removeItem(STORAGE_KEY); } catch(_){}
+      startTour();
+    });
+  }
+
+  function init(){
+    wireHelpButton();
+    // Auto-fire ONLY for first-time visitors, after the editor's
+    // panels have finished mounting (~1s after DOMContentLoaded).
+    if (alreadySeen()) return;
+    setTimeout(startTour, 1100);
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // Expose for manual re-trigger from the console / other code.
+  try {
+    window.startSplicoraEditorTour = startTour;
+    window.resetSplicoraEditorTour = function(){
+      try { localStorage.removeItem(STORAGE_KEY); } catch(_){}
+    };
+  } catch(_){}
+})();
+</script>
 </body>
 </html>`;
   if (res.locals && res.locals.initialProject) {
