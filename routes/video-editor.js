@@ -13,6 +13,76 @@ const { featureUsageOps } = require('../db/database');
 // yt-dlp stays as a fallback for Cobalt failures.
 const { downloadWithCobalt, validateDownloadedVideo } = require('../utils/cobalt');
 
+// Task #106 — YouTube cookies helpers.
+//
+// All three downloader tiers (Cobalt, ytdl-core, yt-dlp) are hitting
+// YouTube's IP-block wall on Railway. The reliable cure is real user
+// cookies. Operators can supply them two ways:
+//
+//   YT_COOKIES_PATH    — absolute path to a Netscape cookies.txt file
+//                        mounted on the server.
+//   YT_COOKIES_CONTENT — the raw Netscape cookies.txt content pasted
+//                        as an env var (Railway-friendly; no volume).
+//                        Written to /tmp on first call.
+//
+// Optional YT_COOKIES_BASE64 — same as CONTENT but base64-encoded so
+//                              multi-line content survives env-var
+//                              dashboards that mangle newlines.
+//
+// resolveYouTubeCookiesPath() returns a usable path (or null).
+// readYouTubeCookieHeader() parses the file and produces a Cookie
+// header string for ytdl-core's requestOptions.
+const _cookieMaterialised = { path: null };
+function resolveYouTubeCookiesPath() {
+  // Cached so we only write the tmp file once.
+  if (_cookieMaterialised.path && fs.existsSync(_cookieMaterialised.path)) {
+    return _cookieMaterialised.path;
+  }
+  if (process.env.YT_COOKIES_PATH && fs.existsSync(process.env.YT_COOKIES_PATH)) {
+    _cookieMaterialised.path = process.env.YT_COOKIES_PATH;
+    return _cookieMaterialised.path;
+  }
+  let content = process.env.YT_COOKIES_CONTENT || null;
+  if (!content && process.env.YT_COOKIES_BASE64) {
+    try { content = Buffer.from(process.env.YT_COOKIES_BASE64, 'base64').toString('utf8'); }
+    catch (e) { console.error('[yt-cookies] base64 decode failed:', e.message); }
+  }
+  if (!content) return null;
+  try {
+    const tmp = path.join('/tmp', 'yt-cookies.txt');
+    fs.writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
+    _cookieMaterialised.path = tmp;
+    return tmp;
+  } catch (e) {
+    console.error('[yt-cookies] write failed:', e.message);
+    return null;
+  }
+}
+function readYouTubeCookieHeader() {
+  const p = resolveYouTubeCookiesPath();
+  if (!p) return null;
+  try {
+    const text = fs.readFileSync(p, 'utf8');
+    const pairs = [];
+    text.split(/\r?\n/).forEach(function(line){
+      if (!line || line[0] === '#') return;
+      // Netscape format: domain  flag  path  secure  expiry  name  value
+      const cols = line.split('\t');
+      if (cols.length < 7) return;
+      const domain = cols[0] || '';
+      if (!/youtube\.com|google\.com/i.test(domain)) return;
+      const name = cols[5];
+      const value = cols[6];
+      if (!name || value == null) return;
+      pairs.push(name + '=' + value);
+    });
+    return pairs.length ? pairs.join('; ') : null;
+  } catch (e) {
+    console.error('[yt-cookies] parse failed:', e.message);
+    return null;
+  }
+}
+
 // Task #69 — Brand Kit logo overlay during export. The brand-templates
 // module exposes fetchLogo(filename) which reads the BLOB out of the
 // brand_template_logos Postgres table; we use that to materialise the
@@ -10508,6 +10578,15 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
     catch (e) { console.log('[youtube-import] @distube/ytdl-core not installed: ' + e.message); }
     const ytIdMatch = /(?:v=|\/shorts\/|youtu\.be\/|\/embed\/|\/v\/)([A-Za-z0-9_-]{11})/.exec(url);
     if (ytdl && ytIdMatch){
+      // Task #106 — Pass real YouTube cookies (when configured) so
+      // ytdl-core can actually authenticate against the watch endpoint
+      // instead of getting the bot-wall response. Without cookies on a
+      // cloud IP, ytdl-core gets "Sign in to confirm you're not a bot".
+      const cookieHeader = readYouTubeCookieHeader();
+      const ytdlHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      };
+      if (cookieHeader) ytdlHeaders.Cookie = cookieHeader;
       await tryWithValidation('ytdl-core', () => new Promise((resolve, reject) => {
         const ws = fs.createWriteStream(outputPath);
         let settled = false;
@@ -10522,11 +10601,7 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
           stream = ytdl(url, {
             quality: 'highest',
             filter: 'audioandvideo',
-            requestOptions: {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-              }
-            }
+            requestOptions: { headers: ytdlHeaders }
           });
         } catch (e) { return finish(e); }
         stream.on('error', finish);
@@ -10583,10 +10658,13 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
       '--max-sleep-interval', '3'
     ];
 
-    // Optional cookies file (if the operator provides one)
+    // Optional cookies file. Resolved from YT_COOKIES_PATH or written
+    // out from YT_COOKIES_CONTENT / YT_COOKIES_BASE64 env vars (Task
+    // #106). Same resolver used by ytdl-core above so a single env-var
+    // setup feeds both tiers.
     var cookiesArgs = [];
-    var cookiesPath = process.env.YT_COOKIES_PATH;
-    if (cookiesPath && fs.existsSync(cookiesPath)){
+    var cookiesPath = resolveYouTubeCookiesPath();
+    if (cookiesPath){
       cookiesArgs = ['--cookies', cookiesPath];
     }
 
@@ -10649,12 +10727,17 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
         msg += ' ' + k + ': ' + String(tierErrors[k]).slice(-250) + '.';
       });
       if (!cookiesPath){
-        msg += ' This server\'s IP appears to be rate-limited by YouTube. ' +
-               'Set the YT_COOKIES_PATH environment variable to a Netscape-format cookies.txt ' +
-               'exported from a logged-in browser (see yt-dlp wiki: "How do I pass cookies to yt-dlp?") ' +
-               'and redeploy. As a workaround, download the video locally and use the Upload button.';
+        msg += ' YouTube blocks every IP on this cloud host. The fix: ' +
+               'install the "Get cookies.txt LOCALLY" browser extension, ' +
+               'log into youtube.com, export cookies to a Netscape-format ' +
+               'file, then paste its contents into the YT_COOKIES_CONTENT ' +
+               'env var on Railway (or mount the file and set YT_COOKIES_PATH). ' +
+               'Until cookies are configured, please download the video ' +
+               'locally and use the Upload button.';
       } else {
-        msg += ' Cookies file at ' + cookiesPath + ' may have expired \u2014 re-export from a logged-in browser.';
+        msg += ' Cookies file at ' + cookiesPath + ' was loaded but YouTube still ' +
+               'refused all tiers \u2014 the cookies have likely expired. Re-export from ' +
+               'a logged-in browser and update YT_COOKIES_CONTENT (or the mounted file).';
       }
       throw new Error(msg);
     }
