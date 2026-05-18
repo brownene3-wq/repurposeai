@@ -862,11 +862,18 @@ async function renderEditor(req, res) {
 
           <div class="editor-topbar">
             <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
-            <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
-            <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
-            <button class="e-tb on">\ud83e\uddf2 Snap</button>
-            <button class="e-tb">\ud83d\udcf7 Snapshot</button>
-            <button class="e-tb">\ud83d\udd17 Link Tracks</button>
+            <!-- Task #99 \u2014 Topbar Undo/Redo/Snap/Snapshot/Link Tracks
+                 now proxy to the real handlers (timeline toolbar +
+                 sidebar Edit > Freeze). Inline onclick removed; wiring
+                 lives in the topbar-proxy block below. The Snap icon
+                 was swapped from the magnet emoji to the same 4-square
+                 SVG used on the timeline's mtSnapBtn so they read as
+                 the same control. -->
+            <button class="e-tb" type="button" id="tbUndoBtn" title="Undo last action">\u21a9 Undo</button>
+            <button class="e-tb" type="button" id="tbRedoBtn" title="Redo last action">\u21aa Redo</button><div class="e-sep"></div>
+            <button class="e-tb" type="button" id="tbSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Snap</button>
+            <button class="e-tb" type="button" id="tbSnapshotBtn" title="Insert a freeze-frame at the playhead">\ud83d\udcf7 Snapshot</button>
+            <button class="e-tb" type="button" id="tbLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
             <div class="e-sp"></div>
             <!-- Task #76 \u2014 Editable project filename. Prefills "Untitled Project"
                  so a fresh project always has a usable default. Export reads
@@ -5497,23 +5504,79 @@ function showToast(message, type = 'success') {
         });
       })();
 
-      // ── 6. TOP TOOLBAR BUTTONS (Snap, Snapshot, Link Tracks) ──
-      document.querySelectorAll('.e-tb').forEach(function(btn) {
-        if (btn.onclick) return; // Skip already wired
-        var text = btn.textContent.trim();
-        btn.style.cursor = 'pointer';
-        btn.addEventListener('click', function() {
-          if (text.includes('Snap')) {
-            this.classList.toggle('on');
-            showToast(this.classList.contains('on') ? 'Snap enabled' : 'Snap disabled');
-          } else if (text.includes('Snapshot')) {
-            showToast('Snapshot saved to library');
-          } else if (text.includes('Link')) {
-            this.classList.toggle('on');
-            showToast(this.classList.contains('on') ? 'Tracks linked' : 'Tracks unlinked');
+      // ── 6. TOP TOOLBAR BUTTONS — proxy to real handlers (Task #99) ──
+      // Topbar Undo/Redo/Snap/Snapshot/Link Tracks were previously
+      // mockup toggles that just flashed a toast. Now each one
+      // synthetically clicks the real control that already lives in
+      // the timeline toolbar (or, for Snapshot, the sidebar's Edit >
+      // Freeze .tb3). We also mirror the timeline button's .active
+      // state onto the topbar's .on class so the two stay visually in
+      // sync — including when the timeline button is toggled some
+      // other way (keyboard, programmatic, etc.).
+      (function wireTopbarProxies(){
+        function fireClick(el){
+          if (!el) return;
+          try { el.click(); }
+          catch(_){
+            try { el.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true })); } catch(__){}
           }
-        });
-      });
+        }
+        function mirrorActive(src, dst){
+          if (!src || !dst) return;
+          if (src.classList.contains('active')) dst.classList.add('on');
+          else dst.classList.remove('on');
+        }
+        function bind(topbarId, timelineId){
+          var tb = document.getElementById(topbarId);
+          var ti = document.getElementById(timelineId);
+          if (!tb || !ti) return;
+          tb.style.cursor = 'pointer';
+          tb.addEventListener('click', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+            fireClick(ti);
+            // Let the timeline handler flip its .active first, then mirror.
+            setTimeout(function(){ mirrorActive(ti, tb); }, 0);
+          });
+          // Keep states in sync when the timeline button is toggled by
+          // something else (keyboard shortcut, programmatic call, …).
+          try {
+            var mo = new MutationObserver(function(){ mirrorActive(ti, tb); });
+            mo.observe(ti, { attributes:true, attributeFilter:['class'] });
+          } catch(_){}
+          mirrorActive(ti, tb);
+        }
+        bind('tbUndoBtn',       'mtUndoBtn');
+        bind('tbRedoBtn',       'mtRedoBtn');
+        bind('tbSnapBtn',       'mtSnapBtn');
+        bind('tbLinkTracksBtn', 'mtLinkTracksBtn');
+
+        // Snapshot proxies to the sidebar's Edit > Freeze button. We
+        // try the v10-redesign selector first ([data-v10-clip-action=
+        // "Freeze"]) because that's the live render in most sessions,
+        // then fall back to the static .tb3 "Freeze" tile.
+        var tbSnapshot = document.getElementById('tbSnapshotBtn');
+        if (tbSnapshot){
+          tbSnapshot.style.cursor = 'pointer';
+          tbSnapshot.addEventListener('click', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+            var freezeBtn = document.querySelector('[data-v10-clip-action="Freeze"]');
+            if (!freezeBtn){
+              var tiles = document.querySelectorAll('.tb3');
+              for (var i = 0; i < tiles.length; i++){
+                var t = (tiles[i].textContent || '').replace(/\s+/g,' ').trim();
+                if (/(^|\s)Freeze$/i.test(t)){ freezeBtn = tiles[i]; break; }
+              }
+            }
+            // Last-ditch: call the underlying function directly, since
+            // clipActionFreeze is exposed on window when v10 is loaded.
+            if (freezeBtn) fireClick(freezeBtn);
+            else if (typeof window.clipActionFreeze === 'function') window.clipActionFreeze();
+            else showToast('Freeze frame is not available yet');
+          });
+        }
+      })();
 
       // ── 7. RIGHT PANEL: ALL .tb3 TOOL BUTTONS ──
       // Map tool names to panel IDs
