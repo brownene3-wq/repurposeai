@@ -7,6 +7,11 @@ const { spawn, execSync } = require('child_process');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
+// Task #98 — Cobalt API for YouTube/Twitch/etc. video downloads. Used as
+// the PRIMARY downloader for /youtube-import because YouTube has been
+// blocking Railway's IP for yt-dlp regardless of player_client variant.
+// yt-dlp stays as a fallback for Cobalt failures.
+const { downloadWithCobalt, validateDownloadedVideo } = require('../utils/cobalt');
 
 // Task #69 — Brand Kit logo overlay during export. The brand-templates
 // module exposes fetchLogo(filename) which reads the BLOB out of the
@@ -10374,6 +10379,53 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
     const outputFilename = 'yt_import_' + Date.now() + '_' + req.user.id + '.mp4';
     const outputPath = path.join(uploadDir, outputFilename);
 
+    // Task #98 — Multi-tier download chain. YouTube has been blocking
+    // Railway's IP for yt-dlp regardless of player_client variant, so we
+    // try the self-hosted Cobalt API first (which routes through a
+    // different egress) and only fall back to yt-dlp when Cobalt fails.
+    // Mirrors the pattern proven in routes/shorts.js for Quick Narrate.
+    let downloadSuccess = false;
+    let cobaltErr = null;
+    const tryWithValidation = async (label, fn) => {
+      try {
+        await fn();
+        validateDownloadedVideo(outputPath);
+        downloadSuccess = true;
+        console.log('[youtube-import] downloaded via ' + label);
+        return true;
+      } catch (err) {
+        console.log('[youtube-import] ' + label + ' failed: ' + String(err.message || err).slice(0, 300));
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
+        return false;
+      }
+    };
+
+    // 1. Cobalt API (preferred — bypasses YouTube IP blocks on Railway)
+    await tryWithValidation('Cobalt API', () => downloadWithCobalt(url, outputPath))
+      .catch(e => { cobaltErr = e; });
+
+    if (downloadSuccess) {
+      try {
+        const metadata = await getVideoMetadata(outputPath);
+        return res.json({
+          filename: outputFilename,
+          duration: metadata.duration,
+          serveUrl: '/video-editor/download/' + outputFilename
+        });
+      } catch (metaErr) {
+        // Metadata failure on an otherwise-valid file shouldn't kill the import.
+        console.error('[youtube-import] metadata after Cobalt failed:', metaErr);
+        return res.json({
+          filename: outputFilename,
+          duration: 0,
+          serveUrl: '/video-editor/download/' + outputFilename
+        });
+      }
+    }
+
+    // 2. yt-dlp fallback — kept exactly as before so behavior is unchanged
+    // when Cobalt is unavailable (env issue, endpoint down, etc.).
+
     // Use yt-dlp to download the video
     let ytdlpPath = 'yt-dlp';
     try { execSync('which yt-dlp', { stdio: 'pipe' }); } catch (e) {
@@ -10471,7 +10523,8 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
       }
     }
     if (!success){
-      var msg = 'YouTube blocked every player client (' + triedList.join(', ') + ').';
+      var msg = 'Cobalt API + every yt-dlp player client failed (' + triedList.join(', ') + ').';
+      if (cobaltErr) msg += ' Cobalt error: ' + String(cobaltErr.message || cobaltErr).slice(-200) + '.';
       if (!cookiesPath){
         msg += ' This server\'s IP appears to be rate-limited by YouTube. ' +
                'Set the YT_COOKIES_PATH environment variable to a Netscape-format cookies.txt ' +
