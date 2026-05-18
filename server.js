@@ -224,6 +224,14 @@ app.use('/public', express.static(path.join(__dirname, 'public'), {
   etag: true
 }));
 
+// TikTok domain ownership verification — serve verification files from root path
+app.get(/^\/tiktok[A-Za-z0-9_-]+\.txt$/, (req, res) => {
+  const filePath = path.join(__dirname, 'public', req.path);
+  res.sendFile(filePath, (err) => {
+    if (err) res.status(404).send('Not found');
+  });
+});
+
 // Mount routes - order matters for specificity
 app.use('/', pagesRouter);
 app.use('/auth', authRouter);
