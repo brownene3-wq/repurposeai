@@ -584,13 +584,12 @@ async function renderEditor(req, res) {
     .fs-row{display:flex;align-items:center;height:56px;position:relative;margin-bottom:2px}
     .fs-row.audio-row{height:38px}
     .fs-label{width:40px;font-size:9px;font-weight:800;color:#5a6a7a;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;text-align:right;padding-right:6px}
-    .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:2px solid rgba(0,200,200,.25)}
+    .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:1px solid rgba(108,58,237,.10)}
     .fs-track.video-track{background:#0a1015}
-    .fs-track.audio-track{background:#0a1520;border-color:rgba(0,150,255,.2)}
+    .fs-track.audio-track{background:#0a1520;border-color:rgba(56,189,248,.10)}
     .fs-thumbs{display:flex;height:100%;width:100%;overflow:hidden;gap:0}.fs-thumbs img,.fs-thumb-placeholder{flex:1;height:100%;object-fit:cover;min-width:0;display:block}.fs-thumb-placeholder{background:linear-gradient(135deg,#1a2a3c 0%,#2a1a3c 100%);animation:fsPulse 1.5s ease-in-out infinite alternate}@keyframes fsPulse{0%{opacity:.4}100%{opacity:.7}}
-    .fs-thumb{flex:1;background-size:cover;background-position:center;position:relative;border-right:1px solid rgba(0,0,0,.3)}
-    .fs-thumb:last-child{border-right:none}
-    .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
+    .fs-thumb{flex:1;background-size:cover;background-position:center;position:relative}
+        .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
     .fs-audio-canvas{width:100%;height:100%;display:block}
 
     
@@ -1698,6 +1697,26 @@ async function renderEditor(req, res) {
     let videoDuration = 0;
     let selectedFilter = null;
 
+    // ── Bridge: let external panels (media-panel-fix.js) push a newly
+    // activated clip into this inline script so the sidebar tools
+    // (trim, export, filter, speed, audio, etc.) operate on whatever
+    // clip is currently on the timeline, not just the first upload.
+    try {
+      window.setEditorCurrentVideoFile = function(v){
+        if (!v || !v.filename) return;
+        currentVideoFile = v;
+        if (typeof v.duration === 'number' && isFinite(v.duration) && v.duration > 0) {
+          videoDuration = v.duration;
+        }
+        // Reset the "original" reference whenever the active clip changes
+        // so Speed reset etc. snaps back to the right source.
+        originalVideoFile = Object.assign({}, v);
+      };
+      // Also expose a peek so external code can read what the inline
+      // script currently considers active.
+      window.getEditorCurrentVideoFile = function(){ return currentVideoFile; };
+    } catch(_){}
+
     // Toast notifications
     
 // === PREMIUM SIDEBAR REDESIGN: Tabbed Category System ===
@@ -1868,6 +1887,7 @@ function showToast(message, type = 'success') {
         const data = await response.json();
         currentVideoFile = data;
         originalVideoFile = { ...data }; // Save original for speed resets
+        try { window.currentVideoFile = data; } catch(_){}
         videoDuration = data.duration || 0;
         initTimeline();
 

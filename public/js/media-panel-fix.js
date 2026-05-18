@@ -6179,17 +6179,41 @@
     if (player){
       try { player.src = url; player.load(); } catch(_){}
     }
-    // If this came from a server upload (has server filename), update
-    // currentVideoFile so the editor's export/trim/etc. call the right file.
+    // ── Make the sidebar tools target THIS clip, not the first upload.
+    // Two paths:
+    //   (a) item already has a server filename → publish it everywhere.
+    //   (b) item is a local blob (handleFiles path) → upload-blob to the
+    //       server first, stamp the returned filename on the dataset,
+    //       then publish.
+    function publishActive(filename, serveUrl, duration){
+      var v = { filename: filename, serveUrl: serveUrl, duration: duration };
+      try { window.currentVideoFile = v; } catch(_){}
+      try { if (typeof window.setEditorCurrentVideoFile === 'function') window.setEditorCurrentVideoFile(v); } catch(_){}
+    }
     var serverFilename = item.dataset.serverFilename;
+    var dur = parseFloat(item.dataset.duration || '0') || 0;
     if (serverFilename){
-      try {
-        window.currentVideoFile = {
-          filename: serverFilename,
-          serveUrl: url,
-          duration: parseFloat(item.dataset.duration || '0') || 0
-        };
-      } catch(_){}
+      publishActive(serverFilename, url, dur);
+    } else if (url && /^(blob:|data:)/.test(url) && !item.dataset._uploadingActive){
+      // Lazy server upload on first activation. Guarded so concurrent
+      // clicks don't re-upload the same blob.
+      item.dataset._uploadingActive = '1';
+      (async function(){
+        try {
+          var blob = await (await fetch(url)).blob();
+          var fd = new FormData();
+          var nm = (item.dataset.fileName || 'clip') + '.bin';
+          fd.append('file', blob, nm);
+          var resp = await fetch('/video-editor/upload-blob', { method:'POST', body: fd, credentials:'same-origin' });
+          var data = await resp.json();
+          if (resp.ok && data && data.success && data.filename){
+            item.dataset.serverFilename = data.filename;
+            if (data.serveUrl) item.dataset.mediaUrl = data.serveUrl;
+            publishActive(data.filename, data.serveUrl || url, dur);
+          }
+        } catch(_){}
+        delete item.dataset._uploadingActive;
+      })();
     }
     // Hide the #uploadZone once a real video is active (mirrors the
     // behavior of the draft-loader in v10-editor-redesign.js).
