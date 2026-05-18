@@ -1687,13 +1687,12 @@ ${pageStyles}
 
           <div class="aspect-ratio-section" style="margin-top:1.5rem">
             <label class="aspect-ratio-label">Crop Mode</label>
-            <!-- Task #101 — Reordered: Multi-Person Grid (left) / Center
-                 Crop (center, default) / AI Face Tracking (right). The
-                 'checked' attribute stays on Center Crop so the default
-                 selection is unchanged; only the visual order moves. -->
+            <!-- Multi-Person Grid is the default-checked option (showcases
+                 the new feature first); Center Crop and AI Face Tracking
+                 remain available but unselected on load. -->
             <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
-              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
-                <input type="radio" name="cropMode" value="grid" style="accent-color:var(--primary)">
+              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
+                <input type="radio" name="cropMode" value="grid" checked style="accent-color:var(--primary)">
                 <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                   <rect x="2.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
                   <rect x="11.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
@@ -1702,8 +1701,8 @@ ${pageStyles}
                 </svg>
                 Multi-Person Grid
               </label>
-              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeCenterLabel">
-                <input type="radio" name="cropMode" value="center" checked style="accent-color:var(--primary)">
+              <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeCenterLabel">
+                <input type="radio" name="cropMode" value="center" style="accent-color:var(--primary)">
                 <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                   <path d="M5 1.5V14.5H18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
                   <path d="M2 5.5H15V18.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1966,10 +1965,10 @@ ${pageStyles}
       const icon = lbl.querySelector('.mode-icon');
       if (icon) icon.style.color = isSelected ? 'var(--primary)' : 'var(--text)';
     }
-    // Initial paint — Center Crop is checked by default, so its icon is purple
-    setModeLabelState('modeCenterLabel', true);
+    // Initial paint — Multi-Person Grid is checked by default on page load
+    setModeLabelState('modeGridLabel',   true);
+    setModeLabelState('modeCenterLabel', false);
     setModeLabelState('modeFaceLabel',   false);
-    setModeLabelState('modeGridLabel',   false);
 
     // Crop mode toggle styling + show/hide mode-specific sections
     document.querySelectorAll('input[name="cropMode"]').forEach(radio => {
@@ -1990,6 +1989,16 @@ ${pageStyles}
         checkInputs();
       });
     });
+
+    // Page-load sync: the radio is pre-checked but no change event ever
+    // fires for the default selection. Replay the change handler against
+    // the currently-checked radio so the rest of the UI (info banner,
+    // aspect-ratio visibility, grid flow visibility, reframe button) all
+    // reflect the initial mode on first paint.
+    (function syncInitialCropMode() {
+      const checked = document.querySelector('input[name="cropMode"]:checked');
+      if (checked) checked.dispatchEvent(new Event('change'));
+    })();
 
     // ---- Multi-Person Grid flow (simplified UX) ----
     let gridJobId = null;
