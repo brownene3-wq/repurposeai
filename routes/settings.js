@@ -634,6 +634,30 @@ router.get('/', requireAuth, async (req, res) => {
         if (params.get('success') || params.get('error')) history.replaceState({}, '', '/settings');
       })();
 
+      // Deep-link support: /settings?section=apikeys (or #section-apikeys)
+      // lands the user directly on the requested section. Used from the
+      // Quick Narrate panel's gear icon on /shorts.
+      (function() {
+        var requested = null;
+        try {
+          var qs = new URLSearchParams(window.location.search);
+          requested = qs.get('section');
+        } catch (e) {}
+        if (!requested && window.location.hash) {
+          var h = String(window.location.hash || '').replace(/^#/, '');
+          if (h.indexOf('section-') === 0) requested = h.slice('section-'.length);
+        }
+        if (requested) {
+          var btn = document.querySelector('.settings-nav-btn[data-section="' + requested + '"]');
+          if (btn && typeof switchSection === 'function') {
+            switchSection(requested, btn);
+            // Scroll the active section into view in case the page is long.
+            var sec = document.getElementById('section-' + requested);
+            if (sec && sec.scrollIntoView) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      })();
+
       async function disconnectTikTok() {
         if (!confirm('Disconnect your TikTok account?')) return;
         try {

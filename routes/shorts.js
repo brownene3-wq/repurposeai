@@ -5969,11 +5969,6 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Auto-Generate</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Create multiple shorts instantly</div>
         </div>
-        <div onclick="toggleToolPanel('settingsPanel', this); toggleSettings(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#10b981';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(16,185,129,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/settings-icon.png" alt="Settings" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
-          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Settings</div>
-          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">API keys & integrations</div>
-        </div>
       </div>
 
       <!-- Auto-Generate Shorts Panel -->
@@ -6112,7 +6107,14 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               <h3 style="font-size:16px; font-weight:600;">🎙️ Quick Narrate</h3>
               <p style="color:#888; font-size:12px; margin-top:2px;">Paste any video URL (YouTube, Instagram, TikTok, Facebook, Twitter/X, LinkedIn, Snapchat) and add AI narration over it</p>
             </div>
-            <button class="btn btn-small" onclick="document.getElementById('quickNarratePanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times;</button>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <a href="/settings?section=apikeys" title="Open API Keys settings" aria-label="API Keys settings"
+                style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);color:var(--text-muted);text-decoration:none;font-size:14px;transition:background 0.15s ease,color 0.15s ease,border-color 0.15s ease;"
+                onmouseenter="this.style.background='rgba(255,255,255,0.12)';this.style.color='var(--text)';this.style.borderColor='rgba(255,255,255,0.2)';"
+                onmouseleave="this.style.background='rgba(255,255,255,0.06)';this.style.color='var(--text-muted)';this.style.borderColor='rgba(255,255,255,0.10)';"
+                >&#x2699;</a>
+              <button class="btn btn-small" onclick="document.getElementById('quickNarratePanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times;</button>
+            </div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <input type="url" id="qn-videoUrl" name="quick_narrate_url" autocomplete="off" placeholder="Paste video URL — YouTube, Instagram, TikTok, Facebook, Twitter/X..."
@@ -7616,7 +7618,7 @@ ${paginationHtml}
     };
 
     function toggleToolPanel(panelId, cardEl) {
-      var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','settingsPanel','autoGenPanel'];
+      var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','autoGenPanel'];
       var panel = document.getElementById(panelId);
       var isVisible = panel.style.display !== 'none';
       // Close all panels first + drop the open marker
