@@ -13,7 +13,7 @@
 //                           service like Bright Data, Oxylabs, or SmartProxy (~$5-15/mo).
 //   YT_COOKIES_PATH      — Path to Netscape cookies.txt from a logged-in YouTube session
 //   YT_COOKIES_BASE64    — Base64-encoded cookies.txt (auto-decoded by server.js on startup)
-//   COBALT_API_URL       — URL of self-hosted Cobalt instance (default: Railway instance)
+//   COBALT_API_URL       — URL of self-hosted Cobalt instance (default: Hetzner VPS)
 
 const { spawn } = require('child_process');
 const fs = require('fs');

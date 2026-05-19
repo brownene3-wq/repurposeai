@@ -1,10 +1,10 @@
 // Cobalt API integration for video downloading
-// Self-hosted Cobalt instance on Railway
+// Self-hosted Cobalt instance on Hetzner VPS (Railway IPs are blocked by YouTube)
 const fs = require('fs');
 const https = require('https');
 const http = require('http');
 
-const COBALT_API_URL = process.env.COBALT_API_URL || 'https://cobalt-production-0ab0.up.railway.app';
+const COBALT_API_URL = process.env.COBALT_API_URL || 'http://46.224.167.94:9000';
 
 function cobaltRequest(videoUrl) {
   return new Promise((resolve, reject) => {
