@@ -2114,6 +2114,38 @@ router.get('/brand-kit', requireAuth, async (req, res) => {
   }
 });
 
+// GET /connection-status - Which social platforms can this user actually
+// publish to right now? Used by the Add-to-Calendar modal to gate the Save
+// button: if the chosen platform isn't connected, swap Save for a
+// "Connect <Platform>" CTA. Source of truth: the user row's per-platform
+// access token columns (tiktok_access_token, instagram_access_token, ...).
+router.get('/connection-status', requireAuth, async (req, res) => {
+  try {
+    const row = (await pool.query(
+      `SELECT
+         tiktok_access_token, instagram_access_token, twitter_access_token,
+         linkedin_access_token, facebook_access_token, youtube_access_token
+       FROM users WHERE id = $1`,
+      [req.user.id]
+    )).rows[0] || {};
+    const has = (v) => !!(v && String(v).trim());
+    res.json({
+      success: true,
+      connections: {
+        tiktok:    has(row.tiktok_access_token),
+        instagram: has(row.instagram_access_token),
+        twitter:   has(row.twitter_access_token),
+        linkedin:  has(row.linkedin_access_token),
+        facebook:  has(row.facebook_access_token),
+        youtube:   has(row.youtube_access_token),
+      }
+    });
+  } catch (error) {
+    console.error('Error checking connection status:', error);
+    res.status(500).json({ error: 'Failed to check connection status' });
+  }
+});
+
 // POST /brand-kit - Save user's brand kit settings
 router.post('/brand-kit', requireAuth, async (req, res) => {
   try {
@@ -6458,6 +6490,15 @@ ${paginationHtml}
         </select>
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
         <textarea id="atcNotes" class="atc-themed-scroll" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
+        <!-- Connection-gate banner: shown when the selected platform isn't
+             connected yet. updateAtcConnectionState() toggles this. -->
+        <div id="atcConnectBanner" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-top:8px;font-size:0.8rem;line-height:1.4;">
+          <div id="atcConnectMsg" style="margin-bottom:8px;"></div>
+          <a id="atcConnectLink" href="#" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;">
+            <span id="atcConnectLinkLabel">Connect</span>
+            <span style="font-size:0.9em;">&rarr;</span>
+          </a>
+        </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
           <button onclick="closeAtcModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
           <button id="atcSaveBtn" onclick="saveAtcEntry()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Save to Calendar</button>
@@ -6805,6 +6846,9 @@ ${paginationHtml}
       document.getElementById('atcNotes').value = noteParts.join('\\n\\n');
       document.getElementById('atcModal').style.display = 'flex';
       setTimeout(function(){ document.getElementById('atcTitle').focus(); document.getElementById('atcTitle').select(); }, 80);
+      // Connection-gate: load status (once) + bind change listener (once),
+      // then run the gate against the currently-selected platform.
+      ensureAtcConnectionStatus().then(updateAtcConnectionState);
     }
     function closeAtcModal() {
       document.getElementById('atcModal').style.display = 'none';
@@ -6832,6 +6876,71 @@ ${paginationHtml}
       }
     }
 
+    // Cache + load /shorts/connection-status once per page load.
+    var __atcConnStatus = null;
+    var __atcConnLoading = null;
+    async function ensureAtcConnectionStatus() {
+      if (__atcConnStatus) return __atcConnStatus;
+      if (__atcConnLoading) return __atcConnLoading;
+      __atcConnLoading = (async function(){
+        try {
+          var r = await fetch('/shorts/connection-status', { credentials: 'same-origin' });
+          var d = await r.json();
+          __atcConnStatus = (d && d.connections) || {};
+        } catch (e) {
+          __atcConnStatus = {};
+        }
+        return __atcConnStatus;
+      })();
+      return __atcConnLoading;
+    }
+    // Friendly display name + connect URL per platform option.
+    var __atcPlatformMeta = {
+      tiktok:    { label: 'TikTok',          connectUrl: '/tiktok/connect',    requiresAuth: true  },
+      instagram: { label: 'Instagram',       connectUrl: '/instagram/connect', requiresAuth: true  },
+      shorts:    { label: 'YouTube Shorts',  connectUrl: '/youtube/connect',   requiresAuth: true, statusKey: 'youtube' },
+      youtube:   { label: 'YouTube',         connectUrl: '/youtube/connect',   requiresAuth: true  },
+      twitter:   { label: 'Twitter / X',     connectUrl: '/twitter/connect',   requiresAuth: true  },
+      linkedin:  { label: 'LinkedIn',        connectUrl: '/linkedin/connect',  requiresAuth: true  },
+      facebook:  { label: 'Facebook',        connectUrl: '/facebook/connect',  requiresAuth: true  },
+      blog:      { label: 'Blog Post',       requiresAuth: false },
+      newsletter:{ label: 'Newsletter',      requiresAuth: false },
+    };
+    function updateAtcConnectionState() {
+      var sel = document.getElementById('atcPlatform');
+      if (!sel) return;
+      var v = sel.value;
+      var meta = __atcPlatformMeta[v] || { label: v, requiresAuth: false };
+      var banner = document.getElementById('atcConnectBanner');
+      var saveBtn = document.getElementById('atcSaveBtn');
+      if (!meta.requiresAuth) {
+        if (banner) banner.style.display = 'none';
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+        return;
+      }
+      var statusKey = meta.statusKey || v;
+      var connected = !!(__atcConnStatus && __atcConnStatus[statusKey]);
+      if (connected) {
+        if (banner) banner.style.display = 'none';
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+      } else {
+        var msg = document.getElementById('atcConnectMsg');
+        var link = document.getElementById('atcConnectLink');
+        var lbl  = document.getElementById('atcConnectLinkLabel');
+        if (msg)  msg.textContent  = meta.label + " isn't connected yet. To auto-publish at the scheduled time, connect your " + meta.label + ' account first.';
+        if (link) link.href        = meta.connectUrl;
+        if (lbl)  lbl.textContent  = 'Connect ' + meta.label;
+        if (banner) banner.style.display = 'block';
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.5'; saveBtn.style.cursor = 'not-allowed'; }
+      }
+    }
+    // Re-check whenever the platform dropdown changes.
+    document.addEventListener('change', function(e){
+      if (e.target && e.target.id === 'atcPlatform') {
+        ensureAtcConnectionStatus().then(updateAtcConnectionState);
+      }
+    });
+
     async function saveAtcEntry() {
       var btn = document.getElementById('atcSaveBtn');
       var ref = (document.getElementById('atcMomentRef').value || '').split('|');
@@ -6848,6 +6957,19 @@ ${paginationHtml}
       };
       if (!payload.title) { showToast('Title is required'); return; }
       if (!payload.scheduledDate) { showToast('Date is required'); return; }
+      // Defense-in-depth: re-check connection status server-side-driven.
+      try {
+        var pm = __atcPlatformMeta[payload.platform];
+        if (pm && pm.requiresAuth) {
+          await ensureAtcConnectionStatus();
+          var statusKey = pm.statusKey || payload.platform;
+          if (!__atcConnStatus || !__atcConnStatus[statusKey]) {
+            showToast('Connect your ' + pm.label + ' account before scheduling.');
+            updateAtcConnectionState();
+            return;
+          }
+        }
+      } catch (e) {}
       var orig = btn.textContent;
       btn.disabled = true; btn.textContent = 'Saving...';
       try {
