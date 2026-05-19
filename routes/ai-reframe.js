@@ -11,6 +11,12 @@ const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/stor
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
+function getYoutubeCookiesArgs() {
+  const p = process.env.YT_COOKIES_PATH;
+  if (p && require('fs').existsSync(p)) return ['--cookies', p];
+  return [];
+}
+
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; }
@@ -95,6 +101,7 @@ function tryYtDlpStrategy(strategy, videoUrl, outputPath) {
       '--force-overwrites',
       ...YTDLP_COMMON_ARGS,
       ...strategy.args,
+      ...getYoutubeCookiesArgs(),
       videoUrl,
     ];
     const proc = spawn(ytdlpPath, args);

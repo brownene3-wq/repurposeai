@@ -16,6 +16,12 @@ if (!fs.existsSync(WORKFLOW_TEMP_DIR)) {
   fs.mkdirSync(WORKFLOW_TEMP_DIR, { recursive: true });
 }
 
+function getYoutubeCookiesArgs() {
+  const p = process.env.YT_COOKIES_PATH;
+  if (p && require('fs').existsSync(p)) return ['--cookies', p];
+  return [];
+}
+
 // HTTPS/HTTP helpers
 function httpsGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -346,6 +352,7 @@ async function downloadMedia(sourceItem, workflowId) {
       return new Promise((resolve, reject) => {
         const proc = spawn('yt-dlp', [
           '--no-warnings',
+          ...getYoutubeCookiesArgs(),
           '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
           '--merge-output-format', 'mp4',
           '-o', tempPath + '.mp4',

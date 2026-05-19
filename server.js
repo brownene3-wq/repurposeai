@@ -14,6 +14,23 @@ const outputDir = path.join('/tmp', 'repurpose-outputs');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
+// YouTube cookies: decode from env var and write to disk so yt-dlp can use them.
+// Set YT_COOKIES_BASE64 in Railway to the base64-encoded contents of a
+// Netscape-format cookies.txt exported from a browser with a logged-in YouTube session.
+// This auto-sets YT_COOKIES_PATH so all routes pick it up.
+if (process.env.YT_COOKIES_BASE64 && !process.env.YT_COOKIES_PATH) {
+  try {
+    const cookiesDir = path.join('/tmp', 'yt-cookies');
+    if (!fs.existsSync(cookiesDir)) fs.mkdirSync(cookiesDir, { recursive: true });
+    const cookiesPath = path.join(cookiesDir, 'cookies.txt');
+    fs.writeFileSync(cookiesPath, Buffer.from(process.env.YT_COOKIES_BASE64, 'base64').toString('utf-8'));
+    process.env.YT_COOKIES_PATH = cookiesPath;
+    console.log('[YouTube] Cookies written to', cookiesPath, '— yt-dlp will use authenticated sessions');
+  } catch (e) {
+    console.error('[YouTube] Failed to decode YT_COOKIES_BASE64:', e.message);
+  }
+}
+
 const { injectChatWidget } = require('./middleware/chatWidget');
 const { injectFeedbackWidget } = require('./middleware/feedbackWidget');
 
