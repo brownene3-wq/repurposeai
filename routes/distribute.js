@@ -19,7 +19,9 @@ const PLATFORM_ENV = {
   pinterest:   ['PINTEREST_CLIENT_ID','PINTEREST_CLIENT_SECRET'],
   threads:     ['THREADS_CLIENT_ID','THREADS_CLIENT_SECRET'],
   snapchat:    ['SNAPCHAT_CLIENT_ID','SNAPCHAT_CLIENT_SECRET'],
-  googledrive: ['GOOGLE_DRIVE_CLIENT_ID','GOOGLE_DRIVE_CLIENT_SECRET'],
+  // Google Drive's route falls back to YOUTUBE_CLIENT_ID/SECRET if its
+  // own pair isn't set, so YouTube credentials alone are enough to enable it.
+  googledrive: ['YOUTUBE_CLIENT_ID','YOUTUBE_CLIENT_SECRET'],
   dropbox:     ['DROPBOX_CLIENT_ID','DROPBOX_CLIENT_SECRET'],
   twitch:      ['TWITCH_CLIENT_ID','TWITCH_CLIENT_SECRET'],
   zoom:        ['ZOOM_CLIENT_ID','ZOOM_CLIENT_SECRET'],
