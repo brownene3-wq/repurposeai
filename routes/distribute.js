@@ -1207,7 +1207,7 @@ router.get('/connections', requireAuth, async (req, res) => {
       // picker open so the user can pick a different one without an
       // extra click. The toast doubles as the explanation.
       function comingSoon(name) {
-        showToast(name + ' integration is coming soon — we\'re finishing the developer setup.', 'info');
+        showToast(name + " integration is coming soon — we're finishing the developer setup.", "info");
       }
 
       function reconnectAccount(platform) {
