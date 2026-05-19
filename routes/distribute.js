@@ -146,6 +146,15 @@ function getDistributeCSS() {
     .platform-picker-item .p-desc{font-size:0.78rem;color:var(--text-muted)}
     .platform-picker-item .p-arrow{color:var(--text-muted);font-size:0.85rem;transition:transform 0.2s}
     .platform-picker-item:hover .p-arrow{transform:translateX(3px);color:var(--text)}
+    /* Coming-soon variant — platforms whose OAuth credentials aren't
+       configured on Railway yet. We render them but visually de-emphasise
+       and route the click to a friendly toast instead of attempting OAuth. */
+    .platform-picker-item.coming-soon{cursor:not-allowed;opacity:0.55}
+    .platform-picker-item.coming-soon:hover{border-color:rgba(255,255,255,0.10);background:rgba(255,255,255,0.02);transform:none;box-shadow:none}
+    .platform-picker-item.coming-soon:hover .p-arrow{transform:none}
+    body.light .platform-picker-item.coming-soon:hover,html.light .platform-picker-item.coming-soon:hover{border-color:rgba(0,0,0,0.08);background:rgba(0,0,0,0.02)}
+    .platform-picker-item .p-soon-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:linear-gradient(135deg,rgba(108,58,237,.18),rgba(236,72,153,.16));border:1px solid rgba(108,58,237,.30);color:#c4b5fd;font-size:0.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-left:0.4rem;vertical-align:middle}
+    body.light .platform-picker-item .p-soon-badge,html.light .platform-picker-item .p-soon-badge{color:#6c3aed}
 
     /* ─── Toast ─── */
     .splicora-toast{position:fixed;bottom:2rem;right:2rem;padding:1rem 1.5rem;border-radius:12px;font-size:0.88rem;font-weight:500;z-index:99999;box-shadow:0 8px 30px rgba(0,0,0,0.3);color:#fff;animation:slideUp 0.3s ease;display:flex;align-items:center;gap:0.6rem}
@@ -1135,16 +1144,24 @@ router.get('/connections', requireAuth, async (req, res) => {
         <div class="modal-body">
           <p class="modal-subtitle">Choose a platform to connect. You'll be redirected to authorize access.</p>
           <div class="platform-picker-grid">
-            ${PLATFORMS.filter(p => platformIsConfigured(p.id)).map(p => `
-              <div class="platform-picker-item" onclick="initOAuth('${p.id}')">
+            ${PLATFORMS.map(p => {
+              const ready = platformIsConfigured(p.id);
+              const cls = ready ? 'platform-picker-item' : 'platform-picker-item coming-soon';
+              const click = ready ? `initOAuth('${p.id}')` : `comingSoon('${p.name.replace(/'/g, "\\'")}')`;
+              const badge = ready ? '' : '<span class="p-soon-badge">Coming soon</span>';
+              const desc = ready ? (platformDescriptions[p.id] || 'Connect your account') : 'Available soon — we\'re finishing the setup.';
+              const arrow = ready ? '<span class="p-arrow">→</span>' : '';
+              return `
+              <div class="${cls}" onclick="${click}">
                 <div class="p-icon">${platformIconHTML(p)}</div>
                 <div class="p-info">
-                  <div class="p-name">${p.name}</div>
-                  <div class="p-desc">${platformDescriptions[p.id] || 'Connect your account'}</div>
+                  <div class="p-name">${p.name}${badge}</div>
+                  <div class="p-desc">${desc}</div>
                 </div>
-                <span class="p-arrow">→</span>
+                ${arrow}
               </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
         </div>
       </div>
@@ -1185,6 +1202,13 @@ router.get('/connections', requireAuth, async (req, res) => {
         showToast('Connecting to ' + platform.charAt(0).toUpperCase() + platform.slice(1) + '...', 'info');
         // Redirect to OAuth flow
         window.location.href = '/auth/' + platform + '/connect?redirect=/distribute/connections';
+      }
+
+      // Friendly handler for not-yet-configured platforms. Keeps the
+      // picker open so the user can pick a different one without an
+      // extra click. The toast doubles as the explanation.
+      function comingSoon(name) {
+        showToast(name + ' integration is coming soon — we\'re finishing the developer setup.', 'info');
       }
 
       function reconnectAccount(platform) {
