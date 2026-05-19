@@ -323,6 +323,14 @@ const initDatabase = async () => {
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_email TEXT DEFAULT \'\'');
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_minutes INTEGER DEFAULT 0');
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT FALSE');
+      // Step 2 of the schedule-and-publish feature: extra columns so the
+      // cron tick knows which entries to auto-publish, which clip file to
+      // upload, and how to surface publish errors back to the user.
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS auto_publish BOOLEAN DEFAULT FALSE');
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS clip_filename TEXT DEFAULT \'\'');
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS published_at TIMESTAMP');
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS publish_error TEXT DEFAULT \'\'');
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS publish_attempts INTEGER DEFAULT 0');
     } catch (migErr) {
       console.log('Calendar migration (may already exist):', migErr.message);
     }
@@ -1026,12 +1034,13 @@ const calendarOps = {
   async create(data) {
     const id = uuidv4();
     const result = await pool.query(`
-      INSERT INTO calendar_entries (id, user_id, title, platform, scheduled_date, scheduled_time, status, content_text, analysis_id, moment_index, notes, color, reminder_email, reminder_minutes, reminder_sent)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, FALSE)
+      INSERT INTO calendar_entries (id, user_id, title, platform, scheduled_date, scheduled_time, status, content_text, analysis_id, moment_index, notes, color, reminder_email, reminder_minutes, reminder_sent, auto_publish, clip_filename)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, FALSE, $15, $16)
       RETURNING *
     `, [id, data.userId, data.title, data.platform || 'tiktok', data.scheduledDate, data.scheduledTime || '12:00',
         data.status || 'planned', data.contentText || '', data.analysisId || null, data.momentIndex ?? null,
-        data.notes || '', data.color || '#6c5ce7', data.reminderEmail || '', data.reminderMinutes || 0]);
+        data.notes || '', data.color || '#6c5ce7', data.reminderEmail || '', data.reminderMinutes || 0,
+        data.autoPublish === true, data.clipFilename || '']);
     return result.rows[0];
   },
   async update(id, userId, data) {
@@ -1074,6 +1083,32 @@ const calendarOps = {
   },
   async delete(id, userId) {
     await pool.query('DELETE FROM calendar_entries WHERE id = $1 AND user_id = $2', [id, userId]);
+  },
+
+  // === Auto-publish on schedule (Step 2) ===
+  async getDueForPublish() {
+    const r = await pool.query(`
+      SELECT * FROM calendar_entries
+      WHERE auto_publish = TRUE
+        AND published_at IS NULL
+        AND publish_attempts < 3
+        AND (scheduled_date + scheduled_time::time) <= NOW()
+      ORDER BY scheduled_date, scheduled_time
+      LIMIT 20
+    `);
+    return r.rows;
+  },
+  async markPublished(id) {
+    await pool.query(
+      `UPDATE calendar_entries SET published_at = NOW(), status = 'published', publish_error = '' WHERE id = $1`,
+      [id]
+    );
+  },
+  async markPublishFailed(id, errorMessage) {
+    await pool.query(
+      `UPDATE calendar_entries SET publish_attempts = publish_attempts + 1, publish_error = $2 WHERE id = $1`,
+      [id, String(errorMessage || '').slice(0, 500)]
+    );
   }
 };
 

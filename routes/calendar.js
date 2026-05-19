@@ -472,7 +472,10 @@ router.post('/api/entries', requireAuth, async (req, res) => {
       color: req.body.color,
       analysisId: req.body.analysisId || null,
       momentIndex: req.body.momentIndex != null ? req.body.momentIndex : null,
-      reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0
+      reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0,
+      reminderEmail: req.body.reminderEmail || '',
+      autoPublish: req.body.autoPublish === true,
+      clipFilename: req.body.clipFilename || ''
     });
     res.json({ entry });
   } catch (error) {

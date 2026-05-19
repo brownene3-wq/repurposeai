@@ -6490,6 +6490,17 @@ ${paginationHtml}
         </select>
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
         <textarea id="atcNotes" class="atc-themed-scroll" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
+        <!-- Auto-publish toggle: when ON, the server cron will pick up this
+             entry at scheduled time and post it to the selected platform.
+             When OFF, we just keep it as a planned calendar item + reminder.
+             Hidden for blog/newsletter (no third-party publish path). -->
+        <label id="atcAutoPubRow" style="display:flex;align-items:center;gap:10px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.18);border-radius:8px;padding:10px 12px;margin-bottom:14px;cursor:pointer;">
+          <input type="checkbox" id="atcAutoPublish" style="accent-color:#a78bfa;width:14px;height:14px;flex-shrink:0;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--text);">Auto-publish at scheduled time</div>
+            <div id="atcAutoPubHint" style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">When the date and time arrive, this clip will be posted to the selected platform automatically.</div>
+          </div>
+        </label>
         <!-- Connection-gate banner: shown when the selected platform isn't
              connected yet. updateAtcConnectionState() toggles this. -->
         <div id="atcConnectBanner" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-top:8px;font-size:0.8rem;line-height:1.4;">
@@ -6913,11 +6924,17 @@ ${paginationHtml}
       var meta = __atcPlatformMeta[v] || { label: v, requiresAuth: false };
       var banner = document.getElementById('atcConnectBanner');
       var saveBtn = document.getElementById('atcSaveBtn');
+      var autoPubRow = document.getElementById('atcAutoPubRow');
+      var autoPubChk = document.getElementById('atcAutoPublish');
       if (!meta.requiresAuth) {
         if (banner) banner.style.display = 'none';
         if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+        // No auth = no auto-publish path. Hide the option for blog/newsletter.
+        if (autoPubRow) autoPubRow.style.display = 'none';
+        if (autoPubChk) autoPubChk.checked = false;
         return;
       }
+      if (autoPubRow) autoPubRow.style.display = 'flex';
       var statusKey = meta.statusKey || v;
       var connected = !!(__atcConnStatus && __atcConnStatus[statusKey]);
       if (connected) {
@@ -6957,6 +6974,7 @@ ${paginationHtml}
       };
       if (!payload.title) { showToast('Title is required'); return; }
       if (!payload.scheduledDate) { showToast('Date is required'); return; }
+      payload.autoPublish = !!document.getElementById('atcAutoPublish').checked;
       // Defense-in-depth: re-check connection status server-side-driven.
       try {
         var pm = __atcPlatformMeta[payload.platform];
@@ -6969,7 +6987,53 @@ ${paginationHtml}
             return;
           }
         }
+        // If auto-publish is on, refuse it for export-only platforms.
+        if (payload.autoPublish && pm && !pm.requiresAuth) {
+          showToast('Auto-publish is only available for connected social platforms.');
+          return;
+        }
       } catch (e) {}
+
+      // Auto-publish: render the clip now so the cron can pick up the file
+      // at scheduled time. We POST /shorts/clip with the analysis + moment,
+      // then poll status until ready. The user sees a clear "Rendering clip..."
+      // state on the Save button while this is in flight.
+      if (payload.autoPublish && payload.analysisId != null && payload.momentIndex != null) {
+        btn.disabled = true; btn.textContent = 'Rendering clip…';
+        try {
+          var selectedBrandTemplateId = null;
+          try { selectedBrandTemplateId = localStorage.getItem('brandKitSelectedTemplateId') || null; } catch (e) {}
+          var clipPost = await fetch('/shorts/clip', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              analysisId: payload.analysisId,
+              momentIndex: payload.momentIndex,
+              includeCaptions: true,
+              clipStyle: 'crop',
+              captionLanguage: 'en',
+              captionStyle: '',
+              applyBrandKit: true,
+              selectedBrandTemplateId
+            })
+          }).then(function(r){ return r.json(); });
+          if (!clipPost || !clipPost.filename) throw new Error(clipPost && clipPost.error || 'Failed to start clip render');
+
+          var deadline = Date.now() + 360000;  // 6 min cap
+          var ready = null;
+          while (Date.now() < deadline) {
+            await new Promise(function(r){ setTimeout(r, 2000); });
+            var s = await fetch('/shorts/clip/status/' + clipPost.filename).then(function(r){ return r.json(); });
+            if (s && (s.failed || s.error)) throw new Error('Clip render failed: ' + (s.message || 'unknown'));
+            if (s && s.ready) { ready = s; break; }
+          }
+          if (!ready) throw new Error('Clip render timed out — try again or save without auto-publish.');
+          payload.clipFilename = clipPost.filename;
+        } catch (clipErr) {
+          showToast('Could not auto-publish: ' + clipErr.message);
+          btn.disabled = false; btn.textContent = 'Save to Calendar';
+          return;
+        }
+      }
       var orig = btn.textContent;
       btn.disabled = true; btn.textContent = 'Saving...';
       try {

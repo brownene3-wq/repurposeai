@@ -966,5 +966,14 @@ async function startWorkflowEngine() {
 }
 
 module.exports = {
-  startWorkflowEngine
+  startWorkflowEngine,
+  publishToDestination,
+  publishYouTube,
+  publishInstagram,
+  publishTikTok,
+  publishTwitter,
+  publishFacebook,
+  publishLinkedIn,
+  publishPinterest,
+  refreshTokenIfNeeded
 };

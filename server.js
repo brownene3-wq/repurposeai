@@ -462,7 +462,14 @@ app.listen(PORT, () => {
   const { calendarOps } = require('./db/database');
   const { sendPostingReminder } = require('./utils/email');
 
+  // Step 2 of the schedule-and-publish feature: same cron tick, two jobs.
+  // (a) Send posting reminder emails (legacy).
+  // (b) Auto-publish any due calendar entries to their target platform
+  //     via utils/schedulePublisher.publishDueEntries().
+  const { publishDueEntries } = require('./utils/schedulePublisher');
+
   setInterval(async () => {
+    // (a) Reminder emails.
     try {
       const pending = await calendarOps.getPendingReminders();
       for (const entry of pending) {
@@ -482,6 +489,13 @@ app.listen(PORT, () => {
       }
     } catch (err) {
       // Silently ignore if DB not ready yet
+    }
+
+    // (b) Auto-publish.
+    try {
+      await publishDueEntries();
+    } catch (err) {
+      console.error('[schedulePublisher] tick crashed:', err && err.message || err);
     }
   }, 120000); // Check every 2 minutes
 
