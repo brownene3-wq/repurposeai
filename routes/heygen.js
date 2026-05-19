@@ -65,7 +65,7 @@ document.getElementById('f').addEventListener('submit', async (e) => {
       body: JSON.stringify({ apiKey: apikey, label })
     });
     const data = await r.json();
-    if (data.success) window.location = data.redirect || '/distribute/connections?success=${encodeURIComponent(platform)}+connected';
+    if (data.success) window.location = data.redirect || '/distribute/connections?success=Connected';
     else { err.textContent = data.error || 'Connection failed'; err.classList.add('show'); }
   } catch (ex) { err.textContent = ex.message; err.classList.add('show'); }
 });
