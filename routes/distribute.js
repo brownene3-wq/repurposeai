@@ -1144,23 +1144,22 @@ router.get('/connections', requireAuth, async (req, res) => {
         <div class="modal-body">
           <p class="modal-subtitle">Choose a platform to connect. You'll be redirected to authorize access.</p>
           <div class="platform-picker-grid">
-            ${PLATFORMS.map(p => {
-              const ready = platformIsConfigured(p.id);
-              const cls = ready ? 'platform-picker-item' : 'platform-picker-item coming-soon';
-              const click = ready ? `initOAuth('${p.id}')` : `comingSoon('${p.name.replace(/'/g, "\\'")}')`;
-              const badge = ready ? '' : '<span class="p-soon-badge">Coming soon</span>';
-              const desc = ready ? (platformDescriptions[p.id] || 'Connect your account') : 'Available soon — we\'re finishing the setup.';
-              const arrow = ready ? '<span class="p-arrow">→</span>' : '';
-              return `
-              <div class="${cls}" onclick="${click}">
-                <div class="p-icon">${platformIconHTML(p)}</div>
-                <div class="p-info">
-                  <div class="p-name">${p.name}${badge}</div>
-                  <div class="p-desc">${desc}</div>
-                </div>
-                ${arrow}
-              </div>
-              `;
+            ${PLATFORMS.map(function(p) {
+              var ready = platformIsConfigured(p.id);
+              var cls = ready ? 'platform-picker-item' : 'platform-picker-item coming-soon';
+              var safeName = String(p.name).replace(/'/g, "\\'");
+              var click = ready ? ("initOAuth('" + p.id + "')") : ("comingSoon('" + safeName + "')");
+              var badge = ready ? '' : '<span class="p-soon-badge">Coming soon</span>';
+              var desc = ready ? (platformDescriptions[p.id] || 'Connect your account') : "Available soon \u2014 we're finishing the setup.";
+              var arrow = ready ? '<span class="p-arrow">\u2192</span>' : '';
+              return '<div class="' + cls + '" onclick="' + click + '">'
+                + '<div class="p-icon">' + platformIconHTML(p) + '</div>'
+                + '<div class="p-info">'
+                +   '<div class="p-name">' + p.name + badge + '</div>'
+                +   '<div class="p-desc">' + desc + '</div>'
+                + '</div>'
+                + arrow
+                + '</div>';
             }).join('')}
           </div>
         </div>
