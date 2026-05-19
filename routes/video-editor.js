@@ -58,6 +58,12 @@ function resolveYouTubeCookiesPath() {
     return null;
   }
 }
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 function readYouTubeCookieHeader() {
   const p = resolveYouTubeCookiesPath();
   if (!p) return null;
@@ -10685,7 +10691,7 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
 
     function runYtdlp(client){
       var clientArgs = ['--extractor-args', 'youtube:player_client=' + client];
-      var args = COMMON_ARGS.concat(clientArgs).concat(cookiesArgs).concat([url]);
+      var args = COMMON_ARGS.concat(clientArgs).concat(cookiesArgs).concat(getYoutubeProxyArgs()).concat([url]);
       return new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, args);
         let stderr = '';

@@ -59,6 +59,12 @@ function getYoutubeCookiesArgs() {
   return [];
 }
 
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // Clips directory
 const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
@@ -172,6 +178,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       '--no-part',
       '--force-overwrites',
       ...getYoutubeCookiesArgs(),
+      ...getYoutubeProxyArgs(),
       ...YTDLP_COMMON_ARGS,
       videoUrl
     ], { timeout: 240000 });
@@ -2812,6 +2819,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
             '--merge-output-format', 'mkv', '-o', tempVideo,
             '--no-part', '--force-overwrites',
             ...getYoutubeCookiesArgs(),
+            ...getYoutubeProxyArgs(),
             ...YTDLP_COMMON_ARGS,
             '--download-sections', `*${frameSec}-${frameSec + 5}`,
             videoUrl
@@ -2824,6 +2832,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
               '--merge-output-format', 'mkv', '-o', tempVideo,
               '--no-part', '--force-overwrites',
               ...getYoutubeCookiesArgs(),
+              ...getYoutubeProxyArgs(),
               ...YTDLP_COMMON_ARGS,
               videoUrl
             ], { timeout: 180000 });
@@ -4368,6 +4377,7 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
             '--merge-output-format', 'mkv', '-o', downloadPath,
             '--no-part', '--force-overwrites',
             ...getYoutubeCookiesArgs(),
+            ...getYoutubeProxyArgs(),
             ...YTDLP_COMMON_ARGS,
             videoUrl
           ], { timeout: 240000 }));
@@ -4768,6 +4778,7 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
             '--merge-output-format', 'mkv', '-o', tempDownload,
             '--no-part', '--force-overwrites',
             ...getYoutubeCookiesArgs(),
+            ...getYoutubeProxyArgs(),
             ...YTDLP_COMMON_ARGS,
             videoUrl
           ], { timeout: 240000 });

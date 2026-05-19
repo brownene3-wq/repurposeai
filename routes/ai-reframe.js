@@ -17,6 +17,12 @@ function getYoutubeCookiesArgs() {
   return [];
 }
 
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // Lazy-load ytdl-core
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; }
@@ -102,6 +108,7 @@ function tryYtDlpStrategy(strategy, videoUrl, outputPath) {
       ...YTDLP_COMMON_ARGS,
       ...strategy.args,
       ...getYoutubeCookiesArgs(),
+      ...getYoutubeProxyArgs(),
       videoUrl,
     ];
     const proc = spawn(ytdlpPath, args);

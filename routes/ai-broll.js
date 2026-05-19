@@ -106,6 +106,12 @@ function ensureYtdlp() {
   }
 }
 
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 function extractYoutubeVideoId(url) {
   if (!url) return null;
   const patterns = [
@@ -200,6 +206,7 @@ async function fetchYoutubeMeta(url) {
     const p = spawn(ytdlpBin, [
       '--skip-download', '--dump-single-json',
       ...BROLL_YTDLP_ARGS,
+      ...getYoutubeProxyArgs(),
       videoUrl
     ]);
     p.stdout.on('data', d => { buf += d.toString(); });
@@ -217,25 +224,25 @@ async function fetchYoutubeMeta(url) {
 
   // 4-strategy subtitle fallback chain (mirrors ai-hook.js)
   let subFile = await tryYtdlpSubsBroll(videoId, [
-    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--skip-download', ...BROLL_YTDLP_ARGS, ...getYoutubeProxyArgs(),
     '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en',
     '--sub-format', 'json3',
     '-o', outTemplate, videoUrl
   ], tmpDir);
   if (!subFile) subFile = await tryYtdlpSubsBroll(videoId, [
-    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--skip-download', ...BROLL_YTDLP_ARGS, ...getYoutubeProxyArgs(),
     '--write-auto-subs', '--write-subs', '--sub-langs', 'en.*,en',
     '--sub-format', 'vtt',
     '-o', outTemplate, videoUrl
   ], tmpDir);
   if (!subFile) subFile = await tryYtdlpSubsBroll(videoId, [
-    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--skip-download', ...BROLL_YTDLP_ARGS, ...getYoutubeProxyArgs(),
     '--write-auto-subs', '--sub-langs', 'all',
     '--sub-format', 'json3',
     '-o', outTemplate, videoUrl
   ], tmpDir);
   if (!subFile) subFile = await tryYtdlpSubsBroll(videoId, [
-    '--skip-download', ...BROLL_YTDLP_ARGS,
+    '--skip-download', ...BROLL_YTDLP_ARGS, ...getYoutubeProxyArgs(),
     '--write-subs', '--sub-langs', 'all',
     '--sub-format', 'json3',
     '-o', outTemplate, videoUrl
@@ -2477,7 +2484,7 @@ router.post('/import-url', requireAuth, async (req, res) => {
     if (cookiesPath && fs.existsSync(cookiesPath)) cookiesArgs = ['--cookies', cookiesPath];
 
     function runYtdlpOnce(extraArgs) {
-      const args = COMMON_ARGS.concat(extraArgs || []).concat(cookiesArgs).concat([url]);
+      const args = COMMON_ARGS.concat(extraArgs || []).concat(cookiesArgs).concat(getYoutubeProxyArgs()).concat([url]);
       return new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, args);
         let stderr = '';

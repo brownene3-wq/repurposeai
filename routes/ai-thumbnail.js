@@ -81,6 +81,12 @@ function getYoutubeCookiesArgs() {
   return [];
 }
 
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // Validate YouTube URL
 function isValidYouTubeUrl(url) {
   const patterns = [
@@ -123,6 +129,7 @@ async function downloadYouTubeVideo(videoUrl) {
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
           ...getYoutubeCookiesArgs(),
+          ...getYoutubeProxyArgs(),
           videoUrl
         ]);
         let stderr = '';

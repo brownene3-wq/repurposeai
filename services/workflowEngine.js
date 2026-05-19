@@ -22,6 +22,12 @@ function getYoutubeCookiesArgs() {
   return [];
 }
 
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // HTTPS/HTTP helpers
 function httpsGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -353,6 +359,7 @@ async function downloadMedia(sourceItem, workflowId) {
         const proc = spawn('yt-dlp', [
           '--no-warnings',
           ...getYoutubeCookiesArgs(),
+          ...getYoutubeProxyArgs(),
           '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
           '--merge-output-format', 'mp4',
           '-o', tempPath + '.mp4',

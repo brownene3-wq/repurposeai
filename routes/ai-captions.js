@@ -34,6 +34,12 @@ function getYoutubeCookiesArgs() {
   return [];
 }
 
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // Boot guard — see shorts.js explanation
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
@@ -1457,6 +1463,7 @@ async function downloadYouTubeVideo(videoUrl) {
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
           ...getYoutubeCookiesArgs(),
+          ...getYoutubeProxyArgs(),
           videoUrl
         ]);
         let stderr = '';
