@@ -27,6 +27,19 @@ if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath
 let ytdlpPath = null;
 try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
 
+// Returns ['--cookies', '<path>'] when a cookies file is configured, else []
+function getYoutubeCookiesArgs() {
+  const p = process.env.YT_COOKIES_PATH;
+  if (p && require('fs').existsSync(p)) return ['--cookies', p];
+  return [];
+}
+
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // Boot guard — see shorts.js explanation
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-openai-key' });
 
@@ -1449,6 +1462,8 @@ async function downloadYouTubeVideo(videoUrl) {
           '--no-part',
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
+          ...getYoutubeCookiesArgs(),
+          ...getYoutubeProxyArgs(),
           videoUrl
         ]);
         let stderr = '';

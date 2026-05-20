@@ -10,6 +10,18 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { featureUsageOps } = require('../db/database');
 
+function getYoutubeCookiesArgs() {
+  const p = process.env.YT_COOKIES_PATH;
+  if (p && require('fs').existsSync(p)) return ['--cookies', p];
+  return [];
+}
+
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // FFmpeg path detection
 let ffmpegPath = null;
 const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
@@ -870,6 +882,8 @@ router.post('/import-url', requireAuth, async (req, res) => {
         '--js-runtimes', 'node',
         '--remote-components', 'ejs:github',
         '--retries', '3', '--extractor-retries', '3', '--fragment-retries', '3',
+        ...getYoutubeCookiesArgs(),
+        ...getYoutubeProxyArgs(),
         '-o', outFile.replace(/\.mp3$/, '.%(ext)s'),
         rawUrl,
       ];

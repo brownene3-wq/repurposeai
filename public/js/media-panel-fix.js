@@ -249,7 +249,7 @@
   // timelines scroll naturally.
   var TIMELINE_PX_PER_SEC = 10;
   // Default-on snap so edges magnetize out of the box.
-  var _timelineState = { tool: 'select', snap: true };
+  var _timelineState = { tool: 'select', snap: true, linked: false };
 
   function findRightmostClipEnd(trackEl){
     var maxEnd = 0;
@@ -441,7 +441,15 @@
   // Split a clip at cutXInClip (in clip-local pixels) into two clips.
   // The right half inherits mediaUrl and stores sourceOffset so when played
   // it seeks to the correct point inside the original source.
-  function razorSplit(clip, cutXInClip){
+  //
+  // Options:
+  //   silent (bool) — Task #103. When true, skip the toast / history /
+  //     preview sync side effects. Used for recursive linked-split calls
+  //     so we emit ONE consolidated toast and push ONE history snapshot
+  //     for the whole multi-track split.
+  function razorSplit(clip, cutXInClip, options){
+    options = options || {};
+    var silent = !!options.silent;
     var width = parseFloat(clip.style.width) || clip.offsetWidth || 0;
     // Ignore clicks within 6px of either edge — don't create tiny slivers.
     if (cutXInClip < 6 || cutXInClip > width - 6) return false;
@@ -485,12 +493,43 @@
     makeClipInteractive(right);
 
     updateTimelineInfo();
+
+    // Silent recursive call from the linked-split block below: skip the
+    // preview / history / toast so the leader emits exactly one of each.
+    if (silent) return true;
+
     // Split changed which clip is under the playhead — refresh preview.
     _lastPreviewUrl = null;
     try { syncPreviewToPlayhead(); } catch(_){}
     if (_timelineState.snap && clip.classList.contains('mt-clip-video')){ compactVideoTrack(); }
+
+    // Task #103 — When Link Tracks is ON, also split any clip on OTHER
+    // tracks whose horizontal range strictly contains the cut point
+    // (timeline-x = clip.left + cutXInClip). Each linked split recurses
+    // with { silent: true } so its own side effects are suppressed.
+    var linkedSplitCount = 0;
+    if (_timelineState.linked){
+      var cutTimelinePx = left + cutXInClip;
+      var myTrack = clip.parentElement;
+      var candidates = Array.from(document.querySelectorAll('.mt-clip'));
+      candidates.forEach(function(c){
+        if (c === clip || c === right) return;
+        if (c.parentElement === myTrack) return;
+        var cl = parseFloat(c.style.left)  || 0;
+        var cw = parseFloat(c.style.width) || 0;
+        // Strict containment — refuse to split exactly at an edge so we
+        // don't create slivers on linked clips (razorSplit's own 6px
+        // guard would reject those anyway).
+        if (cutTimelinePx > cl + 6 && cutTimelinePx < cl + cw - 6){
+          if (razorSplit(c, cutTimelinePx - cl, { silent: true })) linkedSplitCount++;
+        }
+      });
+    }
+
     pushTimelineHistory();
-    showToast('Clip split');
+    showToast(linkedSplitCount > 0
+      ? ('Split ' + (1 + linkedSplitCount) + ' clips')
+      : 'Clip split');
     return true;
   }
   // Task #38/#39 — expose razor + compact helpers so the AI smart-cut
@@ -569,6 +608,20 @@
         document.querySelectorAll('.mt-clip.selected').forEach(function(c){ c.classList.remove('selected'); });
         clip.classList.add('selected');
         group = [clip];
+      }
+
+      // Task #100 — When Link Tracks is ON, expand the drag group to
+      // include clips on other tracks that line up under/over this
+      // one. The existing multi-clip drag logic then moves them all
+      // by the same delta.
+      if (_timelineState.linked){
+        var expanded = group.slice();
+        group.forEach(function(g){
+          findLinkedClips(g).forEach(function(l){
+            if (expanded.indexOf(l) === -1) expanded.push(l);
+          });
+        });
+        group = expanded;
       }
 
       var startX = e.clientX;
@@ -746,7 +799,7 @@
         var slotIdx = 0;
         function drawNext(){
           if (slotIdx >= slotCount){
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
             return;
           }
           var t = srcOff + ((slotIdx + 0.5) / slotCount) * clipDurSec;
@@ -870,7 +923,15 @@
     if (!clip || !dataURL) return;
     clip.style.backgroundImage = 'url(' + dataURL + ')';
     clip.style.backgroundRepeat = 'no-repeat';
-    clip.style.backgroundSize = '100% 100%';
+    // Task #96 — Keep frames at their intrinsic px width so trimming
+    // simply HIDES/REVEALS them via the clip's existing overflow:hidden,
+    // instead of horizontally scaling the whole canvas. The image was
+    // baked at slotCount × THUMB_W (60) px wide for the clip's width at
+    // render time, so 'auto' width = exact 1:1 frame size, and '100%'
+    // height stretches the 30px thumb canvas to fill the clip's height.
+    // Trim end re-renders via attachFilmstripOrWaveform() so growing
+    // a clip past its original width still gets enough frames.
+    clip.style.backgroundSize = 'auto 100%';
     clip.style.backgroundPosition = 'left center';
     // Ensure text (filename) stays readable on top of the filmstrip
     clip.style.textShadow = '0 1px 2px rgba(0,0,0,0.85)';
@@ -920,6 +981,26 @@
       var track       = clip.parentElement;
       var MIN_W       = 15;
       clip.classList.add('mt-trimming');
+
+      // Task #102 — When Link Tracks is ON, snapshot the clips that
+      // line up against this clip's matching edge so we can apply the
+      // same px delta to them as the leader moves. Left-handle matches
+      // by start position; right-handle matches by end position.
+      var linkedState = (function(){
+        if (!_timelineState.linked) return [];
+        var sources = (side === 'l') ? findLinkedClips(clip) : findLinkedClipsByRight(clip);
+        return sources.map(function(c){
+          var t = c.dataset.clipType || '';
+          return {
+            clip:        c,
+            startLeft:   parseFloat(c.style.left)  || 0,
+            startWidth:  parseFloat(c.style.width) || c.offsetWidth || 100,
+            startSrcOff: parseFloat(c.dataset.sourceOffset) || 0,
+            srcDur:      parseFloat(c.dataset.duration) || 0,
+            isMedia:     (t === 'vid' || t === 'aud')
+          };
+        });
+      })();
 
       function onMove(ev){
         var dx = ev.clientX - startX;
@@ -974,6 +1055,26 @@
           // For NON-media clips (text/image/motion) keep duration in sync
           // with timeline width since they don't track a source length.
           if (!isMedia) clip.dataset.duration = (newWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+          // Task #102 — propagate the leader's actual applied delta to
+          // each linked clip. Clamps individually so a shorter linked
+          // clip just stops trimming instead of breaking the leader.
+          if (linkedState.length){
+            var appliedDxL = newLeft - startLeft;
+            linkedState.forEach(function(L){
+              var lLeft  = L.startLeft  + appliedDxL;
+              var lWidth = L.startWidth - appliedDxL;
+              if (lWidth < MIN_W || lLeft < 0) return;
+              if (L.isMedia){
+                var lSrc = L.startSrcOff + appliedDxL / TIMELINE_PX_PER_SEC;
+                if (lSrc < 0) return;
+                L.clip.dataset.sourceOffset = lSrc.toFixed(3);
+              } else {
+                L.clip.dataset.duration = (lWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+              }
+              L.clip.style.left  = lLeft  + 'px';
+              L.clip.style.width = lWidth + 'px';
+            });
+          }
         } else {
           // Right handle: width = startWidth + dx
           var newW = startWidth + dx;
@@ -988,6 +1089,21 @@
 
           clip.style.width = newW + 'px';
           if (!isMedia) clip.dataset.duration = (newW / TIMELINE_PX_PER_SEC).toFixed(3);
+          // Task #102 — propagate to linked clips. Right-trim only
+          // changes width, never left/sourceOffset.
+          if (linkedState.length){
+            var appliedDw = newW - startWidth;
+            linkedState.forEach(function(L){
+              var lWidth = L.startWidth + appliedDw;
+              if (lWidth < MIN_W) return;
+              if (L.isMedia && L.srcDur > 0){
+                var lMaxW = (L.srcDur - L.startSrcOff) * TIMELINE_PX_PER_SEC;
+                if (lMaxW > 0 && lWidth > lMaxW) lWidth = lMaxW;
+              }
+              L.clip.style.width = lWidth + 'px';
+              if (!L.isMedia) L.clip.dataset.duration = (lWidth / TIMELINE_PX_PER_SEC).toFixed(3);
+            });
+          }
         }
       }
 
@@ -1005,6 +1121,12 @@
         try { refreshKeyframeMarkers(clip); } catch(_){}
         // Re-render filmstrip / waveform at the new width
         try { attachFilmstripOrWaveform(clip); } catch(_){}
+        // Task #102 — refresh the same artifacts on every linked clip
+        // whose width changed in sympathy with the leader.
+        linkedState.forEach(function(L){
+          try { refreshKeyframeMarkers(L.clip); } catch(_){}
+          try { attachFilmstripOrWaveform(L.clip); } catch(_){}
+        });
         pushTimelineHistory();
       }
 
@@ -1338,6 +1460,57 @@
     _timelineState.snap = !!on;
     var btn = document.getElementById('mtSnapBtn');
     if (btn) btn.classList.toggle('active', !!on);
+  }
+
+  // Task #100 — Link Tracks. When ON, dragging any clip also drags
+  // every clip on the OTHER tracks that starts at the same timeline-x
+  // (within a small tolerance). Models Premiere's "Linked Selection"
+  // so a V1 video and its A1 audio (or a T1 caption sitting under
+  // them) move as one unit.
+  function setLinkTracksEnabled(on){
+    _timelineState.linked = !!on;
+    var btn = document.getElementById('mtLinkTracksBtn');
+    if (btn) btn.classList.toggle('active', !!on);
+  }
+
+  // Find clips on OTHER tracks that start at the same timeline-x as
+  // `clip`. Returns [] when Link Tracks is OFF so the drag path stays
+  // unchanged in the default case. Tolerance is 4px so minor pixel
+  // rounding (compactVideoTrack, snap-to-edge) doesn't break the link.
+  function findLinkedClips(clip){
+    if (!_timelineState.linked) return [];
+    var leftA   = parseFloat(clip.style.left) || 0;
+    var myTrack = clip.parentElement;
+    var out = [];
+    var all = document.querySelectorAll('.mt-clip');
+    for (var i = 0; i < all.length; i++){
+      var c = all[i];
+      if (c === clip) continue;
+      if (c.parentElement === myTrack) continue;  // same track — not linked
+      var lc = parseFloat(c.style.left) || 0;
+      if (Math.abs(lc - leftA) < 4) out.push(c);
+    }
+    return out;
+  }
+
+  // Task #102 — Right-edge variant for right-handle trims. Same idea as
+  // findLinkedClips but compares (left + width) instead of left, so a
+  // V1 + A1 pair coming from the same source (right edges aligned)
+  // gets trimmed together when the user grabs the tail handle.
+  function findLinkedClipsByRight(clip){
+    if (!_timelineState.linked) return [];
+    var rightA = (parseFloat(clip.style.left) || 0) + (parseFloat(clip.style.width) || 0);
+    var myTrack = clip.parentElement;
+    var out = [];
+    var all = document.querySelectorAll('.mt-clip');
+    for (var i = 0; i < all.length; i++){
+      var c = all[i];
+      if (c === clip) continue;
+      if (c.parentElement === myTrack) continue;
+      var rc = (parseFloat(c.style.left) || 0) + (parseFloat(c.style.width) || 0);
+      if (Math.abs(rc - rightA) < 4) out.push(c);
+    }
+    return out;
   }
 
   // ── Timeline history (Undo / Redo) ─────────────────────────────
@@ -2680,13 +2853,16 @@
     if (linkTracks && !linkTracks.dataset.v14){
       linkTracks.dataset.v14 = '1';
       linkTracks.addEventListener('click', function(){
-        linkTracks.classList.toggle('active');
-        showToast('Tracks ' + (linkTracks.classList.contains('active') ? 'linked' : 'unlinked'));
+        setLinkTracksEnabled(!_timelineState.linked);
+        showToast(_timelineState.linked
+          ? 'Tracks linked — clips lined up under each other now drag as one'
+          : 'Tracks unlinked');
       });
     }
     // Apply initial visual state (Razor active, Snap on by default).
     setActiveTool(_timelineState.tool);
     setSnapEnabled(_timelineState.snap);
+    setLinkTracksEnabled(_timelineState.linked);
   }
   wireTimelineTools();
 
@@ -2753,14 +2929,27 @@
       var selected = document.querySelectorAll('.mt-clip.selected');
       if (!selected.length) return;
       e.preventDefault();
-      var removedVideo = Array.from(selected).some(function(c){ return c.classList.contains('mt-clip-video'); });
-      selected.forEach(function(c){ c.remove(); });
+      // Task #102 — When Link Tracks is ON, also remove any clip on
+      // another track that starts at the same timeline-x as a selected
+      // clip. This way deleting a V1 video also pulls its A1 audio (and
+      // any T1 caption sitting under it).
+      var toRemove = Array.from(selected);
+      if (_timelineState.linked){
+        var seen = new Set(toRemove);
+        toRemove.slice().forEach(function(c){
+          findLinkedClips(c).forEach(function(l){
+            if (!seen.has(l)){ seen.add(l); toRemove.push(l); }
+          });
+        });
+      }
+      var removedVideo = toRemove.some(function(c){ return c.classList.contains('mt-clip-video'); });
+      toRemove.forEach(function(c){ c.remove(); });
       updateTimelineInfo();
       if (removedVideo && _timelineState.snap){ compactVideoTrack(); }
       _lastPreviewUrl = null;
       try { syncPreviewToPlayhead(); } catch(_){}
       pushTimelineHistory();
-      showToast(selected.length === 1 ? 'Clip removed' : (selected.length + ' clips removed'));
+      showToast(toRemove.length === 1 ? 'Clip removed' : (toRemove.length + ' clips removed'));
     });
   }
 
@@ -6179,17 +6368,41 @@
     if (player){
       try { player.src = url; player.load(); } catch(_){}
     }
-    // If this came from a server upload (has server filename), update
-    // currentVideoFile so the editor's export/trim/etc. call the right file.
+    // ── Make the sidebar tools target THIS clip, not the first upload.
+    // Two paths:
+    //   (a) item already has a server filename → publish it everywhere.
+    //   (b) item is a local blob (handleFiles path) → upload-blob to the
+    //       server first, stamp the returned filename on the dataset,
+    //       then publish.
+    function publishActive(filename, serveUrl, duration){
+      var v = { filename: filename, serveUrl: serveUrl, duration: duration };
+      try { window.currentVideoFile = v; } catch(_){}
+      try { if (typeof window.setEditorCurrentVideoFile === 'function') window.setEditorCurrentVideoFile(v); } catch(_){}
+    }
     var serverFilename = item.dataset.serverFilename;
+    var dur = parseFloat(item.dataset.duration || '0') || 0;
     if (serverFilename){
-      try {
-        window.currentVideoFile = {
-          filename: serverFilename,
-          serveUrl: url,
-          duration: parseFloat(item.dataset.duration || '0') || 0
-        };
-      } catch(_){}
+      publishActive(serverFilename, url, dur);
+    } else if (url && /^(blob:|data:)/.test(url) && !item.dataset._uploadingActive){
+      // Lazy server upload on first activation. Guarded so concurrent
+      // clicks don't re-upload the same blob.
+      item.dataset._uploadingActive = '1';
+      (async function(){
+        try {
+          var blob = await (await fetch(url)).blob();
+          var fd = new FormData();
+          var nm = (item.dataset.fileName || 'clip') + '.bin';
+          fd.append('file', blob, nm);
+          var resp = await fetch('/video-editor/upload-blob', { method:'POST', body: fd, credentials:'same-origin' });
+          var data = await resp.json();
+          if (resp.ok && data && data.success && data.filename){
+            item.dataset.serverFilename = data.filename;
+            if (data.serveUrl) item.dataset.mediaUrl = data.serveUrl;
+            publishActive(data.filename, data.serveUrl || url, dur);
+          }
+        } catch(_){}
+        delete item.dataset._uploadingActive;
+      })();
     }
     // Hide the #uploadZone once a real video is active (mirrors the
     // behavior of the draft-loader in v10-editor-redesign.js).

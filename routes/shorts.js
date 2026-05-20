@@ -59,6 +59,12 @@ function getYoutubeCookiesArgs() {
   return [];
 }
 
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
 // Clips directory
 const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
@@ -172,6 +178,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       '--no-part',
       '--force-overwrites',
       ...getYoutubeCookiesArgs(),
+      ...getYoutubeProxyArgs(),
       ...YTDLP_COMMON_ARGS,
       videoUrl
     ], { timeout: 240000 });
@@ -2114,6 +2121,38 @@ router.get('/brand-kit', requireAuth, async (req, res) => {
   }
 });
 
+// GET /connection-status - Which social platforms can this user actually
+// publish to right now? Used by the Add-to-Calendar modal to gate the Save
+// button: if the chosen platform isn't connected, swap Save for a
+// "Connect <Platform>" CTA. Source of truth: the user row's per-platform
+// access token columns (tiktok_access_token, instagram_access_token, ...).
+router.get('/connection-status', requireAuth, async (req, res) => {
+  try {
+    const row = (await pool.query(
+      `SELECT
+         tiktok_access_token, instagram_access_token, twitter_access_token,
+         linkedin_access_token, facebook_access_token, youtube_access_token
+       FROM users WHERE id = $1`,
+      [req.user.id]
+    )).rows[0] || {};
+    const has = (v) => !!(v && String(v).trim());
+    res.json({
+      success: true,
+      connections: {
+        tiktok:    has(row.tiktok_access_token),
+        instagram: has(row.instagram_access_token),
+        twitter:   has(row.twitter_access_token),
+        linkedin:  has(row.linkedin_access_token),
+        facebook:  has(row.facebook_access_token),
+        youtube:   has(row.youtube_access_token),
+      }
+    });
+  } catch (error) {
+    console.error('Error checking connection status:', error);
+    res.status(500).json({ error: 'Failed to check connection status' });
+  }
+});
+
 // POST /brand-kit - Save user's brand kit settings
 router.post('/brand-kit', requireAuth, async (req, res) => {
   try {
@@ -2780,6 +2819,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
             '--merge-output-format', 'mkv', '-o', tempVideo,
             '--no-part', '--force-overwrites',
             ...getYoutubeCookiesArgs(),
+            ...getYoutubeProxyArgs(),
             ...YTDLP_COMMON_ARGS,
             '--download-sections', `*${frameSec}-${frameSec + 5}`,
             videoUrl
@@ -2792,6 +2832,7 @@ router.post('/thumbnail', requireAuth, checkPlanLimit('thumbnailsPerMonth'), asy
               '--merge-output-format', 'mkv', '-o', tempVideo,
               '--no-part', '--force-overwrites',
               ...getYoutubeCookiesArgs(),
+              ...getYoutubeProxyArgs(),
               ...YTDLP_COMMON_ARGS,
               videoUrl
             ], { timeout: 180000 });
@@ -4336,6 +4377,7 @@ router.post('/quick-narrate', requireAuth, checkPlanLimit('narrationsPerMonth'),
             '--merge-output-format', 'mkv', '-o', downloadPath,
             '--no-part', '--force-overwrites',
             ...getYoutubeCookiesArgs(),
+            ...getYoutubeProxyArgs(),
             ...YTDLP_COMMON_ARGS,
             videoUrl
           ], { timeout: 240000 }));
@@ -4736,6 +4778,7 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
             '--merge-output-format', 'mkv', '-o', tempDownload,
             '--no-part', '--force-overwrites',
             ...getYoutubeCookiesArgs(),
+            ...getYoutubeProxyArgs(),
             ...YTDLP_COMMON_ARGS,
             videoUrl
           ], { timeout: 240000 });
@@ -5945,34 +5988,29 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       <!-- Premium Tools Grid -->
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px;">
         <div onclick="toggleToolPanel('quickNarratePanel', this)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#00b894';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(0,184,148,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(0,184,148,0.2),rgba(0,206,201,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🎙️</div>
+          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/quick-narrate.png" alt="Quick Narrate" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Quick Narrate</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Add AI voiceover to any video</div>
         </div>
         <div onclick="toggleToolPanel('workflowPanel', this); toggleWorkflows(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#f39c12';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(243,156,18,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(243,156,18,0.2),rgba(241,196,15,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">📋</div>
+          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/workflow-templates.png" alt="Workflow Templates" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Workflow Templates</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Pre-built automation flows</div>
         </div>
         <div onclick="toggleToolPanel('batchPanel', this); toggleBatchInput(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#FF0050';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(255,0,80,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(255,0,80,0.2),rgba(255,71,87,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🔄</div>
+          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/batch-analyze.png" alt="Batch Analyze" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Batch Analyze</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Process multiple videos at once</div>
         </div>
         <div onclick="openBrandKitModal()" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(108,92,231,0.2),rgba(162,155,254,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">🎨</div>
+          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/brand-kit.png" alt="Brand Kit" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Brand Kit</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Customize with your brand identity</div>
         </div>
         <div onclick="toggleToolPanel('autoGenPanel', this)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#e056fd';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(224,86,253,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(224,86,253,0.2),rgba(162,155,254,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">⚡</div>
+          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/auto-generate.png" alt="Auto-Generate" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Auto-Generate</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Create multiple shorts instantly</div>
-        </div>
-        <div onclick="toggleToolPanel('settingsPanel', this); toggleSettings(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#10b981';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(16,185,129,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,rgba(16,185,129,0.2),rgba(52,211,153,0.2));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;">⚙️</div>
-          <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Settings</div>
-          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">API keys & integrations</div>
         </div>
       </div>
 
@@ -6112,7 +6150,14 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               <h3 style="font-size:16px; font-weight:600;">🎙️ Quick Narrate</h3>
               <p style="color:#888; font-size:12px; margin-top:2px;">Paste any video URL (YouTube, Instagram, TikTok, Facebook, Twitter/X, LinkedIn, Snapchat) and add AI narration over it</p>
             </div>
-            <button class="btn btn-small" onclick="document.getElementById('quickNarratePanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times;</button>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <a href="/settings?section=apikeys" title="Open API Keys settings" aria-label="API Keys settings"
+                style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);color:var(--text-muted);text-decoration:none;font-size:14px;transition:background 0.15s ease,color 0.15s ease,border-color 0.15s ease;"
+                onmouseenter="this.style.background='rgba(255,255,255,0.12)';this.style.color='var(--text)';this.style.borderColor='rgba(255,255,255,0.2)';"
+                onmouseleave="this.style.background='rgba(255,255,255,0.06)';this.style.color='var(--text-muted)';this.style.borderColor='rgba(255,255,255,0.10)';"
+                >&#x2699;</a>
+              <button class="btn btn-small" onclick="document.getElementById('quickNarratePanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times;</button>
+            </div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <input type="url" id="qn-videoUrl" name="quick_narrate_url" autocomplete="off" placeholder="Paste video URL — YouTube, Instagram, TikTok, Facebook, Twitter/X..."
@@ -6456,6 +6501,26 @@ ${paginationHtml}
         </select>
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
         <textarea id="atcNotes" class="atc-themed-scroll" rows="5" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:90px;"></textarea>
+        <!-- Auto-publish toggle: when ON, the server cron will pick up this
+             entry at scheduled time and post it to the selected platform.
+             When OFF, we just keep it as a planned calendar item + reminder.
+             Hidden for blog/newsletter (no third-party publish path). -->
+        <label id="atcAutoPubRow" style="display:flex;align-items:center;gap:10px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.18);border-radius:8px;padding:10px 12px;margin-bottom:14px;cursor:pointer;">
+          <input type="checkbox" id="atcAutoPublish" style="accent-color:#a78bfa;width:14px;height:14px;flex-shrink:0;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--text);">Auto-publish at scheduled time</div>
+            <div id="atcAutoPubHint" style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">When the date and time arrive, this clip will be posted to the selected platform automatically.</div>
+          </div>
+        </label>
+        <!-- Connection-gate banner: shown when the selected platform isn't
+             connected yet. updateAtcConnectionState() toggles this. -->
+        <div id="atcConnectBanner" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-top:8px;font-size:0.8rem;line-height:1.4;">
+          <div id="atcConnectMsg" style="margin-bottom:8px;"></div>
+          <a id="atcConnectLink" href="#" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;">
+            <span id="atcConnectLinkLabel">Connect</span>
+            <span style="font-size:0.9em;">&rarr;</span>
+          </a>
+        </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
           <button onclick="closeAtcModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
           <button id="atcSaveBtn" onclick="saveAtcEntry()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Save to Calendar</button>
@@ -6803,6 +6868,9 @@ ${paginationHtml}
       document.getElementById('atcNotes').value = noteParts.join('\\n\\n');
       document.getElementById('atcModal').style.display = 'flex';
       setTimeout(function(){ document.getElementById('atcTitle').focus(); document.getElementById('atcTitle').select(); }, 80);
+      // Connection-gate: load status (once) + bind change listener (once),
+      // then run the gate against the currently-selected platform.
+      ensureAtcConnectionStatus().then(updateAtcConnectionState);
     }
     function closeAtcModal() {
       document.getElementById('atcModal').style.display = 'none';
@@ -6830,6 +6898,77 @@ ${paginationHtml}
       }
     }
 
+    // Cache + load /shorts/connection-status once per page load.
+    var __atcConnStatus = null;
+    var __atcConnLoading = null;
+    async function ensureAtcConnectionStatus() {
+      if (__atcConnStatus) return __atcConnStatus;
+      if (__atcConnLoading) return __atcConnLoading;
+      __atcConnLoading = (async function(){
+        try {
+          var r = await fetch('/shorts/connection-status', { credentials: 'same-origin' });
+          var d = await r.json();
+          __atcConnStatus = (d && d.connections) || {};
+        } catch (e) {
+          __atcConnStatus = {};
+        }
+        return __atcConnStatus;
+      })();
+      return __atcConnLoading;
+    }
+    // Friendly display name + connect URL per platform option.
+    var __atcPlatformMeta = {
+      tiktok:    { label: 'TikTok',          connectUrl: '/tiktok/connect',    requiresAuth: true  },
+      instagram: { label: 'Instagram',       connectUrl: '/instagram/connect', requiresAuth: true  },
+      shorts:    { label: 'YouTube Shorts',  connectUrl: '/youtube/connect',   requiresAuth: true, statusKey: 'youtube' },
+      youtube:   { label: 'YouTube',         connectUrl: '/youtube/connect',   requiresAuth: true  },
+      twitter:   { label: 'Twitter / X',     connectUrl: '/twitter/connect',   requiresAuth: true  },
+      linkedin:  { label: 'LinkedIn',        connectUrl: '/linkedin/connect',  requiresAuth: true  },
+      facebook:  { label: 'Facebook',        connectUrl: '/facebook/connect',  requiresAuth: true  },
+      blog:      { label: 'Blog Post',       requiresAuth: false },
+      newsletter:{ label: 'Newsletter',      requiresAuth: false },
+    };
+    function updateAtcConnectionState() {
+      var sel = document.getElementById('atcPlatform');
+      if (!sel) return;
+      var v = sel.value;
+      var meta = __atcPlatformMeta[v] || { label: v, requiresAuth: false };
+      var banner = document.getElementById('atcConnectBanner');
+      var saveBtn = document.getElementById('atcSaveBtn');
+      var autoPubRow = document.getElementById('atcAutoPubRow');
+      var autoPubChk = document.getElementById('atcAutoPublish');
+      if (!meta.requiresAuth) {
+        if (banner) banner.style.display = 'none';
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+        // No auth = no auto-publish path. Hide the option for blog/newsletter.
+        if (autoPubRow) autoPubRow.style.display = 'none';
+        if (autoPubChk) autoPubChk.checked = false;
+        return;
+      }
+      if (autoPubRow) autoPubRow.style.display = 'flex';
+      var statusKey = meta.statusKey || v;
+      var connected = !!(__atcConnStatus && __atcConnStatus[statusKey]);
+      if (connected) {
+        if (banner) banner.style.display = 'none';
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+      } else {
+        var msg = document.getElementById('atcConnectMsg');
+        var link = document.getElementById('atcConnectLink');
+        var lbl  = document.getElementById('atcConnectLinkLabel');
+        if (msg)  msg.textContent  = meta.label + " isn't connected yet. To auto-publish at the scheduled time, connect your " + meta.label + ' account first.';
+        if (link) link.href        = meta.connectUrl;
+        if (lbl)  lbl.textContent  = 'Connect ' + meta.label;
+        if (banner) banner.style.display = 'block';
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.5'; saveBtn.style.cursor = 'not-allowed'; }
+      }
+    }
+    // Re-check whenever the platform dropdown changes.
+    document.addEventListener('change', function(e){
+      if (e.target && e.target.id === 'atcPlatform') {
+        ensureAtcConnectionStatus().then(updateAtcConnectionState);
+      }
+    });
+
     async function saveAtcEntry() {
       var btn = document.getElementById('atcSaveBtn');
       var ref = (document.getElementById('atcMomentRef').value || '').split('|');
@@ -6846,6 +6985,66 @@ ${paginationHtml}
       };
       if (!payload.title) { showToast('Title is required'); return; }
       if (!payload.scheduledDate) { showToast('Date is required'); return; }
+      payload.autoPublish = !!document.getElementById('atcAutoPublish').checked;
+      // Defense-in-depth: re-check connection status server-side-driven.
+      try {
+        var pm = __atcPlatformMeta[payload.platform];
+        if (pm && pm.requiresAuth) {
+          await ensureAtcConnectionStatus();
+          var statusKey = pm.statusKey || payload.platform;
+          if (!__atcConnStatus || !__atcConnStatus[statusKey]) {
+            showToast('Connect your ' + pm.label + ' account before scheduling.');
+            updateAtcConnectionState();
+            return;
+          }
+        }
+        // If auto-publish is on, refuse it for export-only platforms.
+        if (payload.autoPublish && pm && !pm.requiresAuth) {
+          showToast('Auto-publish is only available for connected social platforms.');
+          return;
+        }
+      } catch (e) {}
+
+      // Auto-publish: render the clip now so the cron can pick up the file
+      // at scheduled time. We POST /shorts/clip with the analysis + moment,
+      // then poll status until ready. The user sees a clear "Rendering clip..."
+      // state on the Save button while this is in flight.
+      if (payload.autoPublish && payload.analysisId != null && payload.momentIndex != null) {
+        btn.disabled = true; btn.textContent = 'Rendering clip…';
+        try {
+          var selectedBrandTemplateId = null;
+          try { selectedBrandTemplateId = localStorage.getItem('brandKitSelectedTemplateId') || null; } catch (e) {}
+          var clipPost = await fetch('/shorts/clip', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              analysisId: payload.analysisId,
+              momentIndex: payload.momentIndex,
+              includeCaptions: true,
+              clipStyle: 'crop',
+              captionLanguage: 'en',
+              captionStyle: '',
+              applyBrandKit: true,
+              selectedBrandTemplateId
+            })
+          }).then(function(r){ return r.json(); });
+          if (!clipPost || !clipPost.filename) throw new Error(clipPost && clipPost.error || 'Failed to start clip render');
+
+          var deadline = Date.now() + 360000;  // 6 min cap
+          var ready = null;
+          while (Date.now() < deadline) {
+            await new Promise(function(r){ setTimeout(r, 2000); });
+            var s = await fetch('/shorts/clip/status/' + clipPost.filename).then(function(r){ return r.json(); });
+            if (s && (s.failed || s.error)) throw new Error('Clip render failed: ' + (s.message || 'unknown'));
+            if (s && s.ready) { ready = s; break; }
+          }
+          if (!ready) throw new Error('Clip render timed out — try again or save without auto-publish.');
+          payload.clipFilename = clipPost.filename;
+        } catch (clipErr) {
+          showToast('Could not auto-publish: ' + clipErr.message);
+          btn.disabled = false; btn.textContent = 'Save to Calendar';
+          return;
+        }
+      }
       var orig = btn.textContent;
       btn.disabled = true; btn.textContent = 'Saving...';
       try {
@@ -7616,7 +7815,7 @@ ${paginationHtml}
     };
 
     function toggleToolPanel(panelId, cardEl) {
-      var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','settingsPanel','autoGenPanel'];
+      var allPanels = ['quickNarratePanel','workflowPanel','batchPanel','brandKitPanel','autoGenPanel'];
       var panel = document.getElementById(panelId);
       var isVisible = panel.style.display !== 'none';
       // Close all panels first + drop the open marker
@@ -9439,7 +9638,7 @@ ${paginationHtml}
           narrationState.elevenlabsVoiceId = data.voices[0].voice_id;
           select.onchange = function() { narrationState.elevenlabsVoiceId = this.value; };
         } else {
-          select.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Brand Kit</option>';
+          select.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Settings</option>';
         }
       } catch (err) {
         select.innerHTML = '<option value="">Error loading voices</option>';
@@ -9578,7 +9777,7 @@ ${paginationHtml}
         if (data.voices && data.voices.length > 0) {
           sel.innerHTML = data.voices.map(function(v) { return '<option value="' + v.voice_id + '">' + v.name + '</option>'; }).join('');
         } else {
-          sel.innerHTML = '<option value="">No voices — add API key in Brand Kit</option>';
+          sel.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Settings</option>';
         }
       } catch(e) { sel.innerHTML = '<option value="">Error</option>'; }
     }

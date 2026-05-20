@@ -1,10 +1,10 @@
 // Cobalt API integration for video downloading
-// Self-hosted Cobalt instance on Railway
+// Self-hosted Cobalt instance on Hetzner VPS (Railway IPs are blocked by YouTube)
 const fs = require('fs');
 const https = require('https');
 const http = require('http');
 
-const COBALT_API_URL = process.env.COBALT_API_URL || 'https://cobalt-production-0ab0.up.railway.app';
+const COBALT_API_URL = process.env.COBALT_API_URL || 'http://46.224.167.94:9000';
 
 function cobaltRequest(videoUrl) {
   return new Promise((resolve, reject) => {
@@ -25,7 +25,7 @@ function cobaltRequest(videoUrl) {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
-        try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('Cobalt parse error')); }
+        try { resolve(JSON.parse(body)); } catch (e) { reject(new Error('Cobalt parse error: ' + body.substring(0, 200))); }
       });
     });
     req.on('error', reject);
@@ -35,27 +35,67 @@ function cobaltRequest(videoUrl) {
   });
 }
 
-function downloadFile(url, destPath) {
+// Download file with proper timeout, redirect following, and stall detection
+function downloadFile(url, destPath, timeoutMs = 180000) {
   return new Promise((resolve, reject) => {
-    const get = url.startsWith('https') ? https.get : http.get;
-    get(url, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        const get2 = res.headers.location.startsWith('https') ? https.get : http.get;
-        get2(res.headers.location, (res2) => {
-          const ws = fs.createWriteStream(destPath);
-          res2.pipe(ws);
-          ws.on('finish', () => { ws.close(); resolve(); });
-          ws.on('error', reject);
-        }).on('error', reject);
-      } else if (res.statusCode >= 200 && res.statusCode < 300) {
-        const ws = fs.createWriteStream(destPath);
-        res.pipe(ws);
-        ws.on('finish', () => { ws.close(); resolve(); });
-        ws.on('error', reject);
-      } else {
-        reject(new Error('Download HTTP ' + res.statusCode));
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(overallTimer); fn(val); } };
+
+    // Overall timeout for the entire download
+    const overallTimer = setTimeout(() => {
+      settle(reject, new Error('Cobalt download timed out after ' + (timeoutMs / 1000) + 's'));
+    }, timeoutMs);
+
+    function doGet(targetUrl, redirectCount) {
+      if (redirectCount > 5) {
+        return settle(reject, new Error('Too many redirects'));
       }
-    }).on('error', reject);
+      console.log(`  Cobalt download: GET ${targetUrl.substring(0, 120)}... (redirect #${redirectCount})`);
+      const get = targetUrl.startsWith('https') ? https.get : http.get;
+      const req = get(targetUrl, (res) => {
+        console.log(`  Cobalt download: status=${res.statusCode} ct=${res.headers['content-type'] || 'none'} cl=${res.headers['content-length'] || 'none'}`);
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume(); // Drain the response
+          doGet(res.headers.location, redirectCount + 1);
+        } else if (res.statusCode >= 200 && res.statusCode < 300) {
+          const ws = fs.createWriteStream(destPath);
+          let bytesWritten = 0;
+          let lastProgress = Date.now();
+
+          res.on('data', (chunk) => {
+            bytesWritten += chunk.length;
+            lastProgress = Date.now();
+          });
+
+          // Detect stalled downloads (no data for 30s)
+          const stallCheck = setInterval(() => {
+            if (Date.now() - lastProgress > 30000 && bytesWritten > 0) {
+              clearInterval(stallCheck);
+              res.destroy();
+              ws.destroy();
+              settle(reject, new Error('Cobalt download stalled after ' + (bytesWritten / 1024).toFixed(0) + 'KB'));
+            }
+          }, 5000);
+
+          res.pipe(ws);
+          ws.on('finish', () => {
+            clearInterval(stallCheck);
+            ws.close();
+            console.log(`  Cobalt download: completed ${(bytesWritten / 1024 / 1024).toFixed(1)}MB`);
+            settle(resolve, undefined);
+          });
+          ws.on('error', (e) => { clearInterval(stallCheck); settle(reject, e); });
+          res.on('error', (e) => { clearInterval(stallCheck); ws.destroy(); settle(reject, e); });
+        } else {
+          res.resume();
+          settle(reject, new Error('Cobalt download HTTP ' + res.statusCode));
+        }
+      });
+      req.on('error', (e) => settle(reject, e));
+      req.setTimeout(60000, () => { req.destroy(); settle(reject, new Error('Cobalt connection timeout')); });
+    }
+
+    doGet(url, 0);
   });
 }
 
@@ -68,18 +108,10 @@ function validateDownloadedVideo(destPath) {
   try { stat = fs.statSync(destPath); } catch (e) {
     throw new Error('Cobalt download produced no file');
   }
-  // The actual smoking-gun symptom we've seen with Cobalt is the
-  // tunnel URL returning Content-Length: 0 for unsupported videos.
-  // Anything under 10 KB cannot be a real video.
   if (stat.size < 10000) {
     throw new Error('Cobalt download too small (' + stat.size + ' bytes) — likely empty/error response');
   }
 
-  // Scan the first 256 bytes for ANY known container marker. We used to
-  // require 'ftyp' at exactly offset 4, which over-rejected legit MP4s
-  // that begin with a 'wide', 'styp', 'free', 'moov', or 'pdin' box.
-  // Over-rejection was masquerading as 'Video download failed' because
-  // the yt-dlp fallback can't always fetch the same URL.
   let head;
   try {
     const fd = fs.openSync(destPath, 'r');
@@ -91,16 +123,14 @@ function validateDownloadedVideo(destPath) {
   }
   const ascii = head.toString('latin1');
   const knownMarkers = [
-    'ftyp', 'moov', 'mdat', 'wide', 'styp', 'free', 'pdin', 'sidx', 'mfra', // MP4-family box types
-    'WEBM', 'webm',                                                          // WebM signature
-    'RIFF',                                                                  // AVI
-    'FLV',                                                                   // FLV
+    'ftyp', 'moov', 'mdat', 'wide', 'styp', 'free', 'pdin', 'sidx', 'mfra',
+    'WEBM', 'webm',
+    'RIFF',
+    'FLV',
   ];
-  const ebmlHead = head[0] === 0x1A && head[1] === 0x45 && head[2] === 0xDF && head[3] === 0xA3; // Matroska/WebM EBML
+  const ebmlHead = head[0] === 0x1A && head[1] === 0x45 && head[2] === 0xDF && head[3] === 0xA3;
   const looksLikeContainer = ebmlHead || knownMarkers.some(m => ascii.indexOf(m) >= 0);
   if (!looksLikeContainer) {
-    // Looks like an HTML/JSON error body. Reject so the caller can
-    // fall through to the next downloader.
     const preview = head.slice(0, 32).toString('hex');
     try { fs.unlinkSync(destPath); } catch (e) {}
     throw new Error('Cobalt download is not a video container (first 32 bytes: ' + preview + ')');
@@ -108,7 +138,10 @@ function validateDownloadedVideo(destPath) {
 }
 
 async function downloadWithCobalt(videoUrl, destPath) {
+  console.log(`  Cobalt: requesting download for ${videoUrl}`);
   const data = await cobaltRequest(videoUrl);
+  console.log(`  Cobalt: API response status=${data.status} hasUrl=${!!data.url} hasPicker=${!!(data.picker && data.picker.length)}`);
+
   if (data.status === 'tunnel' || data.status === 'redirect') {
     await downloadFile(data.url, destPath);
   } else if (data.status === 'picker' && data.picker && data.picker.length) {
@@ -119,7 +152,7 @@ async function downloadWithCobalt(videoUrl, destPath) {
       throw new Error('Cobalt picker returned no video URL');
     }
   } else {
-    throw new Error('Cobalt error: ' + (data.error && data.error.code || data.status || 'unknown'));
+    throw new Error('Cobalt error: ' + (data.error && data.error.code || JSON.stringify(data.error) || data.status || 'unknown'));
   }
   validateDownloadedVideo(destPath);
 }

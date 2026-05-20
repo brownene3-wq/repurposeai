@@ -14,6 +14,23 @@ const outputDir = path.join('/tmp', 'repurpose-outputs');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
+// YouTube cookies: decode from env var and write to disk so yt-dlp can use them.
+// Set YT_COOKIES_BASE64 in Railway to the base64-encoded contents of a
+// Netscape-format cookies.txt exported from a browser with a logged-in YouTube session.
+// This auto-sets YT_COOKIES_PATH so all routes pick it up.
+if (process.env.YT_COOKIES_BASE64 && !process.env.YT_COOKIES_PATH) {
+  try {
+    const cookiesDir = path.join('/tmp', 'yt-cookies');
+    if (!fs.existsSync(cookiesDir)) fs.mkdirSync(cookiesDir, { recursive: true });
+    const cookiesPath = path.join(cookiesDir, 'cookies.txt');
+    fs.writeFileSync(cookiesPath, Buffer.from(process.env.YT_COOKIES_BASE64, 'base64').toString('utf-8'));
+    process.env.YT_COOKIES_PATH = cookiesPath;
+    console.log('[YouTube] Cookies written to', cookiesPath, '— yt-dlp will use authenticated sessions');
+  } catch (e) {
+    console.error('[YouTube] Failed to decode YT_COOKIES_BASE64:', e.message);
+  }
+}
+
 const { injectChatWidget } = require('./middleware/chatWidget');
 const { injectFeedbackWidget } = require('./middleware/feedbackWidget');
 
@@ -470,7 +487,14 @@ app.listen(PORT, () => {
   const { calendarOps } = require('./db/database');
   const { sendPostingReminder } = require('./utils/email');
 
+  // Step 2 of the schedule-and-publish feature: same cron tick, two jobs.
+  // (a) Send posting reminder emails (legacy).
+  // (b) Auto-publish any due calendar entries to their target platform
+  //     via utils/schedulePublisher.publishDueEntries().
+  const { publishDueEntries } = require('./utils/schedulePublisher');
+
   setInterval(async () => {
+    // (a) Reminder emails.
     try {
       const pending = await calendarOps.getPendingReminders();
       for (const entry of pending) {
@@ -490,6 +514,13 @@ app.listen(PORT, () => {
       }
     } catch (err) {
       // Silently ignore if DB not ready yet
+    }
+
+    // (b) Auto-publish.
+    try {
+      await publishDueEntries();
+    } catch (err) {
+      console.error('[schedulePublisher] tick crashed:', err && err.message || err);
     }
   }, 120000); // Check every 2 minutes
 

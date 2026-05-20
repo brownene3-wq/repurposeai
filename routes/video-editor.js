@@ -7,6 +7,87 @@ const { spawn, execSync } = require('child_process');
 const { requireAuth } = require('../middleware/auth');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
+// Task #98 — Cobalt API for YouTube/Twitch/etc. video downloads. Used as
+// the PRIMARY downloader for /youtube-import because YouTube has been
+// blocking Railway's IP for yt-dlp regardless of player_client variant.
+// yt-dlp stays as a fallback for Cobalt failures.
+const { downloadWithCobalt, validateDownloadedVideo } = require('../utils/cobalt');
+
+// Task #106 — YouTube cookies helpers.
+//
+// All three downloader tiers (Cobalt, ytdl-core, yt-dlp) are hitting
+// YouTube's IP-block wall on Railway. The reliable cure is real user
+// cookies. Operators can supply them two ways:
+//
+//   YT_COOKIES_PATH    — absolute path to a Netscape cookies.txt file
+//                        mounted on the server.
+//   YT_COOKIES_CONTENT — the raw Netscape cookies.txt content pasted
+//                        as an env var (Railway-friendly; no volume).
+//                        Written to /tmp on first call.
+//
+// Optional YT_COOKIES_BASE64 — same as CONTENT but base64-encoded so
+//                              multi-line content survives env-var
+//                              dashboards that mangle newlines.
+//
+// resolveYouTubeCookiesPath() returns a usable path (or null).
+// readYouTubeCookieHeader() parses the file and produces a Cookie
+// header string for ytdl-core's requestOptions.
+const _cookieMaterialised = { path: null };
+function resolveYouTubeCookiesPath() {
+  // Cached so we only write the tmp file once.
+  if (_cookieMaterialised.path && fs.existsSync(_cookieMaterialised.path)) {
+    return _cookieMaterialised.path;
+  }
+  if (process.env.YT_COOKIES_PATH && fs.existsSync(process.env.YT_COOKIES_PATH)) {
+    _cookieMaterialised.path = process.env.YT_COOKIES_PATH;
+    return _cookieMaterialised.path;
+  }
+  let content = process.env.YT_COOKIES_CONTENT || null;
+  if (!content && process.env.YT_COOKIES_BASE64) {
+    try { content = Buffer.from(process.env.YT_COOKIES_BASE64, 'base64').toString('utf8'); }
+    catch (e) { console.error('[yt-cookies] base64 decode failed:', e.message); }
+  }
+  if (!content) return null;
+  try {
+    const tmp = path.join('/tmp', 'yt-cookies.txt');
+    fs.writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 });
+    _cookieMaterialised.path = tmp;
+    return tmp;
+  } catch (e) {
+    console.error('[yt-cookies] write failed:', e.message);
+    return null;
+  }
+}
+function getYoutubeProxyArgs() {
+  const p = process.env.YT_PROXY_URL;
+  if (p) return ['--proxy', p];
+  return [];
+}
+
+function readYouTubeCookieHeader() {
+  const p = resolveYouTubeCookiesPath();
+  if (!p) return null;
+  try {
+    const text = fs.readFileSync(p, 'utf8');
+    const pairs = [];
+    text.split(/\r?\n/).forEach(function(line){
+      if (!line || line[0] === '#') return;
+      // Netscape format: domain  flag  path  secure  expiry  name  value
+      const cols = line.split('\t');
+      if (cols.length < 7) return;
+      const domain = cols[0] || '';
+      if (!/youtube\.com|google\.com/i.test(domain)) return;
+      const name = cols[5];
+      const value = cols[6];
+      if (!name || value == null) return;
+      pairs.push(name + '=' + value);
+    });
+    return pairs.length ? pairs.join('; ') : null;
+  } catch (e) {
+    console.error('[yt-cookies] parse failed:', e.message);
+    return null;
+  }
+}
 
 // Task #69 — Brand Kit logo overlay during export. The brand-templates
 // module exposes fetchLogo(filename) which reads the BLOB out of the
@@ -441,7 +522,7 @@ async function renderEditor(req, res) {
     body.light .mt-track{background:rgba(108,58,237,.04);border-bottom:1px solid rgba(108,58,237,.10)}
     body.light .mt-clip{color:#1a1a2e}
     body.light .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.45),rgba(250,204,21,.28));border-color:rgba(202,138,4,.55);color:#1a1a2e}
-    body.light .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.55),rgba(124,58,237,.35));border-color:rgba(124,58,237,.6);color:#fff}
+    body.light .mt-clip-video{background:transparent;color:#fff}
     body.light .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.55),rgba(56,189,248,.35));border-color:rgba(56,189,248,.6);color:#0a0a0a}
     body.light .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.55),rgba(244,114,182,.35));border-color:rgba(244,114,182,.6);color:#fff}
     body.light .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.55),rgba(52,211,153,.35));border-color:rgba(52,211,153,.6);color:#0a0a0a}
@@ -584,13 +665,12 @@ async function renderEditor(req, res) {
     .fs-row{display:flex;align-items:center;height:56px;position:relative;margin-bottom:2px}
     .fs-row.audio-row{height:38px}
     .fs-label{width:40px;font-size:9px;font-weight:800;color:#5a6a7a;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;text-align:right;padding-right:6px}
-    .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:2px solid rgba(0,200,200,.25)}
+    .fs-track{flex:1;height:100%;border-radius:4px;overflow:hidden;position:relative;border:none}
     .fs-track.video-track{background:#0a1015}
-    .fs-track.audio-track{background:#0a1520;border-color:rgba(0,150,255,.2)}
+    .fs-track.audio-track{background:#0a1520}
     .fs-thumbs{display:flex;height:100%;width:100%;overflow:hidden;gap:0}.fs-thumbs img,.fs-thumb-placeholder{flex:1;height:100%;object-fit:cover;min-width:0;display:block}.fs-thumb-placeholder{background:linear-gradient(135deg,#1a2a3c 0%,#2a1a3c 100%);animation:fsPulse 1.5s ease-in-out infinite alternate}@keyframes fsPulse{0%{opacity:.4}100%{opacity:.7}}
-    .fs-thumb{flex:1;background-size:cover;background-position:center;position:relative;border-right:1px solid rgba(0,0,0,.3)}
-    .fs-thumb:last-child{border-right:none}
-    .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
+    .fs-thumb{flex:1;background-size:cover;background-position:center;position:relative}
+        .fs-dur{position:absolute;top:3px;left:4px;background:rgba(0,0,0,.7);color:#7fdbca;font-size:8px;font-weight:700;padding:1px 4px;border-radius:2px;z-index:2}
     .fs-audio-canvas{width:100%;height:100%;display:block}
 
     
@@ -603,7 +683,6 @@ async function renderEditor(req, res) {
        editor's full-viewport main-content. The pull-to-refresh, mobile
        menu, and sidebar overlay are still suppressed. */
     .main-content .ptr-indicator,.main-content .mobile-menu-btn,.main-content .sidebar-overlay{display:none!important}
-    .main-content .theme-toggle{position:fixed;top:1.2rem;right:1.5rem;z-index:99999}
     .feedback-btn{display:none!important}
     /* Hide extra original editor panels inside video-container */
     .video-container>div:not(.upload-zone):not(.video-preview-area):not(.filmstrip-wrap):not(.tools-section){display:none!important}
@@ -746,8 +825,7 @@ async function renderEditor(req, res) {
     .mt-track-music{background:rgba(244,114,182,.02)}
     .mt-track-text{background:rgba(250,204,21,.02)}
     .mt-track-fx{background:rgba(52,211,153,.02)}
-    .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab;transition:box-shadow .2s}
-    .mt-clip:hover{box-shadow:0 0 12px rgba(124,58,237,.3)}
+    .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab}
     /* Trim handles — 8px grip zones anchored to each clip edge. Become
        visible on hover so they don't clutter the timeline at rest. */
     .mt-clip-trim{position:absolute;top:0;width:8px;height:100%;cursor:ew-resize;z-index:2;opacity:0;transition:opacity .15s;background:rgba(255,255,255,.35);pointer-events:auto}
@@ -776,8 +854,8 @@ async function renderEditor(req, res) {
     /* Keyframe markers — yellow diamonds anchored along the top edge
        of the clip at each keyframe's relative t position. */
     .mt-kf-marker{position:absolute;top:-3px;width:7px;height:7px;background:#fde047;border:1px solid #ca8a04;transform:translateX(-50%) rotate(45deg);border-radius:1px;pointer-events:none;z-index:3;box-shadow:0 0 3px rgba(253,224,71,.8)}
-    .mt-clip-video{background:linear-gradient(135deg,rgba(124,58,237,.35),rgba(124,58,237,.2));border:1px solid rgba(124,58,237,.4)}
-    .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:1px solid rgba(56,189,248,.35)}
+    .mt-clip-video{background:transparent;border:none}
+    .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.3),rgba(56,189,248,.15));border:none}
     .mt-clip.selected{outline:2px solid #a78bfa;outline-offset:-2px;box-shadow:0 0 16px rgba(139,92,246,.55)}
     /* Task #72 — Snap feedback while dragging. Border glows cyan when the
        active clip's edge is locked to a neighbour or playhead. */
@@ -789,9 +867,9 @@ async function renderEditor(req, res) {
     body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}
     /* Razor tool: clicking a clip splits it at the click point */
     body[data-timeline-tool="razor"] .mt-clip{cursor:col-resize}
-    .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:1px solid rgba(244,114,182,.35)}
-    .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:1px solid rgba(250,204,21,.3)}
-    .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:1px solid rgba(52,211,153,.3)}
+    .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:none}
+    .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:none}
+    .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:none}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     /* Task #63 — playhead must always render above clips. AI-inserted
        clips (Hook=950, Brand Logo=920, B-Roll=900, Freeze=850) and
@@ -803,6 +881,45 @@ async function renderEditor(req, res) {
     .mt-playhead .mt-playhead-handle:hover{background:#a78bfa}
     .mt-playhead.mt-playhead-dragging .mt-playhead-handle{background:#a78bfa}
     .mt-tracks-area{cursor:crosshair}
+
+    /* ════════════════════════════════════════════════════════════
+       Task #95 — Coach Mark / Product Tour
+       9999px box-shadow trick creates a "spotlight" by dimming the
+       entire viewport except the rectangle the cutout sits over.
+       Tooltip card uses the dark/neon palette already established
+       elsewhere in the editor. Step indicator + Back / Next / Skip
+       handle lifecycle; localStorage gates the auto-trigger.
+       ════════════════════════════════════════════════════════════ */
+    .sc-tour-spot{position:fixed;z-index:99991;pointer-events:none;border-radius:12px;box-shadow:0 0 0 9999px rgba(8,6,18,.78);outline:2px solid #a855f7;outline-offset:4px;transition:top .25s ease,left .25s ease,width .25s ease,height .25s ease;animation:scTourPulse 2.2s ease-in-out infinite}
+    @keyframes scTourPulse{0%,100%{outline-color:rgba(168,85,247,.85);box-shadow:0 0 0 9999px rgba(8,6,18,.78),0 0 0 0 rgba(168,85,247,.55)}50%{outline-color:rgba(236,72,153,.95);box-shadow:0 0 0 9999px rgba(8,6,18,.78),0 0 0 8px rgba(168,85,247,0)}}
+    .sc-tour-tip{position:fixed;z-index:99992;width:340px;max-width:calc(100vw - 32px);background:linear-gradient(180deg,rgba(15,12,28,.97),rgba(22,15,42,.97));border:1px solid rgba(168,85,247,.4);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.6),0 0 32px rgba(168,85,247,.18);padding:18px 18px 16px;color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;animation:scTourTipIn .25s ease-out;pointer-events:auto}
+    @keyframes scTourTipIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+    .sc-tour-tip-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .sc-tour-tip-step{font-size:10px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.8px;padding:3px 8px;background:rgba(168,85,247,.14);border:1px solid rgba(168,85,247,.28);border-radius:999px}
+    .sc-tour-tip-spacer{flex:1}
+    .sc-tour-tip-close{background:transparent;border:none;color:#666;font-size:18px;line-height:1;cursor:pointer;padding:0 4px;transition:color .15s}
+    .sc-tour-tip-close:hover{color:#a78bfa}
+    .sc-tour-tip-title{font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;letter-spacing:.1px}
+    .sc-tour-tip-body{font-size:12.5px;line-height:1.55;color:#cdc8e0;margin-bottom:16px}
+    .sc-tour-tip-controls{display:flex;align-items:center;gap:8px}
+    .sc-tour-tip-skip{background:transparent;border:none;color:#888;font-size:11.5px;font-weight:500;cursor:pointer;padding:6px 10px;border-radius:6px;transition:color .15s,background .15s}
+    .sc-tour-tip-skip:hover{color:#a78bfa;background:rgba(168,85,247,.08)}
+    .sc-tour-tip-nav{margin-left:auto;display:flex;gap:6px}
+    .sc-tour-tip-btn{padding:7px 16px;border-radius:7px;border:1px solid rgba(168,85,247,.35);background:rgba(168,85,247,.10);color:#e2e0f0;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s,transform .1s;font-family:inherit}
+    .sc-tour-tip-btn:hover{background:rgba(168,85,247,.22);border-color:rgba(168,85,247,.6)}
+    .sc-tour-tip-btn:active{transform:translateY(1px)}
+    .sc-tour-tip-btn[disabled]{opacity:.35;cursor:not-allowed;pointer-events:none}
+    .sc-tour-tip-btn.primary{background:linear-gradient(135deg,#7c3aed,#a855f7);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(124,58,237,.4)}
+    .sc-tour-tip-btn.primary:hover{box-shadow:0 6px 18px rgba(124,58,237,.6)}
+    .sc-tour-dots{display:flex;gap:5px;align-items:center}
+    .sc-tour-dot{width:6px;height:6px;border-radius:50%;background:rgba(168,85,247,.25);transition:background .2s,width .2s}
+    .sc-tour-dot.on{background:#a855f7;width:18px;border-radius:3px}
+    /* Help (question-mark) button — compact icon-only sibling to
+       Save as Draft. Square aspect, no text padding, currentColor
+       inherits the gradient theme on hover. */
+    #tourHelpBtn{padding:0;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;background:rgba(168,85,247,.10);border:1px solid rgba(168,85,247,.35);color:#a78bfa;border-radius:50%;flex-shrink:0}
+    #tourHelpBtn:hover{background:rgba(168,85,247,.22);color:#fff;border-color:#a855f7}
+    #tourHelpBtn svg{width:16px;height:16px}
     </style>
 
     <script type="text/javascript" src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="${process.env.DROPBOX_APP_KEY || ''}"></script>
@@ -815,18 +932,29 @@ async function renderEditor(req, res) {
     ${getSidebar('video-editor', req.user, req.teamPermissions)}
 
     <main class="main-content">
-      ${getThemeToggle()}
       ${getBrandKitModal()}
 
       <div class="editor-container">
 
           <div class="editor-topbar">
             <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
-            <button class="e-tb" onclick="if(typeof undo==='function')undo()">\u21a9 Undo</button>
-            <button class="e-tb" onclick="if(typeof redo==='function')redo()">\u21aa Redo</button><div class="e-sep"></div>
-            <button class="e-tb on">\ud83e\uddf2 Snap</button>
-            <button class="e-tb">\ud83d\udcf7 Snapshot</button>
-            <button class="e-tb">\ud83d\udd17 Link Tracks</button>
+            <!-- Task #99 \u2014 Topbar Undo/Redo/Snap/Snapshot/Link Tracks
+                 now proxy to the real handlers (timeline toolbar +
+                 sidebar Edit > Freeze). Inline onclick removed; wiring
+                 lives in the topbar-proxy block below. The Snap icon
+                 was swapped from the magnet emoji to the same 4-square
+                 SVG used on the timeline's mtSnapBtn so they read as
+                 the same control. -->
+            <button class="e-tb" type="button" id="tbUndoBtn" title="Undo last action">\u21a9 Undo</button>
+            <button class="e-tb" type="button" id="tbRedoBtn" title="Redo last action">\u21aa Redo</button><div class="e-sep"></div>
+            <button class="e-tb" type="button" id="tbSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Snap</button>
+            <!-- Task #104 \u2014 Feather-style line-stroke SVGs replace the
+                 \ud83d\udcf7 / \ud83d\udd17 emoji so the topbar reads consistently against
+                 the Snap/help icons. stroke="currentColor" makes them
+                 follow the .e-tb / .e-tb.on / light-mode text colors
+                 automatically. -->
+            <button class="e-tb" type="button" id="tbSnapshotBtn" title="Insert a freeze-frame at the playhead"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Snapshot</button>
+            <button class="e-tb" type="button" id="tbLinkTracksBtn" title="Link Tracks"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Link Tracks</button>
             <div class="e-sp"></div>
             <!-- Task #76 \u2014 Editable project filename. Prefills "Untitled Project"
                  so a fresh project always has a usable default. Export reads
@@ -845,7 +973,14 @@ async function renderEditor(req, res) {
               autocomplete="off" spellcheck="false"
               aria-label="Project filename"
               onfocus="this.select()"/>
+            <!-- Task #95 \u2014 Re-trigger the interactive coach-mark tour. Clicked
+                 manually any time; auto-fires once for first-time visitors via
+                 localStorage check in the tour script below. -->
             <button class="e-tb" id="saveAsDraftBtn" title="Save the current project state as a draft">\ud83d\udcbe Save as Draft</button>
+            <!-- Task #98 — Tour trigger reduced to a themed question-mark
+                 icon; text dropped, button kept compact + circular so it
+                 reads as a 'help' affordance rather than a primary action. -->
+            <button class="e-tb e-tb-help" id="tourHelpBtn" type="button" title="Show editor walkthrough" aria-label="Show editor walkthrough"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.5 2.5 0 1 1 4.4 1.6c-.6.7-1.4 1-1.9 1.6-.3.4-.5.8-.5 1.3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
           </div>
               <!-- ═══ LEFT: MEDIA LIBRARY ═══ -->
               <div class="media-library" id="mediaLibrary">
@@ -1689,7 +1824,13 @@ async function renderEditor(req, res) {
     if (document.readyState !== 'loading') { populateMediaGrid(); }
 
 
-    ${getThemeScript()}
+    // Editor is dark-only — strip any 'light' class the global toggle
+    // may have stored, and skip the toggle handler entirely.
+    try {
+      document.documentElement.classList.remove('light');
+      document.body && document.body.classList.remove('light');
+      document.documentElement.setAttribute('data-theme','dark');
+    } catch(_){}
 
 
 
@@ -1697,6 +1838,26 @@ async function renderEditor(req, res) {
     let originalVideoFile = null; // Always keeps the original upload for speed resets
     let videoDuration = 0;
     let selectedFilter = null;
+
+    // ── Bridge: let external panels (media-panel-fix.js) push a newly
+    // activated clip into this inline script so the sidebar tools
+    // (trim, export, filter, speed, audio, etc.) operate on whatever
+    // clip is currently on the timeline, not just the first upload.
+    try {
+      window.setEditorCurrentVideoFile = function(v){
+        if (!v || !v.filename) return;
+        currentVideoFile = v;
+        if (typeof v.duration === 'number' && isFinite(v.duration) && v.duration > 0) {
+          videoDuration = v.duration;
+        }
+        // Reset the "original" reference whenever the active clip changes
+        // so Speed reset etc. snaps back to the right source.
+        originalVideoFile = Object.assign({}, v);
+      };
+      // Also expose a peek so external code can read what the inline
+      // script currently considers active.
+      window.getEditorCurrentVideoFile = function(){ return currentVideoFile; };
+    } catch(_){}
 
     // Toast notifications
     
@@ -1868,6 +2029,7 @@ function showToast(message, type = 'success') {
         const data = await response.json();
         currentVideoFile = data;
         originalVideoFile = { ...data }; // Save original for speed resets
+        try { window.currentVideoFile = data; } catch(_){}
         videoDuration = data.duration || 0;
         initTimeline();
 
@@ -5423,23 +5585,79 @@ function showToast(message, type = 'success') {
         });
       })();
 
-      // ── 6. TOP TOOLBAR BUTTONS (Snap, Snapshot, Link Tracks) ──
-      document.querySelectorAll('.e-tb').forEach(function(btn) {
-        if (btn.onclick) return; // Skip already wired
-        var text = btn.textContent.trim();
-        btn.style.cursor = 'pointer';
-        btn.addEventListener('click', function() {
-          if (text.includes('Snap')) {
-            this.classList.toggle('on');
-            showToast(this.classList.contains('on') ? 'Snap enabled' : 'Snap disabled');
-          } else if (text.includes('Snapshot')) {
-            showToast('Snapshot saved to library');
-          } else if (text.includes('Link')) {
-            this.classList.toggle('on');
-            showToast(this.classList.contains('on') ? 'Tracks linked' : 'Tracks unlinked');
+      // ── 6. TOP TOOLBAR BUTTONS — proxy to real handlers (Task #99) ──
+      // Topbar Undo/Redo/Snap/Snapshot/Link Tracks were previously
+      // mockup toggles that just flashed a toast. Now each one
+      // synthetically clicks the real control that already lives in
+      // the timeline toolbar (or, for Snapshot, the sidebar's Edit >
+      // Freeze .tb3). We also mirror the timeline button's .active
+      // state onto the topbar's .on class so the two stay visually in
+      // sync — including when the timeline button is toggled some
+      // other way (keyboard, programmatic, etc.).
+      (function wireTopbarProxies(){
+        function fireClick(el){
+          if (!el) return;
+          try { el.click(); }
+          catch(_){
+            try { el.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true })); } catch(__){}
           }
-        });
-      });
+        }
+        function mirrorActive(src, dst){
+          if (!src || !dst) return;
+          if (src.classList.contains('active')) dst.classList.add('on');
+          else dst.classList.remove('on');
+        }
+        function bind(topbarId, timelineId){
+          var tb = document.getElementById(topbarId);
+          var ti = document.getElementById(timelineId);
+          if (!tb || !ti) return;
+          tb.style.cursor = 'pointer';
+          tb.addEventListener('click', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+            fireClick(ti);
+            // Let the timeline handler flip its .active first, then mirror.
+            setTimeout(function(){ mirrorActive(ti, tb); }, 0);
+          });
+          // Keep states in sync when the timeline button is toggled by
+          // something else (keyboard shortcut, programmatic call, …).
+          try {
+            var mo = new MutationObserver(function(){ mirrorActive(ti, tb); });
+            mo.observe(ti, { attributes:true, attributeFilter:['class'] });
+          } catch(_){}
+          mirrorActive(ti, tb);
+        }
+        bind('tbUndoBtn',       'mtUndoBtn');
+        bind('tbRedoBtn',       'mtRedoBtn');
+        bind('tbSnapBtn',       'mtSnapBtn');
+        bind('tbLinkTracksBtn', 'mtLinkTracksBtn');
+
+        // Snapshot proxies to the sidebar's Edit > Freeze button. We
+        // try the v10-redesign selector first ([data-v10-clip-action=
+        // "Freeze"]) because that's the live render in most sessions,
+        // then fall back to the static .tb3 "Freeze" tile.
+        var tbSnapshot = document.getElementById('tbSnapshotBtn');
+        if (tbSnapshot){
+          tbSnapshot.style.cursor = 'pointer';
+          tbSnapshot.addEventListener('click', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+            var freezeBtn = document.querySelector('[data-v10-clip-action="Freeze"]');
+            if (!freezeBtn){
+              var tiles = document.querySelectorAll('.tb3');
+              for (var i = 0; i < tiles.length; i++){
+                var t = (tiles[i].textContent || '').replace(/\s+/g,' ').trim();
+                if (/(^|\s)Freeze$/i.test(t)){ freezeBtn = tiles[i]; break; }
+              }
+            }
+            // Last-ditch: call the underlying function directly, since
+            // clipActionFreeze is exposed on window when v10 is loaded.
+            if (freezeBtn) fireClick(freezeBtn);
+            else if (typeof window.clipActionFreeze === 'function') window.clipActionFreeze();
+            else showToast('Freeze frame is not available yet');
+          });
+        }
+      })();
 
       // ── 7. RIGHT PANEL: ALL .tb3 TOOL BUTTONS ──
       // Map tool names to panel IDs
@@ -6782,6 +7000,253 @@ setTimeout(function sidebarLayoutFix(){
 </script>
 <script src="/public/js/media-panel-fix.js?v=${Date.now()}"></script>
 <script src="/public/js/v10-editor-redesign.js?v=${Date.now()}"></script>
+
+<!-- Task #95 — Coach Mark / Product Tour controller. -->
+<script>
+(function(){
+  var STORAGE_KEY = 'splicora_editor_tour_v1';
+
+  // Step definitions. Each entry: selector(s) — first match wins — plus
+  // copy and a preferred tooltip side. Selectors are comma-separated so
+  // we can degrade gracefully if a class name shifts.
+  var STEPS = [
+    {
+      sel: '#uploadZone, .upload-zone',
+      title: 'Add Your Video',
+      body:  'Every project starts here. Drop a file, paste a YouTube / Zoom / Twitch / Rumble link, or pull from Dropbox or Google Drive.',
+      side:  'right'
+    },
+    {
+      sel: '.mt-toolbar-left',
+      title: 'Edit Tools',
+      body:  'Razor cuts a clip at the playhead, Select moves clips around, Snap keeps edges aligned. Undo / Redo sit right next door.',
+      side:  'top'
+    },
+    {
+      sel: '#mtTracksArea, .mt-tracks-area',
+      title: 'Multi-Track Timeline',
+      body:  'V1 is video, A1 is audio, M1 is music, T1 is captions, FX is effects. Drag clips between tracks — the playhead follows your every edit.',
+      side:  'top'
+    },
+    {
+      sel: '.editor-sidebar',
+      title: 'AI Toolkit',
+      body:  'Smart Cut trims dead air, Captions auto-transcribes, Brand Kit applies your fonts and logo, B-Roll generates supporting shots. Every shortcut to a polished cut lives here.',
+      side:  'left'
+    },
+    {
+      sel: '#exportButton, .exp-go',
+      title: 'Export Video',
+      body:  'When the edit feels right, render the final file. Filename and format come from the topbar — no popup, just click and go.',
+      side:  'left'
+    }
+  ];
+
+  function findTarget(selectorList){
+    var parts = String(selectorList).split(',');
+    for (var i = 0; i < parts.length; i++){
+      var el = document.querySelector(parts[i].trim());
+      if (el && el.offsetParent !== null) return el;
+    }
+    // Fallback: still return a hidden match if there is one; positioning
+    // logic will handle it via the central-fallback path.
+    for (var j = 0; j < parts.length; j++){
+      var el2 = document.querySelector(parts[j].trim());
+      if (el2) return el2;
+    }
+    return null;
+  }
+
+  function ensureVisible(el){
+    // Bring the target into the viewport before highlighting it.
+    try { el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch(_){
+      try { el.scrollIntoView(); } catch(__){}
+    }
+  }
+
+  function placeTip(rect, tipEl, preferredSide){
+    var gap = 16;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var tipW = tipEl.offsetWidth || 340;
+    var tipH = tipEl.offsetHeight || 200;
+    function compute(side){
+      switch(side){
+        case 'right':  return { x: rect.right + gap,                       y: rect.top + rect.height/2 - tipH/2 };
+        case 'left':   return { x: rect.left  - tipW - gap,                y: rect.top + rect.height/2 - tipH/2 };
+        case 'top':    return { x: rect.left  + rect.width/2 - tipW/2,     y: rect.top  - tipH - gap };
+        case 'bottom':
+        default:       return { x: rect.left  + rect.width/2 - tipW/2,     y: rect.bottom + gap };
+      }
+    }
+    function fits(p){
+      return p.x >= 8 && p.x + tipW <= vw - 8 && p.y >= 8 && p.y + tipH <= vh - 8;
+    }
+    var order = [preferredSide, 'right', 'bottom', 'left', 'top'];
+    var seen = {};
+    for (var i = 0; i < order.length; i++){
+      var s = order[i];
+      if (!s || seen[s]) continue;
+      seen[s] = true;
+      var p = compute(s);
+      if (fits(p)){
+        tipEl.style.left = Math.round(p.x) + 'px';
+        tipEl.style.top  = Math.round(p.y) + 'px';
+        return s;
+      }
+    }
+    // Fallback — center on viewport.
+    tipEl.style.left = Math.round(Math.max(8, (vw - tipW) / 2)) + 'px';
+    tipEl.style.top  = Math.round(Math.max(8, (vh - tipH) / 2)) + 'px';
+    return 'center';
+  }
+
+  function startTour(){
+    var existing = document.getElementById('scTourLayer');
+    if (existing) { try { existing.remove(); } catch(_){} }
+
+    var idx = 0;
+    var layer = document.createElement('div');
+    layer.id = 'scTourLayer';
+    var spot = document.createElement('div');
+    spot.className = 'sc-tour-spot';
+    var tip  = document.createElement('div');
+    tip.className  = 'sc-tour-tip';
+    layer.appendChild(spot);
+    layer.appendChild(tip);
+    document.body.appendChild(layer);
+
+    function buildDots(){
+      var dots = '';
+      for (var i = 0; i < STEPS.length; i++){
+        dots += '<span class="sc-tour-dot' + (i === idx ? ' on' : '') + '"></span>';
+      }
+      return '<div class="sc-tour-dots" aria-hidden="true">' + dots + '</div>';
+    }
+
+    function render(){
+      var step = STEPS[idx];
+      tip.innerHTML =
+        '<div class="sc-tour-tip-head">' +
+          '<span class="sc-tour-tip-step">Step ' + (idx + 1) + ' / ' + STEPS.length + '</span>' +
+          buildDots() +
+          '<span class="sc-tour-tip-spacer"></span>' +
+          '<button class="sc-tour-tip-close" type="button" aria-label="Close tour" data-tour-act="skip">×</button>' +
+        '</div>' +
+        '<div class="sc-tour-tip-title">' + step.title + '</div>' +
+        '<div class="sc-tour-tip-body">'  + step.body  + '</div>' +
+        '<div class="sc-tour-tip-controls">' +
+          '<button class="sc-tour-tip-skip" type="button" data-tour-act="skip">Skip tour</button>' +
+          '<div class="sc-tour-tip-nav">' +
+            '<button class="sc-tour-tip-btn" type="button" data-tour-act="back"' + (idx === 0 ? ' disabled' : '') + '>Back</button>' +
+            '<button class="sc-tour-tip-btn primary" type="button" data-tour-act="next">' +
+              (idx === STEPS.length - 1 ? 'Finish' : 'Next →') +
+            '</button>' +
+          '</div>' +
+        '</div>';
+      // Position spot + tip on the next frame so we can measure tip dims.
+      var target = findTarget(step.sel);
+      if (!target) { finish(true); return; }
+      ensureVisible(target);
+      requestAnimationFrame(function(){
+        var rect = target.getBoundingClientRect();
+        var pad = 8;
+        spot.style.top    = Math.round(rect.top  - pad) + 'px';
+        spot.style.left   = Math.round(rect.left - pad) + 'px';
+        spot.style.width  = Math.round(rect.width  + pad * 2) + 'px';
+        spot.style.height = Math.round(rect.height + pad * 2) + 'px';
+        placeTip(rect, tip, step.side);
+      });
+    }
+
+    function next(){
+      if (idx < STEPS.length - 1){ idx++; render(); }
+      else { finish(false); }
+    }
+    function back(){
+      if (idx > 0){ idx--; render(); }
+    }
+    function finish(silent){
+      try { localStorage.setItem(STORAGE_KEY, '1'); } catch(_){}
+      try { layer.remove(); } catch(_){}
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+      document.removeEventListener('keydown', onKey);
+    }
+
+    function reposition(){
+      var target = findTarget(STEPS[idx].sel);
+      if (!target) return;
+      var rect = target.getBoundingClientRect();
+      var pad = 8;
+      spot.style.top    = Math.round(rect.top  - pad) + 'px';
+      spot.style.left   = Math.round(rect.left - pad) + 'px';
+      spot.style.width  = Math.round(rect.width  + pad * 2) + 'px';
+      spot.style.height = Math.round(rect.height + pad * 2) + 'px';
+      placeTip(rect, tip, STEPS[idx].side);
+    }
+
+    function onKey(e){
+      if (e.key === 'Escape')           { finish(false); }
+      else if (e.key === 'ArrowRight')  { next(); }
+      else if (e.key === 'ArrowLeft')   { back(); }
+      else if (e.key === 'Enter')       { next(); }
+    }
+
+    tip.addEventListener('click', function(e){
+      var t = e.target;
+      while (t && t !== tip && !t.dataset.tourAct) t = t.parentNode;
+      if (!t || !t.dataset.tourAct) return;
+      var act = t.dataset.tourAct;
+      if (act === 'next') next();
+      else if (act === 'back') back();
+      else if (act === 'skip') finish(false);
+    });
+
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll',  reposition, true);
+    document.addEventListener('keydown', onKey);
+
+    render();
+  }
+
+  function alreadySeen(){
+    try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch(_){ return false; }
+  }
+
+  function wireHelpButton(){
+    var btn = document.getElementById('tourHelpBtn');
+    if (!btn || btn.dataset.tourWired) return;
+    btn.dataset.tourWired = '1';
+    btn.addEventListener('click', function(){
+      // Help button always resets the seen flag so re-takes feel intentional.
+      try { localStorage.removeItem(STORAGE_KEY); } catch(_){}
+      startTour();
+    });
+  }
+
+  function init(){
+    wireHelpButton();
+    // Auto-fire ONLY for first-time visitors, after the editor's
+    // panels have finished mounting (~1s after DOMContentLoaded).
+    if (alreadySeen()) return;
+    setTimeout(startTour, 1100);
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // Expose for manual re-trigger from the console / other code.
+  try {
+    window.startSplicoraEditorTour = startTour;
+    window.resetSplicoraEditorTour = function(){
+      try { localStorage.removeItem(STORAGE_KEY); } catch(_){}
+    };
+  } catch(_){}
+})();
+</script>
 </body>
 </html>`;
   if (res.locals && res.locals.initialProject) {
@@ -10058,6 +10523,105 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
     const outputFilename = 'yt_import_' + Date.now() + '_' + req.user.id + '.mp4';
     const outputPath = path.join(uploadDir, outputFilename);
 
+    // Task #98 / #105 — Multi-tier download chain. YouTube has been
+    // blocking Railway's IP for yt-dlp regardless of player_client
+    // variant, so we try three downloaders in order:
+    //   1. Self-hosted Cobalt API (different egress)
+    //   2. @distube/ytdl-core (YouTube-only, fast, anti-bot fork)
+    //   3. yt-dlp 10-player-client cascade (legacy fallback)
+    // Each tier captures its own error and the final error message
+    // lists everything that failed so the user sees real diagnostics
+    // instead of a generic "every player failed" string.
+    let downloadSuccess = false;
+    const tierErrors = {};   // { 'Cobalt API': Error, 'ytdl-core': Error, ... }
+    const tryWithValidation = async (label, fn) => {
+      try {
+        await fn();
+        validateDownloadedVideo(outputPath);
+        downloadSuccess = true;
+        console.log('[youtube-import] downloaded via ' + label);
+        return true;
+      } catch (err) {
+        const msg = String(err && err.message || err).slice(0, 400);
+        console.log('[youtube-import] ' + label + ' failed: ' + msg);
+        tierErrors[label] = msg;
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
+        return false;
+      }
+    };
+
+    function respondSuccess(){
+      // Metadata failure on an otherwise-valid file shouldn't kill the import.
+      return getVideoMetadata(outputPath).then(
+        function(meta){
+          return res.json({
+            filename: outputFilename,
+            duration: meta.duration,
+            serveUrl: '/video-editor/download/' + outputFilename
+          });
+        },
+        function(metaErr){
+          console.error('[youtube-import] metadata probe failed:', metaErr);
+          return res.json({
+            filename: outputFilename,
+            duration: 0,
+            serveUrl: '/video-editor/download/' + outputFilename
+          });
+        }
+      );
+    }
+
+    // 1. Cobalt API (preferred — bypasses YouTube IP blocks on Railway)
+    await tryWithValidation('Cobalt API', () => downloadWithCobalt(url, outputPath));
+    if (downloadSuccess) return respondSuccess();
+
+    // 2. ytdl-core (YouTube-only). @distube/ytdl-core has an actively-
+    //    maintained anti-bot story and frequently succeeds when both
+    //    Cobalt and yt-dlp bot-fail. We extract the 11-char video ID;
+    //    if the URL isn't a YouTube link, this tier is skipped.
+    let ytdl = null;
+    try { ytdl = require('@distube/ytdl-core'); }
+    catch (e) { console.log('[youtube-import] @distube/ytdl-core not installed: ' + e.message); }
+    const ytIdMatch = /(?:v=|\/shorts\/|youtu\.be\/|\/embed\/|\/v\/)([A-Za-z0-9_-]{11})/.exec(url);
+    if (ytdl && ytIdMatch){
+      // Task #106 — Pass real YouTube cookies (when configured) so
+      // ytdl-core can actually authenticate against the watch endpoint
+      // instead of getting the bot-wall response. Without cookies on a
+      // cloud IP, ytdl-core gets "Sign in to confirm you're not a bot".
+      const cookieHeader = readYouTubeCookieHeader();
+      const ytdlHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      };
+      if (cookieHeader) ytdlHeaders.Cookie = cookieHeader;
+      await tryWithValidation('ytdl-core', () => new Promise((resolve, reject) => {
+        const ws = fs.createWriteStream(outputPath);
+        let settled = false;
+        const finish = (err) => {
+          if (settled) return;
+          settled = true;
+          try { ws.destroy(); } catch(_){}
+          if (err) reject(err); else resolve();
+        };
+        let stream;
+        try {
+          stream = ytdl(url, {
+            quality: 'highest',
+            filter: 'audioandvideo',
+            requestOptions: { headers: ytdlHeaders }
+          });
+        } catch (e) { return finish(e); }
+        stream.on('error', finish);
+        ws.on('finish', () => finish());
+        ws.on('error', finish);
+        stream.pipe(ws);
+        setTimeout(() => finish(new Error('ytdl-core timed out after 240s')), 240000);
+      }));
+      if (downloadSuccess) return respondSuccess();
+    }
+
+    // 3. yt-dlp fallback — kept exactly as before so behavior is unchanged
+    // when Cobalt + ytdl-core are unavailable (env issue, endpoint down, etc.).
+
     // Use yt-dlp to download the video
     let ytdlpPath = 'yt-dlp';
     try { execSync('which yt-dlp', { stdio: 'pipe' }); } catch (e) {
@@ -10100,10 +10664,13 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
       '--max-sleep-interval', '3'
     ];
 
-    // Optional cookies file (if the operator provides one)
+    // Optional cookies file. Resolved from YT_COOKIES_PATH or written
+    // out from YT_COOKIES_CONTENT / YT_COOKIES_BASE64 env vars (Task
+    // #106). Same resolver used by ytdl-core above so a single env-var
+    // setup feeds both tiers.
     var cookiesArgs = [];
-    var cookiesPath = process.env.YT_COOKIES_PATH;
-    if (cookiesPath && fs.existsSync(cookiesPath)){
+    var cookiesPath = resolveYouTubeCookiesPath();
+    if (cookiesPath){
       cookiesArgs = ['--cookies', cookiesPath];
     }
 
@@ -10124,7 +10691,7 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
 
     function runYtdlp(client){
       var clientArgs = ['--extractor-args', 'youtube:player_client=' + client];
-      var args = COMMON_ARGS.concat(clientArgs).concat(cookiesArgs).concat([url]);
+      var args = COMMON_ARGS.concat(clientArgs).concat(cookiesArgs).concat(getYoutubeProxyArgs()).concat([url]);
       return new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, args);
         let stderr = '';
@@ -10155,16 +10722,29 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
       }
     }
     if (!success){
-      var msg = 'YouTube blocked every player client (' + triedList.join(', ') + ').';
+      // Task #105 \u2014 Surface what every tier actually said so we can
+      // diagnose without server logs. Cobalt/ytdl-core errors live in
+      // tierErrors; yt-dlp's per-attempt fails are summarized via
+      // triedList + lastErr.
+      tierErrors['yt-dlp'] = 'all player clients failed (' + triedList.join(', ') + ')' +
+        (lastErr ? ' \u2014 last stderr: ' + (lastErr.message || '').slice(-200) : '');
+      var msg = 'YouTube download failed on every tier.';
+      Object.keys(tierErrors).forEach(function(k){
+        msg += ' ' + k + ': ' + String(tierErrors[k]).slice(-250) + '.';
+      });
       if (!cookiesPath){
-        msg += ' This server\'s IP appears to be rate-limited by YouTube. ' +
-               'Set the YT_COOKIES_PATH environment variable to a Netscape-format cookies.txt ' +
-               'exported from a logged-in browser (see yt-dlp wiki: "How do I pass cookies to yt-dlp?") ' +
-               'and redeploy. As a workaround, download the video locally and use the Upload button.';
+        msg += ' YouTube blocks every IP on this cloud host. The fix: ' +
+               'install the "Get cookies.txt LOCALLY" browser extension, ' +
+               'log into youtube.com, export cookies to a Netscape-format ' +
+               'file, then paste its contents into the YT_COOKIES_CONTENT ' +
+               'env var on Railway (or mount the file and set YT_COOKIES_PATH). ' +
+               'Until cookies are configured, please download the video ' +
+               'locally and use the Upload button.';
       } else {
-        msg += ' Cookies file at ' + cookiesPath + ' may have expired \u2014 re-export from a logged-in browser. ';
+        msg += ' Cookies file at ' + cookiesPath + ' was loaded but YouTube still ' +
+               'refused all tiers \u2014 the cookies have likely expired. Re-export from ' +
+               'a logged-in browser and update YT_COOKIES_CONTENT (or the mounted file).';
       }
-      if (lastErr) msg += ' Last yt-dlp error: ' + (lastErr.message || '').slice(-300);
       throw new Error(msg);
     }
 

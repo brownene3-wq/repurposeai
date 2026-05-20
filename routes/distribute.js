@@ -5,6 +5,40 @@ const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = 
 const { getDb } = require('../db/database');
 
 // Platform configuration with SVG icons
+// Which env vars (if any) each platform needs to be connectable.
+// Form-based platforms (Bluesky / HeyGen / RSS podcasts / Libsyn /
+// Captivate) have no env-var dependency — they collect credentials
+// via an in-app form, so they're always considered configured.
+const PLATFORM_ENV = {
+  tiktok:      ['TIKTOK_CLIENT_KEY','TIKTOK_CLIENT_SECRET'],
+  instagram:   ['INSTAGRAM_CLIENT_ID','INSTAGRAM_CLIENT_SECRET'],
+  youtube:     ['YOUTUBE_CLIENT_ID','YOUTUBE_CLIENT_SECRET'],
+  facebook:    ['FACEBOOK_APP_ID','FACEBOOK_APP_SECRET'],
+  twitter:     ['TWITTER_CLIENT_ID','TWITTER_CLIENT_SECRET'],
+  linkedin:    ['LINKEDIN_CLIENT_ID','LINKEDIN_CLIENT_SECRET'],
+  pinterest:   ['PINTEREST_CLIENT_ID','PINTEREST_CLIENT_SECRET'],
+  threads:     ['THREADS_CLIENT_ID','THREADS_CLIENT_SECRET'],
+  snapchat:    ['SNAPCHAT_CLIENT_ID','SNAPCHAT_CLIENT_SECRET'],
+  // Google Drive's route falls back to YOUTUBE_CLIENT_ID/SECRET if its
+  // own pair isn't set, so YouTube credentials alone are enough to enable it.
+  googledrive: ['YOUTUBE_CLIENT_ID','YOUTUBE_CLIENT_SECRET'],
+  dropbox:     ['DROPBOX_CLIENT_ID','DROPBOX_CLIENT_SECRET'],
+  twitch:      ['TWITCH_CLIENT_ID','TWITCH_CLIENT_SECRET'],
+  zoom:        ['ZOOM_CLIENT_ID','ZOOM_CLIENT_SECRET'],
+  webex:       ['WEBEX_CLIENT_ID','WEBEX_CLIENT_SECRET'],
+  amazon:      ['AMAZON_CLIENT_ID','AMAZON_CLIENT_SECRET'],
+  soundcloud:  ['SOUNDCLOUD_CLIENT_ID','SOUNDCLOUD_CLIENT_SECRET'],
+  // form-based — credentials collected in-app, no env vars needed
+  bluesky: [], heygen: [], audiopodcast: [], videopodcast: [],
+  libsyn: [], captivate: []
+};
+function platformIsConfigured(id) {
+  const vars = PLATFORM_ENV[id];
+  if (!vars) return false;
+  if (vars.length === 0) return true;
+  return vars.every(v => !!process.env[v]);
+}
+
 const PLATFORMS = [
   { id: 'tiktok', name: 'TikTok', color: '#25F4EE', colorDark: '#00C9B7', type: 'source_destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.88-2.88 2.89 2.89 0 0 1 2.88-2.88c.28 0 .56.04.81.1v-3.5a6.37 6.37 0 0 0-.81-.05A6.34 6.34 0 0 0 3.15 15a6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.18 8.18 0 0 0 4.76 1.52V6.82a4.83 4.83 0 0 1-1-.13z"/></svg>' },
   { id: 'instagram', name: 'Instagram', color: '#E4405F', colorDark: '#F56040', type: 'source_destination', svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>' },
@@ -112,6 +146,15 @@ function getDistributeCSS() {
     .platform-picker-item .p-desc{font-size:0.78rem;color:var(--text-muted)}
     .platform-picker-item .p-arrow{color:var(--text-muted);font-size:0.85rem;transition:transform 0.2s}
     .platform-picker-item:hover .p-arrow{transform:translateX(3px);color:var(--text)}
+    /* Coming-soon variant — platforms whose OAuth credentials aren't
+       configured on Railway yet. We render them but visually de-emphasise
+       and route the click to a friendly toast instead of attempting OAuth. */
+    .platform-picker-item.coming-soon{cursor:not-allowed;opacity:0.55}
+    .platform-picker-item.coming-soon:hover{border-color:rgba(255,255,255,0.10);background:rgba(255,255,255,0.02);transform:none;box-shadow:none}
+    .platform-picker-item.coming-soon:hover .p-arrow{transform:none}
+    body.light .platform-picker-item.coming-soon:hover,html.light .platform-picker-item.coming-soon:hover{border-color:rgba(0,0,0,0.08);background:rgba(0,0,0,0.02)}
+    .platform-picker-item .p-soon-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:linear-gradient(135deg,rgba(108,58,237,.18),rgba(236,72,153,.16));border:1px solid rgba(108,58,237,.30);color:#c4b5fd;font-size:0.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-left:0.4rem;vertical-align:middle}
+    body.light .platform-picker-item .p-soon-badge,html.light .platform-picker-item .p-soon-badge{color:#6c3aed}
 
     /* ─── Toast ─── */
     .splicora-toast{position:fixed;bottom:2rem;right:2rem;padding:1rem 1.5rem;border-radius:12px;font-size:0.88rem;font-weight:500;z-index:99999;box-shadow:0 8px 30px rgba(0,0,0,0.3);color:#fff;animation:slideUp 0.3s ease;display:flex;align-items:center;gap:0.6rem}
@@ -1101,16 +1144,23 @@ router.get('/connections', requireAuth, async (req, res) => {
         <div class="modal-body">
           <p class="modal-subtitle">Choose a platform to connect. You'll be redirected to authorize access.</p>
           <div class="platform-picker-grid">
-            ${PLATFORMS.map(p => `
-              <div class="platform-picker-item" onclick="initOAuth('${p.id}')">
-                <div class="p-icon">${platformIconHTML(p)}</div>
-                <div class="p-info">
-                  <div class="p-name">${p.name}</div>
-                  <div class="p-desc">${platformDescriptions[p.id] || 'Connect your account'}</div>
-                </div>
-                <span class="p-arrow">→</span>
-              </div>
-            `).join('')}
+            ${PLATFORMS.map(function(p) {
+              var ready = platformIsConfigured(p.id);
+              var cls = ready ? 'platform-picker-item' : 'platform-picker-item coming-soon';
+              var safeName = String(p.name).replace(/'/g, "\\'");
+              var click = ready ? ("initOAuth('" + p.id + "')") : ("comingSoon('" + safeName + "')");
+              var badge = ready ? '' : '<span class="p-soon-badge">Coming soon</span>';
+              var desc = ready ? (platformDescriptions[p.id] || 'Connect your account') : "Available soon \u2014 we're finishing the setup.";
+              var arrow = ready ? '<span class="p-arrow">\u2192</span>' : '';
+              return '<div class="' + cls + '" onclick="' + click + '">'
+                + '<div class="p-icon">' + platformIconHTML(p) + '</div>'
+                + '<div class="p-info">'
+                +   '<div class="p-name">' + p.name + badge + '</div>'
+                +   '<div class="p-desc">' + desc + '</div>'
+                + '</div>'
+                + arrow
+                + '</div>';
+            }).join('')}
           </div>
         </div>
       </div>
@@ -1151,6 +1201,13 @@ router.get('/connections', requireAuth, async (req, res) => {
         showToast('Connecting to ' + platform.charAt(0).toUpperCase() + platform.slice(1) + '...', 'info');
         // Redirect to OAuth flow
         window.location.href = '/auth/' + platform + '/connect?redirect=/distribute/connections';
+      }
+
+      // Friendly handler for not-yet-configured platforms. Keeps the
+      // picker open so the user can pick a different one without an
+      // extra click. The toast doubles as the explanation.
+      function comingSoon(name) {
+        showToast(name + " integration is coming soon — we're finishing the developer setup.", "info");
       }
 
       function reconnectAccount(platform) {

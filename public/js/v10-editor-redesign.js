@@ -87,11 +87,9 @@
     '.mt-label-video,.mt-label-audio{height:52px!important;min-height:52px!important;display:flex!important;align-items:center!important}',
     '.mt-label-music,.mt-label-text,.mt-label-fx{height:36px!important;min-height:36px!important;display:flex!important;align-items:center!important}',
     '/* v10 timeline overlays */',
-    '.v10-filmstrip{position:absolute;inset:4px 4px;border-radius:5px;overflow:hidden;display:flex;box-shadow:0 2px 6px rgba(0,0,0,.35);border:1px solid rgba(124,58,237,.45);z-index:2;pointer-events:none}',
-    '.v10-filmstrip::before,.v10-filmstrip::after{content:"";position:absolute;left:0;right:0;height:3px;background-image:repeating-linear-gradient(90deg,#0a0815 0 4px,transparent 4px 8px);z-index:3}',
-    '.v10-filmstrip::before{top:0}.v10-filmstrip::after{bottom:0}',
-    '.v10-frame{flex:1;min-width:0;border-right:1px solid rgba(0,0,0,.35);position:relative;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat}',
-    '.v10-frame:last-child{border-right:none}',
+    '.v10-filmstrip{position:absolute;inset:0;border-radius:6px;overflow:hidden;display:flex;gap:0;background:#16112a;z-index:2;pointer-events:none}',
+    '.v10-frame{flex:1;min-width:0;position:relative;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat;margin-right:-1px}',
+    '.v10-frame:last-child{margin-right:0}',
     '.v10-fs-label{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.7);z-index:4;pointer-events:none}',
     '.v10-wf-dense{position:absolute;inset:4px 8px;display:flex;align-items:center;justify-content:center;gap:1px;z-index:2;pointer-events:none}',
     '.v10-wf-dense span{flex:1;min-width:1px;background:linear-gradient(180deg,#5eead4 0%,#14b8a6 50%,#5eead4 100%);border-radius:.5px;box-shadow:0 0 2px rgba(94,234,212,.3)}',
@@ -1020,7 +1018,7 @@
           sx = 0; sy = (vh - sh) / 2;
         }
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
-        var dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         if (frameEls[frameIdx]){
           frameEls[frameIdx].style.background = 'url(' + dataUrl + ') center/cover no-repeat';
         }
@@ -2464,23 +2462,17 @@
         var route = btn.getAttribute('data-v10-ai-route');
         var label = btn.getAttribute('data-v10-ai-label');
         if (DIRECT_ACTIONS[label]){
-          // Pre-flight validation: require a real clip with a server-side
-          // mediaUrl (no blob:) for enhance / captions / aihook. This
-          // prevents the 400-from-server fallback path that Albert saw
-          // trigger a redirect on newly-added clips.
+          // Task #97 \u2014 Pre-flight no longer rejects blob: URLs; the
+          // runInlineAIAction handler auto-promotes via
+          // ensureClipHasServerUrl() before calling the server.
           if (label !== 'AI Hook'){
             var probe = pickSourceClipForAI(DIRECT_ACTIONS[label]);
             if (!probe){
               toast('Add a V1 video clip to the timeline first');
               return;
             }
-            var mu = probe.dataset.mediaUrl || '';
-            if (!mu){
-              toast('This clip has no server media yet \u2014 wait for upload to finish');
-              return;
-            }
-            if (mu.indexOf('blob:') === 0){
-              toast('Upload this file via the sidebar first, then try again');
+            if (!(probe.dataset.mediaUrl || '')){
+              toast('This clip has no media source yet');
               return;
             }
           }
@@ -2555,6 +2547,65 @@
     return null;
   }
 
+  // ── Task #97 — Promote a clip's blob: URL to a real server URL ──
+  // Local-pick uploads land on V1 with a browser-only `blob:` mediaUrl
+  // that the server can't resolve. Tools that hit server endpoints
+  // (Translate, BG Remove, Style Transfer, Enhance Audio, Captions,
+  // AI Hook, etc.) previously bailed with "Select a V1 clip with a
+  // server-uploaded source first" — which dead-ended the user even
+  // though the clip was valid, just not promoted yet.
+  //
+  // This helper POSTs the underlying blob bytes to /video-editor/
+  // upload-blob (same endpoint Export uses), rewrites the clip's
+  // dataset.mediaUrl to the returned serveUrl on success, and is a
+  // no-op for clips whose mediaUrl is already server-resolvable.
+  // Returns the same clip on success, null on failure.
+  async function ensureClipHasServerUrl(clip){
+    if (!clip) return null;
+    var url = clip.dataset.mediaUrl || '';
+    if (!url) return null;
+    if (url.indexOf('blob:') !== 0) return clip;  // already promoted
+    try {
+      var resp = await fetch(url);
+      if (!resp.ok) throw new Error('blob fetch ' + resp.status);
+      var data = await resp.blob();
+      var fn = clip.dataset.fileName || clip.dataset.serverFilename || 'clip';
+      // Strip leading emoji + whitespace (e.g. "🎬 sample.mp4")
+      fn = String(fn).replace(/^[^\w.-]+/, '').trim() || 'clip';
+      var hasExt = /\.[a-z0-9]{2,5}$/i.test(fn);
+      if (!hasExt){
+        var m = (data.type || '').toLowerCase();
+        var ext = '.mp4';
+        if      (m.indexOf('mp4')   >= 0) ext = '.mp4';
+        else if (m.indexOf('webm')  >= 0) ext = '.webm';
+        else if (m.indexOf('quick') >= 0) ext = '.mov';
+        else if (m.indexOf('mp3')   >= 0) ext = '.mp3';
+        else if (m.indexOf('mpeg')  >= 0) ext = '.mp3';
+        else if (m.indexOf('wav')   >= 0) ext = '.wav';
+        else if (m.indexOf('png')   >= 0) ext = '.png';
+        else if (m.indexOf('jpeg')  >= 0) ext = '.jpg';
+        fn = fn + ext;
+      }
+      var fd = new FormData();
+      fd.append('file', data, fn);
+      var up = await fetch('/video-editor/upload-blob', {
+        method: 'POST',
+        body: fd,
+        credentials: 'same-origin'
+      });
+      var jr = await up.json();
+      if (!up.ok || !jr.success) throw new Error(jr.error || 'upload-blob failed');
+      clip.dataset.mediaUrl = jr.serveUrl;
+      if (jr.filename) clip.dataset.serverFilename = jr.filename;
+      return clip;
+    } catch (err){
+      console.error('[ensureClipHasServerUrl]', err);
+      try { toast('Could not prepare clip for AI — try again'); } catch(_){}
+      return null;
+    }
+  }
+  try { window.ensureClipHasServerUrl = ensureClipHasServerUrl; } catch(_){}
+
   function setAIButtonLoading(btn, loading, labelOverride){
     if (!btn) return;
     if (loading){
@@ -2582,15 +2633,20 @@
       toast('Add a video clip to the timeline first');
       return;
     }
+    if (!(clip.dataset.mediaUrl || '')){
+      toast('This clip has no media source');
+      return;
+    }
+    // Task #97 — Auto-promote blob: URLs to server-resolvable URLs so
+    // tools work the moment any V1 clip is selected, regardless of
+    // whether it came from a local file pick or a finished server upload.
+    if (clip.dataset.mediaUrl.indexOf('blob:') === 0){
+      setAIButtonLoading(btn, true, 'Uploading…');
+      clip = await ensureClipHasServerUrl(clip);
+      setAIButtonLoading(btn, false);
+      if (!clip) return;
+    }
     var mediaUrl = clip.dataset.mediaUrl;
-    if (!mediaUrl){
-      toast('This clip has no server-side media to process');
-      return;
-    }
-    if (mediaUrl.indexOf('blob:') === 0){
-      toast('Upload this file via the sidebar first, then try again');
-      return;
-    }
 
     if (action === 'enhance'){
       setAIButtonLoading(btn, true, 'Enhancing\u2026');
@@ -3576,13 +3632,19 @@
   // the target language, drops the translated phrases onto T1 at the
   // matching timestamps (same positioning logic as Captions).
   // ═════════════════════════════════════════════════════════════════
-  function openTranslateModal(){
+  async function openTranslateModal(){
     var existing = document.getElementById('v10TranslateModal');
     if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
     var target = pickSourceClipForAI('translate');
-    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
-      toast('Select a V1 clip with a server-uploaded source first');
+    if (!target || !target.dataset.mediaUrl){
+      toast('Select a V1 clip on the timeline first');
       return;
+    }
+    // Task #97 — auto-promote blob: → server URL before opening modal.
+    if (target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Preparing your clip…');
+      target = await ensureClipHasServerUrl(target);
+      if (!target) return;
     }
 
     var bk = document.createElement('div');
@@ -3695,13 +3757,19 @@
   // Chroma-key via FFmpeg colorkey. Server swaps the V1 clip's mediaUrl
   // in place (same pattern as Enhance Audio).
   // ═════════════════════════════════════════════════════════════════
-  function openBGRemoveModal(){
+  async function openBGRemoveModal(){
     var existing = document.getElementById('v10BGRemoveModal');
     if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
     var target = pickSourceClipForAI('bgremove');
-    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
-      toast('Select a V1 clip with a server-uploaded source first');
+    if (!target || !target.dataset.mediaUrl){
+      toast('Select a V1 clip on the timeline first');
       return;
+    }
+    // Task #97 — auto-promote blob: → server URL before opening modal.
+    if (target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Preparing your clip…');
+      target = await ensureClipHasServerUrl(target);
+      if (!target) return;
     }
     var bk = document.createElement('div');
     bk.id = 'v10BGRemoveModal';
@@ -3828,13 +3896,19 @@
   // approximates it (EQ + curves + noise + hue/saturation combos).
   // Output replaces the V1 clip's mediaUrl in place.
   // ═════════════════════════════════════════════════════════════════
-  function openStyleTransferModal(){
+  async function openStyleTransferModal(){
     var existing = document.getElementById('v10StyleModal');
     if (existing instanceof Element){ try { existing.remove(); } catch(_){} }
     var target = pickSourceClipForAI('style');
-    if (!target || !target.dataset.mediaUrl || target.dataset.mediaUrl.indexOf('blob:') === 0){
-      toast('Select a V1 clip with a server-uploaded source first');
+    if (!target || !target.dataset.mediaUrl){
+      toast('Select a V1 clip on the timeline first');
       return;
+    }
+    // Task #97 — auto-promote blob: → server URL before opening modal.
+    if (target.dataset.mediaUrl.indexOf('blob:') === 0){
+      toast('Preparing your clip…');
+      target = await ensureClipHasServerUrl(target);
+      if (!target) return;
     }
     var bk = document.createElement('div');
     bk.id = 'v10StyleModal';
