@@ -2172,6 +2172,83 @@ router.get('/connection-status', requireAuth, async (req, res) => {
   }
 });
 
+// GET /calendar/publish-status - In-browser auto-publish diagnostics.
+//
+// Returns the user's last 25 calendar entries with every column that
+// matters for the schedule-publish cron — so a stuck "scheduled but
+// never posted" entry can be diagnosed without Railway log access.
+// Hit it from devtools:
+//   fetch('/shorts/calendar/publish-status').then(r=>r.json()).then(console.table)
+router.get('/calendar/publish-status', requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, title, platform, scheduled_date, scheduled_time,
+              auto_publish, connection_id, clip_filename,
+              published_at, publish_attempts, publish_error, status,
+              created_at
+       FROM calendar_entries
+       WHERE user_id = $1
+       ORDER BY scheduled_date DESC, scheduled_time DESC
+       LIMIT 25`,
+      [req.user.id]
+    );
+    res.json({
+      success: true,
+      now: new Date().toISOString(),
+      cronTickMs: 120000,
+      entries: r.rows.map(e => ({
+        id: e.id,
+        title: e.title,
+        platform: e.platform,
+        scheduledFor: e.scheduled_date && (e.scheduled_date.toISOString
+          ? e.scheduled_date.toISOString().slice(0, 10)
+          : String(e.scheduled_date).slice(0, 10)) + ' ' + e.scheduled_time,
+        auto_publish: e.auto_publish,
+        has_connection: !!e.connection_id,
+        has_clip_filename: !!(e.clip_filename && e.clip_filename.trim()),
+        publish_attempts: e.publish_attempts || 0,
+        publish_error: e.publish_error || null,
+        published_at: e.published_at,
+        status: e.status,
+        // Why might the cron still be skipping it?
+        diagnosis: (function() {
+          if (e.published_at) return 'published ' + e.published_at;
+          if (!e.auto_publish) return 'auto_publish=false (cron only picks up auto_publish=true)';
+          if ((e.publish_attempts || 0) >= 3) return 'publish_attempts >= 3, cron has abandoned this entry — reset publish_attempts=0 to retry';
+          const when = new Date((e.scheduled_date && e.scheduled_date.toISOString
+            ? e.scheduled_date.toISOString().slice(0, 10)
+            : String(e.scheduled_date).slice(0, 10)) + 'T' + e.scheduled_time + 'Z');
+          if (when.getTime() > Date.now()) return 'scheduled time has not arrived yet (' + when.toISOString() + ')';
+          return 'eligible — should fire on next cron tick (every 2 min)';
+        })()
+      }))
+    });
+  } catch (error) {
+    console.error('Error reading publish-status:', error);
+    res.status(500).json({ error: 'Failed to read publish-status' });
+  }
+});
+
+// POST /calendar/:id/retry-publish - Reset publish_attempts + publish_error
+// so the cron picks an abandoned entry up again. Useful after fixing the
+// underlying cause (re-rendering a clip, reconnecting an account, etc.).
+router.post('/calendar/:id/retry-publish', requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `UPDATE calendar_entries
+       SET publish_attempts = 0, publish_error = '', published_at = NULL
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, title, platform`,
+      [req.params.id, req.user.id]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ success: true, entry: r.rows[0] });
+  } catch (error) {
+    console.error('Error retrying publish:', error);
+    res.status(500).json({ error: 'Failed to retry publish' });
+  }
+});
+
 // POST /brand-kit - Save user's brand kit settings
 router.post('/brand-kit', requireAuth, async (req, res) => {
   try {
