@@ -2757,11 +2757,17 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
     let mediaPath = null;
     try {
       const files = fs.readdirSync(CLIPS_DIR);
-      const match = files
-        .filter(f => f.includes(analysisId) && f.includes('m' + momentIndex))
+      const candidates = files
+        .filter(f => f.endsWith('.mp4') && f.includes(analysisId))
         .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
-        .sort((a, b) => b.mtime - a.mtime)[0];
-      if (match && fs.statSync(match.full).size > 10000) mediaPath = match.full;
+        .sort((a, b) => b.mtime - a.mtime);
+      // Prefer a clip that explicitly encodes this moment index (new naming
+      // from the same commit). Otherwise, accept any clip for this analysis —
+      // handles older clips that were rendered before the m<idx> tag landed.
+      const tag = '_m' + momentIndex + '_';
+      const exact = candidates.find(c => c.f.includes(tag));
+      const pick = exact || candidates[0];
+      if (pick && fs.statSync(pick.full).size > 10000) mediaPath = pick.full;
     } catch (_) {}
     if (!mediaPath) {
       return res.status(409).json({ success: false, error: 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.' });
@@ -3554,7 +3560,10 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const safeTitle = (moment.title || 'clip').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
     const analysisTag = `a${req.body.analysisId || 'unknown'}`;
-    const filename = `${safeTitle}_${analysisTag}_${Date.now()}.mp4`;
+    const momentTag = `m${momentIndex}`;
+    // Filename encodes analysisId + moment index so /shorts/api/publish-moment
+    // can find the right pre-rendered clip on disk later.
+    const filename = `${safeTitle}_${analysisTag}_${momentTag}_${Date.now()}.mp4`;
     const outputPath = path.join(CLIPS_DIR, filename);
     const tempOutputPath = outputPath + '.encoding.mp4'; // Encode to temp file, rename when done
 
