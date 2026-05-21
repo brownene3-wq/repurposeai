@@ -6838,7 +6838,7 @@ ${paginationHtml}
   <!-- Modal for viewing analysis -->
   <div class="modal" id="analysisModal">
     <div class="modal-content">
-      <button class="modal-close" onclick="closeModal()" title="Close">&times;</button>
+      <button class="modal-close" onclick="dismissModal()" title="Close">&times;</button>
       <div id="modalBody"></div>
     </div>
   </div>
@@ -7683,6 +7683,9 @@ ${paginationHtml}
           </button>
         </div>
       \`;
+      // Snapshot the moments-view HTML so closing this Generate Content view
+      // returns to the moments list instead of dismissing the whole modal.
+      try { window.__modalPrevHTML = document.getElementById('modalBody').innerHTML; } catch (_) {}
       document.getElementById('modalBody').innerHTML = html;
       document.getElementById('analysisModal').classList.add('active');
     }
@@ -7837,6 +7840,9 @@ ${paginationHtml}
           \${panels}
         </div>
       \`;
+      // Don't overwrite __modalPrevHTML — we want dismissing this view to
+      // return all the way back to the moments list, not to the Generate
+      // Content type-picker that the user is no longer interested in.
       document.getElementById('modalBody').innerHTML = html;
     }
 
@@ -9755,11 +9761,30 @@ ${paginationHtml}
 
     function closeModal() {
       document.getElementById('analysisModal').classList.remove('active');
+      // Clear any pending back-snapshot too — we're fully out.
+      try { window.__modalPrevHTML = null; } catch (_) {}
     }
 
-    // Close modal when clicking the backdrop (outside the content)
+    // Soft close: if we snapshotted a previous modal view (e.g. the moments
+    // list before the user clicked Generate Content), restore it instead of
+    // dismissing the whole modal. Otherwise behave like closeModal().
+    function dismissModal() {
+      try {
+        if (window.__modalPrevHTML) {
+          var body = document.getElementById('modalBody');
+          if (body) body.innerHTML = window.__modalPrevHTML;
+          window.__modalPrevHTML = null;
+          return;
+        }
+      } catch (_) {}
+      closeModal();
+    }
+
+    // Close modal when clicking the backdrop (outside the content). Use the
+    // soft path so backdrop clicks from inside the Generated Content view
+    // also pop back to moments first.
     document.getElementById('analysisModal').addEventListener('click', function(e) {
-      if (e.target === this) closeModal();
+      if (e.target === this) dismissModal();
     });
 
     async function deleteAnalysis(id, btn) {
@@ -9861,7 +9886,7 @@ ${paginationHtml}
     }
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closeModal(); closeNarrationModal(); }
+      if (e.key === 'Escape') { dismissModal(); closeNarrationModal(); }
     });
 
     // === Narration Feature ===
