@@ -26,7 +26,7 @@ router.post('/submit', async (req, res) => {
 function renderContactPage(user) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+<link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#06060f">
 <meta name="apple-mobile-web-app-capable" content="yes">

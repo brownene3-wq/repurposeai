@@ -552,30 +552,74 @@ async function publishToDestination(workflow, destAccount, sourceItem, mediaPath
 }
 
 async function publishYouTube(destAccount, sourceItem, mediaPath) {
-  // Simplified YouTube upload using resumable upload API
+  // Resumable upload — see https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol
+  if (!mediaPath || !fs.existsSync(mediaPath)) {
+    throw new Error('YouTube publish: media file is missing');
+  }
+  const fileSize = fs.statSync(mediaPath).size;
+  if (fileSize < 1024) {
+    throw new Error('YouTube publish: media file is empty');
+  }
+
+  // YouTube clamps the title to 100 chars. Strip anything beyond and any
+  // angle-brackets that would otherwise cause a 400.
+  const safeTitle = String(sourceItem.title || 'Untitled')
+    .replace(/[<>]/g, '')
+    .slice(0, 100) || 'Untitled';
+  const safeDescription = String(sourceItem.description || '').slice(0, 5000);
+
   const metadata = {
     snippet: {
-      title: sourceItem.title,
-      description: sourceItem.description,
-      tags: ['repurposed']
+      title: safeTitle,
+      description: safeDescription,
+      tags: Array.isArray(sourceItem.tags) && sourceItem.tags.length ? sourceItem.tags.slice(0, 10) : ['repurposed']
     },
-    status: { privacyStatus: 'public' }
+    status: { privacyStatus: sourceItem.privacy || 'public', selfDeclaredMadeForKids: false }
   };
 
   const uploadUrl = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
 
+  // YouTube needs these two X-Upload-* headers to allocate a resumable
+  // session. Without them, the API returns a JSON error and never sets
+  // the Location header — which is the failure mode behind the 'upload
+  // session creation failed' message users were hitting.
   const response = await httpsPostJson(uploadUrl, metadata, {
-    Authorization: `Bearer ${destAccount.access_token}`
+    Authorization: `Bearer ${destAccount.access_token}`,
+    'Content-Type': 'application/json; charset=UTF-8',
+    'X-Upload-Content-Type': 'video/mp4',
+    'X-Upload-Content-Length': String(fileSize)
   });
 
   if (!response.headers.location) {
-    throw new Error('YouTube upload session creation failed');
+    // Surface the actual YouTube error rather than a generic message —
+    // helps the user see auth/quota/scope issues directly.
+    const status = response.status || 0;
+    const body = response.body && (response.body.error || response.body);
+    const reason = (body && (body.error_description || body.message ||
+                   (body.error && (body.error.message || body.error.errors && body.error.errors[0] && body.error.errors[0].message))))
+                   || (typeof body === 'string' ? body.slice(0, 200) : null);
+    // Check quota FIRST — YouTube returns 403 for both 'token expired'
+    // and 'quota exceeded', so we have to look at the message body to
+    // tell them apart. Auth-style errors mention 'authError' or
+    // 'invalid_grant'; quota errors say 'quota' or 'rateLimit'.
+    const reasonStr = String(reason || '');
+    const isQuota = /quota|rateLimit|userRateLimitExceeded|dailyLimitExceeded/i.test(reasonStr);
+    const isAuth  = /authError|invalid[_ ]grant|invalid[_ ]credentials|expired|forbidden\.access/i.test(reasonStr) ||
+                    (status === 401);
+    if (isQuota) {
+      throw new Error('YouTube daily upload quota exceeded. ' +
+        'YouTube\'s default quota is 10,000 units per day and a single upload costs ~1,600 units (~6 uploads/day). ' +
+        'Quota resets at midnight Pacific Time. To raise it, go to https://console.cloud.google.com -> APIs & Services -> YouTube Data API v3 -> Quotas -> Request quota increase.');
+    }
+    if (isAuth) {
+      throw new Error('YouTube authentication failed (status ' + status + '). Reconnect YouTube on /distribute/connections and try again.' + (reasonStr ? ' Details: ' + reasonStr : ''));
+    }
+    throw new Error('YouTube upload session creation failed (status ' + status + ')' + (reason ? ': ' + reason : ''));
   }
 
-  // Upload the video file
+  // Upload the video file to the resumable URL we just received.
   const resumableUrl = response.headers.location;
   const fileStream = fs.createReadStream(mediaPath);
-  const fileSize = fs.statSync(mediaPath).size;
 
   return new Promise((resolve, reject) => {
     const urlObj = new URL(resumableUrl);
@@ -731,6 +775,21 @@ async function publishFacebook(destAccount, sourceItem, mediaPath) {
   const pageId = destAccount.metadata?.page_id || destAccount.platform_user_id;
   if (!pageId) throw new Error('No Facebook page ID');
 
+  // Text-only path — Repurpose-style 'post body to Page feed' when no
+  // media is attached. Posts via /<pageId>/feed instead of /photos.
+  if (!mediaPath) {
+    const text = (sourceItem.description || sourceItem.caption || sourceItem.title || '').slice(0, 5000);
+    if (!text) throw new Error('Facebook requires text or media to post');
+    const feedResp = await httpsPostJson(
+      `https://graph.facebook.com/v21.0/${pageId}/feed`,
+      { message: text, access_token: destAccount.access_token }
+    );
+    if (!feedResp.body || !feedResp.body.id) {
+      throw new Error('Facebook text post failed: ' + JSON.stringify(feedResp.body).slice(0, 200));
+    }
+    return { platform: 'facebook', postId: feedResp.body.id };
+  }
+
   // Post to Facebook feed
   const response = await httpsPost(
     `https://graph.facebook.com/${pageId}/photos`,
@@ -770,22 +829,50 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
     { Authorization: `Bearer ${destAccount.access_token}` }
   );
 
-  if (!registerResponse.body.value?.uploadMechanism?.com.linkedin.digitalmedia_uploadmechanism.UploadStep?.uploadUrl) {
-    throw new Error('LinkedIn asset registration failed');
+  // LinkedIn's response key is a literal dotted string (NOT chained
+  // property access). LinkedIn has shipped at least two namespace
+  // variants over time:
+  //   - 'com.linkedin.digitalmedia.uploadmechanism.MediaUploadHttpRequest'
+  //   - 'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'  (current)
+  // ... and may introduce more. Rather than hardcode, find whichever
+  // key carries the uploadUrl. Future-proofs against further renames
+  // and avoids reintroducing the original bug.
+  const value = registerResponse.body && registerResponse.body.value;
+  const mechs = value && value.uploadMechanism;
+  let mech = null;
+  if (mechs && typeof mechs === 'object') {
+    // Prefer the canonical MediaUploadHttpRequest key under any namespace,
+    // otherwise take the first entry that has an uploadUrl.
+    const keys = Object.keys(mechs);
+    const preferred = keys.find(k => /MediaUploadHttpRequest$/i.test(k) && mechs[k] && mechs[k].uploadUrl);
+    const anyKey    = keys.find(k => mechs[k] && mechs[k].uploadUrl);
+    const key = preferred || anyKey;
+    if (key) mech = mechs[key];
+  }
+  if (!mech || !mech.uploadUrl) {
+    const detail = JSON.stringify(registerResponse.body || {}).slice(0, 300);
+    throw new Error('LinkedIn asset registration failed: ' + detail);
   }
 
   // Upload the media
-  const uploadUrl = registerResponse.body.value.uploadMechanism['com.linkedin.digitalmedia_uploadmechanism.UploadStep'].uploadUrl;
+  const uploadUrl = mech.uploadUrl;
   const asset = registerResponse.body.value.asset;
 
   await new Promise((resolve, reject) => {
     const fileStream = fs.createReadStream(mediaPath);
     const urlObj = new URL(uploadUrl);
+    // The mech object may carry transient auth headers (media token,
+    // etc.) that must be forwarded with the upload request. Merge them
+    // with our defaults.
+    const extra = (mech && typeof mech.headers === 'object' && mech.headers) || {};
     const opts = {
       hostname: urlObj.hostname,
       path: urlObj.pathname + urlObj.search,
-      method: 'POST',
-      headers: { 'Content-Type': 'video/mp4' }
+      // LinkedIn's MediaUploadHttpRequest spec uses PUT; using POST on
+      // dms-uploads worked historically but PUT is what the docs call
+      // for now.
+      method: 'PUT',
+      headers: Object.assign({ 'Content-Type': 'video/mp4' }, extra)
     };
 
     const req = https.request(opts, res => {
@@ -793,14 +880,24 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) resolve();
-        else reject(new Error(`LinkedIn upload failed: ${res.statusCode}`));
+        else reject(new Error('LinkedIn upload failed: ' + res.statusCode + (data ? ' — ' + data.slice(0, 200) : '')));
       });
     });
     req.on('error', reject);
     fileStream.pipe(req);
   });
 
-  // Create UGC post
+  // LinkedIn processes the uploaded video asynchronously. Creating a
+  // UGC post that references the asset before it's READY returns a
+  // generic 400 'INVALID_PARAMETERS' for the media field. Wait briefly
+  // for the processing to start; the worst case is the post still
+  // fails and we surface the real reason below.
+  await new Promise(r => setTimeout(r, 5000));
+
+  // Create UGC post. LinkedIn requires X-Restli-Protocol-Version 2.0.0
+  // on /v2/ugcPosts; without it the API rejects nested objects like
+  // specificContent.com.linkedin.ugc.ShareContent with a generic 400.
+  const commentary = (sourceItem.description || sourceItem.caption || sourceItem.title || '').slice(0, 3000);
   const postResponse = await httpsPostJson(
     'https://api.linkedin.com/v2/ugcPosts',
     {
@@ -808,18 +905,34 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: sourceItem.title },
+          shareCommentary: { text: commentary },
           shareMediaCategory: 'VIDEO',
-          media: [{ status: 'READY', media: asset }]
+          media: [{ status: 'READY', media: asset, title: { text: (sourceItem.title || '').slice(0, 200) } }]
         }
       },
       visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
     },
-    { Authorization: `Bearer ${destAccount.access_token}` }
+    {
+      Authorization: `Bearer ${destAccount.access_token}`,
+      'X-Restli-Protocol-Version': '2.0.0'
+    }
   );
 
-  if (!postResponse.body.id) {
-    throw new Error('LinkedIn post creation failed');
+  if (!postResponse.body || !postResponse.body.id) {
+    const status = postResponse.status || 0;
+    const body = postResponse.body || {};
+    const reason = body.message || body.error || (typeof body === 'string' ? body : JSON.stringify(body).slice(0, 300));
+    // LinkedIn often returns 'Video is not yet uploaded' / 'INVALID_PARAMETERS'
+    // when the asset hasn't finished processing. The 5-second wait above
+    // covers most cases but very large files may need longer. Make the
+    // hint actionable.
+    if (/INVALID_PARAMETERS|not yet uploaded|not ready|processing/i.test(String(reason))) {
+      throw new Error('LinkedIn rejected the post because the video is still being processed on their side. Try Publish again in 30-60 seconds.');
+    }
+    if (status === 401 || status === 403) {
+      throw new Error('LinkedIn authentication failed (status ' + status + '). Reconnect LinkedIn on /distribute/connections.');
+    }
+    throw new Error('LinkedIn post creation failed (status ' + status + '): ' + reason);
   }
 
   return { platform: 'linkedin', postId: postResponse.body.id };

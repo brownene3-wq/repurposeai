@@ -159,13 +159,13 @@ function getHeadHTML(title) {
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>${title} - Splicora</title>
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Splicora">
-  <link rel="apple-touch-icon" href="/images/icon-192.png">
+  <link rel="apple-touch-icon" href="/images/icon-192.png?v=5">
   <script>
     // Restore saved theme preference for dashboard pages
     (function(){
@@ -265,7 +265,7 @@ function getSidebar(activePage, user, teamPermissions) {
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
         <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=4" alt="Splicora" style="height:32px;"></a>
-        <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png" alt="S" style="height:32px;border-radius:6px;"></a>
+        <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png?v=5" alt="S" style="height:32px;border-radius:6px;"></a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
       <nav class="sidebar-nav">

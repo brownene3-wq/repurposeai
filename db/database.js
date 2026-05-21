@@ -331,6 +331,10 @@ const initDatabase = async () => {
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS published_at TIMESTAMP');
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS publish_error TEXT DEFAULT \'\'');
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS publish_attempts INTEGER DEFAULT 0');
+      // Phase 2b — link calendar entry to a row in connected_accounts so
+      // schedulePublisher can publish via the new unified system instead of
+      // the legacy per-platform columns on users.
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS connection_id UUID');
     } catch (migErr) {
       console.log('Calendar migration (may already exist):', migErr.message);
     }
@@ -1034,13 +1038,13 @@ const calendarOps = {
   async create(data) {
     const id = uuidv4();
     const result = await pool.query(`
-      INSERT INTO calendar_entries (id, user_id, title, platform, scheduled_date, scheduled_time, status, content_text, analysis_id, moment_index, notes, color, reminder_email, reminder_minutes, reminder_sent, auto_publish, clip_filename)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, FALSE, $15, $16)
+      INSERT INTO calendar_entries (id, user_id, title, platform, scheduled_date, scheduled_time, status, content_text, analysis_id, moment_index, notes, color, reminder_email, reminder_minutes, reminder_sent, auto_publish, clip_filename, connection_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, FALSE, $15, $16, $17)
       RETURNING *
     `, [id, data.userId, data.title, data.platform || 'tiktok', data.scheduledDate, data.scheduledTime || '12:00',
         data.status || 'planned', data.contentText || '', data.analysisId || null, data.momentIndex ?? null,
         data.notes || '', data.color || '#6c5ce7', data.reminderEmail || '', data.reminderMinutes || 0,
-        data.autoPublish === true, data.clipFilename || '']);
+        data.autoPublish === true, data.clipFilename || '', data.connectionId || null]);
     return result.rows[0];
   },
   async update(id, userId, data) {
@@ -1056,13 +1060,16 @@ const calendarOps = {
         color = COALESCE($10, color),
         reminder_email = $11,
         reminder_minutes = $12,
+        connection_id = $13,
+        auto_publish = $14,
         reminder_sent = FALSE,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND user_id = $2
       RETURNING *
     `, [id, userId, data.title, data.platform, data.scheduledDate, data.scheduledTime,
         data.status, data.contentText, data.notes, data.color,
-        data.reminderEmail || '', data.reminderMinutes || 0]);
+        data.reminderEmail || '', data.reminderMinutes || 0,
+        data.connectionId || null, data.autoPublish === true]);
     return result.rows[0];
   },
   async getPendingReminders() {

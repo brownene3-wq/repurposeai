@@ -2830,6 +2830,10 @@ router.get('/', requireAuth, async (req, res) => {
             <button class="btn-secondary" style="width: 100%;" id="downloadBtn" onclick="downloadVideo()" disabled>
               Download Video
             </button>
+            <!-- Phase 2f — Publish to a connected social account via shared modal -->
+            <button class="btn-secondary" style="width: 100%; margin-top: 0.5rem; background:linear-gradient(135deg,#6C3AED,#EC4899); color:#fff; border:none;" id="acPublishBtn" onclick="openAcPublishModal()" disabled>
+              ✈️ Publish to&hellip;
+            </button>
           </div>
       </div>
     </main>
@@ -3577,6 +3581,25 @@ router.get('/', requireAuth, async (req, res) => {
     bindPreviewListeners();
     setExportButtonState('A');
   </script>
+<script src="/public/js/splicora-publish.js"></script>
+<script>
+  function openAcPublishModal(){
+    if (typeof generatedVideoPath === 'undefined' || !generatedVideoPath) {
+      if (typeof showToast === 'function') showToast('Click Apply to render captions first.');
+      return;
+    }
+    var filename = generatedVideoPath.split('/').pop().split('?')[0];
+    Splicora.openPublish({
+      endpoint: '/ai-captions/api/publish-output',
+      title: 'Captioned video',
+      caption: '',
+      subtitle: 'Source: ' + filename,
+      platforms: ['tiktok','instagram','youtube','facebook','twitter','linkedin','pinterest'],
+      passthrough: { filename: filename }
+    });
+  }
+  try { window.openAcPublishModal = openAcPublishModal; } catch(_) {}
+</script>
 </body>
 </html>`;
 
@@ -3740,6 +3763,65 @@ router.post('/apply', requireAuth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+
+// Phase 2f - POST /ai-captions/api/publish-output
+router.post('/api/publish-output', requireAuth, async (req, res) => {
+  try {
+    const { filename, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    if (!filename) return res.status(400).json({ success: false, error: 'filename is required' });
+    if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
+
+    const safe = path.basename(String(filename));
+
+    const { getConnectionById, publishToConnection } = require('../utils/connections');
+    const acct = await getConnectionById(req.user.id, connectionId);
+    if (!acct) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+    if (scheduledAt) {
+      const when = new Date(scheduledAt);
+      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+        const { calendarOps } = require('../db/database');
+        const dateStr = when.toISOString().slice(0, 10);
+        const timeStr = String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0');
+        const entry = await calendarOps.create({
+          userId: req.user.id,
+          title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+          platform: acct.platform,
+          scheduledDate: dateStr,
+          scheduledTime: timeStr,
+          contentText: caption || description || '',
+          analysisId: null, momentIndex: null,
+          notes: '', color: '#6c5ce7',
+          autoPublish: true,
+          clipFilename: safe,
+          connectionId: acct.id
+        });
+        return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
+      }
+    }
+
+    // Post-now requires the file actually exist on disk. Schedule path
+    // above does not (Railway /tmp is ephemeral — schedulePublisher will
+    // record a clear publish_error if the file's missing when the cron fires).
+    const mediaPath = path.join(outputDir, safe);
+    if (!fs.existsSync(mediaPath)) {
+      return res.status(404).json({ success: false, error: 'Captioned video not found on server. The server may have restarted since you applied captions. Re-Apply and try again.' });
+    }
+
+    const result = await publishToConnection(req.user.id, connectionId, {
+      title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+      description: description || caption || '',
+      caption: caption || description || '',
+      mediaPath
+    });
+    if (!result.success) return res.status(400).json(result);
+    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+  } catch (err) {
+    console.error('[POST /ai-captions/api/publish-output]', err.message);
+    res.status(500).json({ success: false, error: err.message || 'Publish failed' });
   }
 });
 

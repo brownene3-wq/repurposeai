@@ -22,7 +22,9 @@ const PLATFORM_ENV = {
   // Google Drive's route falls back to YOUTUBE_CLIENT_ID/SECRET if its
   // own pair isn't set, so YouTube credentials alone are enough to enable it.
   googledrive: ['YOUTUBE_CLIENT_ID','YOUTUBE_CLIENT_SECRET'],
-  dropbox:     ['DROPBOX_CLIENT_ID','DROPBOX_CLIENT_SECRET'],
+  // Dropbox's developer portal calls these 'App key' and 'App secret',
+  // so either *_CLIENT_* or *_APP_* naming on Railway should count.
+  dropbox:     ['DROPBOX_CLIENT_ID|DROPBOX_APP_KEY','DROPBOX_CLIENT_SECRET|DROPBOX_APP_SECRET'],
   twitch:      ['TWITCH_CLIENT_ID','TWITCH_CLIENT_SECRET'],
   zoom:        ['ZOOM_CLIENT_ID','ZOOM_CLIENT_SECRET'],
   webex:       ['WEBEX_CLIENT_ID','WEBEX_CLIENT_SECRET'],
@@ -36,7 +38,11 @@ function platformIsConfigured(id) {
   const vars = PLATFORM_ENV[id];
   if (!vars) return false;
   if (vars.length === 0) return true;
-  return vars.every(v => !!process.env[v]);
+  // Each entry can be a single env var name OR a pipe-separated list of
+  // acceptable aliases (e.g. 'DROPBOX_CLIENT_ID|DROPBOX_APP_KEY'). The
+  // platform is considered configured if every entry has AT LEAST ONE
+  // of its alternatives set.
+  return vars.every(v => v.split('|').some(name => !!process.env[name]));
 }
 
 const PLATFORMS = [

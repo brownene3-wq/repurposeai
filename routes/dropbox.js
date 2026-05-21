@@ -4,8 +4,8 @@ const https = require('https');
 const { requireAuth } = require('../middleware/auth');
 const { getDb } = require('../db/database');
 
-const DROPBOX_CLIENT_ID = process.env.DROPBOX_CLIENT_ID || '';
-const DROPBOX_CLIENT_SECRET = process.env.DROPBOX_CLIENT_SECRET || '';
+const DROPBOX_CLIENT_ID = process.env.DROPBOX_CLIENT_ID || process.env.DROPBOX_APP_KEY || '';
+const DROPBOX_CLIENT_SECRET = process.env.DROPBOX_CLIENT_SECRET || process.env.DROPBOX_APP_SECRET || '';
 const BASE_URL = process.env.BASE_URL || 'https://splicora.ai';
 
 function httpsPost(url, data, headers = {}) {

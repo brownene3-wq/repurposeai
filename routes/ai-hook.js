@@ -507,6 +507,7 @@ ${pageStyles}
         </div>
         <div class="preview-actions">
           <button type="button" class="btn-apply" id="applyBtn" onclick="downloadHookAssets()">⬇ Download Hook Assets</button>
+          <button type="button" class="btn-apply" onclick="openAhPublishModal()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;margin-left:10px;">✈️ Publish to…</button>
         </div>
       </div>
 
@@ -941,6 +942,23 @@ ${pageStyles}
           urlInput.placeholder = placeholders[idx];
         }, 2500);
       })();
+</script>
+<script src="/public/js/splicora-publish.js"></script>
+<script>
+  // Phase 2f — wire the AI Hooks page to the shared publish modal.
+  function openAhPublishModal(){
+    var text = (document.getElementById('hookPreviewText') && document.getElementById('hookPreviewText').textContent || '').trim();
+    if (!text) { if (typeof showToast === 'function') showToast('Generate a hook first.'); return; }
+    Splicora.openPublish({
+      endpoint: '/ai-hook/api/publish-hook',
+      title: text.split('\n')[0].slice(0, 80),
+      caption: text,
+      subtitle: 'Text-only post via Twitter / LinkedIn / Facebook',
+      platforms: ['twitter','linkedin','facebook'],
+      passthrough: { text: text }
+    });
+  }
+  try { window.openAhPublishModal = openAhPublishModal; } catch(_) {}
 </script>
 </body>
 </html>`;
@@ -1931,5 +1949,57 @@ function runFFmpeg(args) {
     ffmpeg.on('error', reject);
   });
 }
+
+
+// Phase 2f - POST /ai-hook/api/publish-hook (text-only publish via the
+// unified publishToConnection helper, routing to Twitter / LinkedIn /
+// Facebook text-only branches).
+router.post('/api/publish-hook', requireAuth, async (req, res) => {
+  try {
+    const { connectionId, text, title, caption, scheduledAt } = req.body || {};
+    if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
+    const body = (text || caption || '').trim();
+    if (!body) return res.status(400).json({ success: false, error: 'Hook text is empty' });
+
+    const { getConnectionById, publishToConnection } = require('../utils/connections');
+    const acct = await getConnectionById(req.user.id, connectionId);
+    if (!acct) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+    if (scheduledAt) {
+      const when = new Date(scheduledAt);
+      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+        const { calendarOps } = require('../db/database');
+        const dateStr = when.toISOString().slice(0, 10);
+        const timeStr = String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0');
+        const entry = await calendarOps.create({
+          userId: req.user.id,
+          title: title || body.split('\n')[0].slice(0, 100),
+          platform: acct.platform,
+          scheduledDate: dateStr,
+          scheduledTime: timeStr,
+          contentText: body,
+          analysisId: null, momentIndex: null,
+          notes: '', color: '#6c5ce7',
+          autoPublish: true,
+          clipFilename: '',
+          connectionId: acct.id
+        });
+        return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
+      }
+    }
+
+    const result = await publishToConnection(req.user.id, connectionId, {
+      title: title || body.split('\n')[0].slice(0, 100),
+      description: body,
+      caption: body
+      // No mediaPath -> text-only branch.
+    });
+    if (!result.success) return res.status(400).json(result);
+    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+  } catch (err) {
+    console.error('[POST /ai-hook/api/publish-hook]', err.message);
+    res.status(500).json({ success: false, error: err.message || 'Publish failed' });
+  }
+});
 
 module.exports = router;

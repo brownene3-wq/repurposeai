@@ -2637,11 +2637,15 @@ router.get('/history', requireAuth, (req, res) => {
 
             if (data.outputs && data.outputs.length > 0) {
               data.outputs.forEach(function(output) {
-                html += '<div class="output-card">';
+                html += '<div class="output-card" data-platform="' + escapeHtml(output.platform || '') + '">';
                 html += '<div class="output-platform">' + escapeHtml(output.platform) + '</div>';
                 html += '<div class="output-text">' + escapeHtml(output.generated_content || '') + '</div>';
                 html += '<div class="output-actions">';
                 html += '<button onclick="copyOutput(this)">📋 Copy</button>';
+                // Phase 2d - Publish button. Reuses /api/connections and routes
+                // to /repurpose/api/publish-output which dispatches via the
+                // unified publishToConnection helper as a text-only post.
+                html += '<button data-content-id="' + escapeHtml(String(contentId)) + '" data-output-id="' + escapeHtml(String(output.id == null ? '' : output.id)) + '" onclick="openRpPublishModal(this)" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;">✈️ Publish to…</button>';
                 html += '</div>';
                 html += '</div>';
               });
@@ -2704,10 +2708,214 @@ router.get('/history', requireAuth, (req, res) => {
         });
 
         loadHistory();
+
+        // ── Phase 2d — Repurpose Publish Modal ────────────────────────
+        // Opened from each output-card's "Publish to..." button. Lists the
+        // user's connected accounts filtered to text-capable platforms
+        // (Twitter/X, LinkedIn, Facebook today). Submit hits the new
+        // /repurpose/api/publish-output endpoint which dispatches via the
+        // unified publishToConnection helper as a text-only post.
+        function ensureRpPublishModal(){
+          if (document.getElementById('rpPublishModal')) return;
+          const div = document.createElement('div');
+          div.id = 'rpPublishModal';
+          div.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px;';
+          div.addEventListener('click', function(e){ if (e.target === div) closeRpPublishModal(); });
+          div.innerHTML = '\
+          <div style="background:#16112a;border:1px solid rgba(108,58,237,0.30);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif">\
+            <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">✈️ Publish Generated Post</h3>\
+            <div id="rpPublishSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
+            <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
+            <select id="rpPubAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;"><option value="">Loading…</option></select>\
+            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
+            <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
+            <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">\
+              <button id="rpPubTabNow" type="button" onclick="setRpPubMode(\\'now\\')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>\
+              <button id="rpPubTabLater" type="button" onclick="setRpPubMode(\\'later\\')" style="flex:1;background:transparent;color:#8e87b0;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>\
+            </div>\
+            <div id="rpPubLater" style="display:none;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label><input type="date" id="rpPubDate" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label><input type="time" id="rpPubTime" value="12:00" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div></div></div>\
+            <div id="rpPubStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>\
+            <div style="display:flex;justify-content:flex-end;gap:8px;"><button onclick="closeRpPublishModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#e2e0f0;padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button><button id="rpPubSubmit" onclick="submitRpPublish()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Publish</button></div>\
+          </div>';
+          document.body.appendChild(div);
+        }
+        var _rpPubMode = 'now';
+        var _rpPubCtx = { contentId: null, outputId: null, platform: null };
+        async function openRpPublishModal(btn){
+          var contentId = btn && btn.dataset ? btn.dataset.contentId : null;
+          var outputId = btn && btn.dataset && btn.dataset.outputId ? btn.dataset.outputId : null;
+          ensureRpPublishModal();
+          var card = btn && btn.closest && btn.closest('.output-card');
+          var platform = (card && card.dataset && card.dataset.platform || '').toLowerCase();
+          var text = (card && card.querySelector('.output-text') && card.querySelector('.output-text').textContent) || '';
+          _rpPubCtx = { contentId: contentId, outputId: outputId, platform: platform };
+          document.getElementById('rpPubText').value = text;
+          document.getElementById('rpPubSub').textContent = platform ? ('Source platform: ' + platform) : 'Pick a connected account.';
+          var d = new Date(); d.setMinutes(d.getMinutes() + 60);
+          document.getElementById('rpPubDate').value = d.toISOString().slice(0, 10);
+          document.getElementById('rpPubTime').value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+          document.getElementById('rpPubStatus').style.display = 'none';
+          setRpPubMode('now');
+          document.getElementById('rpPublishModal').style.display = 'flex';
+
+          var sel = document.getElementById('rpPubAccount');
+          var noAcct = document.getElementById('rpPubNoAcct');
+          sel.innerHTML = '<option value="">Loading…</option>';
+          try {
+            var r = await fetch('/api/connections', { credentials: 'same-origin' });
+            var j = await r.json();
+            var accounts = (j && j.accounts) || [];
+            // Text-only-capable platforms today.
+            var supported = ['twitter','linkedin','facebook'];
+            accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+            // Prefer matching the source platform first.
+            if (platform) {
+              accounts.sort(function(a, b){
+                if (a.platform === platform && b.platform !== platform) return -1;
+                if (b.platform === platform && a.platform !== platform) return 1;
+                return 0;
+              });
+            }
+            if (accounts.length === 0) {
+              sel.style.display = 'none';
+              noAcct.style.display = 'block';
+            } else {
+              sel.style.display = '';
+              noAcct.style.display = 'none';
+              sel.innerHTML = accounts.map(function(c){
+                return '<option value="' + c.id + '">' + (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' — ' + (c.accountName || c.platformUsername || c.id) + '</option>';
+              }).join('');
+            }
+          } catch(e){
+            sel.innerHTML = '<option value="">Failed to load accounts</option>';
+          }
+        }
+        function closeRpPublishModal(){ var m = document.getElementById('rpPublishModal'); if (m) m.style.display = 'none'; }
+        function setRpPubMode(mode){
+          _rpPubMode = mode;
+          var nowBtn = document.getElementById('rpPubTabNow');
+          var laterBtn = document.getElementById('rpPubTabLater');
+          var laterFields = document.getElementById('rpPubLater');
+          var submitBtn = document.getElementById('rpPubSubmit');
+          if (mode === 'now') {
+            nowBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; nowBtn.style.color = '#fff';
+            laterBtn.style.background = 'transparent'; laterBtn.style.color = '#8e87b0';
+            laterFields.style.display = 'none';
+            submitBtn.textContent = 'Publish now';
+          } else {
+            laterBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; laterBtn.style.color = '#fff';
+            nowBtn.style.background = 'transparent'; nowBtn.style.color = '#8e87b0';
+            laterFields.style.display = 'block';
+            submitBtn.textContent = 'Schedule';
+          }
+        }
+        async function submitRpPublish(){
+          var btn = document.getElementById('rpPubSubmit');
+          var statusEl = document.getElementById('rpPubStatus');
+          var connectionId = document.getElementById('rpPubAccount').value;
+          if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
+          var text = document.getElementById('rpPubText').value.trim();
+          if (!text) { statusEl.style.display = 'block'; statusEl.textContent = 'Post body is empty.'; return; }
+          var payload = {
+            contentId: _rpPubCtx.contentId,
+            outputId: _rpPubCtx.outputId,
+            connectionId: connectionId,
+            text: text
+          };
+          if (_rpPubMode === 'later') {
+            var d = document.getElementById('rpPubDate').value;
+            var t = document.getElementById('rpPubTime').value || '12:00';
+            if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
+            payload.scheduledAt = d + 'T' + t + ':00';
+          }
+          btn.disabled = true; var orig = btn.textContent;
+          btn.textContent = _rpPubMode === 'now' ? 'Publishing…' : 'Scheduling…';
+          statusEl.style.display = 'block';
+          statusEl.textContent = _rpPubMode === 'now' ? 'Posting…' : 'Saving the scheduled post…';
+          try {
+            var resp = await fetch('/repurpose/api/publish-output', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            var data = await resp.json();
+            if (!resp.ok || !data.success) throw new Error(data.error || 'Failed');
+            statusEl.textContent = _rpPubMode === 'now'
+              ? ('Posted to ' + (data.platform || 'platform'))
+              : ('Scheduled for ' + (data.scheduledFor || payload.scheduledAt));
+            setTimeout(closeRpPublishModal, 1500);
+          } catch(e){
+            statusEl.textContent = 'Error: ' + e.message;
+          } finally {
+            btn.disabled = false; btn.textContent = orig;
+          }
+        }
       </script>
     </body>
     </html>
   `);
+});
+
+// Phase 2d - POST /repurpose/api/publish-output
+// Unified Repurpose -> Connected Account publish bridge for text-only
+// platform outputs. Body: { contentId, outputId, connectionId, text, scheduledAt? }
+// scheduledAt in the future -> creates a calendar_entries row with
+//   auto_publish=true + connection_id; schedulePublisher picks it up.
+// Otherwise -> publishToConnection(userId, connectionId, { description, ... })
+//   with no mediaPath, so the per-platform publisher takes its text-only branch
+//   (Twitter already text-only; LinkedIn + Facebook gained text-only short-
+//   circuits in workflowEngine.js for this phase).
+router.post('/api/publish-output', requireAuth, async (req, res) => {
+  try {
+    const { contentId, outputId, connectionId, text, scheduledAt } = req.body || {};
+    if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
+    if (!text || !text.trim()) return res.status(400).json({ success: false, error: 'Post body is empty' });
+
+    const { getConnectionById, publishToConnection } = require('../utils/connections');
+    const acct = await getConnectionById(req.user.id, connectionId);
+    if (!acct) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+    // Schedule path - reuse calendar_entries + schedulePublisher cron.
+    if (scheduledAt) {
+      const when = new Date(scheduledAt);
+      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+        const { calendarOps } = require('../db/database');
+        const dateStr = when.toISOString().slice(0, 10);
+        const timeStr = String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0');
+        const entry = await calendarOps.create({
+          userId: req.user.id,
+          title: (text || '').split('\n')[0].slice(0, 100) || 'Repurpose post',
+          platform: acct.platform,
+          scheduledDate: dateStr,
+          scheduledTime: timeStr,
+          contentText: text,
+          analysisId: null, momentIndex: null,
+          notes: '', color: '#6c5ce7',
+          autoPublish: true,
+          // Text-only post -> no clip required. schedulePublisher's new
+          // connection_id branch publishes via publishToConnection which
+          // routes to text-only paths when mediaPath is absent.
+          clipFilename: '',
+          connectionId: acct.id
+        });
+        return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
+      }
+    }
+
+    // Post-now path - text-only publish via the unified dispatcher.
+    const result = await publishToConnection(req.user.id, connectionId, {
+      title: (text || '').split('\n')[0].slice(0, 100),
+      description: text,
+      caption: text
+      // No mediaPath -> platform publishers take their text-only branch.
+    });
+    if (!result.success) return res.status(400).json(result);
+    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+  } catch (err) {
+    console.error('[POST /repurpose/api/publish-output]', err.message);
+    res.status(500).json({ success: false, error: err.message || 'Publish failed' });
+  }
 });
 
 // GET - API endpoint for history data

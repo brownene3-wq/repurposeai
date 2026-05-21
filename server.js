@@ -118,6 +118,7 @@ const scheduledRouter = require('./routes/scheduled');
 const brandVoiceRouter = require('./routes/brand-voice');
 const calendarRouter = require('./routes/calendar');
 const notificationsRouter = require('./routes/notifications');
+const connectionsRouter = require('./routes/connections');
 const chatbotRouter = require('./routes/chatbot');
 const shortsRouter = require('./routes/shorts');
 const staticPagesRouter = require('./routes/static-pages');
@@ -267,6 +268,7 @@ app.use('/shorts', shortsRouter);
 app.use('/', staticPagesRouter);
 app.use('/settings', settingsRouter);
 app.use('/feedback', feedbackRouter);
+app.use('/api/connections', connectionsRouter);
 app.use('/distribute', distributeRouter);
 app.use('/admin', adminRouter);
 app.use('/admin', pageEditorRouter);
@@ -324,13 +326,13 @@ app.get('/manifest.json', (req, res) => {
     theme_color: '#6C3AED',
     orientation: 'portrait-primary',
     icons: [
-      { src: '/images/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-      { src: '/images/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      { src: '/images/icon-192.png?v=5', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/images/icon-512.png?v=5', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
     ],
     categories: ['productivity', 'social'],
     shortcuts: [
-      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] },
-      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] }
+      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/images/icon-192.png?v=5', sizes: '192x192' }] },
+      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/images/icon-192.png?v=5', sizes: '192x192' }] }
     ]
   });
 });

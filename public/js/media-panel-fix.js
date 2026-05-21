@@ -3441,21 +3441,118 @@
   }
 
   // ── Clip Tools ──
+  // Task #109 — Trim popover with twin sliders. Replaces the legacy
+  // prompt('Trim in/out in seconds (e.g. 2,10)') which made users type
+  // raw seconds. Now they drag two range handles on the source span,
+  // see IN and OUT values live, and hit Apply (or Reset). Same visual
+  // language as the Slip / Resize popovers.
   function clipActionTrim(){
-    withActiveClip(null, function(clip){
-      var curIn  = parseFloat(clip.dataset.trimIn)  || 0;
-      var curOut = parseFloat(clip.dataset.trimOut) || parseFloat(clip.dataset.duration) || 0;
-      var input = prompt('Trim in/out in seconds (e.g. 2,10 — leave blank to reset)',
-        curIn + ',' + curOut);
-      if (input === null) return;
-      if (!input.trim()){ delete clip.dataset.trimIn; delete clip.dataset.trimOut; showToast('Trim reset'); return; }
-      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
-      if (!isFinite(parts[0]) || !isFinite(parts[1]) || parts[1] <= parts[0]){
-        showToast('Invalid trim values'); return;
+    var existing = document.getElementById('trimPopover');
+    if (existing instanceof Element && existing.isConnected){ existing.remove(); return; }
+    if (existing && typeof existing.remove === 'function'){ try { existing.remove(); } catch(_){} }
+    if (typeof closeOtherPopovers === 'function') closeOtherPopovers('trimPopover');
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+    var duration = parseFloat(clip.dataset.duration) || 0;
+    var origIn   = parseFloat(clip.dataset.trimIn)  || 0;
+    var origOut  = parseFloat(clip.dataset.trimOut) || duration;
+    var mediaUrl = clip.dataset.mediaUrl || '';
+    var clipType = clip.dataset.clipType || 'vid';
+
+    function pickMaxOut(){
+      var hinted = parseFloat(clip.dataset.srcDuration)
+                || parseFloat(clip.dataset.sourceDuration);
+      if (hinted && hinted > duration + 0.01) return Promise.resolve(hinted);
+      if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+        return Promise.resolve(Math.max(duration, hinted || 0));
       }
-      clip.dataset.trimIn  = String(parts[0]);
-      clip.dataset.trimOut = String(parts[1]);
-      showToast('Trim ' + parts[0] + 's \u2192 ' + parts[1] + 's');
+      return new Promise(function(resolve){
+        var probe = document.createElement(clipType === 'aud' ? 'audio' : 'video');
+        probe.preload = 'metadata';
+        probe.muted = true;
+        probe.src = mediaUrl;
+        var done = false;
+        var finish = function(d){
+          if (done) return; done = true;
+          resolve(d && isFinite(d) && d > 0 ? d : duration);
+        };
+        probe.addEventListener('loadedmetadata', function(){ finish(probe.duration); }, { once: true });
+        probe.addEventListener('error',          function(){ finish(0); }, { once: true });
+        setTimeout(function(){ finish(0); }, 4000);
+      });
+    }
+
+    pickMaxOut().then(function(maxOut){
+      maxOut = Math.max(maxOut, origOut, duration);
+      if (origOut > maxOut) origOut = maxOut;
+
+      var pop = document.createElement('div');
+      pop.id = 'trimPopover';
+      pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
+        'border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:300px;' +
+        'box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+      function row(lbl, id, min, max, val){
+        return ''
+          + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+          +   '<span style="font-size:10px;color:#8886a0;min-width:46px">' + lbl + '</span>'
+          +   '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="0.01" value="' + val + '" style="flex:1;accent-color:#a78bfa"/>'
+          +   '<span id="' + id + 'Val" style="font-size:11px;font-weight:600;color:#fde047;min-width:48px;text-align:right">' + val.toFixed(2) + 's</span>'
+          + '</div>';
+      }
+      pop.innerHTML =
+        '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:6px">TRIM</div>' +
+        '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Drag the handles to set the in / out points of this clip.</div>' +
+        row('In',  'trimIn',  0, maxOut, origIn) +
+        row('Out', 'trimOut', 0, maxOut, origOut) +
+        '<div id="trimSpan" style="font-size:10px;color:#8886a0;text-align:center;margin-bottom:10px">Length: <b style="color:#a78bfa">' + (origOut - origIn).toFixed(2) + 's</b></div>' +
+        '<div style="display:flex;gap:6px">' +
+          '<button id="trimReset" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Reset</button>' +
+          '<button id="trimCancel" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Cancel</button>' +
+          '<button id="trimApply" style="flex:1;padding:6px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Apply</button>' +
+        '</div>';
+      document.body.appendChild(pop);
+
+      var inR  = pop.querySelector('#trimIn');
+      var outR = pop.querySelector('#trimOut');
+      var inV  = pop.querySelector('#trimInVal');
+      var outV = pop.querySelector('#trimOutVal');
+      var spanEl = pop.querySelector('#trimSpan');
+      function refresh(){
+        var i = parseFloat(inR.value);
+        var o = parseFloat(outR.value);
+        inV.textContent  = i.toFixed(2) + 's';
+        outV.textContent = o.toFixed(2) + 's';
+        spanEl.innerHTML = 'Length: <b style="color:' + (o > i ? '#a78bfa' : '#fb7185') + '">' + Math.max(0, o - i).toFixed(2) + 's</b>';
+      }
+      inR.addEventListener('input', function(){
+        if (parseFloat(inR.value) >= parseFloat(outR.value)) outR.value = (parseFloat(inR.value) + 0.05).toFixed(2);
+        refresh();
+      });
+      outR.addEventListener('input', function(){
+        if (parseFloat(outR.value) <= parseFloat(inR.value)) inR.value = (parseFloat(outR.value) - 0.05).toFixed(2);
+        refresh();
+      });
+      pop.querySelector('#trimReset').addEventListener('click', function(){
+        delete clip.dataset.trimIn;
+        delete clip.dataset.trimOut;
+        pop.remove();
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        showToast('Trim reset');
+      });
+      pop.querySelector('#trimCancel').addEventListener('click', function(){ pop.remove(); });
+      pop.querySelector('#trimApply').addEventListener('click', function(){
+        var i = parseFloat(inR.value);
+        var o = parseFloat(outR.value);
+        if (!isFinite(i) || !isFinite(o) || o <= i){ showToast('Invalid trim range'); return; }
+        clip.dataset.trimIn  = i.toFixed(3);
+        clip.dataset.trimOut = o.toFixed(3);
+        pop.remove();
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        showToast('Trim ' + i.toFixed(2) + 's \u2192 ' + o.toFixed(2) + 's');
+      });
     });
   }
   // Visual Slip Edit: shift the media WITHIN the clip's duration
@@ -3482,21 +3579,53 @@
     if (!clip){ showToast('Select a clip first'); return; }
 
     var duration = parseFloat(clip.dataset.duration) || 0;   // clip's on-timeline length
-    var srcDur   = parseFloat(clip.dataset.srcDuration)
-                || parseFloat(clip.dataset.sourceDuration)
-                || duration;
     var origIn   = parseFloat(clip.dataset.trimIn)  || 0;
     var origOut  = parseFloat(clip.dataset.trimOut) || duration;
     var span     = origOut - origIn;                         // stays constant across slips
+    var mediaUrl = clip.dataset.mediaUrl || '';
+    var clipType = clip.dataset.clipType || 'vid';
 
-    // Slip range: how far we can push trimIn without overflowing source
-    var minIn = 0;
-    var maxIn = Math.max(0, srcDur - span);
-    if (maxIn <= 0){
-      showToast('Source media is too short to slip');
-      return;
+    // Task #110 — Don't trust dataset.srcDuration; it's missing for most
+    // clips and the old fallback to `duration` made every slip attempt
+    // fail with "Source media too short to slip". Sniff the real source
+    // length from a hidden <video> / <audio> element when needed.
+    function pickSrcDur(){
+      var hinted = parseFloat(clip.dataset.srcDuration)
+                || parseFloat(clip.dataset.sourceDuration);
+      if (hinted && hinted > duration + 0.01) return Promise.resolve(hinted);
+      if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+        // Blob URLs can be probed too, but a fresh blob fetch may stall
+        // the popover. Fall back to the clip's own duration.
+        return Promise.resolve(Math.max(duration, hinted || 0));
+      }
+      return new Promise(function(resolve){
+        var probe = document.createElement(clipType === 'aud' ? 'audio' : 'video');
+        probe.preload = 'metadata';
+        probe.muted   = true;
+        probe.src     = mediaUrl;
+        var done = false;
+        var finish = function(d){
+          if (done) return; done = true;
+          resolve(d && isFinite(d) && d > 0 ? d : duration);
+        };
+        probe.addEventListener('loadedmetadata', function(){ finish(probe.duration); }, { once: true });
+        probe.addEventListener('error',          function(){ finish(0); }, { once: true });
+        setTimeout(function(){ finish(0); }, 4000);
+      });
     }
 
+    pickSrcDur().then(function(srcDur){
+      var minIn = 0;
+      var maxIn = Math.max(0, srcDur - span);
+      if (maxIn <= 0.01){
+        showToast('Source has no headroom past the current slip window — already at full extent');
+        return;
+      }
+      _buildSlipPopover(clip, srcDur, origIn, origOut, span, minIn, maxIn);
+    });
+  }
+
+  function _buildSlipPopover(clip, srcDur, origIn, origOut, span, minIn, maxIn){
     var pop = document.createElement('div');
     pop.id = 'slipPopover';
     pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
@@ -4001,6 +4130,157 @@
     });
   }
 
+  // Task #113 — Project aspect is a true project setting (like CapCut,
+  // Premiere, etc.) — persisted to localStorage, restored at boot,
+  // shown in the topbar badge, and threaded through the export
+  // pipeline. Smart Resize's Apply writes here; everything else reads.
+  var PROJECT_ASPECT_LS_KEY = 'splicora_project_aspect_v1';
+
+  function readProjectAspect(){
+    try {
+      var raw = localStorage.getItem(PROJECT_ASPECT_LS_KEY);
+      if (!raw) return null;
+      var p = JSON.parse(raw);
+      if (!p || !p.ratio) return null;
+      return p;
+    } catch (e) { return null; }
+  }
+  function writeProjectAspect(preset, faceTrack){
+    try {
+      localStorage.setItem(PROJECT_ASPECT_LS_KEY, JSON.stringify({
+        ratio:     preset.ratio,
+        label:     preset.label,
+        w:         preset.w,
+        h:         preset.h,
+        cssAspect: preset.cssAspect,
+        faceTrack: !!faceTrack,
+        savedAt:   Date.now()
+      }));
+    } catch (e) {}
+  }
+  function updateProjectAspectBadge(preset){
+    var el = document.getElementById('projectAspectLabel');
+    if (el && preset && preset.ratio) el.textContent = preset.ratio;
+  }
+  // Re-fire the Apply pathway from a persisted snapshot. Sets the
+  // window globals, reshapes the preview canvas, updates the badge,
+  // and tags every V1 clip with the project's target dims.
+  function applyProjectAspect(preset, opts){
+    opts = opts || {};
+    if (!preset || !preset.ratio) return;
+    window.__exportAspect    = preset.ratio;
+    window.__exportWidth     = preset.w;
+    window.__exportHeight    = preset.h;
+    window.__exportFaceTrack = !!opts.faceTrack;
+    try { applyPreviewAspectRatio(preset); } catch(_){}
+    updateProjectAspectBadge(preset);
+    try {
+      document.querySelectorAll('.mt-clip-video').forEach(function(c){
+        c.dataset.targetW      = String(preset.w);
+        c.dataset.targetH      = String(preset.h);
+        c.dataset.targetAspect = preset.ratio;
+      });
+    } catch(_){}
+  }
+  try {
+    window.applyProjectAspect    = applyProjectAspect;
+    window.readProjectAspect     = readProjectAspect;
+    window.writeProjectAspect    = writeProjectAspect;
+    window.updateProjectAspectBadge = updateProjectAspectBadge;
+  } catch(_){}
+
+  // Task #112 — Smart Resize preset table. Shared between the popover
+  // and the apply path so both reference the same data. {w, h} is the
+  // ENCODE-time pixel dim (used by the export pipeline); {ratio} is the
+  // CSS aspect-ratio that reshapes the live preview canvas.
+  var SR_PRESETS = [
+    { ratio:'16:9', label:'16:9 YouTube',  w:1280, h:720,  cssAspect:'16 / 9'  },
+    { ratio:'9:16', label:'9:16 Reels',    w:720,  h:1280, cssAspect:'9 / 16'  },
+    { ratio:'1:1',  label:'1:1 Square',    w:1080, h:1080, cssAspect:'1 / 1'   },
+    { ratio:'4:5',  label:'4:5 Portrait',  w:1080, h:1350, cssAspect:'4 / 5'   }
+  ];
+
+  // Reshape the preview player + its overlays to match a target aspect
+  // ratio. We DON'T touch #videoPreviewArea directly because that
+  // element is a flex slot with min/max-height baked into the
+  // stylesheet. Instead we lazily inject a wrapper (#srAspectFrame)
+  // and move all preview children into it — that wrapper carries the
+  // aspect-ratio CSS, max-width/max-height: 100%, and margin: auto so
+  // it always fits inside the slot, centered. The video element keeps
+  // object-fit:contain so the source pillarboxes / letterboxes inside
+  // the new canvas (same content, just a different frame). Annotation
+  // + crop overlays stay anchored to the wrapper because they're
+  // position:absolute inset:0 inside it.
+  function applyPreviewAspectRatio(preset){
+    var area = document.getElementById('videoPreviewArea');
+    if (!area) return;
+    // Task #114 — DON'T inline-set display:flex here. The stylesheet
+    // already does that via .video-preview-area.has-video (added once
+    // a video actually loads). Forcing display:flex inline made the
+    // empty program monitor appear at boot, which is wrong — the
+    // preview slot must stay hidden until media is present.
+    // The .has-video class also carries align-items + justify-content
+    // so the wrapper centers when its aspect leaves slack space.
+
+    var wrap = document.getElementById('srAspectFrame');
+    if (!wrap){
+      wrap = document.createElement('div');
+      wrap.id = 'srAspectFrame';
+      // Move every existing child of the preview area into the wrapper.
+      // First call only — subsequent calls just retune the aspect.
+      while (area.firstChild) wrap.appendChild(area.firstChild);
+      area.appendChild(wrap);
+    }
+    wrap.style.position     = 'relative';
+    wrap.style.aspectRatio  = preset.cssAspect;
+    wrap.style.maxWidth     = '100%';
+    wrap.style.maxHeight    = '100%';
+    wrap.style.width        = 'auto';
+    wrap.style.height       = 'auto';
+    // Browsers compute the constrained box: when aspect-ratio would
+    // make width or height overflow, the other axis shrinks to fit.
+    // The two-line trick below makes both axes responsive so neither
+    // axis blocks the other from triggering the clamp.
+    if (preset.cssAspect.indexOf('/') !== -1){
+      var parts = preset.cssAspect.split('/').map(function(s){ return parseFloat(s); });
+      if (parts.length === 2 && parts[0] && parts[1]){
+        wrap.style.width  = '100%';
+        wrap.style.height = '100%';
+        // Setting both encourages the browser to satisfy aspect-ratio
+        // via the smaller axis. Final visible size is whichever fits.
+      }
+    }
+
+    // Force the inner <video> + overlays to fill the wrapper. We can
+    // safely set width/height to 100% because the wrapper itself is
+    // already constrained to the target aspect.
+    var vid = wrap.querySelector('#videoPlayer, video.video-player');
+    if (vid){
+      vid.style.width  = '100%';
+      vid.style.height = '100%';
+      vid.style.objectFit = 'contain';
+    }
+    var anno = wrap.querySelector('#annotationWrapper');
+    if (anno){
+      anno.style.position = 'absolute';
+      anno.style.inset    = '0';
+    }
+    var crop = wrap.querySelector('#cropOverlay');
+    if (crop){
+      crop.style.position = 'absolute';
+      crop.style.inset    = '0';
+    }
+
+    // Re-paint any canvas-pixel code that listens for window.resize.
+    try { window.dispatchEvent(new Event('resize')); } catch(_){}
+
+    // The legacy letterbox mask is no longer useful when the preview
+    // itself IS the target aspect — clear it so we don't double-mask.
+    var mask = document.getElementById('srAspectMask');
+    if (mask) mask.remove();
+  }
+  try { window.applyPreviewAspectRatio = applyPreviewAspectRatio; } catch(_){}
+
   function clipActionSmartResize(){
     // Toggle off if already open — Element check guards against the
     // Chrome isolated-world ghost-DOM where getElementById can return
@@ -4016,60 +4296,114 @@
     // Close any competing right-anchored popovers so only one is visible
     closeOtherPopovers('srPopover');
 
-    var cur = window.__exportAspect || '16:9';
+    // ── Component state ─────────────────────────────────────────────
+    // Live state lives in two places:
+    //   selected  : which preset row is currently highlighted in the UI
+    //   faceTrack : whether the AI Face Track checkbox is on
+    // We seed both from the persisted window.__export* globals so a
+    // reopened popover remembers what the user picked last time. Apply
+    // writes back to those globals + reshapes the preview canvas.
+    var curRatio   = window.__exportAspect    || '16:9';
+    var curFaceTrk = !!window.__exportFaceTrack;
+    var selected   = SR_PRESETS.find(function(p){ return p.ratio === curRatio; }) || SR_PRESETS[0];
+
     var pop = document.createElement('div');
     pop.id = 'srPopover';
-    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:250px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:260px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
     pop.innerHTML =
       '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:8px">SMART RESIZE</div>' +
-      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Sets the output aspect for your export.</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Pick an output aspect, then hit Apply. The preview reshapes to match.</div>' +
       '<div id="srPresetRow" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>' +
       '<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#e2e0f0;cursor:pointer;padding:8px;background:rgba(124,58,237,.08);border-radius:6px">' +
-        '<input type="checkbox" id="srFaceTrack" style="accent-color:#a78bfa"/>' +
+        '<input type="checkbox" id="srFaceTrack"' + (curFaceTrk ? ' checked' : '') + ' style="accent-color:#a78bfa"/>' +
         '<span>\ud83c\udfaf AI Face Track <span style="color:#8886a0;font-size:9px">(centers on subject)</span></span>' +
       '</label>' +
       '<div style="display:flex;gap:6px;margin-top:10px">' +
-        '<button id="srClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '<button id="srClose" style="flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '<button id="srApply" style="flex:1;padding:7px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Apply</button>' +
       '</div>';
     document.body.appendChild(pop);
 
-    var presets = [
-      { ratio:'16:9', label:'16:9 YouTube',  w:1280, h:720  },
-      { ratio:'9:16', label:'9:16 Reels',    w:720,  h:1280 },
-      { ratio:'1:1',  label:'1:1 Square',    w:1080, h:1080 },
-      { ratio:'4:5',  label:'4:5 Portrait',  w:1080, h:1350 }
-    ];
     var row = pop.querySelector('#srPresetRow');
-    presets.forEach(function(p){
-      var b = document.createElement('button');
-      var on = (p.ratio === cur);
-      b.style.cssText = 'padding:8px 6px;background:' + (on ? 'rgba(139,92,246,.3)' : 'rgba(255,255,255,.04)') +
-        ';border:1px solid ' + (on ? '#a78bfa' : 'rgba(255,255,255,.1)') +
-        ';border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;text-align:left';
-      b.textContent = p.label;
-      b.addEventListener('click', function(){
-        window.__exportAspect = p.ratio;
-        window.__exportWidth  = p.w;
-        window.__exportHeight = p.h;
-        applySmartResizePreview(p.ratio);
-        var faceTrack = pop.querySelector('#srFaceTrack').checked;
-        if (faceTrack){
-          runFaceTrackCrop(p.ratio).then(function(msg){
-            showToast('Smart Resize ' + p.ratio + ' \u00b7 ' + msg);
-          }).catch(function(err){
-            showToast('Smart Resize ' + p.ratio + ' \u00b7 face track unavailable');
-          });
-        } else {
-          showToast('Smart Resize: ' + p.label);
-        }
-        // Redraw preset highlights
-        pop.remove();
-        clipActionSmartResize();
+    var faceTrackCb = pop.querySelector('#srFaceTrack');
+
+    function paintSelection(){
+      Array.prototype.forEach.call(row.children, function(b){
+        var on = (b.dataset.ratio === selected.ratio);
+        b.style.background  = on ? 'rgba(139,92,246,.3)' : 'rgba(255,255,255,.04)';
+        b.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
       });
+    }
+    SR_PRESETS.forEach(function(p){
+      var b = document.createElement('button');
+      b.dataset.ratio = p.ratio;
+      b.style.cssText = 'padding:8px 6px;background:rgba(255,255,255,.04);' +
+        'border:1px solid rgba(255,255,255,.1);' +
+        'border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;text-align:left;transition:all .15s';
+      b.textContent = p.label;
+      b.addEventListener('click', function(){ selected = p; paintSelection(); });
       row.appendChild(b);
     });
+    paintSelection();
 
     pop.querySelector('#srClose').addEventListener('click', function(){ pop.remove(); });
+
+    // ── Apply handler ──────────────────────────────────────────────
+    // 1) Persist selection to the window.__export* globals so the
+    //    export pipeline picks them up at render time.
+    // 2) Reshape the live preview canvas to match the selected aspect.
+    // 3) Tag every V1 clip with __targetW / __targetH so per-clip
+    //    export math can read the project's target dims.
+    // 4) If Face Track is on, kick off the async face crop. Errors
+    //    don't block the Apply — the user still gets the new aspect.
+    pop.querySelector('#srApply').addEventListener('click', function(){
+      var faceTrack = !!(faceTrackCb && faceTrackCb.checked);
+      // Task #113 — persist to localStorage so the project remembers
+      // its aspect across reloads and draft restores.
+      writeProjectAspect(selected, faceTrack);
+      // applyProjectAspect handles globals + preview reshape + V1 clip
+      // dataset tagging + badge update — single source of truth.
+      applyProjectAspect(selected, { faceTrack: faceTrack });
+
+      pop.remove();
+      if (faceTrack){
+        runFaceTrackCrop(selected.ratio).then(function(msg){
+          showToast('Project aspect ' + selected.ratio + ' \u00b7 ' + msg);
+        }).catch(function(){
+          showToast('Project aspect ' + selected.ratio + ' \u00b7 face track unavailable');
+        });
+      } else {
+        showToast('Project aspect: ' + selected.label);
+      }
+    });
+  }
+
+  // Task #113 — Click the topbar badge to reopen Smart Resize. Also
+  // restore the saved project aspect on first load so the editor
+  // boots into the right canvas shape. Both run after DOM ready so
+  // the preview area + badge are guaranteed to exist.
+  function wireProjectAspectChrome(){
+    var badge = document.getElementById('projectAspectBadge');
+    if (badge && !badge.dataset.v113Wired){
+      badge.dataset.v113Wired = '1';
+      badge.addEventListener('click', function(){
+        if (typeof clipActionSmartResize === 'function') clipActionSmartResize();
+      });
+    }
+    // Restore persisted aspect (project memory). If none saved, default
+    // to 16:9 so the badge text matches the default canvas shape.
+    var saved = readProjectAspect();
+    var preset = saved
+      ? (SR_PRESETS.find(function(p){ return p.ratio === saved.ratio; }) || SR_PRESETS[0])
+      : SR_PRESETS[0];
+    applyProjectAspect(preset, { faceTrack: saved ? !!saved.faceTrack : false });
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', wireProjectAspectChrome);
+  } else {
+    // DOM is already parsed (script may load late) — run on next tick
+    // to let any remaining boot code finish wiring elements first.
+    setTimeout(wireProjectAspectChrome, 0);
   }
 
   // Paint a letterbox/pillarbox mask over the PGM so the user can see
