@@ -27,23 +27,44 @@ function getYoutubeProxyArgs() {
 let ytdl, ytdlError;
 try { ytdl = require('@distube/ytdl-core'); } catch (e) { ytdlError = e.message; }
 
-// Find ffmpeg
+// Find ffmpeg / ffprobe.
+//
+// Important: ffprobe needs to be resolved INDEPENDENTLY of ffmpeg. The old
+// code derived ffprobePath at call-site via `ffmpegPath.replace('ffmpeg',
+// 'ffprobe')` — which throws "ffmpegPath.replace is not a function" the
+// moment ffmpegPath is null or anything other than a plain string. When
+// that throws inside processVideoCenterCrop, the per-aspect catch swallows
+// it and the user only sees a generic "Video processing failed".
 let ffmpegPath = null;
-const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
-if (fs.existsSync(localFfmpeg)) {
-  ffmpegPath = localFfmpeg;
-}
+let ffprobePath = null;
+const localFfmpeg  = path.join(__dirname, '..', 'bin', 'ffmpeg');
+const localFfprobe = path.join(__dirname, '..', 'bin', 'ffprobe');
+if (fs.existsSync(localFfmpeg))  ffmpegPath  = localFfmpeg;
+if (fs.existsSync(localFfprobe)) ffprobePath = localFfprobe;
 if (!ffmpegPath) {
   try {
-    ffmpegPath = require('ffmpeg-static');
+    const fs2 = require('ffmpeg-static');
+    if (typeof fs2 === 'string') ffmpegPath = fs2;
+  } catch (e) {}
+}
+if (!ffprobePath) {
+  // ffprobe-static is a separate package — try it; safe if missing.
+  try {
+    const fpStatic = require('ffprobe-static');
+    if (fpStatic && typeof fpStatic.path === 'string') ffprobePath = fpStatic.path;
   } catch (e) {}
 }
 if (!ffmpegPath) {
-  try {
-    execSync('which ffmpeg', { stdio: 'pipe' });
-    ffmpegPath = 'ffmpeg';
-  } catch (e) {}
+  try { execSync('which ffmpeg',  { stdio: 'pipe' }); ffmpegPath  = 'ffmpeg';  } catch (e) {}
 }
+if (!ffprobePath) {
+  try { execSync('which ffprobe', { stdio: 'pipe' }); ffprobePath = 'ffprobe'; } catch (e) {}
+}
+// Last-ditch fallback so we never end up with null binaries that throw
+// in obscure places. spawn() will surface ENOENT if neither is on PATH.
+if (!ffmpegPath)  ffmpegPath  = 'ffmpeg';
+if (!ffprobePath) ffprobePath = 'ffprobe';
+console.log('[AI Reframe] ffmpeg=' + ffmpegPath + ' ffprobe=' + ffprobePath);
 
 // Find yt-dlp
 let ytdlpPath = null;
@@ -232,7 +253,7 @@ const aspectRatios = {
 function getVideoDimensions(filePath) {
   return new Promise((resolve, reject) => {
     const args = ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0', filePath];
-    const ffprobe = spawn(ffmpegPath === 'ffmpeg' ? 'ffprobe' : ffmpegPath.replace('ffmpeg', 'ffprobe'), args);
+    const ffprobe = spawn(ffprobePath, args);
     let output = '';
 
     ffprobe.stdout.on('data', (data) => {
@@ -2551,9 +2572,11 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
 
     const jobId = uuidv4();
     const results = [];
+    const failures = []; // collect per-aspect reasons so users see a real error
 
     for (const aspectRatio of aspects) {
       if (!aspectRatios[aspectRatio]) {
+        failures.push(`${aspectRatio}: unsupported ratio`);
         continue;
       }
 
@@ -2570,7 +2593,8 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
           mode: faceData ? 'face-tracking' : 'center'
         });
       } catch (error) {
-        console.error(`Failed to process ${aspectRatio}:`, error.message);
+        console.error(`[AI Reframe] Failed to process ${aspectRatio}:`, error && error.stack ? error.stack : error);
+        failures.push(`${aspectRatio}: ${(error && error.message) || String(error)}`);
         // If face tracking fails for this ratio, try center crop fallback
         if (cropMode === 'face-tracking') {
           try {
@@ -2582,8 +2606,11 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
               filename: filename,
               mode: 'center (fallback)'
             });
+            // Successful fallback — drop the earlier failure entry
+            failures.pop();
           } catch (fallbackErr) {
-            console.error(`Center crop fallback also failed for ${aspectRatio}:`, fallbackErr.message);
+            console.error(`[AI Reframe] Center crop fallback also failed for ${aspectRatio}:`, fallbackErr && fallbackErr.stack ? fallbackErr.stack : fallbackErr);
+            failures[failures.length - 1] = `${aspectRatio}: ${(fallbackErr && fallbackErr.message) || String(fallbackErr)}`;
           }
         }
       }
@@ -2595,7 +2622,10 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
     } catch (e) {}
 
     if (results.length === 0) {
-      return res.status(500).json({ success: false, message: 'Video processing failed' });
+      // Surface the first failure reason so the user sees something
+      // actionable instead of a generic "Video processing failed" wall.
+      const detail = failures.length ? ' (' + failures[0].slice(0, 200) + ')' : '';
+      return res.status(500).json({ success: false, message: 'Video processing failed' + detail });
     }
 
     res.json({ success: true, files: results });

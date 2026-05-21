@@ -20,6 +20,11 @@ const sandbox = {
     if (name === 'path') return path;
     if (name === 'child_process') return require('child_process');
     if (name === 'axios') return () => {};
+    if (name === 'uuid') return { v4: () => 'test-uuid' };
+    if (name === '../middleware/auth') return { requireAuth: (q, r, n) => n() };
+    if (name === '../middleware/credits') return { requireCredits: () => (q, r, n) => n() };
+    if (name === '../middleware/storage') return { requireStorageHeadroom: () => (q, r, n) => n(), trackUploadBytes: () => (q, r, n) => n() };
+    if (name === '../db/database') return { featureUsageOps: { log: () => Promise.resolve() } };
     return {};
   },
   module: { exports: {} },
