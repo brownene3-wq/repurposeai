@@ -830,15 +830,25 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
   );
 
   // LinkedIn's response key is a literal dotted string (NOT chained
-  // property access). The full namespace is
-  // 'com.linkedin.digitalmedia.uploadmechanism.MediaUploadHttpRequest'
-  // — note dots throughout, no underscores. The previous code used
-  // chained dotted access AND the wrong namespace, throwing
-  // 'Cannot read properties of undefined (reading linkedin)' on every
-  // LinkedIn video publish.
-  const UPLOAD_MECH_KEY = 'com.linkedin.digitalmedia.uploadmechanism.MediaUploadHttpRequest';
+  // property access). LinkedIn has shipped at least two namespace
+  // variants over time:
+  //   - 'com.linkedin.digitalmedia.uploadmechanism.MediaUploadHttpRequest'
+  //   - 'com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'  (current)
+  // ... and may introduce more. Rather than hardcode, find whichever
+  // key carries the uploadUrl. Future-proofs against further renames
+  // and avoids reintroducing the original bug.
   const value = registerResponse.body && registerResponse.body.value;
-  const mech  = value && value.uploadMechanism && value.uploadMechanism[UPLOAD_MECH_KEY];
+  const mechs = value && value.uploadMechanism;
+  let mech = null;
+  if (mechs && typeof mechs === 'object') {
+    // Prefer the canonical MediaUploadHttpRequest key under any namespace,
+    // otherwise take the first entry that has an uploadUrl.
+    const keys = Object.keys(mechs);
+    const preferred = keys.find(k => /MediaUploadHttpRequest$/i.test(k) && mechs[k] && mechs[k].uploadUrl);
+    const anyKey    = keys.find(k => mechs[k] && mechs[k].uploadUrl);
+    const key = preferred || anyKey;
+    if (key) mech = mechs[key];
+  }
   if (!mech || !mech.uploadUrl) {
     const detail = JSON.stringify(registerResponse.body || {}).slice(0, 300);
     throw new Error('LinkedIn asset registration failed: ' + detail);
