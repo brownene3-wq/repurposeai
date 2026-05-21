@@ -2635,10 +2635,6 @@ router.post('/api/publish-output', requireAuth, async (req, res) => {
     if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
 
     const safe = path.basename(String(filename));
-    const mediaPath = path.join(outputDir, safe);
-    if (!fs.existsSync(mediaPath)) {
-      return res.status(404).json({ success: false, error: 'Reframed file not found. Re-process the video and try again.' });
-    }
 
     const { getConnectionById, publishToConnection } = require('../utils/connections');
     const acct = await getConnectionById(req.user.id, connectionId);
@@ -2665,6 +2661,14 @@ router.post('/api/publish-output', requireAuth, async (req, res) => {
         });
         return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
       }
+    }
+
+    // Post-now requires the file actually exist on disk. Schedule path
+    // above does not (Railway /tmp is ephemeral — schedulePublisher will
+    // record a clear publish_error if the file's missing when the cron fires).
+    const mediaPath = path.join(outputDir, safe);
+    if (!fs.existsSync(mediaPath)) {
+      return res.status(404).json({ success: false, error: 'Reframed file not found. The server may have restarted since you exported. Re-process the video and try again.' });
     }
 
     const result = await publishToConnection(req.user.id, connectionId, {

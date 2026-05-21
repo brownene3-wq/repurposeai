@@ -9022,20 +9022,18 @@ router.post('/api/publish-export', requireAuth, async (req, res) => {
     if (!filename) return res.status(400).json({ success: false, error: 'filename is required' });
     if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
 
-    // Resolve filename → absolute path (output dir first, then upload dir,
-    // matching the download route). path.basename guards against traversal.
-    const safe = path.basename(String(filename));
-    let mediaPath = path.join(outputDir, safe);
-    if (!fs.existsSync(mediaPath)) mediaPath = path.join(uploadDir, safe);
-    if (!fs.existsSync(mediaPath)) {
-      return res.status(404).json({ success: false, error: 'Export file not found. Re-export the timeline and try again.' });
-    }
-
     const { getConnectionById, publishToConnection } = require('../utils/connections');
     const acct = await getConnectionById(req.user.id, connectionId);
     if (!acct) return res.status(404).json({ success: false, error: 'Connection not found' });
 
-    // Schedule path — reuse calendar_entries + schedulePublisher cron.
+    const safe = path.basename(String(filename));
+
+    // Schedule path FIRST — file existence isn't required at schedule
+    // time. Railway's /tmp is ephemeral so by the time the cron fires
+    // the file may or may not still be on disk; schedulePublisher
+    // gracefully reports 'clip missing' into calendar_entries.publish_error
+    // and the user can re-export then. Blocking the schedule because the
+    // file isn't there THIS instant just blocks legitimate use.
     if (scheduledAt) {
       const when = new Date(scheduledAt);
       if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
@@ -9059,7 +9057,12 @@ router.post('/api/publish-export', requireAuth, async (req, res) => {
       }
     }
 
-    // Post-now path.
+    // Post-now path requires the file to actually be on disk right now.
+    let mediaPath = path.join(outputDir, safe);
+    if (!fs.existsSync(mediaPath)) mediaPath = path.join(uploadDir, safe);
+    if (!fs.existsSync(mediaPath)) {
+      return res.status(404).json({ success: false, error: 'Export file not found. The server may have restarted since you exported. Re-export the timeline and try again.' });
+    }
     const result = await publishToConnection(req.user.id, connectionId, {
       title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
       description: description || caption || '',
