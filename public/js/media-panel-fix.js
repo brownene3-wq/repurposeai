@@ -3739,8 +3739,127 @@
   // (Blur/Brightness/Contrast/Saturation). Live preview on drag, neutral
   // of 1.0 clears the dataset key, multi-clip broadcast, Reset button,
   // toggle-close. Range: 0.1× to 3.0× in 0.05 steps.
+  // Task #115 — Edit > Resize now runs a real server-side center-crop
+  // reframe (same pipeline AI Reframe uses on /ai-reframe/process with
+  // Center Crop selected). The user picks one of the four standard
+  // aspects and the clip's media is replaced with a newly-rendered
+  // file at that exact aspect. Previously this was a cosmetic CSS
+  // transform scale slider that didn't change the actual file.
   function clipActionResize(){
-    openFxSliderPopover('scale', 'Resize', 0.1, 3.0, 0.05, 1, '\u00d7', '\ud83d\udcd0');
+    var existing = document.getElementById('resizePopover');
+    if (existing instanceof Element && existing.isConnected){ existing.remove(); return; }
+    if (existing && typeof existing.remove === 'function'){ try { existing.remove(); } catch(_){} }
+    if (typeof closeOtherPopovers === 'function') closeOtherPopovers('resizePopover');
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+    var clipType = clip.dataset.clipType || '';
+    if (clipType !== 'vid'){
+      showToast('Resize is for video clips on V1');
+      return;
+    }
+
+    // Default the selection to the project aspect so a one-click Apply
+    // reframes the clip to match the rest of the project.
+    var defaultRatio = window.__exportAspect || '16:9';
+    var PRESETS = [
+      { ratio:'16:9', label:'16:9 YouTube' },
+      { ratio:'9:16', label:'9:16 Reels'   },
+      { ratio:'1:1',  label:'1:1 Square'   },
+      { ratio:'4:5',  label:'4:5 Portrait' }
+    ];
+    var selected = PRESETS.find(function(p){ return p.ratio === defaultRatio; }) || PRESETS[0];
+
+    var pop = document.createElement('div');
+    pop.id = 'resizePopover';
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
+      'border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:280px;' +
+      'box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+    pop.innerHTML =
+      '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:8px">RESIZE \u00b7 CENTER CROP</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Re-renders this clip to the chosen aspect (center-crop, like AI Reframe).</div>' +
+      '<div id="rzPresetRow" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>' +
+      '<div id="rzStatus" style="font-size:10px;color:#8886a0;margin-bottom:8px;min-height:14px"></div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button id="rzCancel" style="flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Cancel</button>' +
+        '<button id="rzApply" style="flex:1;padding:7px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Apply</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+
+    var row    = pop.querySelector('#rzPresetRow');
+    var status = pop.querySelector('#rzStatus');
+    var apply  = pop.querySelector('#rzApply');
+
+    function paintSelection(){
+      Array.prototype.forEach.call(row.children, function(b){
+        var on = (b.dataset.ratio === selected.ratio);
+        b.style.background  = on ? 'rgba(139,92,246,.3)' : 'rgba(255,255,255,.04)';
+        b.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
+      });
+    }
+    PRESETS.forEach(function(p){
+      var b = document.createElement('button');
+      b.dataset.ratio = p.ratio;
+      b.style.cssText = 'padding:8px 6px;background:rgba(255,255,255,.04);' +
+        'border:1px solid rgba(255,255,255,.1);' +
+        'border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;text-align:left;transition:all .15s';
+      b.textContent = p.label;
+      b.addEventListener('click', function(){ selected = p; paintSelection(); });
+      row.appendChild(b);
+    });
+    paintSelection();
+
+    pop.querySelector('#rzCancel').addEventListener('click', function(){ pop.remove(); });
+
+    apply.addEventListener('click', async function(){
+      if (apply.disabled) return;
+      // Promote blob URLs first — server can't reframe what it can't
+      // resolve. Mirrors the Task #97 ensureClipHasServerUrl flow.
+      status.style.color = '#a78bfa';
+      status.textContent = 'Preparing source\u2026';
+      apply.disabled = true;
+      apply.style.opacity = '0.6';
+      try {
+        var srcClip = clip;
+        if (typeof window.ensureClipHasServerUrl === 'function'){
+          srcClip = await window.ensureClipHasServerUrl(clip);
+          if (!srcClip || !srcClip.dataset.mediaUrl){
+            throw new Error('Clip source not available — try re-adding it');
+          }
+        }
+        status.textContent = 'Reframing to ' + selected.ratio + '\u2026';
+        var r = await fetch('/video-editor/resize-clip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mediaUrl:    srcClip.dataset.mediaUrl,
+            aspectRatio: selected.ratio
+          })
+        });
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Resize failed');
+        // Swap the clip's source to the newly-rendered file.
+        srcClip.dataset.mediaUrl       = d.mediaUrl;
+        srcClip.dataset.serverFilename = d.filename;
+        if (d.width)  srcClip.dataset.srcWidth  = String(d.width);
+        if (d.height) srcClip.dataset.srcHeight = String(d.height);
+        srcClip.dataset.targetW      = String(d.width);
+        srcClip.dataset.targetH      = String(d.height);
+        srcClip.dataset.targetAspect = d.aspectRatio;
+        // Trigger a preview re-bake against the new source.
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        try { attachFilmstripOrWaveform(srcClip); } catch(_){}
+        pushTimelineHistory();
+        pop.remove();
+        showToast('Resized to ' + d.aspectRatio + ' \u00b7 ' + d.width + '\u00d7' + d.height);
+      } catch (err){
+        status.style.color = '#fb7185';
+        status.textContent = String(err.message || err).slice(0, 200);
+        apply.disabled = false;
+        apply.style.opacity = '';
+      }
+    });
   }
   function clipActionRotate(){
     // Relative 90\u00B0 step \u2014 each clip rotates by +90 from its own

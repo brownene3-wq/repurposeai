@@ -1973,11 +1973,16 @@
 
         // Task #73 — B-Roll preserves primary audio (V1 underlay).
         // When the active clip is a B-Roll, a hidden <audio> element
-        // plays the underlying older V1 clip's audio at full volume,
-        // and the visible video's own audio is ducked to ~0.2× so the
-        // primary dialogue remains the focus. Mirrors the FFmpeg amix
-        // the export pipeline runs, so preview matches export.
-        var BROLL_DUCK = 0.20;
+        // plays the underlying older V1 clip's audio at full volume.
+        // Task #116 — In PREVIEW we mute the B-Roll's own audio
+        // entirely (BROLL_DUCK = 0) so the V1 dialogue under it plays
+        // through cleanly without two audio streams fighting. Albert's
+        // report: when a B-Roll was added, V1 audio came across as
+        // "interfered". With the duck at 0, the only audio the user
+        // hears across a B-Roll segment is the V1 underlay. The export
+        // pipeline still does the proper amix (B-Roll audio ducked +
+        // V1 dialogue) — that's untouched in routes/video-editor.js.
+        var BROLL_DUCK = 0;
         var _underlayAudio = null;
         function ensureUnderlayAudio(){
           if (_underlayAudio) return _underlayAudio;
@@ -2031,8 +2036,21 @@
             try { _underlayAudio.pause(); } catch(_){}
             return;
           }
-          if (p.paused){ try { _underlayAudio.pause(); } catch(_){} }
-          else { try { _underlayAudio.play(); } catch(_){} }
+          if (p.paused){ try { _underlayAudio.pause(); } catch(_){} return; }
+          // Task #116 — properly catch the play() promise so an autoplay-
+          // policy rejection surfaces in the console instead of silently
+          // dropping the underlay. The first play() after a fresh src
+          // can also race with the readyState; wait a tick if needed.
+          try {
+            var pr = _underlayAudio.play();
+            if (pr && typeof pr.catch === 'function'){
+              pr.catch(function(err){
+                console.warn('[broll-underlay] play() rejected:', err && err.message || err);
+              });
+            }
+          } catch (e){
+            console.warn('[broll-underlay] play() threw:', e && e.message || e);
+          }
         }
         function configureUnderlayForActive(){
           var c = _activeClip;
@@ -2053,7 +2071,8 @@
           var ua = ensureUnderlayAudio();
           // Stash so applyVolume / time sync can read it without relooking.
           c.__underlay = u;
-          if (ua.dataset.url !== u.mediaUrl){
+          var firstLoad = (ua.dataset.url !== u.mediaUrl);
+          if (firstLoad){
             ua.dataset.url = u.mediaUrl;
             try { ua.src = u.mediaUrl; ua.load(); } catch(_){}
           }
@@ -2065,8 +2084,29 @@
           // Seek + play/pause to match main player.
           var brollClipT = Math.max(0, (p.currentTime || 0) - u.brollSrcOff);
           var targetSrc  = u.baseSrc + brollClipT;
-          try { ua.currentTime = Math.max(0, targetSrc); } catch(_){}
-          syncUnderlayPlayback();
+          // Task #116 — On the first src swap, the audio element isn't
+          // ready yet — setting currentTime + play() races the load.
+          // Wait for canplay, THEN seek + play. Tolerates browsers that
+          // already have the file cached (readyState >= 3) by running
+          // immediately.
+          function applySeekAndPlay(){
+            try { ua.currentTime = Math.max(0, targetSrc); } catch(_){}
+            syncUnderlayPlayback();
+          }
+          if (firstLoad && ua.readyState < 3){
+            var onReady = function(){
+              ua.removeEventListener('canplay', onReady);
+              applySeekAndPlay();
+            };
+            ua.addEventListener('canplay', onReady);
+            // Safety net: don't wait forever if canplay never fires
+            setTimeout(function(){
+              ua.removeEventListener('canplay', onReady);
+              applySeekAndPlay();
+            }, 2000);
+          } else {
+            applySeekAndPlay();
+          }
         }
 
         function findActiveClip(){

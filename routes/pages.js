@@ -322,6 +322,7 @@ router.get('/', async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
+  <meta name="google-site-verification" content="gOwnD0dWqFUKqyVmTAmEJ5LRNwGOwpuZlb5KUp2Gs-8" />
   <meta name="description" content="Splicora auto-repurposes one video into unlimited content across 8 platforms — TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest, X. AI tools for clips, captions, hooks, B-roll & scheduling.">
   <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
   <link rel="manifest" href="/manifest.json">
@@ -344,6 +345,7 @@ router.get('/', async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
+  <meta name="google-site-verification" content="gOwnD0dWqFUKqyVmTAmEJ5LRNwGOwpuZlb5KUp2Gs-8" />
   <meta name="description" content="One video, every platform — automatically. Splicora connects to TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X and auto-publishes platform-tuned versions. Plus 10 AI tools: Smart Shorts, Captions, Hooks, B-Roll, Reframe, Music, Brand Voice, Editor & Calendar.">
   <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
   <link rel="manifest" href="/manifest.json">
