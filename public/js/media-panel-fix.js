@@ -4130,6 +4130,96 @@
     });
   }
 
+  // Task #112 — Smart Resize preset table. Shared between the popover
+  // and the apply path so both reference the same data. {w, h} is the
+  // ENCODE-time pixel dim (used by the export pipeline); {ratio} is the
+  // CSS aspect-ratio that reshapes the live preview canvas.
+  var SR_PRESETS = [
+    { ratio:'16:9', label:'16:9 YouTube',  w:1280, h:720,  cssAspect:'16 / 9'  },
+    { ratio:'9:16', label:'9:16 Reels',    w:720,  h:1280, cssAspect:'9 / 16'  },
+    { ratio:'1:1',  label:'1:1 Square',    w:1080, h:1080, cssAspect:'1 / 1'   },
+    { ratio:'4:5',  label:'4:5 Portrait',  w:1080, h:1350, cssAspect:'4 / 5'   }
+  ];
+
+  // Reshape the preview player + its overlays to match a target aspect
+  // ratio. We DON'T touch #videoPreviewArea directly because that
+  // element is a flex slot with min/max-height baked into the
+  // stylesheet. Instead we lazily inject a wrapper (#srAspectFrame)
+  // and move all preview children into it — that wrapper carries the
+  // aspect-ratio CSS, max-width/max-height: 100%, and margin: auto so
+  // it always fits inside the slot, centered. The video element keeps
+  // object-fit:contain so the source pillarboxes / letterboxes inside
+  // the new canvas (same content, just a different frame). Annotation
+  // + crop overlays stay anchored to the wrapper because they're
+  // position:absolute inset:0 inside it.
+  function applyPreviewAspectRatio(preset){
+    var area = document.getElementById('videoPreviewArea');
+    if (!area) return;
+    // Make the slot itself a centering flex box so the wrapper sits in
+    // the middle when its aspect makes it smaller than the slot.
+    area.style.display        = 'flex';
+    area.style.alignItems     = 'center';
+    area.style.justifyContent = 'center';
+
+    var wrap = document.getElementById('srAspectFrame');
+    if (!wrap){
+      wrap = document.createElement('div');
+      wrap.id = 'srAspectFrame';
+      // Move every existing child of the preview area into the wrapper.
+      // First call only — subsequent calls just retune the aspect.
+      while (area.firstChild) wrap.appendChild(area.firstChild);
+      area.appendChild(wrap);
+    }
+    wrap.style.position     = 'relative';
+    wrap.style.aspectRatio  = preset.cssAspect;
+    wrap.style.maxWidth     = '100%';
+    wrap.style.maxHeight    = '100%';
+    wrap.style.width        = 'auto';
+    wrap.style.height       = 'auto';
+    // Browsers compute the constrained box: when aspect-ratio would
+    // make width or height overflow, the other axis shrinks to fit.
+    // The two-line trick below makes both axes responsive so neither
+    // axis blocks the other from triggering the clamp.
+    if (preset.cssAspect.indexOf('/') !== -1){
+      var parts = preset.cssAspect.split('/').map(function(s){ return parseFloat(s); });
+      if (parts.length === 2 && parts[0] && parts[1]){
+        wrap.style.width  = '100%';
+        wrap.style.height = '100%';
+        // Setting both encourages the browser to satisfy aspect-ratio
+        // via the smaller axis. Final visible size is whichever fits.
+      }
+    }
+
+    // Force the inner <video> + overlays to fill the wrapper. We can
+    // safely set width/height to 100% because the wrapper itself is
+    // already constrained to the target aspect.
+    var vid = wrap.querySelector('#videoPlayer, video.video-player');
+    if (vid){
+      vid.style.width  = '100%';
+      vid.style.height = '100%';
+      vid.style.objectFit = 'contain';
+    }
+    var anno = wrap.querySelector('#annotationWrapper');
+    if (anno){
+      anno.style.position = 'absolute';
+      anno.style.inset    = '0';
+    }
+    var crop = wrap.querySelector('#cropOverlay');
+    if (crop){
+      crop.style.position = 'absolute';
+      crop.style.inset    = '0';
+    }
+
+    // Re-paint any canvas-pixel code that listens for window.resize.
+    try { window.dispatchEvent(new Event('resize')); } catch(_){}
+
+    // The legacy letterbox mask is no longer useful when the preview
+    // itself IS the target aspect — clear it so we don't double-mask.
+    var mask = document.getElementById('srAspectMask');
+    if (mask) mask.remove();
+  }
+  try { window.applyPreviewAspectRatio = applyPreviewAspectRatio; } catch(_){}
+
   function clipActionSmartResize(){
     // Toggle off if already open — Element check guards against the
     // Chrome isolated-world ghost-DOM where getElementById can return
@@ -4145,35 +4235,36 @@
     // Close any competing right-anchored popovers so only one is visible
     closeOtherPopovers('srPopover');
 
-    var cur = window.__exportAspect || '16:9';
+    // ── Component state ─────────────────────────────────────────────
+    // Live state lives in two places:
+    //   selected  : which preset row is currently highlighted in the UI
+    //   faceTrack : whether the AI Face Track checkbox is on
+    // We seed both from the persisted window.__export* globals so a
+    // reopened popover remembers what the user picked last time. Apply
+    // writes back to those globals + reshapes the preview canvas.
+    var curRatio   = window.__exportAspect    || '16:9';
+    var curFaceTrk = !!window.__exportFaceTrack;
+    var selected   = SR_PRESETS.find(function(p){ return p.ratio === curRatio; }) || SR_PRESETS[0];
+
     var pop = document.createElement('div');
     pop.id = 'srPopover';
     pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:260px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
     pop.innerHTML =
       '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:8px">SMART RESIZE</div>' +
-      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Pick an output aspect, then hit Apply.</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Pick an output aspect, then hit Apply. The preview reshapes to match.</div>' +
       '<div id="srPresetRow" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>' +
       '<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#e2e0f0;cursor:pointer;padding:8px;background:rgba(124,58,237,.08);border-radius:6px">' +
-        '<input type="checkbox" id="srFaceTrack" style="accent-color:#a78bfa"/>' +
+        '<input type="checkbox" id="srFaceTrack"' + (curFaceTrk ? ' checked' : '') + ' style="accent-color:#a78bfa"/>' +
         '<span>\ud83c\udfaf AI Face Track <span style="color:#8886a0;font-size:9px">(centers on subject)</span></span>' +
       '</label>' +
-      // Task #111 \u2014 primary Apply button + secondary Close.
-      // Selecting a preset just highlights it; the resize doesn't fire
-      // until the user explicitly hits Apply.
       '<div style="display:flex;gap:6px;margin-top:10px">' +
         '<button id="srClose" style="flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
         '<button id="srApply" style="flex:1;padding:7px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Apply</button>' +
       '</div>';
     document.body.appendChild(pop);
 
-    var presets = [
-      { ratio:'16:9', label:'16:9 YouTube',  w:1280, h:720  },
-      { ratio:'9:16', label:'9:16 Reels',    w:720,  h:1280 },
-      { ratio:'1:1',  label:'1:1 Square',    w:1080, h:1080 },
-      { ratio:'4:5',  label:'4:5 Portrait',  w:1080, h:1350 }
-    ];
-    var selected = presets.find(function(p){ return p.ratio === cur; }) || presets[0];
     var row = pop.querySelector('#srPresetRow');
+    var faceTrackCb = pop.querySelector('#srFaceTrack');
 
     function paintSelection(){
       Array.prototype.forEach.call(row.children, function(b){
@@ -4182,7 +4273,7 @@
         b.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
       });
     }
-    presets.forEach(function(p){
+    SR_PRESETS.forEach(function(p){
       var b = document.createElement('button');
       b.dataset.ratio = p.ratio;
       b.style.cssText = 'padding:8px 6px;background:rgba(255,255,255,.04);' +
@@ -4195,12 +4286,37 @@
     paintSelection();
 
     pop.querySelector('#srClose').addEventListener('click', function(){ pop.remove(); });
+
+    // ── Apply handler ──────────────────────────────────────────────
+    // 1) Persist selection to the window.__export* globals so the
+    //    export pipeline picks them up at render time.
+    // 2) Reshape the live preview canvas to match the selected aspect.
+    // 3) Tag every V1 clip with __targetW / __targetH so per-clip
+    //    export math can read the project's target dims.
+    // 4) If Face Track is on, kick off the async face crop. Errors
+    //    don't block the Apply — the user still gets the new aspect.
     pop.querySelector('#srApply').addEventListener('click', function(){
-      window.__exportAspect = selected.ratio;
-      window.__exportWidth  = selected.w;
-      window.__exportHeight = selected.h;
-      applySmartResizePreview(selected.ratio);
-      var faceTrack = pop.querySelector('#srFaceTrack').checked;
+      var faceTrack = !!(faceTrackCb && faceTrackCb.checked);
+      window.__exportAspect    = selected.ratio;
+      window.__exportWidth     = selected.w;
+      window.__exportHeight    = selected.h;
+      window.__exportFaceTrack = faceTrack;
+
+      // Reshape the preview canvas BEFORE anything async kicks off so
+      // the user sees an immediate response on click.
+      applyPreviewAspectRatio(selected);
+
+      // Sticky per-clip target dims for export — every V1 clip carries
+      // the project's chosen output dimensions so renderers can branch
+      // on it without re-reading window globals.
+      try {
+        document.querySelectorAll('.mt-clip-video').forEach(function(c){
+          c.dataset.targetW = String(selected.w);
+          c.dataset.targetH = String(selected.h);
+          c.dataset.targetAspect = selected.ratio;
+        });
+      } catch(_){}
+
       pop.remove();
       if (faceTrack){
         runFaceTrackCrop(selected.ratio).then(function(msg){
