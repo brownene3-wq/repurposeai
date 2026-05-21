@@ -2004,6 +2004,19 @@ ${pageStyles}
       });
     });
 
+    // ---- Multi-Person Grid flow (simplified UX) ----
+    // Declared BEFORE syncInitialCropMode so the change-event replay below
+    // can safely call resetGridFlow() without hitting a TDZ on gridJobId
+    // (previous arrangement put these declarations after the IIFE, which
+    // killed the entire <script> with a ReferenceError before the rest of
+    // the editor JS ever loaded — including the Publish modal handlers).
+    let gridJobId = null;
+    let gridSubjects = [];
+    const gridSelected = new Set();
+    let gridRenderBtn = null; // lazily created when the user picks subjects
+    let gridLayouts = null;   // catalog fetched once from /ai-reframe/grid-layouts
+    let selectedLayout = null;
+
     // Page-load sync: the radio is pre-checked but no change event ever
     // fires for the default selection. Replay the change handler against
     // the currently-checked radio so the rest of the UI (info banner,
@@ -2013,14 +2026,6 @@ ${pageStyles}
       const checked = document.querySelector('input[name="cropMode"]:checked');
       if (checked) checked.dispatchEvent(new Event('change'));
     })();
-
-    // ---- Multi-Person Grid flow (simplified UX) ----
-    let gridJobId = null;
-    let gridSubjects = [];
-    const gridSelected = new Set();
-    let gridRenderBtn = null; // lazily created when the user picks subjects
-    let gridLayouts = null;   // catalog fetched once from /ai-reframe/grid-layouts
-    let selectedLayout = null;
 
     // Protect the UI from raw ffmpeg error spew. Server errors sometimes
     // contain multi-KB filter graphs ("if(between(t,...))..." chains); we
