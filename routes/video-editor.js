@@ -1464,6 +1464,12 @@ async function renderEditor(req, res) {
               </select>
             </div>
             <button class="exp-go" id="exportButton" type="button">\ud83c\udfac Export Video</button>
+            <!-- Phase 2c — appears post-export. Opens vePublishModal which
+                 lets the user post the freshly-rendered file to any connected
+                 social account via /video-editor/api/publish-export. -->
+            <button class="exp-go" id="vePublishBtn" type="button" style="display:none;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;margin-right:6px;flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>Publish to&hellip;
+            </button>
           </div>
         </div>
 
@@ -3825,6 +3831,19 @@ function showToast(message, type = 'success') {
           ? 'Timeline exported (' + (data.clipCount||0) + ' clip' + (data.clipCount===1?'':'s') + ', ' + Math.round(data.duration||0) + 's)'
           : 'Video exported successfully!';
         showToast(msg, 'success');
+        // Phase 2c — remember the exported file so the Publish modal can
+        // reference it without re-rendering, then reveal the Publish button.
+        try {
+          window.lastVeExport = {
+            filename: data.filename,
+            downloadUrl: data.downloadUrl,
+            duration: data.duration || 0,
+            renderedFromTimeline: !!data.renderedFromTimeline,
+            exportedAt: Date.now()
+          };
+          var pubBtn = document.getElementById('vePublishBtn');
+          if (pubBtn) pubBtn.style.display = '';
+        } catch(_) {}
       }
 
       try {
@@ -7247,6 +7266,193 @@ setTimeout(function sidebarLayoutFix(){
   } catch(_){}
 })();
 </script>
+
+<!-- Phase 2c — Video Editor Publish modal. Reuses the unified
+     /api/connections + publishToConnection backend introduced in
+     Phase 1/2a. Lives at the very bottom of the editor body so it
+     overlays on top of the sidebar/timeline/preview when shown. -->
+<div id="vePublishModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeVePublishModal()">
+  <div style="background:#16112a;border:1px solid rgba(108,58,237,0.30);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+    <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+      Publish Exported Video
+    </h3>
+    <div id="vePublishSubtitle" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>
+
+    <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>
+    <select id="vePublishAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+      <option value="">Loading your connected accounts...</option>
+    </select>
+    <div id="vePublishNoAccounts" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">
+      No social accounts connected yet.
+      <a href="/distribute/connections" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;margin-top:8px;">
+        Connect an account <span>&rarr;</span>
+      </a>
+    </div>
+
+    <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>
+    <input type="text" id="vePublishTitle" maxlength="120" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+
+    <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Caption / Description</label>
+    <textarea id="vePublishCaption" rows="4" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:80px;"></textarea>
+
+    <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">
+      <button id="vePublishTabNow" type="button" onclick="setVePublishMode('now')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>
+      <button id="vePublishTabLater" type="button" onclick="setVePublishMode('later')" style="flex:1;background:transparent;color:#8e87b0;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>
+    </div>
+
+    <div id="vePublishLaterFields" style="display:none;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
+          <input type="date" id="vePublishDate" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;">
+        </div>
+        <div>
+          <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label>
+          <input type="time" id="vePublishTime" value="12:00" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;">
+        </div>
+      </div>
+    </div>
+
+    <div id="vePublishStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button onclick="closeVePublishModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#e2e0f0;padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
+      <button id="vePublishSubmitBtn" onclick="submitVePublish()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Publish</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Phase 2c — Video Editor publish modal client logic. Mirrors the
+  // Smart Shorts implementation but targets /video-editor/api/publish-export
+  // because the asset on disk is the freshly-rendered timeline output,
+  // not a Smart Shorts moment clip.
+  (function(){
+    var _veMode = 'now';
+
+    async function openVePublishModal() {
+      var last = window.lastVeExport;
+      if (!last || !last.filename) {
+        showToast && showToast('Export a video first, then click Publish.', 'info');
+        return;
+      }
+      document.getElementById('vePublishTitle').value = (last.filename || 'My video').replace(/\.[a-z0-9]+$/i, '').slice(0, 120);
+      document.getElementById('vePublishCaption').value = '';
+      document.getElementById('vePublishStatus').style.display = 'none';
+      var d = new Date(); d.setMinutes(d.getMinutes() + 60);
+      document.getElementById('vePublishDate').value = d.toISOString().slice(0, 10);
+      document.getElementById('vePublishTime').value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      setVePublishMode('now');
+      document.getElementById('vePublishModal').style.display = 'flex';
+      document.getElementById('vePublishSubtitle').textContent = 'Source: ' + (last.filename || 'export');
+
+      // Populate connected accounts.
+      var sel = document.getElementById('vePublishAccount');
+      var noAcct = document.getElementById('vePublishNoAccounts');
+      sel.innerHTML = '<option value="">Loading\u2026</option>';
+      try {
+        var r = await fetch('/api/connections', { credentials: 'same-origin' });
+        var j = await r.json();
+        var accounts = (j && j.accounts) || [];
+        var supported = ['tiktok','instagram','youtube','facebook','twitter','linkedin','pinterest'];
+        accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+        if (accounts.length === 0) {
+          sel.style.display = 'none';
+          noAcct.style.display = 'block';
+        } else {
+          sel.style.display = '';
+          noAcct.style.display = 'none';
+          sel.innerHTML = accounts.map(function(c){
+            var label = (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' \u2014 ' + (c.accountName || c.platformUsername || c.id);
+            return '<option value="' + c.id + '">' + label + '</option>';
+          }).join('');
+        }
+      } catch(e){
+        sel.innerHTML = '<option value="">Failed to load accounts</option>';
+      }
+    }
+    function closeVePublishModal(){ document.getElementById('vePublishModal').style.display = 'none'; }
+    function setVePublishMode(mode){
+      _veMode = mode;
+      var nowBtn = document.getElementById('vePublishTabNow');
+      var laterBtn = document.getElementById('vePublishTabLater');
+      var laterFields = document.getElementById('vePublishLaterFields');
+      var submitBtn = document.getElementById('vePublishSubmitBtn');
+      if (mode === 'now') {
+        nowBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; nowBtn.style.color = '#fff';
+        laterBtn.style.background = 'transparent'; laterBtn.style.color = '#8e87b0';
+        laterFields.style.display = 'none';
+        submitBtn.textContent = 'Publish now';
+      } else {
+        laterBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; laterBtn.style.color = '#fff';
+        nowBtn.style.background = 'transparent'; nowBtn.style.color = '#8e87b0';
+        laterFields.style.display = 'block';
+        submitBtn.textContent = 'Schedule';
+      }
+    }
+    async function submitVePublish(){
+      var btn = document.getElementById('vePublishSubmitBtn');
+      var statusEl = document.getElementById('vePublishStatus');
+      var connectionId = document.getElementById('vePublishAccount').value;
+      if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
+      var last = window.lastVeExport;
+      if (!last || !last.filename) { statusEl.style.display = 'block'; statusEl.textContent = 'No export to publish.'; return; }
+      var payload = {
+        filename: last.filename,
+        connectionId: connectionId,
+        title: document.getElementById('vePublishTitle').value.trim(),
+        caption: document.getElementById('vePublishCaption').value.trim(),
+        description: document.getElementById('vePublishCaption').value.trim()
+      };
+      if (_veMode === 'later') {
+        var d = document.getElementById('vePublishDate').value;
+        var t = document.getElementById('vePublishTime').value || '12:00';
+        if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
+        payload.scheduledAt = d + 'T' + t + ':00';
+      }
+      btn.disabled = true; var orig = btn.textContent;
+      btn.textContent = _veMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
+      statusEl.style.display = 'block';
+      statusEl.textContent = _veMode === 'now' ? 'Uploading to platform\u2026' : 'Saving the scheduled post\u2026';
+      try {
+        var resp = await fetch('/video-editor/api/publish-export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Failed');
+        if (_veMode === 'now') {
+          statusEl.textContent = 'Posted to ' + (data.platform || 'platform') + '.';
+          showToast && showToast('Published to ' + (data.platform || 'platform'));
+        } else {
+          statusEl.textContent = 'Scheduled for ' + (data.scheduledFor || payload.scheduledAt);
+          showToast && showToast('Scheduled');
+        }
+        setTimeout(closeVePublishModal, 1500);
+      } catch(e){
+        statusEl.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    // Wire the Publish button revealed by handleSuccess.
+    document.addEventListener('click', function(e){
+      var btn = e.target && e.target.closest && e.target.closest('#vePublishBtn');
+      if (btn) { e.preventDefault(); openVePublishModal(); }
+    });
+
+    // Expose for manual access.
+    try {
+      window.openVePublishModal = openVePublishModal;
+      window.closeVePublishModal = closeVePublishModal;
+      window.setVePublishMode = setVePublishMode;
+      window.submitVePublish = submitVePublish;
+    } catch(_) {}
+  })();
+</script>
 </body>
 </html>`;
   if (res.locals && res.locals.initialProject) {
@@ -8798,6 +9004,73 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       fs.rmdirSync(workDir);
     } } catch(_){}
     res.status(500).json({ error: error.message || 'Timeline export failed' });
+  }
+});
+
+// Phase 2c — POST /video-editor/api/publish-export
+// Unified Video-Editor -> Connected Account publish bridge. Mirrors the
+// shape of /shorts/api/publish-moment but resolves files via the editor's
+// outputDir/uploadDir convention instead of the Smart Shorts clips dir.
+//
+// Body: { filename, connectionId, title, caption, description, scheduledAt? }
+// scheduledAt in the future -> creates a calendar_entries row with
+//   auto_publish=true + connection_id; schedulePublisher picks it up.
+// Otherwise -> calls publishToConnection(userId, connectionId, { ..., mediaPath }).
+router.post('/api/publish-export', requireAuth, async (req, res) => {
+  try {
+    const { filename, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    if (!filename) return res.status(400).json({ success: false, error: 'filename is required' });
+    if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
+
+    // Resolve filename → absolute path (output dir first, then upload dir,
+    // matching the download route). path.basename guards against traversal.
+    const safe = path.basename(String(filename));
+    let mediaPath = path.join(outputDir, safe);
+    if (!fs.existsSync(mediaPath)) mediaPath = path.join(uploadDir, safe);
+    if (!fs.existsSync(mediaPath)) {
+      return res.status(404).json({ success: false, error: 'Export file not found. Re-export the timeline and try again.' });
+    }
+
+    const { getConnectionById, publishToConnection } = require('../utils/connections');
+    const acct = await getConnectionById(req.user.id, connectionId);
+    if (!acct) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+    // Schedule path — reuse calendar_entries + schedulePublisher cron.
+    if (scheduledAt) {
+      const when = new Date(scheduledAt);
+      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+        const { calendarOps } = require('../db/database');
+        const dateStr = when.toISOString().slice(0, 10);
+        const timeStr = String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0');
+        const entry = await calendarOps.create({
+          userId: req.user.id,
+          title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+          platform: acct.platform,
+          scheduledDate: dateStr,
+          scheduledTime: timeStr,
+          contentText: caption || description || '',
+          analysisId: null, momentIndex: null,
+          notes: '', color: '#6c5ce7',
+          autoPublish: true,
+          clipFilename: safe,
+          connectionId: acct.id
+        });
+        return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
+      }
+    }
+
+    // Post-now path.
+    const result = await publishToConnection(req.user.id, connectionId, {
+      title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+      description: description || caption || '',
+      caption: caption || description || '',
+      mediaPath
+    });
+    if (!result.success) return res.status(400).json(result);
+    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+  } catch (err) {
+    console.error('[POST /video-editor/api/publish-export]', err.message);
+    res.status(500).json({ success: false, error: err.message || 'Publish failed' });
   }
 });
 
