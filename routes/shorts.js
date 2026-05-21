@@ -148,6 +148,11 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     });
   };
 
+  // Track each downloader's failure reason so we can surface them in
+  // the final user-facing error message when all three fall over. Albert
+  // was seeing a generic 'Video download failed' with no actionable info.
+  const failureLog = { cobalt: null, ytdlp: null, ytdlcore: null };
+
   try {
     writeProgress('Downloading video...');
 
@@ -164,9 +169,11 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
         return cachedVideoPath;
       }
       // File missing or too small — fall through to yt-dlp
+      failureLog.cobalt = 'returned empty/too-small file';
       try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     } catch (cobaltErr) {
-      console.log(`  Cobalt failed for ${videoId}: ${String(cobaltErr.message || cobaltErr).slice(0, 150)}`);
+      failureLog.cobalt = String(cobaltErr.message || cobaltErr).slice(0, 200);
+      console.log(`  Cobalt failed for ${videoId}: ${failureLog.cobalt}`);
       try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     }
 
@@ -206,7 +213,8 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     return cachedVideoPath;
 
   } catch (err) {
-    console.log(`  yt-dlp failed for ${videoId}: ${err.message.slice(0, 150)}`);
+    failureLog.ytdlp = String(err.message || err).slice(0, 200);
+    console.log(`  yt-dlp failed for ${videoId}: ${failureLog.ytdlp}`);
 
     // Fallback: try @distube/ytdl-core if yt-dlp fails (e.g. datacenter IP blocked)
     if (ytdl) {
@@ -256,16 +264,27 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
         }
         throw new Error('ytdl-core downloaded file is missing or too small');
       } catch (ytdlErr) {
-        console.log(`  ytdl-core fallback also failed for ${videoId}: ${ytdlErr.message.slice(0, 150)}`);
+        failureLog.ytdlcore = String(ytdlErr.message || ytdlErr).slice(0, 200);
+        console.log(`  ytdl-core fallback also failed for ${videoId}: ${failureLog.ytdlcore}`);
       }
+    } else {
+      failureLog.ytdlcore = 'ytdl-core module not loaded';
     }
 
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     const haveCookies = !!getYoutubeCookiesArgs().length;
-    throw new Error(haveCookies
-      ? 'Video download failed. Please try again.'
-      : 'Video download failed: YouTube blocked all download paths. Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in YouTube account, then redeploy.');
+    // Surface the per-downloader failure reasons so the user (and the
+    // operator reading Railway logs) sees which specific path broke.
+    const reasonLines = [];
+    if (failureLog.cobalt)   reasonLines.push('Cobalt: '   + failureLog.cobalt);
+    if (failureLog.ytdlp)    reasonLines.push('yt-dlp: '   + failureLog.ytdlp);
+    if (failureLog.ytdlcore) reasonLines.push('ytdl-core: ' + failureLog.ytdlcore);
+    const reasonBlock = reasonLines.length ? ' Causes — ' + reasonLines.join(' | ') : '';
+    const cookiesHint = haveCookies
+      ? ' (YouTube cookies appear configured; they may have expired — re-export cookies.txt from a freshly-logged-in browser.)'
+      : ' Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in YouTube account, then redeploy.';
+    throw new Error('Video download failed for ' + videoId + '.' + reasonBlock + cookiesHint);
   }
 }
 
