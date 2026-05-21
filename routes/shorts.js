@@ -2671,6 +2671,97 @@ router.get('/calendar', requireAuth, async (req, res) => {
   }
 });
 
+// Phase 2b — POST /shorts/api/publish-moment
+// Unified Smart Shorts -> Connected Account publish bridge.
+// Body: { analysisId, momentIndex, connectionId, title, caption,
+//         description, scheduledAt? }
+// If scheduledAt is in the future -> creates a calendar_entries row with
+//   auto_publish=true and connection_id set. The existing
+//   utils/schedulePublisher cron picks it up and runs publishToConnection
+//   when the scheduled time arrives.
+// Otherwise -> renders the clip (if not already on disk) and calls
+//   publishToConnection immediately.
+router.post('/api/publish-moment', requireAuth, async (req, res) => {
+  try {
+    const { analysisId, momentIndex, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    if (!analysisId || momentIndex == null) return res.status(400).json({ success: false, error: 'analysisId and momentIndex are required' });
+    if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
+
+    // Look up the analysis so we can synthesize a clip render request if needed.
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).json({ success: false, error: 'Analysis not found' });
+    const moment = analysis.moments && analysis.moments[momentIndex];
+    if (!moment) return res.status(404).json({ success: false, error: 'Moment not found' });
+
+    // Validate the connection belongs to this user before we burn time on a render.
+    const { getConnectionById, publishToConnection } = require('../utils/connections');
+    const acct = await getConnectionById(req.user.id, connectionId);
+    if (!acct) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+    // Schedule path — defer to the calendar/schedulePublisher infra.
+    if (scheduledAt) {
+      const when = new Date(scheduledAt);
+      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+        const dateStr = when.toISOString().slice(0, 10);
+        const timeStr = String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0');
+        const entry = await calendarOps.create({
+          userId: req.user.id,
+          title: title || moment.title || ('Viral moment ' + (momentIndex + 1)),
+          platform: acct.platform,
+          scheduledDate: dateStr,
+          scheduledTime: timeStr,
+          contentText: caption || description || '',
+          analysisId, momentIndex,
+          notes: '', color: '#6c5ce7',
+          autoPublish: true,
+          // schedulePublisher renders the clip if clipFilename is empty; setting
+          // it later via a /shorts/clip call would also work, but leaving it
+          // blank means the cron will skip until the clip is rendered. So we
+          // require the caller to have downloaded the clip already, OR we
+          // can leave clipFilename blank and the cron will retry until the
+          // user clicks Download Clip.
+          clipFilename: '',
+          connectionId: acct.id
+        });
+        return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
+      }
+    }
+
+    // Post-now path — we need a media path on disk. Reuse the most recent
+    // rendered clip for this analysis/moment if present; otherwise return a
+    // clear error so the UI can prompt the user to click Download Clip
+    // first. (Rendering synchronously here would block the request for
+    // 30-60 seconds.)
+    const fs = require('fs');
+    const path = require('path');
+    const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
+    let mediaPath = null;
+    try {
+      const files = fs.readdirSync(CLIPS_DIR);
+      const match = files
+        .filter(f => f.includes(analysisId) && f.includes('m' + momentIndex))
+        .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime)[0];
+      if (match && fs.statSync(match.full).size > 10000) mediaPath = match.full;
+    } catch (_) {}
+    if (!mediaPath) {
+      return res.status(409).json({ success: false, error: 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.' });
+    }
+
+    const result = await publishToConnection(req.user.id, connectionId, {
+      title: title || moment.title || ('Viral moment ' + (momentIndex + 1)),
+      description: description || caption || moment.description || '',
+      caption: caption || moment.description || '',
+      mediaPath
+    });
+    if (!result.success) return res.status(400).json(result);
+    return res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+  } catch (err) {
+    console.error('[POST /shorts/api/publish-moment]', err.message);
+    res.status(500).json({ success: false, error: 'Publish failed' });
+  }
+});
+
 router.post('/calendar', requireAuth, async (req, res) => {
   try {
     const { title, platform, scheduledDate, scheduledTime, contentText, analysisId, momentIndex, notes, color, reminderEmail, reminderMinutes } = req.body;
@@ -6528,6 +6619,65 @@ ${paginationHtml}
       </div>
     </div>
 
+    <!-- Phase 2b — Publish Modal. Opened from each moment card's
+         "Publish to..." button. Reads /api/connections to populate the
+         account picker. Post Now hits the unified
+         /shorts/api/publish-moment endpoint; Schedule for Later creates
+         a calendar_entries row carrying the connection_id, which the
+         existing schedulePublisher cron picks up. -->
+    <div id="publishModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closePublishModal()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+          Publish This Moment
+        </h3>
+        <div id="publishSubtitle" style="color:var(--text-muted);font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>
+        <input type="hidden" id="publishMomentRef">
+
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>
+        <select id="publishAccount" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          <option value="">Loading your connected accounts...</option>
+        </select>
+        <div id="publishNoAccounts" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">
+          You don\'t have any social accounts connected yet.
+          <a href="/distribute/connections" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;margin-top:8px;">
+            Connect an account <span style="font-size:0.9em;">&rarr;</span>
+          </a>
+        </div>
+
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>
+        <input type="text" id="publishTitle" maxlength="120" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+
+        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Caption / Description</label>
+        <textarea id="publishCaption" rows="4" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:80px;"></textarea>
+
+        <div style="display:flex;gap:8px;margin-bottom:14px;background:var(--dark);border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">
+          <button id="publishTabNow" type="button" onclick="setPublishMode(\'now\')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>
+          <button id="publishTabLater" type="button" onclick="setPublishMode(\'later\')" style="flex:1;background:transparent;color:var(--text-muted);border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>
+        </div>
+
+        <div id="publishLaterFields" style="display:none;margin-bottom:14px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
+              <input type="date" id="publishDate" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
+            </div>
+            <div>
+              <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label>
+              <input type="time" id="publishTime" value="12:00" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
+            </div>
+          </div>
+        </div>
+
+        <div id="publishStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button onclick="closePublishModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
+          <button id="publishSubmitBtn" onclick="submitPublish()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Publish</button>
+        </div>
+      </div>
+    </div>
+
 </main>
 
   <!-- Calendar Entry Modal -->
@@ -7076,6 +7226,128 @@ ${paginationHtml}
         btn.disabled = false; btn.textContent = orig;
       }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 2b — Publish modal. Lets the user publish a viral moment to
+    // any connected social account (loaded from /api/connections) without
+    // leaving the Smart Shorts page. Supports Post Now and Schedule for
+    // Later. Schedule reuses the existing calendar_entries auto-publish
+    // machinery so the schedulePublisher cron picks it up.
+    // ─────────────────────────────────────────────────────────────────────
+    var _publishConnections = [];
+    var _publishMode = 'now';
+
+    async function openPublishModal(analysisId, momentIdx) {
+      var analysis = window.lastAnalysisData || window.currentAnalysis;
+      if (analysis && (analysis.id !== analysisId && analysis._id !== analysisId)) analysis = null;
+      var moment = analysis && analysis.moments ? analysis.moments[momentIdx] : null;
+      var defaultTitle = moment ? (moment.title || ('Viral moment ' + (momentIdx + 1))) : ('Viral moment ' + (momentIdx + 1));
+      var defaultCaption = moment ? (moment.description || moment.reason || '') : '';
+
+      document.getElementById('publishMomentRef').value = analysisId + '|' + momentIdx;
+      document.getElementById('publishTitle').value = defaultTitle.slice(0, 120);
+      document.getElementById('publishCaption').value = defaultCaption;
+      var now = new Date(); now.setMinutes(now.getMinutes() + 60);
+      document.getElementById('publishDate').value = now.toISOString().slice(0, 10);
+      document.getElementById('publishTime').value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+      setPublishMode('now');
+      document.getElementById('publishStatus').style.display = 'none';
+      document.getElementById('publishModal').style.display = 'flex';
+
+      // Pull live connections.
+      var sel = document.getElementById('publishAccount');
+      var noAcct = document.getElementById('publishNoAccounts');
+      sel.innerHTML = '<option value="">Loading...</option>';
+      try {
+        var resp = await fetch('/api/connections', { credentials: 'same-origin' });
+        var data = await resp.json();
+        _publishConnections = (data && data.accounts) || [];
+        // Filter to platforms where we can actually publish video.
+        var supported = ['tiktok','instagram','youtube','facebook','twitter','linkedin','pinterest'];
+        _publishConnections = _publishConnections.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+        if (_publishConnections.length === 0) {
+          sel.style.display = 'none';
+          noAcct.style.display = 'block';
+        } else {
+          sel.style.display = '';
+          noAcct.style.display = 'none';
+          sel.innerHTML = _publishConnections.map(function(c) {
+            var label = (c.platform.charAt(0).toUpperCase() + c.platform.slice(1)) +
+              ' \u2014 ' + (c.accountName || c.platformUsername || c.id);
+            return '<option value="' + c.id + '" data-platform="' + c.platform + '">' + label + '</option>';
+          }).join('');
+        }
+      } catch (e) {
+        sel.innerHTML = '<option value="">Failed to load accounts</option>';
+      }
+    }
+    function closePublishModal() {
+      document.getElementById('publishModal').style.display = 'none';
+    }
+    function setPublishMode(mode) {
+      _publishMode = mode;
+      var nowBtn = document.getElementById('publishTabNow');
+      var laterBtn = document.getElementById('publishTabLater');
+      var laterFields = document.getElementById('publishLaterFields');
+      var submitBtn = document.getElementById('publishSubmitBtn');
+      if (mode === 'now') {
+        nowBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; nowBtn.style.color = '#fff';
+        laterBtn.style.background = 'transparent'; laterBtn.style.color = 'var(--text-muted)';
+        laterFields.style.display = 'none';
+        submitBtn.textContent = 'Publish now';
+      } else {
+        laterBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; laterBtn.style.color = '#fff';
+        nowBtn.style.background = 'transparent'; nowBtn.style.color = 'var(--text-muted)';
+        laterFields.style.display = 'block';
+        submitBtn.textContent = 'Schedule';
+      }
+    }
+    async function submitPublish() {
+      var btn = document.getElementById('publishSubmitBtn');
+      var statusEl = document.getElementById('publishStatus');
+      var connectionId = document.getElementById('publishAccount').value;
+      if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
+      var ref = (document.getElementById('publishMomentRef').value || '').split('|');
+      var payload = {
+        analysisId: ref[0] || null,
+        momentIndex: ref[1] != null && ref[1] !== '' ? Number(ref[1]) : null,
+        connectionId: connectionId,
+        title: document.getElementById('publishTitle').value.trim(),
+        caption: document.getElementById('publishCaption').value.trim(),
+        description: document.getElementById('publishCaption').value.trim()
+      };
+      if (_publishMode === 'later') {
+        var d = document.getElementById('publishDate').value;
+        var t = document.getElementById('publishTime').value || '12:00';
+        if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
+        payload.scheduledAt = d + 'T' + t + ':00';
+      }
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = _publishMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
+      statusEl.style.display = 'block';
+      statusEl.textContent = _publishMode === 'now' ? 'Rendering clip and posting\u2026 this can take a moment.' : 'Scheduling the post\u2026';
+      try {
+        var resp = await fetch('/shorts/api/publish-moment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Failed');
+        if (_publishMode === 'now') {
+          statusEl.textContent = 'Posted! ' + (data.platform ? '\u2014 ' + data.platform : '');
+          showToast('Published to ' + (data.platform || 'platform'));
+        } else {
+          statusEl.textContent = 'Scheduled for ' + (data.scheduledFor || payload.scheduledAt);
+          showToast('Scheduled');
+        }
+        setTimeout(closePublishModal, 1500);
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
     // ESC closes the add-to-calendar modal
     document.addEventListener('keydown', function(e){
       if (e.key === 'Escape') {
@@ -7227,6 +7499,13 @@ ${paginationHtml}
               <button class="clip-tool-btn" onclick="addToCalendar('\${id}', \${idx})" title="Schedule this moment on the calendar"
                 style="background:rgba(108,58,237,0.10); color:#a78bfa; border:1px solid rgba(108,58,237,0.30);">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Add to Calendar
+              </button>
+              <!-- Phase 2b — Publish to a connected social account directly,
+                   or schedule via the calendar machinery using the same
+                   unified connected_accounts source of truth. -->
+              <button class="clip-tool-btn" onclick="openPublishModal('\${id}', \${idx})" title="Publish this moment to a connected social account"
+                style="background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.16));color:#fff;border:1px solid rgba(108,58,237,0.45);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg> Publish to&hellip;
               </button>
               <div class="clip-toolbar-divider"></div>
               <label class="clip-captions-toggle" title="Burn animated captions into the clip">

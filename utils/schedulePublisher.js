@@ -103,6 +103,34 @@ function resolveClipPath(filename) {
 
 async function publishOneEntry(entry) {
   const platformKey = (entry.platform || '').toLowerCase();
+  const mediaPath = resolveClipPath(entry.clip_filename);
+  if (!mediaPath) {
+    throw new Error(
+      'Pre-rendered clip is missing on disk (likely cleared by a server restart). ' +
+      'Re-open the moment and schedule again.'
+    );
+  }
+  const sourceItem = buildSourceItem(entry);
+
+  // Phase 2b — preferred path: entry.connection_id points to a row in
+  // connected_accounts. Dispatch via the unified utils/connections layer
+  // so token refresh + per-platform dispatch is handled in one place.
+  if (entry.connection_id) {
+    const { publishToConnection } = require('./connections');
+    const result = await publishToConnection(entry.user_id, entry.connection_id, {
+      title: sourceItem.title,
+      description: sourceItem.description,
+      caption: sourceItem.description,
+      mediaPath
+    });
+    if (!result || !result.success) {
+      throw new Error((result && result.error) || 'Publish failed');
+    }
+    return result.raw || result;
+  }
+
+  // Legacy fallback — entries created before the unified system store
+  // tokens on the users table per platform. Keep working for back-compat.
   const cfg = PLATFORM_TABLE[platformKey];
   if (!cfg) {
     throw new Error(`Auto-publish not supported for platform "${entry.platform}"`);
@@ -112,17 +140,9 @@ async function publishOneEntry(entry) {
   const destAccount = buildDestAccount(platformKey, user);
   if (!destAccount) {
     throw new Error(
-      `${entry.platform} isn't connected for this user. Reconnect the account in /settings and reschedule.`
+      `${entry.platform} isn't connected for this user. Reconnect the account on /distribute/connections and reschedule.`
     );
   }
-  const mediaPath = resolveClipPath(entry.clip_filename);
-  if (!mediaPath) {
-    throw new Error(
-      'Pre-rendered clip is missing on disk (likely cleared by a server restart). ' +
-      'Re-open the moment and schedule again.'
-    );
-  }
-  const sourceItem = buildSourceItem(entry);
 
   try { await wf.refreshTokenIfNeeded(destAccount); } catch (_) {}
 
