@@ -3182,12 +3182,13 @@
     var aiStatus   = panel.querySelector('#broAiStatus');
 
     function getSelectedV1Clip(){
-      // Strict: only the .selected V1 clip qualifies, with a server-
-      // resolvable mediaUrl. The B-Roll modal explicitly requires the
-      // user to pick a clip — no playhead / first-clip fallbacks.
+      // Task #107 — Accept blob: URLs too. The analyze handler will
+      // promote them via ensureClipHasServerUrl right before the fetch,
+      // so there's no reason to disable the button when a clip's URL
+      // hasn't been server-resolved yet. Without this change, fresh
+      // YouTube imports and uploaded blobs would never enable B-Roll.
       var sel = document.querySelector('.mt-track-video .mt-clip.selected');
       if (sel && sel.dataset.mediaUrl &&
-          sel.dataset.mediaUrl.indexOf('blob:') !== 0 &&
           sel.dataset.clipType !== 'text' &&
           sel.dataset.clipType !== 'motion'){
         return sel;
@@ -3256,13 +3257,21 @@
       analyzeBtn.disabled = true;
       analyzeBtn.style.opacity = '0.6';
       aiStatus.style.color = '#a78bfa';
-      aiStatus.textContent = 'Transcribing + analyzing ' + clipDisplayName(src) + '…';
+      aiStatus.textContent = 'Preparing ' + clipDisplayName(src) + '…';
       aiBody.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px;color:#a78bfa;font-size:12px;padding:30px 0;justify-content:center">' +
           '<span style="display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></span>' +
           'Whisper is transcribing your clip…' +
         '</div>';
       try {
+        // Task #107 — promote blob: URLs to server-resolvable URLs
+        // before hitting /ai-broll/analyze-segments, mirroring the
+        // pattern used by Translate / BG Remove / Style Transfer.
+        target = await ensureClipHasServerUrl(target);
+        if (!target || !target.dataset.mediaUrl){
+          throw new Error('Could not prepare clip — try re-adding it from the Media panel');
+        }
+        aiStatus.textContent = 'Transcribing + analyzing ' + clipDisplayName(target) + '…';
         var rA = await fetch('/ai-broll/analyze-segments', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ mediaUrl: target.dataset.mediaUrl })
@@ -4436,6 +4445,14 @@
     window.addEventListener('beforeunload', beforeUnload);
     try {
       prog.advance(0);
+      // Task #108 \u2014 promote blob: URLs to server-resolvable URLs before
+      // hitting /smart-cut. Without this, clips whose mediaUrl hasn't
+      // been server-uploaded yet (B-Roll inserts, fresh imports, etc.)
+      // would 404 with "Media not found on server".
+      clip = await ensureClipHasServerUrl(clip);
+      if (!clip || !clip.dataset.mediaUrl){
+        throw new Error('Could not prepare clip \u2014 try re-adding it from the Media panel');
+      }
       var r = await fetch('/video-editor/smart-cut', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mediaUrl: clip.dataset.mediaUrl, mode: mode, thresholdSec: thresholdSec })

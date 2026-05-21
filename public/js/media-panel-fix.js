@@ -3441,21 +3441,118 @@
   }
 
   // ── Clip Tools ──
+  // Task #109 — Trim popover with twin sliders. Replaces the legacy
+  // prompt('Trim in/out in seconds (e.g. 2,10)') which made users type
+  // raw seconds. Now they drag two range handles on the source span,
+  // see IN and OUT values live, and hit Apply (or Reset). Same visual
+  // language as the Slip / Resize popovers.
   function clipActionTrim(){
-    withActiveClip(null, function(clip){
-      var curIn  = parseFloat(clip.dataset.trimIn)  || 0;
-      var curOut = parseFloat(clip.dataset.trimOut) || parseFloat(clip.dataset.duration) || 0;
-      var input = prompt('Trim in/out in seconds (e.g. 2,10 — leave blank to reset)',
-        curIn + ',' + curOut);
-      if (input === null) return;
-      if (!input.trim()){ delete clip.dataset.trimIn; delete clip.dataset.trimOut; showToast('Trim reset'); return; }
-      var parts = input.split(',').map(function(s){ return parseFloat(s.trim()); });
-      if (!isFinite(parts[0]) || !isFinite(parts[1]) || parts[1] <= parts[0]){
-        showToast('Invalid trim values'); return;
+    var existing = document.getElementById('trimPopover');
+    if (existing instanceof Element && existing.isConnected){ existing.remove(); return; }
+    if (existing && typeof existing.remove === 'function'){ try { existing.remove(); } catch(_){} }
+    if (typeof closeOtherPopovers === 'function') closeOtherPopovers('trimPopover');
+
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a clip first'); return; }
+    var duration = parseFloat(clip.dataset.duration) || 0;
+    var origIn   = parseFloat(clip.dataset.trimIn)  || 0;
+    var origOut  = parseFloat(clip.dataset.trimOut) || duration;
+    var mediaUrl = clip.dataset.mediaUrl || '';
+    var clipType = clip.dataset.clipType || 'vid';
+
+    function pickMaxOut(){
+      var hinted = parseFloat(clip.dataset.srcDuration)
+                || parseFloat(clip.dataset.sourceDuration);
+      if (hinted && hinted > duration + 0.01) return Promise.resolve(hinted);
+      if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+        return Promise.resolve(Math.max(duration, hinted || 0));
       }
-      clip.dataset.trimIn  = String(parts[0]);
-      clip.dataset.trimOut = String(parts[1]);
-      showToast('Trim ' + parts[0] + 's \u2192 ' + parts[1] + 's');
+      return new Promise(function(resolve){
+        var probe = document.createElement(clipType === 'aud' ? 'audio' : 'video');
+        probe.preload = 'metadata';
+        probe.muted = true;
+        probe.src = mediaUrl;
+        var done = false;
+        var finish = function(d){
+          if (done) return; done = true;
+          resolve(d && isFinite(d) && d > 0 ? d : duration);
+        };
+        probe.addEventListener('loadedmetadata', function(){ finish(probe.duration); }, { once: true });
+        probe.addEventListener('error',          function(){ finish(0); }, { once: true });
+        setTimeout(function(){ finish(0); }, 4000);
+      });
+    }
+
+    pickMaxOut().then(function(maxOut){
+      maxOut = Math.max(maxOut, origOut, duration);
+      if (origOut > maxOut) origOut = maxOut;
+
+      var pop = document.createElement('div');
+      pop.id = 'trimPopover';
+      pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
+        'border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:300px;' +
+        'box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+      function row(lbl, id, min, max, val){
+        return ''
+          + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+          +   '<span style="font-size:10px;color:#8886a0;min-width:46px">' + lbl + '</span>'
+          +   '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="0.01" value="' + val + '" style="flex:1;accent-color:#a78bfa"/>'
+          +   '<span id="' + id + 'Val" style="font-size:11px;font-weight:600;color:#fde047;min-width:48px;text-align:right">' + val.toFixed(2) + 's</span>'
+          + '</div>';
+      }
+      pop.innerHTML =
+        '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:6px">TRIM</div>' +
+        '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Drag the handles to set the in / out points of this clip.</div>' +
+        row('In',  'trimIn',  0, maxOut, origIn) +
+        row('Out', 'trimOut', 0, maxOut, origOut) +
+        '<div id="trimSpan" style="font-size:10px;color:#8886a0;text-align:center;margin-bottom:10px">Length: <b style="color:#a78bfa">' + (origOut - origIn).toFixed(2) + 's</b></div>' +
+        '<div style="display:flex;gap:6px">' +
+          '<button id="trimReset" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Reset</button>' +
+          '<button id="trimCancel" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Cancel</button>' +
+          '<button id="trimApply" style="flex:1;padding:6px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Apply</button>' +
+        '</div>';
+      document.body.appendChild(pop);
+
+      var inR  = pop.querySelector('#trimIn');
+      var outR = pop.querySelector('#trimOut');
+      var inV  = pop.querySelector('#trimInVal');
+      var outV = pop.querySelector('#trimOutVal');
+      var spanEl = pop.querySelector('#trimSpan');
+      function refresh(){
+        var i = parseFloat(inR.value);
+        var o = parseFloat(outR.value);
+        inV.textContent  = i.toFixed(2) + 's';
+        outV.textContent = o.toFixed(2) + 's';
+        spanEl.innerHTML = 'Length: <b style="color:' + (o > i ? '#a78bfa' : '#fb7185') + '">' + Math.max(0, o - i).toFixed(2) + 's</b>';
+      }
+      inR.addEventListener('input', function(){
+        if (parseFloat(inR.value) >= parseFloat(outR.value)) outR.value = (parseFloat(inR.value) + 0.05).toFixed(2);
+        refresh();
+      });
+      outR.addEventListener('input', function(){
+        if (parseFloat(outR.value) <= parseFloat(inR.value)) inR.value = (parseFloat(outR.value) - 0.05).toFixed(2);
+        refresh();
+      });
+      pop.querySelector('#trimReset').addEventListener('click', function(){
+        delete clip.dataset.trimIn;
+        delete clip.dataset.trimOut;
+        pop.remove();
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        showToast('Trim reset');
+      });
+      pop.querySelector('#trimCancel').addEventListener('click', function(){ pop.remove(); });
+      pop.querySelector('#trimApply').addEventListener('click', function(){
+        var i = parseFloat(inR.value);
+        var o = parseFloat(outR.value);
+        if (!isFinite(i) || !isFinite(o) || o <= i){ showToast('Invalid trim range'); return; }
+        clip.dataset.trimIn  = i.toFixed(3);
+        clip.dataset.trimOut = o.toFixed(3);
+        pop.remove();
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        showToast('Trim ' + i.toFixed(2) + 's \u2192 ' + o.toFixed(2) + 's');
+      });
     });
   }
   // Visual Slip Edit: shift the media WITHIN the clip's duration
@@ -3482,21 +3579,53 @@
     if (!clip){ showToast('Select a clip first'); return; }
 
     var duration = parseFloat(clip.dataset.duration) || 0;   // clip's on-timeline length
-    var srcDur   = parseFloat(clip.dataset.srcDuration)
-                || parseFloat(clip.dataset.sourceDuration)
-                || duration;
     var origIn   = parseFloat(clip.dataset.trimIn)  || 0;
     var origOut  = parseFloat(clip.dataset.trimOut) || duration;
     var span     = origOut - origIn;                         // stays constant across slips
+    var mediaUrl = clip.dataset.mediaUrl || '';
+    var clipType = clip.dataset.clipType || 'vid';
 
-    // Slip range: how far we can push trimIn without overflowing source
-    var minIn = 0;
-    var maxIn = Math.max(0, srcDur - span);
-    if (maxIn <= 0){
-      showToast('Source media is too short to slip');
-      return;
+    // Task #110 — Don't trust dataset.srcDuration; it's missing for most
+    // clips and the old fallback to `duration` made every slip attempt
+    // fail with "Source media too short to slip". Sniff the real source
+    // length from a hidden <video> / <audio> element when needed.
+    function pickSrcDur(){
+      var hinted = parseFloat(clip.dataset.srcDuration)
+                || parseFloat(clip.dataset.sourceDuration);
+      if (hinted && hinted > duration + 0.01) return Promise.resolve(hinted);
+      if (!mediaUrl || mediaUrl.indexOf('blob:') === 0){
+        // Blob URLs can be probed too, but a fresh blob fetch may stall
+        // the popover. Fall back to the clip's own duration.
+        return Promise.resolve(Math.max(duration, hinted || 0));
+      }
+      return new Promise(function(resolve){
+        var probe = document.createElement(clipType === 'aud' ? 'audio' : 'video');
+        probe.preload = 'metadata';
+        probe.muted   = true;
+        probe.src     = mediaUrl;
+        var done = false;
+        var finish = function(d){
+          if (done) return; done = true;
+          resolve(d && isFinite(d) && d > 0 ? d : duration);
+        };
+        probe.addEventListener('loadedmetadata', function(){ finish(probe.duration); }, { once: true });
+        probe.addEventListener('error',          function(){ finish(0); }, { once: true });
+        setTimeout(function(){ finish(0); }, 4000);
+      });
     }
 
+    pickSrcDur().then(function(srcDur){
+      var minIn = 0;
+      var maxIn = Math.max(0, srcDur - span);
+      if (maxIn <= 0.01){
+        showToast('Source has no headroom past the current slip window — already at full extent');
+        return;
+      }
+      _buildSlipPopover(clip, srcDur, origIn, origOut, span, minIn, maxIn);
+    });
+  }
+
+  function _buildSlipPopover(clip, srcDur, origIn, origOut, span, minIn, maxIn){
     var pop = document.createElement('div');
     pop.id = 'slipPopover';
     pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;' +
@@ -4019,17 +4148,21 @@
     var cur = window.__exportAspect || '16:9';
     var pop = document.createElement('div');
     pop.id = 'srPopover';
-    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:250px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
+    pop.style.cssText = 'position:fixed;z-index:100000;right:20px;top:120px;background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:14px;width:260px;box-shadow:0 10px 40px rgba(0,0,0,.6);color:#e2e0f0;font-family:system-ui,sans-serif';
     pop.innerHTML =
       '<div style="font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:.5px;margin-bottom:8px">SMART RESIZE</div>' +
-      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Sets the output aspect for your export.</div>' +
+      '<div style="font-size:10px;color:#8886a0;margin-bottom:10px">Pick an output aspect, then hit Apply.</div>' +
       '<div id="srPresetRow" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px"></div>' +
       '<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#e2e0f0;cursor:pointer;padding:8px;background:rgba(124,58,237,.08);border-radius:6px">' +
         '<input type="checkbox" id="srFaceTrack" style="accent-color:#a78bfa"/>' +
         '<span>\ud83c\udfaf AI Face Track <span style="color:#8886a0;font-size:9px">(centers on subject)</span></span>' +
       '</label>' +
+      // Task #111 \u2014 primary Apply button + secondary Close.
+      // Selecting a preset just highlights it; the resize doesn't fire
+      // until the user explicitly hits Apply.
       '<div style="display:flex;gap:6px;margin-top:10px">' +
-        '<button id="srClose" style="flex:1;padding:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '<button id="srClose" style="flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer">Close</button>' +
+        '<button id="srApply" style="flex:1;padding:7px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">Apply</button>' +
       '</div>';
     document.body.appendChild(pop);
 
@@ -4039,37 +4172,46 @@
       { ratio:'1:1',  label:'1:1 Square',    w:1080, h:1080 },
       { ratio:'4:5',  label:'4:5 Portrait',  w:1080, h:1350 }
     ];
+    var selected = presets.find(function(p){ return p.ratio === cur; }) || presets[0];
     var row = pop.querySelector('#srPresetRow');
+
+    function paintSelection(){
+      Array.prototype.forEach.call(row.children, function(b){
+        var on = (b.dataset.ratio === selected.ratio);
+        b.style.background  = on ? 'rgba(139,92,246,.3)' : 'rgba(255,255,255,.04)';
+        b.style.borderColor = on ? '#a78bfa' : 'rgba(255,255,255,.1)';
+      });
+    }
     presets.forEach(function(p){
       var b = document.createElement('button');
-      var on = (p.ratio === cur);
-      b.style.cssText = 'padding:8px 6px;background:' + (on ? 'rgba(139,92,246,.3)' : 'rgba(255,255,255,.04)') +
-        ';border:1px solid ' + (on ? '#a78bfa' : 'rgba(255,255,255,.1)') +
-        ';border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;text-align:left';
+      b.dataset.ratio = p.ratio;
+      b.style.cssText = 'padding:8px 6px;background:rgba(255,255,255,.04);' +
+        'border:1px solid rgba(255,255,255,.1);' +
+        'border-radius:6px;color:#e2e0f0;font-size:11px;cursor:pointer;text-align:left;transition:all .15s';
       b.textContent = p.label;
-      b.addEventListener('click', function(){
-        window.__exportAspect = p.ratio;
-        window.__exportWidth  = p.w;
-        window.__exportHeight = p.h;
-        applySmartResizePreview(p.ratio);
-        var faceTrack = pop.querySelector('#srFaceTrack').checked;
-        if (faceTrack){
-          runFaceTrackCrop(p.ratio).then(function(msg){
-            showToast('Smart Resize ' + p.ratio + ' \u00b7 ' + msg);
-          }).catch(function(err){
-            showToast('Smart Resize ' + p.ratio + ' \u00b7 face track unavailable');
-          });
-        } else {
-          showToast('Smart Resize: ' + p.label);
-        }
-        // Redraw preset highlights
-        pop.remove();
-        clipActionSmartResize();
-      });
+      b.addEventListener('click', function(){ selected = p; paintSelection(); });
       row.appendChild(b);
     });
+    paintSelection();
 
     pop.querySelector('#srClose').addEventListener('click', function(){ pop.remove(); });
+    pop.querySelector('#srApply').addEventListener('click', function(){
+      window.__exportAspect = selected.ratio;
+      window.__exportWidth  = selected.w;
+      window.__exportHeight = selected.h;
+      applySmartResizePreview(selected.ratio);
+      var faceTrack = pop.querySelector('#srFaceTrack').checked;
+      pop.remove();
+      if (faceTrack){
+        runFaceTrackCrop(selected.ratio).then(function(msg){
+          showToast('Smart Resize ' + selected.ratio + ' \u00b7 ' + msg);
+        }).catch(function(){
+          showToast('Smart Resize ' + selected.ratio + ' \u00b7 face track unavailable');
+        });
+      } else {
+        showToast('Smart Resize: ' + selected.label);
+      }
+    });
   }
 
   // Paint a letterbox/pillarbox mask over the PGM so the user can see
