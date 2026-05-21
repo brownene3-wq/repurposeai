@@ -829,12 +829,23 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
     { Authorization: `Bearer ${destAccount.access_token}` }
   );
 
-  if (!registerResponse.body.value?.uploadMechanism?.com.linkedin.digitalmedia_uploadmechanism.UploadStep?.uploadUrl) {
-    throw new Error('LinkedIn asset registration failed');
+  // LinkedIn's response key is a literal dotted string (NOT chained
+  // property access). The full namespace is
+  // 'com.linkedin.digitalmedia.uploadmechanism.MediaUploadHttpRequest'
+  // — note dots throughout, no underscores. The previous code used
+  // chained dotted access AND the wrong namespace, throwing
+  // 'Cannot read properties of undefined (reading linkedin)' on every
+  // LinkedIn video publish.
+  const UPLOAD_MECH_KEY = 'com.linkedin.digitalmedia.uploadmechanism.MediaUploadHttpRequest';
+  const value = registerResponse.body && registerResponse.body.value;
+  const mech  = value && value.uploadMechanism && value.uploadMechanism[UPLOAD_MECH_KEY];
+  if (!mech || !mech.uploadUrl) {
+    const detail = JSON.stringify(registerResponse.body || {}).slice(0, 300);
+    throw new Error('LinkedIn asset registration failed: ' + detail);
   }
 
   // Upload the media
-  const uploadUrl = registerResponse.body.value.uploadMechanism['com.linkedin.digitalmedia_uploadmechanism.UploadStep'].uploadUrl;
+  const uploadUrl = mech.uploadUrl;
   const asset = registerResponse.body.value.asset;
 
   await new Promise((resolve, reject) => {
