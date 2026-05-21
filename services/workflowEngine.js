@@ -552,30 +552,64 @@ async function publishToDestination(workflow, destAccount, sourceItem, mediaPath
 }
 
 async function publishYouTube(destAccount, sourceItem, mediaPath) {
-  // Simplified YouTube upload using resumable upload API
+  // Resumable upload — see https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol
+  if (!mediaPath || !fs.existsSync(mediaPath)) {
+    throw new Error('YouTube publish: media file is missing');
+  }
+  const fileSize = fs.statSync(mediaPath).size;
+  if (fileSize < 1024) {
+    throw new Error('YouTube publish: media file is empty');
+  }
+
+  // YouTube clamps the title to 100 chars. Strip anything beyond and any
+  // angle-brackets that would otherwise cause a 400.
+  const safeTitle = String(sourceItem.title || 'Untitled')
+    .replace(/[<>]/g, '')
+    .slice(0, 100) || 'Untitled';
+  const safeDescription = String(sourceItem.description || '').slice(0, 5000);
+
   const metadata = {
     snippet: {
-      title: sourceItem.title,
-      description: sourceItem.description,
-      tags: ['repurposed']
+      title: safeTitle,
+      description: safeDescription,
+      tags: Array.isArray(sourceItem.tags) && sourceItem.tags.length ? sourceItem.tags.slice(0, 10) : ['repurposed']
     },
-    status: { privacyStatus: 'public' }
+    status: { privacyStatus: sourceItem.privacy || 'public', selfDeclaredMadeForKids: false }
   };
 
   const uploadUrl = 'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status';
 
+  // YouTube needs these two X-Upload-* headers to allocate a resumable
+  // session. Without them, the API returns a JSON error and never sets
+  // the Location header — which is the failure mode behind the 'upload
+  // session creation failed' message users were hitting.
   const response = await httpsPostJson(uploadUrl, metadata, {
-    Authorization: `Bearer ${destAccount.access_token}`
+    Authorization: `Bearer ${destAccount.access_token}`,
+    'Content-Type': 'application/json; charset=UTF-8',
+    'X-Upload-Content-Type': 'video/mp4',
+    'X-Upload-Content-Length': String(fileSize)
   });
 
   if (!response.headers.location) {
-    throw new Error('YouTube upload session creation failed');
+    // Surface the actual YouTube error rather than a generic message —
+    // helps the user see auth/quota/scope issues directly.
+    const status = response.status || 0;
+    const body = response.body && (response.body.error || response.body);
+    const reason = (body && (body.error_description || body.message ||
+                   (body.error && (body.error.message || body.error.errors && body.error.errors[0] && body.error.errors[0].message))))
+                   || (typeof body === 'string' ? body.slice(0, 200) : null);
+    if (status === 401 || status === 403) {
+      throw new Error('YouTube authentication failed (status ' + status + '). Reconnect YouTube on /distribute/connections and try again.' + (reason ? ' Details: ' + reason : ''));
+    }
+    if (status === 400 && /quota|exceeded/i.test(reason || '')) {
+      throw new Error('YouTube daily upload quota exceeded. Try again tomorrow or request quota increase in Google Cloud Console.');
+    }
+    throw new Error('YouTube upload session creation failed (status ' + status + ')' + (reason ? ': ' + reason : ''));
   }
 
-  // Upload the video file
+  // Upload the video file to the resumable URL we just received.
   const resumableUrl = response.headers.location;
   const fileStream = fs.createReadStream(mediaPath);
-  const fileSize = fs.statSync(mediaPath).size;
 
   return new Promise((resolve, reject) => {
     const urlObj = new URL(resumableUrl);
