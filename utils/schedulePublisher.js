@@ -103,30 +103,35 @@ function resolveClipPath(filename) {
 
 async function publishOneEntry(entry) {
   const platformKey = (entry.platform || '').toLowerCase();
+  const sourceItem = buildSourceItem(entry);
+
+  // Phase 2b - preferred path: entry.connection_id points to a row in
+  // connected_accounts. Dispatch via the unified utils/connections layer
+  // so token refresh + per-platform dispatch is handled in one place.
+  // Phase 2d: clip_filename is now optional - when blank the platform
+  // publisher's text-only branch kicks in (Twitter/LinkedIn/Facebook).
+  if (entry.connection_id) {
+    const { publishToConnection } = require('./connections');
+    const mp = resolveClipPath(entry.clip_filename); // may be null for text posts
+    const result = await publishToConnection(entry.user_id, entry.connection_id, {
+      title: sourceItem.title,
+      description: sourceItem.description,
+      caption: sourceItem.description,
+      mediaPath: mp
+    });
+    if (!result || !result.success) {
+      throw new Error((result && result.error) || 'Publish failed');
+    }
+    return result.raw || result;
+  }
+
+  // Legacy path requires a pre-rendered clip on disk.
   const mediaPath = resolveClipPath(entry.clip_filename);
   if (!mediaPath) {
     throw new Error(
       'Pre-rendered clip is missing on disk (likely cleared by a server restart). ' +
       'Re-open the moment and schedule again.'
     );
-  }
-  const sourceItem = buildSourceItem(entry);
-
-  // Phase 2b — preferred path: entry.connection_id points to a row in
-  // connected_accounts. Dispatch via the unified utils/connections layer
-  // so token refresh + per-platform dispatch is handled in one place.
-  if (entry.connection_id) {
-    const { publishToConnection } = require('./connections');
-    const result = await publishToConnection(entry.user_id, entry.connection_id, {
-      title: sourceItem.title,
-      description: sourceItem.description,
-      caption: sourceItem.description,
-      mediaPath
-    });
-    if (!result || !result.success) {
-      throw new Error((result && result.error) || 'Publish failed');
-    }
-    return result.raw || result;
   }
 
   // Legacy fallback — entries created before the unified system store

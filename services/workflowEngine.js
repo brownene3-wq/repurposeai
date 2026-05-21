@@ -731,6 +731,21 @@ async function publishFacebook(destAccount, sourceItem, mediaPath) {
   const pageId = destAccount.metadata?.page_id || destAccount.platform_user_id;
   if (!pageId) throw new Error('No Facebook page ID');
 
+  // Text-only path — Repurpose-style 'post body to Page feed' when no
+  // media is attached. Posts via /<pageId>/feed instead of /photos.
+  if (!mediaPath) {
+    const text = (sourceItem.description || sourceItem.caption || sourceItem.title || '').slice(0, 5000);
+    if (!text) throw new Error('Facebook requires text or media to post');
+    const feedResp = await httpsPostJson(
+      `https://graph.facebook.com/v21.0/${pageId}/feed`,
+      { message: text, access_token: destAccount.access_token }
+    );
+    if (!feedResp.body || !feedResp.body.id) {
+      throw new Error('Facebook text post failed: ' + JSON.stringify(feedResp.body).slice(0, 200));
+    }
+    return { platform: 'facebook', postId: feedResp.body.id };
+  }
+
   // Post to Facebook feed
   const response = await httpsPost(
     `https://graph.facebook.com/${pageId}/photos`,
