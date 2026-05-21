@@ -11699,6 +11699,126 @@ router.post('/freeze-frame', requireAuth, async (req, res) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
+// Task #115 — POST /video-editor/resize-clip
+// Real center-crop reframe for a single clip — same pipeline AI Reframe
+// uses on the Center Crop path (calculateCropDimensions + ffmpeg
+// crop=W:H:X:Y,scale=W:H). Returns a brand-new mp4 file URL the client
+// then swaps into the clip's dataset.mediaUrl.
+//
+// Body: { mediaUrl: string, aspectRatio: '16:9'|'9:16'|'1:1'|'4:5' }
+// Returns: { success, mediaUrl, filename, width, height, aspectRatio }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/resize-clip', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+
+    // Same preset table AI Reframe uses on /process. Width/height are the
+    // OUTPUT canvas dims; the source gets center-cropped to this aspect
+    // then scaled into the canvas.
+    var ASPECTS = {
+      '16:9': { width: 1920, height: 1080 },
+      '9:16': { width: 1080, height: 1920 },
+      '1:1':  { width: 1080, height: 1080 },
+      '4:5':  { width: 1080, height: 1350 }
+    };
+    var aspectRatio = String(b.aspectRatio || '16:9');
+    if (!ASPECTS[aspectRatio]){
+      return res.status(400).json({ error: 'Unsupported aspect ratio: ' + aspectRatio });
+    }
+    var targetW = ASPECTS[aspectRatio].width;
+    var targetH = ASPECTS[aspectRatio].height;
+
+    // Probe input dimensions so we can compute the centered crop window.
+    var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+    var probeOut = await new Promise(function(resolve, reject){
+      var s = '';
+      var pErr = '';
+      var p = spawn(ffprobeLocal, [
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height',
+        '-of', 'csv=p=0',
+        srcPath
+      ]);
+      p.stdout.on('data', function(d){ s += d.toString(); });
+      p.stderr.on('data', function(d){ pErr += d.toString(); });
+      p.on('close', function(code){
+        if (code === 0) resolve(s);
+        else reject(new Error('ffprobe failed: ' + (pErr || 'exit ' + code).slice(-200)));
+      });
+      p.on('error', reject);
+    });
+    var parts = (probeOut || '').trim().split(',');
+    var srcW = parseInt(parts[0], 10);
+    var srcH = parseInt(parts[1], 10);
+    if (!srcW || !srcH){
+      return res.status(500).json({ error: 'Could not read source video dimensions' });
+    }
+
+    // Center crop math — identical to ai-reframe.js's calculateCropDimensions.
+    var srcAspect    = srcW / srcH;
+    var targetAspect = targetW / targetH;
+    var cropW, cropH;
+    if (srcAspect > targetAspect){
+      // Source is wider than target → crop horizontal slab
+      cropH = srcH;
+      cropW = Math.floor(srcH * targetAspect);
+    } else {
+      // Source is taller than target → crop vertical slab
+      cropW = srcW;
+      cropH = Math.floor(srcW / targetAspect);
+    }
+    var cropX = Math.floor((srcW - cropW) / 2);
+    var cropY = Math.floor((srcH - cropH) / 2);
+
+    var outName = 'resize_' + Date.now() + '_' + req.user.id + '.mp4';
+    var outPath = path.join(uploadDir, outName);
+
+    var filterComplex = 'crop=' + cropW + ':' + cropH + ':' + cropX + ':' + cropY +
+                        ',scale=' + targetW + ':' + targetH;
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vf', filterComplex,
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y', outPath
+      ]);
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0 && fs.existsSync(outPath)) resolve();
+        else reject(new Error('FFmpeg failed: ' + err.slice(-300)));
+      });
+      proc.on('error', reject);
+    });
+
+    res.json({
+      success:     true,
+      mediaUrl:    '/video-editor/download/' + outName,
+      filename:    outName,
+      width:       targetW,
+      height:      targetH,
+      aspectRatio: aspectRatio
+    });
+  } catch (err){
+    console.error('[resize-clip]', err);
+    res.status(500).json({ error: err.message || 'Resize failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
 // Task #55 — POST /video-editor/reverse-clip
 // Produces a reversed copy of the given media so the PGM preview can
 // play the clip backward via simple forward playback. The client swaps
