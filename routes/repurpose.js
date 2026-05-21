@@ -2645,7 +2645,7 @@ router.get('/history', requireAuth, (req, res) => {
                 // Phase 2d - Publish button. Reuses /api/connections and routes
                 // to /repurpose/api/publish-output which dispatches via the
                 // unified publishToConnection helper as a text-only post.
-                html += '<button onclick="openRpPublishModal(this, ' + JSON.stringify(contentId) + ', ' + JSON.stringify(output.id || null) + ')" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;">✈️ Publish to…</button>';
+                html += '<button data-content-id="' + escapeHtml(String(contentId)) + '" data-output-id="' + escapeHtml(String(output.id == null ? '' : output.id)) + '" onclick="openRpPublishModal(this)" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;">✈️ Publish to…</button>';
                 html += '</div>';
                 html += '</div>';
               });
@@ -2742,7 +2742,9 @@ router.get('/history', requireAuth, (req, res) => {
         }
         var _rpPubMode = 'now';
         var _rpPubCtx = { contentId: null, outputId: null, platform: null };
-        async function openRpPublishModal(btn, contentId, outputId){
+        async function openRpPublishModal(btn){
+          var contentId = btn && btn.dataset ? btn.dataset.contentId : null;
+          var outputId = btn && btn.dataset && btn.dataset.outputId ? btn.dataset.outputId : null;
           ensureRpPublishModal();
           var card = btn && btn.closest && btn.closest('.output-card');
           var platform = (card && card.dataset && card.dataset.platform || '').toLowerCase();
