@@ -318,13 +318,13 @@ app.get('/manifest.json', (req, res) => {
     theme_color: '#6C3AED',
     orientation: 'portrait-primary',
     icons: [
-      { src: '/images/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-      { src: '/images/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      { src: '/images/icon-192.png?v=5', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/images/icon-512.png?v=5', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
     ],
     categories: ['productivity', 'social'],
     shortcuts: [
-      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] },
-      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/images/icon-192.png', sizes: '192x192' }] }
+      { name: 'Repurpose Video', short_name: 'Repurpose', url: '/repurpose', icons: [{ src: '/images/icon-192.png?v=5', sizes: '192x192' }] },
+      { name: 'Smart Shorts', short_name: 'Shorts', url: '/shorts', icons: [{ src: '/images/icon-192.png?v=5', sizes: '192x192' }] }
     ]
   });
 });

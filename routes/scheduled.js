@@ -11,7 +11,7 @@ router.get('/', requireAuth, (req, res) => {
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
   <title>Scheduled - Splicora</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }

@@ -323,7 +323,7 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="Splicora auto-repurposes one video into unlimited content across 8 platforms — TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest, X. AI tools for clips, captions, hooks, B-roll & scheduling.">
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=4">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <style>${published.content_css || ''}</style>
@@ -345,13 +345,13 @@ router.get('/', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${BRAND.name} - ${BRAND.tagline}</title>
   <meta name="description" content="One video, every platform — automatically. Splicora connects to TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X and auto-publishes platform-tuned versions. Plus 10 AI tools: Smart Shorts, Captions, Hooks, B-Roll, Reframe, Music, Brand Voice, Editor & Calendar.">
-  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=4">
+  <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Splicora">
-  <link rel="apple-touch-icon" href="/images/icon-192.png?v=4">
+  <link rel="apple-touch-icon" href="/images/icon-192.png?v=5">
   <style>${getStyles()}</style>
 </head>
 <body>
@@ -377,7 +377,7 @@ router.get('/', async (req, res) => {
       <p>One video → 8 platforms, automatically. Connect TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X — Splicora auto-clips, captions, and publishes platform-tuned versions of every upload. Plus 10 AI tools to make every video pop.</p>
       <div class="hero-input-group">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
-        <button class="btn btn-primary">Create <img src="/images/splicora-app-icon.png" alt="" style="height:18px;width:18px;vertical-align:middle;margin-left:4px;display:inline-block"></button>
+        <button class="btn btn-primary">Create <img src="/images/splicora-app-icon.png?v=5" alt="" style="height:18px;width:18px;vertical-align:middle;margin-left:4px;display:inline-block"></button>
         <button class="btn btn-outline">Upload Files</button>
       </div>
       <div style="margin-top:14px;display:flex;justify-content:center"><a href="#repurpose" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;background:rgba(108,58,237,0.12);border:1px solid rgba(108,58,237,0.35);color:#c4b5fd;font-size:.85rem;font-weight:600;text-decoration:none;transition:all .25s" onmouseover="this.style.background='rgba(108,58,237,0.22)';this.style.color='#fff'" onmouseout="this.style.background='rgba(108,58,237,0.12)';this.style.color='#c4b5fd'"><span style="width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:repPulse 1.8s ease-in-out infinite"></span>NEW · See the Repurpose Engine ↓</a></div>
@@ -895,7 +895,7 @@ router.get('/', async (req, res) => {
       <p class="section-subtitle" style="margin:1rem auto 2rem">10 AI tools. Every platform. One subscription. Join thousands of creators who turn a single video into a week of content in under 5 minutes.</p>
       <div class="hero-input-group" style="margin-bottom:1rem">
         <input class="hero-input" type="text" placeholder="Paste your YouTube link here..." value="">
-        <button class="btn btn-primary">Create <img src="/images/splicora-app-icon.png" alt="" style="height:18px;width:18px;vertical-align:middle;margin-left:4px;display:inline-block"></button>
+        <button class="btn btn-primary">Create <img src="/images/splicora-app-icon.png?v=5" alt="" style="height:18px;width:18px;vertical-align:middle;margin-left:4px;display:inline-block"></button>
       </div>
       <p style="color:var(--text-dim);font-size:.85rem">Free plan available &middot; No credit card required</p>
     </div>
@@ -904,7 +904,7 @@ router.get('/', async (req, res) => {
   <!-- Get the App Section -->
   <section id="get-app" style="padding:80px 2rem;text-align:center;background:linear-gradient(180deg,var(--dark) 0%,rgba(108,58,237,0.08) 50%,var(--dark) 100%);">
     <div style="max-width:700px;margin:0 auto;">
-      <div style="margin-bottom:1rem;"><img src="/images/splicora-app-icon.png" alt="Splicora App" style="height:80px;border-radius:16px;"></div>
+      <div style="margin-bottom:1rem;"><img src="/images/splicora-app-icon.png?v=5" alt="Splicora App" style="height:80px;border-radius:16px;"></div>
       <h2 class="section-title" style="margin-bottom:.8rem;">Get the Splicora App</h2>
       <p style="color:var(--text-dim);font-size:1.05rem;line-height:1.8;margin-bottom:2rem;">
         Install Splicora on your phone for the full app experience — no app store needed. Access all features, get notifications, and create content on the go.
@@ -939,7 +939,7 @@ router.get('/', async (req, res) => {
         <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:46px;"></a>
         <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
-      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)"><img src="/images/splicora-app-icon.png" alt="" style="height:14px;border-radius:3px;vertical-align:middle;margin-right:4px;">Get the App</a></div>
+      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)"><img src="/images/splicora-app-icon.png?v=5" alt="" style="height:14px;border-radius:3px;vertical-align:middle;margin-right:4px;">Get the App</a></div>
       <div><h4>Company</h4><a href="/contact">Contact</a><a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a></div>
       <div><h4>Legal</h4><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/cookies">Cookie Policy</a></div>
     </div>
@@ -952,7 +952,7 @@ router.get('/', async (req, res) => {
   <!-- Mobile Install Banner -->
   <div id="installBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#6C3AED,#EC4899);padding:14px 20px;text-align:center;box-shadow:0 -4px 20px rgba(0,0,0,0.3);">
     <div style="display:flex;align-items:center;justify-content:center;gap:12px;max-width:600px;margin:0 auto;">
-      <div><img src="/images/splicora-app-icon.png" alt="Splicora" style="height:32px;border-radius:6px;"></div>
+      <div><img src="/images/splicora-app-icon.png?v=5" alt="Splicora" style="height:32px;border-radius:6px;"></div>
       <div style="flex:1;text-align:left;">
         <div style="font-weight:700;font-size:.9rem;color:#fff;">Get the Splicora App</div>
         <div style="font-size:.75rem;color:rgba(255,255,255,0.8);" id="installHint">Install for the best experience</div>

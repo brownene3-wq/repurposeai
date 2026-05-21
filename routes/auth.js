@@ -210,7 +210,7 @@ function authPage(type) {
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
  <title>${isLogin ? 'Log In' : 'Sign Up'} - Splicora</title>
- <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+ <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
  <style>${authStyles()}</style>
 </head>
 <body>
@@ -459,7 +459,7 @@ router.get('/forgot-password', (req, res) => {
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
  <title>Forgot Password - Splicora</title>
- <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+ <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
  <style>${authStyles()}</style>
 </head>
 <body>
@@ -554,7 +554,7 @@ router.get('/reset-password', (req, res) => {
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
  <title>Reset Password - Splicora</title>
- <link rel="icon" type="image/x-icon" href="/images/favicon.ico">
+ <link rel="icon" type="image/x-icon" href="/images/favicon.ico?v=5">
  <style>${authStyles()}</style>
 </head>
 <body>
