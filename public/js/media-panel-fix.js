@@ -4214,11 +4214,13 @@
   function applyPreviewAspectRatio(preset){
     var area = document.getElementById('videoPreviewArea');
     if (!area) return;
-    // Make the slot itself a centering flex box so the wrapper sits in
-    // the middle when its aspect makes it smaller than the slot.
-    area.style.display        = 'flex';
-    area.style.alignItems     = 'center';
-    area.style.justifyContent = 'center';
+    // Task #114 — DON'T inline-set display:flex here. The stylesheet
+    // already does that via .video-preview-area.has-video (added once
+    // a video actually loads). Forcing display:flex inline made the
+    // empty program monitor appear at boot, which is wrong — the
+    // preview slot must stay hidden until media is present.
+    // The .has-video class also carries align-items + justify-content
+    // so the wrapper centers when its aspect leaves slack space.
 
     var wrap = document.getElementById('srAspectFrame');
     if (!wrap){

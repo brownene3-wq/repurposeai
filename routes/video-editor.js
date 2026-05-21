@@ -284,7 +284,10 @@ async function renderEditor(req, res) {
     .upload-button{padding:.6rem 1.2rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:all 0.2s}
     .upload-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3);transform:translateY(-2px)}
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
-    .video-preview-area.has-video{display:flex;background:transparent;padding:0}
+    /* Task #114 — Centering rules moved here so applyPreviewAspectRatio
+       doesn't need to inline-set display:flex (which was making the
+       empty program monitor appear at boot before any video loaded). */
+    .video-preview-area.has-video{display:flex;align-items:center;justify-content:center;background:transparent;padding:0}
     .video-player{width:100%;height:100%;border-radius:12px;object-fit:contain;background:#000}
 .timeline-container{background:#0c0814;border:none;border-top:1px solid rgba(108,58,237,.12);border-radius:0;margin:0;overflow:hidden;flex-shrink:0;user-select:none;grid-area:timeline}
     .timeline-ruler{height:24px;background:#12121f;display:flex;align-items:flex-end;position:relative;padding:0 40px;border-bottom:1px solid rgba(255,255,255,0.06)}
