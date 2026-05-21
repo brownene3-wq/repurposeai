@@ -20,7 +20,8 @@ const { requireAuth } = require('../middleware/auth');
 const {
   getConnections,
   getConnectionById,
-  getConnectedPlatforms
+  getConnectedPlatforms,
+  publishToConnection
 } = require('../utils/connections');
 
 // GET /api/connections             — list all (optional ?platform=tiktok)
@@ -49,6 +50,44 @@ router.get('/:id', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[GET /api/connections/:id] error:', err.message);
     res.status(500).json({ success: false, error: 'Failed to load connection' });
+  }
+});
+
+// POST /api/connections/:id/publish — Phase 2a publish dispatcher
+//
+// Body (JSON):
+//   { title, description, caption, mediaPath, mediaUrl, thumbnailUrl,
+//     tags, privacy, scheduledAt }
+//
+// If scheduledAt is omitted or in the past, publishes immediately.
+// If scheduledAt is in the future, a Phase 2b follow-up will queue it —
+// for now this endpoint returns 501 with a clear message so callers
+// can wire the UI before scheduling is implemented.
+router.post('/:id/publish', requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const body = req.body || {};
+
+    // Defer scheduling — Phase 2b implements the queue.
+    if (body.scheduledAt) {
+      const when = new Date(body.scheduledAt);
+      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+        return res.status(501).json({
+          success: false,
+          error: 'Scheduled publishing is not yet implemented (Phase 2b). Use the Calendar to schedule for now.',
+          deferUntil: when.toISOString()
+        });
+      }
+    }
+
+    const result = await publishToConnection(req.user.id, id, body);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err) {
+    console.error('[POST /api/connections/:id/publish] error:', err.message);
+    res.status(500).json({ success: false, error: 'Publish failed' });
   }
 });
 

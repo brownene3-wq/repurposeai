@@ -99,3 +99,96 @@ module.exports = {
   // Internal (server-only)
   getRawConnectionById
 };
+
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 2a — Publish dispatcher
+//
+// publishToConnection(userId, connectionId, payload) is the single
+// entry point every feature uses to actually post something. Behind
+// the scenes it:
+//   1. Loads the raw connection row (including access/refresh tokens)
+//   2. Refreshes the token if needed (LinkedIn etc. expire after hours)
+//   3. Dispatches to the platform-specific publisher already living
+//      inside services/workflowEngine.js
+//
+// payload shape (all optional except mediaPath when publishing video):
+//   {
+//     title:        'Post title or video title',
+//     description:  'Longer body text',
+//     caption:      'Short caption (Instagram/TikTok-style)',
+//     mediaPath:    '/absolute/path/to/video.mp4',
+//     mediaUrl:     'https://...',   // fallback if no local path
+//     thumbnailUrl: 'https://...',
+//     tags:         ['array', 'of', 'tags'],
+//     privacy:      'public' | 'unlisted' | 'private'   // YouTube
+//   }
+//
+// Returns: { success: true, platform, externalId?, raw }
+//          or { success: false, error: 'message' }
+// ─────────────────────────────────────────────────────────────────────
+
+let _engine = null;
+function loadEngine() {
+  if (_engine) return _engine;
+  try { _engine = require('../services/workflowEngine'); } catch (e) { _engine = {}; }
+  return _engine;
+}
+
+async function publishToConnection(userId, connectionId, payload = {}) {
+  if (!userId || !connectionId) {
+    return { success: false, error: 'userId and connectionId required' };
+  }
+  const raw = await getRawConnectionById(userId, connectionId);
+  if (!raw) return { success: false, error: 'Connection not found' };
+  if (raw.is_active === false) return { success: false, error: 'Connection is inactive' };
+
+  const engine = loadEngine();
+  if (!engine || !engine.publishToDestination) {
+    return { success: false, error: 'Publisher engine not available' };
+  }
+
+  // Refresh tokens if a refresh path exists (LinkedIn today; others can be
+  // added without changes here). refreshTokenIfNeeded is a no-op for
+  // platforms that don't need it.
+  let account = raw;
+  if (typeof engine.refreshTokenIfNeeded === 'function') {
+    try { account = (await engine.refreshTokenIfNeeded(raw)) || raw; }
+    catch (e) { console.error('[publishToConnection] token refresh:', e.message); }
+  }
+
+  // Synthesize the 'workflow' + 'sourceItem' shapes the existing
+  // publishToDestination expects. The workflow is only used for logging +
+  // destination_platform; the sourceItem provides title/description/url/
+  // thumbnail to the per-platform publisher.
+  const platform = raw.platform;
+  const syntheticWorkflow = {
+    id: 'oneoff-' + Date.now(),
+    destination_platform: platform,
+    settings: {}
+  };
+  const sourceItem = {
+    id: payload.externalSourceId || ('oneoff-' + Date.now()),
+    title: payload.title || payload.caption || 'Untitled',
+    description: payload.description || payload.caption || '',
+    caption: payload.caption || payload.description || payload.title || '',
+    thumbnail: payload.thumbnailUrl || null,
+    url: payload.mediaUrl || null,
+    tags: payload.tags || [],
+    privacy: payload.privacy || 'public',
+    platform: platform,
+    publishedAt: new Date()
+  };
+
+  try {
+    const result = await engine.publishToDestination(
+      syntheticWorkflow, account, sourceItem, payload.mediaPath || null
+    );
+    return { success: true, platform, externalId: result?.videoId || result?.tweetId || result?.id || null, raw: result };
+  } catch (err) {
+    console.error(`[publishToConnection] ${platform} failed:`, err.message);
+    return { success: false, error: err.message || 'Publish failed' };
+  }
+}
+
+module.exports.publishToConnection = publishToConnection;
