@@ -1467,7 +1467,7 @@ async function renderEditor(req, res) {
             <!-- Phase 2c — appears post-export. Opens vePublishModal which
                  lets the user post the freshly-rendered file to any connected
                  social account via /video-editor/api/publish-export. -->
-            <button class="exp-go" id="vePublishBtn" type="button" style="display:none;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;">
+            <button class="exp-go" id="vePublishBtn" type="button" style="display:none;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;margin-top:10px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;margin-right:6px;flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>Publish to&hellip;
             </button>
           </div>
