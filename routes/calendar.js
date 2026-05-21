@@ -191,6 +191,15 @@ router.get('/', requireAuth, (req, res) => {
           <option value="1440">1 day before</option>
           <option value="2880">2 days before</option>
         </select>
+        <!-- Phase 2e — Auto-publish via a connected account when the scheduled
+             time arrives. Populated live from /api/connections on modal open.
+             When set, schedulePublisher dispatches the post automatically; when
+             left blank, the entry behaves as a reminder-only calendar item. -->
+        <label>Publish via account</label>
+        <select id="entryConnection">
+          <option value="">No auto-publish — reminder only</option>
+        </select>
+        <div id="entryConnectionHelp" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.30);color:#ffd591;border-radius:6px;padding:6px 10px;margin-top:-6px;margin-bottom:10px;font-size:0.72rem;line-height:1.4;">No connected accounts. <a href="/distribute/connections" target="_blank" style="color:#a78bfa;text-decoration:none;font-weight:600;">Connect an account →</a></div>
         <label>Notes</label>
         <textarea id="entryNotes" placeholder="Hook ideas, hashtags, links..."></textarea>
         <div id="clipDlBlock" style="display:none;background:rgba(108,58,237,0.08);border:1px solid rgba(108,58,237,0.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;display:none;">
@@ -355,6 +364,8 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('entryId').value='';
         document.getElementById('entryTitleInput').value='';
         document.getElementById('entryPlatform').value='tiktok';
+        document.getElementById('entryConnection').value='';
+        loadEntryConnections();
         document.getElementById('entryStatus').value='planned';
         document.getElementById('entryDate').value=dateStr;
         document.getElementById('entryTime').value='12:00';
@@ -379,6 +390,10 @@ router.get('/', requireAuth, (req, res) => {
         document.getElementById('entryTime').value=(e.scheduled_time||'12:00').slice(0,5);
         document.getElementById('entryNotes').value=e.notes||'';
         document.getElementById('entryReminder').value=String(e.reminder_minutes||0);
+        loadEntryConnections().then(function(){
+          var sel = document.getElementById('entryConnection');
+          if (sel && e.connection_id) sel.value = e.connection_id;
+        });
         // Show clip link when this entry came from a Smart Shorts moment
         var dl = document.getElementById('clipDlBlock');
         if(e.analysis_id && (e.moment_index !== null && e.moment_index !== undefined)){
@@ -397,6 +412,33 @@ router.get('/', requireAuth, (req, res) => {
         const [y,m,d]=s.split('-').map(Number);
         return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'});
       }
+      // Phase 2e — populate the Publish via account dropdown from the
+      // unified /api/connections. Cached for the session so opening the
+      // modal twice doesn't refetch.
+      var _entryConnectionsCache = null;
+      async function loadEntryConnections(){
+        var sel = document.getElementById('entryConnection');
+        var help = document.getElementById('entryConnectionHelp');
+        if (!sel) return;
+        if (!_entryConnectionsCache) {
+          try {
+            var r = await fetch('/api/connections', { credentials: 'same-origin' });
+            var j = await r.json();
+            _entryConnectionsCache = (j && j.accounts) || [];
+          } catch (e) { _entryConnectionsCache = []; }
+        }
+        var accounts = _entryConnectionsCache;
+        var cur = sel.value;
+        var html = '<option value="">No auto-publish — reminder only</option>';
+        accounts.forEach(function(c){
+          var label = (c.platform.charAt(0).toUpperCase() + c.platform.slice(1)) + ' — ' + (c.accountName || c.platformUsername || c.id);
+          html += '<option value="' + c.id + '">' + label + '</option>';
+        });
+        sel.innerHTML = html;
+        if (cur) sel.value = cur;
+        if (help) help.style.display = accounts.length === 0 ? 'block' : 'none';
+      }
+
       async function saveEntry(){
         const id=document.getElementById('entryId').value;
         const payload={
@@ -406,7 +448,9 @@ router.get('/', requireAuth, (req, res) => {
           scheduledDate:document.getElementById('entryDate').value,
           scheduledTime:document.getElementById('entryTime').value||'12:00',
           notes:document.getElementById('entryNotes').value,
-          reminderMinutes:parseInt(document.getElementById('entryReminder').value||'0',10)||0
+          reminderMinutes:parseInt(document.getElementById('entryReminder').value||'0',10)||0,
+          connectionId:document.getElementById('entryConnection').value||null,
+          autoPublish:!!document.getElementById('entryConnection').value
         };
         if(!payload.title){showToast('Title is required');return;}
         if(!payload.scheduledDate){showToast('Date is required');return;}
@@ -473,6 +517,8 @@ router.post('/api/entries', requireAuth, async (req, res) => {
       analysisId: req.body.analysisId || null,
       momentIndex: req.body.momentIndex != null ? req.body.momentIndex : null,
       reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0,
+      connectionId: req.body.connectionId || null,
+      autoPublish: req.body.autoPublish === true || req.body.autoPublish === 'true',
       reminderEmail: req.body.reminderEmail || '',
       autoPublish: req.body.autoPublish === true,
       clipFilename: req.body.clipFilename || ''
@@ -495,7 +541,9 @@ router.put('/api/entries/:id', requireAuth, async (req, res) => {
       contentText: req.body.contentText,
       notes: req.body.notes,
       color: req.body.color,
-      reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0
+      reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0,
+      connectionId: req.body.connectionId || null,
+      autoPublish: req.body.autoPublish === true || req.body.autoPublish === 'true'
     });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
     res.json({ entry });

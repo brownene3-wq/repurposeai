@@ -1060,13 +1060,16 @@ const calendarOps = {
         color = COALESCE($10, color),
         reminder_email = $11,
         reminder_minutes = $12,
+        connection_id = $13,
+        auto_publish = $14,
         reminder_sent = FALSE,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND user_id = $2
       RETURNING *
     `, [id, userId, data.title, data.platform, data.scheduledDate, data.scheduledTime,
         data.status, data.contentText, data.notes, data.color,
-        data.reminderEmail || '', data.reminderMinutes || 0]);
+        data.reminderEmail || '', data.reminderMinutes || 0,
+        data.connectionId || null, data.autoPublish === true]);
     return result.rows[0];
   },
   async getPendingReminders() {

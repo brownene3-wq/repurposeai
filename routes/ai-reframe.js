@@ -2357,6 +2357,7 @@ ${pageStyles}
             <a href="/ai-reframe/download/\${file.filename}" class="download-link" download>
               Download
             </a>
+            <button class="download-link" data-filename="\${file.filename}" data-ratio="\${file.ratio}" onclick="openArPublishModal(this)" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;margin-top:10px;cursor:pointer;">\u2708\uFE0F Publish to\u2026</button>
           </div>
         \`;
         previewGrid.appendChild(container);
@@ -2366,6 +2367,135 @@ ${pageStyles}
     }
 
     ${themeScript}
+
+    // Phase 2e - AI Reframe publish modal (lazy-injected on first use).
+    function ensureArPublishModal(){
+      if (document.getElementById('arPublishModal')) return;
+      const d = document.createElement('div');
+      d.id = 'arPublishModal';
+      d.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px;';
+      d.addEventListener('click', function(e){ if (e.target === d) closeArPublishModal(); });
+      d.innerHTML = '\
+        <div style="background:#16112a;border:1px solid rgba(108,58,237,0.30);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif">\
+          <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">\u2708\uFE0F Publish Reframed Video</h3>\
+          <div id="arPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;"></div>\
+          <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
+          <select id="arPubAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;"><option value="">Loading\u2026</option></select>\
+          <div id="arPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No connected accounts. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect \u2192</a></div>\
+          <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>\
+          <input type="text" id="arPubTitle" maxlength="120" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">\
+          <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Caption</label>\
+          <textarea id="arPubCaption" rows="3" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:70px;"></textarea>\
+          <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">\
+            <button id="arPubTabNow" type="button" onclick="setArPubMode(\\\'now\\\')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>\
+            <button id="arPubTabLater" type="button" onclick="setArPubMode(\\\'later\\\')" style="flex:1;background:transparent;color:#8e87b0;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>\
+          </div>\
+          <div id="arPubLater" style="display:none;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label><input type="date" id="arPubDate" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label><input type="time" id="arPubTime" value="12:00" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div></div></div>\
+          <div id="arPubStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>\
+          <div style="display:flex;justify-content:flex-end;gap:8px;"><button onclick="closeArPublishModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#e2e0f0;padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button><button id="arPubSubmit" onclick="submitArPublish()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Publish</button></div>\
+        </div>';
+      document.body.appendChild(d);
+    }
+    var _arPubMode = 'now';
+    var _arPubCtx = { filename: null, ratio: null };
+    async function openArPublishModal(btn){
+      ensureArPublishModal();
+      var filename = btn && btn.dataset ? btn.dataset.filename : null;
+      var ratio = btn && btn.dataset ? btn.dataset.ratio : null;
+      if (!filename) return;
+      _arPubCtx = { filename: filename, ratio: ratio };
+      document.getElementById('arPubTitle').value = (filename || 'Reframed video').replace(/\.[a-z0-9]+$/i, '').slice(0, 120);
+      document.getElementById('arPubCaption').value = '';
+      document.getElementById('arPubStatus').style.display = 'none';
+      document.getElementById('arPubSub').textContent = ratio ? ('Aspect: ' + ratio) : '';
+      var d = new Date(); d.setMinutes(d.getMinutes() + 60);
+      document.getElementById('arPubDate').value = d.toISOString().slice(0,10);
+      document.getElementById('arPubTime').value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      setArPubMode('now');
+      document.getElementById('arPublishModal').style.display = 'flex';
+
+      var sel = document.getElementById('arPubAccount');
+      var noAcct = document.getElementById('arPubNoAcct');
+      sel.innerHTML = '<option value="">Loading\u2026</option>';
+      try {
+        var r = await fetch('/api/connections', { credentials: 'same-origin' });
+        var j = await r.json();
+        var accounts = (j && j.accounts) || [];
+        var supported = ['tiktok','instagram','youtube','facebook','twitter','linkedin','pinterest'];
+        accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+        if (accounts.length === 0) {
+          sel.style.display = 'none';
+          noAcct.style.display = 'block';
+        } else {
+          sel.style.display = '';
+          noAcct.style.display = 'none';
+          sel.innerHTML = accounts.map(function(c){
+            return '<option value="' + c.id + '">' + (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' \u2014 ' + (c.accountName || c.platformUsername || c.id) + '</option>';
+          }).join('');
+        }
+      } catch(e){
+        sel.innerHTML = '<option value="">Failed to load accounts</option>';
+      }
+    }
+    function closeArPublishModal(){ var m = document.getElementById('arPublishModal'); if (m) m.style.display = 'none'; }
+    function setArPubMode(mode){
+      _arPubMode = mode;
+      var nowBtn = document.getElementById('arPubTabNow');
+      var laterBtn = document.getElementById('arPubTabLater');
+      var laterFields = document.getElementById('arPubLater');
+      var submitBtn = document.getElementById('arPubSubmit');
+      if (mode === 'now') {
+        nowBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; nowBtn.style.color = '#fff';
+        laterBtn.style.background = 'transparent'; laterBtn.style.color = '#8e87b0';
+        laterFields.style.display = 'none';
+        submitBtn.textContent = 'Publish now';
+      } else {
+        laterBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; laterBtn.style.color = '#fff';
+        nowBtn.style.background = 'transparent'; nowBtn.style.color = '#8e87b0';
+        laterFields.style.display = 'block';
+        submitBtn.textContent = 'Schedule';
+      }
+    }
+    async function submitArPublish(){
+      var btn = document.getElementById('arPubSubmit');
+      var statusEl = document.getElementById('arPubStatus');
+      var connectionId = document.getElementById('arPubAccount').value;
+      if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
+      var payload = {
+        filename: _arPubCtx.filename,
+        connectionId: connectionId,
+        title: document.getElementById('arPubTitle').value.trim(),
+        caption: document.getElementById('arPubCaption').value.trim(),
+        description: document.getElementById('arPubCaption').value.trim()
+      };
+      if (_arPubMode === 'later') {
+        var d = document.getElementById('arPubDate').value;
+        var t = document.getElementById('arPubTime').value || '12:00';
+        if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
+        payload.scheduledAt = d + 'T' + t + ':00';
+      }
+      btn.disabled = true; var orig = btn.textContent;
+      btn.textContent = _arPubMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
+      statusEl.style.display = 'block';
+      statusEl.textContent = _arPubMode === 'now' ? 'Uploading to platform\u2026' : 'Saving the scheduled post\u2026';
+      try {
+        var resp = await fetch('/ai-reframe/api/publish-output', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        var data = await resp.json();
+        if (!resp.ok || !data.success) throw new Error(data.error || 'Failed');
+        statusEl.textContent = _arPubMode === 'now'
+          ? ('Posted to ' + (data.platform || 'platform'))
+          : ('Scheduled for ' + (data.scheduledFor || payload.scheduledAt));
+        setTimeout(closeArPublishModal, 1500);
+      } catch(e){
+        statusEl.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
   </script>
 </body>
 </html>`;
@@ -2486,6 +2616,63 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
     // Clean up downloaded file on error
     if (downloadedPath) { try { fs.unlinkSync(downloadedPath); } catch (e) {} }
     res.status(500).json({ success: false, message: error.message || 'Processing failed' });
+  }
+});
+
+// Phase 2e - POST /ai-reframe/api/publish-output
+// Resolves filename through outputDir, then dispatches via the unified
+// publishToConnection helper. scheduledAt + connection_id -> calendar
+// auto-publish; otherwise immediate post.
+router.post('/api/publish-output', requireAuth, async (req, res) => {
+  try {
+    const { filename, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    if (!filename) return res.status(400).json({ success: false, error: 'filename is required' });
+    if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
+
+    const safe = path.basename(String(filename));
+    const mediaPath = path.join(outputDir, safe);
+    if (!fs.existsSync(mediaPath)) {
+      return res.status(404).json({ success: false, error: 'Reframed file not found. Re-process the video and try again.' });
+    }
+
+    const { getConnectionById, publishToConnection } = require('../utils/connections');
+    const acct = await getConnectionById(req.user.id, connectionId);
+    if (!acct) return res.status(404).json({ success: false, error: 'Connection not found' });
+
+    if (scheduledAt) {
+      const when = new Date(scheduledAt);
+      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+        const { calendarOps } = require('../db/database');
+        const dateStr = when.toISOString().slice(0, 10);
+        const timeStr = String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0');
+        const entry = await calendarOps.create({
+          userId: req.user.id,
+          title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+          platform: acct.platform,
+          scheduledDate: dateStr,
+          scheduledTime: timeStr,
+          contentText: caption || description || '',
+          analysisId: null, momentIndex: null,
+          notes: '', color: '#6c5ce7',
+          autoPublish: true,
+          clipFilename: safe,
+          connectionId: acct.id
+        });
+        return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
+      }
+    }
+
+    const result = await publishToConnection(req.user.id, connectionId, {
+      title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+      description: description || caption || '',
+      caption: caption || description || '',
+      mediaPath
+    });
+    if (!result.success) return res.status(400).json(result);
+    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+  } catch (err) {
+    console.error('[POST /ai-reframe/api/publish-output]', err.message);
+    res.status(500).json({ success: false, error: err.message || 'Publish failed' });
   }
 });
 
