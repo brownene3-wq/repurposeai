@@ -598,11 +598,21 @@ async function publishYouTube(destAccount, sourceItem, mediaPath) {
     const reason = (body && (body.error_description || body.message ||
                    (body.error && (body.error.message || body.error.errors && body.error.errors[0] && body.error.errors[0].message))))
                    || (typeof body === 'string' ? body.slice(0, 200) : null);
-    if (status === 401 || status === 403) {
-      throw new Error('YouTube authentication failed (status ' + status + '). Reconnect YouTube on /distribute/connections and try again.' + (reason ? ' Details: ' + reason : ''));
+    // Check quota FIRST — YouTube returns 403 for both 'token expired'
+    // and 'quota exceeded', so we have to look at the message body to
+    // tell them apart. Auth-style errors mention 'authError' or
+    // 'invalid_grant'; quota errors say 'quota' or 'rateLimit'.
+    const reasonStr = String(reason || '');
+    const isQuota = /quota|rateLimit|userRateLimitExceeded|dailyLimitExceeded/i.test(reasonStr);
+    const isAuth  = /authError|invalid[_ ]grant|invalid[_ ]credentials|expired|forbidden\.access/i.test(reasonStr) ||
+                    (status === 401);
+    if (isQuota) {
+      throw new Error('YouTube daily upload quota exceeded. ' +
+        'YouTube\'s default quota is 10,000 units per day and a single upload costs ~1,600 units (~6 uploads/day). ' +
+        'Quota resets at midnight Pacific Time. To raise it, go to https://console.cloud.google.com -> APIs & Services -> YouTube Data API v3 -> Quotas -> Request quota increase.');
     }
-    if (status === 400 && /quota|exceeded/i.test(reason || '')) {
-      throw new Error('YouTube daily upload quota exceeded. Try again tomorrow or request quota increase in Google Cloud Console.');
+    if (isAuth) {
+      throw new Error('YouTube authentication failed (status ' + status + '). Reconnect YouTube on /distribute/connections and try again.' + (reasonStr ? ' Details: ' + reasonStr : ''));
     }
     throw new Error('YouTube upload session creation failed (status ' + status + ')' + (reason ? ': ' + reason : ''));
   }
