@@ -4130,6 +4130,65 @@
     });
   }
 
+  // Task #113 — Project aspect is a true project setting (like CapCut,
+  // Premiere, etc.) — persisted to localStorage, restored at boot,
+  // shown in the topbar badge, and threaded through the export
+  // pipeline. Smart Resize's Apply writes here; everything else reads.
+  var PROJECT_ASPECT_LS_KEY = 'splicora_project_aspect_v1';
+
+  function readProjectAspect(){
+    try {
+      var raw = localStorage.getItem(PROJECT_ASPECT_LS_KEY);
+      if (!raw) return null;
+      var p = JSON.parse(raw);
+      if (!p || !p.ratio) return null;
+      return p;
+    } catch (e) { return null; }
+  }
+  function writeProjectAspect(preset, faceTrack){
+    try {
+      localStorage.setItem(PROJECT_ASPECT_LS_KEY, JSON.stringify({
+        ratio:     preset.ratio,
+        label:     preset.label,
+        w:         preset.w,
+        h:         preset.h,
+        cssAspect: preset.cssAspect,
+        faceTrack: !!faceTrack,
+        savedAt:   Date.now()
+      }));
+    } catch (e) {}
+  }
+  function updateProjectAspectBadge(preset){
+    var el = document.getElementById('projectAspectLabel');
+    if (el && preset && preset.ratio) el.textContent = preset.ratio;
+  }
+  // Re-fire the Apply pathway from a persisted snapshot. Sets the
+  // window globals, reshapes the preview canvas, updates the badge,
+  // and tags every V1 clip with the project's target dims.
+  function applyProjectAspect(preset, opts){
+    opts = opts || {};
+    if (!preset || !preset.ratio) return;
+    window.__exportAspect    = preset.ratio;
+    window.__exportWidth     = preset.w;
+    window.__exportHeight    = preset.h;
+    window.__exportFaceTrack = !!opts.faceTrack;
+    try { applyPreviewAspectRatio(preset); } catch(_){}
+    updateProjectAspectBadge(preset);
+    try {
+      document.querySelectorAll('.mt-clip-video').forEach(function(c){
+        c.dataset.targetW      = String(preset.w);
+        c.dataset.targetH      = String(preset.h);
+        c.dataset.targetAspect = preset.ratio;
+      });
+    } catch(_){}
+  }
+  try {
+    window.applyProjectAspect    = applyProjectAspect;
+    window.readProjectAspect     = readProjectAspect;
+    window.writeProjectAspect    = writeProjectAspect;
+    window.updateProjectAspectBadge = updateProjectAspectBadge;
+  } catch(_){}
+
   // Task #112 — Smart Resize preset table. Shared between the popover
   // and the apply path so both reference the same data. {w, h} is the
   // ENCODE-time pixel dim (used by the export pipeline); {ratio} is the
@@ -4297,37 +4356,52 @@
     //    don't block the Apply — the user still gets the new aspect.
     pop.querySelector('#srApply').addEventListener('click', function(){
       var faceTrack = !!(faceTrackCb && faceTrackCb.checked);
-      window.__exportAspect    = selected.ratio;
-      window.__exportWidth     = selected.w;
-      window.__exportHeight    = selected.h;
-      window.__exportFaceTrack = faceTrack;
-
-      // Reshape the preview canvas BEFORE anything async kicks off so
-      // the user sees an immediate response on click.
-      applyPreviewAspectRatio(selected);
-
-      // Sticky per-clip target dims for export — every V1 clip carries
-      // the project's chosen output dimensions so renderers can branch
-      // on it without re-reading window globals.
-      try {
-        document.querySelectorAll('.mt-clip-video').forEach(function(c){
-          c.dataset.targetW = String(selected.w);
-          c.dataset.targetH = String(selected.h);
-          c.dataset.targetAspect = selected.ratio;
-        });
-      } catch(_){}
+      // Task #113 — persist to localStorage so the project remembers
+      // its aspect across reloads and draft restores.
+      writeProjectAspect(selected, faceTrack);
+      // applyProjectAspect handles globals + preview reshape + V1 clip
+      // dataset tagging + badge update — single source of truth.
+      applyProjectAspect(selected, { faceTrack: faceTrack });
 
       pop.remove();
       if (faceTrack){
         runFaceTrackCrop(selected.ratio).then(function(msg){
-          showToast('Smart Resize ' + selected.ratio + ' \u00b7 ' + msg);
+          showToast('Project aspect ' + selected.ratio + ' \u00b7 ' + msg);
         }).catch(function(){
-          showToast('Smart Resize ' + selected.ratio + ' \u00b7 face track unavailable');
+          showToast('Project aspect ' + selected.ratio + ' \u00b7 face track unavailable');
         });
       } else {
-        showToast('Smart Resize: ' + selected.label);
+        showToast('Project aspect: ' + selected.label);
       }
     });
+  }
+
+  // Task #113 — Click the topbar badge to reopen Smart Resize. Also
+  // restore the saved project aspect on first load so the editor
+  // boots into the right canvas shape. Both run after DOM ready so
+  // the preview area + badge are guaranteed to exist.
+  function wireProjectAspectChrome(){
+    var badge = document.getElementById('projectAspectBadge');
+    if (badge && !badge.dataset.v113Wired){
+      badge.dataset.v113Wired = '1';
+      badge.addEventListener('click', function(){
+        if (typeof clipActionSmartResize === 'function') clipActionSmartResize();
+      });
+    }
+    // Restore persisted aspect (project memory). If none saved, default
+    // to 16:9 so the badge text matches the default canvas shape.
+    var saved = readProjectAspect();
+    var preset = saved
+      ? (SR_PRESETS.find(function(p){ return p.ratio === saved.ratio; }) || SR_PRESETS[0])
+      : SR_PRESETS[0];
+    applyProjectAspect(preset, { faceTrack: saved ? !!saved.faceTrack : false });
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', wireProjectAspectChrome);
+  } else {
+    // DOM is already parsed (script may load late) — run on next tick
+    // to let any remaining boot code finish wiring elements first.
+    setTimeout(wireProjectAspectChrome, 0);
   }
 
   // Paint a letterbox/pillarbox mask over the PGM so the user can see

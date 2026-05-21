@@ -469,6 +469,14 @@ async function renderEditor(req, res) {
        slightly; focus brightens fully and adds a soft purple glow so
        the user knows they're typing. */
     #projectFilenameInput{height:32px;padding:0 12px;background:rgba(124,58,237,.04);border:1px solid rgba(124,58,237,.20);border-radius:6px;color:rgba(226,224,240,.55);font-size:12px;font-family:inherit;outline:none;min-width:200px;max-width:320px;transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease}
+    /* Task #113 — Project aspect badge. Sits between the filename input
+       and Save as Draft so the user always sees what aspect their
+       project is set to. Click opens the Smart Resize popover. */
+    #projectAspectBadge{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.28);border-radius:6px;color:#a78bfa;font-size:11px;font-weight:700;letter-spacing:.4px;cursor:pointer;user-select:none;transition:background .15s,border-color .15s,color .15s;font-family:inherit}
+    #projectAspectBadge:hover{background:rgba(124,58,237,.18);border-color:rgba(124,58,237,.55);color:#fff}
+    #projectAspectBadge svg{display:block;flex:none}
+    body.light #projectAspectBadge{background:rgba(124,58,237,.06);border-color:rgba(108,58,237,.25);color:#6c3aed}
+    body.light #projectAspectBadge:hover{background:rgba(124,58,237,.14);border-color:rgba(108,58,237,.55);color:#1a1a2e}
     #projectFilenameInput::placeholder{color:rgba(226,224,240,.30)}
     #projectFilenameInput:hover{background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.35);color:rgba(226,224,240,.85);cursor:text}
     #projectFilenameInput:focus{background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.7);color:#e2e0f0;box-shadow:0 0 0 2px rgba(124,58,237,.18)}
@@ -973,6 +981,14 @@ async function renderEditor(req, res) {
               autocomplete="off" spellcheck="false"
               aria-label="Project filename"
               onfocus="this.select()"/>
+            <!-- Task #113 — Project aspect badge. Always shows the
+                 current project aspect; click to reopen Smart Resize.
+                 The label text is filled in at boot from the persisted
+                 project state. -->
+            <button type="button" id="projectAspectBadge" title="Project aspect — click to change" aria-label="Project aspect">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              <span id="projectAspectLabel">16:9</span>
+            </button>
             <!-- Task #95 \u2014 Re-trigger the interactive coach-mark tour. Clicked
                  manually any time; auto-fires once for first-time visitors via
                  localStorage check in the tour script below. -->
