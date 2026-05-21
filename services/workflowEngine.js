@@ -861,11 +861,18 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
   await new Promise((resolve, reject) => {
     const fileStream = fs.createReadStream(mediaPath);
     const urlObj = new URL(uploadUrl);
+    // The mech object may carry transient auth headers (media token,
+    // etc.) that must be forwarded with the upload request. Merge them
+    // with our defaults.
+    const extra = (mech && typeof mech.headers === 'object' && mech.headers) || {};
     const opts = {
       hostname: urlObj.hostname,
       path: urlObj.pathname + urlObj.search,
-      method: 'POST',
-      headers: { 'Content-Type': 'video/mp4' }
+      // LinkedIn's MediaUploadHttpRequest spec uses PUT; using POST on
+      // dms-uploads worked historically but PUT is what the docs call
+      // for now.
+      method: 'PUT',
+      headers: Object.assign({ 'Content-Type': 'video/mp4' }, extra)
     };
 
     const req = https.request(opts, res => {
@@ -873,14 +880,24 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) resolve();
-        else reject(new Error(`LinkedIn upload failed: ${res.statusCode}`));
+        else reject(new Error('LinkedIn upload failed: ' + res.statusCode + (data ? ' — ' + data.slice(0, 200) : '')));
       });
     });
     req.on('error', reject);
     fileStream.pipe(req);
   });
 
-  // Create UGC post
+  // LinkedIn processes the uploaded video asynchronously. Creating a
+  // UGC post that references the asset before it's READY returns a
+  // generic 400 'INVALID_PARAMETERS' for the media field. Wait briefly
+  // for the processing to start; the worst case is the post still
+  // fails and we surface the real reason below.
+  await new Promise(r => setTimeout(r, 5000));
+
+  // Create UGC post. LinkedIn requires X-Restli-Protocol-Version 2.0.0
+  // on /v2/ugcPosts; without it the API rejects nested objects like
+  // specificContent.com.linkedin.ugc.ShareContent with a generic 400.
+  const commentary = (sourceItem.description || sourceItem.caption || sourceItem.title || '').slice(0, 3000);
   const postResponse = await httpsPostJson(
     'https://api.linkedin.com/v2/ugcPosts',
     {
@@ -888,18 +905,34 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: sourceItem.title },
+          shareCommentary: { text: commentary },
           shareMediaCategory: 'VIDEO',
-          media: [{ status: 'READY', media: asset }]
+          media: [{ status: 'READY', media: asset, title: { text: (sourceItem.title || '').slice(0, 200) } }]
         }
       },
       visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
     },
-    { Authorization: `Bearer ${destAccount.access_token}` }
+    {
+      Authorization: `Bearer ${destAccount.access_token}`,
+      'X-Restli-Protocol-Version': '2.0.0'
+    }
   );
 
-  if (!postResponse.body.id) {
-    throw new Error('LinkedIn post creation failed');
+  if (!postResponse.body || !postResponse.body.id) {
+    const status = postResponse.status || 0;
+    const body = postResponse.body || {};
+    const reason = body.message || body.error || (typeof body === 'string' ? body : JSON.stringify(body).slice(0, 300));
+    // LinkedIn often returns 'Video is not yet uploaded' / 'INVALID_PARAMETERS'
+    // when the asset hasn't finished processing. The 5-second wait above
+    // covers most cases but very large files may need longer. Make the
+    // hint actionable.
+    if (/INVALID_PARAMETERS|not yet uploaded|not ready|processing/i.test(String(reason))) {
+      throw new Error('LinkedIn rejected the post because the video is still being processed on their side. Try Publish again in 30-60 seconds.');
+    }
+    if (status === 401 || status === 403) {
+      throw new Error('LinkedIn authentication failed (status ' + status + '). Reconnect LinkedIn on /distribute/connections.');
+    }
+    throw new Error('LinkedIn post creation failed (status ' + status + '): ' + reason);
   }
 
   return { platform: 'linkedin', postId: postResponse.body.id };
