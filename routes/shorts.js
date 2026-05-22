@@ -6213,6 +6213,30 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         font-size: 12px !important;
       }
     }
+    /* Smart Shorts publishModal — Schedule for Later picker.
+       Force the native calendar/clock indicator to PURE WHITE so the
+       Date / Time picker buttons are clearly visible against the dark
+       input fill (same treatment as the Video Editor modal). */
+    #publishModal input[type="date"]::-webkit-calendar-picker-indicator,
+    #publishModal input[type="time"]::-webkit-calendar-picker-indicator,
+    #publishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1;padding:4px;border-radius:4px;transition:background .15s}
+    #publishModal input[type="date"]::-webkit-calendar-picker-indicator:hover,
+    #publishModal input[type="time"]::-webkit-calendar-picker-indicator:hover,
+    #publishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover{background:rgba(108,58,237,.25)}
+    #publishModal input[type="date"]::-moz-calendar-picker-indicator,
+    #publishModal input[type="time"]::-moz-calendar-picker-indicator,
+    #publishModal input[type="datetime-local"]::-moz-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1}
+    /* Match the scrollbar to the sidebar-nav design from theme.js — thin
+       6px track with a soft white thumb that brightens on hover. Light
+       mode follows the dashboard's inverted palette for visual parity. */
+    #publishModal > div{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    #publishModal > div::-webkit-scrollbar{width:6px}
+    #publishModal > div::-webkit-scrollbar-track{background:transparent}
+    #publishModal > div::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    #publishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    body.light #publishModal > div{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light #publishModal > div::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+    body.light #publishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.25)}
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
