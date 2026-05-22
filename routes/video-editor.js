@@ -788,6 +788,18 @@ async function renderEditor(req, res) {
     body.light .editor-sidebar .exp-wm{color:#5a4d78}
     body.light .editor-sidebar .exp-wm:hover{color:#1a1a2e}
     body.light .editor-sidebar .exp-wm .exp-wm-hint{color:rgba(26,26,46,.55)}
+    /* Task #126 — Date/time picker indicator inside the Publish Exported
+       Video modal. Webkit ships the icon as a dark glyph by default, which
+       is nearly invisible against the modal's #0f0a1f input fill. invert()
+       paints it white. Apply broadly inside #vePublishModal so all date /
+       time inputs there get the same treatment. */
+    #vePublishModal input[type="date"]::-webkit-calendar-picker-indicator,
+    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.4);cursor:pointer;opacity:.85}
+    #vePublishModal input[type="date"]::-webkit-calendar-picker-indicator:hover,
+    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator:hover{opacity:1}
+    /* Firefox uses ::-moz-calendar-picker-indicator; same idea. */
+    #vePublishModal input[type="date"]::-moz-calendar-picker-indicator,
+    #vePublishModal input[type="time"]::-moz-calendar-picker-indicator{filter:invert(1) brightness(1.4);cursor:pointer;opacity:.85}
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
