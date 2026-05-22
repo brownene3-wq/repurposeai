@@ -1514,12 +1514,13 @@ async function renderEditor(req, res) {
                 <option value="webm">WebM</option>
               </select>
             </div>
-            <!-- Task #121 \u2014 Splicora watermark toggle. Default ON.
-                 Persisted to localStorage so a user's preference rides
-                 across reloads. Unchecking it tells /export-timeline
-                 to render the file completely clean (no overlay). -->
+            <!-- Task #121 \u2014 Splicora watermark toggle.
+                 Task #125 \u2014 Default OFF (user opt-in). Persisted to
+                 localStorage so a user's preference rides across
+                 reloads. Checking it tells /export-timeline to overlay
+                 the logo on the rendered file. -->
             <label class="exp-wm" id="exportWatermarkLabel" title="Adds a transparent Splicora logo in the upper-right corner">
-              <input type="checkbox" id="exportWatermarkChk" checked>
+              <input type="checkbox" id="exportWatermarkChk">
               <span>Splicora watermark</span>
               <span class="exp-wm-hint">top-right</span>
             </label>
