@@ -4404,24 +4404,67 @@
       area.appendChild(wrap);
     }
     wrap.style.position     = 'relative';
-    wrap.style.aspectRatio  = preset.cssAspect;
-    wrap.style.maxWidth     = '100%';
-    wrap.style.maxHeight    = '100%';
-    wrap.style.width        = 'auto';
-    wrap.style.height       = 'auto';
-    // Browsers compute the constrained box: when aspect-ratio would
-    // make width or height overflow, the other axis shrinks to fit.
-    // The two-line trick below makes both axes responsive so neither
-    // axis blocks the other from triggering the clamp.
-    if (preset.cssAspect.indexOf('/') !== -1){
-      var parts = preset.cssAspect.split('/').map(function(s){ return parseFloat(s); });
-      if (parts.length === 2 && parts[0] && parts[1]){
-        wrap.style.width  = '100%';
-        wrap.style.height = '100%';
-        // Setting both encourages the browser to satisfy aspect-ratio
-        // via the smaller axis. Final visible size is whichever fits.
+
+    // Task #123 — Explicit JS-based sizing. The previous CSS-only path
+    // (width:100% + height:100% + aspect-ratio) made the wrapper
+    // stretch to the slot's full dims, ignoring the aspect-ratio
+    // constraint. The video object-fit:contain still letterboxed
+    // inside, but the wrapper itself had the WRONG size — so the
+    // watermark anchored top:2%/right:2% landed on the slot's corner
+    // (outside the visible video frame).
+    //
+    // Now we measure the slot's content box and compute exact px dims
+    // for the wrapper from the target aspect, then attach a resize
+    // listener so the wrapper re-fits when the window resizes. The
+    // watermark already lives inside the wrapper, so once the wrapper
+    // has the right dims, the watermark locks to the video's actual
+    // top-right corner — verified across 16:9, 9:16, 1:1, 4:5.
+    var parts = preset.cssAspect.split('/').map(function(s){ return parseFloat(s); });
+    var aspect = (parts.length === 2 && parts[0] && parts[1]) ? (parts[0] / parts[1]) : 1;
+
+    function fitWrap(){
+      // getBoundingClientRect includes padding; padding is 0 on
+      // .has-video so this is the content box.
+      var rect = area.getBoundingClientRect();
+      var slotW = rect.width;
+      var slotH = rect.height;
+      if (slotW <= 0 || slotH <= 0) return;
+      var w, h;
+      if (slotW / slotH > aspect){
+        // Slot is wider than target aspect → height is the limiting
+        // factor; width is derived to maintain aspect.
+        h = slotH;
+        w = h * aspect;
+      } else {
+        // Slot is taller (or square) than target aspect → width is
+        // the limiting factor; height derives.
+        w = slotW;
+        h = w / aspect;
       }
+      // Round to whole pixels so the watermark's percentage math
+      // doesn't pick up sub-pixel jitter.
+      wrap.style.width      = Math.round(w) + 'px';
+      wrap.style.height     = Math.round(h) + 'px';
+      wrap.style.maxWidth   = '100%';
+      wrap.style.maxHeight  = '100%';
+      wrap.style.aspectRatio = ''; // we own the dims now
     }
+    // Re-fit immediately, and on every window resize (debounced lightly
+    // via rAF so we don't thrash during drags).
+    fitWrap();
+    if (wrap.__v123Resize){
+      window.removeEventListener('resize', wrap.__v123Resize);
+    }
+    var rafPending = false;
+    wrap.__v123Resize = function(){
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(function(){
+        rafPending = false;
+        fitWrap();
+      });
+    };
+    window.addEventListener('resize', wrap.__v123Resize);
 
     // Force the inner <video> + overlays to fill the wrapper. We can
     // safely set width/height to 100% because the wrapper itself is
