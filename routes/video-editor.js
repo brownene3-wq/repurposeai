@@ -793,13 +793,22 @@ async function renderEditor(req, res) {
        is nearly invisible against the modal's #0f0a1f input fill. invert()
        paints it white. Apply broadly inside #vePublishModal so all date /
        time inputs there get the same treatment. */
+    /* Task #126 follow-up — Force the indicator to PURE WHITE. The
+       previous invert(1) brightness(1.4) at 0.85 opacity still read as
+       a muted gray against the #0f0a1f input fill. brightness(0)
+       flattens the icon to solid black, then invert(1) flips it to
+       solid white. Full opacity + a 4px padded pill so the click target
+       is unmistakable. */
     #vePublishModal input[type="date"]::-webkit-calendar-picker-indicator,
-    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.4);cursor:pointer;opacity:.85}
+    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator,
+    #vePublishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1;padding:4px;border-radius:4px;transition:background .15s}
     #vePublishModal input[type="date"]::-webkit-calendar-picker-indicator:hover,
-    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator:hover{opacity:1}
+    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator:hover,
+    #vePublishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover{background:rgba(108,58,237,.25)}
     /* Firefox uses ::-moz-calendar-picker-indicator; same idea. */
     #vePublishModal input[type="date"]::-moz-calendar-picker-indicator,
-    #vePublishModal input[type="time"]::-moz-calendar-picker-indicator{filter:invert(1) brightness(1.4);cursor:pointer;opacity:.85}
+    #vePublishModal input[type="time"]::-moz-calendar-picker-indicator,
+    #vePublishModal input[type="datetime-local"]::-moz-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1}
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
