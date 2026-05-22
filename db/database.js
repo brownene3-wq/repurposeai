@@ -323,6 +323,12 @@ const initDatabase = async () => {
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_email TEXT DEFAULT \'\'');
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_minutes INTEGER DEFAULT 0');
       await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT FALSE');
+      // Track reminder-email delivery so failures don't go silently.
+      // reminder_error holds the last error message from Resend (or 'no API key')
+      // and reminder_attempts caps retries so we don't hammer forever.
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_error TEXT DEFAULT \'\'');
+      await pool.query('ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS reminder_attempts INTEGER DEFAULT 0');
+
       // Step 2 of the schedule-and-publish feature: extra columns so the
       // cron tick knows which entries to auto-publish, which clip file to
       // upload, and how to surface publish errors back to the user.
@@ -1086,7 +1092,30 @@ const calendarOps = {
     return result.rows;
   },
   async markReminderSent(id) {
-    await pool.query('UPDATE calendar_entries SET reminder_sent = TRUE WHERE id = $1', [id]);
+    await pool.query(
+      `UPDATE calendar_entries
+       SET reminder_sent = TRUE, reminder_error = ''
+       WHERE id = $1`,
+      [id]
+    );
+  },
+  async markReminderFailed(id, errorMessage) {
+    await pool.query(
+      `UPDATE calendar_entries
+       SET reminder_attempts = COALESCE(reminder_attempts, 0) + 1,
+           reminder_error = $2
+       WHERE id = $1`,
+      [id, String(errorMessage || 'Unknown email error').slice(0, 500)]
+    );
+  },
+  async giveUpReminder(id) {
+    // After max retries we still flip reminder_sent so the cron stops
+    // checking it, but reminder_error stays populated so the user can
+    // see why it never went out.
+    await pool.query(
+      `UPDATE calendar_entries SET reminder_sent = TRUE WHERE id = $1`,
+      [id]
+    );
   },
   async delete(id, userId) {
     await pool.query('DELETE FROM calendar_entries WHERE id = $1 AND user_id = $2', [id, userId]);
