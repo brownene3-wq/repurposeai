@@ -4475,24 +4475,94 @@
     //    export math can read the project's target dims.
     // 4) If Face Track is on, kick off the async face crop. Errors
     //    don't block the Apply — the user still gets the new aspect.
-    pop.querySelector('#srApply').addEventListener('click', function(){
+    pop.querySelector('#srApply').addEventListener('click', async function(){
+      var applyBtn = pop.querySelector('#srApply');
       var faceTrack = !!(faceTrackCb && faceTrackCb.checked);
-      // Task #113 — persist to localStorage so the project remembers
-      // its aspect across reloads and draft restores.
+
+      // Task #113 — persist + reshape the canvas FIRST so the user
+      // sees an immediate response.
       writeProjectAspect(selected, faceTrack);
-      // applyProjectAspect handles globals + preview reshape + V1 clip
-      // dataset tagging + badge update — single source of truth.
       applyProjectAspect(selected, { faceTrack: faceTrack });
 
-      pop.remove();
-      if (faceTrack){
-        runFaceTrackCrop(selected.ratio).then(function(msg){
-          showToast('Project aspect ' + selected.ratio + ' \u00b7 ' + msg);
-        }).catch(function(){
-          showToast('Project aspect ' + selected.ratio + ' \u00b7 face track unavailable');
+      // Task #119 — Then physically reframe the active V1 clip to the
+      // chosen aspect, exactly like AI Reframe's Center Crop path.
+      // Pick the clip: SELECTED V1 → first V1 with a server-resolvable
+      // mediaUrl. If neither exists, skip the reframe step.
+      function pickActiveV1Clip(){
+        var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+        if (sel && sel.dataset.mediaUrl) return sel;
+        var anyV1 = document.querySelectorAll('.mt-track-video .mt-clip');
+        for (var i = 0; i < anyV1.length; i++){
+          var c = anyV1[i];
+          if (c.dataset.broll === '1') continue;  // skip B-Roll overlays
+          if (c.dataset.clipType !== 'vid') continue;
+          if (c.dataset.mediaUrl) return c;
+        }
+        return null;
+      }
+
+      var clip = pickActiveV1Clip();
+      if (!clip){
+        pop.remove();
+        showToast('Project aspect: ' + selected.label + ' \u00b7 add a V1 video to reframe');
+        return;
+      }
+
+      // Switch the popover into a progress state so the user sees the
+      // reframe running. Close-on-success.
+      applyBtn.disabled = true;
+      applyBtn.textContent = 'Reframing\u2026';
+      applyBtn.style.opacity = '0.7';
+      try {
+        var srcClip = clip;
+        if (typeof window.ensureClipHasServerUrl === 'function'){
+          srcClip = await window.ensureClipHasServerUrl(clip);
+          if (!srcClip || !srcClip.dataset.mediaUrl){
+            throw new Error('Clip source not available');
+          }
+        }
+        var r = await fetch('/video-editor/resize-clip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mediaUrl:    srcClip.dataset.mediaUrl,
+            aspectRatio: selected.ratio
+          })
         });
-      } else {
-        showToast('Project aspect: ' + selected.label);
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Reframe failed');
+
+        // Swap the clip's source to the reframed file.
+        srcClip.dataset.mediaUrl       = d.mediaUrl;
+        srcClip.dataset.serverFilename = d.filename;
+        if (d.width)  srcClip.dataset.srcWidth  = String(d.width);
+        if (d.height) srcClip.dataset.srcHeight = String(d.height);
+        srcClip.dataset.targetW      = String(d.width);
+        srcClip.dataset.targetH      = String(d.height);
+        srcClip.dataset.targetAspect = d.aspectRatio;
+
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        try { attachFilmstripOrWaveform(srcClip); } catch(_){}
+        pushTimelineHistory();
+        pop.remove();
+        showToast('Smart Resize ' + d.aspectRatio + ' \u00b7 ' + d.width + '\u00d7' + d.height);
+
+        // Face track is an additional export-time crop expression — only
+        // useful when face tracking actually finds faces. Runs in parallel
+        // with the physical reframe so it doesn't block the toast.
+        if (faceTrack){
+          runFaceTrackCrop(selected.ratio).then(function(msg){
+            showToast('Face track: ' + msg);
+          }).catch(function(){
+            showToast('Face track unavailable');
+          });
+        }
+      } catch (err){
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Apply';
+        applyBtn.style.opacity = '';
+        showToast('Reframe failed: ' + String(err.message || err).slice(0, 120));
       }
     });
   }
