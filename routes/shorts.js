@@ -3735,8 +3735,15 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
           actualDownload = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress);
         } catch (dlErr) {
           clearTimeout(timeout);
-          console.error('  Video download failed:', dlErr.message);
-          writeError('Video download failed. Please try again.');
+          // getOrDownloadVideo now throws a verbose message that lists each
+          // downloader's specific failure (Cobalt / yt-dlp / ytdl-core)
+          // plus a cookies hint. Pass it straight through so the user sees
+          // the actionable diagnosis instead of the generic 'try again'.
+          var detail = (dlErr && dlErr.message)
+            ? String(dlErr.message)
+            : 'Video download failed. Please try again.';
+          console.error('  Video download failed:', detail);
+          writeError(detail);
           return;
         }
 
