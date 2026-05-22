@@ -5933,32 +5933,6 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       border-color: var(--primary);
       color: var(--text);
     }
-    /* Caption-style live preview pill, sits inline next to the
-       Caption Style dropdown in the per-moment toolbar. */
-    .caption-preview {
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 64px;
-      height: 28px;
-      padding: 0 10px;
-      border-radius: 8px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: linear-gradient(135deg, #16131f, #0c0a14);
-      font-size: 13px;
-      letter-spacing: 0.04em;
-      line-height: 1;
-      user-select: none;
-      pointer-events: none;
-      transition: opacity 0.15s ease;
-    }
-    .caption-preview:empty::before { content: 'Aa'; }
-    body.light .caption-preview {
-      background: linear-gradient(135deg, #f4f0fb, #e8e1f3);
-      border-color: rgba(108,58,237,0.16);
-    }
-
     .clip-toolbar-divider {
       width: 1px;
       height: 24px;
@@ -6281,8 +6255,8 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div>
               <label style="display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Clip Style</label>
               <select id="ag-clipStyle" style="width:100%;padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
-                <option value="crop">Center Crop</option>
                 <option value="blur">Blur Background</option>
+                <option value="crop">Center Crop</option>
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
@@ -7674,7 +7648,6 @@ ${paginationHtml}
                 <option value="tiktok-trend">TikTok Trending</option>
                 <option value="shadow-drop">Shadow Drop</option>
               </select>
-              <div id="caption-preview-\${idx}" class="caption-preview" title="Live caption style preview">Aa</div>
               <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
@@ -7699,8 +7672,8 @@ ${paginationHtml}
               </select>
               <div class="clip-toolbar-divider"></div>
               <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
-                <option value="crop">Center Crop</option>
                 <option value="blur">Blur BG</option>
+                <option value="crop">Center Crop</option>
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
@@ -9648,106 +9621,6 @@ ${paginationHtml}
         btn.textContent = originalText;
       }
     }
-
-    // === Caption Style Preview ===
-    //
-    // Live preview pill sitting next to each per-moment Caption Style
-    // dropdown. CAPTION_PRESET_CSS mirrors the ASS preset map in
-    // generateASSSubtitles() server-side, but precomputed as browser CSS
-    // properties — same color, weight, casing intent so the preview
-    // visually matches the rendered clip.
-    //
-    // ASS color format: &HAABBGGRR (alpha + BGR). We strip alpha + reverse
-    // BGR -> RGB. ASS treats alpha 00 as fully opaque, FF as transparent.
-    (function() {
-      function assColor(ass, fallback) {
-        var hex = String(ass || '').replace(/&H/i, '');
-        if (hex.length < 6) return fallback || '#fff';
-        // Last 6 bytes are BBGGRR
-        var b = hex.slice(-6, -4);
-        var g = hex.slice(-4, -2);
-        var r = hex.slice(-2);
-        return '#' + r + g + b;
-      }
-      // Build a text-shadow string that approximates ASS outline thickness.
-      function outline(color, width) {
-        var w = Math.max(1, Math.min(4, width || 2));
-        var s = [];
-        for (var dx = -w; dx <= w; dx++) {
-          for (var dy = -w; dy <= w; dy++) {
-            if (dx === 0 && dy === 0) continue;
-            s.push(dx + 'px ' + dy + 'px 0 ' + color);
-          }
-        }
-        return s.join(',');
-      }
-      // ASS presets, normalized to CSS. Mirrors server-side styleConfigs.
-      var PRESETS = {
-        classic:        { c:'&H00FFFFFF', o:'&H00000000', w:4, up:true,  b:true,  font:'sans' },
-        trending:       { c:'&H0000FFFF', o:'&H00000000', w:5, up:true,  b:true,  font:'sans' },
-        karaoke:        { c:'&H00FFFFFF', o:'&H000050FF', w:4, up:true,  b:true,  font:'sans' },
-        minimal:        { c:'&H00FFFFFF', o:'&H00000000', w:2, up:false, b:false, font:'sans' },
-        bold:           { c:'&H0000FF00', o:'&H00000000', w:5, up:true,  b:true,  font:'sans' },
-        neon:           { c:'&H00FF50FF', o:'&H00FF0080', w:4, up:true,  b:true,  font:'sans' },
-        'bold-pop':     { c:'&H0000BFFF', o:'&H00000000', w:5, up:true,  b:true,  font:'sans' },
-        'gradient-wave':{ c:'&H00FF69B4', o:'&H009932CC', w:4, up:true,  b:true,  font:'sans' },
-        typewriter:     { c:'&H00FFFFFF', o:'&H00000000', w:2, up:false, b:false, font:'mono' },
-        cinematic:      { c:'&H0074D4D4', o:'&H00000000', w:3, up:false, b:false, font:'sans' },
-        street:         { c:'&H0000FFFF', o:'&H00000000', w:4, up:true,  b:true,  font:'sans' },
-        hormozi:        { c:'&H0000FFFF', o:'&H00000000', w:5, up:true,  b:true,  font:'sans' },
-        mrbeast:        { c:'&H00FFFFFF', o:'&H000000FF', w:5, up:true,  b:true,  font:'sans' },
-        'classic-sub':  { c:'&H00FFFFFF', o:'&H00000000', w:2, up:false, b:false, font:'sans' },
-        'outline-style':{ c:'&H00000000', o:'&H00FFFFFF', w:4, up:true,  b:true,  font:'sans' },
-        'soft-glow':    { c:'&H00FFFFFF', o:'&H00FFB0E0', w:3, up:false, b:false, font:'sans' },
-        'retro-vhs':    { c:'&H0000FFFF', o:'&H000000FF', w:3, up:true,  b:true,  font:'mono' },
-        comic:          { c:'&H0000FFFF', o:'&H00000000', w:4, up:true,  b:true,  font:'sans' },
-        fire:           { c:'&H000055FF', o:'&H000000FF', w:4, up:true,  b:true,  font:'sans' },
-        'clean-modern': { c:'&H00FFFFFF', o:'&H00000000', w:2, up:false, b:false, font:'sans' },
-        podcast:        { c:'&H00FFFFFF', o:'&H00000000', w:3, up:false, b:false, font:'sans' },
-        'tiktok-trend': { c:'&H0000FFFF', o:'&H00000000', w:4, up:true,  b:true,  font:'sans' },
-        'shadow-drop':  { c:'&H00FFFFFF', o:'&H00000000', w:3, up:true,  b:true,  font:'sans' }
-      };
-      function paintPreview(previewEl, styleKey) {
-        if (!previewEl) return;
-        var p = PRESETS[styleKey] || PRESETS.classic;
-        var fillColor    = assColor(p.c, '#ffffff');
-        var outlineColor = assColor(p.o, '#000000');
-        previewEl.textContent = p.up ? 'Aa' : 'Aa';
-        previewEl.style.color           = fillColor;
-        previewEl.style.fontWeight      = p.b ? '900' : '500';
-        previewEl.style.fontFamily      = p.font === 'mono'
-          ? '"SF Mono", "JetBrains Mono", Consolas, "Liberation Mono", monospace'
-          : 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-        previewEl.style.textTransform   = p.up ? 'uppercase' : 'none';
-        previewEl.style.textShadow      = outline(outlineColor, p.w);
-        previewEl.style.letterSpacing   = p.up ? '0.06em' : '0.02em';
-      }
-      // Paint the preview for every moment card on render, and bind a
-      // change listener so it updates when the user picks a new style.
-      function refreshAll() {
-        document.querySelectorAll('select[id^="caption-style-"]').forEach(function(sel) {
-          var idx = sel.id.replace('caption-style-', '');
-          var prev = document.getElementById('caption-preview-' + idx);
-          paintPreview(prev, sel.value || 'classic');
-        });
-      }
-      document.addEventListener('change', function(e) {
-        if (e.target && e.target.matches && e.target.matches('select[id^="caption-style-"]')) {
-          var idx = e.target.id.replace('caption-style-', '');
-          var prev = document.getElementById('caption-preview-' + idx);
-          paintPreview(prev, e.target.value || 'classic');
-        }
-      });
-      // viewAnalysis() renders the cards. Hook into its end by polling
-      // briefly after each modal open (the modal is opened by viewAnalysis
-      // which sets analysisModal.classList.add('active')).
-      var observer = new MutationObserver(function() { refreshAll(); });
-      window.addEventListener('DOMContentLoaded', function() {
-        refreshAll();
-        var modal = document.getElementById('analysisModal');
-        if (modal) observer.observe(modal, { childList: true, subtree: true });
-      });
-    })();
 
     // === Brand Kit Functions ===
 
