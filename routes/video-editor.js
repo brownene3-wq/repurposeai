@@ -809,6 +809,20 @@ async function renderEditor(req, res) {
     #vePublishModal input[type="date"]::-moz-calendar-picker-indicator,
     #vePublishModal input[type="time"]::-moz-calendar-picker-indicator,
     #vePublishModal input[type="datetime-local"]::-moz-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1}
+    /* Task #128 — Scrollbar inside vePublishModal matches the dashboard
+       sidebar (.sidebar-nav in utils/theme.js). Thin 6px track, low-
+       contrast thumb that lifts on hover. Targets the inner scrolling
+       panel via direct-child selector so the outer overlay backdrop
+       isn't affected. Light-mode follows the dashboard's inverted
+       palette. */
+    #vePublishModal > div{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    #vePublishModal > div::-webkit-scrollbar{width:6px}
+    #vePublishModal > div::-webkit-scrollbar-track{background:transparent}
+    #vePublishModal > div::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    #vePublishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    body.light #vePublishModal > div{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light #vePublishModal > div::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+    body.light #vePublishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.25)}
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
