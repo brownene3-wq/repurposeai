@@ -2646,6 +2646,96 @@
   }
   try { window.ensureClipHasServerUrl = ensureClipHasServerUrl; } catch(_){}
 
+  // Task #118 — Global sidebar gate. When the timeline has zero clips
+  // on every track, every action button in the editor sidebar is
+  // disabled + dimmed. The moment a clip lands anywhere, they all
+  // come back to life. Implementation:
+  //   • One MutationObserver on #mtTracksArea (the timeline body)
+  //     reacts to childList changes anywhere inside any track row.
+  //   • The gate toggles .disabled, opacity, cursor, and a v10-empty
+  //     CSS class for richer styling if anyone wants to override it.
+  //   • Buttons handled by the AI tab's own per-label gate
+  //     (data-v10-ai-label) are SKIPPED here — that gate already does
+  //     the right thing including timeline-empty handling and we don't
+  //     want two writers fighting over the same disabled state.
+  //   • Export and Save-as-Draft are explicitly skipped — those should
+  //     stay clickable so the user can save or export even an empty
+  //     project (the export route will just bail with a clear message).
+  function updateSidebarEmptyGate(){
+    var sidebar = document.querySelector('.editor-sidebar');
+    if (!sidebar) return;
+    var hasAnyClip = !!document.querySelector(
+      '.mt-track-video .mt-clip, .mt-track-audio .mt-clip, ' +
+      '.mt-track-music .mt-clip, .mt-track-text .mt-clip, ' +
+      '.mt-track-fx .mt-clip'
+    );
+    var SKIP_IDS = { 'exportButton': 1, 'vePublishBtn': 1, 'saveAsDraftBtn': 1, 'tourHelpBtn': 1, 'projectAspectBadge': 1 };
+    var btns = sidebar.querySelectorAll('.v10-rp-btn, .v10-fx-btn, .tb3');
+    btns.forEach(function(b){
+      if (b.id && SKIP_IDS[b.id]) return;
+      // Leave the AI tab's own gate alone — it already handles its
+      // buttons per-label (and would otherwise flicker as two writers
+      // both flip .disabled within the same tick).
+      if (b.hasAttribute('data-v10-ai-label')) return;
+      if (hasAnyClip){
+        b.classList.remove('v10-empty-disabled');
+        b.removeAttribute('disabled');
+        // Only clear inline styles we set ourselves — preserve any other
+        // opacity / cursor a sibling feature might have applied.
+        if (b.dataset.v118Dimmed === '1'){
+          b.style.opacity = '';
+          b.style.cursor  = '';
+          b.style.pointerEvents = '';
+          delete b.dataset.v118Dimmed;
+        }
+      } else {
+        b.classList.add('v10-empty-disabled');
+        b.setAttribute('disabled', '');
+        b.style.opacity = '0.4';
+        b.style.cursor  = 'not-allowed';
+        b.style.pointerEvents = 'none';
+        b.dataset.v118Dimmed = '1';
+      }
+    });
+  }
+  try { window.updateSidebarEmptyGate = updateSidebarEmptyGate; } catch(_){}
+
+  // Run the gate once on boot, then watch the timeline for any
+  // mutation that could change the clip count (add / remove).
+  function wireSidebarEmptyGate(){
+    updateSidebarEmptyGate();
+    var ta = document.getElementById('mtTracksArea');
+    if (ta && !ta.__v118Obs){
+      ta.__v118Obs = new MutationObserver(function(){
+        updateSidebarEmptyGate();
+      });
+      ta.__v118Obs.observe(ta, { subtree: true, childList: true });
+    }
+    // Also re-evaluate whenever the sidebar's right-panel content is
+    // rebuilt (switching tabs swaps the whole panel content out, so the
+    // newly-inserted buttons need the gate applied too).
+    var rp = document.getElementById('editorRightPanel') ||
+             document.querySelector('.editor-sidebar');
+    if (rp && !rp.__v118Obs){
+      rp.__v118Obs = new MutationObserver(function(muts){
+        // Only react when buttons actually changed (avoid feedback loops
+        // since we mutate their attributes ourselves).
+        for (var i = 0; i < muts.length; i++){
+          if (muts[i].type === 'childList'){
+            updateSidebarEmptyGate();
+            return;
+          }
+        }
+      });
+      rp.__v118Obs.observe(rp, { subtree: true, childList: true });
+    }
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', wireSidebarEmptyGate);
+  } else {
+    setTimeout(wireSidebarEmptyGate, 0);
+  }
+
   function setAIButtonLoading(btn, loading, labelOverride){
     if (!btn) return;
     if (loading){
