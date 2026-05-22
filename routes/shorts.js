@@ -3735,13 +3735,18 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
           actualDownload = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress);
         } catch (dlErr) {
           clearTimeout(timeout);
-          // getOrDownloadVideo now throws a verbose message that lists each
+          // getOrDownloadVideo throws a verbose message listing each
           // downloader's specific failure (Cobalt / yt-dlp / ytdl-core)
-          // plus a cookies hint. Pass it straight through so the user sees
-          // the actionable diagnosis instead of the generic 'try again'.
-          var detail = (dlErr && dlErr.message)
-            ? String(dlErr.message)
-            : 'Video download failed. Please try again.';
+          // plus a cookies hint. Pass it through unchanged so the user
+          // sees the actionable diagnosis, not a generic 'try again.'
+          //
+          // The '[v3]' tag lets Albert verify at a glance that this
+          // commit is actually live on dev — if the tag isn't in the
+          // error message, the deploy hasn't propagated yet.
+          var rawMsg = (dlErr && dlErr.message) ? String(dlErr.message) : '';
+          var detail = rawMsg
+            ? '[v3] ' + rawMsg
+            : '[v3] Download path threw without a message — check Railway logs for the stack trace.';
           console.error('  Video download failed:', detail);
           writeError(detail);
           return;
