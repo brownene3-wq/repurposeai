@@ -7777,15 +7777,15 @@ ${paginationHtml}
                     <option value="pip">Picture-in-Picture</option>
                   </select>
                   <label class="clip-captions-toggle" title="Burn animated captions into the clip">
-                    <input type="checkbox" id="captions-\${idx}"
+                    <input type="checkbox" id="captions-\${idx}" checked
                       onchange="(function(el){ var box = document.getElementById('caption-fields-' + '\${idx}'); if (box) box.style.display = el.checked ? 'inline-flex' : 'none'; })(this);"
                       style="accent-color:#a78bfa; width:14px; height:14px;">
                     <span>Captions</span>
                   </label>
                   <!-- Caption-related controls live in this wrapper so we can
-                       hide all three with one display toggle. Hidden by
-                       default because the Captions checkbox starts unchecked. -->
-                  <span id="caption-fields-\${idx}" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;">
+                       hide all three with one display toggle. Visible by
+                       default because the Captions checkbox starts checked. -->
+                  <span id="caption-fields-\${idx}" style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;">
                     <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style"
                       onchange="if (typeof window.__paintCaptionPreview === 'function') window.__paintCaptionPreview('\${idx}', this.value);">
                 <option value="classic">Classic</option>
