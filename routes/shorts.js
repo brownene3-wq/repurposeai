@@ -2808,7 +2808,12 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
           scheduledTime: timeStr,
           contentText: caption || description || '',
           analysisId, momentIndex,
-          notes: '', color: '#6c5ce7',
+          // Forward the schedule-modal extras (notification + notes) added
+          // when we merged 'Schedule This Moment' into 'Publish This Moment'.
+          notes: req.body.notes || '',
+          color: '#6c5ce7',
+          reminderEmail: req.body.reminderEmail || '',
+          reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0,
           autoPublish: true,
           // schedulePublisher renders the clip if clipFilename is empty; setting
           // it later via a /shorts/clip call would also work, but leaving it
@@ -6791,7 +6796,7 @@ ${paginationHtml}
         </div>
 
         <div id="publishLaterFields" style="display:none;margin-bottom:14px;">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
             <div>
               <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
               <input type="date" id="publishDate" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
@@ -6801,6 +6806,28 @@ ${paginationHtml}
               <input type="time" id="publishTime" value="12:00" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
             </div>
           </div>
+
+          <!-- Suggest peak time for the picked account's platform -->
+          <button type="button" id="publishPeakBtn" onclick="publishSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
+            <span style="font-size:1em;">&#x2728;</span> Suggest peak time for this platform
+            <span id="publishPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          </button>
+
+          <!-- Notification reminder -->
+          <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
+          <select id="publishReminder" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;" onchange="publishToggleReminderEmail()">
+            <option value="0">None</option>
+            <option value="15">15 minutes before</option>
+            <option value="60">1 hour before</option>
+            <option value="1440">1 day before</option>
+            <option value="2880">2 days before</option>
+          </select>
+          <input type="email" id="publishReminderEmail" placeholder="Email for reminder" style="display:none;width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          <div id="publishReminderSpacer" style="margin-bottom:14px;"></div>
+
+          <!-- Notes -->
+          <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
+          <textarea id="publishNotes" rows="4" placeholder="Any notes for this scheduled post" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;resize:vertical;min-height:80px;"></textarea>
         </div>
 
         <div id="publishStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>
@@ -7455,6 +7482,18 @@ ${paginationHtml}
         var t = document.getElementById('publishTime').value || '12:00';
         if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
         payload.scheduledAt = d + 'T' + t + ':00';
+        // Extra fields merged from the legacy 'Schedule This Moment' modal
+        // so both flows now collect the same scheduling metadata.
+        var remVal = parseInt(document.getElementById('publishReminder').value || '0', 10) || 0;
+        var remEmail = document.getElementById('publishReminderEmail').value.trim();
+        if (remVal > 0 && !remEmail) {
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'Enter an email to receive the reminder.';
+          return;
+        }
+        payload.reminderMinutes = remVal;
+        payload.reminderEmail = remVal > 0 ? remEmail : '';
+        payload.notes = document.getElementById('publishNotes').value;
       }
       btn.disabled = true; var orig = btn.textContent; btn.textContent = _publishMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
       statusEl.style.display = 'block';
@@ -7479,6 +7518,54 @@ ${paginationHtml}
         statusEl.textContent = 'Error: ' + e.message;
       } finally {
         btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    // Peak-time suggestion for the publishModal — reads the picked
+    // account's platform from the publishAccount select's data attribute
+    // and fills in publishDate/publishTime.
+    async function publishSuggestPeakTime() {
+      var btn = document.getElementById('publishPeakBtn');
+      var hint = document.getElementById('publishPeakHint');
+      var sel = document.getElementById('publishAccount');
+      var opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+      var platform = opt ? (opt.getAttribute('data-platform') || '') : '';
+      if (!platform) {
+        if (typeof showToast === 'function') showToast('Pick an account first.');
+        return;
+      }
+      var orig = hint.textContent;
+      hint.textContent = 'Thinking…';
+      btn.disabled = true;
+      try {
+        var resp = await fetch('/dashboard/calendar/api/peak-time?platform=' + encodeURIComponent(platform));
+        if (!resp.ok) throw new Error('Failed');
+        var d = await resp.json();
+        if (d.date) document.getElementById('publishDate').value = d.date;
+        if (d.time) document.getElementById('publishTime').value = d.time;
+        hint.textContent = d.date && d.time ? (d.date + ' · ' + d.time) : '';
+        if (typeof showToast === 'function') showToast(d.reasoning || ('Peak time set: ' + d.date + ' ' + d.time));
+      } catch (e) {
+        hint.textContent = orig;
+        if (typeof showToast === 'function') showToast('Peak time unavailable');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Show/hide the reminder-email input depending on whether a non-zero
+    // reminder window is picked.
+    function publishToggleReminderEmail() {
+      var v = parseInt(document.getElementById('publishReminder').value || '0', 10);
+      var email = document.getElementById('publishReminderEmail');
+      var spacer = document.getElementById('publishReminderSpacer');
+      if (v > 0) {
+        email.style.display = 'block';
+        if (spacer) spacer.style.display = 'none';
+      } else {
+        email.style.display = 'none';
+        email.value = '';
+        if (spacer) spacer.style.display = 'block';
       }
     }
 
