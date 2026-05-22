@@ -7762,16 +7762,30 @@ ${paginationHtml}
 
               <!-- Row 2 — Settings (captions/brand/clip style controls
                    that shape how the rendered clip looks). The wrapper
-                   has a subtle background so the grouping reads visually. -->
-              <div class="clip-toolbar-row settings">
-                <span class="clip-toolbar-row-label">Settings</span>
-                <label class="clip-captions-toggle" title="Burn animated captions into the clip">
-                  <input type="checkbox" id="captions-\${idx}" checked
-                    style="accent-color:#a78bfa; width:14px; height:14px;">
-                  <span>Captions</span>
-                </label>
-                <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style"
-                  onchange="if (typeof window.__paintCaptionPreview === 'function') window.__paintCaptionPreview('\${idx}', this.value);">
+                   has a subtle background so the grouping reads visually.
+                   Label sits on its own line above the controls per
+                   Albert's UX request. -->
+              <div class="clip-toolbar-row settings" style="flex-direction:column;align-items:stretch;">
+                <span class="clip-toolbar-row-label" style="margin-bottom:6px;">Settings</span>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                  <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
+                    <option value="crop">Center Crop</option>
+                    <option value="blur">Blur BG</option>
+                    <option value="fit">Fit (Black BG)</option>
+                    <option value="pip">Picture-in-Picture</option>
+                  </select>
+                  <label class="clip-captions-toggle" title="Burn animated captions into the clip">
+                    <input type="checkbox" id="captions-\${idx}"
+                      onchange="(function(el){ var box = document.getElementById('caption-fields-' + '\${idx}'); if (box) box.style.display = el.checked ? 'inline-flex' : 'none'; })(this);"
+                      style="accent-color:#a78bfa; width:14px; height:14px;">
+                    <span>Captions</span>
+                  </label>
+                  <!-- Caption-related controls live in this wrapper so we can
+                       hide all three with one display toggle. Hidden by
+                       default because the Captions checkbox starts unchecked. -->
+                  <span id="caption-fields-\${idx}" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;">
+                    <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style"
+                      onchange="if (typeof window.__paintCaptionPreview === 'function') window.__paintCaptionPreview('\${idx}', this.value);">
                 <option value="classic">Classic</option>
                 <option value="trending">Trending</option>
                 <option value="karaoke">Word Pop</option>
@@ -7819,17 +7833,13 @@ ${paginationHtml}
                 <option value="fil">Filipino</option>
                 <option value="sv">Swedish</option>
               </select>
-                <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
-                  <input type="checkbox" id="brandkit-\${idx}" checked
-                    style="accent-color:#a78bfa; width:14px; height:14px;">
-                  <span>Brand Template</span>
-                </label>
-                <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
-                  <option value="crop">Center Crop</option>
-                  <option value="blur">Blur BG</option>
-                  <option value="fit">Fit (Black BG)</option>
-                  <option value="pip">Picture-in-Picture</option>
-                </select>
+                  </span>
+                  <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
+                    <input type="checkbox" id="brandkit-\${idx}"
+                      style="accent-color:#a78bfa; width:14px; height:14px;">
+                    <span>Brand Template</span>
+                  </label>
+                </div>
               </div>
 
               <!-- Row 3 — Actions / Download (Download Clip, Publish, Narrate, B-Roll). -->
