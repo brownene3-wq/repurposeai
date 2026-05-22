@@ -3781,43 +3781,36 @@ function showToast(message, type = 'success') {
       });
     }
 
-    // Task #121 — Wire the Splicora watermark checkbox to localStorage so
-    // a user's toggle preference survives page reloads. Load saved value
-    // on boot; persist on every change.
-    // Task #122 — Also drive the live Program Monitor watermark off the
-    // same checkbox so what the user sees on the preview matches the
-    // export 1:1.
+    // Task #121 / #122 / #127 — Splicora watermark checkbox wiring.
+    //   • Default OFF on every page load (no localStorage restore).
+    //   • Uncheck again whenever a new video source loads (i.e. the
+    //     user just uploaded / imported a video).
+    //   • Drives the live Program Monitor watermark so the preview
+    //     mirrors the export 1:1.
+    // Watermark is purely opt-in per export — the user has to tick the
+    // box each time they want it baked into a render.
     (function(){
       var cb = document.getElementById('exportWatermarkChk');
       if (!cb) return;
-      var LS_KEY = 'splicora_export_watermark_v1';
-      try {
-        var saved = localStorage.getItem(LS_KEY);
-        if (saved === '0') cb.checked = false;
-        else if (saved === '1') cb.checked = true;
-      } catch(_){}
+      // Ensure unchecked on boot (defensive — HTML default in Task #125
+      // is also unchecked, but browser autofill / form recall could
+      // otherwise restore an old state).
+      cb.checked = false;
       function syncPgmWatermark(){
         var wm = document.getElementById('programMonitorWatermark');
         if (!wm) return;
         var area = document.getElementById('videoPreviewArea');
         // Only show the watermark when a video is actually loaded — the
         // preview area gets the .has-video class on first clip add.
-        // (Without this guard, the logo would float in the empty
-        // gradient slot, which looks broken.)
         var hasVideo = area && area.classList.contains('has-video');
         if (cb.checked && hasVideo) wm.classList.add('on');
         else wm.classList.remove('on');
       }
-      cb.addEventListener('change', function(){
-        try { localStorage.setItem(LS_KEY, cb.checked ? '1' : '0'); } catch(_){}
-        syncPgmWatermark();
-      });
-      // Initial paint + re-paint whenever the preview area's has-video
-      // class flips (i.e., when the first clip lands or the last one is
-      // removed). MutationObserver on the class attribute is the cleanest
-      // way to track that without scattering syncs through every clip-
-      // add path.
+      cb.addEventListener('change', syncPgmWatermark);
       syncPgmWatermark();
+
+      // Mirror has-video changes (clip add / remove) into the live
+      // watermark visibility.
       try {
         var area = document.getElementById('videoPreviewArea');
         if (area && !area.__v122WmObs){
@@ -3825,6 +3818,23 @@ function showToast(message, type = 'success') {
           area.__v122WmObs.observe(area, { attributes:true, attributeFilter:['class'] });
         }
       } catch(_){}
+
+      // Task #127 — Uncheck whenever a new video source loads. The
+      // videoPlayer's loadedmetadata fires after every new src — covers
+      // file upload, drag-drop, YouTube import, Dropbox, Google Drive,
+      // and draft restore alike. Watermark is opt-in PER export, so a
+      // fresh upload always starts clean.
+      try {
+        var vp = document.getElementById('videoPlayer');
+        if (vp && !vp.__v127WmReset){
+          vp.__v127WmReset = true;
+          vp.addEventListener('loadedmetadata', function(){
+            cb.checked = false;
+            syncPgmWatermark();
+          });
+        }
+      } catch(_){}
+
       try { window.syncPgmWatermark = syncPgmWatermark; } catch(_){}
     })();
 
