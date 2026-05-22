@@ -5873,11 +5873,37 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
     .clip-toolbar {
       display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    /* Each toolbar row groups related controls. Wraps gracefully on narrow widths. */
+    .clip-toolbar-row {
+      display: flex;
       gap: 6px;
       flex-wrap: wrap;
       align-items: center;
-      padding-top: 12px;
-      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    /* Settings row gets a subtle inset so the grouping reads visually. */
+    .clip-toolbar-row.settings {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    body.light .clip-toolbar-row.settings {
+      background: rgba(108,58,237,0.04);
+      border-color: rgba(108,58,237,0.10);
+    }
+    .clip-toolbar-row-label {
+      font-size: 0.66rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-right: 4px;
+      flex-shrink: 0;
     }
     .clip-tool-btn {
       padding: 6px 12px;
@@ -7722,37 +7748,30 @@ ${paginationHtml}
               </div>
             </div>
             <div class="clip-toolbar">
-              <button class="clip-tool-btn primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
-                ✨ Generate Content
-              </button>
-              <button class="clip-tool-btn accent" id="clip-btn-\${idx}"
-                onclick="downloadClip('\${id}', \${idx}, this)">
-                ⬇ Download Clip
-              </button>
-              <button class="clip-tool-btn" onclick="addToCalendar('\${id}', \${idx})" title="Schedule this moment on the calendar"
-                style="background:rgba(108,58,237,0.10); color:#a78bfa; border:1px solid rgba(108,58,237,0.30);">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Add to Calendar
-              </button>
-              <!-- Phase 2b — Publish to a connected social account directly,
-                   or schedule via the calendar machinery using the same
-                   unified connected_accounts source of truth. -->
-              <button class="clip-tool-btn" onclick="openPublishModal('\${id}', \${idx})" title="Publish this moment to a connected social account"
-                style="background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.16));color:#fff;border:1px solid rgba(108,58,237,0.45);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg> Publish to&hellip;
-              </button>
-              <div class="clip-toolbar-divider"></div>
-              <label class="clip-captions-toggle" title="Burn animated captions into the clip">
-                <input type="checkbox" id="captions-\${idx}" checked
-                  style="accent-color:#a78bfa; width:14px; height:14px;">
-                <span>Captions</span>
-              </label>
-              <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
-                <input type="checkbox" id="brandkit-\${idx}" checked
-                  style="accent-color:#a78bfa; width:14px; height:14px;">
-                <span>Brand Template</span>
-              </label>
-              <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style"
-                onchange="if (typeof window.__paintCaptionPreview === 'function') window.__paintCaptionPreview('\${idx}', this.value);">
+
+              <!-- Row 1 — Source / Generate -->
+              <div class="clip-toolbar-row">
+                \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
+                  class="clip-tool-btn" style="text-decoration: none;">
+                  ▶ YouTube
+                </a>\` : ''}
+                <button class="clip-tool-btn primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
+                  ✨ Generate Content
+                </button>
+              </div>
+
+              <!-- Row 2 — Settings (captions/brand/clip style controls
+                   that shape how the rendered clip looks). The wrapper
+                   has a subtle background so the grouping reads visually. -->
+              <div class="clip-toolbar-row settings">
+                <span class="clip-toolbar-row-label">Settings</span>
+                <label class="clip-captions-toggle" title="Burn animated captions into the clip">
+                  <input type="checkbox" id="captions-\${idx}" checked
+                    style="accent-color:#a78bfa; width:14px; height:14px;">
+                  <span>Captions</span>
+                </label>
+                <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style"
+                  onchange="if (typeof window.__paintCaptionPreview === 'function') window.__paintCaptionPreview('\${idx}', this.value);">
                 <option value="classic">Classic</option>
                 <option value="trending">Trending</option>
                 <option value="karaoke">Word Pop</option>
@@ -7778,7 +7797,7 @@ ${paginationHtml}
                 <option value="shadow-drop">Shadow Drop</option>
               </select>
               <span id="caption-preview-\${idx}" class="caption-preview" title="Live caption style preview">Aa</span>
-              <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
+                <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
                 <option value="pt">Portuguese</option>
@@ -7800,25 +7819,39 @@ ${paginationHtml}
                 <option value="fil">Filipino</option>
                 <option value="sv">Swedish</option>
               </select>
-              <div class="clip-toolbar-divider"></div>
-              <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
-                <option value="crop">Center Crop</option>
-                <option value="blur">Blur BG</option>
-                <option value="fit">Fit (Black BG)</option>
-                <option value="pip">Picture-in-Picture</option>
-              </select>
-              <button class="clip-tool-btn" id="broll-btn-\${idx}"
-                onclick="findBRoll('\${id}', \${idx}, this)">
-                🎬 B-Roll
-              </button>
-              <button class="clip-tool-btn" id="narrate-btn-\${idx}"
-                onclick="openNarrationModal('\${id}', \${idx})">
-                🎙️ Narrate
-              </button>
-              \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
-                class="clip-tool-btn" style="text-decoration: none;">
-                ▶ YouTube
-              </a>\` : ''}
+                <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
+                  <input type="checkbox" id="brandkit-\${idx}" checked
+                    style="accent-color:#a78bfa; width:14px; height:14px;">
+                  <span>Brand Template</span>
+                </label>
+                <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
+                  <option value="crop">Center Crop</option>
+                  <option value="blur">Blur BG</option>
+                  <option value="fit">Fit (Black BG)</option>
+                  <option value="pip">Picture-in-Picture</option>
+                </select>
+              </div>
+
+              <!-- Row 3 — Actions / Download (Download Clip, Publish, Narrate, B-Roll). -->
+              <div class="clip-toolbar-row">
+                <button class="clip-tool-btn accent" id="clip-btn-\${idx}"
+                  onclick="downloadClip('\${id}', \${idx}, this)">
+                  ⬇ Download Clip
+                </button>
+                <button class="clip-tool-btn" onclick="openPublishModal('\${id}', \${idx})" title="Publish this moment to a connected social account"
+                  style="background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.16));color:#fff;border:1px solid rgba(108,58,237,0.45);">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg> Publish to&hellip;
+                </button>
+                <button class="clip-tool-btn" id="narrate-btn-\${idx}"
+                  onclick="openNarrationModal('\${id}', \${idx})">
+                  🎙️ Narrate
+                </button>
+                <button class="clip-tool-btn" id="broll-btn-\${idx}"
+                  onclick="findBRoll('\${id}', \${idx}, this)">
+                  🎬 B-Roll
+                </button>
+              </div>
+
             </div>
           \`;
           card.onclick = (e) => {
