@@ -766,7 +766,10 @@ async function renderEditor(req, res) {
     .editor-sidebar .s-apply{width:100%;padding:7px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;border-radius:6px;color:#fff;font-size:10px;font-weight:700;cursor:pointer;margin-top:3px}
     .editor-sidebar .exp-section{padding:6px;border-top:1px solid rgba(108,58,237,.06);margin-top:auto}
     .editor-sidebar .exp-row{display:flex;gap:3px;margin-bottom:3px}
-    .editor-sidebar .exp-sel{flex:1;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:4px;padding:4px 6px;color:#b8a6d9;font-size:9px}
+    /* Task #117 — bumped from 9px to 12px so the dropdowns visually
+       align with the rest of the sidebar text. Padding nudged up to
+       keep proportions readable at the larger type size. */
+    .editor-sidebar .exp-sel{flex:1;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:4px;padding:6px 8px;color:#b8a6d9;font-size:12px}
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
@@ -1470,10 +1473,15 @@ async function renderEditor(req, res) {
           </div>
           <div class="exp-section">
             <div class="exp-row">
+              <!-- Task #117 — Default ships at 1080p. The export pipeline
+                   (heightMap at line ~3888) reads the selected value and
+                   computes the encoded width/height from project aspect,
+                   so changing the default here is enough — no backend
+                   change needed. -->
               <select class="exp-sel" id="exportQualitySel">
                 <option value="480p">480p</option>
-                <option value="720p" selected>720p</option>
-                <option value="1080p">1080p</option>
+                <option value="720p">720p</option>
+                <option value="1080p" selected>1080p</option>
                 <option value="4K">4K</option>
               </select>
               <select class="exp-sel" id="exportFormatSel">
