@@ -5933,6 +5933,35 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       border-color: var(--primary);
       color: var(--text);
     }
+    /* Caption-style live preview pill, sits inline next to the
+       Caption Style dropdown in the per-moment toolbar. Updated via
+       window.__paintCaptionPreview, called from the select's onchange. */
+    .caption-preview {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 56px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: linear-gradient(135deg, #16131f, #0c0a14);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      line-height: 1;
+      color: #fff;
+      text-transform: uppercase;
+      text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+      user-select: none;
+      pointer-events: none;
+    }
+    body.light .caption-preview {
+      background: linear-gradient(135deg, #f4f0fb, #e8e1f3);
+      border-color: rgba(108,58,237,0.16);
+    }
+
     .clip-toolbar-divider {
       width: 1px;
       height: 24px;
@@ -7623,7 +7652,8 @@ ${paginationHtml}
                   style="accent-color:#a78bfa; width:14px; height:14px;">
                 <span>Brand Template</span>
               </label>
-              <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style">
+              <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style"
+                onchange="if (typeof window.__paintCaptionPreview === 'function') window.__paintCaptionPreview('\${idx}', this.value);">
                 <option value="classic">Classic</option>
                 <option value="trending">Trending</option>
                 <option value="karaoke">Word Pop</option>
@@ -7648,6 +7678,7 @@ ${paginationHtml}
                 <option value="tiktok-trend">TikTok Trending</option>
                 <option value="shadow-drop">Shadow Drop</option>
               </select>
+              <span id="caption-preview-\${idx}" class="caption-preview" title="Live caption style preview">Aa</span>
               <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
@@ -9621,6 +9652,52 @@ ${paginationHtml}
         btn.textContent = originalText;
       }
     }
+
+    // Caption-style live preview painter. Called by the inline onchange
+    // on the per-moment Caption Style select. Defensively guarded so an
+    // unknown style key falls back to the Classic look instead of throwing.
+    window.__paintCaptionPreview = function(idx, styleKey) {
+      try {
+        var prev = document.getElementById('caption-preview-' + idx);
+        if (!prev) return;
+        var P = {
+          classic:       { c:'#FFFFFF', o:'#000000', up:true,  b:true  },
+          trending:      { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          karaoke:       { c:'#FFFFFF', o:'#FF5000', up:true,  b:true  },
+          minimal:       { c:'#FFFFFF', o:'#000000', up:false, b:false },
+          bold:          { c:'#00FF00', o:'#000000', up:true,  b:true  },
+          neon:          { c:'#FF50FF', o:'#8000FF', up:true,  b:true  },
+          'bold-pop':    { c:'#FFBF00', o:'#000000', up:true,  b:true  },
+          'gradient-wave':{c:'#B469FF', o:'#CC3299', up:true,  b:true  },
+          typewriter:    { c:'#FFFFFF', o:'#000000', up:false, b:false, mono:true },
+          cinematic:     { c:'#D4D474', o:'#000000', up:false, b:false },
+          street:        { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          hormozi:       { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          mrbeast:       { c:'#FFFFFF', o:'#FF0000', up:true,  b:true  },
+          'classic-sub': { c:'#FFFFFF', o:'#000000', up:false, b:false },
+          'outline-style':{c:'#000000', o:'#FFFFFF', up:true,  b:true  },
+          'soft-glow':   { c:'#FFFFFF', o:'#E0B0FF', up:false, b:false },
+          'retro-vhs':   { c:'#FFFF00', o:'#FF0000', up:true,  b:true,  mono:true },
+          comic:         { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          fire:          { c:'#FF5500', o:'#FF0000', up:true,  b:true  },
+          'clean-modern':{ c:'#FFFFFF', o:'#000000', up:false, b:false },
+          podcast:       { c:'#FFFFFF', o:'#000000', up:false, b:false },
+          'tiktok-trend':{ c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          'shadow-drop': { c:'#FFFFFF', o:'#000000', up:true,  b:true  }
+        };
+        var p = P[styleKey] || P.classic;
+        prev.style.color = p.c;
+        prev.style.fontWeight = p.b ? '900' : '500';
+        prev.style.textTransform = p.up ? 'uppercase' : 'none';
+        prev.style.letterSpacing = p.up ? '0.06em' : '0.02em';
+        prev.style.fontFamily = p.mono
+          ? '"SF Mono", "JetBrains Mono", Consolas, "Liberation Mono", monospace'
+          : '';
+        prev.style.textShadow =
+          '-1px -1px 0 ' + p.o + ', 1px -1px 0 ' + p.o + ', ' +
+          '-1px 1px 0 ' + p.o + ', 1px 1px 0 ' + p.o;
+      } catch (_) { /* defensive: never let preview rendering break the page */ }
+    };
 
     // === Brand Kit Functions ===
 
