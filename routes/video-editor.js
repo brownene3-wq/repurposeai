@@ -770,6 +770,16 @@ async function renderEditor(req, res) {
        align with the rest of the sidebar text. Padding nudged up to
        keep proportions readable at the larger type size. */
     .editor-sidebar .exp-sel{flex:1;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:4px;padding:6px 8px;color:#b8a6d9;font-size:12px}
+    /* Task #121 — Splicora watermark toggle. Lives between the dropdowns
+       and the Export button. Small + understated by default so it
+       doesn't compete with the primary CTA. */
+    .editor-sidebar .exp-wm{display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:6px 4px;color:#b8a6d9;font-size:12px;cursor:pointer;user-select:none}
+    .editor-sidebar .exp-wm input[type=checkbox]{accent-color:#a78bfa;width:14px;height:14px;cursor:pointer;margin:0}
+    .editor-sidebar .exp-wm:hover{color:#e2e0f0}
+    .editor-sidebar .exp-wm .exp-wm-hint{font-size:10px;color:#8886a0;margin-left:auto}
+    body.light .editor-sidebar .exp-wm{color:#5a4d78}
+    body.light .editor-sidebar .exp-wm:hover{color:#1a1a2e}
+    body.light .editor-sidebar .exp-wm .exp-wm-hint{color:rgba(26,26,46,.55)}
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
@@ -1490,6 +1500,15 @@ async function renderEditor(req, res) {
                 <option value="webm">WebM</option>
               </select>
             </div>
+            <!-- Task #121 \u2014 Splicora watermark toggle. Default ON.
+                 Persisted to localStorage so a user's preference rides
+                 across reloads. Unchecking it tells /export-timeline
+                 to render the file completely clean (no overlay). -->
+            <label class="exp-wm" id="exportWatermarkLabel" title="Adds a transparent Splicora logo in the upper-right corner">
+              <input type="checkbox" id="exportWatermarkChk" checked>
+              <span>Splicora watermark</span>
+              <span class="exp-wm-hint">top-right</span>
+            </label>
             <button class="exp-go" id="exportButton" type="button">\ud83c\udfac Export Video</button>
             <!-- Phase 2c — appears post-export. Opens vePublishModal which
                  lets the user post the freshly-rendered file to any connected
@@ -3726,6 +3745,23 @@ function showToast(message, type = 'success') {
       });
     }
 
+    // Task #121 — Wire the Splicora watermark checkbox to localStorage so
+    // a user's toggle preference survives page reloads. Load saved value
+    // on boot; persist on every change.
+    (function(){
+      var cb = document.getElementById('exportWatermarkChk');
+      if (!cb) return;
+      var LS_KEY = 'splicora_export_watermark_v1';
+      try {
+        var saved = localStorage.getItem(LS_KEY);
+        if (saved === '0') cb.checked = false;
+        else if (saved === '1') cb.checked = true;
+      } catch(_){}
+      cb.addEventListener('change', function(){
+        try { localStorage.setItem(LS_KEY, cb.checked ? '1' : '0'); } catch(_){}
+      });
+    })();
+
     document.getElementById('exportButton')?.addEventListener('click', async () => {
       // Timeline-aware export: if the user has built a sequence on V1, render
       // the timeline (multiple clips + gaps + razor splits) via the new
@@ -3991,7 +4027,13 @@ function showToast(message, type = 'success') {
                   sourceWidth:   vw,
                   sourceHeight:  vh
                 };
-              })()  // Task #69/#71 — server applies overlay= filter on V1 segments
+              })(),  // Task #69/#71 — server applies overlay= filter on V1 segments
+              // Task #121 — Splicora watermark toggle (default ON).
+              // Unchecking renders the export completely clean.
+              splicoraWatermark: (function(){
+                var cb = document.getElementById('exportWatermarkChk');
+                return cb ? !!cb.checked : true;
+              })()
             })
           });
           var dataTL = await resp.json();
@@ -8505,7 +8547,18 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       }
     }
 
-    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0 || !!brandLogoFile;
+    // Task #121 — Splicora watermark. Default ON; user can toggle off via
+    // the Export panel checkbox (sent in body.splicoraWatermark). When
+    // active, the bundled top-right logo PNG is added as a post-pass
+    // ffmpeg input + overlay; when off, the export is completely clean.
+    var splicoraWatermarkOn = (body && body.splicoraWatermark !== false);
+    var splicoraLogoFile = null;
+    if (splicoraWatermarkOn){
+      var candidate = path.join(__dirname, '..', 'public', 'images', 'splicora-logo-wide-transparent.png');
+      if (fs.existsSync(candidate)) splicoraLogoFile = candidate;
+    }
+
+    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0 || !!brandLogoFile || !!splicoraLogoFile;
 
     if (!hasPostPass){
       // Nothing to bake — just rename the intermediate to the final path.
@@ -8523,6 +8576,13 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       if (brandLogoFile){
         brandLogoInputIdx = 1 + audioClips.length;
         ffArgs.push('-i', brandLogoFile);
+      }
+      // Task #121 — Splicora watermark input goes AFTER brand logo so its
+      // index doesn't shift based on whether a brand logo is present.
+      var splicoraLogoInputIdx = -1;
+      if (splicoraLogoFile){
+        splicoraLogoInputIdx = 1 + audioClips.length + (brandLogoFile ? 1 : 0);
+        ffArgs.push('-i', splicoraLogoFile);
       }
 
       // Video filter chain: drawtext per text clip. Escape special chars.
@@ -8893,6 +8953,32 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       } else {
         // No brand logo — pass [vbase] through to [vout] unchanged.
         chains.push('[vbase]null[vout]');
+      }
+
+      // ─── Task #121 — Splicora watermark overlay ────────────────────────
+      // Sits AFTER the brand-logo step so [vout] from the brand step is
+      // renamed to [vPreWm] and a fresh [vout] is built with the watermark
+      // composited on top. Watermark sits in the upper-right with ~2% pad,
+      // sized to ~18% of canvas width, at 85% alpha so it stays subtle.
+      if (splicoraLogoInputIdx >= 0){
+        var wmW    = Math.max(120, Math.round(outW * 0.18));   // ~18% of canvas
+        var wmPadX = Math.max(8, Math.round(outW * 0.02));     // ~2% inset
+        var wmPadY = Math.max(8, Math.round(outH * 0.02));
+        // ffmpeg overlay's main_w + overlay_w (aliased W/w inside expressions)
+        // place us flush against the right edge minus padding.
+        var wmX = '(W-w)-' + wmPadX;
+        var wmY = String(wmPadY);
+        // Rename the existing [vout] from the brand-logo step → [vPreWm]
+        // so we can use it as the base for the watermark overlay.
+        chains[chains.length - 1] = chains[chains.length - 1].replace(/\[vout\]$/, '[vPreWm]');
+        // Scale the Splicora logo to wmW (height auto-even) and knock the
+        // alpha down to ~85% so the mark reads as a watermark, not opaque.
+        chains.push('[' + splicoraLogoInputIdx + ':v]' +
+                    'format=rgba,' +
+                    'scale=' + wmW + ':-1,' +
+                    'colorchannelmixer=aa=0.85' +
+                    '[swmSc]');
+        chains.push('[vPreWm][swmSc]overlay=x=' + wmX + ':y=' + wmY + '[vout]');
       }
 
       videoGraph = chains.join(';');
