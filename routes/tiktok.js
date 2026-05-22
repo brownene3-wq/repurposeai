@@ -85,7 +85,7 @@ router.get('/connect', requireAuth, (req, res) => {
   const params = new URLSearchParams({
     client_key: TIKTOK_CLIENT_KEY,
     response_type: 'code',
-    scope: 'user.info.basic,video.publish,video.upload',
+    scope: 'user.info.basic,video.publish',
     redirect_uri: BASE_URL + '/auth/tiktok/callback',
     state: state
   });
