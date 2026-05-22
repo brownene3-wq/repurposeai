@@ -6255,8 +6255,8 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div>
               <label style="display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Clip Style</label>
               <select id="ag-clipStyle" style="width:100%;padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
-                <option value="blur">Blur Background</option>
                 <option value="crop">Center Crop</option>
+                <option value="blur">Blur Background</option>
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
@@ -7672,8 +7672,8 @@ ${paginationHtml}
               </select>
               <div class="clip-toolbar-divider"></div>
               <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
-                <option value="blur">Blur BG</option>
                 <option value="crop">Center Crop</option>
+                <option value="blur">Blur BG</option>
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
