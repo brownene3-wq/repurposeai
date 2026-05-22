@@ -7414,8 +7414,11 @@ setTimeout(function sidebarLayoutFix(){
       <button id="vePublishTabLater" type="button" onclick="setVePublishMode('later')" style="flex:1;background:transparent;color:#8e87b0;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>
     </div>
 
+    <!-- Task #124 — Schedule fields brought to parity with Smart Shorts
+         publishModal: date + time + peak-time suggest + notification
+         reminder + email field (conditional) + notes. -->
     <div id="vePublishLaterFields" style="display:none;margin-bottom:14px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
         <div>
           <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
           <input type="date" id="vePublishDate" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;">
@@ -7425,6 +7428,27 @@ setTimeout(function sidebarLayoutFix(){
           <input type="time" id="vePublishTime" value="12:00" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;">
         </div>
       </div>
+
+      <!-- Peak-time suggest: reads the picked account's platform and
+           hits /dashboard/calendar/api/peak-time, fills in Date+Time. -->
+      <button type="button" id="vePublishPeakBtn" onclick="vePublishSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
+        <span style="font-size:1em;">&#x2728;</span> Suggest peak time for this platform
+        <span id="vePublishPeakHint" style="font-weight:400;color:#8e87b0;font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      </button>
+
+      <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
+      <select id="vePublishReminder" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;" onchange="vePublishToggleReminderEmail()">
+        <option value="0">None</option>
+        <option value="15">15 minutes before</option>
+        <option value="60">1 hour before</option>
+        <option value="1440">1 day before</option>
+        <option value="2880">2 days before</option>
+      </select>
+      <input type="email" id="vePublishReminderEmail" placeholder="Email for reminder" style="display:none;width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+      <div id="vePublishReminderSpacer" style="margin-bottom:14px;"></div>
+
+      <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
+      <textarea id="vePublishNotes" rows="4" placeholder="Any notes for this scheduled post" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;resize:vertical;min-height:80px;"></textarea>
     </div>
 
     <div id="vePublishStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>
@@ -7456,6 +7480,17 @@ setTimeout(function sidebarLayoutFix(){
       var d = new Date(); d.setMinutes(d.getMinutes() + 60);
       document.getElementById('vePublishDate').value = d.toISOString().slice(0, 10);
       document.getElementById('vePublishTime').value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      // Task #124 — reset extended Schedule fields each time the modal opens
+      var remSel = document.getElementById('vePublishReminder');
+      if (remSel) remSel.value = '0';
+      var remEmail = document.getElementById('vePublishReminderEmail');
+      if (remEmail){ remEmail.value = ''; remEmail.style.display = 'none'; }
+      var remSpacer = document.getElementById('vePublishReminderSpacer');
+      if (remSpacer) remSpacer.style.display = 'block';
+      var peakHint = document.getElementById('vePublishPeakHint');
+      if (peakHint) peakHint.textContent = '';
+      var notes = document.getElementById('vePublishNotes');
+      if (notes) notes.value = '';
       setVePublishMode('now');
       document.getElementById('vePublishModal').style.display = 'flex';
       document.getElementById('vePublishSubtitle').textContent = 'Source: ' + (last.filename || 'export');
@@ -7478,7 +7513,9 @@ setTimeout(function sidebarLayoutFix(){
           noAcct.style.display = 'none';
           sel.innerHTML = accounts.map(function(c){
             var label = (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' \u2014 ' + (c.accountName || c.platformUsername || c.id);
-            return '<option value="' + c.id + '">' + label + '</option>';
+            // Task #124 \u2014 data-platform so vePublishSuggestPeakTime can
+            // read the picked account's platform without a second lookup.
+            return '<option value="' + c.id + '" data-platform="' + c.platform + '">' + label + '</option>';
           }).join('');
         }
       } catch(e){
@@ -7523,6 +7560,19 @@ setTimeout(function sidebarLayoutFix(){
         var t = document.getElementById('vePublishTime').value || '12:00';
         if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
         payload.scheduledAt = d + 'T' + t + ':00';
+        // Task #124 — mirror Smart Shorts' publish-moment payload so
+        // both flows persist the same scheduling metadata onto the
+        // calendar entry.
+        var remVal = parseInt(document.getElementById('vePublishReminder').value || '0', 10) || 0;
+        var remEmail = document.getElementById('vePublishReminderEmail').value.trim();
+        if (remVal > 0 && !remEmail) {
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'Enter an email to receive the reminder.';
+          return;
+        }
+        payload.reminderMinutes = remVal;
+        payload.reminderEmail   = remVal > 0 ? remEmail : '';
+        payload.notes           = document.getElementById('vePublishNotes').value;
       }
       btn.disabled = true; var orig = btn.textContent;
       btn.textContent = _veMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
@@ -7551,6 +7601,55 @@ setTimeout(function sidebarLayoutFix(){
       }
     }
 
+    // Task #124 — Peak-time suggest. Reads the picked account's
+    // data-platform and hits /dashboard/calendar/api/peak-time, then
+    // fills in Date + Time. Mirrors publishSuggestPeakTime in shorts.js.
+    async function vePublishSuggestPeakTime(){
+      var btn  = document.getElementById('vePublishPeakBtn');
+      var hint = document.getElementById('vePublishPeakHint');
+      var sel  = document.getElementById('vePublishAccount');
+      var opt  = sel && sel.selectedOptions && sel.selectedOptions[0];
+      var platform = opt ? (opt.getAttribute('data-platform') || '') : '';
+      if (!platform){
+        if (typeof showToast === 'function') showToast('Pick an account first.');
+        return;
+      }
+      var orig = hint ? hint.textContent : '';
+      if (hint) hint.textContent = 'Thinking…';
+      if (btn)  btn.disabled = true;
+      try {
+        var resp = await fetch('/dashboard/calendar/api/peak-time?platform=' + encodeURIComponent(platform));
+        if (!resp.ok) throw new Error('Failed');
+        var d = await resp.json();
+        if (d.date) document.getElementById('vePublishDate').value = d.date;
+        if (d.time) document.getElementById('vePublishTime').value = d.time;
+        if (hint)   hint.textContent = (d.date && d.time) ? (d.date + ' · ' + d.time) : '';
+        if (typeof showToast === 'function') showToast(d.reasoning || ('Peak time set: ' + d.date + ' ' + d.time));
+      } catch (e){
+        if (hint) hint.textContent = orig;
+        if (typeof showToast === 'function') showToast('Peak time unavailable');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // Show / hide the reminder-email input depending on whether a non-
+    // zero reminder window is picked. Mirrors publishToggleReminderEmail
+    // in shorts.js.
+    function vePublishToggleReminderEmail(){
+      var v       = parseInt(document.getElementById('vePublishReminder').value || '0', 10);
+      var email   = document.getElementById('vePublishReminderEmail');
+      var spacer  = document.getElementById('vePublishReminderSpacer');
+      if (v > 0){
+        email.style.display = 'block';
+        if (spacer) spacer.style.display = 'none';
+      } else {
+        email.style.display = 'none';
+        email.value = '';
+        if (spacer) spacer.style.display = 'block';
+      }
+    }
+
     // Wire the Publish button revealed by handleSuccess.
     document.addEventListener('click', function(e){
       var btn = e.target && e.target.closest && e.target.closest('#vePublishBtn');
@@ -7559,10 +7658,12 @@ setTimeout(function sidebarLayoutFix(){
 
     // Expose for manual access.
     try {
-      window.openVePublishModal = openVePublishModal;
-      window.closeVePublishModal = closeVePublishModal;
-      window.setVePublishMode = setVePublishMode;
-      window.submitVePublish = submitVePublish;
+      window.openVePublishModal           = openVePublishModal;
+      window.closeVePublishModal          = closeVePublishModal;
+      window.setVePublishMode             = setVePublishMode;
+      window.submitVePublish              = submitVePublish;
+      window.vePublishSuggestPeakTime     = vePublishSuggestPeakTime;
+      window.vePublishToggleReminderEmail = vePublishToggleReminderEmail;
     } catch(_) {}
   })();
 </script>
@@ -9175,7 +9276,11 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
 // Otherwise -> calls publishToConnection(userId, connectionId, { ..., mediaPath }).
 router.post('/api/publish-export', requireAuth, async (req, res) => {
   try {
-    const { filename, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    // Task #124 — accept reminderMinutes, reminderEmail, notes so the
+    // calendar entry captures the same Schedule metadata Smart Shorts
+    // collects.
+    const { filename, connectionId, title, caption, description, scheduledAt,
+            reminderMinutes, reminderEmail, notes } = req.body || {};
     if (!filename) return res.status(400).json({ success: false, error: 'filename is required' });
     if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
 
@@ -9205,10 +9310,15 @@ router.post('/api/publish-export', requireAuth, async (req, res) => {
           scheduledTime: timeStr,
           contentText: caption || description || '',
           analysisId: null, momentIndex: null,
-          notes: '', color: '#6c5ce7',
+          // Task #124 — persist notes + reminder so the calendar UI +
+          // schedulePublisher cron pick them up like Smart Shorts does.
+          notes: notes || '',
+          color: '#6c5ce7',
           autoPublish: true,
           clipFilename: safe,
-          connectionId: acct.id
+          connectionId: acct.id,
+          reminderEmail:   reminderEmail || '',
+          reminderMinutes: parseInt(reminderMinutes, 10) || 0
         });
         return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
       }

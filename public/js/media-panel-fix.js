@@ -4466,6 +4466,39 @@
     };
     window.addEventListener('resize', wrap.__v123Resize);
 
+    // Task #124 — Re-fit when the preview slot becomes visible. On
+    // boot the slot is display:none (Task #114) until a clip lands,
+    // so the FIRST fitWrap measures 0×0 and bails — leaving the
+    // wrapper with no inline dims. Watermark anchored top:2%/right:2%
+    // then resolves against the wrapper's intrinsic (zero) size and
+    // ends up at the slot's outer corner. Listen for the .has-video
+    // class flip and re-fit immediately so the wrapper picks up the
+    // slot's real dimensions the moment it's painted.
+    if (area.__v124VisObs){ try { area.__v124VisObs.disconnect(); } catch(_){} }
+    area.__v124VisObs = new MutationObserver(function(muts){
+      for (var i = 0; i < muts.length; i++){
+        if (muts[i].attributeName === 'class'){
+          // Run on next frame so the new layout is committed before
+          // we measure — getBoundingClientRect right after a class
+          // change can still report stale dims in some browsers.
+          requestAnimationFrame(fitWrap);
+          return;
+        }
+      }
+    });
+    area.__v124VisObs.observe(area, { attributes:true, attributeFilter:['class'] });
+
+    // Also use ResizeObserver on the slot itself to catch container
+    // size changes that don't go through window.resize (sidebar
+    // panel toggles, fullscreen mode, etc.).
+    if (typeof ResizeObserver === 'function'){
+      if (area.__v124SizeObs){ try { area.__v124SizeObs.disconnect(); } catch(_){} }
+      area.__v124SizeObs = new ResizeObserver(function(){
+        requestAnimationFrame(fitWrap);
+      });
+      area.__v124SizeObs.observe(area);
+    }
+
     // Force the inner <video> + overlays to fill the wrapper. We can
     // safely set width/height to 100% because the wrapper itself is
     // already constrained to the target aspect.
