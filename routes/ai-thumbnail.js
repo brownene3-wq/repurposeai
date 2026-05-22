@@ -907,6 +907,276 @@ function findSystemFont() {
   return null;
 }
 
+// ============================================================================
+// High-Conversion Thumbnail Generator — preset + layout libraries
+// ----------------------------------------------------------------------------
+// Phase 1: 1 preset (MrBeast Bold) + 4 layouts (2 face, 2 no-face).
+// Each preset captures the typography/color recipe. Each layout describes
+// where on the image the face cutout and the title text go, as normalized
+// 0-1 coordinates so it scales to any aspect ratio.
+// ============================================================================
+
+const CREATOR_PRESETS = {
+  'mrbeast-bold': {
+    key: 'mrbeast-bold',
+    name: 'MrBeast Bold',
+    description: 'Vibrant background, huge bold text with thick outline.',
+    backgroundSuffix: 'vibrant saturated colors, dramatic lighting, high-contrast composition, MrBeast-style cinematic background, ultra-detailed, eye-catching, no people in the frame, no text or logos',
+    textColor: 'white',
+    outlineColor: 'black',
+    outlineWidthPct: 0.09, // ~9% of font size — fat outline
+    fontSizePct: 0.13,     // 13% of image height
+    fontFamilyPref: ['Anton', 'DejaVu Sans Bold', 'sans'],
+    caseTransform: 'upper',
+    allowedLayouts: ['face-left-text-right', 'face-center-text-top', 'text-only-screamer', 'centered-quote']
+  }
+};
+
+// Coordinates are fractions (0..1) of the rendered image's width/height.
+// faceSlot specifies where the face cutout center should land and how big.
+// textSlot specifies the text's anchor point and the wrap width.
+const LAYOUT_LIBRARY = {
+  'face-left-text-right': {
+    key: 'face-left-text-right',
+    requiresFace: true,
+    faceSlot: { cx: 0.27, cy: 0.55, heightPct: 0.85 },
+    textSlot: { cx: 0.74, cy: 0.50, maxWidthPct: 0.46, align: 'center' },
+    backgroundPromptHint: 'leave clear negative space on the LEFT 50% of the frame for a person to be composited in later. Composition should be a dramatic environment / setting only, no human subject.'
+  },
+  'face-center-text-top': {
+    key: 'face-center-text-top',
+    requiresFace: true,
+    faceSlot: { cx: 0.50, cy: 0.62, heightPct: 0.70 },
+    textSlot: { cx: 0.50, cy: 0.12, maxWidthPct: 0.85, align: 'center' },
+    backgroundPromptHint: 'leave clear negative space in the CENTER (for a person to be composited in later) and the TOP 22% (for a banner of text). Composition should be an immersive environment, no human subject in the frame.'
+  },
+  'text-only-screamer': {
+    key: 'text-only-screamer',
+    requiresFace: false,
+    textSlot: { cx: 0.50, cy: 0.50, maxWidthPct: 0.86, align: 'center' },
+    backgroundPromptHint: 'highly graphic, visually striking, dramatic single hero subject or pattern, no people, leave the center of the frame relatively uncluttered so a large text overlay reads cleanly'
+  },
+  'centered-quote': {
+    key: 'centered-quote',
+    requiresFace: false,
+    textSlot: { cx: 0.50, cy: 0.78, maxWidthPct: 0.86, align: 'center' },
+    backgroundPromptHint: 'cinematic single-subject image, dramatic lighting, leave the BOTTOM 25% darker and uncluttered for a caption overlay'
+  }
+};
+
+// Run a face image through Replicate's background remover and return the
+// path to the local PNG cutout. Cached per-hash so re-uploads of the same
+// face don't re-pay rembg costs within the lifetime of /tmp.
+const FACE_CUTOUT_CACHE_DIR = path.join('/tmp', 'repurpose-face-cutouts');
+try { if (!fs.existsSync(FACE_CUTOUT_CACHE_DIR)) fs.mkdirSync(FACE_CUTOUT_CACHE_DIR, { recursive: true }); } catch (e) {}
+
+async function extractFaceCutout(faceImagePath) {
+  if (!process.env.REPLICATE_API_TOKEN) throw new Error('REPLICATE_API_TOKEN not configured');
+  if (!replicate) throw new Error('Replicate SDK not installed on this server.');
+
+  const crypto = require('crypto');
+  const buf = fs.readFileSync(faceImagePath);
+  const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
+  const cachedPath = path.join(FACE_CUTOUT_CACHE_DIR, hash + '.png');
+  if (fs.existsSync(cachedPath) && fs.statSync(cachedPath).size > 1000) {
+    return cachedPath;
+  }
+
+  // Convert to data URI for Replicate input
+  const ext = (path.extname(faceImagePath) || '.jpg').toLowerCase().replace('.', '');
+  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  const dataUri = 'data:' + mime + ';base64,' + buf.toString('base64');
+
+  const prediction = await replicate.predictions.create({
+    model: '851-labs/background-remover',
+    input: { image: dataUri }
+  });
+  const finalPrediction = await replicate.wait(prediction, { interval: 1500 });
+  if (finalPrediction.status !== 'succeeded') {
+    throw new Error('rembg ' + finalPrediction.status + ': ' + (finalPrediction.error || 'unknown'));
+  }
+  const out = finalPrediction.output;
+  const cutoutUrl = Array.isArray(out) ? out[0] : out;
+  if (!cutoutUrl || typeof cutoutUrl !== 'string') throw new Error('rembg returned no image URL');
+
+  const imgResp = await fetch(cutoutUrl);
+  if (!imgResp.ok) throw new Error('Failed to download cutout: HTTP ' + imgResp.status);
+  fs.writeFileSync(cachedPath, Buffer.from(await imgResp.arrayBuffer()));
+  return cachedPath;
+}
+
+// Render the final composite: background (already generated) + optional face
+// cutout (positioned per layout.faceSlot) + title text (positioned per
+// layout.textSlot with preset typography).
+async function renderHighConversionComposite({ bgPath, facePath, layout, preset, title, outputPath }) {
+  const dims = await getFrameDimensions(bgPath);
+  const W = dims.width;
+  const H = dims.height;
+
+  // Title text — apply preset case transform
+  let cleanTitle = String(title || '').trim().slice(0, 80);
+  if (preset.caseTransform === 'upper') cleanTitle = cleanTitle.toUpperCase();
+  else if (preset.caseTransform === 'lower') cleanTitle = cleanTitle.toLowerCase();
+
+  // Write the title to a temp file for drawtext (avoids escape gymnastics)
+  const textfilePath = path.join(outputDir, 'hctitle-' + uuidv4().slice(0, 8) + '.txt');
+  fs.writeFileSync(textfilePath, cleanTitle);
+
+  // Resolve a font file — fall back through preset's prefs to anything we find
+  const font = findSystemFont() || '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+
+  const fontSize = Math.max(20, Math.round(preset.fontSizePct * H));
+  const outlineW = Math.max(2, Math.round(fontSize * preset.outlineWidthPct));
+  const textX = Math.round(layout.textSlot.cx * W);
+  const textY = Math.round(layout.textSlot.cy * H);
+
+  const drawtextFilter = [
+    'drawtext=',
+    `fontfile='${font}'`,
+    `:textfile='${textfilePath}'`,
+    ':fontsize=' + fontSize,
+    ':fontcolor=' + preset.textColor,
+    ':borderw=' + outlineW,
+    ':bordercolor=' + preset.outlineColor,
+    ':shadowcolor=black@0.55:shadowx=4:shadowy=4',
+    ':x=(' + textX + ')-text_w/2',
+    ':y=(' + textY + ')-text_h/2'
+  ].join('');
+
+  return new Promise((resolve, reject) => {
+    const args = ['-y'];
+    if (facePath && layout.requiresFace) {
+      const faceH = Math.round(layout.faceSlot.heightPct * H);
+      const faceCx = Math.round(layout.faceSlot.cx * W);
+      const faceCy = Math.round(layout.faceSlot.cy * H);
+      args.push('-i', bgPath, '-i', facePath);
+      // Filter graph:
+      //   [1]scale=-1:H_face[face]
+      //   [0][face]overlay=cx-w/2:cy-h/2[withface]
+      //   [withface]drawtext=...
+      const filter = [
+        '[1:v]scale=-1:' + faceH + ':flags=lanczos[face]',
+        '[0:v][face]overlay=' + faceCx + '-overlay_w/2:' + faceCy + '-overlay_h/2[withface]',
+        '[withface]' + drawtextFilter + '[out]'
+      ].join(';');
+      args.push('-filter_complex', filter, '-map', '[out]', outputPath);
+    } else {
+      args.push('-i', bgPath, '-vf', drawtextFilter, outputPath);
+    }
+
+    const proc = spawn(ffmpegPath || 'ffmpeg', args);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      if (code === 0) resolve();
+      else reject(new Error('composite ffmpeg exit ' + code + ': ' + stderr.slice(-300)));
+    });
+    proc.on('error', (err) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      reject(err);
+    });
+  });
+}
+
+// High-conversion concept generation. Like generateThumbnailConcepts but
+// constrained to the chosen preset's allowed layouts (filtered by hasFace).
+async function generateHighConversionConcepts({ transcript, hint, videoTitle, aspectLabel, count, preset, hasFace }) {
+  const candidates = preset.allowedLayouts.filter((k) => {
+    const lay = LAYOUT_LIBRARY[k];
+    return lay && (!lay.requiresFace || hasFace);
+  });
+  if (candidates.length === 0) throw new Error('No usable layouts for this preset + face setting');
+
+  const layoutsBlock = candidates.map((k) => {
+    const lay = LAYOUT_LIBRARY[k];
+    return '  - "' + k + '": ' + lay.backgroundPromptHint;
+  }).join('\n');
+
+  const safeTranscript = (transcript || '').slice(0, 12000);
+  const systemPrompt = 'You are a senior YouTube thumbnail art director designing for the "' + preset.name + '" preset (' + preset.description + '). You produce concepts that match proven high-CTR layout frameworks.\n\nSTEP 1 — Extract the HOOK TOPIC: the single abstract idea the video is about. Ignore incidental visuals.\n\nSTEP 2 — Choose exactly ' + count + ' concept(s), each using a DIFFERENT LAYOUT from this list:\n' + layoutsBlock + '\n\nSTEP 3 — For each concept, write:\n- layout: one of the layout keys above (exact match)\n- title: 1-4 word punchy hook in ALL CAPS, will be rendered in huge bold typography\n- backgroundPrompt: detailed text-to-image prompt for the BACKGROUND ONLY. Must follow the chosen layout\'s backgroundPromptHint exactly. Cinematic, dramatic, high-impact. Do NOT ask the model to render any text, logos, watermarks. Do NOT include people if the layout requires a face overlay — the face is composited in separately.';
+
+  const userPrompt = 'Video title: ' + (videoTitle || '(unknown)') + '\nTarget aspect ratio: ' + aspectLabel + '\nUser has uploaded a face photo: ' + (hasFace ? 'YES — face-required layouts are allowed' : 'NO — use only no-face layouts') + '\nUser style hint: ' + (hint || '(none)') + '\n\nTranscript (may be truncated):\n"""\n' + (safeTranscript || '(no transcript available)') + '\n"""\n\nReturn JSON shaped as:\n{\n  "hookTopic": "...",\n  "concepts": [{"layout": "...", "title": "...", "backgroundPrompt": "..."}]\n}';
+
+  const resp = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.8,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  });
+  const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
+  if (!raw) throw new Error('Concept generation returned empty');
+  const parsed = JSON.parse(raw);
+  const concepts = Array.isArray(parsed.concepts) ? parsed.concepts : [];
+  if (concepts.length === 0) throw new Error('Model returned no concepts');
+  return concepts.slice(0, count).map((c, i) => ({
+    layout: candidates.includes(c.layout) ? c.layout : candidates[i % candidates.length],
+    title: String(c.title || ('Concept ' + (i + 1))).slice(0, 60),
+    backgroundPrompt: String(c.backgroundPrompt || c.imagePrompt || '').slice(0, 1800),
+    hookTopic: String(parsed.hookTopic || '').slice(0, 160)
+  }));
+}
+
+// Generate a Flux background + composite face + burn text → final thumbnail.
+async function generateHighConversionThumbnail({ concept, preset, aspect, jobId, index, facePath }) {
+  if (!process.env.REPLICATE_API_TOKEN) throw new Error('REPLICATE_API_TOKEN not configured');
+  if (!replicate) throw new Error('Replicate SDK not installed on this server.');
+
+  const fullPrompt = (concept.backgroundPrompt || '') + '. ' + (preset.backgroundSuffix || '');
+  const prediction = await replicate.predictions.create({
+    model: 'black-forest-labs/flux-schnell',
+    input: {
+      prompt: fullPrompt,
+      aspect_ratio: aspectForFlux(aspect),
+      num_outputs: 1,
+      output_format: 'png',
+      output_quality: 90,
+      megapixels: '1',
+      num_inference_steps: 4,
+      go_fast: true
+    }
+  });
+  const finalPrediction = await replicate.wait(prediction, { interval: 1500 });
+  if (finalPrediction.status !== 'succeeded') {
+    throw new Error('flux ' + finalPrediction.status + ': ' + (finalPrediction.error || 'unknown'));
+  }
+  const out = finalPrediction.output;
+  const bgUrl = Array.isArray(out) ? out[0] : out;
+  if (!bgUrl || typeof bgUrl !== 'string') throw new Error('Flux returned no URL');
+  const bgResp = await fetch(bgUrl);
+  if (!bgResp.ok) throw new Error('Failed to download bg: HTTP ' + bgResp.status);
+  const bgBuf = Buffer.from(await bgResp.arrayBuffer());
+  const bgPath = path.join(outputDir, 'hc-bg-' + jobId + '-' + index + '.png');
+  fs.writeFileSync(bgPath, bgBuf);
+
+  const layout = LAYOUT_LIBRARY[concept.layout];
+  if (!layout) throw new Error('Unknown layout: ' + concept.layout);
+  const finalFilename = 'hc-thumb-' + jobId + '-' + index + '.png';
+  const finalPath = path.join(outputDir, finalFilename);
+
+  try {
+    await renderHighConversionComposite({
+      bgPath,
+      facePath: layout.requiresFace ? facePath : null,
+      layout,
+      preset,
+      title: concept.title,
+      outputPath: finalPath
+    });
+    try { fs.unlinkSync(bgPath); } catch (e) {}
+  } catch (overlayErr) {
+    console.warn('[HC Thumbnail] composite failed, serving raw bg:', overlayErr.message);
+    try { fs.renameSync(bgPath, finalPath); } catch (e2) {
+      throw new Error('Composite + fallback both failed: ' + overlayErr.message);
+    }
+  }
+
+  return { filename: finalFilename };
+}
+
 // Burn the 1-4 word hook title onto the image using ffmpeg drawtext.
 // Text goes in the TOP-LEFT safe zone (out of the way of YouTube's bottom
 // scrubber and right-side share/close buttons). Font scales with image height.
@@ -1652,6 +1922,116 @@ router.get('/', requireAuth, (req, res) => {
         box-shadow: 0 4px 12px rgba(108, 58, 237, 0.3);
       }
 
+      /* ===== High-Conversion AI tab: preset grid + face uploader ===== */
+      .hc-preset-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 0.75rem;
+        margin: 0.5rem 0 0.5rem;
+      }
+
+      .hc-preset-card {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 0.85rem 0.95rem;
+        cursor: pointer;
+        text-align: left;
+        transition: all 0.2s;
+      }
+
+      .hc-preset-card:hover {
+        border-color: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .hc-preset-card.active {
+        background: rgba(108, 58, 237, 0.18);
+        border-color: var(--primary);
+      }
+
+      .hc-preset-name {
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 0.25rem;
+      }
+
+      .hc-preset-desc {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        line-height: 1.4;
+      }
+
+      .hc-face-disclosure {
+        margin-top: 1.25rem;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+      }
+
+      .hc-face-summary {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 0.92rem;
+        list-style: none;
+      }
+
+      .hc-face-summary::-webkit-details-marker { display: none; }
+
+      .hc-face-summary-hint {
+        color: var(--text-muted);
+        font-weight: 400;
+        font-size: 0.82rem;
+        margin-left: 0.4rem;
+      }
+
+      .hc-face-body {
+        padding: 0 1rem 1rem;
+      }
+
+      .hc-face-preview {
+        margin-top: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.6rem;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 8px;
+      }
+
+      .hc-face-preview img {
+        width: 72px;
+        height: 72px;
+        object-fit: cover;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .hc-face-preview-meta {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+
+      .hc-face-remove {
+        align-self: flex-start;
+        background: rgba(255, 100, 100, 0.12);
+        border: 1px solid rgba(255, 100, 100, 0.25);
+        color: #ff8a8a;
+        padding: 0.35rem 0.75rem;
+        border-radius: 5px;
+        font-size: 0.78rem;
+        cursor: pointer;
+      }
+
+      .hc-face-remove:hover {
+        background: rgba(255, 100, 100, 0.2);
+      }
+
       /* ===== Classic-flow card actions (Add Text + Download buttons) ===== */
       .thumbnail-actions {
         display: flex;
@@ -2055,26 +2435,57 @@ ${pageStyles}
 
           <div id="aiTab" class="tab-content active">
             <div class="ai-intro">
-              Let AI watch your video, pick the most interesting moments, and design 4 custom thumbnails for you.
+              High-conversion thumbnails modeled after proven, top-creator layouts. The AI analyzes your video, chooses a winning layout, and renders the finished thumbnail.
             </div>
 
+            <!-- Preset gallery (Phase 1 ships 1 preset; more come in Phase 2) -->
+            <label class="url-input-label" style="margin-top: 0.5rem;">Style preset</label>
+            <div class="hc-preset-grid">
+              <button type="button" class="hc-preset-card active" data-preset="mrbeast-bold">
+                <div class="hc-preset-name">MrBeast Bold</div>
+                <div class="hc-preset-desc">Vibrant background, huge bold text with thick outline. Great for high-energy content.</div>
+              </button>
+            </div>
+
+            <!-- Optional face uploader, collapsed by default -->
+            <details class="hc-face-disclosure">
+              <summary class="hc-face-summary">
+                <span>Add your face (optional)</span>
+                <span class="hc-face-summary-hint">— enables face-in-thumbnail layouts</span>
+              </summary>
+              <div class="hc-face-body">
+                <div class="upload-area" id="hcFaceArea" onclick="document.getElementById('hcFaceInput').click()">
+                  <div class="upload-icon">👤</div>
+                  <div class="upload-text">Drop a headshot here</div>
+                  <div class="upload-subtext">PNG / JPG up to 8 MB &bull; clear head-and-shoulders shot works best</div>
+                  <input type="file" id="hcFaceInput" class="file-input" accept="image/png,image/jpeg,image/jpg,image/webp">
+                </div>
+                <div id="hcFacePreview" class="hc-face-preview" style="display:none;">
+                  <img id="hcFacePreviewImg" alt="Face preview" />
+                  <div class="hc-face-preview-meta">
+                    <div id="hcFacePreviewName"></div>
+                    <button type="button" class="hc-face-remove" id="hcFaceRemove">Remove</button>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <!-- Video source picker -->
+            <label class="url-input-label" style="margin-top: 1.25rem;">Video source</label>
             <div class="ai-source-tabs" role="tablist">
               <button type="button" class="ai-source-tab active" data-aisource="url">YouTube URL</button>
               <button type="button" class="ai-source-tab" data-aisource="upload">Upload Video</button>
             </div>
 
             <div class="ai-source-content" data-aisource-content="url">
-              <div class="url-input-group">
-                <label class="url-input-label">YouTube URL</label>
-                <input type="text" id="aiYoutubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
-              </div>
+              <input type="text" id="aiYoutubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
             </div>
 
             <div class="ai-source-content" data-aisource-content="upload" style="display:none">
               <div class="upload-area" id="aiUploadArea" onclick="document.getElementById('aiFileInput').click()">
                 <div class="upload-icon">🎬</div>
                 <div class="upload-text">Drop your video file here</div>
-                <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
+                <div class="upload-subtext">Or click to select &bull; MP4, MOV, WebM supported</div>
                 <input type="file" id="aiFileInput" class="file-input" accept="video/*">
                 <div id="aiFileName" class="file-name" style="display: none;"></div>
               </div>
@@ -2090,9 +2501,9 @@ ${pageStyles}
 
               <label class="url-input-label" style="margin-top: 1.25rem;">Number of thumbnails</label>
               <div class="ai-aspect-row">
-                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="1">1 &bull; Character</button>
-                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="2">2 &bull; + Action</button>
-                <button type="button" class="ai-aspect-btn ai-count-btn active" data-count="3">3 &bull; + Object</button>
+                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="1">1</button>
+                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="2">2</button>
+                <button type="button" class="ai-aspect-btn ai-count-btn active" data-count="3">3</button>
               </div>
 
               <label class="url-input-label" style="margin-top: 1.25rem;">Style hint (optional)</label>
@@ -2512,11 +2923,70 @@ ${pageStyles}
     }
 
     // ===========================================================
-    // AI Generated tab — separate flow (no frame extraction)
+    // AI Generated tab — high-conversion flow (preset + optional face)
     // ===========================================================
     var aiActiveSource = 'url';
     var aiActiveAspect = '16:9';
     var aiActiveCount = 3;
+    var aiActivePreset = 'mrbeast-bold';
+    var aiFaceFile = null; // File object from hcFaceInput
+
+    // Preset cards
+    document.querySelectorAll('.hc-preset-card').forEach(card => {
+      card.addEventListener('click', () => {
+        aiActivePreset = card.dataset.preset;
+        document.querySelectorAll('.hc-preset-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+      });
+    });
+
+    // Optional face uploader
+    const hcFaceInput = document.getElementById('hcFaceInput');
+    const hcFaceArea = document.getElementById('hcFaceArea');
+    const hcFacePreview = document.getElementById('hcFacePreview');
+    const hcFacePreviewImg = document.getElementById('hcFacePreviewImg');
+    const hcFacePreviewName = document.getElementById('hcFacePreviewName');
+    const hcFaceRemove = document.getElementById('hcFaceRemove');
+
+    function setFaceFile(file) {
+      aiFaceFile = file;
+      if (!file) {
+        if (hcFacePreview) hcFacePreview.style.display = 'none';
+        if (hcFaceArea) hcFaceArea.style.display = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (hcFacePreviewImg) hcFacePreviewImg.src = e.target.result;
+        if (hcFacePreviewName) hcFacePreviewName.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+        if (hcFacePreview) hcFacePreview.style.display = 'flex';
+        if (hcFaceArea) hcFaceArea.style.display = 'none';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    if (hcFaceInput) {
+      hcFaceInput.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) setFaceFile(f);
+      });
+    }
+    if (hcFaceArea) {
+      hcFaceArea.addEventListener('dragover', (e) => { e.preventDefault(); hcFaceArea.classList.add('dragover'); });
+      hcFaceArea.addEventListener('dragleave', () => hcFaceArea.classList.remove('dragover'));
+      hcFaceArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        hcFaceArea.classList.remove('dragover');
+        const f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) setFaceFile(f);
+      });
+    }
+    if (hcFaceRemove) {
+      hcFaceRemove.addEventListener('click', () => {
+        if (hcFaceInput) hcFaceInput.value = '';
+        setFaceFile(null);
+      });
+    }
 
     document.querySelectorAll('.ai-source-tab').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2635,6 +3105,8 @@ ${pageStyles}
         formData.set('aspect', aiActiveAspect);
         formData.set('styleHint', document.getElementById('aiStyleHint').value.trim());
         formData.set('count', String(aiActiveCount));
+        formData.set('preset', aiActivePreset);
+        if (aiFaceFile) formData.set('faceFile', aiFaceFile);
         if (hasUrl) formData.set('youtubeUrl', aiYoutubeUrlEl.value.trim());
         if (hasFile) formData.set('videoFile', aiFileInputEl.files[0]);
 
@@ -3132,10 +3604,11 @@ router.get('/download/:filename', requireAuth, (req, res) => {
 // asks GPT-4o-mini to propose N thumbnail concepts rooted in the video's
 // most interesting moments, then renders each concept into an image via
 // GPT-image-1 in parallel. Returns the array of generated thumbnails.
-router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req, res) => {
+router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', maxCount: 1 }, { name: 'faceFile', maxCount: 1 }]), async (req, res) => {
   let videoPath = null;
   let downloadedYoutubeFile = null;
   let audioPath = null;
+  let faceCutoutPath = null;
 
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -3147,7 +3620,10 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
     const aspect = ['16:9', '9:16', '1:1'].includes(req.body.aspect) ? req.body.aspect : '16:9';
     const styleHint = (req.body.styleHint || '').toString().slice(0, 300);
     const requestedCount = Math.min(Math.max(parseInt(req.body.count, 10) || 3, 1), 3);
-    const videoFile = req.file;
+    const presetKey = (req.body.preset || 'mrbeast-bold').toString();
+    const preset = CREATOR_PRESETS[presetKey] || CREATOR_PRESETS['mrbeast-bold'];
+    const videoFile = req.files && req.files.videoFile && req.files.videoFile[0];
+    const faceFile = req.files && req.files.faceFile && req.files.faceFile[0];
 
     // Resolve the source video path
     let videoTitle = '';
@@ -3173,6 +3649,18 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
       return res.status(400).json({ success: false, message: 'Video file not found on server' });
     }
 
+    // Optional: extract face cutout (cached per hash so re-uploads are free)
+    let hasFace = false;
+    if (faceFile && fs.existsSync(faceFile.path)) {
+      try {
+        faceCutoutPath = await extractFaceCutout(faceFile.path);
+        hasFace = true;
+      } catch (faceErr) {
+        console.warn('[AI Thumbnail AI-Gen] Face cutout failed, continuing without face:', faceErr.message);
+        hasFace = false;
+      }
+    }
+
     // Extract audio + transcribe
     let transcript = '';
     try {
@@ -3192,29 +3680,31 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
       });
     }
 
-    // Generate concepts via GPT-4o-mini
+    // Generate concepts via GPT-4o-mini (constrained to preset's allowed layouts)
     const aspectLabel = aspect === '16:9' ? 'Horizontal 16:9 (YouTube)'
       : aspect === '9:16' ? 'Vertical 9:16 (Shorts / TikTok / Reels)'
       : 'Square 1:1 (Instagram)';
 
     let concepts;
     try {
-      concepts = await generateThumbnailConcepts({
+      concepts = await generateHighConversionConcepts({
         transcript,
         hint: styleHint,
         videoTitle,
         aspectLabel,
-        count: requestedCount
+        count: requestedCount,
+        preset,
+        hasFace
       });
     } catch (err) {
       console.error('[AI Thumbnail AI-Gen] Concept generation failed:', err.message);
       return res.status(500).json({ success: false, message: 'Could not generate thumbnail concepts: ' + err.message });
     }
 
-    // Generate images in parallel
+    // Generate composites in parallel
     const jobId = uuidv4().slice(0, 10);
     const results = await Promise.allSettled(concepts.map((concept, index) =>
-      generateAIImage({ prompt: concept.imagePrompt, aspect, jobId, index, title: concept.title })
+      generateHighConversionThumbnail({ concept, preset, aspect, jobId, index, facePath: faceCutoutPath })
         .then((img) => ({ ...img, concept }))
     ));
 
@@ -3227,9 +3717,9 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
           filename: r.value.filename,
           outputType: 'Generated Thumbnail',
           title: r.value.concept.title,
-          angle: r.value.concept.angle,
-          moment: r.value.concept.moment,
-          prompt: r.value.concept.imagePrompt
+          layout: r.value.concept.layout,
+          preset: preset.key,
+          prompt: r.value.concept.backgroundPrompt
         });
         if (!hookTopic && r.value.concept.hookTopic) hookTopic = r.value.concept.hookTopic;
       } else {
@@ -3251,6 +3741,8 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
       partialFailures: failures,
       aspect,
       hookTopic,
+      preset: preset.key,
+      hasFace,
       transcriptPreview: transcript ? transcript.slice(0, 400) : '',
       videoTitle
     });
@@ -3258,10 +3750,15 @@ router.post('/ai-generate', requireAuth, upload.single('videoFile'), async (req,
     console.error('[AI Thumbnail AI-Gen] Unhandled error:', error);
     res.status(500).json({ success: false, message: error.message || 'AI thumbnail generation failed' });
   } finally {
-    // Cleanup temp files
+    // Cleanup temp files (face cutout cache is NOT cleaned up — it's intentionally retained)
     if (audioPath) { try { fs.unlinkSync(audioPath); } catch (e) {} }
     if (downloadedYoutubeFile) { try { fs.unlinkSync(downloadedYoutubeFile); } catch (e) {} }
-    if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch (e) {} }
+    if (req.files) {
+      ['videoFile', 'faceFile'].forEach((field) => {
+        const arr = req.files[field];
+        if (arr) arr.forEach((f) => { try { fs.unlinkSync(f.path); } catch (e) {} });
+      });
+    }
   }
 });
 
