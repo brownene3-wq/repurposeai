@@ -284,6 +284,14 @@ async function renderEditor(req, res) {
     .upload-button{padding:.6rem 1.2rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:all 0.2s}
     .upload-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3);transform:translateY(-2px)}
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
+    /* Task #122 — Live Splicora watermark preview. Sits in the same
+       upper-right slot as the exported overlay. Sized to ~18% of the
+       inner canvas width, 2% inset on both axes, 0.85 alpha to match
+       the export-time ffmpeg colorchannelmixer. Hidden by default;
+       toggled by the export checkbox. pointer-events:none so it never
+       blocks clicks on the underlying video. */
+    .pgm-watermark{position:absolute;top:2%;right:2%;width:18%;max-width:240px;opacity:.85;pointer-events:none;z-index:60;display:none;user-select:none;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+    .pgm-watermark.on{display:block}
     /* Task #114 — Centering rules moved here so applyPreviewAspectRatio
        doesn't need to inline-set display:flex (which was making the
        empty program monitor appear at boot before any video loaded). */
@@ -1073,6 +1081,12 @@ async function renderEditor(req, res) {
                 <canvas class="annotation-canvas" id="annotationCanvas"></canvas>
               </div>
               <div class="crop-overlay" id="cropOverlay"></div>
+              <!-- Task #122 — Live Splicora watermark mirroring the
+                   export-time overlay. Shown when the export checkbox
+                   is checked AND a video is loaded. -->
+              <img id="programMonitorWatermark" class="pgm-watermark"
+                   src="/images/splicora-logo-wide-transparent.png"
+                   alt="Splicora" draggable="false">
             </div>
 
             
@@ -3748,6 +3762,9 @@ function showToast(message, type = 'success') {
     // Task #121 — Wire the Splicora watermark checkbox to localStorage so
     // a user's toggle preference survives page reloads. Load saved value
     // on boot; persist on every change.
+    // Task #122 — Also drive the live Program Monitor watermark off the
+    // same checkbox so what the user sees on the preview matches the
+    // export 1:1.
     (function(){
       var cb = document.getElementById('exportWatermarkChk');
       if (!cb) return;
@@ -3757,9 +3774,36 @@ function showToast(message, type = 'success') {
         if (saved === '0') cb.checked = false;
         else if (saved === '1') cb.checked = true;
       } catch(_){}
+      function syncPgmWatermark(){
+        var wm = document.getElementById('programMonitorWatermark');
+        if (!wm) return;
+        var area = document.getElementById('videoPreviewArea');
+        // Only show the watermark when a video is actually loaded — the
+        // preview area gets the .has-video class on first clip add.
+        // (Without this guard, the logo would float in the empty
+        // gradient slot, which looks broken.)
+        var hasVideo = area && area.classList.contains('has-video');
+        if (cb.checked && hasVideo) wm.classList.add('on');
+        else wm.classList.remove('on');
+      }
       cb.addEventListener('change', function(){
         try { localStorage.setItem(LS_KEY, cb.checked ? '1' : '0'); } catch(_){}
+        syncPgmWatermark();
       });
+      // Initial paint + re-paint whenever the preview area's has-video
+      // class flips (i.e., when the first clip lands or the last one is
+      // removed). MutationObserver on the class attribute is the cleanest
+      // way to track that without scattering syncs through every clip-
+      // add path.
+      syncPgmWatermark();
+      try {
+        var area = document.getElementById('videoPreviewArea');
+        if (area && !area.__v122WmObs){
+          area.__v122WmObs = new MutationObserver(syncPgmWatermark);
+          area.__v122WmObs.observe(area, { attributes:true, attributeFilter:['class'] });
+        }
+      } catch(_){}
+      try { window.syncPgmWatermark = syncPgmWatermark; } catch(_){}
     })();
 
     document.getElementById('exportButton')?.addEventListener('click', async () => {

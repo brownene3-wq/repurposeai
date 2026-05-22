@@ -4264,7 +4264,7 @@
       return p;
     } catch (e) { return null; }
   }
-  function writeProjectAspect(preset, faceTrack){
+  function writeProjectAspect(preset, faceTrack, userSet){
     try {
       localStorage.setItem(PROJECT_ASPECT_LS_KEY, JSON.stringify({
         ratio:     preset.ratio,
@@ -4273,10 +4273,63 @@
         h:         preset.h,
         cssAspect: preset.cssAspect,
         faceTrack: !!faceTrack,
+        // Task #122 — userSet distinguishes "user explicitly clicked
+        // Smart Resize Apply" from "auto-detected from source dims".
+        // The boot path + source-load path only override when this is
+        // false; once a user has explicitly chosen, we never silently
+        // overwrite their choice on subsequent uploads.
+        userSet:   !!userSet,
         savedAt:   Date.now()
       }));
     } catch (e) {}
   }
+  // Task #122 — Pick the SR preset whose aspect ratio is closest to
+  // the (width, height) of the source video. Used by the auto-detect
+  // path to align the project canvas with the user's upload.
+  function pickPresetFromDimensions(w, h){
+    if (!w || !h) return null;
+    var sourceAspect = w / h;
+    var best = SR_PRESETS[0];
+    var bestDiff = Infinity;
+    SR_PRESETS.forEach(function(p){
+      var parts = p.ratio.split(':').map(parseFloat);
+      var pAspect = parts[0] / parts[1];
+      var diff = Math.abs(pAspect - sourceAspect);
+      if (diff < bestDiff){ bestDiff = diff; best = p; }
+    });
+    return best;
+  }
+  // Apply the closest preset to the source's intrinsic dimensions —
+  // but only when the user hasn't manually picked one via Smart Resize.
+  // Safe to call repeatedly; no-op when userSet is true.
+  function maybeAutoDetectProjectAspect(){
+    var saved = readProjectAspect();
+    if (saved && saved.userSet === true) return false;  // user owns this; don't touch
+    var v = document.getElementById('videoPlayer');
+    if (!v || !v.videoWidth || !v.videoHeight){
+      // Fall back: look at the first V1 clip's dataset if the
+      // <video> element hasn't loaded metadata yet.
+      var c = document.querySelector('.mt-track-video .mt-clip');
+      if (c && c.dataset.srcWidth && c.dataset.srcHeight){
+        var preset = pickPresetFromDimensions(parseInt(c.dataset.srcWidth, 10), parseInt(c.dataset.srcHeight, 10));
+        if (preset){
+          writeProjectAspect(preset, !!(saved && saved.faceTrack), false);
+          applyProjectAspect(preset, { faceTrack: !!(saved && saved.faceTrack) });
+          return true;
+        }
+      }
+      return false;
+    }
+    var preset = pickPresetFromDimensions(v.videoWidth, v.videoHeight);
+    if (!preset) return false;
+    // No-op if we'd be re-applying the same aspect we already have.
+    if (saved && saved.ratio === preset.ratio) return false;
+    writeProjectAspect(preset, !!(saved && saved.faceTrack), false);
+    applyProjectAspect(preset, { faceTrack: !!(saved && saved.faceTrack) });
+    console.log('[project-aspect] auto-detected', preset.ratio, 'from source ' + v.videoWidth + 'x' + v.videoHeight);
+    return true;
+  }
+  try { window.maybeAutoDetectProjectAspect = maybeAutoDetectProjectAspect; } catch(_){}
   function updateProjectAspectBadge(preset){
     var el = document.getElementById('projectAspectLabel');
     if (el && preset && preset.ratio) el.textContent = preset.ratio;
@@ -4481,7 +4534,9 @@
 
       // Task #113 — persist + reshape the canvas FIRST so the user
       // sees an immediate response.
-      writeProjectAspect(selected, faceTrack);
+      // Task #122 — userSet:true so future video uploads don't silently
+      // overwrite this user-explicit choice via the auto-detect path.
+      writeProjectAspect(selected, faceTrack, true);
       applyProjectAspect(selected, { faceTrack: faceTrack });
 
       // Task #119 — Then physically reframe the active V1 clip to the
@@ -4586,6 +4641,23 @@
       ? (SR_PRESETS.find(function(p){ return p.ratio === saved.ratio; }) || SR_PRESETS[0])
       : SR_PRESETS[0];
     applyProjectAspect(preset, { faceTrack: saved ? !!saved.faceTrack : false });
+
+    // Task #122 — Source-aspect auto-detect. When the project record
+    // is missing OR marked userSet:false, we want the canvas to follow
+    // the actual upload's dimensions. Hook into the videoPlayer's
+    // loadedmetadata event so each new source triggers a re-evaluation
+    // (only overwrites if userSet is false). Also run once now in case
+    // a clip is already loaded by the time we boot.
+    try { maybeAutoDetectProjectAspect(); } catch(_){}
+    try {
+      var vp = document.getElementById('videoPlayer');
+      if (vp && !vp.__v122AspectHook){
+        vp.__v122AspectHook = true;
+        vp.addEventListener('loadedmetadata', function(){
+          try { maybeAutoDetectProjectAspect(); } catch(_){}
+        });
+      }
+    } catch(_){}
   }
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', wireProjectAspectChrome);
