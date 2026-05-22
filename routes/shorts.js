@@ -7661,6 +7661,10 @@ ${paginationHtml}
             <h2 class="modal-title">\${analysis.video_title || 'Analysis'}</h2>
             <div class="modal-header-actions">
               <span class="moment-count-badge">\${analysis.moments?.length || 0} viral moments found</span>
+              \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}" target="_blank"
+                class="modal-header-btn" style="text-decoration:none;">
+                ▶ YouTube
+              </a>\` : ''}
               <button class="modal-header-btn"
                 onclick="document.getElementById('transcriptPanel').style.display = document.getElementById('transcriptPanel').style.display === 'none' ? 'block' : 'none'">
                 📄 View Transcript
@@ -7749,12 +7753,10 @@ ${paginationHtml}
             </div>
             <div class="clip-toolbar">
 
-              <!-- Row 1 — Source / Generate -->
+              <!-- Row 1 — Source / Generate
+                   YouTube link lives in the modal header now (next to
+                   View Transcript), so it's not duplicated on every card. -->
               <div class="clip-toolbar-row">
-                \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
-                  class="clip-tool-btn" style="text-decoration: none;">
-                  ▶ YouTube
-                </a>\` : ''}
                 <button class="clip-tool-btn primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
                   ✨ Generate Content
                 </button>
@@ -7842,23 +7844,27 @@ ${paginationHtml}
                 </div>
               </div>
 
-              <!-- Row 3 — Actions / Download (Download Clip, Publish, Narrate, B-Roll). -->
+              <!-- Row 3 — Actions / Download.
+                   Three 'Download X' siblings share the accent style so
+                   they read as a coherent set of save-to-disk actions;
+                   Publish-to lives at the end and keeps its purple/pink
+                   gradient so it's visually distinct as a network action. -->
               <div class="clip-toolbar-row">
                 <button class="clip-tool-btn accent" id="clip-btn-\${idx}"
                   onclick="downloadClip('\${id}', \${idx}, this)">
                   ⬇ Download Clip
                 </button>
+                <button class="clip-tool-btn accent" id="narrate-btn-\${idx}"
+                  onclick="openNarrationModal('\${id}', \${idx})">
+                  🎙️ Download with AI Narration
+                </button>
+                <button class="clip-tool-btn accent" id="broll-btn-\${idx}"
+                  onclick="findBRoll('\${id}', \${idx}, this)">
+                  🎬 Download with AI B-Roll
+                </button>
                 <button class="clip-tool-btn" onclick="openPublishModal('\${id}', \${idx})" title="Publish this moment to a connected social account"
                   style="background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.16));color:#fff;border:1px solid rgba(108,58,237,0.45);">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg> Publish to&hellip;
-                </button>
-                <button class="clip-tool-btn" id="narrate-btn-\${idx}"
-                  onclick="openNarrationModal('\${id}', \${idx})">
-                  🎙️ Narrate
-                </button>
-                <button class="clip-tool-btn" id="broll-btn-\${idx}"
-                  onclick="findBRoll('\${id}', \${idx}, this)">
-                  🎬 B-Roll
                 </button>
               </div>
 
