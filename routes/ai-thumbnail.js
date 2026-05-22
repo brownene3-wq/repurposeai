@@ -920,15 +920,67 @@ const CREATOR_PRESETS = {
   'mrbeast-bold': {
     key: 'mrbeast-bold',
     name: 'MrBeast Bold',
-    description: 'Vibrant background, huge bold text with thick outline.',
+    description: 'Vibrant background, huge bold text with thick black outline.',
     backgroundSuffix: 'vibrant saturated colors, dramatic lighting, high-contrast composition, MrBeast-style cinematic background, ultra-detailed, eye-catching, no people in the frame, no text or logos',
     textColor: 'white',
     outlineColor: 'black',
-    outlineWidthPct: 0.09, // ~9% of font size — fat outline
-    fontSizePct: 0.13,     // 13% of image height
+    outlineWidthPct: 0.09,
+    fontSizePct: 0.13,
     fontFamilyPref: ['Anton', 'DejaVu Sans Bold', 'sans'],
     caseTransform: 'upper',
     allowedLayouts: ['face-left-text-right', 'face-center-text-top', 'text-only-screamer', 'centered-quote']
+  },
+  'cinematic-reveal': {
+    key: 'cinematic-reveal',
+    name: 'Cinematic Reveal',
+    description: 'Film-grade color, dramatic lighting, restrained typography.',
+    backgroundSuffix: 'cinematic film still, golden hour lighting, dramatic chiaroscuro shadows, shallow depth of field, anamorphic lens look, subtle film grain, moody teal-and-amber color grade, no people in the frame, no text or logos',
+    textColor: '#f5e1a0',
+    outlineColor: 'black',
+    outlineWidthPct: 0.04,
+    fontSizePct: 0.10,
+    fontFamilyPref: ['Bebas Neue', 'DejaVu Sans Bold', 'sans'],
+    caseTransform: 'upper',
+    allowedLayouts: ['face-center-text-top', 'centered-quote']
+  },
+  'tutorial-hook': {
+    key: 'tutorial-hook',
+    name: 'Tutorial Hook',
+    description: 'Clean two-tone background, big "how to" energy, centered face.',
+    backgroundSuffix: 'clean two-tone background, bold flat color blocks, bright contrasting colors, minimalist composition, modern editorial style, no people in the frame, no text or logos',
+    textColor: 'white',
+    outlineColor: '#1a73e8',
+    outlineWidthPct: 0.06,
+    fontSizePct: 0.11,
+    fontFamilyPref: ['Montserrat', 'Helvetica', 'sans'],
+    caseTransform: 'upper',
+    allowedLayouts: ['face-left-text-right', 'face-center-text-top', 'centered-quote']
+  },
+  'reaction-cam': {
+    key: 'reaction-cam',
+    name: 'Reaction Cam',
+    description: 'Loud primary colors, max-energy text, scroll-stopping shock.',
+    backgroundSuffix: 'high-energy background, bright saturated primary colors, comic-book pop-art style, motion lines, exploding burst graphics, no people in the frame, no text or logos',
+    textColor: '#ffea00',
+    outlineColor: 'black',
+    outlineWidthPct: 0.10,
+    fontSizePct: 0.14,
+    fontFamilyPref: ['Oswald', 'DejaVu Sans Bold', 'sans'],
+    caseTransform: 'upper',
+    allowedLayouts: ['face-center-text-top', 'text-only-screamer']
+  },
+  'minimalist-pro': {
+    key: 'minimalist-pro',
+    name: 'Minimalist Pro',
+    description: 'Lots of negative space, subtle typography, monochrome polish.',
+    backgroundSuffix: 'minimalist composition, monochromatic tones, lots of negative space, soft single light source, premium editorial photography aesthetic, no people in the frame, no text or logos',
+    textColor: 'white',
+    outlineColor: 'black',
+    outlineWidthPct: 0.02,
+    fontSizePct: 0.08,
+    fontFamilyPref: ['Helvetica', 'Arial', 'sans'],
+    caseTransform: 'none',
+    allowedLayouts: ['centered-quote', 'text-only-screamer']
   }
 };
 
@@ -1926,39 +1978,56 @@ router.get('/', requireAuth, (req, res) => {
       .hc-preset-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        gap: 0.75rem;
+        gap: 0.9rem;
         margin: 0.5rem 0 0.5rem;
       }
 
       .hc-preset-card {
         background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        border: 2px solid rgba(255, 255, 255, 0.10);
         color: var(--text);
-        border-radius: 10px;
-        padding: 0.85rem 0.95rem;
+        border-radius: 12px;
+        padding: 0;
         cursor: pointer;
         text-align: left;
-        transition: all 0.2s;
+        transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
       }
 
       .hc-preset-card:hover {
-        border-color: rgba(255, 255, 255, 0.2);
-        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.25);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
       }
 
       .hc-preset-card.active {
-        background: rgba(108, 58, 237, 0.18);
         border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(108, 58, 237, 0.25);
+      }
+
+      .hc-preset-svg {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
+        display: block;
+        background: #0a0a14;
+      }
+
+      .hc-preset-meta {
+        padding: 0.7rem 0.85rem 0.85rem;
       }
 
       .hc-preset-name {
         font-weight: 700;
         color: var(--text);
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.2rem;
+        font-size: 0.92rem;
       }
 
       .hc-preset-desc {
-        font-size: 0.82rem;
+        font-size: 0.78rem;
         color: var(--text-muted);
         line-height: 1.4;
       }
@@ -2438,13 +2507,119 @@ ${pageStyles}
               High-conversion thumbnails modeled after proven, top-creator layouts. The AI analyzes your video, chooses a winning layout, and renders the finished thumbnail.
             </div>
 
-            <!-- Preset gallery (Phase 1 ships 1 preset; more come in Phase 2) -->
+            <!-- Preset gallery — each card is a visual sample of what that preset produces -->
             <label class="url-input-label" style="margin-top: 0.5rem;">Style preset</label>
             <div class="hc-preset-grid">
+
               <button type="button" class="hc-preset-card active" data-preset="mrbeast-bold">
-                <div class="hc-preset-name">MrBeast Bold</div>
-                <div class="hc-preset-desc">Vibrant background, huge bold text with thick outline. Great for high-energy content.</div>
+                <svg class="hc-preset-svg" viewBox="0 0 280 158" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+                  <defs>
+                    <linearGradient id="bg-mb" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stop-color="#ff3b3b"/>
+                      <stop offset="55%" stop-color="#ff007a"/>
+                      <stop offset="100%" stop-color="#7b1fa2"/>
+                    </linearGradient>
+                  </defs>
+                  <rect width="280" height="158" fill="url(#bg-mb)"/>
+                  <ellipse cx="58" cy="105" rx="34" ry="44" fill="#1a1a2e"/>
+                  <circle cx="58" cy="72" r="21" fill="#1a1a2e"/>
+                  <text x="170" y="92" text-anchor="middle" font-family="Anton, Impact, sans-serif" font-size="32" font-weight="900" fill="#fff" stroke="#000" stroke-width="3.5" paint-order="stroke fill">UNREAL!</text>
+                </svg>
+                <div class="hc-preset-meta">
+                  <div class="hc-preset-name">MrBeast Bold</div>
+                  <div class="hc-preset-desc">Vibrant bg, huge text, thick outline</div>
+                </div>
               </button>
+
+              <button type="button" class="hc-preset-card" data-preset="cinematic-reveal">
+                <svg class="hc-preset-svg" viewBox="0 0 280 158" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+                  <defs>
+                    <linearGradient id="bg-cr" x1="0" y1="0" x2="1" y2="0.6">
+                      <stop offset="0%" stop-color="#0f2c33"/>
+                      <stop offset="60%" stop-color="#3a2814"/>
+                      <stop offset="100%" stop-color="#b07d3a"/>
+                    </linearGradient>
+                    <radialGradient id="light-cr" cx="0.75" cy="0.3" r="0.6">
+                      <stop offset="0%" stop-color="#ffdfa0" stop-opacity="0.6"/>
+                      <stop offset="100%" stop-color="#ffdfa0" stop-opacity="0"/>
+                    </radialGradient>
+                  </defs>
+                  <rect width="280" height="158" fill="url(#bg-cr)"/>
+                  <rect width="280" height="158" fill="url(#light-cr)"/>
+                  <ellipse cx="140" cy="110" rx="40" ry="50" fill="#0a0f12"/>
+                  <circle cx="140" cy="80" r="24" fill="#0a0f12"/>
+                  <text x="140" y="30" text-anchor="middle" font-family="'Bebas Neue', Impact, sans-serif" font-size="22" font-weight="700" letter-spacing="2" fill="#f5e1a0" stroke="#000" stroke-width="1.2" paint-order="stroke fill">THE TRUTH</text>
+                </svg>
+                <div class="hc-preset-meta">
+                  <div class="hc-preset-name">Cinematic Reveal</div>
+                  <div class="hc-preset-desc">Film grade, dramatic light, restrained type</div>
+                </div>
+              </button>
+
+              <button type="button" class="hc-preset-card" data-preset="tutorial-hook">
+                <svg class="hc-preset-svg" viewBox="0 0 280 158" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+                  <rect width="280" height="158" fill="#1a73e8"/>
+                  <rect x="148" width="132" height="158" fill="#fff"/>
+                  <ellipse cx="220" cy="100" rx="32" ry="42" fill="#222"/>
+                  <circle cx="220" cy="70" r="20" fill="#222"/>
+                  <text x="14" y="58" font-family="Montserrat, Helvetica, sans-serif" font-size="22" font-weight="900" fill="#fff" stroke="#0a3680" stroke-width="1.5" paint-order="stroke fill">HOW TO</text>
+                  <text x="14" y="86" font-family="Montserrat, Helvetica, sans-serif" font-size="22" font-weight="900" fill="#fff" stroke="#0a3680" stroke-width="1.5" paint-order="stroke fill">WIN</text>
+                  <text x="14" y="114" font-family="Montserrat, Helvetica, sans-serif" font-size="22" font-weight="900" fill="#fff" stroke="#0a3680" stroke-width="1.5" paint-order="stroke fill">FAST</text>
+                </svg>
+                <div class="hc-preset-meta">
+                  <div class="hc-preset-name">Tutorial Hook</div>
+                  <div class="hc-preset-desc">Clean two-tone, "how to" energy</div>
+                </div>
+              </button>
+
+              <button type="button" class="hc-preset-card" data-preset="reaction-cam">
+                <svg class="hc-preset-svg" viewBox="0 0 280 158" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+                  <defs>
+                    <radialGradient id="bg-rc" cx="0.5" cy="0.5" r="0.7">
+                      <stop offset="0%" stop-color="#ffea00"/>
+                      <stop offset="60%" stop-color="#ff7a00"/>
+                      <stop offset="100%" stop-color="#c00057"/>
+                    </radialGradient>
+                  </defs>
+                  <rect width="280" height="158" fill="url(#bg-rc)"/>
+                  <g stroke="#000" stroke-width="2" fill="none" opacity="0.35">
+                    <line x1="20" y1="20" x2="50" y2="50"/>
+                    <line x1="260" y1="20" x2="230" y2="50"/>
+                    <line x1="20" y1="138" x2="50" y2="108"/>
+                    <line x1="260" y1="138" x2="230" y2="108"/>
+                  </g>
+                  <ellipse cx="140" cy="108" rx="38" ry="48" fill="#1a1a2e"/>
+                  <circle cx="140" cy="78" r="22" fill="#1a1a2e"/>
+                  <circle cx="132" cy="74" r="3.5" fill="#fff"/>
+                  <circle cx="148" cy="74" r="3.5" fill="#fff"/>
+                  <ellipse cx="140" cy="92" rx="6" ry="4" fill="#fff"/>
+                  <text x="140" y="34" text-anchor="middle" font-family="Oswald, Impact, sans-serif" font-size="30" font-weight="900" fill="#ffea00" stroke="#000" stroke-width="3.5" paint-order="stroke fill">WHAT?!</text>
+                </svg>
+                <div class="hc-preset-meta">
+                  <div class="hc-preset-name">Reaction Cam</div>
+                  <div class="hc-preset-desc">Loud primaries, max-energy shock</div>
+                </div>
+              </button>
+
+              <button type="button" class="hc-preset-card" data-preset="minimalist-pro">
+                <svg class="hc-preset-svg" viewBox="0 0 280 158" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+                  <defs>
+                    <linearGradient id="bg-mp" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stop-color="#1a1a1a"/>
+                      <stop offset="100%" stop-color="#2d2d2d"/>
+                    </linearGradient>
+                  </defs>
+                  <rect width="280" height="158" fill="url(#bg-mp)"/>
+                  <ellipse cx="200" cy="100" rx="22" ry="28" fill="#3a3a3a"/>
+                  <circle cx="200" cy="78" r="14" fill="#3a3a3a"/>
+                  <text x="20" y="138" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="300" letter-spacing="3" fill="#eaeaea">A QUIET TAKE.</text>
+                </svg>
+                <div class="hc-preset-meta">
+                  <div class="hc-preset-name">Minimalist Pro</div>
+                  <div class="hc-preset-desc">Negative space, monochrome polish</div>
+                </div>
+              </button>
+
             </div>
 
             <!-- Optional face uploader, collapsed by default -->
