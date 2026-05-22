@@ -11741,54 +11741,43 @@ router.post('/resize-clip', requireAuth, async (req, res) => {
     var targetW = ASPECTS[aspectRatio].width;
     var targetH = ASPECTS[aspectRatio].height;
 
-    // Probe input dimensions so we can compute the centered crop window.
-    var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
-    var probeOut = await new Promise(function(resolve, reject){
-      var s = '';
-      var pErr = '';
-      var p = spawn(ffprobeLocal, [
-        '-v', 'error',
-        '-select_streams', 'v:0',
-        '-show_entries', 'stream=width,height',
-        '-of', 'csv=p=0',
-        srcPath
-      ]);
-      p.stdout.on('data', function(d){ s += d.toString(); });
-      p.stderr.on('data', function(d){ pErr += d.toString(); });
-      p.on('close', function(code){
-        if (code === 0) resolve(s);
-        else reject(new Error('ffprobe failed: ' + (pErr || 'exit ' + code).slice(-200)));
-      });
-      p.on('error', reject);
-    });
-    var parts = (probeOut || '').trim().split(',');
-    var srcW = parseInt(parts[0], 10);
-    var srcH = parseInt(parts[1], 10);
-    if (!srcW || !srcH){
-      return res.status(500).json({ error: 'Could not read source video dimensions' });
-    }
-
-    // Center crop math — identical to ai-reframe.js's calculateCropDimensions.
-    var srcAspect    = srcW / srcH;
-    var targetAspect = targetW / targetH;
-    var cropW, cropH;
-    if (srcAspect > targetAspect){
-      // Source is wider than target → crop horizontal slab
-      cropH = srcH;
-      cropW = Math.floor(srcH * targetAspect);
-    } else {
-      // Source is taller than target → crop vertical slab
-      cropW = srcW;
-      cropH = Math.floor(srcW / targetAspect);
-    }
-    var cropX = Math.floor((srcW - cropW) / 2);
-    var cropY = Math.floor((srcH - cropH) / 2);
-
     var outName = 'resize_' + Date.now() + '_' + req.user.id + '.mp4';
     var outPath = path.join(uploadDir, outName);
 
-    var filterComplex = 'crop=' + cropW + ':' + cropH + ':' + cropX + ':' + cropY +
-                        ',scale=' + targetW + ':' + targetH;
+    // Task #120 — Use ffmpeg expressions instead of hardcoded crop dims
+    // so the filter computes against the actual decoded frame at
+    // runtime. This handles three cases that broke the old crop-then-
+    // scale approach with hardcoded numbers from ffprobe:
+    //   1. Rotated sources (phone portrait video where the stream is
+    //      encoded horizontally with rotation metadata — ffprobe
+    //      reports pre-rotation dims, ffmpeg auto-rotates on decode,
+    //      and the hardcoded crop coords no longer fit).
+    //   2. Variable-resolution sources (some YouTube downloads).
+    //   3. Pixel format / framerate inconsistencies.
+    //
+    // The filter does fit-cover: scale to fill the smaller axis while
+    // preserving aspect, then center-crop the exact target dims. This
+    // is the same outcome AI Reframe achieves with hardcoded numbers,
+    // but rotation-safe.
+    var ar = targetW + '/' + targetH;  // e.g. "1920/1080" — used in expressions
+    // scale expression:
+    //   • if source is WIDER than target (iw/ih >= W/H): scale height to H,
+    //     width auto (preserves aspect), making width > W → crop will
+    //     trim sides.
+    //   • else (source is TALLER than target): scale width to W, height
+    //     auto (preserves aspect), making height > H → crop will trim
+    //     top + bottom.
+    //   • -2 means "auto-compute, must be even" — required for H.264.
+    // Single-quote the expressions so ffmpeg treats commas inside as
+    // literal characters (cleaner than backslash-escaping each comma).
+    var scaleW = "'if(gte(iw/ih," + ar + "),-2," + targetW + ")'";
+    var scaleH = "'if(gte(iw/ih," + ar + ")," + targetH + ",-2)'";
+    var filterComplex =
+      'fps=30,' +                          // normalize variable framerate
+      'format=yuv420p,' +                   // normalize pixel format
+      'scale=w=' + scaleW + ':h=' + scaleH + ',' +
+      'crop=' + targetW + ':' + targetH +   // exact center-crop to target
+      ',setsar=1';                          // square pixels for clean encode
 
     await new Promise(function(resolve, reject){
       var proc = spawn(ffmpegPath, [
