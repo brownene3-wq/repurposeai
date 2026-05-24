@@ -208,7 +208,7 @@ const FEEDBACK_WIDGET_HTML = `
 </style>
 
 <button class="feedback-btn" id="feedbackBtn" onclick="openFeedback()" title="Report a bug or give feedback">
-  <span class="fb-icon">&#x1F41B;</span> Feedback
+  <span class="fb-icon"><img src="/images/section-icons/A-38.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px"></span> Feedback
 </button>
 
 <div class="feedback-overlay" id="feedbackOverlay">

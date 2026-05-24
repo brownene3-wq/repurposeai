@@ -405,7 +405,7 @@ ${pageStyles}
         <!-- Upload panel -->
         <div id="qibUploadPanel" style="display:none">
           <div class="upload-zone" id="uploadContainer" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-            <h3>📹 Drop your video here</h3>
+            <h3><img src="/images/section-icons/A-82.png" alt="" style="height:24px;width:24px;border-radius:5px;vertical-align:middle;margin-right:4px"> Drop your video here</h3>
             <p>Or click to browse</p>
             <button type="button" class="upload-button" onclick="document.getElementById('videoFile').click()">Select Video</button>
             <input type="file" id="videoFile" style="display:none" accept="video/*" onchange="handleFileSelect(event)">
