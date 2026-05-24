@@ -1025,7 +1025,7 @@ async function renderEditor(req, res) {
                   </div>
                 </div>
                 <div class="ml-foot">
-                  <button class="ml-fb ai" style="flex:1;width:100%">&#10024; AI B-Roll</button>
+                  <button class="ml-fb ai" style="flex:1;width:100%"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI B-Roll</button>
                 </div>
               </div>
 
@@ -1036,7 +1036,7 @@ async function renderEditor(req, res) {
               <p>Drop your video here or click to browse</p>
               <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:12px">
                 <button type="button" class="upload-button">Select Video</button>
-                <button type="button" class="upload-button" id="dropboxImportBtn" style="background:linear-gradient(135deg,#0061FF,#0041B3)">📦 Dropbox</button>
+                <button type="button" class="upload-button" id="dropboxImportBtn" style="background:linear-gradient(135deg,#0061FF,#0041B3)"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
               </div>
               <input type="file" id="fileInput" style="display:none" accept="video/*">
               <div style="display:flex;align-items:center;gap:8px;margin-top:12px;width:100%;max-width:560px">
@@ -1046,13 +1046,13 @@ async function renderEditor(req, res) {
               </div>
               <div style="display:flex;gap:8px;margin-top:8px;width:100%;max-width:560px">
                 <div style="position:relative;flex:1">
-                  <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
+                  <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle"></span>
                   <input type="text" id="youtubeUrlInput" placeholder="Drop a YouTube, Zoom, Twitch, or Rumble link" style="width:100%;padding:12px 14px 12px 36px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.9rem;outline:none;box-sizing:border-box">
                 </div>
                 <button type="button" id="youtubeImportBtn" style="padding:10px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#6C3AED,#EC4899);color:white;font-weight:600;cursor:pointer;white-space:nowrap;font-size:.9rem">▶ Import</button>
               </div>
               <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;justify-content:center">
-                <button type="button" class="upload-button" id="googleDriveImportBtn" style="background:linear-gradient(135deg,#4285F4,#34A853);padding:8px 16px;font-size:.8rem">📁 Google Drive</button>
+                <button type="button" class="upload-button" id="googleDriveImportBtn" style="background:linear-gradient(135deg,#4285F4,#34A853);padding:8px 16px;font-size:.8rem"><img src="/images/section-icons/A-75.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Google Drive</button>
               </div>
               <p style="color:var(--text-muted);font-size:.75rem;margin-top:8px">You can upload videos up to 120 minutes long. Supports YouTube, Zoom, Twitch, Rumble links.</p>
             </div>
@@ -1094,29 +1094,29 @@ async function renderEditor(req, res) {
             <div class="tools-section">
               <button type="button" id="undoBtn" class="tool-button" style="background:linear-gradient(135deg,#F59E0B,#D97706);color:#fff;border:none;font-weight:700" title="Undo last action">↩️ Undo</button>
               <button type="button" id="redoBtn" class="tool-button" style="background:linear-gradient(135deg,#6366F1,#4F46E5);color:#fff;border:none;font-weight:700" title="Redo last action">↪️ Redo</button>
-              <button class="tool-button active" data-tool="trim">✂️ Trim</button>
-              <button class="tool-button" data-tool="split">🔀 Split</button>
-              <button class="tool-button" data-tool="filters">🎨 Filters</button>
-              <button class="tool-button" data-tool="speed">⚡ Speed</button>
-              <button class="tool-button" data-tool="audio">🔊 Audio</button>
-              <button class="tool-button" data-tool="music">🎵 Music</button>
-              <button class="tool-button" data-tool="enhance">✨ AI Enhance</button>
-              <button class="tool-button" data-tool="captions">💬 AI Captions</button>
-              <button class="tool-button" data-tool="voiceover">🎙️ AI Voice</button>
-              <button class="tool-button" data-tool="voicetransform">🔄 Voice Transform</button>
-              <button class="tool-button" data-tool="text">📝 Text Overlay</button>
-              <button class="tool-button" data-tool="transitions">✨ Transitions</button>
-              <button class="tool-button" data-tool="broll">🎬 B-Roll</button>
+              <button class="tool-button active" data-tool="trim"><img src="/images/section-icons/A-2.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Trim</button>
+              <button class="tool-button" data-tool="split"><img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Split</button>
+              <button class="tool-button" data-tool="filters"><img src="/images/section-icons/A-4.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Filters</button>
+              <button class="tool-button" data-tool="speed"><img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Speed</button>
+              <button class="tool-button" data-tool="audio"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Audio</button>
+              <button class="tool-button" data-tool="music"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Music</button>
+              <button class="tool-button" data-tool="enhance"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Enhance</button>
+              <button class="tool-button" data-tool="captions"><img src="/images/section-icons/A-3.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Captions</button>
+              <button class="tool-button" data-tool="voiceover"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
+              <button class="tool-button" data-tool="voicetransform"><img src="/images/section-icons/A-83.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Voice Transform</button>
+              <button class="tool-button" data-tool="text"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Overlay</button>
+              <button class="tool-button" data-tool="transitions"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Transitions</button>
+              <button class="tool-button" data-tool="broll"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> B-Roll</button>
               <button class="tool-button" data-tool="aihook">🪝 AI Hook</button>
-              <button class="tool-button" data-tool="brandtemplate">🎨 Brand Template</button>
+              <button class="tool-button" data-tool="brandtemplate"><img src="/images/section-icons/A-4.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Brand Template</button>
               <button class="tool-button" data-tool="transcript">📜 Transcript</button>
               <button class="tool-button" data-tool="crop"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg>Crop</button>
               <button class="tool-button" data-tool="annotations">✏️ Annotations</button>
-              <button class="tool-button" data-tool="elements">⭐ Elements</button>
-              <button class="tool-button" data-tool="zoom">🔍 Zoom & Pan</button>
+              <button class="tool-button" data-tool="elements"><img src="/images/section-icons/A-80.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Elements</button>
+              <button class="tool-button" data-tool="zoom"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Zoom & Pan</button>
               <button class="tool-button" data-tool="pip">📺 Picture-in-Picture</button>
-              <button class="tool-button" data-tool="keyframes">💎 Keyframes</button>
-              <button class="tool-button" data-tool="colorgrade">🎨 Color Grading</button>
+              <button class="tool-button" data-tool="keyframes"><img src="/images/section-icons/A-86.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Keyframes</button>
+              <button class="tool-button" data-tool="colorgrade"><img src="/images/section-icons/A-4.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Color Grading</button>
             </div>
 
             <!-- Background Color Presets -->
@@ -1263,12 +1263,12 @@ async function renderEditor(req, res) {
             <div id="colorGradePanel" class="tool-panel" style="display:none;padding:12px 16px;background:var(--surface);border-radius:12px;border:1px solid var(--border-subtle);margin-top:8px">
               <label class="dropdown-label" style="margin-bottom:8px;display:block">Color Grading</label>
               <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-                <button class="crop-preset color-grade-preset" data-grade="cinematic">🎬 Cinematic</button>
+                <button class="crop-preset color-grade-preset" data-grade="cinematic"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Cinematic</button>
                 <button class="crop-preset color-grade-preset" data-grade="vintage">📷 Vintage</button>
                 <button class="crop-preset color-grade-preset" data-grade="warm">🌅 Warm</button>
                 <button class="crop-preset color-grade-preset" data-grade="cool">❄️ Cool</button>
                 <button class="crop-preset color-grade-preset" data-grade="bw">⬛ B&W</button>
-                <button class="crop-preset color-grade-preset" data-grade="dramatic">🎭 Dramatic</button>
+                <button class="crop-preset color-grade-preset" data-grade="dramatic"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dramatic</button>
                 <button class="crop-preset color-grade-preset" data-grade="pastel">🌸 Pastel</button>
                 <button class="crop-preset color-grade-preset" data-grade="none">↩️ None</button>
               </div>
@@ -2519,7 +2519,7 @@ function showToast(message, type = 'success') {
         showToast('Brand template error: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '✨ Apply Brand Template';
+        button.innerHTML = '<img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Apply Brand Template';
       }
     });
 
@@ -2642,7 +2642,7 @@ function showToast(message, type = 'success') {
         showToast('Error: ' + error.message, 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '💬 Generate & Apply Captions';
+        btn.innerHTML = '<img src="/images/section-icons/A-3.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate & Apply Captions';
         setTimeout(function() { progressDiv.style.display = 'none'; progressBar.style.width = '0%'; }, 2000);
       }
     });
@@ -3042,7 +3042,7 @@ function showToast(message, type = 'success') {
       musicTrack.className = 'timeline-track';
       musicTrack.id = 'timelineMusicTrack';
 
-      musicTrack.innerHTML = '<div class="timeline-track-label">🎵</div>' +
+      musicTrack.innerHTML = '<div class="timeline-track-label"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle"></div>' +
         '<div class="timeline-track-content">' +
           '<div class="timeline-music-bar">' +
             '<span class="track-info">' + musicName + '</span>' +
@@ -3124,7 +3124,7 @@ function showToast(message, type = 'success') {
         showToast('Trim failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '✂️ Trim';
+        button.innerHTML = '<img src="/images/section-icons/A-2.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Trim';
       }
     });
 
@@ -3163,7 +3163,7 @@ function showToast(message, type = 'success') {
         showToast('Split failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '🔀 Split';
+        button.innerHTML = '<img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Split';
       }
     });
 
@@ -3205,7 +3205,7 @@ function showToast(message, type = 'success') {
         showToast('Filter failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '🎨 Apply Filter';
+        button.innerHTML = '<img src="/images/section-icons/A-4.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Apply Filter';
       }
     });
 
@@ -3260,7 +3260,7 @@ function showToast(message, type = 'success') {
         showToast('Speed adjustment failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '⚡ Apply Speed';
+        button.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Apply Speed';
       }
     });
 
@@ -3311,7 +3311,7 @@ function showToast(message, type = 'success') {
         showToast('Audio processing failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '🔊 Apply Audio';
+        button.innerHTML = '<img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Apply Audio';
       }
     });
 
@@ -3387,7 +3387,7 @@ function showToast(message, type = 'success') {
         showToast('Voiceover failed: ' + error.message, 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '🎙️ Apply to Video';
+        btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Apply to Video';
       }
     });
 
@@ -3401,7 +3401,7 @@ function showToast(message, type = 'success') {
     });
     document.getElementById('vtAudioFile')?.addEventListener('change', function(e) {
       if (e.target.files.length > 0) {
-        document.getElementById('vtAudioFileName').textContent = '🎵 ' + e.target.files[0].name;
+        document.getElementById('vtAudioFileName').innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + e.target.files[0].name;
         document.getElementById('vtAudioFileName').style.display = 'block';
       }
     });
@@ -3474,7 +3474,7 @@ function showToast(message, type = 'success') {
         progressText.textContent = 'Failed: ' + error.message;
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '🔄 Transform Voice';
+        btn.innerHTML = '<img src="/images/section-icons/A-83.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Transform Voice';
         setTimeout(() => { progress.style.display = 'none'; }, 3000);
       }
     });
@@ -3575,7 +3575,7 @@ function showToast(message, type = 'success') {
         showToast('Text overlay failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '📝 Apply Text';
+        button.innerHTML = '<img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Apply Text';
       }
     });
 
@@ -4064,7 +4064,7 @@ function showToast(message, type = 'success') {
         showToast('Export failed: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '🎬 Export Video';
+        button.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Export Video';
       }
     });
 
@@ -4116,7 +4116,7 @@ function showToast(message, type = 'success') {
         showToast('Error: ' + error.message, 'error');
       } finally {
         button.disabled = false;
-        button.innerHTML = '🎵 Add to Video';
+        button.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Add to Video';
       }
     });
 
@@ -4328,7 +4328,7 @@ function showToast(message, type = 'success') {
                 showToast(err.message, 'error');
               } finally {
                 dropboxBtn.disabled = false;
-                dropboxBtn.textContent = '📦 Dropbox';
+                dropboxBtn.innerHTML = '<img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox';
               }
             },
             linkType: 'direct',
@@ -4571,7 +4571,7 @@ function showToast(message, type = 'success') {
           showToast(err.message, 'error');
         } finally {
           this.disabled = false;
-          this.textContent = '✨ Generate AI Hook';
+          this.innerHTML = '<img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate AI Hook';
         }
       });
     }

@@ -2808,7 +2808,12 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
           scheduledTime: timeStr,
           contentText: caption || description || '',
           analysisId, momentIndex,
-          notes: '', color: '#6c5ce7',
+          // Forward the schedule-modal extras (notification + notes) added
+          // when we merged 'Schedule This Moment' into 'Publish This Moment'.
+          notes: req.body.notes || '',
+          color: '#6c5ce7',
+          reminderEmail: req.body.reminderEmail || '',
+          reminderMinutes: parseInt(req.body.reminderMinutes, 10) || 0,
           autoPublish: true,
           // schedulePublisher renders the clip if clipFilename is empty; setting
           // it later via a /shorts/clip call would also work, but leaving it
@@ -3730,8 +3735,20 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
           actualDownload = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress);
         } catch (dlErr) {
           clearTimeout(timeout);
-          console.error('  Video download failed:', dlErr.message);
-          writeError('Video download failed. Please try again.');
+          // getOrDownloadVideo throws a verbose message listing each
+          // downloader's specific failure (Cobalt / yt-dlp / ytdl-core)
+          // plus a cookies hint. Pass it through unchanged so the user
+          // sees the actionable diagnosis, not a generic 'try again.'
+          //
+          // The '[v3]' tag lets Albert verify at a glance that this
+          // commit is actually live on dev — if the tag isn't in the
+          // error message, the deploy hasn't propagated yet.
+          var rawMsg = (dlErr && dlErr.message) ? String(dlErr.message) : '';
+          var detail = rawMsg
+            ? '[v3] ' + rawMsg
+            : '[v3] Download path threw without a message — check Railway logs for the stack trace.';
+          console.error('  Video download failed:', detail);
+          writeError(detail);
           return;
         }
 
@@ -5856,11 +5873,37 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
     .clip-toolbar {
       display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    /* Each toolbar row groups related controls. Wraps gracefully on narrow widths. */
+    .clip-toolbar-row {
+      display: flex;
       gap: 6px;
       flex-wrap: wrap;
       align-items: center;
-      padding-top: 12px;
-      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    /* Settings row gets a subtle inset so the grouping reads visually. */
+    .clip-toolbar-row.settings {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    body.light .clip-toolbar-row.settings {
+      background: rgba(108,58,237,0.04);
+      border-color: rgba(108,58,237,0.10);
+    }
+    .clip-toolbar-row-label {
+      font-size: 0.66rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-right: 4px;
+      flex-shrink: 0;
     }
     .clip-tool-btn {
       padding: 6px 12px;
@@ -5933,6 +5976,35 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       border-color: var(--primary);
       color: var(--text);
     }
+    /* Caption-style live preview pill, sits inline next to the
+       Caption Style dropdown in the per-moment toolbar. Updated via
+       window.__paintCaptionPreview, called from the select's onchange. */
+    .caption-preview {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 56px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: linear-gradient(135deg, #16131f, #0c0a14);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      line-height: 1;
+      color: #fff;
+      text-transform: uppercase;
+      text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+      user-select: none;
+      pointer-events: none;
+    }
+    body.light .caption-preview {
+      background: linear-gradient(135deg, #f4f0fb, #e8e1f3);
+      border-color: rgba(108,58,237,0.16);
+    }
+
     .clip-toolbar-divider {
       width: 1px;
       height: 24px;
@@ -6141,6 +6213,30 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         font-size: 12px !important;
       }
     }
+    /* Smart Shorts publishModal — Schedule for Later picker.
+       Force the native calendar/clock indicator to PURE WHITE so the
+       Date / Time picker buttons are clearly visible against the dark
+       input fill (same treatment as the Video Editor modal). */
+    #publishModal input[type="date"]::-webkit-calendar-picker-indicator,
+    #publishModal input[type="time"]::-webkit-calendar-picker-indicator,
+    #publishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1;padding:4px;border-radius:4px;transition:background .15s}
+    #publishModal input[type="date"]::-webkit-calendar-picker-indicator:hover,
+    #publishModal input[type="time"]::-webkit-calendar-picker-indicator:hover,
+    #publishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover{background:rgba(108,58,237,.25)}
+    #publishModal input[type="date"]::-moz-calendar-picker-indicator,
+    #publishModal input[type="time"]::-moz-calendar-picker-indicator,
+    #publishModal input[type="datetime-local"]::-moz-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1}
+    /* Match the scrollbar to the sidebar-nav design from theme.js — thin
+       6px track with a soft white thumb that brightens on hover. Light
+       mode follows the dashboard's inverted palette for visual parity. */
+    #publishModal > div{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    #publishModal > div::-webkit-scrollbar{width:6px}
+    #publishModal > div::-webkit-scrollbar-track{background:transparent}
+    #publishModal > div::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    #publishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    body.light #publishModal > div{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light #publishModal > div::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+    body.light #publishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.25)}
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
@@ -6255,8 +6351,8 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div>
               <label style="display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">Clip Style</label>
               <select id="ag-clipStyle" style="width:100%;padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
-                <option value="blur">Blur Background</option>
                 <option value="crop">Center Crop</option>
+                <option value="blur">Blur Background</option>
                 <option value="fit">Fit (Black BG)</option>
                 <option value="pip">Picture-in-Picture</option>
               </select>
@@ -6309,7 +6405,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
           <div style="display:flex;gap:10px;align-items:center;">
             <button class="btn btn-primary" id="ag-btn" onclick="autoGenerateShorts()" style="background:linear-gradient(135deg,#e056fd,#a29bfe);padding:12px 28px;font-size:14px;font-weight:700;border-radius:10px;border:none;color:#fff;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 20px rgba(224,86,253,0.3);">
-              ⚡ Generate Shorts
+              <img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Shorts
             </button>
             <span id="ag-status" style="font-size:13px;color:var(--text-muted);"></span>
           </div>
@@ -6330,7 +6426,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
               <h4 style="font-size:15px;font-weight:700;color:var(--text);">Generated Shorts</h4>
               <button class="btn btn-primary" id="ag-download-all" onclick="downloadAllAutoGenClips()" style="background:linear-gradient(135deg,#e056fd,#a29bfe);padding:8px 20px;font-size:12px;font-weight:600;border-radius:8px;border:none;color:#fff;cursor:pointer;">
-                📦 Download All (ZIP)
+                <img src="/images/section-icons/A-94.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download All (ZIP)
               </button>
             </div>
             <div id="ag-results-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;"></div>
@@ -6362,16 +6458,16 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
             <select id="qn-style" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
               <option value="funny">😂 Funny</option>
-              <option value="documentary">🎬 Documentary</option>
-              <option value="dramatic">🎭 Dramatic</option>
+              <option value="documentary"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Documentary</option>
+              <option value="dramatic"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dramatic</option>
               <option value="hype">🔥 Hype</option>
               <option value="sarcastic">😏 Sarcastic</option>
               <option value="storytime">📖 Storytime</option>
               <option value="news">📺 News</option>
-              <option value="poetic">✨ Poetic</option>
+              <option value="poetic"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Poetic</option>
             </select>
             <select id="qn-mix" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
-              <option value="mix">🔀 Mix Audio (30% original)</option>
+              <option value="mix"><img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Mix Audio (30% original)</option>
               <option value="replace">🔇 Replace Audio</option>
             </select>
             <select id="qn-provider" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;" onchange="if(this.value==='elevenlabs'){document.getElementById('qn-el-voices').style.display='inline-block';loadQNElevenLabsVoices();}else{document.getElementById('qn-el-voices').style.display='none';}">
@@ -6388,7 +6484,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           </div>
           <div style="display:flex;gap:10px;align-items:center;">
             <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()" style="background:linear-gradient(135deg,#00b894,#00cec9);padding:10px 24px;">
-              🎙️ Generate Narrated Video
+              <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narrated Video
             </button>
             <button class="btn" onclick="downloadQuickNarrateScript()" style="background:transparent;border:1px solid var(--text-muted);color:var(--text-muted);padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;">📄 Download Script</button> <span id="qn-status" style="font-size:13px;color:var(--text-muted);"></span>
           </div>
@@ -6556,7 +6652,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               </div>
               <p style="color:#888; font-size:13px; margin-bottom:20px;">Configure your API keys and integrations.</p>
               <div style="max-width:500px;">
-                <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">🎙️ ElevenLabs API Key <span style="color:#888;font-weight:400;">(optional — for premium AI voices in narration)</span></label>
+                <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ElevenLabs API Key <span style="color:#888;font-weight:400;">(optional — for premium AI voices in narration)</span></label>
                 <input type="password" id="settings-elevenlabsApiKey" placeholder="Enter your ElevenLabs API key..."
                   style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px;">
                 <p style="font-size:11px; color:#666; margin-top:4px;">Get your key at <a href="https://elevenlabs.io" target="_blank" style="color:#a29bfe;">elevenlabs.io</a> — enables custom AI voices for narrated clips</p>
@@ -6684,7 +6780,7 @@ ${paginationHtml}
           </div>
         </div>
         <button type="button" id="atcPeakBtn" onclick="atcSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
-          <span style="font-size:1em;">✨</span> Suggest peak time for this platform
+          <img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Suggest peak time for this platform
           <span id="atcPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
         </button>
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
@@ -6762,7 +6858,7 @@ ${paginationHtml}
         </div>
 
         <div id="publishLaterFields" style="display:none;margin-bottom:14px;">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
             <div>
               <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
               <input type="date" id="publishDate" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
@@ -6772,6 +6868,28 @@ ${paginationHtml}
               <input type="time" id="publishTime" value="12:00" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
             </div>
           </div>
+
+          <!-- Suggest peak time for the picked account's platform -->
+          <button type="button" id="publishPeakBtn" onclick="publishSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
+            <span style="font-size:1em;">&#x2728;</span> Suggest peak time for this platform
+            <span id="publishPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          </button>
+
+          <!-- Notification reminder -->
+          <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
+          <select id="publishReminder" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;" onchange="publishToggleReminderEmail()">
+            <option value="0">None</option>
+            <option value="15">15 minutes before</option>
+            <option value="60">1 hour before</option>
+            <option value="1440">1 day before</option>
+            <option value="2880">2 days before</option>
+          </select>
+          <input type="email" id="publishReminderEmail" placeholder="Email for reminder" style="display:none;width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+          <div id="publishReminderSpacer" style="margin-bottom:14px;"></div>
+
+          <!-- Notes -->
+          <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
+          <textarea id="publishNotes" rows="4" placeholder="Any notes for this scheduled post" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;resize:vertical;min-height:80px;"></textarea>
         </div>
 
         <div id="publishStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>
@@ -6924,28 +7042,28 @@ ${paginationHtml}
   <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
     <div style="background:var(--surface);border-radius:16px;padding:28px;max-width:520px;width:90%;margin:auto;position:relative;max-height:90vh;overflow-y:auto;">
       <button onclick="closeNarrationModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;">&times;</button>
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;">🎙️ AI Narration</h2>
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Narration</h2>
       <p style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">Add a voiceover or text narration to your clip</p>
 
       <div style="margin-bottom:16px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Style</label>
         <div id="narration-styles" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
           <button class="narr-style-btn" data-style="funny" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😂<br>Funny</button>
-          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🎬<br>Documentary</button>
-          <button class="narr-style-btn" data-style="dramatic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🎭<br>Dramatic</button>
+          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Documentary</button>
+          <button class="narr-style-btn" data-style="dramatic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Dramatic</button>
           <button class="narr-style-btn" data-style="hype" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🔥<br>Hype</button>
           <button class="narr-style-btn" data-style="sarcastic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😏<br>Sarcastic</button>
           <button class="narr-style-btn" data-style="storytime" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📖<br>Storytime</button>
           <button class="narr-style-btn" data-style="news" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📺<br>News</button>
-          <button class="narr-style-btn" data-style="poetic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">✨<br>Poetic</button>
+          <button class="narr-style-btn" data-style="poetic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Poetic</button>
         </div>
       </div>
 
       <div style="margin-bottom:16px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Type</label>
         <div style="display:flex;gap:8px;">
-          <button id="voice-type-ai" class="voice-type-btn active" onclick="setVoiceType('ai')" style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;">🔊 AI Voice</button>
-          <button id="voice-type-text" class="voice-type-btn" onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;">📝 Text Only</button>
+          <button id="voice-type-ai" class="voice-type-btn active" onclick="setVoiceType('ai')" style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
+          <button id="voice-type-text" class="voice-type-btn" onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Only</button>
         </div>
       </div>
 
@@ -6966,7 +7084,7 @@ ${paginationHtml}
       <div id="audio-mix-options" style="margin-bottom:20px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Audio Mix</label>
         <div style="display:flex;gap:8px;">
-          <button id="mix-type-mix" class="mix-type-btn active" onclick="setMixType('mix')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:11px;cursor:pointer;">🔀 Mix (30% original)</button>
+          <button id="mix-type-mix" class="mix-type-btn active" onclick="setMixType('mix')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:11px;cursor:pointer;"><img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Mix (30% original)</button>
           <button id="mix-type-replace" class="mix-type-btn" onclick="setMixType('replace')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;">🔇 Replace Audio</button>
         </div>
       </div>
@@ -6974,7 +7092,7 @@ ${paginationHtml}
       <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">⚠️ Click Generate to create a narrated version of this clip. The clip will be processed automatically.</p>
 
       <button id="narrate-generate-btn" onclick="generateNarration()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;">
-        🎙️ Generate Narration
+        <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration
       </button>
       <div id="narration-progress" style="display:none;margin-top:12px;text-align:center;color:var(--text-muted);font-size:13px;"></div>
     </div>
@@ -7426,6 +7544,18 @@ ${paginationHtml}
         var t = document.getElementById('publishTime').value || '12:00';
         if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
         payload.scheduledAt = d + 'T' + t + ':00';
+        // Extra fields merged from the legacy 'Schedule This Moment' modal
+        // so both flows now collect the same scheduling metadata.
+        var remVal = parseInt(document.getElementById('publishReminder').value || '0', 10) || 0;
+        var remEmail = document.getElementById('publishReminderEmail').value.trim();
+        if (remVal > 0 && !remEmail) {
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'Enter an email to receive the reminder.';
+          return;
+        }
+        payload.reminderMinutes = remVal;
+        payload.reminderEmail = remVal > 0 ? remEmail : '';
+        payload.notes = document.getElementById('publishNotes').value;
       }
       btn.disabled = true; var orig = btn.textContent; btn.textContent = _publishMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
       statusEl.style.display = 'block';
@@ -7450,6 +7580,54 @@ ${paginationHtml}
         statusEl.textContent = 'Error: ' + e.message;
       } finally {
         btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    // Peak-time suggestion for the publishModal — reads the picked
+    // account's platform from the publishAccount select's data attribute
+    // and fills in publishDate/publishTime.
+    async function publishSuggestPeakTime() {
+      var btn = document.getElementById('publishPeakBtn');
+      var hint = document.getElementById('publishPeakHint');
+      var sel = document.getElementById('publishAccount');
+      var opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+      var platform = opt ? (opt.getAttribute('data-platform') || '') : '';
+      if (!platform) {
+        if (typeof showToast === 'function') showToast('Pick an account first.');
+        return;
+      }
+      var orig = hint.textContent;
+      hint.textContent = 'Thinking…';
+      btn.disabled = true;
+      try {
+        var resp = await fetch('/dashboard/calendar/api/peak-time?platform=' + encodeURIComponent(platform));
+        if (!resp.ok) throw new Error('Failed');
+        var d = await resp.json();
+        if (d.date) document.getElementById('publishDate').value = d.date;
+        if (d.time) document.getElementById('publishTime').value = d.time;
+        hint.textContent = d.date && d.time ? (d.date + ' · ' + d.time) : '';
+        if (typeof showToast === 'function') showToast(d.reasoning || ('Peak time set: ' + d.date + ' ' + d.time));
+      } catch (e) {
+        hint.textContent = orig;
+        if (typeof showToast === 'function') showToast('Peak time unavailable');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // Show/hide the reminder-email input depending on whether a non-zero
+    // reminder window is picked.
+    function publishToggleReminderEmail() {
+      var v = parseInt(document.getElementById('publishReminder').value || '0', 10);
+      var email = document.getElementById('publishReminderEmail');
+      var spacer = document.getElementById('publishReminderSpacer');
+      if (v > 0) {
+        email.style.display = 'block';
+        if (spacer) spacer.style.display = 'none';
+      } else {
+        email.style.display = 'none';
+        email.value = '';
+        if (spacer) spacer.style.display = 'block';
       }
     }
 
@@ -7507,13 +7685,17 @@ ${paginationHtml}
             <h2 class="modal-title">\${analysis.video_title || 'Analysis'}</h2>
             <div class="modal-header-actions">
               <span class="moment-count-badge">\${analysis.moments?.length || 0} viral moments found</span>
+              \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}" target="_blank"
+                class="modal-header-btn" style="text-decoration:none;">
+                ▶ YouTube
+              </a>\` : ''}
               <button class="modal-header-btn"
                 onclick="document.getElementById('transcriptPanel').style.display = document.getElementById('transcriptPanel').style.display === 'none' ? 'block' : 'none'">
                 📄 View Transcript
               </button>
               <button class="modal-header-btn export"
                 onclick="exportAllClips('\${id}')">
-                📦 Export All
+                <img src="/images/section-icons/A-94.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Export All
               </button>
             </div>
           </div>
@@ -7594,36 +7776,42 @@ ${paginationHtml}
               </div>
             </div>
             <div class="clip-toolbar">
-              <button class="clip-tool-btn primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
-                ✨ Generate Content
-              </button>
-              <button class="clip-tool-btn accent" id="clip-btn-\${idx}"
-                onclick="downloadClip('\${id}', \${idx}, this)">
-                ⬇ Download Clip
-              </button>
-              <button class="clip-tool-btn" onclick="addToCalendar('\${id}', \${idx})" title="Schedule this moment on the calendar"
-                style="background:rgba(108,58,237,0.10); color:#a78bfa; border:1px solid rgba(108,58,237,0.30);">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Add to Calendar
-              </button>
-              <!-- Phase 2b — Publish to a connected social account directly,
-                   or schedule via the calendar machinery using the same
-                   unified connected_accounts source of truth. -->
-              <button class="clip-tool-btn" onclick="openPublishModal('\${id}', \${idx})" title="Publish this moment to a connected social account"
-                style="background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.16));color:#fff;border:1px solid rgba(108,58,237,0.45);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg> Publish to&hellip;
-              </button>
-              <div class="clip-toolbar-divider"></div>
-              <label class="clip-captions-toggle" title="Burn animated captions into the clip">
-                <input type="checkbox" id="captions-\${idx}" checked
-                  style="accent-color:#a78bfa; width:14px; height:14px;">
-                <span>Captions</span>
-              </label>
-              <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
-                <input type="checkbox" id="brandkit-\${idx}" checked
-                  style="accent-color:#a78bfa; width:14px; height:14px;">
-                <span>Brand Template</span>
-              </label>
-              <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style">
+
+              <!-- Row 1 — Source / Generate
+                   YouTube link lives in the modal header now (next to
+                   View Transcript), so it's not duplicated on every card. -->
+              <div class="clip-toolbar-row">
+                <button class="clip-tool-btn primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
+                  <img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Content
+                </button>
+              </div>
+
+              <!-- Row 2 — Settings (captions/brand/clip style controls
+                   that shape how the rendered clip looks). The wrapper
+                   has a subtle background so the grouping reads visually.
+                   Label sits on its own line above the controls per
+                   Albert's UX request. -->
+              <div class="clip-toolbar-row settings" style="flex-direction:column;align-items:stretch;">
+                <span class="clip-toolbar-row-label" style="margin-bottom:6px;">Settings</span>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                  <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
+                    <option value="crop">Center Crop</option>
+                    <option value="blur">Blur BG</option>
+                    <option value="fit">Fit (Black BG)</option>
+                    <option value="pip">Picture-in-Picture</option>
+                  </select>
+                  <label class="clip-captions-toggle" title="Burn animated captions into the clip">
+                    <input type="checkbox" id="captions-\${idx}" checked
+                      onchange="(function(el){ var box = document.getElementById('caption-fields-' + '\${idx}'); if (box) box.style.display = el.checked ? 'inline-flex' : 'none'; })(this);"
+                      style="accent-color:#a78bfa; width:14px; height:14px;">
+                    <span>Captions</span>
+                  </label>
+                  <!-- Caption-related controls live in this wrapper so we can
+                       hide all three with one display toggle. Visible by
+                       default because the Captions checkbox starts checked. -->
+                  <span id="caption-fields-\${idx}" style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                    <select id="caption-style-\${idx}" class="clip-tool-select" title="Caption style"
+                      onchange="if (typeof window.__paintCaptionPreview === 'function') window.__paintCaptionPreview('\${idx}', this.value);">
                 <option value="classic">Classic</option>
                 <option value="trending">Trending</option>
                 <option value="karaoke">Word Pop</option>
@@ -7648,7 +7836,8 @@ ${paginationHtml}
                 <option value="tiktok-trend">TikTok Trending</option>
                 <option value="shadow-drop">Shadow Drop</option>
               </select>
-              <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
+              <span id="caption-preview-\${idx}" class="caption-preview" title="Live caption style preview">Aa</span>
+                <select id="caption-lang-\${idx}" class="clip-tool-select" title="Language">
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
                 <option value="pt">Portuguese</option>
@@ -7670,25 +7859,39 @@ ${paginationHtml}
                 <option value="fil">Filipino</option>
                 <option value="sv">Swedish</option>
               </select>
-              <div class="clip-toolbar-divider"></div>
-              <select id="clip-style-\${idx}" class="clip-tool-select" title="Clip style">
-                <option value="blur">Blur BG</option>
-                <option value="crop">Center Crop</option>
-                <option value="fit">Fit (Black BG)</option>
-                <option value="pip">Picture-in-Picture</option>
-              </select>
-              <button class="clip-tool-btn" id="broll-btn-\${idx}"
-                onclick="findBRoll('\${id}', \${idx}, this)">
-                🎬 B-Roll
-              </button>
-              <button class="clip-tool-btn" id="narrate-btn-\${idx}"
-                onclick="openNarrationModal('\${id}', \${idx})">
-                🎙️ Narrate
-              </button>
-              \${videoId ? \`<a href="https://youtube.com/watch?v=\${videoId}&t=\${startSec}" target="_blank"
-                class="clip-tool-btn" style="text-decoration: none;">
-                ▶ YouTube
-              </a>\` : ''}
+                  </span>
+                  <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
+                    <input type="checkbox" id="brandkit-\${idx}"
+                      style="accent-color:#a78bfa; width:14px; height:14px;">
+                    <span>Brand Template</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Row 3 — Actions / Download.
+                   Three 'Download X' siblings share the accent style so
+                   they read as a coherent set of save-to-disk actions;
+                   Publish-to lives at the end and keeps its purple/pink
+                   gradient so it's visually distinct as a network action. -->
+              <div class="clip-toolbar-row">
+                <button class="clip-tool-btn accent" id="clip-btn-\${idx}"
+                  onclick="downloadClip('\${id}', \${idx}, this)">
+                  ⬇ Download Clip
+                </button>
+                <button class="clip-tool-btn accent" id="narrate-btn-\${idx}"
+                  onclick="openNarrationModal('\${id}', \${idx})">
+                  <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download with AI Narration
+                </button>
+                <button class="clip-tool-btn accent" id="broll-btn-\${idx}"
+                  onclick="findBRoll('\${id}', \${idx}, this)">
+                  <img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download with AI B-Roll
+                </button>
+                <button class="clip-tool-btn" onclick="openPublishModal('\${id}', \${idx})" title="Publish this moment to a connected social account"
+                  style="background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.16));color:#fff;border:1px solid rgba(108,58,237,0.45);">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg> Publish to&hellip;
+                </button>
+              </div>
+
             </div>
           \`;
           card.onclick = (e) => {
@@ -8970,7 +9173,7 @@ ${paginationHtml}
                   progressBar.style.width = '100%';
                   progressLabel.textContent = 'All done!';
                   progressCount.textContent = (data.totalGenerated || agGeneratedClips.length) + '/' + numClips;
-                  btn.textContent = '⚡ Generate Shorts';
+                  btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Shorts';
                   btn.disabled = false;
                   showToast((data.totalGenerated || agGeneratedClips.length) + ' shorts generated!');
                 } else if (data.status === 'error') {
@@ -8986,7 +9189,7 @@ ${paginationHtml}
         showToast('Auto-generate failed: ' + err.message, true);
       } finally {
         btn.disabled = false;
-        btn.textContent = '⚡ Generate Shorts';
+        btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Shorts';
       }
     }
 
@@ -9055,7 +9258,7 @@ ${paginationHtml}
         showToast('ZIP download failed: ' + err.message, true);
       } finally {
         dlBtn.disabled = false;
-        dlBtn.textContent = '📦 Download All (ZIP)';
+        dlBtn.innerHTML = '<img src="/images/section-icons/A-94.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download All (ZIP)';
       }
     }
 
@@ -9161,7 +9364,7 @@ ${paginationHtml}
         var html = '<div style="margin-top:12px;background:rgba(243,156,18,0.04);border:1px solid rgba(243,156,18,0.2);border-radius:10px;padding:16px;" id="' + panelId + '">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
-              '<span style="font-size:18px;">🎬</span>' +
+              '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px">' +
               '<h4 style="font-size:14px;color:#f39c12;margin:0;">AI-Selected B-Roll Scenes</h4>' +
             '</div>' +
             '<button class="btn btn-small" style="font-size:10px;background:rgba(255,255,255,0.1);" onclick="document.getElementById(' + "'" + panelId + "'" + ').remove()">Close</button>' +
@@ -9283,7 +9486,7 @@ ${paginationHtml}
             html += '<div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.1);">' +
               '<button class="btn btn-primary" id="broll-download-btn-' + momentIndex + '" onclick="downloadClipWithBRoll(' + "'" + analysisId + "'" + ',' + momentIndex + ',this)" ' +
                 'style="width:100%;padding:12px;font-size:14px;background:linear-gradient(135deg,#f39c12 0%,#e67e22 50%,#d35400 100%);border:none;font-weight:600;">' +
-                '🎬 Download Clip with B-Roll' +
+                '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download Clip with B-Roll' +
               '</button>' +
               '<p style="font-size:11px;color:#888;text-align:center;margin:6px 0 0 0;">Uncheck scenes you don' + "'" + 't want. Change position and duration above.</p>' +
             '</div>';
@@ -9621,6 +9824,52 @@ ${paginationHtml}
         btn.textContent = originalText;
       }
     }
+
+    // Caption-style live preview painter. Called by the inline onchange
+    // on the per-moment Caption Style select. Defensively guarded so an
+    // unknown style key falls back to the Classic look instead of throwing.
+    window.__paintCaptionPreview = function(idx, styleKey) {
+      try {
+        var prev = document.getElementById('caption-preview-' + idx);
+        if (!prev) return;
+        var P = {
+          classic:       { c:'#FFFFFF', o:'#000000', up:true,  b:true  },
+          trending:      { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          karaoke:       { c:'#FFFFFF', o:'#FF5000', up:true,  b:true  },
+          minimal:       { c:'#FFFFFF', o:'#000000', up:false, b:false },
+          bold:          { c:'#00FF00', o:'#000000', up:true,  b:true  },
+          neon:          { c:'#FF50FF', o:'#8000FF', up:true,  b:true  },
+          'bold-pop':    { c:'#FFBF00', o:'#000000', up:true,  b:true  },
+          'gradient-wave':{c:'#B469FF', o:'#CC3299', up:true,  b:true  },
+          typewriter:    { c:'#FFFFFF', o:'#000000', up:false, b:false, mono:true },
+          cinematic:     { c:'#D4D474', o:'#000000', up:false, b:false },
+          street:        { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          hormozi:       { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          mrbeast:       { c:'#FFFFFF', o:'#FF0000', up:true,  b:true  },
+          'classic-sub': { c:'#FFFFFF', o:'#000000', up:false, b:false },
+          'outline-style':{c:'#000000', o:'#FFFFFF', up:true,  b:true  },
+          'soft-glow':   { c:'#FFFFFF', o:'#E0B0FF', up:false, b:false },
+          'retro-vhs':   { c:'#FFFF00', o:'#FF0000', up:true,  b:true,  mono:true },
+          comic:         { c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          fire:          { c:'#FF5500', o:'#FF0000', up:true,  b:true  },
+          'clean-modern':{ c:'#FFFFFF', o:'#000000', up:false, b:false },
+          podcast:       { c:'#FFFFFF', o:'#000000', up:false, b:false },
+          'tiktok-trend':{ c:'#FFFF00', o:'#000000', up:true,  b:true  },
+          'shadow-drop': { c:'#FFFFFF', o:'#000000', up:true,  b:true  }
+        };
+        var p = P[styleKey] || P.classic;
+        prev.style.color = p.c;
+        prev.style.fontWeight = p.b ? '900' : '500';
+        prev.style.textTransform = p.up ? 'uppercase' : 'none';
+        prev.style.letterSpacing = p.up ? '0.06em' : '0.02em';
+        prev.style.fontFamily = p.mono
+          ? '"SF Mono", "JetBrains Mono", Consolas, "Liberation Mono", monospace'
+          : '';
+        prev.style.textShadow =
+          '-1px -1px 0 ' + p.o + ', 1px -1px 0 ' + p.o + ', ' +
+          '-1px 1px 0 ' + p.o + ', 1px 1px 0 ' + p.o;
+      } catch (_) { /* defensive: never let preview rendering break the page */ }
+    };
 
     // === Brand Kit Functions ===
 
@@ -10099,7 +10348,7 @@ ${paginationHtml}
         } catch (err) {
           progress.textContent = 'Error: ' + err.message;
           btn.disabled = false;
-          btn.textContent = '🎙️ Generate Narration';
+          btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
           return;
         }
       }
@@ -10172,7 +10421,7 @@ ${paginationHtml}
         showToast('Narration failed: ' + err.message, true);
       } finally {
         btn.disabled = false;
-        btn.textContent = '🎙️ Generate Narration';
+        btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
       }
     }
 
@@ -10271,7 +10520,7 @@ ${paginationHtml}
         status.textContent = 'Error: ' + err.message;
       } finally {
         btn.disabled = false;
-        btn.textContent = '🎙️ Generate Narrated Video';
+        btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narrated Video';
       }
     }
 

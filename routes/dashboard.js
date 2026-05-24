@@ -76,7 +76,7 @@ router.get('/', requireAuth, async (req, res) => {
     return `
         <a href="${escapeAttr(target)}" class="recent-card" aria-label="${escapeAttr('Open ' + title + ' on Smart Shorts')}" title="Open on Smart Shorts">
           <div class="recent-thumb"${thumb ? ` style="background-image:url('${escapeAttr(thumb)}')"` : ''}>
-            ${thumb ? '' : '<span class="recent-thumb-fallback">🎬</span>'}
+            ${thumb ? '' : '<span class="recent-thumb-fallback"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"></span>'}
             <div class="recent-thumb-hover"><span>▶ Open on Smart Shorts</span></div>
           </div>
           <div class="recent-meta">
@@ -442,7 +442,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
 
       const btn = document.getElementById('processBtn');
-      btn.disabled = true; btn.innerHTML = '⚡ Analyzing…';
+      btn.disabled = true; btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Analyzing…';
       showAnalyzeNotice('Uploading file…');
 
       try {
@@ -549,7 +549,7 @@ router.get('/', requireAuth, async (req, res) => {
       if (!url) { alert('Please paste a YouTube URL'); return; }
 
       const btn = document.getElementById('processBtn');
-      btn.disabled = true; btn.innerHTML = '⚡ Analyzing…';
+      btn.disabled = true; btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Analyzing…';
       showAnalyzeNotice('Starting…');
 
       try {
@@ -637,7 +637,7 @@ router.get('/', requireAuth, async (req, res) => {
         '</div>' +
         '<textarea class="content-textarea" id="textarea-' + id + '">' + text.replace(/</g, '&lt;') + '</textarea>' +
         '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;">' +
-          '<button class="btn btn-primary btn-sm" onclick="copyText(\\'' + id + '\\')">&#x1F4CB; Copy</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="copyText(\\'' + id + '\\')"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>' +
         '</div>';
       contents.appendChild(div);
     }
@@ -824,7 +824,7 @@ router.get('/', requireAuth, async (req, res) => {
       extra += '<div style="margin-top:.6rem;font-size:.72rem;color:var(--text-dim);font-style:italic">Estimates based on average manual effort: transcribing, cutting, captioning, writing. Your mileage may vary.</div>';
       if (data.spotlight) {
         extra += '<div style="margin-top:1rem;padding:.85rem 1rem;border-radius:12px;background:linear-gradient(135deg,rgba(108,58,237,0.15),rgba(236,72,153,0.12));border:1px solid rgba(108,58,237,0.3)">'
-              + '<div style="font-size:.8rem;color:var(--text-muted);margin-bottom:.4rem">💡 Tip</div>'
+              + '<div style="font-size:.8rem;color:var(--text-muted);margin-bottom:.4rem"><img src="/images/section-icons/A-80.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Tip</div>'
               + '<div style="font-size:.88rem;margin-bottom:.7rem">' + data.spotlight.message + '</div>'
               + '<a href="' + data.spotlight.href + '" style="display:inline-block;padding:.5rem 1rem;background:var(--gradient-1);color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:.82rem">Open ' + data.spotlight.label + '</a>'
               + '</div>';

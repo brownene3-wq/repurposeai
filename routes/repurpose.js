@@ -1653,9 +1653,9 @@ router.get('/', requireAuth, (req, res) => {
               </div>
               <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
-                <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
-                \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>\` : ''}
-                <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')">🔄 Regenerate</button>
+                <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
+                \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
+                <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')"><img src="/images/section-icons/A-83.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Regenerate</button>
               </div>
             \`;
             grid.appendChild(card);
@@ -1689,8 +1689,8 @@ router.get('/', requireAuth, (req, res) => {
             </div>
             <div class="result-content">\${escapeHtml(content)}</div>
             <div class="result-actions">
-              <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}">📋 Copy</button>
-              \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')">🔗 Share</button>\` : ''}
+              <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
+              \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
             </div>
           \`;
           grid.appendChild(card);
@@ -2641,7 +2641,7 @@ router.get('/history', requireAuth, (req, res) => {
                 html += '<div class="output-platform">' + escapeHtml(output.platform) + '</div>';
                 html += '<div class="output-text">' + escapeHtml(output.generated_content || '') + '</div>';
                 html += '<div class="output-actions">';
-                html += '<button onclick="copyOutput(this)">📋 Copy</button>';
+                html += '<button onclick="copyOutput(this)"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>';
                 // Phase 2d - Publish button. Reuses /api/connections and routes
                 // to /repurpose/api/publish-output which dispatches via the
                 // unified publishToConnection helper as a text-only post.
@@ -2675,7 +2675,7 @@ router.get('/history', requireAuth, (req, res) => {
           const text = btn.closest('.output-card').querySelector('.output-text').textContent;
           navigator.clipboard.writeText(text).then(function() {
             btn.textContent = '✅ Copied!';
-            setTimeout(function() { btn.textContent = '📋 Copy'; }, 2000);
+            setTimeout(function() { btn.innerHTML = '<img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy'; }, 2000);
           });
         }
 
