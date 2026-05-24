@@ -406,7 +406,7 @@ ${pageStyles}
 
       <div class="content-wrapper">
         <div class="upload-section" id="uploadSection" onclick="document.getElementById('fileInput').click()">
-          <div class="upload-icon">📁</div>
+          <div class="upload-icon"><img src="/images/section-icons/A-74.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
           <div class="upload-text">Drop your audio or video file here</div>
           <div class="upload-subtext">Or click to select • MP3, WAV, M4A, OGG and other audio formats supported</div>
           <input type="file" id="fileInput" class="file-input" accept="audio/*">
