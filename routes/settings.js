@@ -122,7 +122,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== PROFILE SECTION ===== -->
         <div class="settings-section active" id="section-profile">
           <div class="settings-card">
-            <h2><span class="icon">&#x1F464;</span> Profile Information</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-27.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Profile Information</h2>
             <p class="desc">Your account details and login method</p>
             <div class="info-row">
               <span class="label">Email</span>
@@ -143,7 +143,7 @@ router.get('/', requireAuth, async (req, res) => {
 
           <div class="settings-card">
             ${hasGoogle ? `
-              <h2><span class="icon">&#x1F512;</span> Create Password</h2>
+              <h2><span class="icon"><img src="/images/section-icons/A-28.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Create Password</h2>
               <p class="desc">You signed up with Google. Add a password so you can also log in via email.</p>
               <div class="form-group">
                 <label>New Password</label>
@@ -155,7 +155,7 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
               <button class="btn-save" onclick="setPassword()">Create Password</button>
             ` : `
-              <h2><span class="icon">&#x1F512;</span> Change Password</h2>
+              <h2><span class="icon"><img src="/images/section-icons/A-28.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Change Password</h2>
               <p class="desc">Update your login password</p>
               <div class="form-group">
                 <label>Current Password</label>
@@ -174,7 +174,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="settings-card">
-            <h2><span class="icon">&#x1F517;</span> Connected Accounts</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-29.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Connected Accounts</h2>
             <p class="desc">Link your social media accounts to publish content directly</p>
             <div class="info-row" style="align-items:center">
               <span class="label" style="display:flex;align-items:center;gap:8px">
@@ -269,7 +269,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="settings-card">
-            <h2><span class="icon">&#x1F4B3;</span> Subscription</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-31.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Subscription</h2>
             <p class="desc">Your current plan and billing</p>
             <div class="info-row">
               <span class="label">Plan</span>
@@ -282,7 +282,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== NOTIFICATIONS SECTION ===== -->
         <div class="settings-section" id="section-notifications">
           <div class="settings-card">
-            <h2><span class="icon">&#x1F514;</span> Email Notifications</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-64.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Email Notifications</h2>
             <p class="desc">Choose which emails you'd like to receive</p>
 
             <div class="toggle-row">
@@ -334,7 +334,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== EXPORT DEFAULTS SECTION ===== -->
         <div class="settings-section" id="section-export">
           <div class="settings-card">
-            <h2><span class="icon">&#x1F4E4;</span> Default Export Settings</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-33.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Default Export Settings</h2>
             <p class="desc">Set default preferences for exporting videos</p>
 
             <div class="select-group">
@@ -372,7 +372,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== CAPTIONS SECTION ===== -->
         <div class="settings-section" id="section-captions">
           <div class="settings-card">
-            <h2><span class="icon">&#x1F4DD;</span> Caption Preferences</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-30.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Caption Preferences</h2>
             <p class="desc">Default settings for auto-generated captions</p>
 
             <div class="toggle-row">
@@ -427,7 +427,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== APPEARANCE SECTION ===== -->
         <div class="settings-section" id="section-appearance">
           <div class="settings-card">
-            <h2><span class="icon">&#x1F3A8;</span> Appearance</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-32.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Appearance</h2>
             <p class="desc">Customize how Splicora looks for you</p>
 
             <div class="form-group">
@@ -451,7 +451,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="settings-card">
-            <h2><span class="icon">&#x1F310;</span> Language & Region</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-29.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Language & Region</h2>
             <p class="desc">Set your preferred language and timezone</p>
 
             <div class="select-group">
@@ -489,7 +489,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== DATA & PRIVACY SECTION ===== -->
         <div class="settings-section" id="section-privacy">
           <div class="settings-card">
-            <h2><span class="icon">&#x1F6E1;</span> Privacy</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-29.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Privacy</h2>
             <p class="desc">Control how your data is used</p>
 
             <div class="toggle-row">
@@ -522,13 +522,13 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== API KEYS SECTION ===== -->
         <div class="settings-section" id="section-apikeys">
           <div class="settings-card">
-            <h2><span class="icon">&#x1F511;</span> API Keys</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-25.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> API Keys</h2>
             <p class="desc">Manage your third-party API keys for enhanced features</p>
 
             <div style="margin-top:1.5rem">
               <div style="margin-bottom:1.5rem;padding:1.2rem;border-radius:12px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.15)">
                 <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">
-                  <span style="font-size:1.3rem">&#x1F3A4;</span>
+                  <img src="/images/section-icons/A-26.png" alt="" style="height:22px;width:22px;vertical-align:middle;border-radius:4px">
                   <h3 style="margin:0;font-size:1rem;font-weight:600;color:var(--text)">ElevenLabs</h3>
                   <a href="https://elevenlabs.io" target="_blank" style="font-size:.75rem;color:var(--primary,#6C3AED);text-decoration:none;margin-left:auto">Get API Key &rarr;</a>
                 </div>

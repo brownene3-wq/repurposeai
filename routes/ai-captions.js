@@ -2685,7 +2685,7 @@ router.get('/', requireAuth, async (req, res) => {
           <div class="editor-area">
             <!-- Left: Upload & Preview -->
             <div class="section">
-              <div class="section-title">📹 Video</div>
+              <div class="section-title"><img src="/images/section-icons/A-92.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px;margin-right:6px">Video</div>
 
               <div class="upload-zone" id="uploadZone">
                 <h3>Upload Video</h3>
@@ -2717,7 +2717,7 @@ router.get('/', requireAuth, async (req, res) => {
 
             <!-- Right: Caption Styling -->
             <div class="section">
-              <div class="section-title">✨ Caption Styling</div>
+              <div class="section-title"><img src="/images/section-icons/A-93.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px;margin-right:6px">Caption Styling</div>
 
               <!-- Presets first, Customize second (single consolidated tab
                    that holds everything from the old Font + Effects tabs). -->
@@ -2822,7 +2822,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="section" style="margin-top: 1rem;">
-            <div class="section-title">📥 Export</div>
+            <div class="section-title"><img src="/images/section-icons/A-94.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px;margin-right:6px">Export</div>
             <!-- The class on these two buttons is set dynamically by setExportButtonState(). -->
             <button class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;" id="exportBtn" onclick="exportVideo()" disabled>
               Apply

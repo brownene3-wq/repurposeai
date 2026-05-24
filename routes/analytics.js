@@ -410,25 +410,25 @@ router.get('/', requireAuth, async (req, res) => {
 
         <!-- Content by Platform -->
         <div class="section">
-          <h2><span class="icon">&#x1F4CA;</span> Content by Platform</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-50.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Content by Platform</h2>
           ${noPlatformData ? '<div class="empty-state"><p>No platform data yet. Generate content to see your distribution.</p></div>' : platformBarsHtml}
         </div>
 
         <!-- Credit Usage -->
         <div class="section">
-          <h2><span class="icon">&#x26A1;</span> Credit Usage This Month</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-52.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Credit Usage This Month</h2>
           ${creditKeys.length === 0 ? '<div class="empty-state"><p>No credits used this month. AI features will show usage here.</p></div>' : creditBarsHtml}
         </div>
 
         <!-- Feature Usage -->
         <div class="section">
-          <h2><span class="icon">&#x1F527;</span> AI Tools Usage</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-43.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> AI Tools Usage</h2>
           ${usageKeys.length === 0 ? '<div class="empty-state"><p>No feature usage recorded yet. Your AI tool activity will appear here.</p></div>' : featureUsageHtml}
         </div>
 
         <!-- Storage -->
         <div class="section">
-          <h2><span class="icon">&#x1F4BE;</span> Storage Usage</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-44.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Storage Usage</h2>
           <div style="margin-bottom:16px;">
             <span style="font-size:1.6em;font-weight:800;color:#fff">${formatBytes(storageUsed)}</span>
             <span style="color:#888;font-size:0.85em;margin-left:8px">total used</span>
@@ -438,25 +438,25 @@ router.get('/', requireAuth, async (req, res) => {
 
         <!-- Workflows -->
         <div class="section full-width">
-          <h2><span class="icon">&#x1F504;</span> Workflow Performance</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-45.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Workflow Performance</h2>
           ${workflowsHtml}
         </div>
 
         <!-- Connected Accounts -->
         <div class="section full-width">
-          <h2><span class="icon">&#x1F517;</span> Connected Accounts</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-51.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Connected Accounts</h2>
           ${connectedHtml}
         </div>
 
         <!-- Calendar This Week -->
         <div class="section full-width">
-          <h2><span class="icon">&#x1F4C5;</span> Scheduled This Week</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-53.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Scheduled This Week</h2>
           ${calendarHtml}
         </div>
 
         <!-- Recent Activity -->
         <div class="section full-width">
-          <h2><span class="icon">&#x1F4DD;</span> Recent Activity</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-42.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Recent Activity</h2>
           ${recentHtml}
         </div>
 
