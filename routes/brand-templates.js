@@ -108,10 +108,10 @@ const captionStyles = {
 
 // Aspect ratios
 const aspectRatios = {
-  '9:16': { label: 'TikTok / Shorts / Reels', width: 1080, height: 1920, icon: '📱' },
-  '1:1':  { label: 'LinkedIn / Instagram', width: 1080, height: 1080, icon: '⬜' },
-  '16:9': { label: 'YouTube / Vimeo', width: 1920, height: 1080, icon: '📺' },
-  '4:5':  { label: 'Instagram Portrait', width: 1080, height: 1350, icon: '📸' }
+  '9:16': { label: 'TikTok / Shorts / Reels', width: 1080, height: 1920, icon: '<img src="/images/section-icons/A-95.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
+  '1:1':  { label: 'LinkedIn / Instagram', width: 1080, height: 1080, icon: '<img src="/images/section-icons/A-96.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
+  '16:9': { label: 'YouTube / Vimeo', width: 1920, height: 1080, icon: '<img src="/images/section-icons/A-97.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
+  '4:5':  { label: 'Instagram Portrait', width: 1080, height: 1350, icon: '<img src="/images/section-icons/A-98.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' }
 };
 
 // ----- Cookie helpers -----
@@ -457,7 +457,7 @@ ${pageStyles}
           <div class="step-description">Upload your brand logo and customize placement</div>
           <div class="logo-section" style="margin-top: 2rem;">
             <div class="logo-upload" ondrop="handleLogoDrop(event)" ondragover="handleLogoDragOver(event)" ondragleave="handleLogoDragLeave(event)">
-              <h3>🎨 Upload Your Logo</h3>
+              <h3><img src="/images/section-icons/A-32.png" alt="" style="height:22px;width:22px;border-radius:5px;vertical-align:middle;margin-right:4px"> Upload Your Logo</h3>
               <p>Drop your logo here or click to browse</p>
               <button type="button" class="upload-button" onclick="document.getElementById('logoFile').click()">Select Logo</button>
               <input type="file" id="logoFile" style="display:none" accept="image/*" onchange="handleLogoSelect(event)">

@@ -281,8 +281,8 @@ ${navLinks}
           <span class="user-card-caret" aria-hidden="true">&#x25BE;</span>
         </button>
         <div class="user-popover" id="userPopover" role="menu" aria-labelledby="userCardBtn" hidden>
-          <a href="/notifications" role="menuitem" id="notifPopoverLink"><span class="nav-icon">&#x1F514;</span><span class="nav-label">Notifications</span><span id="notifBellBadge" class="notif-bell-badge" hidden>0</span></a>
-          <a href="/settings" role="menuitem"><span class="nav-icon">&#x2699;&#xFE0F;</span><span class="nav-label">Settings</span></a>
+          <a href="/notifications" role="menuitem" id="notifPopoverLink"><span class="nav-icon"><img src="/images/section-icons/A-99.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px"></span><span class="nav-label">Notifications</span><span id="notifBellBadge" class="notif-bell-badge" hidden>0</span></a>
+          <a href="/settings" role="menuitem"><span class="nav-icon"><img src="/images/section-icons/A-100.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px"></span><span class="nav-label">Settings</span></a>
           <a href="/billing" role="menuitem"><span class="nav-icon">&#x1F4B3;</span><span class="nav-label">Billing</span></a>
           <hr>
           <a href="/auth/logout" role="menuitem" class="popover-signout"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>

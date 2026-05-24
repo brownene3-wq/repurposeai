@@ -756,15 +756,15 @@ ${pageStyles}
       <div style="background:linear-gradient(135deg,rgba(6,182,212,0.15),rgba(139,92,246,0.1));border-radius:20px;padding:2.5rem;margin-bottom:2rem;position:relative;overflow:hidden;border:1px solid rgba(6,182,212,0.2)">
         <div style="display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap">
           <div style="background:linear-gradient(135deg,#06B6D4,#8B5CF6);border-radius:16px;padding:2rem 2.5rem;position:relative;min-width:200px;text-align:center">
-            <div style="font-size:2.5rem;margin-bottom:0.5rem">🎬</div>
+            <img src="/images/section-icons/A-54.png" alt="" style="height:64px;width:64px;border-radius:12px;margin-bottom:0.5rem">
             <div style="font-size:1rem;color:rgba(255,255,255,0.8)">Your Video</div>
           </div>
           <div style="font-size:2rem;color:var(--text-muted)">→</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div style="background:linear-gradient(135deg,#F59E0B,#F97316);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🏞️</div>
-            <div style="background:linear-gradient(135deg,#8B5CF6,#A78BFA);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🌌</div>
-            <div style="background:linear-gradient(135deg,#10B981,#34D399);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🎨</div>
-            <div style="background:linear-gradient(135deg,#EC4899,#F472B6);border-radius:12px;padding:1.2rem;text-align:center;font-size:1.5rem">🎭</div>
+            <div style="background:linear-gradient(135deg,#F59E0B,#F97316);border-radius:12px;padding:1.2rem;text-align:center"><img src="/images/section-icons/A-55.png" alt="" style="height:40px;width:40px;border-radius:8px"></div>
+            <div style="background:linear-gradient(135deg,#8B5CF6,#A78BFA);border-radius:12px;padding:1.2rem;text-align:center"><img src="/images/section-icons/A-56.png" alt="" style="height:40px;width:40px;border-radius:8px"></div>
+            <div style="background:linear-gradient(135deg,#10B981,#34D399);border-radius:12px;padding:1.2rem;text-align:center"><img src="/images/section-icons/A-57.png" alt="" style="height:40px;width:40px;border-radius:8px"></div>
+            <div style="background:linear-gradient(135deg,#EC4899,#F472B6);border-radius:12px;padding:1.2rem;text-align:center"><img src="/images/section-icons/A-58.png" alt="" style="height:40px;width:40px;border-radius:8px"></div>
           </div>
         </div>
       </div>

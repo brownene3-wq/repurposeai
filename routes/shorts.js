@@ -6311,7 +6311,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         <div id="autoGenPanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <div>
-              <h3 style="font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px;">⚡ Auto-Generate Shorts</h3>
+              <h3 style="font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px;"><img src="/images/section-icons/A-46.png" alt="" style="height:22px;width:22px;border-radius:5px"> Auto-Generate Shorts</h3>
               <p style="color:#888; font-size:12px; margin-top:4px;">Paste a YouTube URL and we'll automatically create multiple ready-to-post shorts</p>
             </div>
             <button class="btn btn-small" onclick="document.getElementById('autoGenPanel').style.display='none'" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:16px;border:none;cursor:pointer;">&times;</button>
@@ -6439,7 +6439,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         <div id="quickNarratePanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <div>
-              <h3 style="font-size:16px; font-weight:600;">🎙️ Quick Narrate</h3>
+              <h3 style="font-size:16px; font-weight:600;"><img src="/images/section-icons/A-73.png" alt="" style="height:22px;width:22px;border-radius:5px;vertical-align:middle;margin-right:4px"> Quick Narrate</h3>
               <p style="color:#888; font-size:12px; margin-top:2px;">Paste any video URL (YouTube, Instagram, TikTok, Facebook, Twitter/X, LinkedIn, Snapchat) and add AI narration over it</p>
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
@@ -6500,7 +6500,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           </div>
           <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">
             <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-tiktok')">
-              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x266C;</div>
+              <div style="margin-bottom:8px;"><img src="/images/section-icons/A-47.png" alt="" style="height:32px;width:32px;border-radius:6px"></div>
               <div style="font-weight:600;margin-bottom:4px;">YouTube to TikTok</div>
               <div style="font-size:12px;color:var(--text-muted);">Blur background, auto-captions, TikTok-optimized content with trending hashtags</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
@@ -6510,7 +6510,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               </div>
             </div>
             <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-shorts')">
-              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x25B6;</div>
+              <div style="margin-bottom:8px;"><img src="/images/section-icons/A-48.png" alt="" style="height:32px;width:32px;border-radius:6px"></div>
               <div style="font-weight:600;margin-bottom:4px;">YouTube to YT Shorts</div>
               <div style="font-size:12px;color:var(--text-muted);">Center crop for full-frame, captions, Shorts-optimized with SEO description</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
@@ -6520,7 +6520,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               </div>
             </div>
             <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-linkedin')">
-              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x1F4BC;</div>
+              <div style="margin-bottom:8px;"><img src="/images/section-icons/A-49.png" alt="" style="height:32px;width:32px;border-radius:6px"></div>
               <div style="font-weight:600;margin-bottom:4px;">YouTube to LinkedIn</div>
               <div style="font-size:12px;color:var(--text-muted);">Fit style with clean background, professional content + blog post</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
@@ -6530,7 +6530,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               </div>
             </div>
             <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('yt-all')">
-              <div style="font-size:24px;margin-bottom:8px;">&#x1F3AC; &#x2192; &#x1F30D;</div>
+              <div style="margin-bottom:8px;"><img src="/images/section-icons/A-59.png" alt="" style="height:32px;width:32px;border-radius:6px"></div>
               <div style="font-weight:600;margin-bottom:4px;">YouTube to Everything</div>
               <div style="font-size:12px;color:var(--text-muted);">Maximum reach: blur BG clip, captions, content for all 8 platforms, thumbnail</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
@@ -6540,7 +6540,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               </div>
             </div>
             <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('podcast')">
-              <div style="font-size:24px;margin-bottom:8px;">&#x1F399; &#x2192; &#x1F4F1;</div>
+              <div style="margin-bottom:8px;"><img src="/images/section-icons/A-60.png" alt="" style="height:32px;width:32px;border-radius:6px"></div>
               <div style="font-weight:600;margin-bottom:4px;">Podcast to Clips</div>
               <div style="font-size:12px;color:var(--text-muted);">PiP style for talking heads, bold captions, Twitter thread + newsletter</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
@@ -6549,7 +6549,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               </div>
             </div>
             <div class="card" style="cursor:pointer;padding:16px;" onclick="applyWorkflow('education')">
-              <div style="font-size:24px;margin-bottom:8px;">&#x1F393; &#x2192; &#x1F4DD;</div>
+              <div style="margin-bottom:8px;"><img src="/images/section-icons/A-63.png" alt="" style="height:32px;width:32px;border-radius:6px"></div>
               <div style="font-weight:600;margin-bottom:4px;">Education to Blog</div>
               <div style="font-size:12px;color:var(--text-muted);">Fit style, captions for accessibility, long-form blog + LinkedIn article</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
@@ -6647,7 +6647,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div style="margin-bottom: 24px;">
             <div id="settingsPanel" style="display:none; margin-top:0px; background:var(--surface-light); border:var(--border-subtle); border-radius:12px; padding:24px;">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <h3 style="font-size:16px; font-weight:600;">⚙️ Settings</h3>
+                <h3 style="font-size:16px; font-weight:600;"><img src="/images/section-icons/A-100.png" alt="" style="height:22px;width:22px;border-radius:5px;vertical-align:middle;margin-right:4px"> Settings</h3>
                 <button class="btn btn-small" onclick="toggleSettings()" style="background:rgba(255,255,255,0.1);color:var(--text-muted);font-size:12px;">&times; Close</button>
               </div>
               <p style="color:#888; font-size:13px; margin-bottom:20px;">Configure your API keys and integrations.</p>
@@ -6669,7 +6669,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       <div id="analysesContainer">
         ${analyses.length === 0 ? `
           <div class="empty-state">
-            <div class="empty-state-icon">&#x2702;&#xFE0F;</div>
+            <div class="empty-state-icon"><img src="/images/section-icons/A-1.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
             <h3 class="empty-state-title">No analyses yet</h3>
             <p class="empty-state-text">Paste a YouTube URL above to get started</p>
           </div>
