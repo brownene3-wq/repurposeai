@@ -267,7 +267,7 @@ router.get('/', requireAuth, async (req, res) => {
       ${req.query.restricted === '1' ? '<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:1rem 1.5rem;margin-bottom:1.5rem;color:#EF4444;font-size:.9rem;">You don\'t have permission to access that page. Contact your team admin to request access.</div>' : ''}
 
       <div class="page-header">
-        <h1><img src="/images/dashboard-icons/dashboard.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Content Studio</h1>
+        <h1><img src="/images/section-icons/A-21.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Content Studio</h1>
         <p>Transform your content into viral posts for every platform</p>
       </div>
 
@@ -341,62 +341,62 @@ router.get('/', requireAuth, async (req, res) => {
         <h3><img src="/images/section-icons/A-21.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:6px"> AI Tools</h3>
         <div class="tools-grid">
           <a href="/repurpose" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/create.png" alt="Create"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-2.png" alt="Create"></span>
             <span class="tool-label">Create</span>
           </a>
           <a href="/shorts" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/smart-shorts.png" alt="Smart Shorts"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-1.png" alt="Smart Shorts"></span>
             <span class="tool-label">Smart Shorts</span>
           </a>
           <a href="/video-editor" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/video-editor.png" alt="Video Editor" style="width:44px;height:44px;"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-2.png" alt="Video Editor"></span>
             <span class="tool-label">Video Editor</span>
           </a>
           <a href="/ai-captions" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/ai-captions.png" alt="AI Captions"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-3.png" alt="AI Captions"></span>
             <span class="tool-label">AI Captions</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/caption-presets" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/caption-styles.png" alt="Caption Styles"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-4.png" alt="Caption Styles"></span>
             <span class="tool-label">Caption Styles</span>
           </a>
           <a href="/ai-hook" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/ai-hooks.png" alt="AI Hooks"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-5.png" alt="AI Hooks"></span>
             <span class="tool-label">AI Hooks</span>
           </a>
           <a href="/ai-reframe" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/ai-reframe.png" alt="AI Reframe"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-6.png" alt="AI Reframe"></span>
             <span class="tool-label">AI Reframe</span>
           </a>
           <a href="/ai-thumbnail" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/ai-thumbnails.png?v=2" alt="AI Thumbnails"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-9.png" alt="AI Thumbnails"></span>
             <span class="tool-label">AI Thumbnails</span>
           </a>
           <a href="/ai-broll" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/ai-broll.png?v=2" alt="AI B-Roll"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-7.png" alt="AI B-Roll"></span>
             <span class="tool-label">AI B-Roll</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/enhance-speech" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/enhance-audio.png?v=2" alt="Enhance Audio"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-69.png" alt="Enhance Audio"></span>
             <span class="tool-label">Enhance Audio</span>
           </a>
           <a href="/brand-voice" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/brand-voice.png?v=2" alt="Brand Voice"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-26.png" alt="Brand Voice"></span>
             <span class="tool-label">Brand Voice</span>
           </a>
           <a href="/brand-templates" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/brand-templates.png?v=2" alt="Brand Templates"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-32.png" alt="Brand Templates"></span>
             <span class="tool-label">Brand Templates</span>
             <span class="tool-badge">New</span>
           </a>
           <a href="/dashboard/calendar" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/calendar.png?v=2" alt="Calendar"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-8.png" alt="Calendar"></span>
             <span class="tool-label">Calendar</span>
           </a>
           <a href="/dashboard/analytics" class="tool-card">
-            <span class="tool-icon"><img src="/images/dashboard-icons/analytics.png?v=2" alt="Analytics"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-50.png" alt="Analytics"></span>
             <span class="tool-label">Analytics</span>
           </a>
         </div>
@@ -411,16 +411,16 @@ router.get('/', requireAuth, async (req, res) => {
         ${recentShorts.length > 0 ? `
           <div class="recent-shorts-grid" aria-label="Recent Smart Shorts (preview)">${recentShortsHtml}</div>
           <div class="quick-actions-cta">
-            <a href="/repurpose" class="btn btn-primary btn-sm"><img src="/images/dashboard-icons/repurpose.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Repurpose a Video</a>
-            <a href="/shorts" class="btn btn-outline btn-sm"><img src="/images/dashboard-icons/smart-shorts.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Create Shorts</a>
+            <a href="/repurpose" class="btn btn-primary btn-sm"><img src="/images/section-icons/A-12.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px;margin-right:4px"> Repurpose a Video</a>
+            <a href="/shorts" class="btn btn-outline btn-sm"><img src="/images/section-icons/A-1.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px;margin-right:4px"> Create Shorts</a>
           </div>
         ` : `
           <div class="empty-state" id="emptyState">
-            <div class="empty-icon">&#x1F3AC;</div>
+            <div class="empty-icon"><img src="/images/section-icons/A-42.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
             <p>No projects yet. Paste a YouTube URL above to get started!</p>
             <div class="quick-actions">
-              <a href="/repurpose" class="btn btn-primary btn-sm"><img src="/images/dashboard-icons/repurpose.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Repurpose a Video</a>
-              <a href="/shorts" class="btn btn-outline btn-sm"><img src="/images/dashboard-icons/smart-shorts.png?v=2" alt="" style="height:18px;width:18px;vertical-align:middle;margin-right:4px"> Create Shorts</a>
+              <a href="/repurpose" class="btn btn-primary btn-sm"><img src="/images/section-icons/A-12.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px;margin-right:4px"> Repurpose a Video</a>
+              <a href="/shorts" class="btn btn-outline btn-sm"><img src="/images/section-icons/A-1.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px;margin-right:4px"> Create Shorts</a>
             </div>
           </div>
         `}
