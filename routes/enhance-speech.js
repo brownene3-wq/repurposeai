@@ -374,9 +374,9 @@ ${pageStyles}
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            <div style="background:linear-gradient(135deg,#10B981,#34D399);border-radius:12px;padding:0.8rem 1.5rem;font-size:0.9rem;color:#fff;display:flex;align-items:center;gap:8px;justify-content:center;min-width:230px"><img src="/images/section-icons/A-70.png" alt="" style="height:22px;width:22px;border-radius:4px"> Crystal Clear Audio</div>
-            <div style="background:linear-gradient(135deg,#F59E0B,#FBBF24);border-radius:12px;padding:0.8rem 1.5rem;font-size:0.9rem;color:#fff;display:flex;align-items:center;gap:8px;justify-content:center;min-width:230px"><img src="/images/section-icons/A-71.png" alt="" style="height:22px;width:22px;border-radius:4px"> Noise Removal</div>
-            <div style="background:linear-gradient(135deg,#6366F1,#818CF8);border-radius:12px;padding:0.8rem 1.5rem;font-size:0.9rem;color:#fff;display:flex;align-items:center;gap:8px;justify-content:center;min-width:230px"><img src="/images/section-icons/A-72.png" alt="" style="height:22px;width:22px;border-radius:4px"> Voice Enhancement</div>
+            <div style="background:linear-gradient(135deg,#10B981,#34D399);border-radius:12px;padding:0.8rem 1.5rem 0.8rem 1.2rem;font-size:0.9rem;color:#fff;display:flex;align-items:center;gap:8px"><img src="/images/section-icons/A-70.png" alt="" style="height:22px;width:22px;border-radius:4px"> Crystal Clear Audio</div>
+            <div style="background:linear-gradient(135deg,#F59E0B,#FBBF24);border-radius:12px;padding:0.8rem 1.5rem 0.8rem 1.2rem;font-size:0.9rem;color:#fff;display:flex;align-items:center;gap:8px"><img src="/images/section-icons/A-71.png" alt="" style="height:22px;width:22px;border-radius:4px"> Noise Removal</div>
+            <div style="background:linear-gradient(135deg,#6366F1,#818CF8);border-radius:12px;padding:0.8rem 1.5rem 0.8rem 1.2rem;font-size:0.9rem;color:#fff;display:flex;align-items:center;gap:8px"><img src="/images/section-icons/A-72.png" alt="" style="height:22px;width:22px;border-radius:4px"> Voice Enhancement</div>
           </div>
         </div>
         <style>
