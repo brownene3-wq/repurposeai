@@ -772,16 +772,16 @@ ${pageStyles}
       <!-- Quick Import Bar (mirrors /ai-hook layout: input mode selector + active panel) -->
       <div id="quickImportBar" class="input-section broll-container">
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1.25rem">
-          <button type="button" id="modeUrlBtn" onclick="setBrollInputMode('youtube')" style="padding:10px 20px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">🔗 URL Input</button>
-          <button type="button" id="modeUploadBtn" onclick="setBrollInputMode('upload')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">⬆ Upload</button>
-          <button type="button" id="modeTextBtn" onclick="setBrollInputMode('text')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s">📝 Text/Transcript</button>
+          <button type="button" id="modeUrlBtn" onclick="setBrollInputMode('youtube')" style="padding:10px 20px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> URL Input</button>
+          <button type="button" id="modeUploadBtn" onclick="setBrollInputMode('upload')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s"><img src="/images/section-icons/A-74.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Upload</button>
+          <button type="button" id="modeTextBtn" onclick="setBrollInputMode('text')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text/Transcript</button>
         </div>
 
         <!-- URL Input panel (default visible) -->
         <div id="qibUrlPanel" style="display:block">
           <div style="display:flex;gap:8px;width:100%;max-width:600px;margin:0 auto">
             <div style="position:relative;flex:1">
-              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px"></span>
               <input type="text" id="heroLinkInput" placeholder="Paste a YouTube, Zoom, Twitch, or Rumble link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
             </div>
 <button type="button" id="heroImportBtn" style="display:none">Import</button>
@@ -797,8 +797,8 @@ ${pageStyles}
             <p id="fileName" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;"></p>
           </div>
           <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:1rem">
-            <button type="button" id="gdrivePrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
-            <button type="button" id="dropboxPrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
+            <button type="button" id="gdrivePrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-75.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Google Drive</button>
+            <button type="button" id="dropboxPrimaryBtn" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
           </div>
           <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem;margin-bottom:0">You can upload videos up to 120 minutes long.</p>
           <input type="file" id="primaryFileInput" accept="video/*" style="display:none">
@@ -819,7 +819,7 @@ ${pageStyles}
       <div id="projectStagingCard" style="background:var(--surface);border-radius:16px;padding:1.2rem 1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle);display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
           <div id="primaryStatusText" style="color:var(--text);font-size:0.95rem"></div>
-          <button type="button" id="createProjectBtn" style="padding:10px 22px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:700;font-size:0.95rem" disabled>🎬 Open in Video Editor</button>
+          <button type="button" id="createProjectBtn" style="padding:10px 22px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:700;font-size:0.95rem" disabled><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Open in Video Editor</button>
         </div>
         <div id="selectedBrollList" style="margin-top:0.8rem;display:flex;flex-wrap:wrap;gap:8px"></div>
       </div>
@@ -1447,7 +1447,7 @@ async function confirmBrollSelection() {
       state.broll.forEach(function (b, i) {
         var chip = document.createElement('span');
         chip.style.cssText = 'background:var(--dark-2);padding:6px 10px;border-radius:8px;font-size:.8rem;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border-subtle)';
-        chip.innerHTML = '🎞️ ' + (b.name || b.filename) + ' <button type="button" aria-label="Remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem;line-height:1">×</button>';
+        chip.innerHTML = '<img src="/images/section-icons/A-92.png" alt="" style="height:14px;width:14px;vertical-align:middle;margin-right:2px"> ' + (b.name || b.filename) + ' <button type="button" aria-label="Remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem;line-height:1">×</button>';
         chip.querySelector('button').onclick = function () {
           state.broll.splice(i, 1);
           updateStagingCard();
