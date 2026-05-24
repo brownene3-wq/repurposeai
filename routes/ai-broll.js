@@ -748,7 +748,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1><img src="/images/dashboard-icons/ai-broll.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">AI B-Roll</h1>
+        <h1><img src="/images/section-icons/A-7.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">AI B-Roll</h1>
         <p>Automatically add relevant B-roll to enhance your videos</p>
       </div>
 

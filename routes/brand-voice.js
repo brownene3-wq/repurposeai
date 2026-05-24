@@ -425,7 +425,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1><img src="/images/dashboard-icons/brand-voice.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Brand Voice</h1>
+            <h1><img src="/images/section-icons/A-26.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Voice</h1>
             <p>Create and manage your unique brand voice profiles</p>
           </div>
 

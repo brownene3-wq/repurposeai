@@ -393,7 +393,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1><img src="/images/dashboard-icons/brand-templates.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Brand Templates</h1>
+        <h1><img src="/images/section-icons/A-32.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Templates</h1>
         <p>Create consistent branded videos in 3 easy steps</p>
       </div>
 

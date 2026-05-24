@@ -367,7 +367,7 @@ router.get('/', requireAuth, async (req, res) => {
     ${getThemeToggle()}
     <div class="main">
       <div class="page-header">
-        <h1><img src="/images/dashboard-icons/analytics.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Analytics</h1>
+        <h1><img src="/images/section-icons/A-50.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Analytics</h1>
         <p style="color:#888;margin:0 0 8px">Performance metrics and usage insights across your entire workspace.</p>
       </div>
 

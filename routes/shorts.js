@@ -6152,7 +6152,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
   <!-- Main content -->
   <main class="main-content">
       <div class="header">
-        <h1 class="header-title"><img src="/images/dashboard-icons/smart-shorts.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Smart Shorts</h1>
+        <h1 class="header-title"><img src="/images/section-icons/A-1.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Smart Shorts</h1>
         <p class="header-subtitle">Transform any YouTube video into viral short-form content</p>
       </div>
 

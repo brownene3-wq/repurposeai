@@ -1663,7 +1663,7 @@ ${PRESETS_VISUAL_CSS}
     <main class="main-content">
       <div class="header">
         <div class="header-content">
-          <h1><img src="/images/dashboard-icons/caption-styles.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Caption Styles</h1>
+          <h1><img src="/images/section-icons/A-4.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Caption Styles</h1>
           <p>Choose from 100 premium caption presets across 5 categories to make your videos stand out</p>
         </div>
         <div class="header-actions">
