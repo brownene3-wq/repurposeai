@@ -108,10 +108,10 @@ const captionStyles = {
 
 // Aspect ratios
 const aspectRatios = {
-  '9:16': { label: 'TikTok / Shorts / Reels', width: 1080, height: 1920, icon: '<img src="/images/section-icons/A-95.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
-  '1:1':  { label: 'LinkedIn / Instagram', width: 1080, height: 1080, icon: '<img src="/images/section-icons/A-96.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
-  '16:9': { label: 'YouTube / Vimeo', width: 1920, height: 1080, icon: '<img src="/images/section-icons/A-97.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
-  '4:5':  { label: 'Instagram Portrait', width: 1080, height: 1350, icon: '<img src="/images/section-icons/A-98.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' }
+  '9:16': { label: 'TikTok / Shorts / Reels', width: 1080, height: 1920, icon: '<img src="/images/section-icons/A-95.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' },
+  '1:1':  { label: 'LinkedIn / Instagram', width: 1080, height: 1080, icon: '<img src="/images/section-icons/A-96.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' },
+  '16:9': { label: 'YouTube / Vimeo', width: 1920, height: 1080, icon: '<img src="/images/section-icons/A-97.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' },
+  '4:5':  { label: 'Instagram Portrait', width: 1080, height: 1350, icon: '<img src="/images/section-icons/A-98.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' }
 };
 
 // ----- Cookie helpers -----
