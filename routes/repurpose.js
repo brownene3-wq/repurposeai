@@ -1374,7 +1374,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1><img src="/images/dashboard-icons/create.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Create</h1>
+            <h1><img src="/images/section-icons/A-2.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Create</h1>
             <p>Turn any YouTube video into tailored content for multiple platforms with AI</p>
           </div>
 
@@ -2515,7 +2515,7 @@ router.get('/history', requireAuth, (req, res) => {
         <div class="main-content">
           ${getThemeToggle()}
           <div class="header">
-            <h1><img src="/images/dashboard-icons/library.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Library</h1>
+            <h1><img src="/images/section-icons/A-13.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Library</h1>
             <p>Browse and manage all your created content</p>
           </div>
 

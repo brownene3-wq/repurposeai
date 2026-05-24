@@ -1674,7 +1674,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1><img src="/images/dashboard-icons/ai-reframe.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">AI Reframe</h1>
+        <h1><img src="/images/section-icons/A-6.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">AI Reframe</h1>
         <p>Resize any video for every platform in 1 click</p>
       </div>
 
@@ -1786,7 +1786,7 @@ ${pageStyles}
               <div class="aspect-ratio-card">
                 <input type="checkbox" id="ratio-9-16" name="aspect" value="9:16">
                 <div class="aspect-ratio-preview">
-                  <div style="width: 60px; height: 106px; background: var(--primary); border-radius: 4px;"></div>
+                  <img src="/images/section-icons/A-95.png" alt="" style="width:60px;height:60px;border-radius:8px;object-fit:contain">
                 </div>
                 <div class="aspect-ratio-info">
                   <div class="aspect-ratio-title">9:16 Vertical</div>
@@ -1797,7 +1797,7 @@ ${pageStyles}
               <div class="aspect-ratio-card">
                 <input type="checkbox" id="ratio-1-1" name="aspect" value="1:1">
                 <div class="aspect-ratio-preview">
-                  <div style="width: 80px; height: 80px; background: var(--primary); border-radius: 4px;"></div>
+                  <img src="/images/section-icons/A-96.png" alt="" style="width:60px;height:60px;border-radius:8px;object-fit:contain">
                 </div>
                 <div class="aspect-ratio-info">
                   <div class="aspect-ratio-title">1:1 Square</div>
@@ -1808,7 +1808,7 @@ ${pageStyles}
               <div class="aspect-ratio-card">
                 <input type="checkbox" id="ratio-4-5" name="aspect" value="4:5">
                 <div class="aspect-ratio-preview">
-                  <div style="width: 64px; height: 80px; background: var(--primary); border-radius: 4px;"></div>
+                  <img src="/images/section-icons/A-97.png" alt="" style="width:60px;height:60px;border-radius:8px;object-fit:contain">
                 </div>
                 <div class="aspect-ratio-info">
                   <div class="aspect-ratio-title">4:5 Portrait</div>
@@ -1819,7 +1819,7 @@ ${pageStyles}
               <div class="aspect-ratio-card">
                 <input type="checkbox" id="ratio-16-9" name="aspect" value="16:9">
                 <div class="aspect-ratio-preview">
-                  <div style="width: 106px; height: 60px; background: var(--primary); border-radius: 4px;"></div>
+                  <img src="/images/section-icons/A-98.png" alt="" style="width:60px;height:60px;border-radius:8px;object-fit:contain">
                 </div>
                 <div class="aspect-ratio-info">
                   <div class="aspect-ratio-title">16:9 Landscape</div>

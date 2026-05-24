@@ -106,7 +106,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="calendar-page">
           <div class="cal-header">
             <div>
-              <h1><img src="/images/dashboard-icons/calendar.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">Content Calendar</h1>
+              <h1><img src="/images/section-icons/A-8.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Content Calendar</h1>
               <p>Plan your posts across platforms — click any day to schedule.</p>
             </div>
             <div class="cal-nav">
