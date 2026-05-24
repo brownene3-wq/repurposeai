@@ -6405,7 +6405,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
           <div style="display:flex;gap:10px;align-items:center;">
             <button class="btn btn-primary" id="ag-btn" onclick="autoGenerateShorts()" style="background:linear-gradient(135deg,#e056fd,#a29bfe);padding:12px 28px;font-size:14px;font-weight:700;border-radius:10px;border:none;color:#fff;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 20px rgba(224,86,253,0.3);">
-              ⚡ Generate Shorts
+              <img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Shorts
             </button>
             <span id="ag-status" style="font-size:13px;color:var(--text-muted);"></span>
           </div>
@@ -6426,7 +6426,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
               <h4 style="font-size:15px;font-weight:700;color:var(--text);">Generated Shorts</h4>
               <button class="btn btn-primary" id="ag-download-all" onclick="downloadAllAutoGenClips()" style="background:linear-gradient(135deg,#e056fd,#a29bfe);padding:8px 20px;font-size:12px;font-weight:600;border-radius:8px;border:none;color:#fff;cursor:pointer;">
-                📦 Download All (ZIP)
+                <img src="/images/section-icons/A-94.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download All (ZIP)
               </button>
             </div>
             <div id="ag-results-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;"></div>
@@ -6458,16 +6458,16 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
             <select id="qn-style" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
               <option value="funny">😂 Funny</option>
-              <option value="documentary">🎬 Documentary</option>
-              <option value="dramatic">🎭 Dramatic</option>
+              <option value="documentary"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Documentary</option>
+              <option value="dramatic"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dramatic</option>
               <option value="hype">🔥 Hype</option>
               <option value="sarcastic">😏 Sarcastic</option>
               <option value="storytime">📖 Storytime</option>
               <option value="news">📺 News</option>
-              <option value="poetic">✨ Poetic</option>
+              <option value="poetic"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Poetic</option>
             </select>
             <select id="qn-mix" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;">
-              <option value="mix">🔀 Mix Audio (30% original)</option>
+              <option value="mix"><img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Mix Audio (30% original)</option>
               <option value="replace">🔇 Replace Audio</option>
             </select>
             <select id="qn-provider" style="padding:8px 10px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:12px;" onchange="if(this.value==='elevenlabs'){document.getElementById('qn-el-voices').style.display='inline-block';loadQNElevenLabsVoices();}else{document.getElementById('qn-el-voices').style.display='none';}">
@@ -6484,7 +6484,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           </div>
           <div style="display:flex;gap:10px;align-items:center;">
             <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()" style="background:linear-gradient(135deg,#00b894,#00cec9);padding:10px 24px;">
-              🎙️ Generate Narrated Video
+              <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narrated Video
             </button>
             <button class="btn" onclick="downloadQuickNarrateScript()" style="background:transparent;border:1px solid var(--text-muted);color:var(--text-muted);padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;">📄 Download Script</button> <span id="qn-status" style="font-size:13px;color:var(--text-muted);"></span>
           </div>
@@ -6652,7 +6652,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               </div>
               <p style="color:#888; font-size:13px; margin-bottom:20px;">Configure your API keys and integrations.</p>
               <div style="max-width:500px;">
-                <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;">🎙️ ElevenLabs API Key <span style="color:#888;font-weight:400;">(optional — for premium AI voices in narration)</span></label>
+                <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ElevenLabs API Key <span style="color:#888;font-weight:400;">(optional — for premium AI voices in narration)</span></label>
                 <input type="password" id="settings-elevenlabsApiKey" placeholder="Enter your ElevenLabs API key..."
                   style="width:100%; padding:10px 12px; background:#111; border:1px solid #333; border-radius:8px; color:#fff; font-size:14px;">
                 <p style="font-size:11px; color:#666; margin-top:4px;">Get your key at <a href="https://elevenlabs.io" target="_blank" style="color:#a29bfe;">elevenlabs.io</a> — enables custom AI voices for narrated clips</p>
@@ -6780,7 +6780,7 @@ ${paginationHtml}
           </div>
         </div>
         <button type="button" id="atcPeakBtn" onclick="atcSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
-          <span style="font-size:1em;">✨</span> Suggest peak time for this platform
+          <img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Suggest peak time for this platform
           <span id="atcPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
         </button>
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
@@ -7042,28 +7042,28 @@ ${paginationHtml}
   <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
     <div style="background:var(--surface);border-radius:16px;padding:28px;max-width:520px;width:90%;margin:auto;position:relative;max-height:90vh;overflow-y:auto;">
       <button onclick="closeNarrationModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;">&times;</button>
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;">🎙️ AI Narration</h2>
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Narration</h2>
       <p style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">Add a voiceover or text narration to your clip</p>
 
       <div style="margin-bottom:16px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Style</label>
         <div id="narration-styles" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
           <button class="narr-style-btn" data-style="funny" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😂<br>Funny</button>
-          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🎬<br>Documentary</button>
-          <button class="narr-style-btn" data-style="dramatic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🎭<br>Dramatic</button>
+          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Documentary</button>
+          <button class="narr-style-btn" data-style="dramatic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Dramatic</button>
           <button class="narr-style-btn" data-style="hype" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🔥<br>Hype</button>
           <button class="narr-style-btn" data-style="sarcastic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😏<br>Sarcastic</button>
           <button class="narr-style-btn" data-style="storytime" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📖<br>Storytime</button>
           <button class="narr-style-btn" data-style="news" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📺<br>News</button>
-          <button class="narr-style-btn" data-style="poetic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">✨<br>Poetic</button>
+          <button class="narr-style-btn" data-style="poetic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Poetic</button>
         </div>
       </div>
 
       <div style="margin-bottom:16px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Type</label>
         <div style="display:flex;gap:8px;">
-          <button id="voice-type-ai" class="voice-type-btn active" onclick="setVoiceType('ai')" style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;">🔊 AI Voice</button>
-          <button id="voice-type-text" class="voice-type-btn" onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;">📝 Text Only</button>
+          <button id="voice-type-ai" class="voice-type-btn active" onclick="setVoiceType('ai')" style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
+          <button id="voice-type-text" class="voice-type-btn" onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Only</button>
         </div>
       </div>
 
@@ -7084,7 +7084,7 @@ ${paginationHtml}
       <div id="audio-mix-options" style="margin-bottom:20px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Audio Mix</label>
         <div style="display:flex;gap:8px;">
-          <button id="mix-type-mix" class="mix-type-btn active" onclick="setMixType('mix')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:11px;cursor:pointer;">🔀 Mix (30% original)</button>
+          <button id="mix-type-mix" class="mix-type-btn active" onclick="setMixType('mix')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:11px;cursor:pointer;"><img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Mix (30% original)</button>
           <button id="mix-type-replace" class="mix-type-btn" onclick="setMixType('replace')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;">🔇 Replace Audio</button>
         </div>
       </div>
@@ -7092,7 +7092,7 @@ ${paginationHtml}
       <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">⚠️ Click Generate to create a narrated version of this clip. The clip will be processed automatically.</p>
 
       <button id="narrate-generate-btn" onclick="generateNarration()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;">
-        🎙️ Generate Narration
+        <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration
       </button>
       <div id="narration-progress" style="display:none;margin-top:12px;text-align:center;color:var(--text-muted);font-size:13px;"></div>
     </div>
@@ -7695,7 +7695,7 @@ ${paginationHtml}
               </button>
               <button class="modal-header-btn export"
                 onclick="exportAllClips('\${id}')">
-                📦 Export All
+                <img src="/images/section-icons/A-94.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Export All
               </button>
             </div>
           </div>
@@ -7782,7 +7782,7 @@ ${paginationHtml}
                    View Transcript), so it's not duplicated on every card. -->
               <div class="clip-toolbar-row">
                 <button class="clip-tool-btn primary" onclick="generateContent('\${id}', '\${moment.timeRange}')">
-                  ✨ Generate Content
+                  <img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Content
                 </button>
               </div>
 
@@ -7880,11 +7880,11 @@ ${paginationHtml}
                 </button>
                 <button class="clip-tool-btn accent" id="narrate-btn-\${idx}"
                   onclick="openNarrationModal('\${id}', \${idx})">
-                  🎙️ Download with AI Narration
+                  <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download with AI Narration
                 </button>
                 <button class="clip-tool-btn accent" id="broll-btn-\${idx}"
                   onclick="findBRoll('\${id}', \${idx}, this)">
-                  🎬 Download with AI B-Roll
+                  <img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download with AI B-Roll
                 </button>
                 <button class="clip-tool-btn" onclick="openPublishModal('\${id}', \${idx})" title="Publish this moment to a connected social account"
                   style="background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.16));color:#fff;border:1px solid rgba(108,58,237,0.45);">
@@ -9173,7 +9173,7 @@ ${paginationHtml}
                   progressBar.style.width = '100%';
                   progressLabel.textContent = 'All done!';
                   progressCount.textContent = (data.totalGenerated || agGeneratedClips.length) + '/' + numClips;
-                  btn.textContent = '⚡ Generate Shorts';
+                  btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Shorts';
                   btn.disabled = false;
                   showToast((data.totalGenerated || agGeneratedClips.length) + ' shorts generated!');
                 } else if (data.status === 'error') {
@@ -9189,7 +9189,7 @@ ${paginationHtml}
         showToast('Auto-generate failed: ' + err.message, true);
       } finally {
         btn.disabled = false;
-        btn.textContent = '⚡ Generate Shorts';
+        btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Shorts';
       }
     }
 
@@ -9258,7 +9258,7 @@ ${paginationHtml}
         showToast('ZIP download failed: ' + err.message, true);
       } finally {
         dlBtn.disabled = false;
-        dlBtn.textContent = '📦 Download All (ZIP)';
+        dlBtn.innerHTML = '<img src="/images/section-icons/A-94.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download All (ZIP)';
       }
     }
 
@@ -9364,7 +9364,7 @@ ${paginationHtml}
         var html = '<div style="margin-top:12px;background:rgba(243,156,18,0.04);border:1px solid rgba(243,156,18,0.2);border-radius:10px;padding:16px;" id="' + panelId + '">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
-              '<span style="font-size:18px;">🎬</span>' +
+              '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px">' +
               '<h4 style="font-size:14px;color:#f39c12;margin:0;">AI-Selected B-Roll Scenes</h4>' +
             '</div>' +
             '<button class="btn btn-small" style="font-size:10px;background:rgba(255,255,255,0.1);" onclick="document.getElementById(' + "'" + panelId + "'" + ').remove()">Close</button>' +
@@ -9486,7 +9486,7 @@ ${paginationHtml}
             html += '<div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.1);">' +
               '<button class="btn btn-primary" id="broll-download-btn-' + momentIndex + '" onclick="downloadClipWithBRoll(' + "'" + analysisId + "'" + ',' + momentIndex + ',this)" ' +
                 'style="width:100%;padding:12px;font-size:14px;background:linear-gradient(135deg,#f39c12 0%,#e67e22 50%,#d35400 100%);border:none;font-weight:600;">' +
-                '🎬 Download Clip with B-Roll' +
+                '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Download Clip with B-Roll' +
               '</button>' +
               '<p style="font-size:11px;color:#888;text-align:center;margin:6px 0 0 0;">Uncheck scenes you don' + "'" + 't want. Change position and duration above.</p>' +
             '</div>';
@@ -10348,7 +10348,7 @@ ${paginationHtml}
         } catch (err) {
           progress.textContent = 'Error: ' + err.message;
           btn.disabled = false;
-          btn.textContent = '🎙️ Generate Narration';
+          btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
           return;
         }
       }
@@ -10421,7 +10421,7 @@ ${paginationHtml}
         showToast('Narration failed: ' + err.message, true);
       } finally {
         btn.disabled = false;
-        btn.textContent = '🎙️ Generate Narration';
+        btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
       }
     }
 
@@ -10520,7 +10520,7 @@ ${paginationHtml}
         status.textContent = 'Error: ' + err.message;
       } finally {
         btn.disabled = false;
-        btn.textContent = '🎙️ Generate Narrated Video';
+        btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narrated Video';
       }
     }
 

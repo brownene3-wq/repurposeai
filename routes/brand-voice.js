@@ -559,7 +559,7 @@ router.get('/', requireAuth, (req, res) => {
               <div class="voice-description">\${escapeHtml(voice.description)}</div>
               <div class="voice-actions">
                 <button class="voice-action-btn" onclick="openEditModal('\${voice.id}')">✏️ Edit</button>
-                \${!voice.is_default ? \`<button class="voice-action-btn" onclick="setDefault('\${voice.id}')">⭐ Set Default</button>\` : ''}
+                \${!voice.is_default ? \`<button class="voice-action-btn" onclick="setDefault('\${voice.id}')"><img src="/images/section-icons/A-80.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Set Default</button>\` : ''}
                 <button class="voice-action-btn" onclick="deleteVoice('\${voice.id}')">🗑️ Delete</button>
               </div>
             </div>

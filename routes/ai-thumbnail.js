@@ -2845,7 +2845,7 @@ ${pageStyles}
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
         const name = e.target.files[0].name;
-        fileName.textContent = '🎬 ' + name;
+        fileName.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }
@@ -2869,7 +2869,7 @@ ${pageStyles}
       if (files.length > 0) {
         fileInput.files = files;
         const name = files[0].name;
-        fileName.textContent = '🎬 ' + name;
+        fileName.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }
@@ -3211,7 +3211,7 @@ ${pageStyles}
     if (aiFileInputEl) {
       aiFileInputEl.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-          aiFileNameEl.textContent = '🎬 ' + e.target.files[0].name;
+          aiFileNameEl.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + e.target.files[0].name;
           aiFileNameEl.style.display = 'block';
         }
         checkAIInputs();
@@ -3225,7 +3225,7 @@ ${pageStyles}
         aiUploadAreaEl.classList.remove('dragover');
         if (e.dataTransfer.files.length > 0) {
           aiFileInputEl.files = e.dataTransfer.files;
-          aiFileNameEl.textContent = '🎬 ' + e.dataTransfer.files[0].name;
+          aiFileNameEl.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + e.dataTransfer.files[0].name;
           aiFileNameEl.style.display = 'block';
           checkAIInputs();
         }

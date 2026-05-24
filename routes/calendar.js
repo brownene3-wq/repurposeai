@@ -180,7 +180,7 @@ router.get('/', requireAuth, (req, res) => {
           </div>
         </div>
         <button type="button" id="peakTimeBtn" onclick="suggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
-          <span style="font-size:1em;">✨</span> Suggest peak time for this platform
+          <img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Suggest peak time for this platform
           <span id="peakTimeHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
         </button>
         <label>Notification</label>
