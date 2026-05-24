@@ -338,7 +338,7 @@ router.get('/', requireAuth, async (req, res) => {
 
       <!-- AI Tools Grid -->
       <div class="tools-section">
-        <h3>&#x1F9E0; AI Tools</h3>
+        <h3><img src="/images/section-icons/A-21.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:6px"> AI Tools</h3>
         <div class="tools-grid">
           <a href="/repurpose" class="tool-card">
             <span class="tool-icon"><img src="/images/dashboard-icons/create.png" alt="Create"></span>
@@ -405,7 +405,7 @@ router.get('/', requireAuth, async (req, res) => {
       <!-- Recent Projects -->
       <div class="projects-section">
         <div class="section-head">
-          <h3>&#x1F4C2; Recent Projects</h3>
+          <h3><img src="/images/section-icons/A-13.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:6px"> Recent Projects</h3>
           ${recentShorts.length > 0 ? '<a href="/shorts" class="see-more">See more &rarr;</a>' : ''}
         </div>
         ${recentShorts.length > 0 ? `
