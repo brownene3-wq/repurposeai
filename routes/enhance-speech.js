@@ -389,15 +389,15 @@ ${pageStyles}
       <div style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle)">
         <div style="display:flex;gap:8px;margin-bottom:1rem;width:100%;max-width:600px;margin-left:auto;margin-right:auto">
           <div style="position:relative;flex:1">
-            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem">🔗</span>
+            <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px"></span>
             <input type="text" id="heroLinkInput" placeholder="Drop a YouTube link" readonly style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem;cursor:text" onclick="this.removeAttribute('readonly');this.focus()">
           </div>
           <button type="button" id="heroImportBtn" onclick="handleHeroImport()" style="padding:10px 20px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem;white-space:nowrap">▶ Import</button>
         </div>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <button type="button" id="heroUploadBtn" onclick="document.getElementById('fileInput').click()" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">⬆ Upload</button>
-          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📁 Google Drive</button>
-          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem">📦 Dropbox</button>
+          <button type="button" id="heroUploadBtn" onclick="document.getElementById('fileInput').click()" style="padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-74.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Upload</button>
+          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-75.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Google Drive</button>
+          <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
         </div>
         <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem">You can upload videos up to 120 minutes long.</p>
       </div>
