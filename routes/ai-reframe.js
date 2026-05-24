@@ -1212,7 +1212,7 @@ router.get('/grid-test', requireAuth, (req, res) => {
 <div class="row">
   <label>Input</label>
   <div class="file-picker">
-    <label class="file-btn" for="file">📁 Choose file</label>
+    <label class="file-btn" for="file"><img src="/images/section-icons/A-77.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Choose file</label>
     <input type="file" id="file" accept="video/*">
     <span class="file-name" id="fileLabel">No file chosen</span>
   </div>
@@ -1889,7 +1889,7 @@ ${pageStyles}
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
         const name = e.target.files[0].name;
-        fileName.textContent = '🎬 ' + name;
+        fileName.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }
@@ -1913,7 +1913,7 @@ ${pageStyles}
       if (files.length > 0) {
         fileInput.files = files;
         const name = files[0].name;
-        fileName.textContent = '🎬 ' + name;
+        fileName.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }

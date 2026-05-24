@@ -578,7 +578,7 @@ router.get('/create', requireAuth, async (req, res) => {
                 <div class="mode-desc">Automatically repurpose new content from your source platform to your destination — hands-free.</div>
               </div>
               <div class="mode-card" onclick="selectMode('schedule-existing', this)">
-                <div class="mode-icon">📅</div>
+                <div class="mode-icon"><img src="/images/section-icons/A-8.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"></div>
                 <div class="mode-title">Schedule Existing Content</div>
                 <div class="mode-desc">Pick specific posts from your library and schedule them for optimal posting times.</div>
               </div>
@@ -612,7 +612,7 @@ router.get('/create', requireAuth, async (req, res) => {
             <p class="step-desc">Choose which connected account to pull content from</p>
             <div class="account-grid" id="sourceAccounts"></div>
             <div class="no-accounts-hint" id="noSourceHint" style="display:none">
-              <span class="hint-icon">🔗</span>
+              <span class="hint-icon"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"></span>
               <p>No accounts connected for this platform yet. <a href="/distribute/connections">Add a connection</a> first, then come back here.</p>
             </div>
             <div class="actions-row">
@@ -645,7 +645,7 @@ router.get('/create', requireAuth, async (req, res) => {
             <p class="step-desc">Which account should receive the posts?</p>
             <div class="account-grid" id="destAccounts"></div>
             <div class="no-accounts-hint" id="noDestHint" style="display:none">
-              <span class="hint-icon">🔗</span>
+              <span class="hint-icon"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"></span>
               <p>No accounts connected for this platform yet. <a href="/distribute/connections">Add a connection</a> first, then come back here.</p>
             </div>
             <div class="actions-row">
@@ -1093,7 +1093,7 @@ router.get('/connections', requireAuth, async (req, res) => {
 
         ${connections.length === 0 ? `
           <div class="empty-state">
-            <div class="empty-icon">🔗</div>
+            <div class="empty-icon"><img src="/images/section-icons/A-82.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"></div>
             <h3>${filter === 'all' ? 'No accounts connected' : 'No ' + filter + ' accounts'}</h3>
             <p>${filter === 'all' ? 'Connect your social media accounts to start repurposing content across platforms automatically.' : 'No accounts match the selected filter.'}</p>
             ${filter === 'all' ? `<button class="btn-gradient" onclick="openPlatformPicker()">
