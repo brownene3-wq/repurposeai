@@ -309,7 +309,7 @@ router.get('/', requireAuth, async (req, res) => {
 
         ${workflows.length === 0 ? `
           <div class="empty-state">
-            <div class="empty-icon">📡</div>
+            <div class="empty-icon"><img src="/images/section-icons/A-45.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
             <h3>${filter === 'all' ? 'No workflows yet' : 'No ' + filter + ' workflows'}</h3>
             <p>${filter === 'all' ? 'Create your first repurposing workflow to start automatically posting content across platforms.' : 'No workflows match the selected filter.'}</p>
             ${filter === 'all' ? `<a href="/distribute/create" class="btn-gradient">
@@ -1332,22 +1332,22 @@ router.get('/workflow/:id', requireAuth, async (req, res) => {
 
         <div class="stats-grid">
           <div class="stat-card">
-            <div class="stat-icon">📤</div>
+            <div class="stat-icon"><img src="/images/section-icons/A-33.png" alt="" style="height:24px;width:24px;border-radius:5px"></div>
             <div class="stat-label">Mode</div>
             <div class="stat-value" style="font-size:1rem">${workflow.content_type === 'auto-publish' ? 'Auto-Publish' : 'Schedule'}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-icon">⏱</div>
+            <div class="stat-icon"><img src="/images/section-icons/A-53.png" alt="" style="height:24px;width:24px;border-radius:5px"></div>
             <div class="stat-label">Delay</div>
             <div class="stat-value" style="font-size:1rem">${workflow.delay_mode === 'immediate' ? 'Instant' : workflow.delay_mode === 'custom' ? workflow.delay_hours + ' hrs' : 'Timed'}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-icon">📊</div>
+            <div class="stat-icon"><img src="/images/section-icons/A-50.png" alt="" style="height:24px;width:24px;border-radius:5px"></div>
             <div class="stat-label">Posts Sent</div>
             <div class="stat-value">${workflow.post_count || 0}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-icon">📅</div>
+            <div class="stat-icon"><img src="/images/section-icons/A-8.png" alt="" style="height:24px;width:24px;border-radius:5px"></div>
             <div class="stat-label">Created</div>
             <div class="stat-value" style="font-size:0.9rem">${workflow.created_at ? new Date(workflow.created_at).toLocaleDateString() : '—'}</div>
           </div>

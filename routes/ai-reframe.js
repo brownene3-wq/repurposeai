@@ -1691,7 +1691,7 @@ ${pageStyles}
 
           <div id="uploadTab" class="tab-content">
             <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-              <div class="upload-icon">🎬</div>
+              <div class="upload-icon"><img src="/images/section-icons/A-61.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
               <div class="upload-text">Drop your video file here</div>
               <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
               <input type="file" id="fileInput" name="videoFile" class="file-input" accept="video/*">

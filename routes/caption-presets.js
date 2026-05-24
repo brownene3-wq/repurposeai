@@ -18,11 +18,11 @@ const { featureUsageOps } = require('../db/database');
 // =============================================================================
 
 const CATEGORIES = [
-  { id: 'trending', label: 'Trending', icon: '🔥' },
-  { id: 'classic',  label: 'Classic',  icon: '🎬' },
-  { id: 'hits',     label: 'Hits',     icon: '⚡' },
-  { id: 'title',    label: 'Title',    icon: '🏆' },
-  { id: 'vlog',     label: 'Vlog',     icon: '📹' }
+  { id: 'trending', label: 'Trending', icon: '<img src="/images/section-icons/A-85.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
+  { id: 'classic',  label: 'Classic',  icon: '<img src="/images/section-icons/A-86.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
+  { id: 'hits',     label: 'Hits',     icon: '<img src="/images/section-icons/A-87.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
+  { id: 'title',    label: 'Title',    icon: '<img src="/images/section-icons/A-88.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' },
+  { id: 'vlog',     label: 'Vlog',     icon: '<img src="/images/section-icons/A-89.png" alt="" style="height:18px;width:18px;vertical-align:middle;border-radius:4px">' }
 ];
 
 const PRESETS = [

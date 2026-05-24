@@ -330,7 +330,7 @@ router.get('/', requireAuth, async (req, res) => {
 
       <!-- Results (immediately after input so user sees them right away) -->
       <div class="results-section" id="results" style="display:none;">
-        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem">&#x2728; Generated Content</h2>
+        <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:1rem"><img src="/images/section-icons/A-42.png" alt="" style="height:22px;width:22px;vertical-align:middle;border-radius:5px;margin-right:6px">Generated Content</h2>
         <div class="platform-tabs" id="platformTabs"></div>
         <div id="platformContents"></div>
         <p style="margin-top:1rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Want all 7 platforms? <a href="/repurpose" style="color:var(--primary);">Go to Repurpose</a></p>
