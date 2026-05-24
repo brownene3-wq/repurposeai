@@ -2494,7 +2494,7 @@ ${pageStyles}
 
           <div id="uploadTab" class="tab-content">
             <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-              <div class="upload-icon">🎬</div>
+              <div class="upload-icon"><img src="/images/section-icons/A-54.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
               <div class="upload-text">Drop your video file here</div>
               <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
               <input type="file" id="fileInput" name="videoFile" class="file-input" accept="video/*">
@@ -2630,7 +2630,7 @@ ${pageStyles}
               </summary>
               <div class="hc-face-body">
                 <div class="upload-area" id="hcFaceArea" onclick="document.getElementById('hcFaceInput').click()">
-                  <div class="upload-icon">👤</div>
+                  <div class="upload-icon"><img src="/images/section-icons/A-62.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
                   <div class="upload-text">Drop a headshot here</div>
                   <div class="upload-subtext">PNG / JPG up to 8 MB &bull; clear head-and-shoulders shot works best</div>
                   <input type="file" id="hcFaceInput" class="file-input" accept="image/png,image/jpeg,image/jpg,image/webp">
@@ -2658,7 +2658,7 @@ ${pageStyles}
 
             <div class="ai-source-content" data-aisource-content="upload" style="display:none">
               <div class="upload-area" id="aiUploadArea" onclick="document.getElementById('aiFileInput').click()">
-                <div class="upload-icon">🎬</div>
+                <div class="upload-icon"><img src="/images/section-icons/A-54.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
                 <div class="upload-text">Drop your video file here</div>
                 <div class="upload-subtext">Or click to select &bull; MP4, MOV, WebM supported</div>
                 <input type="file" id="aiFileInput" class="file-input" accept="video/*">

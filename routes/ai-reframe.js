@@ -1707,40 +1707,23 @@ ${pageStyles}
             <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid var(--primary);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeGridLabel">
                 <input type="radio" name="cropMode" value="grid" checked style="accent-color:var(--primary)">
-                <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <rect x="2.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
-                  <rect x="11.25" y="2.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
-                  <rect x="2.25" y="11.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
-                  <rect x="11.25" y="11.25" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
-                </svg>
+                <img src="/images/section-icons/A-63.png" alt="" style="height:20px;width:20px;border-radius:4px">
                 Multi-Person Grid
               </label>
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeCenterLabel">
                 <input type="radio" name="cropMode" value="center" style="accent-color:var(--primary)">
-                <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <path d="M5 1.5V14.5H18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M2 5.5H15V18.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-                  <circle cx="10" cy="10" r="1.2" fill="currentColor"/>
-                </svg>
+                <img src="/images/section-icons/A-61.png" alt="" style="height:20px;width:20px;border-radius:4px">
                 Center Crop
               </label>
               <label style="display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1.25rem;background:var(--dark-2);border:2px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;color:var(--text);font-weight:600;font-size:0.9rem;transition:all 0.3s" id="modeFaceLabel">
                 <input type="radio" name="cropMode" value="face-tracking" style="accent-color:var(--primary)">
-                <svg class="mode-icon" width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/>
-                  <path d="M3 17.5C3 14.2 5.7 12 9 12C10.6 12 12 12.5 13.1 13.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                  <path d="M16.5 4L17.1 5.4L18.5 6L17.1 6.6L16.5 8L15.9 6.6L14.5 6L15.9 5.4L16.5 4Z" fill="currentColor"/>
-                </svg>
+                <img src="/images/section-icons/A-62.png" alt="" style="height:20px;width:20px;border-radius:4px">
                 AI Face Tracking
               </label>
             </div>
             <div id="faceTrackingInfo" style="display:none;background:rgba(108,58,237,0.1);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:0.85rem;color:var(--text)">
               <strong style="display:inline-flex;align-items:center;gap:.4rem">
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" style="vertical-align:middle;color:var(--primary)">
-                  <circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/>
-                  <path d="M3 17.5C3 14.2 5.7 12 9 12C10.6 12 12 12.5 13.1 13.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                  <path d="M16.5 4L17.1 5.4L18.5 6L17.1 6.6L16.5 8L15.9 6.6L14.5 6L15.9 5.4L16.5 4Z" fill="currentColor"/>
-                </svg>
+                <img src="/images/section-icons/A-62.png" alt="" style="height:16px;width:16px;border-radius:3px;vertical-align:middle">
                 AI Face Tracking
               </strong> — The AI will detect faces in your video and dynamically adjust the crop window to keep people centered in every frame. Perfect for interviews, podcasts, and talking-head videos where subjects aren't always in the center.
             </div>

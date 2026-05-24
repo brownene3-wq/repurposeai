@@ -41,7 +41,7 @@ router.get('/', requireAuth, (req, res) => {
         <div class="notif-page">
           <div class="notif-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:24px;">
             <div>
-              <h1 style="display:flex;align-items:center;gap:10px;">🔔 Notifications <span id="notifUnreadBadge" class="notif-unread-badge" hidden>0</span></h1>
+              <h1 style="display:flex;align-items:center;gap:10px;"><img src="/images/section-icons/A-39.png" alt="" style="height:32px;width:32px;border-radius:8px"> Notifications <span id="notifUnreadBadge" class="notif-unread-badge" hidden>0</span></h1>
               <p>Reminders for your scheduled posts. New ones land here automatically.</p>
             </div>
             <button id="markAllReadBtn" onclick="markAllRead()" hidden style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:.55rem 1rem;border-radius:10px;font-weight:600;font-size:.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(108,58,237,.30);">Mark all as read</button>
@@ -100,7 +100,7 @@ router.get('/', requireAuth, (req, res) => {
           }
 
           if (!unread.length && !upcoming.length && !read.length) {
-            list.innerHTML = '<div class="notif-empty"><div class="icon">\ud83d\udd15</div><div><strong>You&rsquo;re all caught up.</strong></div><div style="margin-top:6px;font-size:.85rem">Schedule posts on the <a href="/dashboard/calendar" style="color:#a78bfa;text-decoration:none">Calendar</a> with reminders to see them here.</div></div>';
+            list.innerHTML = '<div class="notif-empty"><div class="icon"><img src="/images/section-icons/A-40.png" alt="" style="height:48px;width:48px;border-radius:10px;opacity:.6"></div><div><strong>You&rsquo;re all caught up.</strong></div><div style="margin-top:6px;font-size:.85rem">Schedule posts on the <a href="/dashboard/calendar" style="color:#a78bfa;text-decoration:none">Calendar</a> with reminders to see them here.</div></div>';
             return;
           }
           let html = '';
