@@ -374,7 +374,7 @@ router.get('/', async (req, res) => {
   <section class="hero">
     <div class="hero-bg"></div><div class="hero-grid"></div>
     <div class="hero-content">
-      <div class="hero-badge">&#x2728; AI-Powered Content Engine</div>
+      <div class="hero-badge"><img src="/images/section-icons/A-21.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> AI-Powered Content Engine</div>
       <h1>Turn One Video Into<br><span class="gradient-text">Unlimited Content</span></h1>
       <p>One video → 8 platforms, automatically. Connect TikTok, Instagram, YouTube, Facebook, Threads, LinkedIn, Pinterest & X — Splicora auto-clips, captions, and publishes platform-tuned versions of every upload. Plus 10 AI tools to make every video pop.</p>
       <div class="hero-input-group">
@@ -475,9 +475,9 @@ router.get('/', async (req, res) => {
         <button class="carousel-nav next" onclick="nextSlide()" aria-label="Next slide"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
         <div class="carousel" id="carousel">
           <!-- Slide 1: Smart Shorts / AI Clipping (Full Cinema) -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Smart Shorts — AI Clipping</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/ai-clipping-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(20,20,32,0.5);border-top:none"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(108,58,237,0.25);border:1px solid rgba(108,58,237,0.4);font-size:.7rem;font-weight:700;color:#a78bfa;white-space:nowrap">&#x2702;&#xFE0F; AI-Powered Clipping</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Drop a long video &#x2192; Get viral-ready shorts for every platform</div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Smart Shorts — AI Clipping</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/ai-clipping-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(20,20,32,0.5);border-top:none"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(108,58,237,0.25);border:1px solid rgba(108,58,237,0.4);font-size:.7rem;font-weight:700;color:#a78bfa;white-space:nowrap"><img src="/images/section-icons/A-1.png" alt="" style="width:16px;height:16px;vertical-align:middle;border-radius:3px"> AI-Powered Clipping</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Drop a long video &#x2192; Get viral-ready shorts for every platform</div></div></div></div></div>
           <!-- Slide 2: AI Captions (Full Cinema) -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Captions — Animated Subtitles</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/ai-captions-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(20,20,32,0.5);border-top:none"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(236,72,153,0.25);border:1px solid rgba(236,72,153,0.4);font-size:.7rem;font-weight:700;color:#f472b6;white-space:nowrap">&#x1F4DD; 6 Animated Styles</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Auto-generated captions with karaoke, neon, cinematic &amp; more</div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Captions — Animated Subtitles</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/ai-captions-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(20,20,32,0.5);border-top:none"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(236,72,153,0.25);border:1px solid rgba(236,72,153,0.4);font-size:.7rem;font-weight:700;color:#f472b6;white-space:nowrap"><img src="/images/section-icons/A-3.png" alt="" style="width:16px;height:16px;vertical-align:middle;border-radius:3px"> 6 Animated Styles</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Auto-generated captions with karaoke, neon, cinematic &amp; more</div></div></div></div></div>
           <!-- Slide 3: Video Editor -->
           <div class="carousel-slide"><div class="carousel-showcase layout-editor"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Video Editor — Full Timeline</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/video-editor-feature.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div></div></div></div>
           <!-- Slide 4: AI Hook Generator -->
@@ -485,7 +485,7 @@ router.get('/', async (req, res) => {
           <!-- Slide 5: AI B-Roll -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI B-Roll — Stock Footage</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/ai-b-roll.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div></div></div></div>
           <!-- Slide 6: AI Reframe (Full Cinema) -->
-          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Reframe — Auto Resize</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/ai-reframe.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(20,20,32,0.5);border-top:none"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(59,130,246,0.25);border:1px solid rgba(59,130,246,0.4);font-size:.7rem;font-weight:700;color:#60a5fa;white-space:nowrap">&#x1F4D0; Smart Reframe</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Turn 16:9 into 9:16 or 1:1 — perfect for TikTok, Reels &amp; Shorts</div></div></div></div></div>
+          <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">AI Reframe — Auto Resize</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/ai-reframe.mp4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div><div style="display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(20,20,32,0.5);border-top:none"><div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(59,130,246,0.25);border:1px solid rgba(59,130,246,0.4);font-size:.7rem;font-weight:700;color:#60a5fa;white-space:nowrap"><img src="/images/section-icons/A-6.png" alt="" style="width:16px;height:16px;vertical-align:middle;border-radius:3px"> Smart Reframe</div><div style="font-size:.78rem;color:var(--text-muted);font-weight:500">Turn 16:9 into 9:16 or 1:1 — perfect for TikTok, Reels &amp; Shorts</div></div></div></div></div>
           <!-- Slide 7: Music Library -->
           <div class="carousel-slide"><div class="carousel-showcase layout-centered"><div class="carousel-screen carousel-screen-main"><div class="carousel-screen-topbar"><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><div class="carousel-screen-dot"></div><span style="flex:1;text-align:center;font-size:.7rem;color:var(--text-muted)">Music Library — 123 Royalty-Free Tracks</span></div><div style="flex:1;overflow:hidden;background:transparent"><video data-src="/public/videos/music-library-feature.mp4?v=4" muted playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block"></video></div></div></div></div>
           <!-- Slide 8: Brand Voice -->
@@ -542,10 +542,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 1: Smart Shorts -->
         <div class="feature-row">
           <div class="feature-content">
-            <h3>Smart Shorts</h3>
+            <h3><img src="/images/section-icons/A-1.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">Smart Shorts</h3>
             <h2>AI that finds viral moments in any video</h2>
             <p>Upload any long-form video or paste a YouTube link. Our AI analyzes engagement patterns, detects the most compelling moments, and automatically cuts them into perfectly timed short-form clips optimized for TikTok, Instagram Reels, and YouTube Shorts. Each clip is scored by viral potential so you know which ones to post first.</p>
-            <span class="feature-tag">&#x2728; Most Popular</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-1.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Most Popular</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/smart-shorts-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -553,10 +553,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 2: Video Editor -->
         <div class="feature-row reverse">
           <div class="feature-content">
-            <h3>Video Editor</h3>
+            <h3><img src="/images/section-icons/A-2.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">Video Editor</h3>
             <h2>A full professional editor right in your browser</h2>
             <p>No more switching between apps. Our built-in video editor features a full multi-track timeline with real audio waveform visualization, a curated music library with 123 royalty-free tracks across 11 genres, AI-powered captions, and precision playhead seeking. Trim, add music, overlay captions, and export — all without leaving Splicora.</p>
-            <span class="feature-tag">&#x1F3AC; Full Editor</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-2.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Full Editor</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/video-editor-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -564,10 +564,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 3: AI Captions -->
         <div class="feature-row">
           <div class="feature-content">
-            <h3>AI Captions</h3>
+            <h3><img src="/images/section-icons/A-3.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">AI Captions</h3>
             <h2>Trendy animated subtitles that boost engagement by 40%</h2>
             <p>Powered by OpenAI Whisper with word-level timestamp accuracy. Choose from 6 stunning caption presets — Karaoke, Bold Pop, Minimal, Neon Glow, Typewriter, and Cinematic — each with unique animations. Upload your own video or paste a YouTube URL. Position captions anywhere on screen and preview them in real-time before exporting.</p>
-            <span class="feature-tag">&#x1F4C8; +40% Engagement</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-3.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> +40% Engagement</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-caption-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -575,10 +575,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 4: AI Hook Generator -->
         <div class="feature-row reverse">
           <div class="feature-content">
-            <h3>AI Hook Generator</h3>
+            <h3><img src="/images/section-icons/A-5.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">AI Hook Generator</h3>
             <h2>Scroll-stopping hooks that grab attention in 2 seconds</h2>
             <p>Generate irresistible video hooks in 5 styles: Controversial, Question, Story, Statistic, and Bold Statement. Each hook is crafted for your specific platform and content. Choose from 6 free built-in AI voices or connect your own ElevenLabs account for premium voice synthesis. Get the hook text and audio file ready to drop into your video.</p>
-            <span class="feature-tag">&#x1F3A4; Free AI Voices</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-5.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Free AI Voices</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-hooks-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -586,10 +586,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 5: AI B-Roll -->
         <div class="feature-row">
           <div class="feature-content">
-            <h3>AI B-Roll</h3>
+            <h3><img src="/images/section-icons/A-7.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">AI B-Roll</h3>
             <h2>Millions of stock clips, found instantly by AI</h2>
             <p>Stop spending hours searching for the perfect B-roll. Paste a YouTube link or describe your scene, and our AI searches millions of HD stock clips from the Pixabay Video library. Preview clips with full video player, see metadata like resolution and duration, and insert them directly into your project with one click.</p>
-            <span class="feature-tag">&#x1F3AC; Pixabay HD Library</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-7.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Pixabay HD Library</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-b-roll_section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -597,10 +597,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 6: Music Library -->
         <div class="feature-row reverse">
           <div class="feature-content">
-            <h3>Music Library</h3>
+            <h3><img src="/images/section-icons/A-4.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">Music Library</h3>
             <h2>123 royalty-free tracks across 11 genres</h2>
             <p>Find the perfect background music for any content. Browse our curated library of 123 tracks spanning Ambient, Lo-Fi, Corporate, Cinematic, Upbeat, Hip-Hop, Electronic, Acoustic, Jazz, Classical, and Nature. Preview every track before adding it to your video. All tracks are 100% royalty-free — use them on any platform without copyright worries.</p>
-            <span class="feature-tag">&#x1F3B5; Royalty-Free</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-4.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Royalty-Free</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/music-library-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -608,10 +608,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 7: AI Reframe -->
         <div class="feature-row">
           <div class="feature-content">
-            <h3>AI Reframe</h3>
+            <h3><img src="/images/section-icons/A-6.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">AI Reframe</h3>
             <h2>Resize any video for every platform in 1 click</h2>
             <p>Automatically convert your 16:9 landscape videos to 9:16 vertical for TikTok and Reels, 1:1 square for Instagram feed, 4:5 for Facebook, and any custom ratio you need. Our AI intelligently tracks the main subject so faces and key content stay perfectly centered — no manual cropping needed.</p>
-            <span class="feature-tag">&#x1F680; One Click</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-6.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> One Click</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/ai-reframe-section.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -619,10 +619,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 8: Brand Voice -->
         <div class="feature-row">
           <div class="feature-content">
-            <h3>Brand Voice</h3>
+            <h3><img src="/images/section-icons/A-26.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">Brand Voice</h3>
             <h2>Every piece of content sounds like you</h2>
             <p>Train our AI on your best-performing content, and it learns your unique tone, vocabulary, and style. Every created post — whether it's a tweet, LinkedIn article, or Instagram caption — comes out sounding authentically you. Set up custom tone profiles for different brands, clients, or content types.</p>
-            <span class="feature-tag">&#x1F399; Custom AI Voice</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-26.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Custom AI Voice</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/brand-voice-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -630,10 +630,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 9: Content Repurposing -->
         <div class="feature-row reverse">
           <div class="feature-content">
-            <h3>Content Repurposing</h3>
+            <h3><img src="/images/section-icons/A-12.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">Content Repurposing</h3>
             <h2>One link becomes content for every platform</h2>
             <p>Paste any YouTube link and our AI generates platform-optimized posts for Instagram, TikTok, Twitter/X, LinkedIn, Facebook, YouTube, and your blog. Choose from 5 content tones — Professional, Casual, Humorous, Inspirational, or Educational — or use your Brand Voice for perfectly consistent messaging across all platforms.</p>
-            <span class="feature-tag">&#x1F504; Multi-Platform AI</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-12.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Multi-Platform AI</span>
           </div>
           <div class="feature-mockup"><div class="feature-mock-inner"><video class="section-video" data-src="/public/videos/repurpose-feature.mp4" muted playsinline loop preload="none" style="width:100%;height:100%;object-fit:contain;display:block;border-radius:12px"></video></div></div>
         </div>
@@ -641,10 +641,10 @@ router.get('/', async (req, res) => {
         <!-- Feature 10: Content Calendar -->
         <div class="feature-row">
           <div class="feature-content">
-            <h3>Content Calendar</h3>
+            <h3><img src="/images/section-icons/A-8.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:8px;border-radius:8px">Content Calendar</h3>
             <h2>Plan your uploads and never miss a post</h2>
             <p>Organize all your content on a visual calendar. Pick the exact date and time you want to upload to each platform, and choose to receive email reminders 30 minutes before, 1 hour before, or 1 day before. Stay on top of your content schedule without needing a separate planning tool.</p>
-            <span class="feature-tag">&#x1F4C5; Email Reminders</span>
+            <span class="feature-tag"><img src="/images/section-icons/A-8.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;border-radius:4px"> Email Reminders</span>
           </div>
           <div class="feature-mockup" style="aspect-ratio:auto"><div class="feature-mock-inner" style="position:relative"><img src="/public/videos/Calendar.png" alt="Content Calendar" style="width:100%;height:auto;object-fit:contain;display:block;border-radius:12px"></div></div>
         </div>
@@ -694,22 +694,22 @@ router.get('/', async (req, res) => {
       </div>
       <div class="teams-grid">
         <div class="team-card">
-          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-1.png?v=2" alt="" width="56" height="56" style="display:block"></div>
+          <div class="team-card-icon"><img src="/images/section-icons/A-21.png?v=2" alt="" width="56" height="56" style="display:block;border-radius:12px"></div>
           <h3>10 AI Tools in One</h3>
           <p>Smart Shorts, Video Editor, AI Captions, AI Hooks, AI B-Roll, Music Library, AI Reframe, Brand Voice, Content Repurposing, and Content Calendar — all under one roof. No juggling between 5 different apps.</p>
-          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-4.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
+          <div class="team-card-mockup"><img src="/images/section-icons/A-18.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto;border-radius:16px"></div>
         </div>
         <div class="team-card">
-          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-2.png?v=2" alt="" width="56" height="56" style="display:block"></div>
+          <div class="team-card-icon"><img src="/images/section-icons/A-22.png?v=2" alt="" width="56" height="56" style="display:block;border-radius:12px"></div>
           <h3>No Hidden Costs</h3>
           <p>Free AI voices built in. 123 royalty-free music tracks included. Millions of stock B-roll clips. You bring your own ElevenLabs key only if you want premium voices — everything else is included.</p>
-          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-5.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
+          <div class="team-card-mockup"><img src="/images/section-icons/A-19.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto;border-radius:16px"></div>
         </div>
         <div class="team-card">
-          <div class="team-card-icon"><img src="/public/images/homepage-icons/icon-3.png?v=2" alt="" width="56" height="56" style="display:block"></div>
+          <div class="team-card-icon"><img src="/images/section-icons/A-23.png?v=2" alt="" width="56" height="56" style="display:block;border-radius:12px"></div>
           <h3>Built for Teams</h3>
           <p>Invite your team, assign brand voices, share content libraries, and publish from one workspace. From solo creators to agencies managing 20+ clients — Splicora scales with you.</p>
-          <div class="team-card-mockup"><img src="/public/images/homepage-icons/icon-6.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto"></div>
+          <div class="team-card-mockup"><img src="/images/section-icons/A-20.png?v=2" alt="" width="96" height="96" style="display:block;margin:0 auto;border-radius:16px"></div>
         </div>
       </div>
     </div>
