@@ -6901,6 +6901,51 @@ ${paginationHtml}
       </div>
     </div>
 
+    <!-- Copyright disclaimer modal (Analyze gate) — shown after the user
+         clicks "Analyze" on the import panel. Confirm proceeds with the
+         actual analysis; Cancel aborts. -->
+    <div id="analyzeConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:10001;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeAnalyzeConfirm()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:480px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <h3 style="margin:0 0 14px;font-size:1.05rem;display:flex;align-items:center;gap:8px;color:var(--text);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Confirm rights to use this content
+        </h3>
+        <p style="color:var(--text-muted);font-size:0.88rem;line-height:1.55;margin:0 0 18px;">
+          Please ensure you have the right to use this content. Uploading copyrighted material without permission may violate legal guidelines. By proceeding, you confirm that you own this video or have the authorization to use it.
+        </p>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button id="analyzeConfirmCancel" type="button" onclick="closeAnalyzeConfirm()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.55rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
+          <button id="analyzeConfirmOk" type="button" onclick="confirmAnalyze()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.55rem 1.4rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Yes, proceed</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Moment Preview Modal — opens when a moment thumbnail is clicked.
+         Renders a YouTube iframe scoped to the moment's start/end seconds
+         using the privacy-enhanced embed URL with start= / end= params. -->
+    <div id="momentPreviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);z-index:10002;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeMomentPreview()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:780px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <div style="min-width:0;">
+            <div id="momentPreviewTitle" style="font-size:0.98rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Moment preview</div>
+            <div id="momentPreviewRange" style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;"></div>
+          </div>
+          <button type="button" onclick="closeMomentPreview()" aria-label="Close preview"
+            style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:var(--text);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;">&times;</button>
+        </div>
+        <!-- 16:9 frame so the embedded YouTube player never crops awkwardly -->
+        <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;">
+          <iframe id="momentPreviewIframe" src="" title="Moment preview"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowfullscreen
+            style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;"></iframe>
+        </div>
+        <div style="margin-top:10px;font-size:0.74rem;color:var(--text-muted);line-height:1.45;">
+          Playback starts at the moment's start time and stops automatically at its end time.
+        </div>
+      </div>
+    </div>
+
 </main>
 
   <!-- Calendar Entry Modal -->
@@ -7131,13 +7176,20 @@ ${paginationHtml}
       }
     })();
 
-    async function analyzeVideo() {
+    // Entry point wired to the import panel's Analyze button.
+    // We DON'T start the analysis here anymore — first we open the
+    // copyright disclaimer modal. confirmAnalyze() resumes the flow
+    // via _runAnalyze(url) only after the user accepts.
+    function analyzeVideo() {
       const url = document.getElementById('videoUrl').value.trim();
       if (!url) {
         showToast('Please enter a YouTube URL');
         return;
       }
+      openAnalyzeConfirm(url);
+    }
 
+    async function _runAnalyze(url) {
       const btn = document.querySelector('.btn-primary');
       const btnText = document.getElementById('analyzeBtn');
       btn.disabled = true;
@@ -7504,6 +7556,62 @@ ${paginationHtml}
         sel.innerHTML = '<option value="">Failed to load accounts</option>';
       }
     }
+    // ── Analyze confirmation gate ────────────────────────────────────
+    // The Analyze button on the import panel routes through this gate so
+    // the user has to acknowledge the copyright disclaimer before the
+    // POST /shorts/analyze SSE actually fires. We stash the URL and the
+    // button refs in a closure so confirmAnalyze() can resume the flow
+    // exactly where analyzeVideo() would have, but only on confirmation.
+    var __pendingAnalyzeUrl = null;
+    function openAnalyzeConfirm(url) {
+      __pendingAnalyzeUrl = url;
+      var m = document.getElementById('analyzeConfirmModal');
+      if (m) m.style.display = 'flex';
+    }
+    function closeAnalyzeConfirm() {
+      var m = document.getElementById('analyzeConfirmModal');
+      if (m) m.style.display = 'none';
+      __pendingAnalyzeUrl = null;
+    }
+    function confirmAnalyze() {
+      var url = __pendingAnalyzeUrl;
+      closeAnalyzeConfirm();
+      if (!url) return;
+      _runAnalyze(url);
+    }
+
+    // ── Moment preview modal ─────────────────────────────────────────
+    // Opens a YouTube embed scoped to a single moment's [start, end]
+    // window. We use the privacy-enhanced /embed/ URL with start= and
+    // end= query params so YouTube itself bounds playback to the moment.
+    // The 16:9 frame guarantees no awkward cropping.
+    function openMomentPreview(videoId, startSec, endSec, timeRange, title) {
+      var modal = document.getElementById('momentPreviewModal');
+      var iframe = document.getElementById('momentPreviewIframe');
+      var titleEl = document.getElementById('momentPreviewTitle');
+      var rangeEl = document.getElementById('momentPreviewRange');
+      if (!modal || !iframe) return;
+      var s = Math.max(0, Math.floor(Number(startSec) || 0));
+      var e = Math.max(s + 1, Math.floor(Number(endSec) || (s + 30)));
+      var src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoId)
+        + '?start=' + s
+        + '&end=' + e
+        + '&autoplay=1'
+        + '&rel=0'
+        + '&modestbranding=1'
+        + '&playsinline=1';
+      iframe.src = src;
+      if (titleEl) titleEl.textContent = title || 'Moment preview';
+      if (rangeEl) rangeEl.textContent = timeRange ? ('Playing ' + timeRange) : '';
+      modal.style.display = 'flex';
+    }
+    function closeMomentPreview() {
+      var modal = document.getElementById('momentPreviewModal');
+      var iframe = document.getElementById('momentPreviewIframe');
+      if (iframe) iframe.src = ''; // stop playback immediately
+      if (modal) modal.style.display = 'none';
+    }
+
     function closePublishModal() {
       document.getElementById('publishModal').style.display = 'none';
     }
@@ -7723,28 +7831,33 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Build clickable thumbnail preview — each moment gets a different frame
-          // (YouTube's 1/2/3.jpg are taken at ~25/50/75% of the video, cycled by index for variety).
-          // Clicking the thumbnail triggers a clip download instead of redirecting to YouTube.
-          const _frameIdx = (idx % 3) + 1; // 1, 2, or 3
+          // Clickable thumbnail preview — opens a modal that plays the
+          // moment between its start and end timestamps. We use YouTube's
+          // 16:9-native mqdefault.jpg (same source the landing-page
+          // analysis cards use) so the frame doesn't get awkwardly cropped,
+          // and constrain the container to aspect-ratio:16/9 to match.
+          const _safeRange = (moment.timeRange || '').replace(/'/g, "\\'");
+          const _safeTitle = (moment.title || 'Moment').replace(/'/g, "\\'");
           const videoEmbed = videoId ? \`
-            <button type="button" id="thumb-btn-\${idx}" onclick="downloadClip('\${id}', \${idx}, this)" title="Click to download this clip"
-              style="display:block; position:relative; text-decoration:none; height:120px; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
-              <img src="https://img.youtube.com/vi/\${videoId}/\${_frameIdx}.jpg" alt="Clip thumbnail"
-                onerror="this.onerror=null;this.src='https://img.youtube.com/vi/\${videoId}/mqdefault.jpg';"
-                style="width:100%; height:120px; object-fit:cover; display:block;" loading="lazy" />
+            <button type="button" id="thumb-btn-\${idx}" onclick="openMomentPreview('\${videoId}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}')" title="Click to preview this moment"
+              style="display:block; position:relative; text-decoration:none; aspect-ratio:16/9; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
+              <img src="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg" alt="Clip thumbnail"
+                onerror="this.onerror=null;this.src='https://img.youtube.com/vi/\${videoId}/hqdefault.jpg';"
+                style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy" />
+              <div style="position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 50%,rgba(0,0,0,0.55) 100%); pointer-events:none;"></div>
               <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                width:44px; height:44px; background:rgba(108,58,237,0.85); border-radius:50%;
-                display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px; font-weight:600;">
-                ⬇
+                width:54px; height:54px; background:rgba(108,58,237,0.92); border-radius:50%;
+                display:flex; align-items:center; justify-content:center; color:#fff;
+                box-shadow:0 6px 18px rgba(0,0,0,0.45);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
               </div>
-              <div style="position:absolute; bottom:6px; left:6px; background:rgba(0,0,0,0.8);
-                padding:2px 6px; border-radius:4px; color:#fff; font-size:11px;">
+              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78);
+                padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em;">
                 \${moment.timeRange}
               </div>
-              <div style="position:absolute; top:6px; right:6px; background:rgba(0,0,0,0.7);
-                padding:2px 7px; border-radius:4px; color:#fff; font-size:10px; font-weight:600;">
-                Click to download
+              <div style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65);
+                padding:3px 8px; border-radius:6px; color:#fff; font-size:10px; font-weight:600;">
+                Click to preview
               </div>
             </button>
           \` : '';
