@@ -1612,6 +1612,21 @@ Ensure all times are accurate to the transcript. Focus on moments that are 30-12
       });
 
       res.end();
+
+      // ──────────────────────────────────────────────────────────────────
+      // Phase: pre-warm the source-video cache so the FIRST per-moment
+      // preview is instant. Fire-and-forget — runs after the response
+      // ends so the user never waits on it. getOrDownloadVideo() uses a
+      // lockfile + on-disk cache keyed by videoId, so if the user opens
+      // a moment before this finishes, the moment-preview endpoint
+      // simply joins the in-flight download instead of starting a
+      // second one.
+      // ──────────────────────────────────────────────────────────────────
+      setImmediate(() => {
+        getOrDownloadVideo(videoId, canonicalUrl, 'yt-dlp', () => {})
+          .then(p => console.log(`[shorts/analyze] source pre-cached for ${videoId} -> ${p}`))
+          .catch(e => console.log(`[shorts/analyze] source pre-cache skipped for ${videoId}: ${(e && e.message || e).toString().slice(0, 200)}`));
+      });
     } catch (streamError) {
       console.error('Error during analysis stream:', streamError);
       sendUpdate({ status: 'error', message: streamError.message || 'Analysis failed unexpectedly.' });
