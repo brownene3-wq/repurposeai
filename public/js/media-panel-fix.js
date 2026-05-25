@@ -867,6 +867,19 @@
     p.then(function(dataURL){ if (dataURL) applyClipBg(clip, dataURL); });
   }
 
+  // Task #132 — Discrete bar waveform in brand colors. Replaces the
+  // earlier continuous-line peak waveform (green-on-green) with a
+  // sound-bar pattern: 2px wide bars, 2px gaps, vertically centered,
+  // bar height = the peak amplitude inside the bar's sample bucket.
+  // Background uses a soft brand-purple tint that reads cleanly in
+  // both light and dark modes; bars use the editor's accent purple
+  // (#a78bfa). Canvas height matches the post-Task #131 clip height
+  // so no vertical stretch distorts the bars at render time.
+  var WAVE_H        = 46;   // matches .mt-clip height
+  var WAVE_BAR_W    = 2;
+  var WAVE_BAR_GAP  = 2;
+  var WAVE_BG       = 'rgba(108, 58, 237, 0.10)';   // brand-purple at 10%
+  var WAVE_BAR_FILL = '#a78bfa';                    // editor accent
   function renderWaveformOnClip(clip){
     var url   = clip.dataset.mediaUrl;
     var width = Math.round(parseFloat(clip.style.width) || 100);
@@ -879,35 +892,46 @@
     var p = decodeAudioBuffer(url).then(function(buffer){
       if (!buffer) return null;
       var ch = buffer.getChannelData(0);
-      var samplesPerBucket = Math.max(1, Math.floor(ch.length / width));
       var canvas = document.createElement('canvas');
       canvas.width  = width;
-      canvas.height = THUMB_H;
+      canvas.height = WAVE_H;
       var ctx = canvas.getContext('2d');
-      // Translucent gradient background
-      var grad = ctx.createLinearGradient(0, 0, 0, THUMB_H);
-      grad.addColorStop(0, 'rgba(5,150,105,0.95)');
-      grad.addColorStop(1, 'rgba(16,185,129,0.85)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, width, THUMB_H);
-      // Peaks
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      var mid = THUMB_H / 2;
-      for (var x = 0; x < width; x++){
-        var start = x * samplesPerBucket;
-        var end   = Math.min(ch.length, start + samplesPerBucket);
+
+      // 1) Background — soft brand-purple tint that lets the clip's
+      //    own gradient show through softly.
+      ctx.fillStyle = WAVE_BG;
+      ctx.fillRect(0, 0, width, WAVE_H);
+
+      // 2) Discrete bars. Step = bar + gap. Each bar's height comes
+      //    from the peak amplitude inside its sample bucket.
+      var step = WAVE_BAR_W + WAVE_BAR_GAP;
+      var barCount = Math.max(1, Math.floor(width / step));
+      var samplesPerBar = Math.max(1, Math.floor(ch.length / barCount));
+      var mid = WAVE_H / 2;
+      var maxBarH = WAVE_H - 6;            // 3px padding top + bottom
+      var minBarH = 2;                     // visible dot for silent gaps
+      ctx.fillStyle = WAVE_BAR_FILL;
+
+      var hasRoundRect = (typeof ctx.roundRect === 'function');
+      for (var b = 0; b < barCount; b++){
+        var start = b * samplesPerBar;
+        var end   = Math.min(ch.length, start + samplesPerBar);
         var peak = 0;
         for (var i = start; i < end; i++){
           var v = Math.abs(ch[i]);
           if (v > peak) peak = v;
         }
-        var h = Math.round(peak * (THUMB_H - 4));
-        ctx.moveTo(x + 0.5, mid - h / 2);
-        ctx.lineTo(x + 0.5, mid + h / 2);
+        var h = Math.max(minBarH, Math.round(peak * maxBarH));
+        var x = b * step + 1;              // 1px left margin per step
+        var y = Math.round(mid - h / 2);
+        if (hasRoundRect){
+          ctx.beginPath();
+          ctx.roundRect(x, y, WAVE_BAR_W, h, 1);
+          ctx.fill();
+        } else {
+          ctx.fillRect(x, y, WAVE_BAR_W, h);
+        }
       }
-      ctx.stroke();
       return canvas.toDataURL('image/png');
     }).catch(function(err){
       console.warn('[waveform] decode failed for', url, err);
