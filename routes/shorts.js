@@ -6278,7 +6278,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       </div>
 
       <!-- Premium Tools Grid -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:24px;">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:24px;">
         <div onclick="toggleToolPanel('quickNarratePanel', this)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#00b894';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(0,184,148,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
           <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/section-icons/A-10.png" alt="Quick Narrate" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Quick Narrate</div>
