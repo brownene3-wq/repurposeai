@@ -11780,6 +11780,64 @@ router.post('/ai-enhance', requireAuth, async (req, res) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
+// Task #133 — POST /video-editor/extract-audio
+// Detach a V1 video clip's audio into a standalone mp3 the editor can
+// drop onto A1. Extracts the ENTIRE source's audio (not just the
+// visible clip window) so the resulting A1 clip can be trimmed freely
+// just like a fresh upload. ffmpeg with -vn -acodec libmp3lame is fast
+// and produces a clean stereo VBR ~192kbps file.
+//
+// Body:    { mediaUrl }
+// Returns: { success, mediaUrl, filename, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/extract-audio', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+
+    var outName = 'extracted_' + Date.now() + '_' + req.user.id + '.mp3';
+    var outPath = path.join(uploadDir, outName);
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vn',                       // drop video
+        '-c:a', 'libmp3lame',
+        '-q:a', '2',                 // VBR ~190 kbps
+        '-ac', '2',                  // stereo
+        '-ar', '44100',              // 44.1 kHz
+        '-y', outPath
+      ]);
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0 && fs.existsSync(outPath)) resolve();
+        else reject(new Error('FFmpeg failed: ' + err.slice(-300)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Probe duration so the client knows the extracted asset's true
+    // length. getVideoMetadata works on audio-only too via ffprobe.
+    var meta = await getVideoMetadata(outPath).catch(function(){ return { duration: 0 }; });
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: meta.duration || 0
+    });
+  } catch (err){
+    console.error('[extract-audio]', err);
+    res.status(500).json({ error: err.message || 'Extract audio failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
 // Task #38 + #39 — POST /video-editor/smart-cut
 // Analyzes a media file and returns a list of time ranges to cut or
 // split. Three modes:

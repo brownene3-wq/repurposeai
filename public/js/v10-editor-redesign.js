@@ -1281,6 +1281,16 @@
         rpBtn('\u23ea','Reverse','Reverse')+
         rpBtn('\u2744\ufe0f','Freeze','Freeze')+
         rpBtn('\ud83c\udfaf','Keyframe','Keyframe')+
+      '</div>'+
+      // Task #133 — Extract Audio. Detaches the V1 clip's embedded
+      // audio: server extracts the audio stream, returns a new mp3 the
+      // editor drops onto A1 at the same timeline position. The V1
+      // clip is muted so the two don't double-play. The new A1 clip
+      // inherits standard interactive handlers (drag, trim, cut,
+      // volume) like any uploaded audio asset.
+      '<div class="v10-rp-section-title">AUDIO</div>'+
+      '<div class="v10-rp-grid">'+
+        rpBtn('\ud83c\udfb5','Extract Audio','ExtractAudio')+
       '</div>';
 
     // Wire all clip-action buttons FIRST so wireRPToast doesn't overwrite

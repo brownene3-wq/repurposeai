@@ -4968,6 +4968,105 @@
     try { syncPreviewToPlayhead(); } catch(_){}
     return usedFace ? 'face-centered crop set' : 'center crop set (FaceDetector unavailable)';
   }
+  // Task #133 — Extract Audio. Detaches the active V1 clip's embedded
+  // audio: server extracts a fresh mp3 from the source, the editor
+  // drops a new A1 clip at the same timeline position with matching
+  // width / sourceOffset / duration / trim, and the V1 clip is muted
+  // so the two don't double-play. The new A1 clip is interactive
+  // (drag / trim / cut / volume) via the same makeClipInteractive +
+  // attachFilmstripOrWaveform pipeline uploaded audio uses.
+  async function clipActionExtractAudio(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (clip.dataset.clipType !== 'vid'){
+      showToast('Extract Audio is for V1 video clips');
+      return;
+    }
+    var mediaUrl = clip.dataset.mediaUrl || '';
+    if (!mediaUrl){ showToast('Clip has no media URL'); return; }
+
+    showToast('Extracting audio…');
+    try {
+      // Blob URLs need to be promoted server-side first — same pattern
+      // every other clip-action that hits the backend uses.
+      if (typeof window.ensureClipHasServerUrl === 'function'){
+        clip = await window.ensureClipHasServerUrl(clip);
+        if (!clip || !clip.dataset.mediaUrl){
+          throw new Error('Clip source not available — try re-adding it');
+        }
+        mediaUrl = clip.dataset.mediaUrl;
+      }
+
+      var r = await fetch('/video-editor/extract-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: mediaUrl })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Extract failed');
+
+      // 1) Mute the V1 clip so we don't double-play. dataset.muted is
+      //    the flag the live <video>-element audio hook and the export
+      //    amix both read.
+      clip.dataset.muted = 'true';
+
+      // 2) Build a new A1 clip at the SAME timeline-x and width as the
+      //    V1 source. sourceOffset + duration + trim copy across so
+      //    playback stays in sync. Mirrors addClipToTimeline's audio
+      //    branch without its track-end positioning.
+      var a1 = document.querySelector('.mt-track-audio');
+      if (!a1){ throw new Error('A1 track not found'); }
+
+      var leftPx  = parseFloat(clip.style.left)  || 0;
+      var widthPx = parseFloat(clip.style.width) || 0;
+      var dur     = parseFloat(clip.dataset.duration) || (widthPx / TIMELINE_PX_PER_SEC);
+      var srcOff  = parseFloat(clip.dataset.sourceOffset) || 0;
+      var trimIn  = parseFloat(clip.dataset.trimIn);
+      var trimOut = parseFloat(clip.dataset.trimOut);
+
+      var audClip = document.createElement('div');
+      audClip.className = 'mt-clip mt-clip-audio';
+      audClip.dataset.fileName = '🎵 ' + (clip.dataset.fileName || 'audio');
+      audClip.dataset.clipType = 'aud';
+      audClip.dataset.mediaUrl = d.mediaUrl;
+      audClip.dataset.serverFilename = d.filename;
+      audClip.dataset.duration     = String(dur);
+      audClip.dataset.sourceOffset = String(srcOff);
+      if (isFinite(trimIn))  audClip.dataset.trimIn  = String(trimIn);
+      if (isFinite(trimOut)) audClip.dataset.trimOut = String(trimOut);
+      // Bump addedAt so this lands on top in overlap layering.
+      audClip.dataset.addedAt = String(Date.now() * 1000 + (addClipToTimeline._seq = ((addClipToTimeline._seq || 0) + 1)));
+      audClip.style.zIndex = String(100 + (addClipToTimeline._seq % 1000));
+      audClip.style.left = leftPx + 'px';
+      audClip.style.width = widthPx + 'px';
+      audClip.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+      audClip.style.color = '#fff';
+      audClip.style.padding = '4px 8px';
+      audClip.style.fontSize = '10px';
+      audClip.style.overflow = 'hidden';
+      audClip.style.textOverflow = 'ellipsis';
+      audClip.style.whiteSpace = 'nowrap';
+      audClip.style.userSelect = 'none';
+      audClip.textContent = audClip.dataset.fileName;
+      a1.appendChild(audClip);
+
+      // 3) Standard interactive wiring — drag / trim handles / razor-
+      //    split / delete / volume — same path uploaded audio uses.
+      try { makeClipInteractive(audClip); } catch(_){}
+      // 4) Bar waveform render (Task #132 styling).
+      try { attachFilmstripOrWaveform(audClip); } catch(_){}
+
+      updateTimelineInfo();
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast('Audio extracted to A1 · V1 muted');
+    } catch (err){
+      showToast('Extract failed: ' + String(err.message || err).slice(0, 120));
+    }
+  }
+  try { window.clipActionExtractAudio = clipActionExtractAudio; } catch(_){}
+
   // Task #55 — Freeze Frame (spec): capture a PNG of the frame at the
   // current playhead, split the active V1 clip at that timestamp, shift
   // the second half + all subsequent V1 clips right by freezeDur (3s),
