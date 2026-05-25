@@ -80,13 +80,18 @@
     '/* v10 hide native filmstrip-wrap (mini-timeline) — consolidated into multi-track */',
     '.filmstrip-wrap{display:none!important}',
     '/* v10 enhanced multi-track timeline */',
-    '.mt-track-video,.mt-track-audio{height:52px!important;min-height:52px!important}',
-    '.mt-track-video .mt-clip,.mt-track-audio .mt-clip{height:100%!important}',
+    /* Task #131 — Base .mt-track is now 52px universally (set in
+       routes/video-editor.js), so the V1+A1 height-override below
+       is redundant. The clip 100% rule stays so V1+A1 filmstrips
+       fill the row edge-to-edge; T1+FX clips keep the standard
+       46px inset for clear vertical rhythm. */
+    '.mt-track-video .mt-clip,.mt-track-audio .mt-clip{top:0!important;height:100%!important}',
     '.mt-tracks-area{cursor:pointer}',
     '/* v10 track-label alignment \u2014 match label height to track height */',
     '.mt-label-video,.mt-label-audio{height:52px!important;min-height:52px!important;display:flex!important;align-items:center!important}',
-    /* Task #130 — .mt-label-music removed; only T1 + FX labels need this rule now. */
-    '.mt-label-text,.mt-label-fx{height:36px!important;min-height:36px!important;display:flex!important;align-items:center!important}',
+    /* Task #131 — Label height override removed. Base .mt-label is
+       now 52px universally so T1+FX labels match V1+A1 without
+       needing an !important rule here. */
     '/* v10 timeline overlays */',
     '.v10-filmstrip{position:absolute;inset:0;border-radius:6px;overflow:hidden;display:flex;gap:0;background:#16112a;z-index:2;pointer-events:none}',
     '.v10-frame{flex:1;min-width:0;position:relative;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat;margin-right:-1px}',

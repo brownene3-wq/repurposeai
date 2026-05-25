@@ -867,7 +867,10 @@ async function renderEditor(req, res) {
     .mt-info{font-size:10px;color:#4a3d6a;font-weight:500}
     .mt-timeline-body{display:flex;flex:1;overflow:hidden;min-height:0}
     .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px;overflow-y:hidden}
-    .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04);position:relative;flex-shrink:0}
+    /* Task #131 — Standardized row height: every track (V1/A1/T1/FX)
+       renders at 52px so the timeline reads as a single visually
+       coherent stack. Labels match. */
+    .mt-label{height:52px;min-height:52px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04);position:relative;flex-shrink:0}
     /* Always-visible delete button on user-added audio tracks. Red bullet in
        the top-right of the label. Turns solid red on hover for affordance. */
     .mt-label .mt-label-del{display:block;position:absolute;top:2px;right:2px;width:14px;height:14px;font-size:10px;font-weight:700;line-height:13px;text-align:center;border-radius:50%;background:rgba(239,68,68,.25);color:#fca5a5;cursor:pointer;border:1px solid rgba(239,68,68,.5);z-index:2;user-select:none}
@@ -885,14 +888,21 @@ async function renderEditor(req, res) {
     .mt-tracks-area{flex:1 1 auto;min-width:0;width:100%;overflow-x:auto;overflow-y:auto;position:relative;background:#0a0612}
     .mt-time-ruler{display:flex;align-items:center;height:22px;width:100%;min-width:100%;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18;position:sticky;top:0;z-index:5}
     .mt-time-ruler span{flex:1;font-size:9px;color:#3d3358;font-variant-numeric:tabular-nums}
-    .mt-track{height:36px;width:100%;min-width:100%;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
+    /* Task #131 — Track rows all share the same 52px height to match
+       V1's existing footprint. min-height locks against children
+       (filmstrips, waveforms) trying to grow the row past spec. */
+    .mt-track{height:52px;min-height:52px;width:100%;min-width:100%;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
     .mt-track:hover{background:rgba(108,58,237,.03)}
     .mt-track-video{background:rgba(124,58,237,.03)}
     .mt-track-audio{background:rgba(56,189,248,.03)}
     /* Task #130 — .mt-track-music removed with the M1 track row. */
     .mt-track-text{background:rgba(250,204,21,.02)}
     .mt-track-fx{background:rgba(52,211,153,.02)}
-    .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab}
+    /* Task #131 — Clip footprint expanded to fill the standardized
+       52px track minus 3px top/bottom inset. V1/A1 still get the
+       100%-height override below (v10-editor-redesign) but T1/FX now
+       sit centered with the same vertical rhythm. */
+    .mt-clip{position:absolute;top:3px;height:46px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab}
     /* Trim handles — 8px grip zones anchored to each clip edge. Become
        visible on hover so they don't clutter the timeline at rest. */
     .mt-clip-trim{position:absolute;top:0;width:8px;height:100%;cursor:ew-resize;z-index:2;opacity:0;transition:opacity .15s;background:rgba(255,255,255,.35);pointer-events:auto}
