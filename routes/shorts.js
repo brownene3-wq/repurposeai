@@ -7780,7 +7780,73 @@ ${paginationHtml}
     //     (the browser is actively fetching)
     // Once a canplay / canplaythrough / playing event lands and
     // readyState >= 3, we reveal the player and re-enable controls.
-    function _updateMomentLoader(vid, eventName) {
+    // Phase: escalating status. The first preview for a brand-new
+    // analysis can take 30-60+ seconds because the server has to
+    // yt-dlp the source video and run ffmpeg. Show the user the
+    // estimated wait so they don't think the page is frozen.
+    function _scheduleLoaderEscalation(shell) {
+      if (!shell || shell.dataset.escScheduled) return;
+      shell.dataset.escScheduled = '1';
+      shell.dataset.escStartedAt = String(Date.now());
+      var textEl = shell.querySelector('.moment-preview-loader-text');
+      if (!textEl) return;
+      var stages = [
+        { at: 4000,  msg: 'Buffering…' },
+        { at: 12000, msg: 'Trimming clip on the server…' },
+        { at: 30000, msg: 'Still working — first preview can take up to 60s' },
+        { at: 60000, msg: 'Almost there… you can refresh if this hangs' }
+      ];
+      stages.forEach(function(stage) {
+        setTimeout(function() {
+          // Only update if loader is still visible (not flipped to ready).
+          var loader = shell.querySelector('.moment-preview-loader');
+          if (!loader || loader.style.display === 'none') return;
+          textEl.textContent = stage.msg;
+        }, stage.at);
+      });
+    }
+
+    // Called by the <video>'s onerror. Surfaces a Retry option in the
+    // fallback so transient yt-dlp / ffmpeg failures (the most common
+    // cause of preview hangs) don't require a full page refresh.
+    function _onMomentPreviewError(vid) {
+      var shell = vid && vid.closest && vid.closest('.moment-preview-shell');
+      if (!shell) return;
+      // Stash the original src so Retry can re-point at it with a cache
+      // buster.
+      if (!vid.dataset.origSrc) vid.dataset.origSrc = vid.getAttribute('src') || '';
+      vid.style.display = 'none';
+      var loader = shell.querySelector('.moment-preview-loader');
+      if (loader) loader.style.display = 'none';
+      var fb = shell.querySelector('.moment-preview-fallback');
+      if (fb) fb.style.display = 'flex';
+    }
+
+    // Triggered by the Retry button in the fallback overlay.
+    function _retryMomentPreview(btn) {
+      var shell = btn && btn.closest && btn.closest('.moment-preview-shell');
+      if (!shell) return;
+      var vid = shell.querySelector('video');
+      var fb  = shell.querySelector('.moment-preview-fallback');
+      var loader = shell.querySelector('.moment-preview-loader');
+      var textEl = loader && loader.querySelector('.moment-preview-loader-text');
+      if (!vid) return;
+      if (fb) fb.style.display = 'none';
+      if (loader) loader.style.display = 'flex';
+      if (textEl) textEl.textContent = 'Retrying…';
+      // Reset escalation so it kicks in again on the new attempt.
+      delete shell.dataset.escScheduled;
+      // Re-point the source with a cache buster to force the browser
+      // to re-request (skips any negatively cached error response).
+      var orig = vid.dataset.origSrc || vid.getAttribute('src') || '';
+      var sep = orig.indexOf('?') >= 0 ? '&' : '?';
+      vid.style.display = 'block';
+      vid.setAttribute('src', orig.replace(/[?&]_retry=\d+/, '') + sep + '_retry=' + Date.now());
+      try { vid.load(); } catch (_) {}
+      _scheduleLoaderEscalation(shell);
+    }
+
+        function _updateMomentLoader(vid, eventName) {
       var shell = vid && vid.closest && vid.closest('.moment-preview-shell');
       if (!shell) return;
       var loader = shell.querySelector('.moment-preview-loader');
@@ -7816,6 +7882,9 @@ ${paginationHtml}
       if (!vid) return;
       var obs = _getMomentPreviewObserver();
       if (obs) obs.observe(vid);
+      // Kick off the escalation ticker the first time a preview registers.
+      var shell = vid.closest && vid.closest('.moment-preview-shell');
+      if (shell) _scheduleLoaderEscalation(shell);
       // Wire native playback + loading events. dataset.ppWired guards
       // against double-binding if onloadeddata fires multiple times.
       if (!vid.dataset.ppWired) {
@@ -8134,19 +8203,20 @@ ${paginationHtml}
                 style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
                 onloadstart="registerMomentPreview(this)"
                 onloadeddata="registerMomentPreview(this)"
-                onerror="this.style.display='none'; var f=this.parentElement.querySelector('.moment-preview-fallback'); if(f) f.style.display='flex';"></video>
-              <!-- Loading overlay — visible while the <video> is buffering
-                   or while the server is still trimming the source MP4.
+                onerror="_onMomentPreviewError(this)"></video>
+              <!-- Loading overlay — status text escalates the longer
+                   generation takes so users know it isn't frozen.
                    _updateMomentLoader() toggles display based on the
                    video's readyState and the latest network event. -->
               <div class="moment-preview-loader" aria-hidden="true">
                 <div class="moment-preview-spinner"></div>
-                <div>Loading</div>
+                <div class="moment-preview-loader-text">Loading</div>
               </div>
               <div class="moment-preview-fallback" aria-hidden="true"
-                style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:6px; padding:14px; text-align:center; color:#aaa; font-size:11px; line-height:1.4; background:linear-gradient(180deg,#1a1430,#0a0612);">
+                style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:14px; text-align:center; color:#cfc6e6; font-size:11px; line-height:1.4; background:linear-gradient(180deg,#1a1430,#0a0612);">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <div>Preview unavailable</div>
+                <div class="moment-preview-fallback-text" style="color:#aaa;">Preview unavailable</div>
+                <button type="button" class="moment-preview-retry" onclick="_retryMomentPreview(this)" style="margin-top:4px;background:rgba(108,58,237,0.18);border:1px solid rgba(108,58,237,0.40);color:#c4b5fd;padding:5px 12px;border-radius:999px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.04em;text-transform:uppercase;">Retry</button>
               </div>
               <!-- Center play/pause toggle. Icons live as sibling SVGs;
                    _syncMomentPlayPauseIcon shows whichever matches the
