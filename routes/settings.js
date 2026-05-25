@@ -555,7 +555,7 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
             </div>
 
-            <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem"><img src="/images/section-icons/A-85.png" alt="" style="height:16px;width:16px;vertical-align:middle;border-radius:3px;margin-right:4px"> Your API keys are encrypted and stored securely. They are never shared with third parties.</p>
+            <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem"><img src="/images/section-icons/A-105.png" alt="" style="height:16px;width:16px;vertical-align:middle;border-radius:3px;margin-right:4px"> Your API keys are encrypted and stored securely. They are never shared with third parties.</p>
           </div>
 
       </div>
