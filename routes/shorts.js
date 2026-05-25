@@ -2529,7 +2529,10 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
       return res.status(400).end();
     }
-    const duration = Math.max(1, endSec - startSec);
+    // Use the full duration between the moment's start and end
+    // timestamps. The endSec > startSec check above already guarantees
+    // this is > 0, so no minimum floor is needed.
+    const duration = endSec - startSec;
 
     // Extract YouTube videoId from the analysis URL.
     const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
@@ -6388,6 +6391,17 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
     body.light #publishModal > div{scrollbar-color:rgba(0,0,0,0.15) transparent}
     body.light #publishModal > div::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
     body.light #publishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.25)}
+    /* Moment preview loading state — covers the 9:16 shell while the
+       <video> element is buffering or while the server is still
+       running ffmpeg to trim the source on first request. Drops away
+       once the video's readyState reaches HAVE_FUTURE_DATA (3). */
+    .moment-preview-loader{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(10,6,18,0.88);color:#cfc6e6;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;z-index:6;backdrop-filter:blur(2px);}
+    .moment-preview-spinner{width:34px;height:34px;border:3px solid rgba(255,255,255,0.12);border-top-color:#a78bfa;border-radius:50%;animation:momentPreviewSpin 0.9s linear infinite;}
+    @keyframes momentPreviewSpin{to{transform:rotate(360deg);}}
+    /* Controls disabled while loading — visually muted, click-through
+       suppressed. Re-enabled when _updateMomentLoader clears the
+       disabled state. */
+    .moment-preview-shell .moment-control-disabled{opacity:0.35;pointer-events:none;}
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
@@ -7758,23 +7772,77 @@ ${paginationHtml}
       // content, but keep it interactive.
       btn.style.opacity = playing ? '0.55' : '1';
     }
+    // Show/hide the .moment-preview-loader overlay based on the
+    // <video>'s readyState and the latest fired event. We treat the
+    // video as "loading" when:
+    //   • readyState < HAVE_FUTURE_DATA (3) — not enough buffered yet
+    //   • OR the last network event was loadstart / waiting / stalled
+    //     (the browser is actively fetching)
+    // Once a canplay / canplaythrough / playing event lands and
+    // readyState >= 3, we reveal the player and re-enable controls.
+    function _updateMomentLoader(vid, eventName) {
+      var shell = vid && vid.closest && vid.closest('.moment-preview-shell');
+      if (!shell) return;
+      var loader = shell.querySelector('.moment-preview-loader');
+      // Buffering events override readyState (they fire while the
+      // browser is actively fetching more frames mid-playback).
+      var bufferingEvent = eventName === 'waiting' || eventName === 'stalled' || eventName === 'loadstart';
+      var readyEvent = eventName === 'canplay' || eventName === 'canplaythrough' || eventName === 'playing' || eventName === 'loadeddata';
+      var loading;
+      if (bufferingEvent) {
+        loading = true;
+      } else if (readyEvent) {
+        loading = vid.readyState < 3;
+      } else {
+        loading = vid.readyState < 3;
+      }
+      if (loader) loader.style.display = loading ? 'flex' : 'none';
+      // Disable controls while loading — visually muted + click-through
+      // suppressed via the .moment-control-disabled class.
+      var ppBtn = shell.querySelector('.moment-pp-btn');
+      var muteBtn = shell.querySelector('.moment-mute-btn');
+      [ppBtn, muteBtn].forEach(function(b) {
+        if (!b) return;
+        if (loading) {
+          b.classList.add('moment-control-disabled');
+          b.setAttribute('aria-disabled', 'true');
+        } else {
+          b.classList.remove('moment-control-disabled');
+          b.removeAttribute('aria-disabled');
+        }
+      });
+    }
     function registerMomentPreview(vid) {
       if (!vid) return;
       var obs = _getMomentPreviewObserver();
       if (obs) obs.observe(vid);
-      // Keep the center button's icon in lockstep with native playback
-      // events. The handlers are idempotent so re-registering on
-      // onloadeddata across reloads is harmless.
+      // Wire native playback + loading events. dataset.ppWired guards
+      // against double-binding if onloadeddata fires multiple times.
       if (!vid.dataset.ppWired) {
         vid.dataset.ppWired = '1';
-        vid.addEventListener('play', function() { _syncMomentPlayPauseIcon(vid); });
+        // Play/pause icon sync.
+        vid.addEventListener('play', function() { _syncMomentPlayPauseIcon(vid); _updateMomentLoader(vid, 'playing'); });
         vid.addEventListener('pause', function() { _syncMomentPlayPauseIcon(vid); });
         vid.addEventListener('ended', function() { _syncMomentPlayPauseIcon(vid); });
+        // Loading state events. Order chosen so we go LOAD → READY:
+        //   loadstart → metadata → loadeddata → canplay → canplaythrough → playing
+        // and re-show on waiting / stalled.
+        vid.addEventListener('loadstart',    function() { _updateMomentLoader(vid, 'loadstart'); });
+        vid.addEventListener('loadedmetadata', function() { _updateMomentLoader(vid, 'loadedmetadata'); });
+        vid.addEventListener('loadeddata',   function() { _updateMomentLoader(vid, 'loadeddata'); });
+        vid.addEventListener('canplay',      function() { _updateMomentLoader(vid, 'canplay'); });
+        vid.addEventListener('canplaythrough', function() { _updateMomentLoader(vid, 'canplaythrough'); });
+        vid.addEventListener('waiting',      function() { _updateMomentLoader(vid, 'waiting'); });
+        vid.addEventListener('stalled',      function() { _updateMomentLoader(vid, 'stalled'); });
       }
       _syncMomentPlayPauseIcon(vid);
+      _updateMomentLoader(vid, null);
     }
     function togglePlayPause(btn) {
       if (!btn) return;
+      // Bail out if the button is currently disabled by the loading
+      // state — clicks during buffering would race the video element.
+      if (btn.classList.contains('moment-control-disabled')) return;
       var shell = btn.closest('.moment-preview-shell');
       if (!shell) return;
       var vid = shell.querySelector('video');
@@ -7796,6 +7864,7 @@ ${paginationHtml}
     }
     function toggleMomentMute(btn) {
       if (!btn) return;
+      if (btn.classList.contains('moment-control-disabled')) return;
       var shell = btn.closest('.moment-preview-shell');
       if (!shell) return;
       var vid = shell.querySelector('video');
@@ -8061,10 +8130,19 @@ ${paginationHtml}
               <video
                 src="/shorts/moment-preview/\${id}/\${idx}"
                 poster="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg"
-                autoplay muted playsinline preload="metadata"
+                autoplay muted playsinline preload="auto"
                 style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
+                onloadstart="registerMomentPreview(this)"
                 onloadeddata="registerMomentPreview(this)"
                 onerror="this.style.display='none'; var f=this.parentElement.querySelector('.moment-preview-fallback'); if(f) f.style.display='flex';"></video>
+              <!-- Loading overlay — visible while the <video> is buffering
+                   or while the server is still trimming the source MP4.
+                   _updateMomentLoader() toggles display based on the
+                   video's readyState and the latest network event. -->
+              <div class="moment-preview-loader" aria-hidden="true">
+                <div class="moment-preview-spinner"></div>
+                <div>Loading</div>
+              </div>
               <div class="moment-preview-fallback" aria-hidden="true"
                 style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:6px; padding:14px; text-align:center; color:#aaa; font-size:11px; line-height:1.4; background:linear-gradient(180deg,#1a1430,#0a0612);">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -8090,7 +8168,7 @@ ${paginationHtml}
               <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78); padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em; z-index:2;">
                 \${moment.timeRange}
               </div>
-              <button type="button" onclick="toggleMomentMute(this)" title="Unmute preview" aria-label="Unmute preview"
+              <button type="button" class="moment-mute-btn" onclick="toggleMomentMute(this)" title="Unmute preview" aria-label="Unmute preview"
                 style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.18); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:3;">
                 <svg class="mute-on" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
