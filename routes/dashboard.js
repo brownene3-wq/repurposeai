@@ -396,7 +396,7 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">Calendar</span>
           </a>
           <a href="/dashboard/analytics" class="tool-card">
-            <span class="tool-icon"><img src="/images/section-icons/A-114.png" alt="Analytics"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-50.png" alt="Analytics"></span>
             <span class="tool-label">Analytics</span>
           </a>
         </div>

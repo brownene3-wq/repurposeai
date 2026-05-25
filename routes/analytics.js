@@ -367,7 +367,7 @@ router.get('/', requireAuth, async (req, res) => {
     ${getThemeToggle()}
     <div class="main">
       <div class="page-header">
-        <h1><img src="/images/section-icons/A-114.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Analytics</h1>
+        <h1><img src="/images/section-icons/A-50.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Analytics</h1>
         <p style="color:#888;margin:0 0 8px">Performance metrics and usage insights across your entire workspace.</p>
       </div>
 
@@ -410,13 +410,13 @@ router.get('/', requireAuth, async (req, res) => {
 
         <!-- Content by Platform -->
         <div class="section">
-          <h2><span class="icon"><img src="/images/section-icons/A-114.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Content by Platform</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-50.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Content by Platform</h2>
           ${noPlatformData ? '<div class="empty-state"><p>No platform data yet. Generate content to see your distribution.</p></div>' : platformBarsHtml}
         </div>
 
         <!-- Credit Usage -->
         <div class="section">
-          <h2><span class="icon"><img src="/images/section-icons/A-114.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Credit Usage This Month</h2>
+          <h2><span class="icon"><img src="/images/section-icons/A-50.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Credit Usage This Month</h2>
           ${creditKeys.length === 0 ? '<div class="empty-state"><p>No credits used this month. AI features will show usage here.</p></div>' : creditBarsHtml}
         </div>
 
