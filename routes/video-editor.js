@@ -543,7 +543,7 @@ async function renderEditor(req, res) {
     body.light .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.45),rgba(250,204,21,.28));border-color:rgba(202,138,4,.55);color:#1a1a2e}
     body.light .mt-clip-video{background:transparent;color:#fff}
     body.light .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.55),rgba(56,189,248,.35));border-color:rgba(56,189,248,.6);color:#0a0a0a}
-    body.light .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.55),rgba(244,114,182,.35));border-color:rgba(244,114,182,.6);color:#fff}
+    /* Task #130 — light-mode .mt-clip-music dropped. */
     body.light .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.55),rgba(52,211,153,.35));border-color:rgba(52,211,153,.6);color:#0a0a0a}
     body.light .mt-playhead{background:#7c3aed;box-shadow:0 0 4px rgba(124,58,237,.55)}
 
@@ -874,7 +874,7 @@ async function renderEditor(req, res) {
     .mt-label .mt-label-del:hover{background:#ef4444;color:#fff;border-color:#ef4444}
     .mt-label-video{color:#a78bfa}
     .mt-label-audio{color:#38bdf8}
-    .mt-label-music{color:#f472b6}
+    /* Task #130 — .mt-label-music removed with the M1 track row. */
     .mt-label-text{color:#facc15}
     .mt-label-fx{color:#34d399}
     /* Task #88 — Tracks area must consume 100% of the remaining width
@@ -889,7 +889,7 @@ async function renderEditor(req, res) {
     .mt-track:hover{background:rgba(108,58,237,.03)}
     .mt-track-video{background:rgba(124,58,237,.03)}
     .mt-track-audio{background:rgba(56,189,248,.03)}
-    .mt-track-music{background:rgba(244,114,182,.02)}
+    /* Task #130 — .mt-track-music removed with the M1 track row. */
     .mt-track-text{background:rgba(250,204,21,.02)}
     .mt-track-fx{background:rgba(52,211,153,.02)}
     .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab}
@@ -934,7 +934,7 @@ async function renderEditor(req, res) {
     body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}
     /* Razor tool: clicking a clip splits it at the click point */
     body[data-timeline-tool="razor"] .mt-clip{cursor:col-resize}
-    .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:none}
+    /* Task #130 — .mt-clip-music removed; motion clips now ride on FX. */
     .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:none}
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:none}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1583,7 +1583,7 @@ async function renderEditor(req, res) {
                   <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
                 </div>
                 <div class="mt-toolbar-right">
-                  <span class="mt-info">5 tracks &bull; 0:00</span>
+                  <span class="mt-info">4 tracks &bull; 0:00</span>
                   <span class="mt-toolbar-sep"></span>
                   <!-- Task #79 — Timeline zoom slider. Drives setTimelineZoom();
                        buttons step ×0.8 / ×1.25, slider sets px-per-second
@@ -1600,7 +1600,6 @@ async function renderEditor(req, res) {
                 <div class="mt-labels">
                   <div class="mt-label mt-label-video">V1</div>
                   <div class="mt-label mt-label-audio">A1</div>
-                  <div class="mt-label mt-label-music">M1</div>
                   <div class="mt-label mt-label-text">T1</div>
                   <div class="mt-label mt-label-fx">FX</div>
                 </div>
@@ -1612,7 +1611,6 @@ async function renderEditor(req, res) {
                   </div>
                   <div class="mt-track mt-track-audio" data-type="audio">
                   </div>
-                  <div class="mt-track mt-track-music" data-type="music"></div>
                   <div class="mt-track mt-track-text" data-type="text"></div>
                   <div class="mt-track mt-track-fx" data-type="fx"></div>
                   <div class="mt-playhead" id="mtPlayhead" style="left:0px"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>

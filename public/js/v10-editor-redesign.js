@@ -85,7 +85,8 @@
     '.mt-tracks-area{cursor:pointer}',
     '/* v10 track-label alignment \u2014 match label height to track height */',
     '.mt-label-video,.mt-label-audio{height:52px!important;min-height:52px!important;display:flex!important;align-items:center!important}',
-    '.mt-label-music,.mt-label-text,.mt-label-fx{height:36px!important;min-height:36px!important;display:flex!important;align-items:center!important}',
+    /* Task #130 — .mt-label-music removed; only T1 + FX labels need this rule now. */
+    '.mt-label-text,.mt-label-fx{height:36px!important;min-height:36px!important;display:flex!important;align-items:center!important}',
     '/* v10 timeline overlays */',
     '.v10-filmstrip{position:absolute;inset:0;border-radius:6px;overflow:hidden;display:flex;gap:0;background:#16112a;z-index:2;pointer-events:none}',
     '.v10-frame{flex:1;min-width:0;position:relative;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat;margin-right:-1px}',
@@ -2664,10 +2665,11 @@
   function updateSidebarEmptyGate(){
     var sidebar = document.querySelector('.editor-sidebar');
     if (!sidebar) return;
+    // Task #130 — .mt-track-music dropped from the selector along with
+    // the M1 row removal. Motion clip indicators now ride on .mt-track-fx.
     var hasAnyClip = !!document.querySelector(
       '.mt-track-video .mt-clip, .mt-track-audio .mt-clip, ' +
-      '.mt-track-music .mt-clip, .mt-track-text .mt-clip, ' +
-      '.mt-track-fx .mt-clip'
+      '.mt-track-text .mt-clip, .mt-track-fx .mt-clip'
     );
     var SKIP_IDS = { 'exportButton': 1, 'vePublishBtn': 1, 'saveAsDraftBtn': 1, 'tourHelpBtn': 1, 'projectAspectBadge': 1 };
     var btns = sidebar.querySelectorAll('.v10-rp-btn, .v10-fx-btn, .tb3');

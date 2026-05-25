@@ -3331,11 +3331,13 @@
   }
   try { window.addTextClipToTimeline = addTextClipToTimeline; } catch(_){}
 
-  // ── Motion effects on M1 ──
+  // ── Motion effects on FX ──
   // A "motion effect" is a time-varying transform applied to whatever V1
   // visual is at the playhead: zoom, pan, fade, rotate, shake, etc. Each
-  // motion effect lives as its own clip on the .mt-track-music row (M1)
-  // so the user can place / drag / delete them like any other clip.
+  // motion effect lives as its own clip on the FX track (formerly the
+  // M1 row, removed in Task #130). The export pipeline still picks them
+  // out by clipType === 'motion', so cohabiting with the FX-effect
+  // indicators doesn't affect rendering.
   var MOTION_EFFECTS = {
     'zoom-in':    { label: 'Zoom In',    icon: '\ud83d\udd0d' },
     'zoom-out':   { label: 'Zoom Out',   icon: '\ud83d\udd0e' },
@@ -3351,13 +3353,17 @@
     opts = opts || {};
     var effect = MOTION_EFFECTS[effectKey];
     if (!effect){ showToast('Unknown motion effect'); return null; }
-    var track = document.querySelector('.mt-track-music');
-    if (!track){ showToast('Motion track not found'); return null; }
+    var track = document.querySelector('.mt-track-fx');
+    if (!track){ showToast('FX track not found'); return null; }
     var dur = parseFloat(opts.duration) || 3;
     if (dur < 0.5) dur = 0.5;
     var width = Math.max(40, dur * TIMELINE_PX_PER_SEC);
     var leftPos = findRightmostClipEnd(track);
     var clip = document.createElement('div');
+    // Task #130 — Motion clips ride on FX track now. Keep mt-clip-motion
+    // for any styling specific to motion + the dataset.clipType the
+    // export pipeline reads. Pink gradient distinguishes them from the
+    // FX-effect indicators (green) that share the track.
     clip.className = 'mt-clip mt-clip-motion';
     clip.textContent = effect.icon + ' ' + effect.label;
     clip.dataset.fileName     = effect.label;
@@ -5695,11 +5701,12 @@
     ctx.translate(-cx, -cy);
   }
 
-  // Find motion clips on M1 whose timeline range contains playhead x,
-  // and return {clip, progress 0..1 across clip} for each.
+  // Task #130 — Motion clips moved from the (removed) M1 row to the
+  // FX track. Filter by clipType so we only pick up motion indicators
+  // here, not the FX-effect indicators that share the same track.
   function getActiveMotionEffectsAtPlayheadX(phX){
     var out = [];
-    document.querySelectorAll('.mt-track-music .mt-clip').forEach(function(c){
+    document.querySelectorAll('.mt-clip').forEach(function(c){
       if (c.dataset.clipType !== 'motion') return;
       var l = parseFloat(c.style.left)  || 0;
       var w = parseFloat(c.style.width) || 0;
