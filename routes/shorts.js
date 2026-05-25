@@ -7697,14 +7697,19 @@ ${paginationHtml}
 
     // ── Native 9:16 moment preview ───────────────────────────────────
     // Each moment card embeds a <video src="/shorts/moment-preview/.../...">
-    // that autoplays muted in a loop. The server side trims to the
-    // exact start/end window and center-crops to 9:16, so the only
-    // browser-side responsibilities are:
-    //   1) Lazy-pause when the video scrolls out of viewport (saves CPU
-    //      when 8 moments are on screen simultaneously).
-    //   2) A small mute toggle so the user can unmute the one preview
-    //      they care about. We auto-mute any others to keep the audio
-    //      experience sane.
+    // trimmed server-side to the moment's start/end window. Behavior:
+    //   • Autoplays once when it scrolls into view (no infinite loop).
+    //   • IntersectionObserver pauses it when it leaves the viewport
+    //     and resumes it when it comes back — UNLESS the video has
+    //     ended or the user explicitly paused it via the toggle, in
+    //     which case we leave it alone and let the user click play.
+    //   • Center play/pause button toggles the playback state; its
+    //     icon swaps between ▶ and ‖ in response to actual play/pause/
+    //     ended events on the <video>, not based on what the button
+    //     "thinks" the state is. That way external state changes
+    //     (autoplay, IntersectionObserver, end-of-clip) stay in sync.
+    //   • Top-right mute toggle still exists; unmuting one preview
+    //     auto-mutes the others.
     function _getMomentPreviewObserver() {
       if (window.__momentPreviewObserver) return window.__momentPreviewObserver;
       if (!('IntersectionObserver' in window)) return null;
@@ -7713,8 +7718,12 @@ ${paginationHtml}
           var vid = entry.target;
           if (!(vid instanceof HTMLVideoElement)) return;
           if (entry.isIntersecting) {
-            // play() returns a Promise that rejects if autoplay is blocked.
-            // Swallow — the poster image is a fine fallback.
+            // Don't auto-resume if the user has paused, or if the clip
+            // has already played to completion — that would be a
+            // surprise replay every scroll-pass and effectively turn
+            // the preview back into a loop.
+            if (vid.dataset.userPaused === '1') return;
+            if (vid.ended) return;
             var p = vid.play();
             if (p && typeof p.catch === 'function') p.catch(function(){});
           } else {
@@ -7724,9 +7733,56 @@ ${paginationHtml}
       }, { threshold: 0.2 });
       return window.__momentPreviewObserver;
     }
+    function _syncMomentPlayPauseIcon(vid) {
+      var shell = vid && vid.closest && vid.closest('.moment-preview-shell');
+      if (!shell) return;
+      var btn = shell.querySelector('.moment-pp-btn');
+      if (!btn) return;
+      var playing = !vid.paused && !vid.ended;
+      var playIcon = btn.querySelector('.pp-play');
+      var pauseIcon = btn.querySelector('.pp-pause');
+      if (playIcon) playIcon.style.display = playing ? 'none' : '';
+      if (pauseIcon) pauseIcon.style.display = playing ? '' : 'none';
+      btn.setAttribute('aria-label', playing ? 'Pause preview' : 'Play preview');
+      // Fade the overlay while playing so it doesn't compete with the
+      // content, but keep it interactive.
+      btn.style.opacity = playing ? '0.55' : '1';
+    }
     function registerMomentPreview(vid) {
+      if (!vid) return;
       var obs = _getMomentPreviewObserver();
-      if (obs && vid) obs.observe(vid);
+      if (obs) obs.observe(vid);
+      // Keep the center button's icon in lockstep with native playback
+      // events. The handlers are idempotent so re-registering on
+      // onloadeddata across reloads is harmless.
+      if (!vid.dataset.ppWired) {
+        vid.dataset.ppWired = '1';
+        vid.addEventListener('play', function() { _syncMomentPlayPauseIcon(vid); });
+        vid.addEventListener('pause', function() { _syncMomentPlayPauseIcon(vid); });
+        vid.addEventListener('ended', function() { _syncMomentPlayPauseIcon(vid); });
+      }
+      _syncMomentPlayPauseIcon(vid);
+    }
+    function togglePlayPause(btn) {
+      if (!btn) return;
+      var shell = btn.closest('.moment-preview-shell');
+      if (!shell) return;
+      var vid = shell.querySelector('video');
+      if (!vid) return;
+      if (vid.paused || vid.ended) {
+        // If the clip already ended, rewind to the start so the click
+        // does the obvious thing — replay from the beginning rather
+        // than staying frozen on the last frame.
+        if (vid.ended) {
+          try { vid.currentTime = 0; } catch (_) {}
+        }
+        delete vid.dataset.userPaused;
+        var p = vid.play();
+        if (p && typeof p.catch === 'function') p.catch(function(){});
+      } else {
+        vid.dataset.userPaused = '1';
+        vid.pause();
+      }
     }
     function toggleMomentMute(btn) {
       if (!btn) return;
@@ -7974,25 +8030,28 @@ ${paginationHtml}
 
           // Native 9:16 vertical preview. The server returns an MP4 that
           // is already trimmed to the moment's [start, end] window and
-          // center-cropped to 9:16, so the browser just autoplays it in
-          // a loop. The container is locked to aspect-ratio:9/16 with a
-          // capped width so the moment card stays a sensible height even
-          // when 8 cards stack.
-          //   - <video> autoplay+muted+playsinline+loop so it kicks off
-          //     as soon as the moment renders.
+          // center-cropped to 9:16, so the browser just plays it once
+          // (no infinite loop). The container is locked to aspect-ratio
+          // 9:16 with a capped width so the moment card stays a sensible
+          // height even when 8 cards stack.
+          //   - <video> autoplay+muted+playsinline so it kicks off when
+          //     scrolled into view, but no loop attribute — plays once
+          //     then stops on the last frame until the user clicks play.
           //   - poster falls back to YouTube's mqdefault frame while the
           //     trimmed MP4 is still being generated server-side.
-          //   - registerMomentPreview() wires IntersectionObserver so the
-          //     video pauses when it scrolls out of view.
-          //   - mute toggle in the top-right; bottom-left badge keeps
-          //     showing the original timeRange.
+          //   - registerMomentPreview() wires IntersectionObserver +
+          //     listens for native play / pause / ended events so the
+          //     center play/pause button icon stays in sync.
+          //   - Center button: togglePlayPause swaps between ▶ and ‖.
+          //   - Top-right mute toggle stays; bottom-left timeRange badge
+          //     stays.
           const videoEmbed = videoId ? \`
             <div class="moment-preview-shell" id="moment-preview-\${idx}"
               style="position:relative; width:100%; max-width:220px; aspect-ratio:9/16; margin:0 auto 14px; background:#0a0612; border:1px solid rgba(108,58,237,0.20); border-radius:14px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,0.35);">
               <video
                 src="/shorts/moment-preview/\${id}/\${idx}"
                 poster="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg"
-                autoplay loop muted playsinline preload="metadata"
+                autoplay muted playsinline preload="metadata"
                 style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
                 onloadeddata="registerMomentPreview(this)"
                 onerror="this.style.display='none'; var f=this.parentElement.querySelector('.moment-preview-fallback'); if(f) f.style.display='flex';"></video>
@@ -8001,6 +8060,23 @@ ${paginationHtml}
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <div>Preview unavailable</div>
               </div>
+              <!-- Center play/pause toggle. Icons live as sibling SVGs;
+                   _syncMomentPlayPauseIcon shows whichever matches the
+                   <video>'s current state. -->
+              <button type="button" class="moment-pp-btn" onclick="togglePlayPause(this)" title="Play / pause preview" aria-label="Play preview"
+                style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:54px; height:54px; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:4; transition:opacity .2s, background .15s;"
+                onmouseenter="this.style.background='rgba(108,58,237,0.85)'; this.style.opacity='1';"
+                onmouseleave="this.style.background='rgba(0,0,0,0.55)';">
+                <!-- Play triangle (shown when paused / ended). -->
+                <svg class="pp-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+                <!-- Pause bars (shown while playing). -->
+                <svg class="pp-pause" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
+                  <rect x="6" y="5" width="4" height="14" rx="1"/>
+                  <rect x="14" y="5" width="4" height="14" rx="1"/>
+                </svg>
+              </button>
               <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78); padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em; z-index:2;">
                 \${moment.timeRange}
               </div>
