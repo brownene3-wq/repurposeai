@@ -334,7 +334,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== EXPORT DEFAULTS SECTION ===== -->
         <div class="settings-section" id="section-export">
           <div class="settings-card">
-            <h2><span class="icon"><img src="/images/section-icons/A-33.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Default Export Settings</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-109.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Default Export Settings</h2>
             <p class="desc">Set default preferences for exporting videos</p>
 
             <div class="select-group">
