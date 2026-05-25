@@ -267,7 +267,7 @@ router.get('/', requireAuth, async (req, res) => {
       ${req.query.restricted === '1' ? '<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:1rem 1.5rem;margin-bottom:1.5rem;color:#EF4444;font-size:.9rem;">You don\'t have permission to access that page. Contact your team admin to request access.</div>' : ''}
 
       <div class="page-header">
-        <h1><img src="/images/section-icons/A-75.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Content Studio</h1>
+        <h1><img src="/images/section-icons/A-21.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Content Studio</h1>
         <p>Transform your content into viral posts for every platform</p>
       </div>
 
