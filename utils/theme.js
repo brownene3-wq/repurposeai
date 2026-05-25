@@ -219,7 +219,7 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
     { href: '/brand-templates', icon: '<img src="/images/section-icons/A-118.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
     { href: '/dashboard/calendar', icon: '<img src="/images/section-icons/A-8.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
-    { href: '/dashboard/analytics', icon: '<img src="/images/section-icons/A-114.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
+    { href: '/dashboard/analytics', icon: '<img src="/images/section-icons/A-50.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
     // --- Account ---
   ];
 
