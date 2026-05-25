@@ -341,7 +341,7 @@ router.get('/', requireAuth, async (req, res) => {
         <h3><img src="/images/section-icons/A-21.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:6px"> AI Tools</h3>
         <div class="tools-grid">
           <a href="/repurpose" class="tool-card">
-            <span class="tool-icon"><img src="/images/section-icons/A-2.png" alt="Create"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-101.png" alt="Create"></span>
             <span class="tool-label">Create</span>
           </a>
           <a href="/shorts" class="tool-card">
@@ -370,7 +370,7 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">AI Reframe</span>
           </a>
           <a href="/ai-thumbnail" class="tool-card">
-            <span class="tool-icon"><img src="/images/section-icons/A-9.png" alt="AI Thumbnails"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-103.png" alt="AI Thumbnails"></span>
             <span class="tool-label">AI Thumbnails</span>
           </a>
           <a href="/ai-broll" class="tool-card">
