@@ -6285,7 +6285,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Add AI voiceover to any video</div>
         </div>
         <div onclick="toggleToolPanel('workflowPanel', this); toggleWorkflows(true)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#f39c12';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(243,156,18,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
-          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/section-icons/A-45.png" alt="Workflow Templates" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
+          <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/section-icons/A-11.png" alt="Workflow Templates" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Workflow Templates</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Pre-built automation flows</div>
         </div>
