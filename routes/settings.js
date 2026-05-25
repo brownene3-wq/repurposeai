@@ -505,7 +505,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="settings-card">
-            <h2><span class="icon">&#x1F4E6;</span> Your Data</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-106.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Your Data</h2>
             <p class="desc">Export or manage your account data</p>
             <div style="display:flex;gap:1rem;flex-wrap:wrap">
               <button class="btn-outline" onclick="exportData()">Export My Data</button>
@@ -513,7 +513,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="settings-card danger-zone">
-            <h2><span class="icon">&#x26A0;</span> Danger Zone</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-87.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Danger Zone</h2>
             <p class="desc">Irreversible actions — proceed with caution</p>
             <button class="btn-danger" onclick="confirmDeleteAccount()">Delete My Account</button>
           </div>
