@@ -2457,6 +2457,147 @@ function formatTimestampCompat(totalSeconds) {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
 }
 
+// In-flight lock map so concurrent requests for the same preview
+// don't double-spawn ffmpeg. Key: output path on disk. Value: Promise
+// that resolves once the writer finishes.
+const previewGenerationLocks = new Map();
+
+// GET /moment-preview/:analysisId/:momentIdx
+// Returns a 9:16 vertical, center-cropped, trimmed-to-timeRange MP4 for
+// a single moment so the analysis card can autoplay it in a <video> tag.
+// Lazily ffmpegs the first request and caches the output in CLIPS_DIR
+// as _preview_<id>_m<idx>.mp4 (small file, ~1-3MB at 360x640@CRF 28).
+router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) return res.status(503).end();
+
+    const analysisId = req.params.analysisId;
+    const momentIdx = parseInt(req.params.momentIdx, 10);
+    if (!Number.isFinite(momentIdx) || momentIdx < 0) return res.status(400).end();
+
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
+
+    let moments = analysis.moments || [];
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIdx];
+    if (!moment || !moment.timeRange) return res.status(404).end();
+
+    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}.mp4`);
+
+    // Helper to stream the cached file with proper headers.
+    const sendCached = () => {
+      res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+      res.setHeader('Content-Type', 'video/mp4');
+      return res.sendFile(outPath);
+    };
+
+    // Cache hit — serve immediately.
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 1024) {
+      return sendCached();
+    }
+
+    // Wait on any in-flight generation for the same file before kicking
+    // off a new ffmpeg. Two simultaneous requests for the same preview
+    // (page refresh, hot reload) would otherwise race for the same path.
+    if (previewGenerationLocks.has(outPath)) {
+      try { await previewGenerationLocks.get(outPath); } catch (_) { /* swallow — handled below */ }
+      if (fs.existsSync(outPath) && fs.statSync(outPath).size > 1024) {
+        return sendCached();
+      }
+    }
+
+    // Parse the moment time range. parseTimeRange handles MM:SS-MM:SS.
+    let startSec, endSec;
+    try {
+      const r = parseTimeRange(moment.timeRange);
+      startSec = r.start;
+      endSec = r.end;
+    } catch (e) { return res.status(400).end(); }
+    if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
+      return res.status(400).end();
+    }
+    const duration = Math.max(1, endSec - startSec);
+
+    // Extract YouTube videoId from the analysis URL.
+    const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+    const vidMatch = (analysis.video_url || '').match(ytRegex);
+    if (!vidMatch) return res.status(400).end();
+    const videoId = vidMatch[1];
+    const videoUrl = analysis.video_url;
+
+    // Register lock so concurrent requests block instead of racing.
+    let lockResolve, lockReject;
+    const lockPromise = new Promise((resolve, reject) => {
+      lockResolve = resolve;
+      lockReject = reject;
+    });
+    previewGenerationLocks.set(outPath, lockPromise);
+
+    try {
+      // Reuse the cached source video if available; download otherwise.
+      const ytdlpPath = 'yt-dlp';
+      const sourceVideoPath = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, () => {});
+
+      // ffmpeg pipeline:
+      //   -ss before -i = fast seek (keyframe-accurate enough for a preview)
+      //   -t duration   = trim to the moment's window
+      //   crop=ih*9/16:ih  = center crop the source into a 9:16 column
+      //   scale=360:640    = downscale for fast playback / small file size
+      //   libx264 veryfast crf 28 + faststart for browser streaming
+      //   aac 64k stereo audio so the user can unmute meaningfully
+      const ffArgs = [
+        '-y',
+        '-ss', String(startSec),
+        '-t', String(duration),
+        '-i', sourceVideoPath,
+        '-vf', 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=360:640:flags=lanczos',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '64k', '-ac', '2', '-ar', '44100',
+        '-movflags', '+faststart',
+        outPath
+      ];
+
+      await new Promise((resolve, reject) => {
+        const proc = spawn(ffmpegPath, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderr = '';
+        let settled = false;
+        const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+        proc.stderr.on('data', d => { stderr += d.toString(); });
+        proc.on('error', e => settle(reject, e));
+        proc.on('close', code => code === 0
+          ? settle(resolve)
+          : settle(reject, new Error(`ffmpeg preview exit ${code}: ${stderr.slice(-300)}`)));
+        const timer = setTimeout(() => {
+          try { proc.kill('SIGKILL'); } catch (_) {}
+          settle(reject, new Error('ffmpeg preview timeout (90s)'));
+        }, 90000);
+      });
+
+      lockResolve();
+    } catch (genErr) {
+      lockReject(genErr);
+      previewGenerationLocks.delete(outPath);
+      // Clean up any half-written file so the next request retries.
+      try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
+      console.error('  Moment preview generation failed:', genErr && genErr.message);
+      return res.status(500).json({ error: 'preview generation failed', detail: String(genErr && genErr.message || '').slice(0, 300) });
+    }
+    previewGenerationLocks.delete(outPath);
+
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 1024) {
+      return res.status(500).end();
+    }
+    return sendCached();
+  } catch (err) {
+    console.error('Moment preview error:', err);
+    return res.status(500).end();
+  }
+});
+
 // GET /analysis/:id - Get analysis data (used by client-side export)
 router.get('/analysis/:id', requireAuth, async (req, res) => {
   try {
@@ -7554,48 +7695,62 @@ ${paginationHtml}
       _runAnalyze(url);
     }
 
-    // ── Inline moment playback ───────────────────────────────────────
-    // Clicking a moment thumbnail swaps the thumbnail's contents IN PLACE
-    // for a YouTube iframe scoped to [startSec, endSec]. The iframe lives
-    // inside the same <button> wrapper that hosted the thumbnail, so the
-    // 16:9 frame and card layout don't shift. A small × button in the
-    // top-right tears it back down and restores the original thumbnail
-    // markup, which we stash on the button via dataset.originalHtml.
-    function playMomentInline(btn) {
-      if (!btn || btn.dataset.playing === '1') return;
-      var videoId = btn.dataset.videoId || '';
-      if (!videoId) return;
-      if (!btn.dataset.originalHtml) {
-        btn.dataset.originalHtml = btn.innerHTML;
-      }
-      var s = Math.max(0, Math.floor(Number(btn.dataset.start) || 0));
-      var e = Math.max(s + 1, Math.floor(Number(btn.dataset.end) || (s + 30)));
-      var src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoId)
-        + '?start=' + s
-        + '&end=' + e
-        + '&autoplay=1'
-        + '&rel=0'
-        + '&modestbranding=1'
-        + '&playsinline=1';
-      // Iframe fills the existing aspect-ratio:16/9 container; close
-      // button overlays the top-right.
-      btn.innerHTML =
-        '<iframe src="' + src + '" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen ' +
-          'style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;"></iframe>' +
-        '<button type="button" onclick="event.stopPropagation(); event.preventDefault(); stopMomentInline(this.parentElement);" ' +
-          'title="Close preview" aria-label="Close preview" ' +
-          'style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.78);border:1px solid rgba(255,255,255,0.2);color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:5;">&times;</button>';
-      btn.dataset.playing = '1';
-      btn.style.cursor = 'default';
+    // ── Native 9:16 moment preview ───────────────────────────────────
+    // Each moment card embeds a <video src="/shorts/moment-preview/.../...">
+    // that autoplays muted in a loop. The server side trims to the
+    // exact start/end window and center-crops to 9:16, so the only
+    // browser-side responsibilities are:
+    //   1) Lazy-pause when the video scrolls out of viewport (saves CPU
+    //      when 8 moments are on screen simultaneously).
+    //   2) A small mute toggle so the user can unmute the one preview
+    //      they care about. We auto-mute any others to keep the audio
+    //      experience sane.
+    function _getMomentPreviewObserver() {
+      if (window.__momentPreviewObserver) return window.__momentPreviewObserver;
+      if (!('IntersectionObserver' in window)) return null;
+      window.__momentPreviewObserver = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          var vid = entry.target;
+          if (!(vid instanceof HTMLVideoElement)) return;
+          if (entry.isIntersecting) {
+            // play() returns a Promise that rejects if autoplay is blocked.
+            // Swallow — the poster image is a fine fallback.
+            var p = vid.play();
+            if (p && typeof p.catch === 'function') p.catch(function(){});
+          } else {
+            try { vid.pause(); } catch (_) {}
+          }
+        });
+      }, { threshold: 0.2 });
+      return window.__momentPreviewObserver;
     }
-    function stopMomentInline(btn) {
+    function registerMomentPreview(vid) {
+      var obs = _getMomentPreviewObserver();
+      if (obs && vid) obs.observe(vid);
+    }
+    function toggleMomentMute(btn) {
       if (!btn) return;
-      if (btn.dataset.originalHtml) {
-        btn.innerHTML = btn.dataset.originalHtml;
-        delete btn.dataset.originalHtml;
+      var shell = btn.closest('.moment-preview-shell');
+      if (!shell) return;
+      var vid = shell.querySelector('video');
+      if (!vid) return;
+      var willUnmute = !!vid.muted;
+      // If the user is unmuting THIS preview, mute every other one so
+      // they don't compete. Honors basic audio etiquette across the
+      // moments grid.
+      if (willUnmute) {
+        document.querySelectorAll('.moment-preview-shell video').forEach(function(other) {
+          if (other !== vid) other.muted = true;
+        });
       }
-      delete btn.dataset.playing;
-      btn.style.cursor = 'pointer';
+      vid.muted = !vid.muted;
+      var mutedIcon = btn.querySelector('.mute-on');
+      var unmutedIcon = btn.querySelector('.mute-off');
+      if (mutedIcon && unmutedIcon) {
+        mutedIcon.style.display = vid.muted ? '' : 'none';
+        unmutedIcon.style.display = vid.muted ? 'none' : '';
+      }
+      btn.setAttribute('aria-label', vid.muted ? 'Unmute preview' : 'Mute preview');
     }
 
     function closePublishModal() {
@@ -7817,36 +7972,48 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Clickable thumbnail preview — clicking the play button swaps
-          // the thumbnail's contents in place with a YouTube iframe bounded
-          // to [startSec, endSec]. No popup modal: the iframe takes over
-          // the same 16:9 slot inside the moment card. The playback
-          // bounds ride on data-* attributes so playMomentInline() can
-          // read them without depending on inline-stringified arguments.
+          // Native 9:16 vertical preview. The server returns an MP4 that
+          // is already trimmed to the moment's [start, end] window and
+          // center-cropped to 9:16, so the browser just autoplays it in
+          // a loop. The container is locked to aspect-ratio:9/16 with a
+          // capped width so the moment card stays a sensible height even
+          // when 8 cards stack.
+          //   - <video> autoplay+muted+playsinline+loop so it kicks off
+          //     as soon as the moment renders.
+          //   - poster falls back to YouTube's mqdefault frame while the
+          //     trimmed MP4 is still being generated server-side.
+          //   - registerMomentPreview() wires IntersectionObserver so the
+          //     video pauses when it scrolls out of view.
+          //   - mute toggle in the top-right; bottom-left badge keeps
+          //     showing the original timeRange.
           const videoEmbed = videoId ? \`
-            <button type="button" id="thumb-btn-\${idx}"
-              data-video-id="\${videoId}" data-start="\${startSec}" data-end="\${endSec}"
-              onclick="playMomentInline(this)" title="Click to play this moment"
-              style="display:block; position:relative; text-decoration:none; aspect-ratio:16/9; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
-              <img src="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg" alt="Clip thumbnail"
-                onerror="this.onerror=null;this.src='https://img.youtube.com/vi/\${videoId}/hqdefault.jpg';"
-                style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy" />
-              <div style="position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 50%,rgba(0,0,0,0.55) 100%); pointer-events:none;"></div>
-              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                width:54px; height:54px; background:rgba(108,58,237,0.92); border-radius:50%;
-                display:flex; align-items:center; justify-content:center; color:#fff;
-                box-shadow:0 6px 18px rgba(0,0,0,0.45);">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            <div class="moment-preview-shell" id="moment-preview-\${idx}"
+              style="position:relative; width:100%; max-width:220px; aspect-ratio:9/16; margin:0 auto 14px; background:#0a0612; border:1px solid rgba(108,58,237,0.20); border-radius:14px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,0.35);">
+              <video
+                src="/shorts/moment-preview/\${id}/\${idx}"
+                poster="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg"
+                autoplay loop muted playsinline preload="metadata"
+                style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
+                onloadeddata="registerMomentPreview(this)"
+                onerror="this.style.display='none'; var f=this.parentElement.querySelector('.moment-preview-fallback'); if(f) f.style.display='flex';"></video>
+              <div class="moment-preview-fallback" aria-hidden="true"
+                style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:6px; padding:14px; text-align:center; color:#aaa; font-size:11px; line-height:1.4; background:linear-gradient(180deg,#1a1430,#0a0612);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div>Preview unavailable</div>
               </div>
-              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78);
-                padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em;">
+              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78); padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em; z-index:2;">
                 \${moment.timeRange}
               </div>
-              <div style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65);
-                padding:3px 8px; border-radius:6px; color:#fff; font-size:10px; font-weight:600;">
-                Click to play
-              </div>
-            </button>
+              <button type="button" onclick="toggleMomentMute(this)" title="Unmute preview" aria-label="Unmute preview"
+                style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.18); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:3;">
+                <svg class="mute-on" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                </svg>
+                <svg class="mute-off" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+              </button>
+            </div>
           \` : '';
 
           var viralColor = moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b';
