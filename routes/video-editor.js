@@ -7863,15 +7863,22 @@ router.post('/export', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    // Resolution mapping
+    // Resolution mapping. Task #129 — keys are case-insensitive so
+    // '4K' from the dropdown maps correctly (was '4k' only, which made
+    // a 4K request silently fall through to the 1280×720 default).
     const resolutionMap = {
       '1080p': '1920x1080',
-      '720p': '1280x720',
-      '4k': '3840x2160',
-      '480p': '854x480'
+      '720p':  '1280x720',
+      '4k':    '3840x2160',
+      '4K':    '3840x2160',
+      '480p':  '854x480'
     };
 
-    const resolutionValue = resolutionMap[resolution] || '1280x720';
+    const resolutionKey = String(resolution || '').toLowerCase();
+    const normalizedKey = resolutionKey === '4k' ? '4k' : resolutionKey;
+    const resolutionValue = resolutionMap[resolution]
+                         || resolutionMap[normalizedKey]
+                         || '1280x720';
     const [width, height] = resolutionValue.split('x').map(Number);
 
     // Normalize brightness/contrast/saturation for ffmpeg eq filter

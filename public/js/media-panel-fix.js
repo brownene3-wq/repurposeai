@@ -807,22 +807,38 @@
           var onSeeked = function(){
             vid.removeEventListener('seeked', onSeeked);
             try {
-              // Preserve aspect: fit video frame into THUMB_W x THUMB_H
+              // Task #129 — Letterbox/pillarbox instead of crop. Earlier
+              // logic center-cropped the source frame to fill the slot,
+              // which clipped both edges of a landscape clip. Now we
+              // fit the WHOLE frame inside the slot and pad with black
+              // bars so the full picture is visible on the timeline.
               var srcAR = vw / vh;
               var dstAR = THUMB_W / THUMB_H;
-              var sx, sy, sw, sh;
+              var dx = slotIdx * THUMB_W;
+              var dy = 0;
+              // Black backdrop fills the slot so the letterbox/pillarbox
+              // area reads as bars, not as transparency showing the V1
+              // gradient through.
+              ctx.fillStyle = '#000';
+              ctx.fillRect(dx, 0, THUMB_W, THUMB_H);
+              var dW, dH;
               if (srcAR > dstAR){
-                sh = vh;
-                sw = Math.round(sh * dstAR);
-                sx = Math.round((vw - sw) / 2);
-                sy = 0;
+                // Source is wider than the slot → fit to slot width,
+                // letterbox top + bottom.
+                dW = THUMB_W;
+                dH = Math.round(THUMB_W / srcAR);
+                ctx.drawImage(vid, 0, 0, vw, vh,
+                              dx, Math.round((THUMB_H - dH) / 2),
+                              dW, dH);
               } else {
-                sw = vw;
-                sh = Math.round(sw / dstAR);
-                sx = 0;
-                sy = Math.round((vh - sh) / 2);
+                // Source is taller than the slot → fit to slot height,
+                // pillarbox left + right.
+                dH = THUMB_H;
+                dW = Math.round(THUMB_H * srcAR);
+                ctx.drawImage(vid, 0, 0, vw, vh,
+                              dx + Math.round((THUMB_W - dW) / 2), 0,
+                              dW, dH);
               }
-              ctx.drawImage(vid, sx, sy, sw, sh, slotIdx * THUMB_W, 0, THUMB_W, THUMB_H);
             } catch(_){}
             slotIdx++;
             drawNext();
@@ -2065,6 +2081,26 @@
   }
   function tlTogglePlay(){ if (_transport.playing) tlPause(); else tlPlay(); }
 
+  // Task #129 — Go-to-start / Go-to-end transport helpers. Both pause
+  // playback first (so the audio mixer stops cleanly), then set the
+  // playhead to the appropriate edge and refresh the preview.
+  function tlGoToStart(){
+    tlPause();
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = '0px';
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+  function tlGoToEnd(){
+    tlPause();
+    var endSec = getTimelineEndSec();
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = (endSec * TIMELINE_PX_PER_SEC) + 'px';
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+  try { window.tlGoToStart = tlGoToStart; window.tlGoToEnd = tlGoToEnd; } catch(_){}
+
   function transportTickAndRender(phSec){
     var ph = document.getElementById('mtPlayhead');
     if (ph) ph.style.left = (phSec * TIMELINE_PX_PER_SEC) + 'px';
@@ -2154,25 +2190,73 @@
     _transport.raf = requestAnimationFrame(tlTransportRAF);
   }
 
+  // Task #129 \u2014 Build a dedicated transport strip that sits at the top
+  // of the timeline container (above the Razor/Select toolbar) instead
+  // of overlaying the video preview. Three buttons: Go to start, Play /
+  // Pause, Go to end. The Play button keeps id #tlTransportBtn so all
+  // existing callers (spacebar shortcut, draft restore, etc.) still
+  // find it by id.
   function ensureTransportBtn(){
     var existing = document.getElementById('tlTransportBtn');
     if (existing instanceof HTMLButtonElement && existing.isConnected) return existing;
-    var player = document.getElementById('videoPlayer') || document.querySelector('video');
-    if (!(player instanceof Element)) return null;
-    var container = player.parentElement;
-    if (!(container instanceof Element)) return null;
-    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
-    var btn = (existing instanceof HTMLButtonElement) ? existing : document.createElement('button');
-    btn.id = 'tlTransportBtn';
-    btn.type = 'button';
-    btn.title = 'Play / pause the timeline (Space)';
-    btn.textContent = '\u25B6 Play';
-    btn.style.cssText = 'position:absolute;top:10px;right:74px;z-index:8;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(34,197,94,.55);border-radius:6px;cursor:pointer;backdrop-filter:blur(4px)';
+
+    // Strip lives above .mt-toolbar inside #timelineContainer.
+    var timelineWrap = document.getElementById('timelineContainer');
+    if (!(timelineWrap instanceof Element)) return null;
+    var toolbar = timelineWrap.querySelector('.mt-toolbar');
+    if (!(toolbar instanceof Element)) return null;
+
+    var strip = document.getElementById('pgmTransportStrip');
+    if (!(strip instanceof Element) || !strip.isConnected){
+      strip = document.createElement('div');
+      strip.id = 'pgmTransportStrip';
+      strip.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;' +
+        'padding:6px 12px;background:#0e0a1c;border-bottom:1px solid rgba(108,58,237,.10);' +
+        'flex-shrink:0';
+      timelineWrap.insertBefore(strip, toolbar);
+    }
+
+    function makeStripBtn(id, label, title){
+      var b = document.getElementById(id);
+      if (b instanceof HTMLButtonElement && b.isConnected) return b;
+      b = document.createElement('button');
+      b.id = id;
+      b.type = 'button';
+      b.title = title;
+      b.textContent = label;
+      b.style.cssText = 'padding:5px 12px;font-size:11px;font-weight:700;letter-spacing:.4px;' +
+        'color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(108,58,237,.35);' +
+        'border-radius:6px;cursor:pointer;transition:background .15s,border-color .15s,color .15s';
+      b.addEventListener('mouseenter', function(){
+        b.style.background = 'rgba(108,58,237,.18)';
+        b.style.borderColor = 'rgba(108,58,237,.55)';
+      });
+      b.addEventListener('mouseleave', function(){
+        b.style.background = 'rgba(15,10,30,.75)';
+        b.style.borderColor = 'rgba(108,58,237,.35)';
+      });
+      strip.appendChild(b);
+      return b;
+    }
+
+    var startBtn = makeStripBtn('tlGoStartBtn', '\u23EE Start', 'Go to start of timeline');
+    var btn      = makeStripBtn('tlTransportBtn', '\u25B6 Play', 'Play / pause the timeline (Space)');
+    var endBtn   = makeStripBtn('tlGoEndBtn',   'End \u23ED',  'Go to end of timeline');
+
+    if (!startBtn.dataset.v129){
+      startBtn.dataset.v129 = '1';
+      startBtn.addEventListener('click', function(){ tlGoToStart(); });
+    }
     if (!btn.dataset.v14){
       btn.dataset.v14 = '1';
       btn.addEventListener('click', function(){ tlTogglePlay(); });
     }
-    try { container.appendChild(btn); } catch(_){ return null; }
+    if (!endBtn.dataset.v129){
+      endBtn.dataset.v129 = '1';
+      endBtn.addEventListener('click', function(){ tlGoToEnd(); });
+    }
+    // Make Play the visual focal point with a slightly stronger style.
+    btn.style.borderColor = 'rgba(34,197,94,.55)';
     return btn;
   }
   function updateTransportBtnUI(){
@@ -2569,19 +2653,10 @@
     // and without this the toolbar becomes an orphan no-op.
     if (_cropMode){ try { ensureCropToolbar(); } catch(_){} }
 
-    // Watermark so the user knows this is a simulation — NOT the final export.
-    ctx.fillStyle = 'rgba(139,92,246,.95)';
-    ctx.font = 'bold 14px -apple-system,system-ui,sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText('PGM \u00B7 simulation', 12, 12);
-    ctx.fillStyle = 'rgba(255,255,255,.55)';
-    ctx.font = '11px -apple-system,system-ui,sans-serif';
-    ctx.fillText('not final export (audio / transitions not rendered)', 12, 30);
-
-    // Live audio metering — waveform + level meter for whatever is playing
-    // through the main <video>. Skips cleanly if WebAudio is unavailable or
-    // the source hasn't been attached yet.
-    try { progDrawAudioMeters(ctx, W, H); } catch(_){}
+    // Task #129 — Removed the "PGM · simulation / not final
+    // export" overlay text and the in-PGM audio visualizer. Both
+    // obstructed the video frame; the timeline A1 track waveform
+    // now carries audio visualization on its own.
 
     _progRAF = requestAnimationFrame(progLoop);
   }
