@@ -2372,7 +2372,14 @@
       timelineWrap.insertBefore(strip, toolbar);
     }
 
-    function makeStripBtn(id, label, title){
+    // Task #135 \u2014 Icon-only Start/End buttons get a square footprint so
+    // they read as glyph chips next to the wider Play button. Each
+    // button is centered with flexbox and shares a min-width so the
+    // row stays visually balanced even though one of the three has a
+    // text label.
+    function makeStripBtn(id, label, title, opts){
+      opts = opts || {};
+      var iconOnly = !!opts.iconOnly;
       var b = document.getElementById(id);
       if (b instanceof HTMLButtonElement && b.isConnected) return b;
       b = document.createElement('button');
@@ -2380,7 +2387,12 @@
       b.type = 'button';
       b.title = title;
       b.textContent = label;
-      b.style.cssText = 'padding:5px 12px;font-size:11px;font-weight:700;letter-spacing:.4px;' +
+      // Common base styles
+      b.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;' +
+        'min-width:48px;height:30px;' +
+        'padding:' + (iconOnly ? '0 8px' : '0 14px') + ';' +
+        'font-size:' + (iconOnly ? '14px' : '11px') + ';' +
+        'font-weight:700;letter-spacing:.4px;line-height:1;' +
         'color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(108,58,237,.35);' +
         'border-radius:6px;cursor:pointer;transition:background .15s,border-color .15s,color .15s';
       b.addEventListener('mouseenter', function(){
@@ -2395,9 +2407,12 @@
       return b;
     }
 
-    var startBtn = makeStripBtn('tlGoStartBtn', '\u23EE Start', 'Go to start of timeline');
+    // Task #135 \u2014 Dropped the "Start" and "End" text labels. Icon-only
+    // chips read as compact transport glyphs; flexbox centering keeps
+    // them aligned with the (wider) Play button between them.
+    var startBtn = makeStripBtn('tlGoStartBtn',   '\u23EE', 'Go to start of timeline', { iconOnly: true });
     var btn      = makeStripBtn('tlTransportBtn', '\u25B6 Play', 'Play / pause the timeline (Space)');
-    var endBtn   = makeStripBtn('tlGoEndBtn',   'End \u23ED',  'Go to end of timeline');
+    var endBtn   = makeStripBtn('tlGoEndBtn',     '\u23ED', 'Go to end of timeline',   { iconOnly: true });
 
     if (!startBtn.dataset.v129){
       startBtn.dataset.v129 = '1';
