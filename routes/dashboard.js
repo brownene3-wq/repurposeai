@@ -307,7 +307,7 @@ router.get('/', requireAuth, async (req, res) => {
         <div class="or-divider"><span>or import from</span></div>
         <div class="import-btns">
           <button class="import-btn" onclick="alert('Google Drive import coming soon!')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 19.5h20L12 2z"/><path d="M2 19.5L8.5 8h14.5"/><path d="M15.5 8L22 19.5H2"/></svg>
+            <img src="/images/section-icons/A-74.png" alt="" style="height:20px;width:20px;vertical-align:middle">
             Google Drive
           </button>
           <button class="import-btn" onclick="alert('Dropbox import coming soon!')">
