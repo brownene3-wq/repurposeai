@@ -542,7 +542,7 @@ router.get('/', requireAuth, async (req, res) => {
 
               <div style="margin-bottom:1.5rem;padding:1.2rem;border-radius:12px;background:rgba(108,58,237,0.06);border:1px solid rgba(108,58,237,0.15)">
                 <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">
-                  <span style="font-size:1.3rem">&#x1F4E6;</span>
+                  <img src="/images/section-icons/A-104.png" alt="" style="height:22px;width:22px;vertical-align:middle;border-radius:4px">
                   <h3 style="margin:0;font-size:1rem;font-weight:600;color:var(--text)">Dropbox</h3>
                   <a href="https://www.dropbox.com/developers" target="_blank" style="font-size:.75rem;color:var(--primary,#6C3AED);text-decoration:none;margin-left:auto">Get App Key &rarr;</a>
                 </div>
@@ -555,7 +555,7 @@ router.get('/', requireAuth, async (req, res) => {
               </div>
             </div>
 
-            <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">&#x1F512; Your API keys are encrypted and stored securely. They are never shared with third parties.</p>
+            <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem"><img src="/images/section-icons/A-85.png" alt="" style="height:16px;width:16px;vertical-align:middle;border-radius:3px;margin-right:4px"> Your API keys are encrypted and stored securely. They are never shared with third parties.</p>
           </div>
 
       </div>

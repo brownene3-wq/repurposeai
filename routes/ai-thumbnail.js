@@ -2473,7 +2473,7 @@ ${pageStyles}
 
     <main class="main-content">
       <div class="page-header">
-        <h1><img src="/images/section-icons/A-9.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">AI Thumbnails</h1>
+        <h1><img src="/images/section-icons/A-103.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">AI Thumbnails</h1>
         <p>Generate professional YouTube thumbnails with AI styling</p>
       </div>
 

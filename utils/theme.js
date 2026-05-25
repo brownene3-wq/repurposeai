@@ -203,7 +203,7 @@ function getSidebar(activePage, user, teamPermissions) {
     // --- Core Content Tools ---
     { href: '/dashboard', icon: '<img src="/images/section-icons/A-21.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Dashboard', key: 'dashboard', perm: null },
     { href: '/distribute', icon: '<img src="/images/section-icons/A-12.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Repurpose', key: 'distribute', perm: null },
-    { href: '/repurpose', icon: '<img src="/images/section-icons/A-2.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
+    { href: '/repurpose', icon: '<img src="/images/section-icons/A-101.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/repurpose/history', icon: '<img src="/images/section-icons/A-13.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Library', key: 'library', perm: 'use_repurpose' },
     { href: '/shorts', icon: '<img src="/images/section-icons/A-1.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
     { href: '/video-editor', icon: '<img src="/images/section-icons/A-2.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
@@ -212,7 +212,7 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/caption-presets', icon: '<img src="/images/section-icons/A-4.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
     { href: '/ai-hook', icon: '<img src="/images/section-icons/A-5.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
     { href: '/ai-reframe', icon: '<img src="/images/section-icons/A-6.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
-    { href: '/ai-thumbnail', icon: '<img src="/images/section-icons/A-9.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
+    { href: '/ai-thumbnail', icon: '<img src="/images/section-icons/A-103.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
     { href: '/ai-broll', icon: '<img src="/images/section-icons/A-7.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
     { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-69.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
@@ -285,7 +285,7 @@ ${navLinks}
           <a href="/settings" role="menuitem"><span class="nav-icon"><img src="/images/section-icons/A-100.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px"></span><span class="nav-label">Settings</span></a>
           <a href="/billing" role="menuitem"><span class="nav-icon"><img src="/images/section-icons/A-41.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px"></span><span class="nav-label">Billing</span></a>
           <hr>
-          <a href="/auth/logout" role="menuitem" class="popover-signout"><span class="nav-icon">&#x1F6AA;</span><span class="nav-label">Sign Out</span></a>
+          <a href="/auth/logout" role="menuitem" class="popover-signout"><span class="nav-icon"><img src="/images/section-icons/A-102.png" alt="" style="height:20px;width:20px;vertical-align:middle;border-radius:4px"></span><span class="nav-label">Sign Out</span></a>
         </div>
       </div>
     </aside>`;
