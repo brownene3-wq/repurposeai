@@ -379,15 +379,15 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-badge">New</span>
           </a>
           <a href="/enhance-speech" class="tool-card">
-            <span class="tool-icon"><img src="/images/section-icons/A-69.png" alt="Enhance Audio"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-113.png" alt="Enhance Audio"></span>
             <span class="tool-label">Enhance Audio</span>
           </a>
           <a href="/brand-voice" class="tool-card">
-            <span class="tool-icon"><img src="/images/section-icons/A-26.png" alt="Brand Voice"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-117.png" alt="Brand Voice"></span>
             <span class="tool-label">Brand Voice</span>
           </a>
           <a href="/brand-templates" class="tool-card">
-            <span class="tool-icon"><img src="/images/section-icons/A-32.png" alt="Brand Templates"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-118.png" alt="Brand Templates"></span>
             <span class="tool-label">Brand Templates</span>
             <span class="tool-badge">New</span>
           </a>
@@ -396,7 +396,7 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-label">Calendar</span>
           </a>
           <a href="/dashboard/analytics" class="tool-card">
-            <span class="tool-icon"><img src="/images/section-icons/A-50.png" alt="Analytics"></span>
+            <span class="tool-icon"><img src="/images/section-icons/A-114.png" alt="Analytics"></span>
             <span class="tool-label">Analytics</span>
           </a>
         </div>
@@ -405,7 +405,7 @@ router.get('/', requireAuth, async (req, res) => {
       <!-- Recent Projects -->
       <div class="projects-section">
         <div class="section-head">
-          <h3><img src="/images/section-icons/A-13.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:6px"> Recent Projects</h3>
+          <h3><img src="/images/section-icons/A-112.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:6px"> Recent Projects</h3>
           ${recentShorts.length > 0 ? '<a href="/shorts" class="see-more">See more &rarr;</a>' : ''}
         </div>
         ${recentShorts.length > 0 ? `
