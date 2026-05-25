@@ -36,11 +36,21 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-opena
 
 // Common yt-dlp args to handle YouTube's anti-bot measures
 // PO token provider runs on port 4416 (started in Dockerfile CMD)
+//
+// player_client expansion: by default yt-dlp queries YouTube's "web"
+// client, which is the most heavily auth-gated. We override to try
+// tv / ios / web_safari / web in that order — TV and iOS clients use
+// a different auth path and frequently bypass the "Sign in to confirm
+// you're not a bot" wall that hits datacenter IPs (Railway, sometimes
+// Hetzner). When YT_COOKIES_PATH is also configured, this turns into a
+// best-of-both stack. When it isn't, it's our highest-value code-only
+// mitigation against the auth wall.
 const YTDLP_COMMON_ARGS = [
   '--no-warnings',
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtube:player_client=tv,ios,web_safari,web',
   '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
   '--js-runtimes', 'node',
   '--remote-components', 'ejs:github',
