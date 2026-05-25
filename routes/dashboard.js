@@ -267,7 +267,7 @@ router.get('/', requireAuth, async (req, res) => {
       ${req.query.restricted === '1' ? '<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:1rem 1.5rem;margin-bottom:1.5rem;color:#EF4444;font-size:.9rem;">You don\'t have permission to access that page. Contact your team admin to request access.</div>' : ''}
 
       <div class="page-header">
-        <h1><img src="/images/section-icons/A-21.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Content Studio</h1>
+        <h1><img src="/images/section-icons/A-75.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Content Studio</h1>
         <p>Transform your content into viral posts for every platform</p>
       </div>
 
@@ -311,11 +311,11 @@ router.get('/', requireAuth, async (req, res) => {
             Google Drive
           </button>
           <button class="import-btn" onclick="alert('Dropbox import coming soon!')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l-7 4.5L12 11l7-4.5L12 2z"/><path d="M5 6.5L12 11l7-4.5"/><path d="M5 11.5L12 16l7-4.5"/><path d="M12 16v5"/></svg>
+            <img src="/images/section-icons/A-75.png" alt="" style="height:20px;width:20px;vertical-align:middle">
             Dropbox
           </button>
           <label class="import-btn" style="cursor:pointer">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <img src="/images/section-icons/A-59.png" alt="" style="height:20px;width:20px;vertical-align:middle">
             Upload File
             <input type="file" accept="video/*,audio/*" style="display:none" onchange="processUploadedFile(this.files[0])">
           </label>
