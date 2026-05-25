@@ -110,8 +110,8 @@ const captionStyles = {
 const aspectRatios = {
   '9:16': { label: 'TikTok / Shorts / Reels', width: 1080, height: 1920, icon: '<img src="/images/section-icons/A-95.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' },
   '1:1':  { label: 'LinkedIn / Instagram', width: 1080, height: 1080, icon: '<img src="/images/section-icons/A-96.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' },
-  '16:9': { label: 'YouTube / Vimeo', width: 1920, height: 1080, icon: '<img src="/images/section-icons/A-97.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' },
-  '4:5':  { label: 'Instagram Portrait', width: 1080, height: 1350, icon: '<img src="/images/section-icons/A-98.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' }
+  '16:9': { label: 'YouTube / Vimeo', width: 1920, height: 1080, icon: '<img src="/images/section-icons/A-98.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' },
+  '4:5':  { label: 'Instagram Portrait', width: 1080, height: 1350, icon: '<img src="/images/section-icons/A-97.png" alt="" style="height:40px;width:40px;vertical-align:middle;border-radius:8px">' }
 };
 
 // ----- Cookie helpers -----
@@ -393,7 +393,7 @@ ${pageStyles}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
-        <h1><img src="/images/section-icons/A-32.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Templates</h1>
+        <h1><img src="/images/section-icons/A-118.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Templates</h1>
         <p>Create consistent branded videos in 3 easy steps</p>
       </div>
 
