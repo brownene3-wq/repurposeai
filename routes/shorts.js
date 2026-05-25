@@ -6920,32 +6920,6 @@ ${paginationHtml}
       </div>
     </div>
 
-    <!-- Moment Preview Modal — opens when a moment thumbnail is clicked.
-         Renders a YouTube iframe scoped to the moment's start/end seconds
-         using the privacy-enhanced embed URL with start= / end= params. -->
-    <div id="momentPreviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);z-index:10002;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeMomentPreview()">
-      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:780px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-          <div style="min-width:0;">
-            <div id="momentPreviewTitle" style="font-size:0.98rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Moment preview</div>
-            <div id="momentPreviewRange" style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;"></div>
-          </div>
-          <button type="button" onclick="closeMomentPreview()" aria-label="Close preview"
-            style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:var(--text);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;">&times;</button>
-        </div>
-        <!-- 16:9 frame so the embedded YouTube player never crops awkwardly -->
-        <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;">
-          <iframe id="momentPreviewIframe" src="" title="Moment preview"
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowfullscreen
-            style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;"></iframe>
-        </div>
-        <div style="margin-top:10px;font-size:0.74rem;color:var(--text-muted);line-height:1.45;">
-          Playback starts at the moment's start time and stops automatically at its end time.
-        </div>
-      </div>
-    </div>
-
 </main>
 
   <!-- Calendar Entry Modal -->
@@ -7580,19 +7554,22 @@ ${paginationHtml}
       _runAnalyze(url);
     }
 
-    // ── Moment preview modal ─────────────────────────────────────────
-    // Opens a YouTube embed scoped to a single moment's [start, end]
-    // window. We use the privacy-enhanced /embed/ URL with start= and
-    // end= query params so YouTube itself bounds playback to the moment.
-    // The 16:9 frame guarantees no awkward cropping.
-    function openMomentPreview(videoId, startSec, endSec, timeRange, title) {
-      var modal = document.getElementById('momentPreviewModal');
-      var iframe = document.getElementById('momentPreviewIframe');
-      var titleEl = document.getElementById('momentPreviewTitle');
-      var rangeEl = document.getElementById('momentPreviewRange');
-      if (!modal || !iframe) return;
-      var s = Math.max(0, Math.floor(Number(startSec) || 0));
-      var e = Math.max(s + 1, Math.floor(Number(endSec) || (s + 30)));
+    // ── Inline moment playback ───────────────────────────────────────
+    // Clicking a moment thumbnail swaps the thumbnail's contents IN PLACE
+    // for a YouTube iframe scoped to [startSec, endSec]. The iframe lives
+    // inside the same <button> wrapper that hosted the thumbnail, so the
+    // 16:9 frame and card layout don't shift. A small × button in the
+    // top-right tears it back down and restores the original thumbnail
+    // markup, which we stash on the button via dataset.originalHtml.
+    function playMomentInline(btn) {
+      if (!btn || btn.dataset.playing === '1') return;
+      var videoId = btn.dataset.videoId || '';
+      if (!videoId) return;
+      if (!btn.dataset.originalHtml) {
+        btn.dataset.originalHtml = btn.innerHTML;
+      }
+      var s = Math.max(0, Math.floor(Number(btn.dataset.start) || 0));
+      var e = Math.max(s + 1, Math.floor(Number(btn.dataset.end) || (s + 30)));
       var src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoId)
         + '?start=' + s
         + '&end=' + e
@@ -7600,16 +7577,25 @@ ${paginationHtml}
         + '&rel=0'
         + '&modestbranding=1'
         + '&playsinline=1';
-      iframe.src = src;
-      if (titleEl) titleEl.textContent = title || 'Moment preview';
-      if (rangeEl) rangeEl.textContent = timeRange ? ('Playing ' + timeRange) : '';
-      modal.style.display = 'flex';
+      // Iframe fills the existing aspect-ratio:16/9 container; close
+      // button overlays the top-right.
+      btn.innerHTML =
+        '<iframe src="' + src + '" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen ' +
+          'style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;"></iframe>' +
+        '<button type="button" onclick="event.stopPropagation(); event.preventDefault(); stopMomentInline(this.parentElement);" ' +
+          'title="Close preview" aria-label="Close preview" ' +
+          'style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.78);border:1px solid rgba(255,255,255,0.2);color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:5;">&times;</button>';
+      btn.dataset.playing = '1';
+      btn.style.cursor = 'default';
     }
-    function closeMomentPreview() {
-      var modal = document.getElementById('momentPreviewModal');
-      var iframe = document.getElementById('momentPreviewIframe');
-      if (iframe) iframe.src = ''; // stop playback immediately
-      if (modal) modal.style.display = 'none';
+    function stopMomentInline(btn) {
+      if (!btn) return;
+      if (btn.dataset.originalHtml) {
+        btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.originalHtml;
+      }
+      delete btn.dataset.playing;
+      btn.style.cursor = 'pointer';
     }
 
     function closePublishModal() {
@@ -7831,15 +7817,16 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Clickable thumbnail preview — opens a modal that plays the
-          // moment between its start and end timestamps. We use YouTube's
-          // 16:9-native mqdefault.jpg (same source the landing-page
-          // analysis cards use) so the frame doesn't get awkwardly cropped,
-          // and constrain the container to aspect-ratio:16/9 to match.
-          const _safeRange = (moment.timeRange || '').replace(/'/g, "\\'");
-          const _safeTitle = (moment.title || 'Moment').replace(/'/g, "\\'");
+          // Clickable thumbnail preview — clicking the play button swaps
+          // the thumbnail's contents in place with a YouTube iframe bounded
+          // to [startSec, endSec]. No popup modal: the iframe takes over
+          // the same 16:9 slot inside the moment card. The playback
+          // bounds ride on data-* attributes so playMomentInline() can
+          // read them without depending on inline-stringified arguments.
           const videoEmbed = videoId ? \`
-            <button type="button" id="thumb-btn-\${idx}" onclick="openMomentPreview('\${videoId}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}')" title="Click to preview this moment"
+            <button type="button" id="thumb-btn-\${idx}"
+              data-video-id="\${videoId}" data-start="\${startSec}" data-end="\${endSec}"
+              onclick="playMomentInline(this)" title="Click to play this moment"
               style="display:block; position:relative; text-decoration:none; aspect-ratio:16/9; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
               <img src="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg" alt="Clip thumbnail"
                 onerror="this.onerror=null;this.src='https://img.youtube.com/vi/\${videoId}/hqdefault.jpg';"
@@ -7857,7 +7844,7 @@ ${paginationHtml}
               </div>
               <div style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65);
                 padding:3px 8px; border-radius:6px; color:#fff; font-size:10px; font-weight:600;">
-                Click to preview
+                Click to play
               </div>
             </button>
           \` : '';
