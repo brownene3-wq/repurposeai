@@ -122,7 +122,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== PROFILE SECTION ===== -->
         <div class="settings-section active" id="section-profile">
           <div class="settings-card">
-            <h2><span class="icon"><img src="/images/section-icons/A-27.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Profile Information</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-111.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Profile Information</h2>
             <p class="desc">Your account details and login method</p>
             <div class="info-row">
               <span class="label">Email</span>
@@ -174,7 +174,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="settings-card">
-            <h2><span class="icon"><img src="/images/section-icons/A-29.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Connected Accounts</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-110.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Connected Accounts</h2>
             <p class="desc">Link your social media accounts to publish content directly</p>
             <div class="info-row" style="align-items:center">
               <span class="label" style="display:flex;align-items:center;gap:8px">

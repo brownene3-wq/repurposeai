@@ -204,7 +204,7 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/dashboard', icon: '<img src="/images/section-icons/A-21.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Dashboard', key: 'dashboard', perm: null },
     { href: '/distribute', icon: '<img src="/images/section-icons/A-12.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Repurpose', key: 'distribute', perm: null },
     { href: '/repurpose', icon: '<img src="/images/section-icons/A-101.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
-    { href: '/repurpose/history', icon: '<img src="/images/section-icons/A-13.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Library', key: 'library', perm: 'use_repurpose' },
+    { href: '/repurpose/history', icon: '<img src="/images/section-icons/A-112.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Library', key: 'library', perm: 'use_repurpose' },
     { href: '/shorts', icon: '<img src="/images/section-icons/A-1.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
     { href: '/video-editor', icon: '<img src="/images/section-icons/A-2.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
     // --- AI & Creative Tools ---
@@ -214,12 +214,12 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/ai-reframe', icon: '<img src="/images/section-icons/A-6.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
     { href: '/ai-thumbnail', icon: '<img src="/images/section-icons/A-103.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
     { href: '/ai-broll', icon: '<img src="/images/section-icons/A-7.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
-    { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-69.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
+    { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-113.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
-    { href: '/brand-voice', icon: '<img src="/images/section-icons/A-26.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
-    { href: '/brand-templates', icon: '<img src="/images/section-icons/A-32.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
+    { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    { href: '/brand-templates', icon: '<img src="/images/section-icons/A-118.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
     { href: '/dashboard/calendar', icon: '<img src="/images/section-icons/A-8.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
-    { href: '/dashboard/analytics', icon: '<img src="/images/section-icons/A-50.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
+    { href: '/dashboard/analytics', icon: '<img src="/images/section-icons/A-114.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
     // --- Account ---
   ];
 
