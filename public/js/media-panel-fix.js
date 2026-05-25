@@ -537,6 +537,119 @@
   // at returned timestamps without having to reimplement the trim math.
   try { window.razorSplit = razorSplit; } catch(_){}
 
+  // Task #134 — Custom right-click context menu for timeline clips.
+  // Rendered once at module load and hidden by default. showClipContextMenu
+  // positions it at (x, y), binds menu items to operate on the supplied
+  // target clip, and wires global dismiss listeners (outside click,
+  // Escape key, window blur, timeline scroll).
+  var _clipCtxMenu = null;          // the floating <div>
+  var _clipCtxTarget = null;        // the clip the menu currently targets
+  var _clipCtxDismissBound = false; // global dismiss listeners attached?
+  function ensureClipContextMenu(){
+    if (_clipCtxMenu && _clipCtxMenu.isConnected) return _clipCtxMenu;
+    var menu = document.createElement('div');
+    menu.id = 'clipCtxMenu';
+    menu.setAttribute('role', 'menu');
+    menu.style.cssText =
+      'position:fixed;z-index:100002;display:none;min-width:180px;' +
+      'background:#1a1230;border:1px solid rgba(124,58,237,.4);' +
+      'border-radius:10px;padding:6px 0;color:#e2e0f0;font-family:system-ui,sans-serif;' +
+      'font-size:12px;box-shadow:0 12px 32px rgba(0,0,0,.55);user-select:none';
+    document.body.appendChild(menu);
+    _clipCtxMenu = menu;
+    return menu;
+  }
+  function hideClipContextMenu(){
+    if (_clipCtxMenu) _clipCtxMenu.style.display = 'none';
+    _clipCtxTarget = null;
+  }
+  function bindClipContextMenuDismiss(){
+    if (_clipCtxDismissBound) return;
+    _clipCtxDismissBound = true;
+    document.addEventListener('mousedown', function(e){
+      if (!_clipCtxMenu || _clipCtxMenu.style.display === 'none') return;
+      if (_clipCtxMenu.contains(e.target)) return;
+      hideClipContextMenu();
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') hideClipContextMenu();
+    });
+    window.addEventListener('blur', hideClipContextMenu);
+    // Hide if the user scrolls the tracks area; the menu coords would
+    // otherwise drift away from the clip they targeted.
+    document.addEventListener('scroll', hideClipContextMenu, true);
+  }
+  function showClipContextMenu(clip, clientX, clientY){
+    var menu = ensureClipContextMenu();
+    bindClipContextMenuDismiss();
+    _clipCtxTarget = clip;
+
+    // Build items per clip type. V1 video gets Extract Audio; other
+    // types fall through with an empty list (menu hidden).
+    var items = [];
+    if ((clip.dataset.clipType || '') === 'vid' && clip.dataset.mediaUrl){
+      items.push({
+        icon: '🎵',
+        label: 'Extract Audio',
+        run: function(){
+          // The action operates on the SELECTED V1 clip via getActiveClip,
+          // and the contextmenu handler above already marked _clipCtxTarget
+          // selected — so calling the existing handler is a drop-in.
+          if (typeof window.clipActionExtractAudio === 'function'){
+            window.clipActionExtractAudio();
+          } else if (typeof clipActionExtractAudio === 'function'){
+            clipActionExtractAudio();
+          }
+        }
+      });
+    }
+    if (!items.length){ hideClipContextMenu(); return; }
+
+    // Re-render the menu's HTML each time so item bindings stay fresh.
+    menu.innerHTML = '';
+    items.forEach(function(it){
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.setAttribute('role', 'menuitem');
+      row.style.cssText =
+        'display:flex;align-items:center;gap:10px;width:100%;padding:8px 14px;' +
+        'background:transparent;border:0;color:#e2e0f0;font-size:12px;' +
+        'font-family:inherit;text-align:left;cursor:pointer;transition:background .12s';
+      row.innerHTML =
+        '<span style="font-size:13px;width:16px;display:inline-flex;justify-content:center">' + it.icon + '</span>' +
+        '<span>' + it.label + '</span>';
+      row.addEventListener('mouseenter', function(){ row.style.background = 'rgba(108,58,237,.18)'; });
+      row.addEventListener('mouseleave', function(){ row.style.background = 'transparent'; });
+      row.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        hideClipContextMenu();
+        try { it.run(); } catch(err){ console.error('[clipCtxMenu]', err); }
+      });
+      menu.appendChild(row);
+    });
+
+    // Position. Show off-screen first so we can measure, then clamp
+    // into the viewport so the menu doesn't get clipped at the right
+    // or bottom edge.
+    menu.style.display = 'block';
+    menu.style.left = '-9999px';
+    menu.style.top  = '-9999px';
+    requestAnimationFrame(function(){
+      var rect = menu.getBoundingClientRect();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var x = clientX + 2;
+      var y = clientY + 2;
+      if (x + rect.width  > vw - 6) x = vw - rect.width  - 6;
+      if (y + rect.height > vh - 6) y = vh - rect.height - 6;
+      menu.style.left = Math.max(6, x) + 'px';
+      menu.style.top  = Math.max(6, y) + 'px';
+    });
+  }
+  try {
+    window.showClipContextMenu = showClipContextMenu;
+    window.hideClipContextMenu = hideClipContextMenu;
+  } catch(_){}
+
   function makeClipInteractive(clip){
     if (clip.dataset.interactive) return;
     clip.dataset.interactive = '1';
@@ -576,6 +689,25 @@
       e.stopPropagation();
       e.preventDefault();
       openSlipEditor(clip);
+    });
+
+    // Task #134 — Right-click context menu. V1 video clips currently
+    // get a single item: Extract Audio. The menu is rendered once and
+    // anchored at the cursor; outside click / Escape / window blur
+    // dismiss it. Right-clicking AGAIN repositions it onto the new
+    // target clip without flicker.
+    clip.addEventListener('contextmenu', function(e){
+      var ct = clip.dataset.clipType || '';
+      if (ct !== 'vid') return;          // only V1 video clips for now
+      e.preventDefault();
+      e.stopPropagation();
+      // Select the right-clicked clip so subsequent actions targeting
+      // the "active" clip pick this one up.
+      document.querySelectorAll('.mt-clip.selected').forEach(function(c){
+        c.classList.remove('selected');
+      });
+      clip.classList.add('selected');
+      showClipContextMenu(clip, e.clientX, e.clientY);
     });
 
     // Drag to move — only when Select tool active.
