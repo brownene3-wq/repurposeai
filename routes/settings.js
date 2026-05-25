@@ -427,7 +427,7 @@ router.get('/', requireAuth, async (req, res) => {
         <!-- ===== APPEARANCE SECTION ===== -->
         <div class="settings-section" id="section-appearance">
           <div class="settings-card">
-            <h2><span class="icon"><img src="/images/section-icons/A-32.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Appearance</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-107.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Appearance</h2>
             <p class="desc">Customize how Splicora looks for you</p>
 
             <div class="form-group">
@@ -451,7 +451,7 @@ router.get('/', requireAuth, async (req, res) => {
           </div>
 
           <div class="settings-card">
-            <h2><span class="icon"><img src="/images/section-icons/A-29.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Language & Region</h2>
+            <h2><span class="icon"><img src="/images/section-icons/A-108.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Language & Region</h2>
             <p class="desc">Set your preferred language and timezone</p>
 
             <div class="select-group">
