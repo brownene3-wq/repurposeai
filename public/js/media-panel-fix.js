@@ -537,6 +537,119 @@
   // at returned timestamps without having to reimplement the trim math.
   try { window.razorSplit = razorSplit; } catch(_){}
 
+  // Task #134 — Custom right-click context menu for timeline clips.
+  // Rendered once at module load and hidden by default. showClipContextMenu
+  // positions it at (x, y), binds menu items to operate on the supplied
+  // target clip, and wires global dismiss listeners (outside click,
+  // Escape key, window blur, timeline scroll).
+  var _clipCtxMenu = null;          // the floating <div>
+  var _clipCtxTarget = null;        // the clip the menu currently targets
+  var _clipCtxDismissBound = false; // global dismiss listeners attached?
+  function ensureClipContextMenu(){
+    if (_clipCtxMenu && _clipCtxMenu.isConnected) return _clipCtxMenu;
+    var menu = document.createElement('div');
+    menu.id = 'clipCtxMenu';
+    menu.setAttribute('role', 'menu');
+    menu.style.cssText =
+      'position:fixed;z-index:100002;display:none;min-width:180px;' +
+      'background:#1a1230;border:1px solid rgba(124,58,237,.4);' +
+      'border-radius:10px;padding:6px 0;color:#e2e0f0;font-family:system-ui,sans-serif;' +
+      'font-size:12px;box-shadow:0 12px 32px rgba(0,0,0,.55);user-select:none';
+    document.body.appendChild(menu);
+    _clipCtxMenu = menu;
+    return menu;
+  }
+  function hideClipContextMenu(){
+    if (_clipCtxMenu) _clipCtxMenu.style.display = 'none';
+    _clipCtxTarget = null;
+  }
+  function bindClipContextMenuDismiss(){
+    if (_clipCtxDismissBound) return;
+    _clipCtxDismissBound = true;
+    document.addEventListener('mousedown', function(e){
+      if (!_clipCtxMenu || _clipCtxMenu.style.display === 'none') return;
+      if (_clipCtxMenu.contains(e.target)) return;
+      hideClipContextMenu();
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') hideClipContextMenu();
+    });
+    window.addEventListener('blur', hideClipContextMenu);
+    // Hide if the user scrolls the tracks area; the menu coords would
+    // otherwise drift away from the clip they targeted.
+    document.addEventListener('scroll', hideClipContextMenu, true);
+  }
+  function showClipContextMenu(clip, clientX, clientY){
+    var menu = ensureClipContextMenu();
+    bindClipContextMenuDismiss();
+    _clipCtxTarget = clip;
+
+    // Build items per clip type. V1 video gets Extract Audio; other
+    // types fall through with an empty list (menu hidden).
+    var items = [];
+    if ((clip.dataset.clipType || '') === 'vid' && clip.dataset.mediaUrl){
+      items.push({
+        icon: '🎵',
+        label: 'Extract Audio',
+        run: function(){
+          // The action operates on the SELECTED V1 clip via getActiveClip,
+          // and the contextmenu handler above already marked _clipCtxTarget
+          // selected — so calling the existing handler is a drop-in.
+          if (typeof window.clipActionExtractAudio === 'function'){
+            window.clipActionExtractAudio();
+          } else if (typeof clipActionExtractAudio === 'function'){
+            clipActionExtractAudio();
+          }
+        }
+      });
+    }
+    if (!items.length){ hideClipContextMenu(); return; }
+
+    // Re-render the menu's HTML each time so item bindings stay fresh.
+    menu.innerHTML = '';
+    items.forEach(function(it){
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.setAttribute('role', 'menuitem');
+      row.style.cssText =
+        'display:flex;align-items:center;gap:10px;width:100%;padding:8px 14px;' +
+        'background:transparent;border:0;color:#e2e0f0;font-size:12px;' +
+        'font-family:inherit;text-align:left;cursor:pointer;transition:background .12s';
+      row.innerHTML =
+        '<span style="font-size:13px;width:16px;display:inline-flex;justify-content:center">' + it.icon + '</span>' +
+        '<span>' + it.label + '</span>';
+      row.addEventListener('mouseenter', function(){ row.style.background = 'rgba(108,58,237,.18)'; });
+      row.addEventListener('mouseleave', function(){ row.style.background = 'transparent'; });
+      row.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        hideClipContextMenu();
+        try { it.run(); } catch(err){ console.error('[clipCtxMenu]', err); }
+      });
+      menu.appendChild(row);
+    });
+
+    // Position. Show off-screen first so we can measure, then clamp
+    // into the viewport so the menu doesn't get clipped at the right
+    // or bottom edge.
+    menu.style.display = 'block';
+    menu.style.left = '-9999px';
+    menu.style.top  = '-9999px';
+    requestAnimationFrame(function(){
+      var rect = menu.getBoundingClientRect();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var x = clientX + 2;
+      var y = clientY + 2;
+      if (x + rect.width  > vw - 6) x = vw - rect.width  - 6;
+      if (y + rect.height > vh - 6) y = vh - rect.height - 6;
+      menu.style.left = Math.max(6, x) + 'px';
+      menu.style.top  = Math.max(6, y) + 'px';
+    });
+  }
+  try {
+    window.showClipContextMenu = showClipContextMenu;
+    window.hideClipContextMenu = hideClipContextMenu;
+  } catch(_){}
+
   function makeClipInteractive(clip){
     if (clip.dataset.interactive) return;
     clip.dataset.interactive = '1';
@@ -576,6 +689,25 @@
       e.stopPropagation();
       e.preventDefault();
       openSlipEditor(clip);
+    });
+
+    // Task #134 — Right-click context menu. V1 video clips currently
+    // get a single item: Extract Audio. The menu is rendered once and
+    // anchored at the cursor; outside click / Escape / window blur
+    // dismiss it. Right-clicking AGAIN repositions it onto the new
+    // target clip without flicker.
+    clip.addEventListener('contextmenu', function(e){
+      var ct = clip.dataset.clipType || '';
+      if (ct !== 'vid') return;          // only V1 video clips for now
+      e.preventDefault();
+      e.stopPropagation();
+      // Select the right-clicked clip so subsequent actions targeting
+      // the "active" clip pick this one up.
+      document.querySelectorAll('.mt-clip.selected').forEach(function(c){
+        c.classList.remove('selected');
+      });
+      clip.classList.add('selected');
+      showClipContextMenu(clip, e.clientX, e.clientY);
     });
 
     // Drag to move — only when Select tool active.
@@ -807,22 +939,38 @@
           var onSeeked = function(){
             vid.removeEventListener('seeked', onSeeked);
             try {
-              // Preserve aspect: fit video frame into THUMB_W x THUMB_H
+              // Task #129 — Letterbox/pillarbox instead of crop. Earlier
+              // logic center-cropped the source frame to fill the slot,
+              // which clipped both edges of a landscape clip. Now we
+              // fit the WHOLE frame inside the slot and pad with black
+              // bars so the full picture is visible on the timeline.
               var srcAR = vw / vh;
               var dstAR = THUMB_W / THUMB_H;
-              var sx, sy, sw, sh;
+              var dx = slotIdx * THUMB_W;
+              var dy = 0;
+              // Black backdrop fills the slot so the letterbox/pillarbox
+              // area reads as bars, not as transparency showing the V1
+              // gradient through.
+              ctx.fillStyle = '#000';
+              ctx.fillRect(dx, 0, THUMB_W, THUMB_H);
+              var dW, dH;
               if (srcAR > dstAR){
-                sh = vh;
-                sw = Math.round(sh * dstAR);
-                sx = Math.round((vw - sw) / 2);
-                sy = 0;
+                // Source is wider than the slot → fit to slot width,
+                // letterbox top + bottom.
+                dW = THUMB_W;
+                dH = Math.round(THUMB_W / srcAR);
+                ctx.drawImage(vid, 0, 0, vw, vh,
+                              dx, Math.round((THUMB_H - dH) / 2),
+                              dW, dH);
               } else {
-                sw = vw;
-                sh = Math.round(sw / dstAR);
-                sx = 0;
-                sy = Math.round((vh - sh) / 2);
+                // Source is taller than the slot → fit to slot height,
+                // pillarbox left + right.
+                dH = THUMB_H;
+                dW = Math.round(THUMB_H * srcAR);
+                ctx.drawImage(vid, 0, 0, vw, vh,
+                              dx + Math.round((THUMB_W - dW) / 2), 0,
+                              dW, dH);
               }
-              ctx.drawImage(vid, sx, sy, sw, sh, slotIdx * THUMB_W, 0, THUMB_W, THUMB_H);
             } catch(_){}
             slotIdx++;
             drawNext();
@@ -851,6 +999,19 @@
     p.then(function(dataURL){ if (dataURL) applyClipBg(clip, dataURL); });
   }
 
+  // Task #132 — Discrete bar waveform in brand colors. Replaces the
+  // earlier continuous-line peak waveform (green-on-green) with a
+  // sound-bar pattern: 2px wide bars, 2px gaps, vertically centered,
+  // bar height = the peak amplitude inside the bar's sample bucket.
+  // Background uses a soft brand-purple tint that reads cleanly in
+  // both light and dark modes; bars use the editor's accent purple
+  // (#a78bfa). Canvas height matches the post-Task #131 clip height
+  // so no vertical stretch distorts the bars at render time.
+  var WAVE_H        = 46;   // matches .mt-clip height
+  var WAVE_BAR_W    = 2;
+  var WAVE_BAR_GAP  = 2;
+  var WAVE_BG       = 'rgba(108, 58, 237, 0.10)';   // brand-purple at 10%
+  var WAVE_BAR_FILL = '#a78bfa';                    // editor accent
   function renderWaveformOnClip(clip){
     var url   = clip.dataset.mediaUrl;
     var width = Math.round(parseFloat(clip.style.width) || 100);
@@ -863,35 +1024,46 @@
     var p = decodeAudioBuffer(url).then(function(buffer){
       if (!buffer) return null;
       var ch = buffer.getChannelData(0);
-      var samplesPerBucket = Math.max(1, Math.floor(ch.length / width));
       var canvas = document.createElement('canvas');
       canvas.width  = width;
-      canvas.height = THUMB_H;
+      canvas.height = WAVE_H;
       var ctx = canvas.getContext('2d');
-      // Translucent gradient background
-      var grad = ctx.createLinearGradient(0, 0, 0, THUMB_H);
-      grad.addColorStop(0, 'rgba(5,150,105,0.95)');
-      grad.addColorStop(1, 'rgba(16,185,129,0.85)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, width, THUMB_H);
-      // Peaks
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      var mid = THUMB_H / 2;
-      for (var x = 0; x < width; x++){
-        var start = x * samplesPerBucket;
-        var end   = Math.min(ch.length, start + samplesPerBucket);
+
+      // 1) Background — soft brand-purple tint that lets the clip's
+      //    own gradient show through softly.
+      ctx.fillStyle = WAVE_BG;
+      ctx.fillRect(0, 0, width, WAVE_H);
+
+      // 2) Discrete bars. Step = bar + gap. Each bar's height comes
+      //    from the peak amplitude inside its sample bucket.
+      var step = WAVE_BAR_W + WAVE_BAR_GAP;
+      var barCount = Math.max(1, Math.floor(width / step));
+      var samplesPerBar = Math.max(1, Math.floor(ch.length / barCount));
+      var mid = WAVE_H / 2;
+      var maxBarH = WAVE_H - 6;            // 3px padding top + bottom
+      var minBarH = 2;                     // visible dot for silent gaps
+      ctx.fillStyle = WAVE_BAR_FILL;
+
+      var hasRoundRect = (typeof ctx.roundRect === 'function');
+      for (var b = 0; b < barCount; b++){
+        var start = b * samplesPerBar;
+        var end   = Math.min(ch.length, start + samplesPerBar);
         var peak = 0;
         for (var i = start; i < end; i++){
           var v = Math.abs(ch[i]);
           if (v > peak) peak = v;
         }
-        var h = Math.round(peak * (THUMB_H - 4));
-        ctx.moveTo(x + 0.5, mid - h / 2);
-        ctx.lineTo(x + 0.5, mid + h / 2);
+        var h = Math.max(minBarH, Math.round(peak * maxBarH));
+        var x = b * step + 1;              // 1px left margin per step
+        var y = Math.round(mid - h / 2);
+        if (hasRoundRect){
+          ctx.beginPath();
+          ctx.roundRect(x, y, WAVE_BAR_W, h, 1);
+          ctx.fill();
+        } else {
+          ctx.fillRect(x, y, WAVE_BAR_W, h);
+        }
       }
-      ctx.stroke();
       return canvas.toDataURL('image/png');
     }).catch(function(err){
       console.warn('[waveform] decode failed for', url, err);
@@ -2065,6 +2237,26 @@
   }
   function tlTogglePlay(){ if (_transport.playing) tlPause(); else tlPlay(); }
 
+  // Task #129 — Go-to-start / Go-to-end transport helpers. Both pause
+  // playback first (so the audio mixer stops cleanly), then set the
+  // playhead to the appropriate edge and refresh the preview.
+  function tlGoToStart(){
+    tlPause();
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = '0px';
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+  function tlGoToEnd(){
+    tlPause();
+    var endSec = getTimelineEndSec();
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = (endSec * TIMELINE_PX_PER_SEC) + 'px';
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+  try { window.tlGoToStart = tlGoToStart; window.tlGoToEnd = tlGoToEnd; } catch(_){}
+
   function transportTickAndRender(phSec){
     var ph = document.getElementById('mtPlayhead');
     if (ph) ph.style.left = (phSec * TIMELINE_PX_PER_SEC) + 'px';
@@ -2154,25 +2346,88 @@
     _transport.raf = requestAnimationFrame(tlTransportRAF);
   }
 
+  // Task #129 \u2014 Build a dedicated transport strip that sits at the top
+  // of the timeline container (above the Razor/Select toolbar) instead
+  // of overlaying the video preview. Three buttons: Go to start, Play /
+  // Pause, Go to end. The Play button keeps id #tlTransportBtn so all
+  // existing callers (spacebar shortcut, draft restore, etc.) still
+  // find it by id.
   function ensureTransportBtn(){
     var existing = document.getElementById('tlTransportBtn');
     if (existing instanceof HTMLButtonElement && existing.isConnected) return existing;
-    var player = document.getElementById('videoPlayer') || document.querySelector('video');
-    if (!(player instanceof Element)) return null;
-    var container = player.parentElement;
-    if (!(container instanceof Element)) return null;
-    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
-    var btn = (existing instanceof HTMLButtonElement) ? existing : document.createElement('button');
-    btn.id = 'tlTransportBtn';
-    btn.type = 'button';
-    btn.title = 'Play / pause the timeline (Space)';
-    btn.textContent = '\u25B6 Play';
-    btn.style.cssText = 'position:absolute;top:10px;right:74px;z-index:8;padding:5px 11px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(34,197,94,.55);border-radius:6px;cursor:pointer;backdrop-filter:blur(4px)';
+
+    // Strip lives above .mt-toolbar inside #timelineContainer.
+    var timelineWrap = document.getElementById('timelineContainer');
+    if (!(timelineWrap instanceof Element)) return null;
+    var toolbar = timelineWrap.querySelector('.mt-toolbar');
+    if (!(toolbar instanceof Element)) return null;
+
+    var strip = document.getElementById('pgmTransportStrip');
+    if (!(strip instanceof Element) || !strip.isConnected){
+      strip = document.createElement('div');
+      strip.id = 'pgmTransportStrip';
+      strip.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;' +
+        'padding:6px 12px;background:#0e0a1c;border-bottom:1px solid rgba(108,58,237,.10);' +
+        'flex-shrink:0';
+      timelineWrap.insertBefore(strip, toolbar);
+    }
+
+    // Task #135 \u2014 Icon-only Start/End buttons get a square footprint so
+    // they read as glyph chips next to the wider Play button. Each
+    // button is centered with flexbox and shares a min-width so the
+    // row stays visually balanced even though one of the three has a
+    // text label.
+    function makeStripBtn(id, label, title, opts){
+      opts = opts || {};
+      var iconOnly = !!opts.iconOnly;
+      var b = document.getElementById(id);
+      if (b instanceof HTMLButtonElement && b.isConnected) return b;
+      b = document.createElement('button');
+      b.id = id;
+      b.type = 'button';
+      b.title = title;
+      b.textContent = label;
+      // Common base styles
+      b.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;' +
+        'min-width:48px;height:30px;' +
+        'padding:' + (iconOnly ? '0 8px' : '0 14px') + ';' +
+        'font-size:' + (iconOnly ? '14px' : '11px') + ';' +
+        'font-weight:700;letter-spacing:.4px;line-height:1;' +
+        'color:#e2e0f0;background:rgba(15,10,30,.75);border:1px solid rgba(108,58,237,.35);' +
+        'border-radius:6px;cursor:pointer;transition:background .15s,border-color .15s,color .15s';
+      b.addEventListener('mouseenter', function(){
+        b.style.background = 'rgba(108,58,237,.18)';
+        b.style.borderColor = 'rgba(108,58,237,.55)';
+      });
+      b.addEventListener('mouseleave', function(){
+        b.style.background = 'rgba(15,10,30,.75)';
+        b.style.borderColor = 'rgba(108,58,237,.35)';
+      });
+      strip.appendChild(b);
+      return b;
+    }
+
+    // Task #135 \u2014 Dropped the "Start" and "End" text labels. Icon-only
+    // chips read as compact transport glyphs; flexbox centering keeps
+    // them aligned with the (wider) Play button between them.
+    var startBtn = makeStripBtn('tlGoStartBtn',   '\u23EE', 'Go to start of timeline', { iconOnly: true });
+    var btn      = makeStripBtn('tlTransportBtn', '\u25B6 Play', 'Play / pause the timeline (Space)');
+    var endBtn   = makeStripBtn('tlGoEndBtn',     '\u23ED', 'Go to end of timeline',   { iconOnly: true });
+
+    if (!startBtn.dataset.v129){
+      startBtn.dataset.v129 = '1';
+      startBtn.addEventListener('click', function(){ tlGoToStart(); });
+    }
     if (!btn.dataset.v14){
       btn.dataset.v14 = '1';
       btn.addEventListener('click', function(){ tlTogglePlay(); });
     }
-    try { container.appendChild(btn); } catch(_){ return null; }
+    if (!endBtn.dataset.v129){
+      endBtn.dataset.v129 = '1';
+      endBtn.addEventListener('click', function(){ tlGoToEnd(); });
+    }
+    // Make Play the visual focal point with a slightly stronger style.
+    btn.style.borderColor = 'rgba(34,197,94,.55)';
     return btn;
   }
   function updateTransportBtnUI(){
@@ -2569,19 +2824,10 @@
     // and without this the toolbar becomes an orphan no-op.
     if (_cropMode){ try { ensureCropToolbar(); } catch(_){} }
 
-    // Watermark so the user knows this is a simulation — NOT the final export.
-    ctx.fillStyle = 'rgba(139,92,246,.95)';
-    ctx.font = 'bold 14px -apple-system,system-ui,sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText('PGM \u00B7 simulation', 12, 12);
-    ctx.fillStyle = 'rgba(255,255,255,.55)';
-    ctx.font = '11px -apple-system,system-ui,sans-serif';
-    ctx.fillText('not final export (audio / transitions not rendered)', 12, 30);
-
-    // Live audio metering — waveform + level meter for whatever is playing
-    // through the main <video>. Skips cleanly if WebAudio is unavailable or
-    // the source hasn't been attached yet.
-    try { progDrawAudioMeters(ctx, W, H); } catch(_){}
+    // Task #129 — Removed the "PGM · simulation / not final
+    // export" overlay text and the in-PGM audio visualizer. Both
+    // obstructed the video frame; the timeline A1 track waveform
+    // now carries audio visualization on its own.
 
     _progRAF = requestAnimationFrame(progLoop);
   }
@@ -3256,11 +3502,13 @@
   }
   try { window.addTextClipToTimeline = addTextClipToTimeline; } catch(_){}
 
-  // ── Motion effects on M1 ──
+  // ── Motion effects on FX ──
   // A "motion effect" is a time-varying transform applied to whatever V1
   // visual is at the playhead: zoom, pan, fade, rotate, shake, etc. Each
-  // motion effect lives as its own clip on the .mt-track-music row (M1)
-  // so the user can place / drag / delete them like any other clip.
+  // motion effect lives as its own clip on the FX track (formerly the
+  // M1 row, removed in Task #130). The export pipeline still picks them
+  // out by clipType === 'motion', so cohabiting with the FX-effect
+  // indicators doesn't affect rendering.
   var MOTION_EFFECTS = {
     'zoom-in':    { label: 'Zoom In',    icon: '\ud83d\udd0d' },
     'zoom-out':   { label: 'Zoom Out',   icon: '\ud83d\udd0e' },
@@ -3276,13 +3524,17 @@
     opts = opts || {};
     var effect = MOTION_EFFECTS[effectKey];
     if (!effect){ showToast('Unknown motion effect'); return null; }
-    var track = document.querySelector('.mt-track-music');
-    if (!track){ showToast('Motion track not found'); return null; }
+    var track = document.querySelector('.mt-track-fx');
+    if (!track){ showToast('FX track not found'); return null; }
     var dur = parseFloat(opts.duration) || 3;
     if (dur < 0.5) dur = 0.5;
     var width = Math.max(40, dur * TIMELINE_PX_PER_SEC);
     var leftPos = findRightmostClipEnd(track);
     var clip = document.createElement('div');
+    // Task #130 — Motion clips ride on FX track now. Keep mt-clip-motion
+    // for any styling specific to motion + the dataset.clipType the
+    // export pipeline reads. Pink gradient distinguishes them from the
+    // FX-effect indicators (green) that share the track.
     clip.className = 'mt-clip mt-clip-motion';
     clip.textContent = effect.icon + ' ' + effect.label;
     clip.dataset.fileName     = effect.label;
@@ -4264,7 +4516,7 @@
       return p;
     } catch (e) { return null; }
   }
-  function writeProjectAspect(preset, faceTrack){
+  function writeProjectAspect(preset, faceTrack, userSet){
     try {
       localStorage.setItem(PROJECT_ASPECT_LS_KEY, JSON.stringify({
         ratio:     preset.ratio,
@@ -4273,10 +4525,63 @@
         h:         preset.h,
         cssAspect: preset.cssAspect,
         faceTrack: !!faceTrack,
+        // Task #122 — userSet distinguishes "user explicitly clicked
+        // Smart Resize Apply" from "auto-detected from source dims".
+        // The boot path + source-load path only override when this is
+        // false; once a user has explicitly chosen, we never silently
+        // overwrite their choice on subsequent uploads.
+        userSet:   !!userSet,
         savedAt:   Date.now()
       }));
     } catch (e) {}
   }
+  // Task #122 — Pick the SR preset whose aspect ratio is closest to
+  // the (width, height) of the source video. Used by the auto-detect
+  // path to align the project canvas with the user's upload.
+  function pickPresetFromDimensions(w, h){
+    if (!w || !h) return null;
+    var sourceAspect = w / h;
+    var best = SR_PRESETS[0];
+    var bestDiff = Infinity;
+    SR_PRESETS.forEach(function(p){
+      var parts = p.ratio.split(':').map(parseFloat);
+      var pAspect = parts[0] / parts[1];
+      var diff = Math.abs(pAspect - sourceAspect);
+      if (diff < bestDiff){ bestDiff = diff; best = p; }
+    });
+    return best;
+  }
+  // Apply the closest preset to the source's intrinsic dimensions —
+  // but only when the user hasn't manually picked one via Smart Resize.
+  // Safe to call repeatedly; no-op when userSet is true.
+  function maybeAutoDetectProjectAspect(){
+    var saved = readProjectAspect();
+    if (saved && saved.userSet === true) return false;  // user owns this; don't touch
+    var v = document.getElementById('videoPlayer');
+    if (!v || !v.videoWidth || !v.videoHeight){
+      // Fall back: look at the first V1 clip's dataset if the
+      // <video> element hasn't loaded metadata yet.
+      var c = document.querySelector('.mt-track-video .mt-clip');
+      if (c && c.dataset.srcWidth && c.dataset.srcHeight){
+        var preset = pickPresetFromDimensions(parseInt(c.dataset.srcWidth, 10), parseInt(c.dataset.srcHeight, 10));
+        if (preset){
+          writeProjectAspect(preset, !!(saved && saved.faceTrack), false);
+          applyProjectAspect(preset, { faceTrack: !!(saved && saved.faceTrack) });
+          return true;
+        }
+      }
+      return false;
+    }
+    var preset = pickPresetFromDimensions(v.videoWidth, v.videoHeight);
+    if (!preset) return false;
+    // No-op if we'd be re-applying the same aspect we already have.
+    if (saved && saved.ratio === preset.ratio) return false;
+    writeProjectAspect(preset, !!(saved && saved.faceTrack), false);
+    applyProjectAspect(preset, { faceTrack: !!(saved && saved.faceTrack) });
+    console.log('[project-aspect] auto-detected', preset.ratio, 'from source ' + v.videoWidth + 'x' + v.videoHeight);
+    return true;
+  }
+  try { window.maybeAutoDetectProjectAspect = maybeAutoDetectProjectAspect; } catch(_){}
   function updateProjectAspectBadge(preset){
     var el = document.getElementById('projectAspectLabel');
     if (el && preset && preset.ratio) el.textContent = preset.ratio;
@@ -4351,23 +4656,99 @@
       area.appendChild(wrap);
     }
     wrap.style.position     = 'relative';
-    wrap.style.aspectRatio  = preset.cssAspect;
-    wrap.style.maxWidth     = '100%';
-    wrap.style.maxHeight    = '100%';
-    wrap.style.width        = 'auto';
-    wrap.style.height       = 'auto';
-    // Browsers compute the constrained box: when aspect-ratio would
-    // make width or height overflow, the other axis shrinks to fit.
-    // The two-line trick below makes both axes responsive so neither
-    // axis blocks the other from triggering the clamp.
-    if (preset.cssAspect.indexOf('/') !== -1){
-      var parts = preset.cssAspect.split('/').map(function(s){ return parseFloat(s); });
-      if (parts.length === 2 && parts[0] && parts[1]){
-        wrap.style.width  = '100%';
-        wrap.style.height = '100%';
-        // Setting both encourages the browser to satisfy aspect-ratio
-        // via the smaller axis. Final visible size is whichever fits.
+
+    // Task #123 — Explicit JS-based sizing. The previous CSS-only path
+    // (width:100% + height:100% + aspect-ratio) made the wrapper
+    // stretch to the slot's full dims, ignoring the aspect-ratio
+    // constraint. The video object-fit:contain still letterboxed
+    // inside, but the wrapper itself had the WRONG size — so the
+    // watermark anchored top:2%/right:2% landed on the slot's corner
+    // (outside the visible video frame).
+    //
+    // Now we measure the slot's content box and compute exact px dims
+    // for the wrapper from the target aspect, then attach a resize
+    // listener so the wrapper re-fits when the window resizes. The
+    // watermark already lives inside the wrapper, so once the wrapper
+    // has the right dims, the watermark locks to the video's actual
+    // top-right corner — verified across 16:9, 9:16, 1:1, 4:5.
+    var parts = preset.cssAspect.split('/').map(function(s){ return parseFloat(s); });
+    var aspect = (parts.length === 2 && parts[0] && parts[1]) ? (parts[0] / parts[1]) : 1;
+
+    function fitWrap(){
+      // getBoundingClientRect includes padding; padding is 0 on
+      // .has-video so this is the content box.
+      var rect = area.getBoundingClientRect();
+      var slotW = rect.width;
+      var slotH = rect.height;
+      if (slotW <= 0 || slotH <= 0) return;
+      var w, h;
+      if (slotW / slotH > aspect){
+        // Slot is wider than target aspect → height is the limiting
+        // factor; width is derived to maintain aspect.
+        h = slotH;
+        w = h * aspect;
+      } else {
+        // Slot is taller (or square) than target aspect → width is
+        // the limiting factor; height derives.
+        w = slotW;
+        h = w / aspect;
       }
+      // Round to whole pixels so the watermark's percentage math
+      // doesn't pick up sub-pixel jitter.
+      wrap.style.width      = Math.round(w) + 'px';
+      wrap.style.height     = Math.round(h) + 'px';
+      wrap.style.maxWidth   = '100%';
+      wrap.style.maxHeight  = '100%';
+      wrap.style.aspectRatio = ''; // we own the dims now
+    }
+    // Re-fit immediately, and on every window resize (debounced lightly
+    // via rAF so we don't thrash during drags).
+    fitWrap();
+    if (wrap.__v123Resize){
+      window.removeEventListener('resize', wrap.__v123Resize);
+    }
+    var rafPending = false;
+    wrap.__v123Resize = function(){
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(function(){
+        rafPending = false;
+        fitWrap();
+      });
+    };
+    window.addEventListener('resize', wrap.__v123Resize);
+
+    // Task #124 — Re-fit when the preview slot becomes visible. On
+    // boot the slot is display:none (Task #114) until a clip lands,
+    // so the FIRST fitWrap measures 0×0 and bails — leaving the
+    // wrapper with no inline dims. Watermark anchored top:2%/right:2%
+    // then resolves against the wrapper's intrinsic (zero) size and
+    // ends up at the slot's outer corner. Listen for the .has-video
+    // class flip and re-fit immediately so the wrapper picks up the
+    // slot's real dimensions the moment it's painted.
+    if (area.__v124VisObs){ try { area.__v124VisObs.disconnect(); } catch(_){} }
+    area.__v124VisObs = new MutationObserver(function(muts){
+      for (var i = 0; i < muts.length; i++){
+        if (muts[i].attributeName === 'class'){
+          // Run on next frame so the new layout is committed before
+          // we measure — getBoundingClientRect right after a class
+          // change can still report stale dims in some browsers.
+          requestAnimationFrame(fitWrap);
+          return;
+        }
+      }
+    });
+    area.__v124VisObs.observe(area, { attributes:true, attributeFilter:['class'] });
+
+    // Also use ResizeObserver on the slot itself to catch container
+    // size changes that don't go through window.resize (sidebar
+    // panel toggles, fullscreen mode, etc.).
+    if (typeof ResizeObserver === 'function'){
+      if (area.__v124SizeObs){ try { area.__v124SizeObs.disconnect(); } catch(_){} }
+      area.__v124SizeObs = new ResizeObserver(function(){
+        requestAnimationFrame(fitWrap);
+      });
+      area.__v124SizeObs.observe(area);
     }
 
     // Force the inner <video> + overlays to fill the wrapper. We can
@@ -4475,24 +4856,96 @@
     //    export math can read the project's target dims.
     // 4) If Face Track is on, kick off the async face crop. Errors
     //    don't block the Apply — the user still gets the new aspect.
-    pop.querySelector('#srApply').addEventListener('click', function(){
+    pop.querySelector('#srApply').addEventListener('click', async function(){
+      var applyBtn = pop.querySelector('#srApply');
       var faceTrack = !!(faceTrackCb && faceTrackCb.checked);
-      // Task #113 — persist to localStorage so the project remembers
-      // its aspect across reloads and draft restores.
-      writeProjectAspect(selected, faceTrack);
-      // applyProjectAspect handles globals + preview reshape + V1 clip
-      // dataset tagging + badge update — single source of truth.
+
+      // Task #113 — persist + reshape the canvas FIRST so the user
+      // sees an immediate response.
+      // Task #122 — userSet:true so future video uploads don't silently
+      // overwrite this user-explicit choice via the auto-detect path.
+      writeProjectAspect(selected, faceTrack, true);
       applyProjectAspect(selected, { faceTrack: faceTrack });
 
-      pop.remove();
-      if (faceTrack){
-        runFaceTrackCrop(selected.ratio).then(function(msg){
-          showToast('Project aspect ' + selected.ratio + ' \u00b7 ' + msg);
-        }).catch(function(){
-          showToast('Project aspect ' + selected.ratio + ' \u00b7 face track unavailable');
+      // Task #119 — Then physically reframe the active V1 clip to the
+      // chosen aspect, exactly like AI Reframe's Center Crop path.
+      // Pick the clip: SELECTED V1 → first V1 with a server-resolvable
+      // mediaUrl. If neither exists, skip the reframe step.
+      function pickActiveV1Clip(){
+        var sel = document.querySelector('.mt-track-video .mt-clip.selected');
+        if (sel && sel.dataset.mediaUrl) return sel;
+        var anyV1 = document.querySelectorAll('.mt-track-video .mt-clip');
+        for (var i = 0; i < anyV1.length; i++){
+          var c = anyV1[i];
+          if (c.dataset.broll === '1') continue;  // skip B-Roll overlays
+          if (c.dataset.clipType !== 'vid') continue;
+          if (c.dataset.mediaUrl) return c;
+        }
+        return null;
+      }
+
+      var clip = pickActiveV1Clip();
+      if (!clip){
+        pop.remove();
+        showToast('Project aspect: ' + selected.label + ' \u00b7 add a V1 video to reframe');
+        return;
+      }
+
+      // Switch the popover into a progress state so the user sees the
+      // reframe running. Close-on-success.
+      applyBtn.disabled = true;
+      applyBtn.textContent = 'Reframing\u2026';
+      applyBtn.style.opacity = '0.7';
+      try {
+        var srcClip = clip;
+        if (typeof window.ensureClipHasServerUrl === 'function'){
+          srcClip = await window.ensureClipHasServerUrl(clip);
+          if (!srcClip || !srcClip.dataset.mediaUrl){
+            throw new Error('Clip source not available');
+          }
+        }
+        var r = await fetch('/video-editor/resize-clip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mediaUrl:    srcClip.dataset.mediaUrl,
+            aspectRatio: selected.ratio
+          })
         });
-      } else {
-        showToast('Project aspect: ' + selected.label);
+        var d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Reframe failed');
+
+        // Swap the clip's source to the reframed file.
+        srcClip.dataset.mediaUrl       = d.mediaUrl;
+        srcClip.dataset.serverFilename = d.filename;
+        if (d.width)  srcClip.dataset.srcWidth  = String(d.width);
+        if (d.height) srcClip.dataset.srcHeight = String(d.height);
+        srcClip.dataset.targetW      = String(d.width);
+        srcClip.dataset.targetH      = String(d.height);
+        srcClip.dataset.targetAspect = d.aspectRatio;
+
+        _lastPreviewUrl = null;
+        try { syncPreviewToPlayhead(); } catch(_){}
+        try { attachFilmstripOrWaveform(srcClip); } catch(_){}
+        pushTimelineHistory();
+        pop.remove();
+        showToast('Smart Resize ' + d.aspectRatio + ' \u00b7 ' + d.width + '\u00d7' + d.height);
+
+        // Face track is an additional export-time crop expression — only
+        // useful when face tracking actually finds faces. Runs in parallel
+        // with the physical reframe so it doesn't block the toast.
+        if (faceTrack){
+          runFaceTrackCrop(selected.ratio).then(function(msg){
+            showToast('Face track: ' + msg);
+          }).catch(function(){
+            showToast('Face track unavailable');
+          });
+        }
+      } catch (err){
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Apply';
+        applyBtn.style.opacity = '';
+        showToast('Reframe failed: ' + String(err.message || err).slice(0, 120));
       }
     });
   }
@@ -4516,6 +4969,23 @@
       ? (SR_PRESETS.find(function(p){ return p.ratio === saved.ratio; }) || SR_PRESETS[0])
       : SR_PRESETS[0];
     applyProjectAspect(preset, { faceTrack: saved ? !!saved.faceTrack : false });
+
+    // Task #122 — Source-aspect auto-detect. When the project record
+    // is missing OR marked userSet:false, we want the canvas to follow
+    // the actual upload's dimensions. Hook into the videoPlayer's
+    // loadedmetadata event so each new source triggers a re-evaluation
+    // (only overwrites if userSet is false). Also run once now in case
+    // a clip is already loaded by the time we boot.
+    try { maybeAutoDetectProjectAspect(); } catch(_){}
+    try {
+      var vp = document.getElementById('videoPlayer');
+      if (vp && !vp.__v122AspectHook){
+        vp.__v122AspectHook = true;
+        vp.addEventListener('loadedmetadata', function(){
+          try { maybeAutoDetectProjectAspect(); } catch(_){}
+        });
+      }
+    } catch(_){}
   }
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', wireProjectAspectChrome);
@@ -4645,6 +5115,105 @@
     try { syncPreviewToPlayhead(); } catch(_){}
     return usedFace ? 'face-centered crop set' : 'center crop set (FaceDetector unavailable)';
   }
+  // Task #133 — Extract Audio. Detaches the active V1 clip's embedded
+  // audio: server extracts a fresh mp3 from the source, the editor
+  // drops a new A1 clip at the same timeline position with matching
+  // width / sourceOffset / duration / trim, and the V1 clip is muted
+  // so the two don't double-play. The new A1 clip is interactive
+  // (drag / trim / cut / volume) via the same makeClipInteractive +
+  // attachFilmstripOrWaveform pipeline uploaded audio uses.
+  async function clipActionExtractAudio(){
+    var clip = getActiveClip();
+    if (!clip){ showToast('Select a V1 clip first'); return; }
+    if (clip.dataset.clipType !== 'vid'){
+      showToast('Extract Audio is for V1 video clips');
+      return;
+    }
+    var mediaUrl = clip.dataset.mediaUrl || '';
+    if (!mediaUrl){ showToast('Clip has no media URL'); return; }
+
+    showToast('Extracting audio…');
+    try {
+      // Blob URLs need to be promoted server-side first — same pattern
+      // every other clip-action that hits the backend uses.
+      if (typeof window.ensureClipHasServerUrl === 'function'){
+        clip = await window.ensureClipHasServerUrl(clip);
+        if (!clip || !clip.dataset.mediaUrl){
+          throw new Error('Clip source not available — try re-adding it');
+        }
+        mediaUrl = clip.dataset.mediaUrl;
+      }
+
+      var r = await fetch('/video-editor/extract-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaUrl: mediaUrl })
+      });
+      var d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || 'Extract failed');
+
+      // 1) Mute the V1 clip so we don't double-play. dataset.muted is
+      //    the flag the live <video>-element audio hook and the export
+      //    amix both read.
+      clip.dataset.muted = 'true';
+
+      // 2) Build a new A1 clip at the SAME timeline-x and width as the
+      //    V1 source. sourceOffset + duration + trim copy across so
+      //    playback stays in sync. Mirrors addClipToTimeline's audio
+      //    branch without its track-end positioning.
+      var a1 = document.querySelector('.mt-track-audio');
+      if (!a1){ throw new Error('A1 track not found'); }
+
+      var leftPx  = parseFloat(clip.style.left)  || 0;
+      var widthPx = parseFloat(clip.style.width) || 0;
+      var dur     = parseFloat(clip.dataset.duration) || (widthPx / TIMELINE_PX_PER_SEC);
+      var srcOff  = parseFloat(clip.dataset.sourceOffset) || 0;
+      var trimIn  = parseFloat(clip.dataset.trimIn);
+      var trimOut = parseFloat(clip.dataset.trimOut);
+
+      var audClip = document.createElement('div');
+      audClip.className = 'mt-clip mt-clip-audio';
+      audClip.dataset.fileName = '🎵 ' + (clip.dataset.fileName || 'audio');
+      audClip.dataset.clipType = 'aud';
+      audClip.dataset.mediaUrl = d.mediaUrl;
+      audClip.dataset.serverFilename = d.filename;
+      audClip.dataset.duration     = String(dur);
+      audClip.dataset.sourceOffset = String(srcOff);
+      if (isFinite(trimIn))  audClip.dataset.trimIn  = String(trimIn);
+      if (isFinite(trimOut)) audClip.dataset.trimOut = String(trimOut);
+      // Bump addedAt so this lands on top in overlap layering.
+      audClip.dataset.addedAt = String(Date.now() * 1000 + (addClipToTimeline._seq = ((addClipToTimeline._seq || 0) + 1)));
+      audClip.style.zIndex = String(100 + (addClipToTimeline._seq % 1000));
+      audClip.style.left = leftPx + 'px';
+      audClip.style.width = widthPx + 'px';
+      audClip.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+      audClip.style.color = '#fff';
+      audClip.style.padding = '4px 8px';
+      audClip.style.fontSize = '10px';
+      audClip.style.overflow = 'hidden';
+      audClip.style.textOverflow = 'ellipsis';
+      audClip.style.whiteSpace = 'nowrap';
+      audClip.style.userSelect = 'none';
+      audClip.textContent = audClip.dataset.fileName;
+      a1.appendChild(audClip);
+
+      // 3) Standard interactive wiring — drag / trim handles / razor-
+      //    split / delete / volume — same path uploaded audio uses.
+      try { makeClipInteractive(audClip); } catch(_){}
+      // 4) Bar waveform render (Task #132 styling).
+      try { attachFilmstripOrWaveform(audClip); } catch(_){}
+
+      updateTimelineInfo();
+      _lastPreviewUrl = null;
+      try { syncPreviewToPlayhead(); } catch(_){}
+      pushTimelineHistory();
+      showToast('Audio extracted to A1 · V1 muted');
+    } catch (err){
+      showToast('Extract failed: ' + String(err.message || err).slice(0, 120));
+    }
+  }
+  try { window.clipActionExtractAudio = clipActionExtractAudio; } catch(_){}
+
   // Task #55 — Freeze Frame (spec): capture a PNG of the frame at the
   // current playhead, split the active V1 clip at that timestamp, shift
   // the second half + all subsequent V1 clips right by freezeDur (3s),
@@ -5402,11 +5971,12 @@
     ctx.translate(-cx, -cy);
   }
 
-  // Find motion clips on M1 whose timeline range contains playhead x,
-  // and return {clip, progress 0..1 across clip} for each.
+  // Task #130 — Motion clips moved from the (removed) M1 row to the
+  // FX track. Filter by clipType so we only pick up motion indicators
+  // here, not the FX-effect indicators that share the same track.
   function getActiveMotionEffectsAtPlayheadX(phX){
     var out = [];
-    document.querySelectorAll('.mt-track-music .mt-clip').forEach(function(c){
+    document.querySelectorAll('.mt-clip').forEach(function(c){
       if (c.dataset.clipType !== 'motion') return;
       var l = parseFloat(c.style.left)  || 0;
       var w = parseFloat(c.style.width) || 0;

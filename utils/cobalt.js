@@ -6,10 +6,17 @@ const http = require('http');
 
 const COBALT_API_URL = process.env.COBALT_API_URL || 'http://46.224.167.94:9000';
 
-function cobaltRequest(videoUrl) {
+// Build a Cobalt request body. Defaults are 720p H.264 DASH, but
+// downloadWithCobalt() falls through alternative configs (HLS toggle,
+// VP9 codec, lower quality) when YouTube auth-walls the default path.
+function cobaltRequest(videoUrl, extraOpts) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(COBALT_API_URL);
-    const postData = JSON.stringify({ url: videoUrl, videoQuality: '720', youtubeVideoCodec: 'h264' });
+    const body = Object.assign(
+      { url: videoUrl, videoQuality: '720', youtubeVideoCodec: 'h264' },
+      extraOpts || {}
+    );
+    const postData = JSON.stringify(body);
     const transport = urlObj.protocol === 'https:' ? https : http;
     const req = transport.request({
       hostname: urlObj.hostname,
@@ -137,9 +144,16 @@ function validateDownloadedVideo(destPath) {
   }
 }
 
-async function downloadWithCobalt(videoUrl, destPath) {
-  console.log(`  Cobalt: requesting download for ${videoUrl}`);
-  const data = await cobaltRequest(videoUrl);
+// Cobalt sometimes returns error.api.youtube.login (YouTube demanding
+// auth) for the default DASH+H.264 720p config but succeeds with a
+// different codec or with HLS toggled on. Walk a small fallback chain
+// before giving up so the caller (yt-dlp / ytdl-core) only kicks in
+// when Cobalt is genuinely unable to serve the URL.
+//
+// Each attempt is the same Cobalt API call with different query knobs.
+// The first one that lands a working tunnel/picker/redirect wins.
+async function attemptCobaltOnce(videoUrl, attemptOpts, destPath) {
+  const data = await cobaltRequest(videoUrl, attemptOpts);
   console.log(`  Cobalt: API response status=${data.status} hasUrl=${!!data.url} hasPicker=${!!(data.picker && data.picker.length)}`);
 
   if (data.status === 'tunnel' || data.status === 'redirect') {
@@ -155,6 +169,51 @@ async function downloadWithCobalt(videoUrl, destPath) {
     throw new Error('Cobalt error: ' + (data.error && data.error.code || JSON.stringify(data.error) || data.status || 'unknown'));
   }
   validateDownloadedVideo(destPath);
+}
+
+async function downloadWithCobalt(videoUrl, destPath) {
+  console.log(`  Cobalt: requesting download for ${videoUrl}`);
+
+  // Attempt order. Each one is cheap to try (HTTP POST + ~1-3 MB
+  // probe before validateDownloadedVideo). The HLS toggle hits a
+  // different YouTube endpoint with a looser auth contract; VP9 uses
+  // a different DRM/codec path that sometimes isn't login-walled
+  // even when H.264 is; the 360p fallback exists because lower
+  // quality streams are occasionally less aggressively gated.
+  const attempts = [
+    { videoQuality: '720', youtubeVideoCodec: 'h264' },
+    { videoQuality: '720', youtubeVideoCodec: 'h264', youtubeHLS: true },
+    { videoQuality: '720', youtubeVideoCodec: 'vp9' },
+    { videoQuality: '360', youtubeVideoCodec: 'h264' },
+  ];
+
+  let lastErr = null;
+  for (let i = 0; i < attempts.length; i++) {
+    const opts = attempts[i];
+    try {
+      console.log(`  Cobalt: attempt ${i + 1}/${attempts.length} ` + JSON.stringify(opts));
+      await attemptCobaltOnce(videoUrl, opts, destPath);
+      console.log(`  Cobalt: attempt ${i + 1} succeeded`);
+      return;
+    } catch (e) {
+      lastErr = e;
+      console.log(`  Cobalt: attempt ${i + 1} failed: ${e.message}`);
+      // Clean up any half-written file before the next try.
+      try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) {}
+
+      // Auth-wall errors are video-specific and unlikely to resolve
+      // by retrying with other codecs — but cheap enough to try once
+      // more with HLS, which we do on attempt 2. After that, bail.
+      var msg = (e && e.message) || '';
+      var isLoginWall = msg.indexOf('youtube.login') >= 0;
+      if (isLoginWall && i >= 1) {
+        // Already tried HLS in attempt 2; further codec swaps won't
+        // change YouTube's auth decision for this video.
+        break;
+      }
+    }
+  }
+  throw lastErr || new Error('Cobalt: all attempts failed');
 }
 
 module.exports = { downloadWithCobalt, validateDownloadedVideo };
