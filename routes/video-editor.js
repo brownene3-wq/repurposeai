@@ -284,6 +284,14 @@ async function renderEditor(req, res) {
     .upload-button{padding:.6rem 1.2rem;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:all 0.2s}
     .upload-button:hover{box-shadow:0 8px 24px rgba(108,58,237,0.3);transform:translateY(-2px)}
     .video-preview-area{background:linear-gradient(135deg,rgba(108,58,237,0.1),rgba(236,72,153,0.1));border-radius:10px;flex:1;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:280px;max-height:55vh}
+    /* Task #122 — Live Splicora watermark preview. Sits in the same
+       upper-right slot as the exported overlay. Sized to ~18% of the
+       inner canvas width, 2% inset on both axes, 0.85 alpha to match
+       the export-time ffmpeg colorchannelmixer. Hidden by default;
+       toggled by the export checkbox. pointer-events:none so it never
+       blocks clicks on the underlying video. */
+    .pgm-watermark{position:absolute;top:2%;right:2%;width:18%;max-width:240px;opacity:.85;pointer-events:none;z-index:60;display:none;user-select:none;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+    .pgm-watermark.on{display:block}
     /* Task #114 — Centering rules moved here so applyPreviewAspectRatio
        doesn't need to inline-set display:flex (which was making the
        empty program monitor appear at boot before any video loaded). */
@@ -535,7 +543,7 @@ async function renderEditor(req, res) {
     body.light .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.45),rgba(250,204,21,.28));border-color:rgba(202,138,4,.55);color:#1a1a2e}
     body.light .mt-clip-video{background:transparent;color:#fff}
     body.light .mt-clip-audio{background:linear-gradient(135deg,rgba(56,189,248,.55),rgba(56,189,248,.35));border-color:rgba(56,189,248,.6);color:#0a0a0a}
-    body.light .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.55),rgba(244,114,182,.35));border-color:rgba(244,114,182,.6);color:#fff}
+    /* Task #130 — light-mode .mt-clip-music dropped. */
     body.light .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.55),rgba(52,211,153,.35));border-color:rgba(52,211,153,.6);color:#0a0a0a}
     body.light .mt-playhead{background:#7c3aed;box-shadow:0 0 4px rgba(124,58,237,.55)}
 
@@ -770,6 +778,51 @@ async function renderEditor(req, res) {
        align with the rest of the sidebar text. Padding nudged up to
        keep proportions readable at the larger type size. */
     .editor-sidebar .exp-sel{flex:1;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:4px;padding:6px 8px;color:#b8a6d9;font-size:12px}
+    /* Task #121 — Splicora watermark toggle. Lives between the dropdowns
+       and the Export button. Small + understated by default so it
+       doesn't compete with the primary CTA. */
+    .editor-sidebar .exp-wm{display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:6px 4px;color:#b8a6d9;font-size:12px;cursor:pointer;user-select:none}
+    .editor-sidebar .exp-wm input[type=checkbox]{accent-color:#a78bfa;width:14px;height:14px;cursor:pointer;margin:0}
+    .editor-sidebar .exp-wm:hover{color:#e2e0f0}
+    .editor-sidebar .exp-wm .exp-wm-hint{font-size:10px;color:#8886a0;margin-left:auto}
+    body.light .editor-sidebar .exp-wm{color:#5a4d78}
+    body.light .editor-sidebar .exp-wm:hover{color:#1a1a2e}
+    body.light .editor-sidebar .exp-wm .exp-wm-hint{color:rgba(26,26,46,.55)}
+    /* Task #126 — Date/time picker indicator inside the Publish Exported
+       Video modal. Webkit ships the icon as a dark glyph by default, which
+       is nearly invisible against the modal's #0f0a1f input fill. invert()
+       paints it white. Apply broadly inside #vePublishModal so all date /
+       time inputs there get the same treatment. */
+    /* Task #126 follow-up — Force the indicator to PURE WHITE. The
+       previous invert(1) brightness(1.4) at 0.85 opacity still read as
+       a muted gray against the #0f0a1f input fill. brightness(0)
+       flattens the icon to solid black, then invert(1) flips it to
+       solid white. Full opacity + a 4px padded pill so the click target
+       is unmistakable. */
+    #vePublishModal input[type="date"]::-webkit-calendar-picker-indicator,
+    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator,
+    #vePublishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1;padding:4px;border-radius:4px;transition:background .15s}
+    #vePublishModal input[type="date"]::-webkit-calendar-picker-indicator:hover,
+    #vePublishModal input[type="time"]::-webkit-calendar-picker-indicator:hover,
+    #vePublishModal input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover{background:rgba(108,58,237,.25)}
+    /* Firefox uses ::-moz-calendar-picker-indicator; same idea. */
+    #vePublishModal input[type="date"]::-moz-calendar-picker-indicator,
+    #vePublishModal input[type="time"]::-moz-calendar-picker-indicator,
+    #vePublishModal input[type="datetime-local"]::-moz-calendar-picker-indicator{filter:brightness(0) invert(1);cursor:pointer;opacity:1}
+    /* Task #128 — Scrollbar inside vePublishModal matches the dashboard
+       sidebar (.sidebar-nav in utils/theme.js). Thin 6px track, low-
+       contrast thumb that lifts on hover. Targets the inner scrolling
+       panel via direct-child selector so the outer overlay backdrop
+       isn't affected. Light-mode follows the dashboard's inverted
+       palette. */
+    #vePublishModal > div{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+    #vePublishModal > div::-webkit-scrollbar{width:6px}
+    #vePublishModal > div::-webkit-scrollbar-track{background:transparent}
+    #vePublishModal > div::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+    #vePublishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+    body.light #vePublishModal > div{scrollbar-color:rgba(0,0,0,0.15) transparent}
+    body.light #vePublishModal > div::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
+    body.light #vePublishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.25)}
     .editor-sidebar .exp-go{width:100%;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);border:none;border-radius:7px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.3px}
 
     /* ═══ TIMELINE BAR ═══ */
@@ -814,14 +867,17 @@ async function renderEditor(req, res) {
     .mt-info{font-size:10px;color:#4a3d6a;font-weight:500}
     .mt-timeline-body{display:flex;flex:1;overflow:hidden;min-height:0}
     .mt-labels{display:flex;flex-direction:column;width:44px;flex-shrink:0;background:#0e0a18;border-right:1px solid rgba(108,58,237,.08);padding-top:22px;overflow-y:hidden}
-    .mt-label{height:36px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04);position:relative;flex-shrink:0}
+    /* Task #131 — Standardized row height: every track (V1/A1/T1/FX)
+       renders at 52px so the timeline reads as a single visually
+       coherent stack. Labels match. */
+    .mt-label{height:52px;min-height:52px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;letter-spacing:.5px;color:#4a3d6a;border-bottom:1px solid rgba(108,58,237,.04);position:relative;flex-shrink:0}
     /* Always-visible delete button on user-added audio tracks. Red bullet in
        the top-right of the label. Turns solid red on hover for affordance. */
     .mt-label .mt-label-del{display:block;position:absolute;top:2px;right:2px;width:14px;height:14px;font-size:10px;font-weight:700;line-height:13px;text-align:center;border-radius:50%;background:rgba(239,68,68,.25);color:#fca5a5;cursor:pointer;border:1px solid rgba(239,68,68,.5);z-index:2;user-select:none}
     .mt-label .mt-label-del:hover{background:#ef4444;color:#fff;border-color:#ef4444}
     .mt-label-video{color:#a78bfa}
     .mt-label-audio{color:#38bdf8}
-    .mt-label-music{color:#f472b6}
+    /* Task #130 — .mt-label-music removed with the M1 track row. */
     .mt-label-text{color:#facc15}
     .mt-label-fx{color:#34d399}
     /* Task #88 — Tracks area must consume 100% of the remaining width
@@ -832,14 +888,21 @@ async function renderEditor(req, res) {
     .mt-tracks-area{flex:1 1 auto;min-width:0;width:100%;overflow-x:auto;overflow-y:auto;position:relative;background:#0a0612}
     .mt-time-ruler{display:flex;align-items:center;height:22px;width:100%;min-width:100%;padding:0 8px;border-bottom:1px solid rgba(108,58,237,.08);background:#0e0a18;position:sticky;top:0;z-index:5}
     .mt-time-ruler span{flex:1;font-size:9px;color:#3d3358;font-variant-numeric:tabular-nums}
-    .mt-track{height:36px;width:100%;min-width:100%;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
+    /* Task #131 — Track rows all share the same 52px height to match
+       V1's existing footprint. min-height locks against children
+       (filmstrips, waveforms) trying to grow the row past spec. */
+    .mt-track{height:52px;min-height:52px;width:100%;min-width:100%;position:relative;border-bottom:1px solid rgba(108,58,237,.04);background:rgba(10,6,18,.6)}
     .mt-track:hover{background:rgba(108,58,237,.03)}
     .mt-track-video{background:rgba(124,58,237,.03)}
     .mt-track-audio{background:rgba(56,189,248,.03)}
-    .mt-track-music{background:rgba(244,114,182,.02)}
+    /* Task #130 — .mt-track-music removed with the M1 track row. */
     .mt-track-text{background:rgba(250,204,21,.02)}
     .mt-track-fx{background:rgba(52,211,153,.02)}
-    .mt-clip{position:absolute;top:3px;height:30px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab}
+    /* Task #131 — Clip footprint expanded to fill the standardized
+       52px track minus 3px top/bottom inset. V1/A1 still get the
+       100%-height override below (v10-editor-redesign) but T1/FX now
+       sit centered with the same vertical rhythm. */
+    .mt-clip{position:absolute;top:3px;height:46px;border-radius:6px;display:flex;align-items:center;padding:0 8px;cursor:grab}
     /* Trim handles — 8px grip zones anchored to each clip edge. Become
        visible on hover so they don't clutter the timeline at rest. */
     .mt-clip-trim{position:absolute;top:0;width:8px;height:100%;cursor:ew-resize;z-index:2;opacity:0;transition:opacity .15s;background:rgba(255,255,255,.35);pointer-events:auto}
@@ -881,7 +944,7 @@ async function renderEditor(req, res) {
     body[data-timeline-tool="razor"] .mt-tracks-area{cursor:crosshair}
     /* Razor tool: clicking a clip splits it at the click point */
     body[data-timeline-tool="razor"] .mt-clip{cursor:col-resize}
-    .mt-clip-music{background:linear-gradient(135deg,rgba(244,114,182,.3),rgba(244,114,182,.15));border:none}
+    /* Task #130 — .mt-clip-music removed; motion clips now ride on FX. */
     .mt-clip-text{background:linear-gradient(135deg,rgba(250,204,21,.25),rgba(250,204,21,.12));border:none}
     .mt-clip-fx{background:linear-gradient(135deg,rgba(52,211,153,.25),rgba(52,211,153,.12));border:none}
     .mt-clip-label{font-size:9px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1063,6 +1126,12 @@ async function renderEditor(req, res) {
                 <canvas class="annotation-canvas" id="annotationCanvas"></canvas>
               </div>
               <div class="crop-overlay" id="cropOverlay"></div>
+              <!-- Task #122 — Live Splicora watermark mirroring the
+                   export-time overlay. Shown when the export checkbox
+                   is checked AND a video is loaded. -->
+              <img id="programMonitorWatermark" class="pgm-watermark"
+                   src="/images/splicora-logo-wide-transparent.png"
+                   alt="Splicora" draggable="false">
             </div>
 
             
@@ -1490,6 +1559,16 @@ async function renderEditor(req, res) {
                 <option value="webm">WebM</option>
               </select>
             </div>
+            <!-- Task #121 \u2014 Splicora watermark toggle.
+                 Task #125 \u2014 Default OFF (user opt-in). Persisted to
+                 localStorage so a user's preference rides across
+                 reloads. Checking it tells /export-timeline to overlay
+                 the logo on the rendered file. -->
+            <label class="exp-wm" id="exportWatermarkLabel" title="Adds a transparent Splicora logo in the upper-right corner">
+              <input type="checkbox" id="exportWatermarkChk">
+              <span>Splicora watermark</span>
+              <span class="exp-wm-hint">top-right</span>
+            </label>
             <button class="exp-go" id="exportButton" type="button">\ud83c\udfac Export Video</button>
             <!-- Phase 2c — appears post-export. Opens vePublishModal which
                  lets the user post the freshly-rendered file to any connected
@@ -1514,7 +1593,7 @@ async function renderEditor(req, res) {
                   <button class="mt-tool-btn" id="mtLinkTracksBtn" title="Link Tracks">\ud83d\udd17 Link Tracks</button>
                 </div>
                 <div class="mt-toolbar-right">
-                  <span class="mt-info">5 tracks &bull; 0:00</span>
+                  <span class="mt-info">4 tracks &bull; 0:00</span>
                   <span class="mt-toolbar-sep"></span>
                   <!-- Task #79 — Timeline zoom slider. Drives setTimelineZoom();
                        buttons step ×0.8 / ×1.25, slider sets px-per-second
@@ -1531,7 +1610,6 @@ async function renderEditor(req, res) {
                 <div class="mt-labels">
                   <div class="mt-label mt-label-video">V1</div>
                   <div class="mt-label mt-label-audio">A1</div>
-                  <div class="mt-label mt-label-music">M1</div>
                   <div class="mt-label mt-label-text">T1</div>
                   <div class="mt-label mt-label-fx">FX</div>
                 </div>
@@ -1543,7 +1621,6 @@ async function renderEditor(req, res) {
                   </div>
                   <div class="mt-track mt-track-audio" data-type="audio">
                   </div>
-                  <div class="mt-track mt-track-music" data-type="music"></div>
                   <div class="mt-track mt-track-text" data-type="text"></div>
                   <div class="mt-track mt-track-fx" data-type="fx"></div>
                   <div class="mt-playhead" id="mtPlayhead" style="left:0px"><div class="mt-playhead-handle" id="mtPlayheadHandle" title="Drag to scrub"></div></div>
@@ -3726,6 +3803,63 @@ function showToast(message, type = 'success') {
       });
     }
 
+    // Task #121 / #122 / #127 — Splicora watermark checkbox wiring.
+    //   • Default OFF on every page load (no localStorage restore).
+    //   • Uncheck again whenever a new video source loads (i.e. the
+    //     user just uploaded / imported a video).
+    //   • Drives the live Program Monitor watermark so the preview
+    //     mirrors the export 1:1.
+    // Watermark is purely opt-in per export — the user has to tick the
+    // box each time they want it baked into a render.
+    (function(){
+      var cb = document.getElementById('exportWatermarkChk');
+      if (!cb) return;
+      // Ensure unchecked on boot (defensive — HTML default in Task #125
+      // is also unchecked, but browser autofill / form recall could
+      // otherwise restore an old state).
+      cb.checked = false;
+      function syncPgmWatermark(){
+        var wm = document.getElementById('programMonitorWatermark');
+        if (!wm) return;
+        var area = document.getElementById('videoPreviewArea');
+        // Only show the watermark when a video is actually loaded — the
+        // preview area gets the .has-video class on first clip add.
+        var hasVideo = area && area.classList.contains('has-video');
+        if (cb.checked && hasVideo) wm.classList.add('on');
+        else wm.classList.remove('on');
+      }
+      cb.addEventListener('change', syncPgmWatermark);
+      syncPgmWatermark();
+
+      // Mirror has-video changes (clip add / remove) into the live
+      // watermark visibility.
+      try {
+        var area = document.getElementById('videoPreviewArea');
+        if (area && !area.__v122WmObs){
+          area.__v122WmObs = new MutationObserver(syncPgmWatermark);
+          area.__v122WmObs.observe(area, { attributes:true, attributeFilter:['class'] });
+        }
+      } catch(_){}
+
+      // Task #127 — Uncheck whenever a new video source loads. The
+      // videoPlayer's loadedmetadata fires after every new src — covers
+      // file upload, drag-drop, YouTube import, Dropbox, Google Drive,
+      // and draft restore alike. Watermark is opt-in PER export, so a
+      // fresh upload always starts clean.
+      try {
+        var vp = document.getElementById('videoPlayer');
+        if (vp && !vp.__v127WmReset){
+          vp.__v127WmReset = true;
+          vp.addEventListener('loadedmetadata', function(){
+            cb.checked = false;
+            syncPgmWatermark();
+          });
+        }
+      } catch(_){}
+
+      try { window.syncPgmWatermark = syncPgmWatermark; } catch(_){}
+    })();
+
     document.getElementById('exportButton')?.addEventListener('click', async () => {
       // Timeline-aware export: if the user has built a sequence on V1, render
       // the timeline (multiple clips + gaps + razor splits) via the new
@@ -3991,7 +4125,13 @@ function showToast(message, type = 'success') {
                   sourceWidth:   vw,
                   sourceHeight:  vh
                 };
-              })()  // Task #69/#71 — server applies overlay= filter on V1 segments
+              })(),  // Task #69/#71 — server applies overlay= filter on V1 segments
+              // Task #121 — Splicora watermark toggle (default ON).
+              // Unchecking renders the export completely clean.
+              splicoraWatermark: (function(){
+                var cb = document.getElementById('exportWatermarkChk');
+                return cb ? !!cb.checked : true;
+              })()
             })
           });
           var dataTL = await resp.json();
@@ -7328,8 +7468,11 @@ setTimeout(function sidebarLayoutFix(){
       <button id="vePublishTabLater" type="button" onclick="setVePublishMode('later')" style="flex:1;background:transparent;color:#8e87b0;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>
     </div>
 
+    <!-- Task #124 — Schedule fields brought to parity with Smart Shorts
+         publishModal: date + time + peak-time suggest + notification
+         reminder + email field (conditional) + notes. -->
     <div id="vePublishLaterFields" style="display:none;margin-bottom:14px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
         <div>
           <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
           <input type="date" id="vePublishDate" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;">
@@ -7339,6 +7482,27 @@ setTimeout(function sidebarLayoutFix(){
           <input type="time" id="vePublishTime" value="12:00" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;">
         </div>
       </div>
+
+      <!-- Peak-time suggest: reads the picked account's platform and
+           hits /dashboard/calendar/api/peak-time, fills in Date+Time. -->
+      <button type="button" id="vePublishPeakBtn" onclick="vePublishSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
+        <span style="font-size:1em;">&#x2728;</span> Suggest peak time for this platform
+        <span id="vePublishPeakHint" style="font-weight:400;color:#8e87b0;font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      </button>
+
+      <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
+      <select id="vePublishReminder" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;" onchange="vePublishToggleReminderEmail()">
+        <option value="0">None</option>
+        <option value="15">15 minutes before</option>
+        <option value="60">1 hour before</option>
+        <option value="1440">1 day before</option>
+        <option value="2880">2 days before</option>
+      </select>
+      <input type="email" id="vePublishReminderEmail" placeholder="Email for reminder" style="display:none;width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+      <div id="vePublishReminderSpacer" style="margin-bottom:14px;"></div>
+
+      <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
+      <textarea id="vePublishNotes" rows="4" placeholder="Any notes for this scheduled post" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;resize:vertical;min-height:80px;"></textarea>
     </div>
 
     <div id="vePublishStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>
@@ -7370,6 +7534,17 @@ setTimeout(function sidebarLayoutFix(){
       var d = new Date(); d.setMinutes(d.getMinutes() + 60);
       document.getElementById('vePublishDate').value = d.toISOString().slice(0, 10);
       document.getElementById('vePublishTime').value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      // Task #124 — reset extended Schedule fields each time the modal opens
+      var remSel = document.getElementById('vePublishReminder');
+      if (remSel) remSel.value = '0';
+      var remEmail = document.getElementById('vePublishReminderEmail');
+      if (remEmail){ remEmail.value = ''; remEmail.style.display = 'none'; }
+      var remSpacer = document.getElementById('vePublishReminderSpacer');
+      if (remSpacer) remSpacer.style.display = 'block';
+      var peakHint = document.getElementById('vePublishPeakHint');
+      if (peakHint) peakHint.textContent = '';
+      var notes = document.getElementById('vePublishNotes');
+      if (notes) notes.value = '';
       setVePublishMode('now');
       document.getElementById('vePublishModal').style.display = 'flex';
       document.getElementById('vePublishSubtitle').textContent = 'Source: ' + (last.filename || 'export');
@@ -7392,7 +7567,9 @@ setTimeout(function sidebarLayoutFix(){
           noAcct.style.display = 'none';
           sel.innerHTML = accounts.map(function(c){
             var label = (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' \u2014 ' + (c.accountName || c.platformUsername || c.id);
-            return '<option value="' + c.id + '">' + label + '</option>';
+            // Task #124 \u2014 data-platform so vePublishSuggestPeakTime can
+            // read the picked account's platform without a second lookup.
+            return '<option value="' + c.id + '" data-platform="' + c.platform + '">' + label + '</option>';
           }).join('');
         }
       } catch(e){
@@ -7437,6 +7614,19 @@ setTimeout(function sidebarLayoutFix(){
         var t = document.getElementById('vePublishTime').value || '12:00';
         if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
         payload.scheduledAt = d + 'T' + t + ':00';
+        // Task #124 — mirror Smart Shorts' publish-moment payload so
+        // both flows persist the same scheduling metadata onto the
+        // calendar entry.
+        var remVal = parseInt(document.getElementById('vePublishReminder').value || '0', 10) || 0;
+        var remEmail = document.getElementById('vePublishReminderEmail').value.trim();
+        if (remVal > 0 && !remEmail) {
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'Enter an email to receive the reminder.';
+          return;
+        }
+        payload.reminderMinutes = remVal;
+        payload.reminderEmail   = remVal > 0 ? remEmail : '';
+        payload.notes           = document.getElementById('vePublishNotes').value;
       }
       btn.disabled = true; var orig = btn.textContent;
       btn.textContent = _veMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
@@ -7465,6 +7655,55 @@ setTimeout(function sidebarLayoutFix(){
       }
     }
 
+    // Task #124 — Peak-time suggest. Reads the picked account's
+    // data-platform and hits /dashboard/calendar/api/peak-time, then
+    // fills in Date + Time. Mirrors publishSuggestPeakTime in shorts.js.
+    async function vePublishSuggestPeakTime(){
+      var btn  = document.getElementById('vePublishPeakBtn');
+      var hint = document.getElementById('vePublishPeakHint');
+      var sel  = document.getElementById('vePublishAccount');
+      var opt  = sel && sel.selectedOptions && sel.selectedOptions[0];
+      var platform = opt ? (opt.getAttribute('data-platform') || '') : '';
+      if (!platform){
+        if (typeof showToast === 'function') showToast('Pick an account first.');
+        return;
+      }
+      var orig = hint ? hint.textContent : '';
+      if (hint) hint.textContent = 'Thinking…';
+      if (btn)  btn.disabled = true;
+      try {
+        var resp = await fetch('/dashboard/calendar/api/peak-time?platform=' + encodeURIComponent(platform));
+        if (!resp.ok) throw new Error('Failed');
+        var d = await resp.json();
+        if (d.date) document.getElementById('vePublishDate').value = d.date;
+        if (d.time) document.getElementById('vePublishTime').value = d.time;
+        if (hint)   hint.textContent = (d.date && d.time) ? (d.date + ' · ' + d.time) : '';
+        if (typeof showToast === 'function') showToast(d.reasoning || ('Peak time set: ' + d.date + ' ' + d.time));
+      } catch (e){
+        if (hint) hint.textContent = orig;
+        if (typeof showToast === 'function') showToast('Peak time unavailable');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // Show / hide the reminder-email input depending on whether a non-
+    // zero reminder window is picked. Mirrors publishToggleReminderEmail
+    // in shorts.js.
+    function vePublishToggleReminderEmail(){
+      var v       = parseInt(document.getElementById('vePublishReminder').value || '0', 10);
+      var email   = document.getElementById('vePublishReminderEmail');
+      var spacer  = document.getElementById('vePublishReminderSpacer');
+      if (v > 0){
+        email.style.display = 'block';
+        if (spacer) spacer.style.display = 'none';
+      } else {
+        email.style.display = 'none';
+        email.value = '';
+        if (spacer) spacer.style.display = 'block';
+      }
+    }
+
     // Wire the Publish button revealed by handleSuccess.
     document.addEventListener('click', function(e){
       var btn = e.target && e.target.closest && e.target.closest('#vePublishBtn');
@@ -7473,10 +7712,12 @@ setTimeout(function sidebarLayoutFix(){
 
     // Expose for manual access.
     try {
-      window.openVePublishModal = openVePublishModal;
-      window.closeVePublishModal = closeVePublishModal;
-      window.setVePublishMode = setVePublishMode;
-      window.submitVePublish = submitVePublish;
+      window.openVePublishModal           = openVePublishModal;
+      window.closeVePublishModal          = closeVePublishModal;
+      window.setVePublishMode             = setVePublishMode;
+      window.submitVePublish              = submitVePublish;
+      window.vePublishSuggestPeakTime     = vePublishSuggestPeakTime;
+      window.vePublishToggleReminderEmail = vePublishToggleReminderEmail;
     } catch(_) {}
   })();
 </script>
@@ -7630,15 +7871,22 @@ router.post('/export', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    // Resolution mapping
+    // Resolution mapping. Task #129 — keys are case-insensitive so
+    // '4K' from the dropdown maps correctly (was '4k' only, which made
+    // a 4K request silently fall through to the 1280×720 default).
     const resolutionMap = {
       '1080p': '1920x1080',
-      '720p': '1280x720',
-      '4k': '3840x2160',
-      '480p': '854x480'
+      '720p':  '1280x720',
+      '4k':    '3840x2160',
+      '4K':    '3840x2160',
+      '480p':  '854x480'
     };
 
-    const resolutionValue = resolutionMap[resolution] || '1280x720';
+    const resolutionKey = String(resolution || '').toLowerCase();
+    const normalizedKey = resolutionKey === '4k' ? '4k' : resolutionKey;
+    const resolutionValue = resolutionMap[resolution]
+                         || resolutionMap[normalizedKey]
+                         || '1280x720';
     const [width, height] = resolutionValue.split('x').map(Number);
 
     // Normalize brightness/contrast/saturation for ffmpeg eq filter
@@ -8505,7 +8753,18 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       }
     }
 
-    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0 || !!brandLogoFile;
+    // Task #121 — Splicora watermark. Default ON; user can toggle off via
+    // the Export panel checkbox (sent in body.splicoraWatermark). When
+    // active, the bundled top-right logo PNG is added as a post-pass
+    // ffmpeg input + overlay; when off, the export is completely clean.
+    var splicoraWatermarkOn = (body && body.splicoraWatermark !== false);
+    var splicoraLogoFile = null;
+    if (splicoraWatermarkOn){
+      var candidate = path.join(__dirname, '..', 'public', 'images', 'splicora-logo-wide-transparent.png');
+      if (fs.existsSync(candidate)) splicoraLogoFile = candidate;
+    }
+
+    var hasPostPass = textClips.length > 0 || audioClips.length > 0 || motionClips.length > 0 || !!brandLogoFile || !!splicoraLogoFile;
 
     if (!hasPostPass){
       // Nothing to bake — just rename the intermediate to the final path.
@@ -8523,6 +8782,13 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
       if (brandLogoFile){
         brandLogoInputIdx = 1 + audioClips.length;
         ffArgs.push('-i', brandLogoFile);
+      }
+      // Task #121 — Splicora watermark input goes AFTER brand logo so its
+      // index doesn't shift based on whether a brand logo is present.
+      var splicoraLogoInputIdx = -1;
+      if (splicoraLogoFile){
+        splicoraLogoInputIdx = 1 + audioClips.length + (brandLogoFile ? 1 : 0);
+        ffArgs.push('-i', splicoraLogoFile);
       }
 
       // Video filter chain: drawtext per text clip. Escape special chars.
@@ -8895,6 +9161,32 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
         chains.push('[vbase]null[vout]');
       }
 
+      // ─── Task #121 — Splicora watermark overlay ────────────────────────
+      // Sits AFTER the brand-logo step so [vout] from the brand step is
+      // renamed to [vPreWm] and a fresh [vout] is built with the watermark
+      // composited on top. Watermark sits in the upper-right with ~2% pad,
+      // sized to ~18% of canvas width, at 85% alpha so it stays subtle.
+      if (splicoraLogoInputIdx >= 0){
+        var wmW    = Math.max(120, Math.round(outW * 0.18));   // ~18% of canvas
+        var wmPadX = Math.max(8, Math.round(outW * 0.02));     // ~2% inset
+        var wmPadY = Math.max(8, Math.round(outH * 0.02));
+        // ffmpeg overlay's main_w + overlay_w (aliased W/w inside expressions)
+        // place us flush against the right edge minus padding.
+        var wmX = '(W-w)-' + wmPadX;
+        var wmY = String(wmPadY);
+        // Rename the existing [vout] from the brand-logo step → [vPreWm]
+        // so we can use it as the base for the watermark overlay.
+        chains[chains.length - 1] = chains[chains.length - 1].replace(/\[vout\]$/, '[vPreWm]');
+        // Scale the Splicora logo to wmW (height auto-even) and knock the
+        // alpha down to ~85% so the mark reads as a watermark, not opaque.
+        chains.push('[' + splicoraLogoInputIdx + ':v]' +
+                    'format=rgba,' +
+                    'scale=' + wmW + ':-1,' +
+                    'colorchannelmixer=aa=0.85' +
+                    '[swmSc]');
+        chains.push('[vPreWm][swmSc]overlay=x=' + wmX + ':y=' + wmY + '[vout]');
+      }
+
       videoGraph = chains.join(';');
 
       // Audio graph: mix video's own audio + every audio clip
@@ -9045,7 +9337,11 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
 // Otherwise -> calls publishToConnection(userId, connectionId, { ..., mediaPath }).
 router.post('/api/publish-export', requireAuth, async (req, res) => {
   try {
-    const { filename, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    // Task #124 — accept reminderMinutes, reminderEmail, notes so the
+    // calendar entry captures the same Schedule metadata Smart Shorts
+    // collects.
+    const { filename, connectionId, title, caption, description, scheduledAt,
+            reminderMinutes, reminderEmail, notes } = req.body || {};
     if (!filename) return res.status(400).json({ success: false, error: 'filename is required' });
     if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
 
@@ -9075,10 +9371,15 @@ router.post('/api/publish-export', requireAuth, async (req, res) => {
           scheduledTime: timeStr,
           contentText: caption || description || '',
           analysisId: null, momentIndex: null,
-          notes: '', color: '#6c5ce7',
+          // Task #124 — persist notes + reminder so the calendar UI +
+          // schedulePublisher cron pick them up like Smart Shorts does.
+          notes: notes || '',
+          color: '#6c5ce7',
           autoPublish: true,
           clipFilename: safe,
-          connectionId: acct.id
+          connectionId: acct.id,
+          reminderEmail:   reminderEmail || '',
+          reminderMinutes: parseInt(reminderMinutes, 10) || 0
         });
         return res.json({ success: true, scheduled: true, scheduledFor: dateStr + ' ' + timeStr, entryId: entry.id });
       }
@@ -11479,6 +11780,64 @@ router.post('/ai-enhance', requireAuth, async (req, res) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
+// Task #133 — POST /video-editor/extract-audio
+// Detach a V1 video clip's audio into a standalone mp3 the editor can
+// drop onto A1. Extracts the ENTIRE source's audio (not just the
+// visible clip window) so the resulting A1 clip can be trimmed freely
+// just like a fresh upload. ffmpeg with -vn -acodec libmp3lame is fast
+// and produces a clean stereo VBR ~192kbps file.
+//
+// Body:    { mediaUrl }
+// Returns: { success, mediaUrl, filename, duration }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/extract-audio', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath){
+      return res.status(500).json({ error: 'FFmpeg is not available' });
+    }
+    var b = req.body || {};
+    var srcPath = resolveMediaUrlToPath(b.mediaUrl);
+    if (!srcPath){ return res.status(400).json({ error: 'Media not found on server' }); }
+
+    var outName = 'extracted_' + Date.now() + '_' + req.user.id + '.mp3';
+    var outPath = path.join(uploadDir, outName);
+
+    await new Promise(function(resolve, reject){
+      var proc = spawn(ffmpegPath, [
+        '-i', srcPath,
+        '-vn',                       // drop video
+        '-c:a', 'libmp3lame',
+        '-q:a', '2',                 // VBR ~190 kbps
+        '-ac', '2',                  // stereo
+        '-ar', '44100',              // 44.1 kHz
+        '-y', outPath
+      ]);
+      var err = '';
+      proc.stderr.on('data', function(d){ err += d.toString(); });
+      proc.on('close', function(code){
+        if (code === 0 && fs.existsSync(outPath)) resolve();
+        else reject(new Error('FFmpeg failed: ' + err.slice(-300)));
+      });
+      proc.on('error', reject);
+    });
+
+    // Probe duration so the client knows the extracted asset's true
+    // length. getVideoMetadata works on audio-only too via ffprobe.
+    var meta = await getVideoMetadata(outPath).catch(function(){ return { duration: 0 }; });
+
+    res.json({
+      success: true,
+      mediaUrl: '/video-editor/download/' + outName,
+      filename: outName,
+      duration: meta.duration || 0
+    });
+  } catch (err){
+    console.error('[extract-audio]', err);
+    res.status(500).json({ error: err.message || 'Extract audio failed' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════
 // Task #38 + #39 — POST /video-editor/smart-cut
 // Analyzes a media file and returns a list of time ranges to cut or
 // split. Three modes:
@@ -11741,54 +12100,43 @@ router.post('/resize-clip', requireAuth, async (req, res) => {
     var targetW = ASPECTS[aspectRatio].width;
     var targetH = ASPECTS[aspectRatio].height;
 
-    // Probe input dimensions so we can compute the centered crop window.
-    var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
-    var probeOut = await new Promise(function(resolve, reject){
-      var s = '';
-      var pErr = '';
-      var p = spawn(ffprobeLocal, [
-        '-v', 'error',
-        '-select_streams', 'v:0',
-        '-show_entries', 'stream=width,height',
-        '-of', 'csv=p=0',
-        srcPath
-      ]);
-      p.stdout.on('data', function(d){ s += d.toString(); });
-      p.stderr.on('data', function(d){ pErr += d.toString(); });
-      p.on('close', function(code){
-        if (code === 0) resolve(s);
-        else reject(new Error('ffprobe failed: ' + (pErr || 'exit ' + code).slice(-200)));
-      });
-      p.on('error', reject);
-    });
-    var parts = (probeOut || '').trim().split(',');
-    var srcW = parseInt(parts[0], 10);
-    var srcH = parseInt(parts[1], 10);
-    if (!srcW || !srcH){
-      return res.status(500).json({ error: 'Could not read source video dimensions' });
-    }
-
-    // Center crop math — identical to ai-reframe.js's calculateCropDimensions.
-    var srcAspect    = srcW / srcH;
-    var targetAspect = targetW / targetH;
-    var cropW, cropH;
-    if (srcAspect > targetAspect){
-      // Source is wider than target → crop horizontal slab
-      cropH = srcH;
-      cropW = Math.floor(srcH * targetAspect);
-    } else {
-      // Source is taller than target → crop vertical slab
-      cropW = srcW;
-      cropH = Math.floor(srcW / targetAspect);
-    }
-    var cropX = Math.floor((srcW - cropW) / 2);
-    var cropY = Math.floor((srcH - cropH) / 2);
-
     var outName = 'resize_' + Date.now() + '_' + req.user.id + '.mp4';
     var outPath = path.join(uploadDir, outName);
 
-    var filterComplex = 'crop=' + cropW + ':' + cropH + ':' + cropX + ':' + cropY +
-                        ',scale=' + targetW + ':' + targetH;
+    // Task #120 — Use ffmpeg expressions instead of hardcoded crop dims
+    // so the filter computes against the actual decoded frame at
+    // runtime. This handles three cases that broke the old crop-then-
+    // scale approach with hardcoded numbers from ffprobe:
+    //   1. Rotated sources (phone portrait video where the stream is
+    //      encoded horizontally with rotation metadata — ffprobe
+    //      reports pre-rotation dims, ffmpeg auto-rotates on decode,
+    //      and the hardcoded crop coords no longer fit).
+    //   2. Variable-resolution sources (some YouTube downloads).
+    //   3. Pixel format / framerate inconsistencies.
+    //
+    // The filter does fit-cover: scale to fill the smaller axis while
+    // preserving aspect, then center-crop the exact target dims. This
+    // is the same outcome AI Reframe achieves with hardcoded numbers,
+    // but rotation-safe.
+    var ar = targetW + '/' + targetH;  // e.g. "1920/1080" — used in expressions
+    // scale expression:
+    //   • if source is WIDER than target (iw/ih >= W/H): scale height to H,
+    //     width auto (preserves aspect), making width > W → crop will
+    //     trim sides.
+    //   • else (source is TALLER than target): scale width to W, height
+    //     auto (preserves aspect), making height > H → crop will trim
+    //     top + bottom.
+    //   • -2 means "auto-compute, must be even" — required for H.264.
+    // Single-quote the expressions so ffmpeg treats commas inside as
+    // literal characters (cleaner than backslash-escaping each comma).
+    var scaleW = "'if(gte(iw/ih," + ar + "),-2," + targetW + ")'";
+    var scaleH = "'if(gte(iw/ih," + ar + ")," + targetH + ",-2)'";
+    var filterComplex =
+      'fps=30,' +                          // normalize variable framerate
+      'format=yuv420p,' +                   // normalize pixel format
+      'scale=w=' + scaleW + ':h=' + scaleH + ',' +
+      'crop=' + targetW + ':' + targetH +   // exact center-crop to target
+      ',setsar=1';                          // square pixels for clean encode
 
     await new Promise(function(resolve, reject){
       var proc = spawn(ffmpegPath, [

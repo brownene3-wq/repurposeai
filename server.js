@@ -497,20 +497,42 @@ app.listen(PORT, () => {
 
   setInterval(async () => {
     // (a) Reminder emails.
+    //
+    // sendPostingReminder() now returns { ok, error } instead of throwing.
+    // We only flip reminder_sent on a real success. On failure we increment
+    // reminder_attempts + store the error so the user sees it on the
+    // notifications page (red banner on the entry card). After 3 attempts
+    // we 'give up' by flipping reminder_sent (cron stops retrying) but the
+    // error stays visible.
+    const REMINDER_MAX_ATTEMPTS = 3;
     try {
       const pending = await calendarOps.getPendingReminders();
       for (const entry of pending) {
         try {
-          await sendPostingReminder({
+          const result = await sendPostingReminder({
             email: entry.reminder_email,
             title: entry.title,
             platform: entry.platform,
             scheduledDate: (entry.scheduled_date || '').toString().substring(0, 10),
             scheduledTime: entry.scheduled_time
           });
-          await calendarOps.markReminderSent(entry.id);
-          console.log(`[Reminder] Sent to ${entry.reminder_email} for "${entry.title}"`);
+          if (result && result.ok) {
+            await calendarOps.markReminderSent(entry.id);
+            console.log(`[Reminder] Sent to ${entry.reminder_email} for "${entry.title}"`);
+          } else {
+            const attempts = (entry.reminder_attempts || 0) + 1;
+            await calendarOps.markReminderFailed(entry.id, result && result.error || 'Email send failed');
+            console.error(
+              `[Reminder] Send failed for ${entry.id} (attempt ${attempts}/${REMINDER_MAX_ATTEMPTS}): ${result && result.error || 'unknown'}`
+            );
+            if (attempts >= REMINDER_MAX_ATTEMPTS) {
+              await calendarOps.giveUpReminder(entry.id);
+              console.error(`[Reminder] Gave up after ${attempts} attempts for entry ${entry.id}`);
+            }
+          }
         } catch (e) {
+          // Hard exception (network glitch, code bug). Surface the same way.
+          await calendarOps.markReminderFailed(entry.id, e && e.message || 'Unexpected error');
           console.error(`[Reminder] Failed for entry ${entry.id}:`, e.message);
         }
       }

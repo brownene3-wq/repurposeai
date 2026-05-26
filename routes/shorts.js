@@ -36,11 +36,21 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing-opena
 
 // Common yt-dlp args to handle YouTube's anti-bot measures
 // PO token provider runs on port 4416 (started in Dockerfile CMD)
+//
+// player_client expansion: by default yt-dlp queries YouTube's "web"
+// client, which is the most heavily auth-gated. We override to try
+// tv / ios / web_safari / web in that order — TV and iOS clients use
+// a different auth path and frequently bypass the "Sign in to confirm
+// you're not a bot" wall that hits datacenter IPs (Railway, sometimes
+// Hetzner). When YT_COOKIES_PATH is also configured, this turns into a
+// best-of-both stack. When it isn't, it's our highest-value code-only
+// mitigation against the auth wall.
 const YTDLP_COMMON_ARGS = [
   '--no-warnings',
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtube:player_client=tv,ios,web_safari,web',
   '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
   '--js-runtimes', 'node',
   '--remote-components', 'ejs:github',
@@ -1602,6 +1612,21 @@ Ensure all times are accurate to the transcript. Focus on moments that are 30-12
       });
 
       res.end();
+
+      // ──────────────────────────────────────────────────────────────────
+      // Phase: pre-warm the source-video cache so the FIRST per-moment
+      // preview is instant. Fire-and-forget — runs after the response
+      // ends so the user never waits on it. getOrDownloadVideo() uses a
+      // lockfile + on-disk cache keyed by videoId, so if the user opens
+      // a moment before this finishes, the moment-preview endpoint
+      // simply joins the in-flight download instead of starting a
+      // second one.
+      // ──────────────────────────────────────────────────────────────────
+      setImmediate(() => {
+        getOrDownloadVideo(videoId, canonicalUrl, 'yt-dlp', () => {})
+          .then(p => console.log(`[shorts/analyze] source pre-cached for ${videoId} -> ${p}`))
+          .catch(e => console.log(`[shorts/analyze] source pre-cache skipped for ${videoId}: ${(e && e.message || e).toString().slice(0, 200)}`));
+      });
     } catch (streamError) {
       console.error('Error during analysis stream:', streamError);
       sendUpdate({ status: 'error', message: streamError.message || 'Analysis failed unexpectedly.' });
@@ -2457,6 +2482,150 @@ function formatTimestampCompat(totalSeconds) {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
 }
 
+// In-flight lock map so concurrent requests for the same preview
+// don't double-spawn ffmpeg. Key: output path on disk. Value: Promise
+// that resolves once the writer finishes.
+const previewGenerationLocks = new Map();
+
+// GET /moment-preview/:analysisId/:momentIdx
+// Returns a 9:16 vertical, center-cropped, trimmed-to-timeRange MP4 for
+// a single moment so the analysis card can autoplay it in a <video> tag.
+// Lazily ffmpegs the first request and caches the output in CLIPS_DIR
+// as _preview_<id>_m<idx>.mp4 (small file, ~1-3MB at 360x640@CRF 28).
+router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) return res.status(503).end();
+
+    const analysisId = req.params.analysisId;
+    const momentIdx = parseInt(req.params.momentIdx, 10);
+    if (!Number.isFinite(momentIdx) || momentIdx < 0) return res.status(400).end();
+
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
+
+    let moments = analysis.moments || [];
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIdx];
+    if (!moment || !moment.timeRange) return res.status(404).end();
+
+    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}.mp4`);
+
+    // Helper to stream the cached file with proper headers.
+    const sendCached = () => {
+      res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+      res.setHeader('Content-Type', 'video/mp4');
+      return res.sendFile(outPath);
+    };
+
+    // Cache hit — serve immediately.
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 1024) {
+      return sendCached();
+    }
+
+    // Wait on any in-flight generation for the same file before kicking
+    // off a new ffmpeg. Two simultaneous requests for the same preview
+    // (page refresh, hot reload) would otherwise race for the same path.
+    if (previewGenerationLocks.has(outPath)) {
+      try { await previewGenerationLocks.get(outPath); } catch (_) { /* swallow — handled below */ }
+      if (fs.existsSync(outPath) && fs.statSync(outPath).size > 1024) {
+        return sendCached();
+      }
+    }
+
+    // Parse the moment time range. parseTimeRange handles MM:SS-MM:SS.
+    let startSec, endSec;
+    try {
+      const r = parseTimeRange(moment.timeRange);
+      startSec = r.start;
+      endSec = r.end;
+    } catch (e) { return res.status(400).end(); }
+    if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
+      return res.status(400).end();
+    }
+    // Use the full duration between the moment's start and end
+    // timestamps. The endSec > startSec check above already guarantees
+    // this is > 0, so no minimum floor is needed.
+    const duration = endSec - startSec;
+
+    // Extract YouTube videoId from the analysis URL.
+    const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+    const vidMatch = (analysis.video_url || '').match(ytRegex);
+    if (!vidMatch) return res.status(400).end();
+    const videoId = vidMatch[1];
+    const videoUrl = analysis.video_url;
+
+    // Register lock so concurrent requests block instead of racing.
+    let lockResolve, lockReject;
+    const lockPromise = new Promise((resolve, reject) => {
+      lockResolve = resolve;
+      lockReject = reject;
+    });
+    previewGenerationLocks.set(outPath, lockPromise);
+
+    try {
+      // Reuse the cached source video if available; download otherwise.
+      const ytdlpPath = 'yt-dlp';
+      const sourceVideoPath = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, () => {});
+
+      // ffmpeg pipeline:
+      //   -ss before -i = fast seek (keyframe-accurate enough for a preview)
+      //   -t duration   = trim to the moment's window
+      //   crop=ih*9/16:ih  = center crop the source into a 9:16 column
+      //   scale=360:640    = downscale for fast playback / small file size
+      //   libx264 veryfast crf 28 + faststart for browser streaming
+      //   aac 64k stereo audio so the user can unmute meaningfully
+      const ffArgs = [
+        '-y',
+        '-ss', String(startSec),
+        '-t', String(duration),
+        '-i', sourceVideoPath,
+        '-vf', 'crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=360:640:flags=lanczos',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '64k', '-ac', '2', '-ar', '44100',
+        '-movflags', '+faststart',
+        outPath
+      ];
+
+      await new Promise((resolve, reject) => {
+        const proc = spawn(ffmpegPath, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderr = '';
+        let settled = false;
+        const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+        proc.stderr.on('data', d => { stderr += d.toString(); });
+        proc.on('error', e => settle(reject, e));
+        proc.on('close', code => code === 0
+          ? settle(resolve)
+          : settle(reject, new Error(`ffmpeg preview exit ${code}: ${stderr.slice(-300)}`)));
+        const timer = setTimeout(() => {
+          try { proc.kill('SIGKILL'); } catch (_) {}
+          settle(reject, new Error('ffmpeg preview timeout (90s)'));
+        }, 90000);
+      });
+
+      lockResolve();
+    } catch (genErr) {
+      lockReject(genErr);
+      previewGenerationLocks.delete(outPath);
+      // Clean up any half-written file so the next request retries.
+      try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (_) {}
+      console.error('  Moment preview generation failed:', genErr && genErr.message);
+      return res.status(500).json({ error: 'preview generation failed', detail: String(genErr && genErr.message || '').slice(0, 300) });
+    }
+    previewGenerationLocks.delete(outPath);
+
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 1024) {
+      return res.status(500).end();
+    }
+    return sendCached();
+  } catch (err) {
+    console.error('Moment preview error:', err);
+    return res.status(500).end();
+  }
+});
+
 // GET /analysis/:id - Get analysis data (used by client-side export)
 router.get('/analysis/:id', requireAuth, async (req, res) => {
   try {
@@ -2833,24 +3002,52 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
     // clear error so the UI can prompt the user to click Download Clip
     // first. (Rendering synchronously here would block the request for
     // 30-60 seconds.)
+    //
+    // Race-condition guard: the front-end button switches back to "Download
+    // Clip" the instant the render endpoint finishes writing the .progress
+    // file, but the atomic-rename of the .mp4 may still be a few hundred ms
+    // behind. If the user clicks Publish right at that boundary, we'd see
+    // no candidates and bail with "No rendered clip found". Retry the lookup
+    // a few times with a small delay before erroring so the rename has time
+    // to complete. Also wait while a .progress or .encoding.mp4 file exists
+    // for this analysis+moment — that means a render is genuinely in flight.
     const fs = require('fs');
     const path = require('path');
     const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
-    let mediaPath = null;
-    try {
-      const files = fs.readdirSync(CLIPS_DIR);
-      const candidates = files
-        .filter(f => f.endsWith('.mp4') && f.includes(analysisId))
-        .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
-        .sort((a, b) => b.mtime - a.mtime);
-      // Prefer a clip that explicitly encodes this moment index (new naming
-      // from the same commit). Otherwise, accept any clip for this analysis —
-      // handles older clips that were rendered before the m<idx> tag landed.
-      const tag = '_m' + momentIndex + '_';
-      const exact = candidates.find(c => c.f.includes(tag));
-      const pick = exact || candidates[0];
-      if (pick && fs.statSync(pick.full).size > 10000) mediaPath = pick.full;
-    } catch (_) {}
+    const tag = '_m' + momentIndex + '_';
+    const tryFindClip = () => {
+      try {
+        const files = fs.readdirSync(CLIPS_DIR);
+        const candidates = files
+          .filter(f => f.endsWith('.mp4') && !f.endsWith('.encoding.mp4') && f.includes(analysisId))
+          .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime);
+        const exact = candidates.find(c => c.f.includes(tag));
+        const pick = exact || candidates[0];
+        if (pick && fs.statSync(pick.full).size > 10000) return pick.full;
+      } catch (_) {}
+      return null;
+    };
+    const renderInFlight = () => {
+      try {
+        const files = fs.readdirSync(CLIPS_DIR);
+        return files.some(f =>
+          f.includes(analysisId) && (f.endsWith('.progress') || f.endsWith('.encoding.mp4'))
+        );
+      } catch (_) { return false; }
+    };
+    let mediaPath = tryFindClip();
+    // Retry for up to ~10 seconds while a render is in flight, or 3 seconds
+    // for the rename race when no render is active.
+    const startTs = Date.now();
+    while (!mediaPath) {
+      const inFlight = renderInFlight();
+      const elapsed = Date.now() - startTs;
+      if (!inFlight && elapsed >= 3000) break;
+      if (inFlight && elapsed >= 60000) break; // hard cap — render shouldn't take >60s past the button toggle
+      await new Promise(r => setTimeout(r, 500));
+      mediaPath = tryFindClip();
+    }
     if (!mediaPath) {
       return res.status(409).json({ success: false, error: 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.' });
     }
@@ -6237,6 +6434,17 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
     body.light #publishModal > div{scrollbar-color:rgba(0,0,0,0.15) transparent}
     body.light #publishModal > div::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15)}
     body.light #publishModal > div::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,0.25)}
+    /* Moment preview loading state — covers the 9:16 shell while the
+       <video> element is buffering or while the server is still
+       running ffmpeg to trim the source on first request. Drops away
+       once the video's readyState reaches HAVE_FUTURE_DATA (3). */
+    .moment-preview-loader{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(10,6,18,0.88);color:#cfc6e6;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;z-index:6;backdrop-filter:blur(2px);}
+    .moment-preview-spinner{width:34px;height:34px;border:3px solid rgba(255,255,255,0.12);border-top-color:#a78bfa;border-radius:50%;animation:momentPreviewSpin 0.9s linear infinite;}
+    @keyframes momentPreviewSpin{to{transform:rotate(360deg);}}
+    /* Controls disabled while loading — visually muted, click-through
+       suppressed. Re-enabled when _updateMomentLoader clears the
+       disabled state. */
+    .moment-preview-shell .moment-control-disabled{opacity:0.35;pointer-events:none;}
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
@@ -6901,6 +7109,25 @@ ${paginationHtml}
       </div>
     </div>
 
+    <!-- Copyright disclaimer modal (Analyze gate) — shown after the user
+         clicks "Analyze" on the import panel. Confirm proceeds with the
+         actual analysis; Cancel aborts. -->
+    <div id="analyzeConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:10001;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeAnalyzeConfirm()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:480px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <h3 style="margin:0 0 14px;font-size:1.05rem;display:flex;align-items:center;gap:8px;color:var(--text);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Confirm rights to use this content
+        </h3>
+        <p style="color:var(--text-muted);font-size:0.88rem;line-height:1.55;margin:0 0 18px;">
+          Please ensure you have the right to use this content. Uploading copyrighted material without permission may violate legal guidelines. By proceeding, you confirm that you own this video or have the authorization to use it.
+        </p>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button id="analyzeConfirmCancel" type="button" onclick="closeAnalyzeConfirm()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.55rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
+          <button id="analyzeConfirmOk" type="button" onclick="confirmAnalyze()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.55rem 1.4rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Yes, proceed</button>
+        </div>
+      </div>
+    </div>
+
 </main>
 
   <!-- Calendar Entry Modal -->
@@ -7131,13 +7358,20 @@ ${paginationHtml}
       }
     })();
 
-    async function analyzeVideo() {
+    // Entry point wired to the import panel's Analyze button.
+    // We DON'T start the analysis here anymore — first we open the
+    // copyright disclaimer modal. confirmAnalyze() resumes the flow
+    // via _runAnalyze(url) only after the user accepts.
+    function analyzeVideo() {
       const url = document.getElementById('videoUrl').value.trim();
       if (!url) {
         showToast('Please enter a YouTube URL');
         return;
       }
+      openAnalyzeConfirm(url);
+    }
 
+    async function _runAnalyze(url) {
       const btn = document.querySelector('.btn-primary');
       const btnText = document.getElementById('analyzeBtn');
       btn.disabled = true;
@@ -7504,6 +7738,268 @@ ${paginationHtml}
         sel.innerHTML = '<option value="">Failed to load accounts</option>';
       }
     }
+    // ── Analyze confirmation gate ────────────────────────────────────
+    // The Analyze button on the import panel routes through this gate so
+    // the user has to acknowledge the copyright disclaimer before the
+    // POST /shorts/analyze SSE actually fires. We stash the URL and the
+    // button refs in a closure so confirmAnalyze() can resume the flow
+    // exactly where analyzeVideo() would have, but only on confirmation.
+    var __pendingAnalyzeUrl = null;
+    function openAnalyzeConfirm(url) {
+      __pendingAnalyzeUrl = url;
+      var m = document.getElementById('analyzeConfirmModal');
+      if (m) m.style.display = 'flex';
+    }
+    function closeAnalyzeConfirm() {
+      var m = document.getElementById('analyzeConfirmModal');
+      if (m) m.style.display = 'none';
+      __pendingAnalyzeUrl = null;
+    }
+    function confirmAnalyze() {
+      var url = __pendingAnalyzeUrl;
+      closeAnalyzeConfirm();
+      if (!url) return;
+      _runAnalyze(url);
+    }
+
+    // ── Native 9:16 moment preview ───────────────────────────────────
+    // Each moment card embeds a <video src="/shorts/moment-preview/.../...">
+    // trimmed server-side to the moment's start/end window. Behavior:
+    //   • Autoplays once when it scrolls into view (no infinite loop).
+    //   • IntersectionObserver pauses it when it leaves the viewport
+    //     and resumes it when it comes back — UNLESS the video has
+    //     ended or the user explicitly paused it via the toggle, in
+    //     which case we leave it alone and let the user click play.
+    //   • Center play/pause button toggles the playback state; its
+    //     icon swaps between ▶ and ‖ in response to actual play/pause/
+    //     ended events on the <video>, not based on what the button
+    //     "thinks" the state is. That way external state changes
+    //     (autoplay, IntersectionObserver, end-of-clip) stay in sync.
+    //   • Top-right mute toggle still exists; unmuting one preview
+    //     auto-mutes the others.
+    function _getMomentPreviewObserver() {
+      if (window.__momentPreviewObserver) return window.__momentPreviewObserver;
+      if (!('IntersectionObserver' in window)) return null;
+      window.__momentPreviewObserver = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          var vid = entry.target;
+          if (!(vid instanceof HTMLVideoElement)) return;
+          if (entry.isIntersecting) {
+            // Don't auto-resume if the user has paused, or if the clip
+            // has already played to completion — that would be a
+            // surprise replay every scroll-pass and effectively turn
+            // the preview back into a loop.
+            if (vid.dataset.userPaused === '1') return;
+            if (vid.ended) return;
+            var p = vid.play();
+            if (p && typeof p.catch === 'function') p.catch(function(){});
+          } else {
+            try { vid.pause(); } catch (_) {}
+          }
+        });
+      }, { threshold: 0.2 });
+      return window.__momentPreviewObserver;
+    }
+    function _syncMomentPlayPauseIcon(vid) {
+      var shell = vid && vid.closest && vid.closest('.moment-preview-shell');
+      if (!shell) return;
+      var btn = shell.querySelector('.moment-pp-btn');
+      if (!btn) return;
+      var playing = !vid.paused && !vid.ended;
+      var playIcon = btn.querySelector('.pp-play');
+      var pauseIcon = btn.querySelector('.pp-pause');
+      if (playIcon) playIcon.style.display = playing ? 'none' : '';
+      if (pauseIcon) pauseIcon.style.display = playing ? '' : 'none';
+      btn.setAttribute('aria-label', playing ? 'Pause preview' : 'Play preview');
+      // Fade the overlay while playing so it doesn't compete with the
+      // content, but keep it interactive.
+      btn.style.opacity = playing ? '0.55' : '1';
+    }
+    // Show/hide the .moment-preview-loader overlay based on the
+    // <video>'s readyState and the latest fired event. We treat the
+    // video as "loading" when:
+    //   • readyState < HAVE_FUTURE_DATA (3) — not enough buffered yet
+    //   • OR the last network event was loadstart / waiting / stalled
+    //     (the browser is actively fetching)
+    // Once a canplay / canplaythrough / playing event lands and
+    // readyState >= 3, we reveal the player and re-enable controls.
+    // Phase: escalating status. The first preview for a brand-new
+    // analysis can take 30-60+ seconds because the server has to
+    // yt-dlp the source video and run ffmpeg. Show the user the
+    // estimated wait so they don't think the page is frozen.
+    function _scheduleLoaderEscalation(shell) {
+      if (!shell || shell.dataset.escScheduled) return;
+      shell.dataset.escScheduled = '1';
+      shell.dataset.escStartedAt = String(Date.now());
+      var textEl = shell.querySelector('.moment-preview-loader-text');
+      if (!textEl) return;
+      var stages = [
+        { at: 4000,  msg: 'Buffering…' },
+        { at: 12000, msg: 'Trimming clip on the server…' },
+        { at: 30000, msg: 'Still working — first preview can take up to 60s' },
+        { at: 60000, msg: 'Almost there… you can refresh if this hangs' }
+      ];
+      stages.forEach(function(stage) {
+        setTimeout(function() {
+          // Only update if loader is still visible (not flipped to ready).
+          var loader = shell.querySelector('.moment-preview-loader');
+          if (!loader || loader.style.display === 'none') return;
+          textEl.textContent = stage.msg;
+        }, stage.at);
+      });
+    }
+
+    // Called by the <video>'s onerror. Surfaces a Retry option in the
+    // fallback so transient yt-dlp / ffmpeg failures (the most common
+    // cause of preview hangs) don't require a full page refresh.
+    function _onMomentPreviewError(vid) {
+      var shell = vid && vid.closest && vid.closest('.moment-preview-shell');
+      if (!shell) return;
+      // Stash the original src so Retry can re-point at it with a cache
+      // buster.
+      if (!vid.dataset.origSrc) vid.dataset.origSrc = vid.getAttribute('src') || '';
+      vid.style.display = 'none';
+      var loader = shell.querySelector('.moment-preview-loader');
+      if (loader) loader.style.display = 'none';
+      var fb = shell.querySelector('.moment-preview-fallback');
+      if (fb) fb.style.display = 'flex';
+    }
+
+    // Triggered by the Retry button in the fallback overlay.
+    function _retryMomentPreview(btn) {
+      var shell = btn && btn.closest && btn.closest('.moment-preview-shell');
+      if (!shell) return;
+      var vid = shell.querySelector('video');
+      var fb  = shell.querySelector('.moment-preview-fallback');
+      var loader = shell.querySelector('.moment-preview-loader');
+      var textEl = loader && loader.querySelector('.moment-preview-loader-text');
+      if (!vid) return;
+      if (fb) fb.style.display = 'none';
+      if (loader) loader.style.display = 'flex';
+      if (textEl) textEl.textContent = 'Retrying…';
+      // Reset escalation so it kicks in again on the new attempt.
+      delete shell.dataset.escScheduled;
+      // Re-point the source with a cache buster to force the browser
+      // to re-request (skips any negatively cached error response).
+      var orig = vid.dataset.origSrc || vid.getAttribute('src') || '';
+      var sep = orig.indexOf('?') >= 0 ? '&' : '?';
+      vid.style.display = 'block';
+      vid.setAttribute('src', orig.replace(/[?&]_retry=\d+/, '') + sep + '_retry=' + Date.now());
+      try { vid.load(); } catch (_) {}
+      _scheduleLoaderEscalation(shell);
+    }
+
+        function _updateMomentLoader(vid, eventName) {
+      var shell = vid && vid.closest && vid.closest('.moment-preview-shell');
+      if (!shell) return;
+      var loader = shell.querySelector('.moment-preview-loader');
+      // Buffering events override readyState (they fire while the
+      // browser is actively fetching more frames mid-playback).
+      var bufferingEvent = eventName === 'waiting' || eventName === 'stalled' || eventName === 'loadstart';
+      var readyEvent = eventName === 'canplay' || eventName === 'canplaythrough' || eventName === 'playing' || eventName === 'loadeddata';
+      var loading;
+      if (bufferingEvent) {
+        loading = true;
+      } else if (readyEvent) {
+        loading = vid.readyState < 3;
+      } else {
+        loading = vid.readyState < 3;
+      }
+      if (loader) loader.style.display = loading ? 'flex' : 'none';
+      // Disable controls while loading — visually muted + click-through
+      // suppressed via the .moment-control-disabled class.
+      var ppBtn = shell.querySelector('.moment-pp-btn');
+      var muteBtn = shell.querySelector('.moment-mute-btn');
+      [ppBtn, muteBtn].forEach(function(b) {
+        if (!b) return;
+        if (loading) {
+          b.classList.add('moment-control-disabled');
+          b.setAttribute('aria-disabled', 'true');
+        } else {
+          b.classList.remove('moment-control-disabled');
+          b.removeAttribute('aria-disabled');
+        }
+      });
+    }
+    function registerMomentPreview(vid) {
+      if (!vid) return;
+      var obs = _getMomentPreviewObserver();
+      if (obs) obs.observe(vid);
+      // Kick off the escalation ticker the first time a preview registers.
+      var shell = vid.closest && vid.closest('.moment-preview-shell');
+      if (shell) _scheduleLoaderEscalation(shell);
+      // Wire native playback + loading events. dataset.ppWired guards
+      // against double-binding if onloadeddata fires multiple times.
+      if (!vid.dataset.ppWired) {
+        vid.dataset.ppWired = '1';
+        // Play/pause icon sync.
+        vid.addEventListener('play', function() { _syncMomentPlayPauseIcon(vid); _updateMomentLoader(vid, 'playing'); });
+        vid.addEventListener('pause', function() { _syncMomentPlayPauseIcon(vid); });
+        vid.addEventListener('ended', function() { _syncMomentPlayPauseIcon(vid); });
+        // Loading state events. Order chosen so we go LOAD → READY:
+        //   loadstart → metadata → loadeddata → canplay → canplaythrough → playing
+        // and re-show on waiting / stalled.
+        vid.addEventListener('loadstart',    function() { _updateMomentLoader(vid, 'loadstart'); });
+        vid.addEventListener('loadedmetadata', function() { _updateMomentLoader(vid, 'loadedmetadata'); });
+        vid.addEventListener('loadeddata',   function() { _updateMomentLoader(vid, 'loadeddata'); });
+        vid.addEventListener('canplay',      function() { _updateMomentLoader(vid, 'canplay'); });
+        vid.addEventListener('canplaythrough', function() { _updateMomentLoader(vid, 'canplaythrough'); });
+        vid.addEventListener('waiting',      function() { _updateMomentLoader(vid, 'waiting'); });
+        vid.addEventListener('stalled',      function() { _updateMomentLoader(vid, 'stalled'); });
+      }
+      _syncMomentPlayPauseIcon(vid);
+      _updateMomentLoader(vid, null);
+    }
+    function togglePlayPause(btn) {
+      if (!btn) return;
+      // Bail out if the button is currently disabled by the loading
+      // state — clicks during buffering would race the video element.
+      if (btn.classList.contains('moment-control-disabled')) return;
+      var shell = btn.closest('.moment-preview-shell');
+      if (!shell) return;
+      var vid = shell.querySelector('video');
+      if (!vid) return;
+      if (vid.paused || vid.ended) {
+        // If the clip already ended, rewind to the start so the click
+        // does the obvious thing — replay from the beginning rather
+        // than staying frozen on the last frame.
+        if (vid.ended) {
+          try { vid.currentTime = 0; } catch (_) {}
+        }
+        delete vid.dataset.userPaused;
+        var p = vid.play();
+        if (p && typeof p.catch === 'function') p.catch(function(){});
+      } else {
+        vid.dataset.userPaused = '1';
+        vid.pause();
+      }
+    }
+    function toggleMomentMute(btn) {
+      if (!btn) return;
+      if (btn.classList.contains('moment-control-disabled')) return;
+      var shell = btn.closest('.moment-preview-shell');
+      if (!shell) return;
+      var vid = shell.querySelector('video');
+      if (!vid) return;
+      var willUnmute = !!vid.muted;
+      // If the user is unmuting THIS preview, mute every other one so
+      // they don't compete. Honors basic audio etiquette across the
+      // moments grid.
+      if (willUnmute) {
+        document.querySelectorAll('.moment-preview-shell video').forEach(function(other) {
+          if (other !== vid) other.muted = true;
+        });
+      }
+      vid.muted = !vid.muted;
+      var mutedIcon = btn.querySelector('.mute-on');
+      var unmutedIcon = btn.querySelector('.mute-off');
+      if (mutedIcon && unmutedIcon) {
+        mutedIcon.style.display = vid.muted ? '' : 'none';
+        unmutedIcon.style.display = vid.muted ? 'none' : '';
+      }
+      btn.setAttribute('aria-label', vid.muted ? 'Unmute preview' : 'Mute preview');
+    }
+
     function closePublishModal() {
       document.getElementById('publishModal').style.display = 'none';
     }
@@ -7723,30 +8219,78 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Build clickable thumbnail preview — each moment gets a different frame
-          // (YouTube's 1/2/3.jpg are taken at ~25/50/75% of the video, cycled by index for variety).
-          // Clicking the thumbnail triggers a clip download instead of redirecting to YouTube.
-          const _frameIdx = (idx % 3) + 1; // 1, 2, or 3
+          // Native 9:16 vertical preview. The server returns an MP4 that
+          // is already trimmed to the moment's [start, end] window and
+          // center-cropped to 9:16, so the browser just plays it once
+          // (no infinite loop). The container is locked to aspect-ratio
+          // 9:16 with a capped width so the moment card stays a sensible
+          // height even when 8 cards stack.
+          //   - <video> autoplay+muted+playsinline so it kicks off when
+          //     scrolled into view, but no loop attribute — plays once
+          //     then stops on the last frame until the user clicks play.
+          //   - poster falls back to YouTube's mqdefault frame while the
+          //     trimmed MP4 is still being generated server-side.
+          //   - registerMomentPreview() wires IntersectionObserver +
+          //     listens for native play / pause / ended events so the
+          //     center play/pause button icon stays in sync.
+          //   - Center button: togglePlayPause swaps between ▶ and ‖.
+          //   - Top-right mute toggle stays; bottom-left timeRange badge
+          //     stays.
           const videoEmbed = videoId ? \`
-            <button type="button" id="thumb-btn-\${idx}" onclick="downloadClip('\${id}', \${idx}, this)" title="Click to download this clip"
-              style="display:block; position:relative; text-decoration:none; height:120px; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
-              <img src="https://img.youtube.com/vi/\${videoId}/\${_frameIdx}.jpg" alt="Clip thumbnail"
-                onerror="this.onerror=null;this.src='https://img.youtube.com/vi/\${videoId}/mqdefault.jpg';"
-                style="width:100%; height:120px; object-fit:cover; display:block;" loading="lazy" />
-              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-                width:44px; height:44px; background:rgba(108,58,237,0.85); border-radius:50%;
-                display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px; font-weight:600;">
-                ⬇
+            <div class="moment-preview-shell" id="moment-preview-\${idx}"
+              style="position:relative; width:100%; max-width:220px; aspect-ratio:9/16; margin:0 auto 14px; background:#0a0612; border:1px solid rgba(108,58,237,0.20); border-radius:14px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,0.35);">
+              <video
+                src="/shorts/moment-preview/\${id}/\${idx}"
+                poster="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg"
+                autoplay muted playsinline preload="auto"
+                style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
+                onloadstart="registerMomentPreview(this)"
+                onloadeddata="registerMomentPreview(this)"
+                onerror="_onMomentPreviewError(this)"></video>
+              <!-- Loading overlay — status text escalates the longer
+                   generation takes so users know it isn't frozen.
+                   _updateMomentLoader() toggles display based on the
+                   video's readyState and the latest network event. -->
+              <div class="moment-preview-loader" aria-hidden="true">
+                <div class="moment-preview-spinner"></div>
+                <div class="moment-preview-loader-text">Loading</div>
               </div>
-              <div style="position:absolute; bottom:6px; left:6px; background:rgba(0,0,0,0.8);
-                padding:2px 6px; border-radius:4px; color:#fff; font-size:11px;">
+              <div class="moment-preview-fallback" aria-hidden="true"
+                style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:14px; text-align:center; color:#cfc6e6; font-size:11px; line-height:1.4; background:linear-gradient(180deg,#1a1430,#0a0612);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div class="moment-preview-fallback-text" style="color:#aaa;">Preview unavailable</div>
+                <button type="button" class="moment-preview-retry" onclick="_retryMomentPreview(this)" style="margin-top:4px;background:rgba(108,58,237,0.18);border:1px solid rgba(108,58,237,0.40);color:#c4b5fd;padding:5px 12px;border-radius:999px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.04em;text-transform:uppercase;">Retry</button>
+              </div>
+              <!-- Center play/pause toggle. Icons live as sibling SVGs;
+                   _syncMomentPlayPauseIcon shows whichever matches the
+                   <video>'s current state. -->
+              <button type="button" class="moment-pp-btn" onclick="togglePlayPause(this)" title="Play / pause preview" aria-label="Play preview"
+                style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:54px; height:54px; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:4; transition:opacity .2s, background .15s;"
+                onmouseenter="this.style.background='rgba(108,58,237,0.85)'; this.style.opacity='1';"
+                onmouseleave="this.style.background='rgba(0,0,0,0.55)';">
+                <!-- Play triangle (shown when paused / ended). -->
+                <svg class="pp-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+                <!-- Pause bars (shown while playing). -->
+                <svg class="pp-pause" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
+                  <rect x="6" y="5" width="4" height="14" rx="1"/>
+                  <rect x="14" y="5" width="4" height="14" rx="1"/>
+                </svg>
+              </button>
+              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78); padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em; z-index:2;">
                 \${moment.timeRange}
               </div>
-              <div style="position:absolute; top:6px; right:6px; background:rgba(0,0,0,0.7);
-                padding:2px 7px; border-radius:4px; color:#fff; font-size:10px; font-weight:600;">
-                Click to download
-              </div>
-            </button>
+              <button type="button" class="moment-mute-btn" onclick="toggleMomentMute(this)" title="Unmute preview" aria-label="Unmute preview"
+                style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.18); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:3;">
+                <svg class="mute-on" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                </svg>
+                <svg class="mute-off" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+              </button>
+            </div>
           \` : '';
 
           var viralColor = moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b';

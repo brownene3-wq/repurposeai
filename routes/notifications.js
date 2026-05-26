@@ -143,9 +143,20 @@ router.get('/', requireAuth, (req, res) => {
         const fireIn = isUpcoming ? fmtIn(e.scheduled_date, e.scheduled_time, e.reminder_minutes) : '';
         const cardClass = isUnread ? 'unseen' : (isUpcoming ? 'upcoming' : 'read');
         const icon = isUpcoming ? '\u23F0' : '\ud83d\udcc5';
+        // Inline error banner — surfaces reminder-email delivery failures
+        // (Resend rejected, no API key, etc.) so silent failures stop being
+        // invisible. Lives inside notif-body, above the title.
+        const errorBanner = e.reminder_error
+          ? '<div style="background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.35);color:#fca5a5;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:0.78rem;line-height:1.4;">' +
+              '<strong>Email reminder failed</strong>' +
+              (e.reminder_attempts ? ' (attempt ' + escHtml(String(e.reminder_attempts)) + '/3)' : '') +
+              ':\u00A0' + escHtml(String(e.reminder_error).slice(0, 200)) +
+            '</div>'
+          : '';
         return '<div class="notif-card ' + cardClass + '" data-id="' + escHtml(e.id) + '">' +
           '<div class="notif-icon">' + icon + '</div>' +
           '<div class="notif-body">' +
+            errorBanner +
             '<div class="notif-title">' +
               (isUnread ? '<span class="unread-dot" aria-hidden="true"></span>' : '') +
               escHtml(e.title || 'Scheduled post') +

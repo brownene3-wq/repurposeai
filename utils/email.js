@@ -20,21 +20,28 @@ function getResend() {
                     const FROM_NAME = 'Splicora';
                     
                     async function sendEmail({ to, subject, html }) {
-                      try {
-                          const r = getResend();
-                              if (!r) return;
-                              
-                                  await r.emails.send({
-                                        from: `${FROM_NAME} <${FROM()}>`,
-                                              to,
-                                                    subject,
-                                                          html
-                                                              });
-                                                                  console.log(`[Email] Sent "${subject}" to ${to}`);
-                                                                    } catch (err) {
-                                                                        console.error(`[Email] Failed "${subject}" to ${to}:`, err.message);
-                                                                          }
-                                                                          }
+  try {
+    const r = getResend();
+    if (!r) {
+      // No API key configured. Return an explicit failure so the
+      // caller (e.g. the reminder cron) can surface it instead of
+      // silently flipping the entry to 'sent'.
+      return { ok: false, error: 'Email provider not configured (RESEND_API_KEY missing)' };
+    }
+    await r.emails.send({
+      from: `${FROM_NAME} <${FROM()}>`,
+      to,
+      subject,
+      html
+    });
+    console.log(`[Email] Sent "${subject}" to ${to}`);
+    return { ok: true, error: null };
+  } catch (err) {
+    const msg = (err && err.message) || 'Unknown email error';
+    console.error(`[Email] Failed "${subject}" to ${to}:`, msg);
+    return { ok: false, error: msg };
+  }
+}
                                                                           
                                                                           function sendWelcomeEmail(user) {
                                                                             return sendEmail({
