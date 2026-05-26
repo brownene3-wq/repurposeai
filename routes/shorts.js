@@ -161,7 +161,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
   // Track each downloader's failure reason so we can surface them in
   // the final user-facing error message when all three fall over. Albert
   // was seeing a generic 'Video download failed' with no actionable info.
-  const failureLog = { cobalt: null, ytdlp: null, ytdlcore: null };
+  const failureLog = { cobalt: null, ytdlp: null, ytdlcore: null, apify: null };
 
   try {
     writeProgress('Downloading video...');
@@ -281,6 +281,34 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       failureLog.ytdlcore = 'ytdl-core module not loaded';
     }
 
+    // Last resort: paid Apify fallback. Only fires when the cheap/free
+    // chain (Cobalt + yt-dlp + ytdl-core) has all failed. Adds ~2-3 min
+    // to the request but works when YouTube has blocked our infra,
+    // because Apify runs the download from their own residential IP
+    // pool inside their cloud. No-op if APIFY_API_TOKEN isn't set.
+    try {
+      const { downloadWithApify, isApifyEnabled } = require('../utils/apify-youtube');
+      if (isApifyEnabled()) {
+        writeProgress('Trying paid fallback (Apify)...');
+        await downloadWithApify(videoUrl, cachedVideoPath);
+        if (fs.existsSync(cachedVideoPath) && fs.statSync(cachedVideoPath).size > 10000) {
+          try { fs.unlinkSync(lockPath); } catch (e) {}
+          const entry = { path: cachedVideoPath, refCount: 1, timer: null };
+          videoDownloadCache.set(cacheKey, entry);
+          console.log(`  Apify fallback succeeded for ${videoId} (${(fs.statSync(cachedVideoPath).size / 1024 / 1024).toFixed(1)}MB)`);
+          return cachedVideoPath;
+        }
+        failureLog.apify = 'Apify run completed but downloaded file is missing/too small';
+        try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+      } else {
+        failureLog.apify = 'APIFY_API_TOKEN not set';
+      }
+    } catch (apifyErr) {
+      failureLog.apify = String(apifyErr.message || apifyErr).slice(0, 200);
+      console.log(`  Apify fallback failed for ${videoId}: ${failureLog.apify}`);
+      try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+    }
+
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     const haveCookies = !!getYoutubeCookiesArgs().length;
@@ -290,6 +318,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     if (failureLog.cobalt)   reasonLines.push('Cobalt: '   + failureLog.cobalt);
     if (failureLog.ytdlp)    reasonLines.push('yt-dlp: '   + failureLog.ytdlp);
     if (failureLog.ytdlcore) reasonLines.push('ytdl-core: ' + failureLog.ytdlcore);
+    if (failureLog.apify)    reasonLines.push('Apify: '     + failureLog.apify);
     const reasonBlock = reasonLines.length ? ' Causes — ' + reasonLines.join(' | ') : '';
     const cookiesHint = haveCookies
       ? ' (YouTube cookies appear configured; they may have expired — re-export cookies.txt from a freshly-logged-in browser.)'
