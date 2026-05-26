@@ -750,27 +750,41 @@ async function publishTikTok(destAccount, sourceItem, mediaPath) {
   const uploadUrl = initResponse.body.data.upload_url;
   const publishId = initResponse.body.data.publish_id;
 
-  // Upload video file
-  const fileStream = fs.createReadStream(mediaPath);
+  // Upload video file to TikTok's PUT endpoint.
+  //
+  // TikTok's chunked upload protocol requires Content-Range and
+  // Content-Length headers even when there's only a single chunk —
+  // omitting them returns HTTP 416 (Range Not Satisfiable). The values
+  // match the chunk_size/total_chunk_count we sent to /video/init/.
+  // We read the whole file into a buffer (clips are small, ~5MB) so
+  // we can set Content-Length exactly. For larger uploads we'd switch
+  // to multi-chunk with separate PUTs per chunk.
+  const fileBuf = fs.readFileSync(mediaPath);
+  const fileLen = fileBuf.length;
   await new Promise((resolve, reject) => {
     const urlObj = new URL(uploadUrl);
     const opts = {
       hostname: urlObj.hostname,
       path: urlObj.pathname + urlObj.search,
       method: 'PUT',
-      headers: { 'Content-Type': 'video/mp4' }
+      headers: {
+        'Content-Type': 'video/mp4',
+        'Content-Length': fileLen,
+        'Content-Range': 'bytes 0-' + (fileLen - 1) + '/' + fileLen
+      }
     };
-
     const req = https.request(opts, res => {
       let data = '';
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) resolve();
-        else reject(new Error(`TikTok upload failed: ${res.statusCode}`));
+        if (res.statusCode >= 200 && res.statusCode < 300) return resolve();
+        console.error('[publishTikTok] upload PUT failed:', res.statusCode, data.slice(0, 300));
+        reject(new Error('TikTok upload failed: ' + res.statusCode + (data ? ' ' + data.slice(0, 200) : '')));
       });
     });
     req.on('error', reject);
-    fileStream.pipe(req);
+    req.write(fileBuf);
+    req.end();
   });
 
   // Publish the video
