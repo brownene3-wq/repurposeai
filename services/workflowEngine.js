@@ -691,13 +691,44 @@ async function publishInstagram(destAccount, sourceItem, mediaPath) {
 }
 
 async function publishTikTok(destAccount, sourceItem, mediaPath) {
-  // TikTok Content Posting API
+  // TikTok Content Posting API — Direct Post (video.publish scope).
+  //
+  // The /video/init/ endpoint rejects the request as "video info is empty"
+  // unless we send BOTH post_info (title, privacy_level, disable_* flags)
+  // AND a complete source_info with chunk_size + total_chunk_count.
+  // The earlier minimal payload (just source_info.video_size) is what TikTok
+  // returned the empty-info error for.
+  //
+  // Sandbox/unaudited apps: privacy_level must be SELF_ONLY — TikTok rejects
+  // PUBLIC_TO_EVERYONE until the app has passed Content Posting API audit.
+  // Once the app is approved we can flip this to PUBLIC_TO_EVERYONE (or read
+  // it off sourceItem.privacy).
+  const videoSize = fs.statSync(mediaPath).size;
+  // TikTok chunked upload: single chunk fits up to 64MB; for clip sizes we
+  // produce (~5MB) one chunk is fine.
+  const CHUNK_SIZE = Math.min(videoSize, 64 * 1024 * 1024);
+  const TOTAL_CHUNKS = Math.max(1, Math.ceil(videoSize / CHUNK_SIZE));
+  // Title cap: TikTok rejects titles over 2200 chars. Default to a safe
+  // 150-char trim so existing callers don't accidentally hit that limit.
+  const rawTitle = (sourceItem.title || sourceItem.description || sourceItem.caption || 'Splicora clip').toString();
+  const title = rawTitle.slice(0, 150);
+  const privacyLevel = sourceItem.privacy_level || 'SELF_ONLY';
   const initResponse = await httpsPostJson(
     'https://open.tiktokapis.com/v2/post/publish/video/init/',
     {
+      post_info: {
+        title,
+        privacy_level: privacyLevel,
+        disable_duet: false,
+        disable_comment: false,
+        disable_stitch: false,
+        video_cover_timestamp_ms: 1000
+      },
       source_info: {
         source: 'FILE_UPLOAD',
-        video_size: fs.statSync(mediaPath).size
+        video_size: videoSize,
+        chunk_size: CHUNK_SIZE,
+        total_chunk_count: TOTAL_CHUNKS
       }
     },
     { Authorization: `Bearer ${destAccount.access_token}` }
