@@ -7546,7 +7546,7 @@ ${paginationHtml}
           var read = await reader.read();
           if (read.done) break;
           sseBuffer += decoder.decode(read.value, { stream: true });
-          var lines = sseBuffer.split('\n\n');
+          var lines = sseBuffer.split('\\n\\n');
           sseBuffer = lines.pop() || '';
           for (var i = 0; i < lines.length; i++) {
             var ln = lines[i].trim();
