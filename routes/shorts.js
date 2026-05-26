@@ -3002,24 +3002,52 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
     // clear error so the UI can prompt the user to click Download Clip
     // first. (Rendering synchronously here would block the request for
     // 30-60 seconds.)
+    //
+    // Race-condition guard: the front-end button switches back to "Download
+    // Clip" the instant the render endpoint finishes writing the .progress
+    // file, but the atomic-rename of the .mp4 may still be a few hundred ms
+    // behind. If the user clicks Publish right at that boundary, we'd see
+    // no candidates and bail with "No rendered clip found". Retry the lookup
+    // a few times with a small delay before erroring so the rename has time
+    // to complete. Also wait while a .progress or .encoding.mp4 file exists
+    // for this analysis+moment — that means a render is genuinely in flight.
     const fs = require('fs');
     const path = require('path');
     const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
-    let mediaPath = null;
-    try {
-      const files = fs.readdirSync(CLIPS_DIR);
-      const candidates = files
-        .filter(f => f.endsWith('.mp4') && f.includes(analysisId))
-        .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
-        .sort((a, b) => b.mtime - a.mtime);
-      // Prefer a clip that explicitly encodes this moment index (new naming
-      // from the same commit). Otherwise, accept any clip for this analysis —
-      // handles older clips that were rendered before the m<idx> tag landed.
-      const tag = '_m' + momentIndex + '_';
-      const exact = candidates.find(c => c.f.includes(tag));
-      const pick = exact || candidates[0];
-      if (pick && fs.statSync(pick.full).size > 10000) mediaPath = pick.full;
-    } catch (_) {}
+    const tag = '_m' + momentIndex + '_';
+    const tryFindClip = () => {
+      try {
+        const files = fs.readdirSync(CLIPS_DIR);
+        const candidates = files
+          .filter(f => f.endsWith('.mp4') && !f.endsWith('.encoding.mp4') && f.includes(analysisId))
+          .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime);
+        const exact = candidates.find(c => c.f.includes(tag));
+        const pick = exact || candidates[0];
+        if (pick && fs.statSync(pick.full).size > 10000) return pick.full;
+      } catch (_) {}
+      return null;
+    };
+    const renderInFlight = () => {
+      try {
+        const files = fs.readdirSync(CLIPS_DIR);
+        return files.some(f =>
+          f.includes(analysisId) && (f.endsWith('.progress') || f.endsWith('.encoding.mp4'))
+        );
+      } catch (_) { return false; }
+    };
+    let mediaPath = tryFindClip();
+    // Retry for up to ~10 seconds while a render is in flight, or 3 seconds
+    // for the rename race when no render is active.
+    const startTs = Date.now();
+    while (!mediaPath) {
+      const inFlight = renderInFlight();
+      const elapsed = Date.now() - startTs;
+      if (!inFlight && elapsed >= 3000) break;
+      if (inFlight && elapsed >= 60000) break; // hard cap — render shouldn't take >60s past the button toggle
+      await new Promise(r => setTimeout(r, 500));
+      mediaPath = tryFindClip();
+    }
     if (!mediaPath) {
       return res.status(409).json({ success: false, error: 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.' });
     }
