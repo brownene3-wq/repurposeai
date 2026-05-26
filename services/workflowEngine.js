@@ -704,7 +704,16 @@ async function publishTikTok(destAccount, sourceItem, mediaPath) {
   );
 
   if (!initResponse.body.data?.upload_url) {
-    throw new Error('TikTok upload init failed');
+    // Surface TikTok's actual response so we can diagnose scope/sandbox
+    // problems instead of returning a generic error.
+    console.error('[publishTikTok] init failed:', JSON.stringify({
+      statusCode: initResponse.statusCode,
+      body: initResponse.body
+    }));
+    const ttErr = initResponse.body && initResponse.body.error;
+    const errCode = ttErr && (ttErr.code || ttErr.error || '') || 'unknown';
+    const errMsg = ttErr && (ttErr.message || ttErr.error_description || '') || JSON.stringify(initResponse.body).slice(0, 200);
+    throw new Error(`TikTok upload init failed (${errCode}): ${errMsg}`);
   }
 
   const uploadUrl = initResponse.body.data.upload_url;
