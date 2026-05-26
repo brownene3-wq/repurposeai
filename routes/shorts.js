@@ -299,6 +299,12 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
 }
 
 function releaseVideoCache(videoId) {
+  // Uploaded sources are persistent — never schedule them for deletion.
+  // They're the user's original source video, needed for re-rendering
+  // any moment from the same analysis. YouTube-downloaded caches are
+  // cheap to re-fetch, but uploads aren't.
+  if (typeof videoId === 'string' && videoId.startsWith('upload-')) return;
+
   const entry = videoDownloadCache.get(videoId);
   if (!entry) return;
   entry.refCount = Math.max(0, entry.refCount - 1);
@@ -1364,11 +1370,43 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
       return res.end();
     }
 
-    // Save analysis row using the upload\'s filename as a "video_url" stand-in.
-    // The downstream /shorts page can extract a (missing) videoId — that's fine,
-    // it falls back to a generic thumbnail.
-    const sourceUrl = 'upload://' + encodeURIComponent(fileName);
-    const analysisId = await shortsOps.create(userId, sourceUrl, fileName, transcriptText);
+    // Save analysis row first so we have a stable analysisId, then move
+    // the uploaded source file into CLIPS_DIR with a name keyed off the
+    // analysisId. This way the /clip render endpoint can find the source
+    // later without re-downloading from YouTube — that's the entire point
+    // of the upload feature.
+    //
+    // video_url uses the 'upload://<analysisId>' scheme. The render path
+    // detects this prefix and skips the YouTube-download chain entirely.
+    let analysisId = await shortsOps.create(userId, 'upload://pending', fileName, transcriptText);
+    const sourceUrl = 'upload://' + analysisId;
+    try {
+      await shortsOps.updateVideoUrl(analysisId, sourceUrl);
+    } catch (e) {
+      // Older shortsOps may not have updateVideoUrl; fall back to a raw
+      // SQL update via the pool exposed on the module. Best-effort — if
+      // this fails the user just sees a 'pending' video_url placeholder
+      // and the render endpoint will tell them the source is missing.
+      try {
+        const { pool } = require('../db/database');
+        await pool.query('UPDATE smart_shorts SET video_url = $1 WHERE id = $2', [sourceUrl, analysisId]);
+      } catch (e2) { console.error('updateVideoUrl fallback failed:', e2.message); }
+    }
+    // Move the uploaded file into CLIPS_DIR so the render endpoint can find
+    // it. Preserve the original extension (mp4 / mov / mkv / webm).
+    try {
+      const _origExt = (path.extname(filePath || '') || '.mp4').toLowerCase();
+      const _persistedPath = path.join(CLIPS_DIR, 'upload-' + analysisId + _origExt);
+      _fs.renameSync(filePath, _persistedPath);
+      // Update filePath so the finally-block doesn't try to delete the now
+      // -moved file (renameSync invalidated the original path).
+      filePath = null;
+      console.log('  [analyze-upload] persisted source video at ' + _persistedPath);
+    } catch (mvErr) {
+      console.error('  [analyze-upload] failed to persist source:', mvErr.message);
+      // Don't abort the analysis — moments still get created, render will
+      // just complain about missing source if the user clicks Download Clip.
+    }
     await shortsOps.updateStatus(analysisId, 'analyzing');
     sendUpdate({ status: 'analyzing', message: 'Analyzing with AI to identify viral moments...' });
 
@@ -3830,13 +3868,39 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
     const endSec = rangeParts[1] ? parseTime(rangeParts[1]) : startSec + 60;
     const duration = Math.max(endSec - startSec, 5); // At least 5 seconds
 
-    // Extract video ID
-    const videoId = extractVideoId(analysis.video_url);
-    if (!videoId) {
-      return res.status(400).json({ error: 'Invalid video URL in analysis' });
+    // Extract video ID — branch on source type.
+    //
+    // For an analysis created via /analyze-upload (user-uploaded .mp4),
+    // video_url is 'upload://<analysisId>' and the source file is already
+    // sitting in CLIPS_DIR as 'upload-<analysisId>.<ext>'. We use a
+    // synthetic videoId and remember the path so we can skip the entire
+    // YouTube-download chain (proxy / cookies / Cobalt) further down.
+    //
+    // For YouTube URLs, this is unchanged from before.
+    let videoId, videoUrl, uploadedSourcePath = null;
+    if ((analysis.video_url || '').startsWith('upload://')) {
+      let _files = [];
+      try { _files = fs.readdirSync(CLIPS_DIR); } catch (e) {}
+      const _match = _files.find(f =>
+        f.startsWith('upload-' + analysisId + '.') &&
+        !f.endsWith('.mp3') &&
+        !f.endsWith('.progress') &&
+        !f.endsWith('.error')
+      );
+      if (!_match) {
+        return res.status(404).json({ error: 'Uploaded source file is missing on the server. The server may have restarted — please re-upload the video.' });
+      }
+      uploadedSourcePath = path.join(CLIPS_DIR, _match);
+      videoId = 'upload-' + analysisId;
+      videoUrl = analysis.video_url;
+    } else {
+      videoId = extractVideoId(analysis.video_url);
+      if (!videoId) {
+        return res.status(400).json({ error: 'Invalid video URL in analysis' });
+      }
+      videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     }
 
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const safeTitle = (moment.title || 'clip').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
     const analysisTag = `a${req.body.analysisId || 'unknown'}`;
     const momentTag = `m${momentIndex}`;
@@ -3928,8 +3992,14 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
         console.log(`  Downloading video: start=${startSec}s, dur=${duration}s`);
 
         let actualDownload;
+        if (uploadedSourcePath) {
+          // User-uploaded source — skip the YouTube download chain entirely.
+          actualDownload = uploadedSourcePath;
+          writeProgress('Using uploaded source video...');
+          console.log('  [' + filename + '] using uploaded source: ' + uploadedSourcePath);
+        }
         try {
-          actualDownload = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress);
+          if (!actualDownload) actualDownload = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress);
         } catch (dlErr) {
           clearTimeout(timeout);
           // getOrDownloadVideo throws a verbose message listing each
@@ -6460,11 +6530,11 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         <p class="header-subtitle">Transform any YouTube video into viral short-form content</p>
       </div>
 
-      <!-- Upload section -->
+      <!-- Upload section (URL OR file) -->
       <div class="upload-section">
         <div style="margin-bottom: 16px;">
-          <h3 style="margin-bottom: 8px;">Analyze a YouTube Video</h3>
-          <p style="color: #888; font-size: 14px;">Paste a YouTube URL to extract viral moments</p>
+          <h3 style="margin-bottom: 8px;">Analyze a Video</h3>
+          <p style="color: #888; font-size: 14px;">Paste a YouTube URL or upload a video file from your computer.</p>
         </div>
         <div class="upload-input-group">
           <input
@@ -6482,6 +6552,24 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <button class="btn btn-primary" onclick="analyzeVideo()">
             <span id="analyzeBtn">Analyze</span>
           </button>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;margin:14px 0 10px;">
+          <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+          <span style="font-size:12px;color:#888;letter-spacing:0.08em;font-weight:600;">OR</span>
+          <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+        </div>
+        <div id="uploadDropZone" ondrop="handleVideoDrop(event)" ondragover="handleVideoDragOver(event)" ondragleave="handleVideoDragLeave(event)" style="border:2px dashed rgba(108,58,237,0.4);border-radius:14px;padding:24px 20px;text-align:center;cursor:pointer;background:rgba(108,58,237,0.04);transition:all 0.2s ease;" onclick="document.getElementById('videoFileInput').click()">
+          <input type="file" id="videoFileInput" accept="video/mp4,video/quicktime,video/x-matroska,video/webm,.mp4,.mov,.mkv,.webm" style="display:none;" onchange="handleVideoFile(this.files[0])">
+          <div id="uploadDropZoneIdle">
+            <div style="font-size:32px;margin-bottom:6px;">📹</div>
+            <div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px;">Upload Your Video</div>
+            <div style="font-size:12px;color:#888;">Drag &amp; drop or click to choose · MP4, MOV, MKV, WEBM · up to 200 MB</div>
+            <div style="font-size:11px;color:#666;margin-top:8px;">Best for videos you own — or when YouTube downloads aren't working.</div>
+          </div>
+          <div id="uploadDropZoneBusy" style="display:none;">
+            <div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px;"><span class="loading"></span> <span id="uploadStatusText">Uploading...</span></div>
+            <div style="font-size:12px;color:#888;" id="uploadStatusDetail">Sending file to server</div>
+          </div>
         </div>
       </div>
 
@@ -7369,6 +7457,97 @@ ${paginationHtml}
         return;
       }
       openAnalyzeConfirm(url);
+    }
+
+    // ── File upload path ────────────────────────────────────────────
+    // Posts the file to /shorts/analyze-upload (Server-Sent Events) and
+    // shows live status updates in the drop zone. On 'completed' the
+    // page reloads so the new analysis appears in the list below.
+    function handleVideoDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var z = document.getElementById('uploadDropZone');
+      if (z) z.style.background = 'rgba(108,58,237,0.12)';
+    }
+    function handleVideoDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var z = document.getElementById('uploadDropZone');
+      if (z) z.style.background = 'rgba(108,58,237,0.04)';
+    }
+    function handleVideoDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var z = document.getElementById('uploadDropZone');
+      if (z) z.style.background = 'rgba(108,58,237,0.04)';
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleVideoFile(f);
+    }
+    async function handleVideoFile(file) {
+      if (!file) return;
+      var MAX = 200 * 1024 * 1024;
+      if (file.size > MAX) {
+        showToast('File too large — 200 MB max. Trim it first or upload a shorter clip.');
+        return;
+      }
+      var idle = document.getElementById('uploadDropZoneIdle');
+      var busy = document.getElementById('uploadDropZoneBusy');
+      var status = document.getElementById('uploadStatusText');
+      var detail = document.getElementById('uploadStatusDetail');
+      if (idle) idle.style.display = 'none';
+      if (busy) busy.style.display = 'block';
+      if (status) status.textContent = 'Uploading...';
+      if (detail) detail.textContent = file.name + ' · ' + (file.size / 1024 / 1024).toFixed(1) + ' MB';
+
+      try {
+        var fd = new FormData();
+        fd.append('file', file);
+        var response = await fetch('/shorts/analyze-upload', { method: 'POST', body: fd });
+        var contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          var data = await response.json();
+          throw new Error(data.error || 'Upload failed');
+        }
+        if (!response.ok) throw new Error('Upload failed. Please try again.');
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var sseBuffer = '';
+        var lastStatus = null;
+        while (true) {
+          var read = await reader.read();
+          if (read.done) break;
+          sseBuffer += decoder.decode(read.value, { stream: true });
+          var lines = sseBuffer.split('\n\n');
+          sseBuffer = lines.pop() || '';
+          for (var i = 0; i < lines.length; i++) {
+            var ln = lines[i].trim();
+            if (!ln.startsWith('data: ')) continue;
+            var evt;
+            try { evt = JSON.parse(ln.slice(6)); } catch (e) { continue; }
+            lastStatus = evt;
+            if (status && evt.status === 'extracting_audio') { status.textContent = 'Extracting audio...'; }
+            else if (status && evt.status === 'transcribing') { status.textContent = 'Transcribing...'; }
+            else if (status && evt.status === 'analyzing') { status.textContent = 'Analyzing viral moments...'; }
+            else if (status && evt.status === 'completed') { status.textContent = 'Done!'; }
+            else if (status && evt.status === 'error') { status.textContent = 'Error'; if (detail) detail.textContent = evt.message || 'Upload failed'; }
+            if (detail && evt.message && evt.status !== 'error') detail.textContent = evt.message;
+          }
+        }
+        if (lastStatus && lastStatus.status === 'completed') {
+          showToast('Analysis complete! Loading...');
+          setTimeout(function() { location.reload(); }, 1000);
+        } else if (lastStatus && lastStatus.status === 'error') {
+          throw new Error(lastStatus.message || 'Analysis failed');
+        }
+      } catch (err) {
+        if (idle) idle.style.display = 'block';
+        if (busy) busy.style.display = 'none';
+        showToast('Upload error: ' + (err.message || err));
+      } finally {
+        // Reset file input so the same file can be re-selected if needed.
+        var inp = document.getElementById('videoFileInput');
+        if (inp) inp.value = '';
+      }
     }
 
     async function _runAnalyze(url) {
