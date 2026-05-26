@@ -6590,7 +6590,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         <div id="uploadDropZone" ondrop="handleVideoDrop(event)" ondragover="handleVideoDragOver(event)" ondragleave="handleVideoDragLeave(event)" style="border:2px dashed rgba(108,58,237,0.4);border-radius:14px;padding:24px 20px;text-align:center;cursor:pointer;background:rgba(108,58,237,0.04);transition:all 0.2s ease;" onclick="document.getElementById('videoFileInput').click()">
           <input type="file" id="videoFileInput" accept="video/mp4,video/quicktime,video/x-matroska,video/webm,.mp4,.mov,.mkv,.webm" style="display:none;" onchange="handleVideoFile(this.files[0])">
           <div id="uploadDropZoneIdle">
-            <div style="font-size:32px;margin-bottom:6px;">📹</div>
+            <div style="margin-bottom:8px;"><img src="/images/section-icons/A-61.png" alt="" style="height:48px;width:48px;border-radius:10px;display:inline-block"></div>
             <div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px;">Upload Your Video</div>
             <div style="font-size:12px;color:#888;">Drag &amp; drop or click to choose · MP4, MOV, MKV, WEBM · up to 200 MB</div>
             <div style="font-size:11px;color:#666;margin-top:8px;">Best for videos you own — or when YouTube downloads aren't working.</div>
