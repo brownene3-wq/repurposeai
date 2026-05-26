@@ -787,21 +787,42 @@ async function publishTikTok(destAccount, sourceItem, mediaPath) {
     req.end();
   });
 
-  // Publish the video
-  const publishResponse = await httpsPostJson(
-    'https://open.tiktokapis.com/v2/post/publish/video/publish/',
-    {
-      publish_id: publishId,
-      description: sourceItem.title
-    },
-    { Authorization: `Bearer ${destAccount.access_token}` }
-  );
-
-  if (!publishResponse.body.data?.video_id) {
-    throw new Error('TikTok publish failed');
+  // Direct Post flow: /video/init/ + PUT upload already constitutes the
+  // publish. There is NO separate /video/publish/ call (the previous
+  // implementation called one that returned an error). Instead, we poll
+  // /v2/post/publish/status/fetch/ a few times to confirm TikTok actually
+  // processed the upload, then return the publish_id as the externalId.
+  //
+  // Status terminal states:
+  //   PUBLISH_COMPLETE — video is on the user's TikTok feed
+  //   FAILED          — TikTok rejected it (gets logged + thrown)
+  //   PROCESSING_DOWNLOAD / PROCESSING_UPLOAD — keep polling
+  let finalStatus = 'PROCESSING';
+  let failReason = null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const statusResp = await httpsPostJson(
+      'https://open.tiktokapis.com/v2/post/publish/status/fetch/',
+      { publish_id: publishId },
+      { Authorization: `Bearer ${destAccount.access_token}` }
+    );
+    const data = statusResp.body && statusResp.body.data;
+    const s = data && data.status;
+    if (s) finalStatus = s;
+    if (s === 'PUBLISH_COMPLETE') break;
+    if (s === 'FAILED') {
+      failReason = (data.fail_reason || 'unknown');
+      break;
+    }
+    // Other transient statuses: keep polling
   }
-
-  return { platform: 'tiktok', videoId: publishResponse.body.data.video_id };
+  if (finalStatus === 'FAILED') {
+    throw new Error('TikTok publish failed: ' + failReason);
+  }
+  // For PROCESSING/SEND_TO_USER_INBOX/etc., trust TikTok will finish
+  // asynchronously and return what we have.
+  console.log('[publishTikTok] published as publishId=' + publishId + ' status=' + finalStatus);
+  return { platform: 'tiktok', videoId: publishId, status: finalStatus };
 }
 
 async function publishTwitter(destAccount, sourceItem, mediaPath) {
