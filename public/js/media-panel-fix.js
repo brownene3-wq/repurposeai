@@ -623,14 +623,12 @@
     // types fall through with an empty list (menu hidden).
     var items = [];
     if ((clip.dataset.clipType || '') === 'vid' && clip.dataset.mediaUrl){
-      // Task #136 — Label flips to "Unlink Audio" when the clip is part
-      // of an auto-extract pair, since the handler now BREAKS the link
-      // instead of extracting from scratch. Falls back to the legacy
-      // "Extract Audio" label for unpaired clips.
-      var hasPair = !!clip.dataset.linkPair;
+      // Task #137 — Renamed to "Unlink Audio" consistently. The
+      // dispatcher (window.clipActionExtractAudio) still routes to the
+      // unlink-if-paired / extract-otherwise branch internally.
       items.push({
-        icon: hasPair ? '🔓' : '🎵',
-        label: hasPair ? 'Unlink Audio' : 'Extract Audio',
+        icon: '🔓',
+        label: 'Unlink Audio',
         run: function(){
           if (typeof window.clipActionExtractAudio === 'function'){
             window.clipActionExtractAudio();
