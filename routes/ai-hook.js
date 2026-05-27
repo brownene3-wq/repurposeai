@@ -517,7 +517,7 @@ ${pageStyles}
           </div>
 
           <div id="apiKeyNotice" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;display:none">
-            <p style="color:#F59E0B;font-size:.85rem;margin:0"><strong>ElevenLabs API Key Required</strong> — To generate voice hooks, connect your own ElevenLabs API key in <a href="/shorts#settings" style="color:#6C3AED;font-weight:600">Smart Shorts &rarr; Settings</a>. The hook text will still be generated without a key.</p>
+            <p style="color:#F59E0B;font-size:.85rem;margin:0"><strong>ElevenLabs API Key Required</strong> — To generate voice hooks, connect your ElevenLabs API key in <a href="/settings#apikeys" style="color:var(--primary);font-weight:600;text-decoration:underline">Settings</a>. The hook text will still be generated without a key.</p>
           </div>
           <button type="submit" class="btn-generate" id="generateBtn">Generate AI Hook</button>
           <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
