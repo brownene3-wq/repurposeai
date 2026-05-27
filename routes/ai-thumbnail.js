@@ -1066,37 +1066,35 @@ async function extractCandidateFrames(videoPath, count = 8) {
 
   const jobId = uuidv4().slice(0, 8);
 
-  // Build the list of tasks. We run them in batches of 4 (instead of 8 in
-  // one shot) so the 8 ffmpeg processes don't all serialize on the same
-  // video file's I/O and starve each other within the per-frame timeout.
-  // Per-frame timeout bumped to 45s to handle large/4K source videos.
+  // Single-output extraction per frame. The previous filter_complex split
+  // approach (one ffmpeg producing BOTH a full-res frame and a 384px preview)
+  // proved unreliable across codecs — some files would hang at seek and burn
+  // the entire 45s timeout. Single output + accurate seek (-ss AFTER -i) is
+  // boringly reliable. We scale to 640px wide so the vision-scoring upload
+  // stays small (~40KB per frame).
   const tasks = [];
   for (let i = 0; i < count; i++) {
     const ts = startCut + i * step + step / 2;
     const framePath = path.join(outputDir, `frame-${jobId}-${i}.jpg`);
-    const previewPath = path.join(outputDir, `frame-${jobId}-${i}-prev.jpg`);
     tasks.push(() => new Promise((resolve) => {
       const proc = spawn(ffmpegPath, [
-        '-ss', String(ts.toFixed(2)),
+        '-y',
         '-i', videoPath,
+        '-ss', String(ts.toFixed(2)),
         '-frames:v', '1',
-        '-filter_complex', '[0:v]split=2[a][b];[b]scale=384:-1[prev]',
-        '-map', '[a]',
-        '-q:v', '2',
-        '-y',
-        framePath,
-        '-map', '[prev]',
-        '-q:v', '4',
-        '-y',
-        previewPath
+        '-vf', 'scale=640:-1',
+        '-q:v', '3',
+        framePath
       ]);
       let timedOut = false;
-      const killer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL'); } catch (e) {} }, 45000);
-      proc.on('close', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut }); });
-      proc.on('error', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut: true }); });
+      let stderr = '';
+      const killer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL'); } catch (e) {} }, 30000);
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => { clearTimeout(killer); resolve({ ts, framePath, timedOut, code, stderr: stderr.slice(-400) }); });
+      proc.on('error', (err) => { clearTimeout(killer); resolve({ ts, framePath, timedOut: true, errMsg: err.message }); });
     }));
   }
-  // Run in batches of 4
+  // Run in batches of 4 to limit concurrent I/O on the source video
   const results = [];
   const batchSize = 4;
   for (let i = 0; i < tasks.length; i += batchSize) {
@@ -1105,13 +1103,20 @@ async function extractCandidateFrames(videoPath, count = 8) {
     results.push(...batchResults);
   }
 
+  // Log failures for visibility so we can see WHY frames aren't being made
+  const failed = results.filter((r) => r.timedOut || (r.code !== 0));
+  if (failed.length > 0) {
+    console.warn('[extractCandidateFrames] ' + failed.length + '/' + results.length + ' frames failed. First failure: timedOut=' + failed[0].timedOut + ' code=' + failed[0].code + ' stderr=' + (failed[0].stderr || failed[0].errMsg || ''));
+  }
+
   const frames = [];
   for (const r of results) {
-    if (r.timedOut) continue;
+    if (r.timedOut || r.code !== 0) continue;
     if (fs.existsSync(r.framePath) && fs.statSync(r.framePath).size > 1000) {
+      // previewPath is the same file — scoreCandidateFrames will use it as-is.
       frames.push({
         path: r.framePath,
-        previewPath: fs.existsSync(r.previewPath) ? r.previewPath : r.framePath,
+        previewPath: r.framePath,
         timestamp: r.ts
       });
     }
