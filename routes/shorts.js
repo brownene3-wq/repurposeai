@@ -13091,18 +13091,18 @@ function renderMyClipsPage(user, teamPermissions) {
         if (c.status === 'ready' && c.onDisk) {
           actions.push('<a class="btn-primary" href="/shorts/clip/download/' + encodeURIComponent(c.filename) + '" download="' + escapeHtml(c.filename) + '">⬇ Download</a>');
         } else if (c.status === 'ready' && !c.onDisk) {
-          actions.push('<button onclick="retryRender(\'' + c.analysisId + '\', ' + c.momentIndex + ', this)" title="File expired on the server (Railway /tmp wipe). Re-render to download.">↻ Re-render</button>');
+          actions.push('<button onclick="retryRender(\\'' + c.analysisId + '\\', ' + c.momentIndex + ', this)" title="File expired on the server (Railway /tmp wipe). Re-render to download.">↻ Re-render</button>');
         } else if (c.status === 'failed') {
-          actions.push('<button onclick="retryRender(\'' + c.analysisId + '\', ' + c.momentIndex + ', this)">↻ Retry</button>');
+          actions.push('<button onclick="retryRender(\\'' + c.analysisId + '\\', ' + c.momentIndex + ', this)">↻ Retry</button>');
         }
         if (c.analysisId) {
           actions.push('<a href="/shorts?openAnalysis=' + encodeURIComponent(c.analysisId) + '&publishMoment=' + c.momentIndex + '">↗ Publish</a>');
         }
         if (c.status === 'ready' && c.onDisk) {
-          actions.push('<button onclick="sendToDrive(\'' + c.id + '\', this)">☁ Drive</button>');
-          actions.push('<button onclick="sendToDropbox(\'' + c.id + '\', this)">\u{1F4E6} Dropbox</button>');
+          actions.push('<button onclick="sendToDrive(\\'' + c.id + '\\', this)">☁ Drive</button>');
+          actions.push('<button onclick="sendToDropbox(\\'' + c.id + '\\', this)">\u{1F4E6} Dropbox</button>');
         }
-        actions.push('<button class="btn-danger" onclick="deleteClip(\'' + c.id + '\', this)">\u{1F5D1} Delete</button>');
+        actions.push('<button class="btn-danger" onclick="deleteClip(\\'' + c.id + '\\', this)">\u{1F5D1} Delete</button>');
         return (
           '<div class="clip-card-mc" data-clip-id="' + c.id + '">' +
             '<div class="clip-card-mc-thumb">' + thumb + '</div>' +
