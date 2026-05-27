@@ -1671,14 +1671,14 @@
       _progAutoEnabledOnce = true;
       try { toggleProgramMonitor(); } catch(_){}
     }
-    // Task #136 — Auto-extract audio for new V1 video clips so the
-    // editor opens with the audio stream pre-detached + linked to its
-    // video parent. Skipped for audio/image clips and for clips that
-    // already carry a linkPair (draft restore re-runs).
-    if (mediaType === 'vid' && mediaUrl && mediaUrl.indexOf('blob:') !== 0){
-      if (!clip.dataset.linkPair){
-        try { autoExtractAudioPair(clip); } catch(_){}
-      }
+    // Task #136 / #139 — Auto-extract audio for new V1 video clips so
+    // the editor opens with the audio stream pre-detached + linked to
+    // its video parent. Skipped only for audio/image clips and clips
+    // that already carry a linkPair (draft restore re-runs).
+    // Task #139 — Blob URLs no longer skipped here; autoExtractAudioPair
+    // now handles them by promoting via ensureClipHasServerUrl first.
+    if (mediaType === 'vid' && mediaUrl && !clip.dataset.linkPair){
+      try { autoExtractAudioPair(clip); } catch(_){}
     }
   }
 
@@ -1693,8 +1693,34 @@
   function autoExtractAudioPair(v1Clip){
     if (!v1Clip || v1Clip.dataset.clipType !== 'vid') return;
     var url = v1Clip.dataset.mediaUrl || '';
-    if (!url || url.indexOf('blob:') === 0) return;
+    if (!url) return;
     if (v1Clip.dataset.linkPair) return;
+    if (v1Clip.dataset.linkPairPending) return;  // already in flight
+
+    // Task #139 — Media-panel uploads land with a blob: URL (local
+    // URL.createObjectURL). The server can't fetch blob URLs, so we
+    // promote via ensureClipHasServerUrl (POSTs the bytes to
+    // /video-editor/upload-blob) and then recurse on the promoted
+    // clip. ensureClipHasServerUrl is a no-op for already-server URLs
+    // so this path is also safe to call for non-blob clips — but we
+    // short-circuit the round-trip just below by checking the prefix.
+    if (url.indexOf('blob:') === 0){
+      if (typeof window.ensureClipHasServerUrl !== 'function') return;
+      v1Clip.dataset.linkPairPending = '1';
+      window.ensureClipHasServerUrl(v1Clip).then(function(promoted){
+        delete v1Clip.dataset.linkPairPending;
+        if (!promoted || !promoted.isConnected) return;
+        var newUrl = promoted.dataset.mediaUrl || '';
+        if (!newUrl || newUrl.indexOf('blob:') === 0) return;  // promote failed
+        // Recurse — now that mediaUrl is a server URL, the
+        // /extract-audio path below runs normally.
+        autoExtractAudioPair(promoted);
+      }).catch(function(){
+        delete v1Clip.dataset.linkPairPending;
+      });
+      return;
+    }
+
     // Stamp a pending flag immediately so concurrent triggers don't
     // race onto the same clip.
     v1Clip.dataset.linkPairPending = '1';
