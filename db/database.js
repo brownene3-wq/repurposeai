@@ -278,6 +278,35 @@ const initDatabase = async () => {
       )
     `);
 
+    // Clip renders table — every time the user clicks Download Clip we
+    // insert a row here so the /shorts/clips page can show "every clip ever
+    // rendered" even after Railway wipes /tmp.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS clip_renders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        analysis_id TEXT,
+        moment_index INTEGER,
+        filename TEXT NOT NULL,
+        moment_title TEXT,
+        video_title TEXT,
+        source_url TEXT,
+        status TEXT DEFAULT 'rendering',
+        progress_message TEXT,
+        error_message TEXT,
+        file_size BIGINT DEFAULT 0,
+        thumbnail_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ready_at TIMESTAMP,
+        deleted_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_clip_renders_user ON clip_renders(user_id, created_at DESC)`); } catch (e) {}
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_clip_renders_filename ON clip_renders(filename)`); } catch (e) {}
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_clip_renders_status ON clip_renders(status)`); } catch (e) {}
+
     // Brand kit table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS brand_kits (
@@ -1784,6 +1813,76 @@ module.exports = {
     },
     async deactivate(id) { return (await pool.query(`UPDATE connected_accounts SET is_active = false WHERE id = $1 RETURNING *`, [id])).rows[0]; },
     async delete(id) { await pool.query(`DELETE FROM connected_accounts WHERE id = $1`, [id]); }
+  },
+  clipRenderOps: {
+    async create(userId, data) {
+      const id = uuidv4();
+      const result = await pool.query(
+        `INSERT INTO clip_renders (id, user_id, analysis_id, moment_index, filename, moment_title, video_title, source_url, status, progress_message)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [id, userId, data.analysisId || null, data.momentIndex == null ? null : Number(data.momentIndex), data.filename, data.momentTitle || null, data.videoTitle || null, data.sourceUrl || null, data.status || 'rendering', data.progressMessage || null]
+      );
+      return result.rows[0];
+    },
+    async getByUser(userId, opts = {}) {
+      const limit = Math.min(Math.max(opts.limit || 100, 1), 500);
+      const offset = Math.max(opts.offset || 0, 0);
+      const statusFilter = opts.status; // 'all' | 'rendering' | 'ready' | 'failed' | 'deleted'
+      const sortBy = opts.sortBy === 'size' ? 'file_size' : (opts.sortBy === 'title' ? 'moment_title' : 'created_at');
+      const sortDir = opts.sortDir === 'asc' ? 'ASC' : 'DESC';
+      let where = 'WHERE user_id = $1 AND deleted_at IS NULL';
+      const vals = [userId];
+      if (statusFilter && statusFilter !== 'all') {
+        vals.push(statusFilter);
+        where += ` AND status = $${vals.length}`;
+      }
+      vals.push(limit, offset);
+      const sql = `SELECT * FROM clip_renders ${where} ORDER BY ${sortBy} ${sortDir} NULLS LAST LIMIT $${vals.length - 1} OFFSET $${vals.length}`;
+      const result = await pool.query(sql, vals);
+      return result.rows;
+    },
+    async getById(id) {
+      return (await pool.query(`SELECT * FROM clip_renders WHERE id = $1`, [id])).rows[0];
+    },
+    async getByFilename(filename) {
+      return (await pool.query(`SELECT * FROM clip_renders WHERE filename = $1 ORDER BY created_at DESC LIMIT 1`, [filename])).rows[0];
+    },
+    async updateStatus(id, status, opts = {}) {
+      const fields = ['status = $1', 'updated_at = CURRENT_TIMESTAMP'];
+      const vals = [status];
+      if (opts.progressMessage !== undefined) { vals.push(opts.progressMessage); fields.push(`progress_message = $${vals.length}`); }
+      if (opts.errorMessage !== undefined) { vals.push(opts.errorMessage); fields.push(`error_message = $${vals.length}`); }
+      if (opts.fileSize !== undefined) { vals.push(opts.fileSize); fields.push(`file_size = $${vals.length}`); }
+      if (opts.thumbnailUrl !== undefined) { vals.push(opts.thumbnailUrl); fields.push(`thumbnail_url = $${vals.length}`); }
+      if (status === 'ready') { fields.push('ready_at = CURRENT_TIMESTAMP'); }
+      vals.push(id);
+      const sql = `UPDATE clip_renders SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`;
+      return (await pool.query(sql, vals)).rows[0];
+    },
+    async updateStatusByFilename(filename, status, opts = {}) {
+      const row = await module.exports.clipRenderOps.getByFilename(filename);
+      if (!row) return null;
+      return module.exports.clipRenderOps.updateStatus(row.id, status, opts);
+    },
+    async softDelete(id, userId) {
+      // Only allow deletion by owner.
+      const result = await pool.query(
+        `UPDATE clip_renders SET deleted_at = CURRENT_TIMESTAMP, status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *`,
+        [id, userId]
+      );
+      return result.rows[0];
+    },
+    async totalStorageBytes(userId) {
+      const result = await pool.query(
+        `SELECT COALESCE(SUM(file_size), 0)::bigint AS total, COUNT(*) AS count FROM clip_renders WHERE user_id = $1 AND deleted_at IS NULL AND status = 'ready'`,
+        [userId]
+      );
+      return { total: Number(result.rows[0].total || 0), count: Number(result.rows[0].count || 0) };
+    },
+    async countByUser(userId) {
+      const result = await pool.query(`SELECT COUNT(*) FROM clip_renders WHERE user_id = $1 AND deleted_at IS NULL`, [userId]);
+      return parseInt(result.rows[0].count, 10);
+    }
   },
   workflowOps: {
     async create(userId, data) {
