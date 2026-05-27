@@ -2069,6 +2069,15 @@
   setTimeout(pushTimelineHistory, 200);
 
   // ── Snap compaction (no-gap enforcement on V1 when Snap ON) ────
+  // Task #138 — When a V1 clip moves during compaction (most commonly:
+  // the first clip snapping back to 0:00 after a drop), propagate that
+  // same px delta to every clip sharing its dataset.linkPair so the
+  // auto-extracted A1 audio (Task #136) travels with its video parent.
+  // Without this, the V1 clip snapped to 0:00 but the A1 stayed where
+  // the user dropped it — link broken visually, audio sync broken
+  // on playback. Once the user explicitly clicks Unlink Audio, the
+  // pair attribute is cleared so this code becomes a no-op for that
+  // pair and the clips stay independent under compaction too.
   function compactVideoTrack(){
     var track = document.querySelector('.mt-track-video');
     if (!track) return;
@@ -2076,7 +2085,23 @@
       .sort(function(a, b){ return (parseFloat(a.style.left)||0) - (parseFloat(b.style.left)||0); });
     var cursor = 0;
     clips.forEach(function(c){
+      var oldLeft = parseFloat(c.style.left) || 0;
       c.style.left = cursor + 'px';
+      var deltaLeft = cursor - oldLeft;
+      if (deltaLeft !== 0 && c.dataset.linkPair){
+        // Move every partner by the same delta. Using delta (not the
+        // V1's new left) preserves any intentional offset a user might
+        // have between the V1 and its audio before compaction kicked
+        // in — though for auto-extracted pairs the offset is zero.
+        var pair = c.dataset.linkPair;
+        var partners = document.querySelectorAll('[data-link-pair="' + pair + '"]');
+        for (var i = 0; i < partners.length; i++){
+          var p = partners[i];
+          if (p === c) continue;
+          var pl = parseFloat(p.style.left) || 0;
+          p.style.left = Math.max(0, pl + deltaLeft) + 'px';
+        }
+      }
       cursor += (parseFloat(c.style.width) || 0);
     });
   }
