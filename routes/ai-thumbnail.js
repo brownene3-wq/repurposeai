@@ -1131,6 +1131,73 @@ async function renderHighConversionComposite({ bgPath, facePath, layout, preset,
   });
 }
 
+// ============================================================================
+// Wizard analysis pipeline
+// ----------------------------------------------------------------------------
+// The AI-Generated tab is a 5-step wizard. After Step 1 (ingestion), we fire
+// an eager background analysis: transcribe + GPT-4o-mini → semantic tags,
+// emotion, context, hook topic, and suggested preset keys. The full result
+// is cached in-memory by jobId for 30 minutes so Step 5 (Generate) can skip
+// re-doing transcription on the same video.
+// ============================================================================
+const ANALYSIS_CACHE = new Map(); // jobId -> { createdAt, videoPath, videoTitle, transcript, analysis, ownedVideoPath }
+const ANALYSIS_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function _cleanupAnalysisCache() {
+  const now = Date.now();
+  for (const [jobId, entry] of ANALYSIS_CACHE.entries()) {
+    if (now - entry.createdAt > ANALYSIS_TTL_MS) {
+      // Try to remove the video file we own
+      if (entry.ownedVideoPath) {
+        try { fs.unlinkSync(entry.ownedVideoPath); } catch (e) {}
+      }
+      ANALYSIS_CACHE.delete(jobId);
+    }
+  }
+}
+setInterval(_cleanupAnalysisCache, 5 * 60 * 1000).unref?.();
+
+// Run GPT-4o-mini over the transcript + title and extract structured analysis:
+// content tags (3-8 short tokens), emotion (single word), context (one short
+// sentence), hook topic, and 1-3 suggested preset keys ranked by fit.
+async function analyzeVideoContent({ transcript, videoTitle, styleHint, presetKeys }) {
+  const safeTranscript = (transcript || '').slice(0, 8000);
+  const presetList = (presetKeys && presetKeys.length ? presetKeys : Object.keys(CREATOR_PRESETS)).join(', ');
+
+  const systemPrompt = 'You are a YouTube content analyst. Read the video transcript and metadata and produce a compact JSON analysis used to recommend a thumbnail design preset.\n\nReturn JSON shaped EXACTLY as:\n{\n  "tags": ["..."],            // 3-8 short lowercase noun-phrase content tags (the topics the video covers)\n  "emotion": "...",            // ONE word describing the dominant emotional tone: e.g. "excited", "tense", "calm", "shocked", "curious", "inspiring"\n  "context": "...",            // ONE short sentence describing what the video is and who it is for\n  "hookTopic": "...",          // The single abstract idea the video is about, 3-10 words\n  "suggestedPresetKeys": ["..."] // 1-3 keys, in order of fit, chosen ONLY from this set: ' + presetList + '\n}\n\nNever invent preset keys. Never include text/quotes from the transcript verbatim. Output ONLY the JSON, no commentary.';
+
+  const userPrompt = 'Video title: ' + (videoTitle || '(unknown)') + '\nUser style hint: ' + (styleHint || '(none)') + '\n\nTranscript (may be truncated):\n"""\n' + (safeTranscript || '(no transcript available)') + '\n"""';
+
+  const resp = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.4,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  });
+
+  const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
+  if (!raw) throw new Error('Analysis returned empty');
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (e) { throw new Error('Analysis returned invalid JSON'); }
+
+  const allowedKeys = new Set(Object.keys(CREATOR_PRESETS));
+  const tags = Array.isArray(parsed.tags) ? parsed.tags.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 8) : [];
+  const emotion = String(parsed.emotion || '').trim().toLowerCase().slice(0, 24);
+  const context = String(parsed.context || '').trim().slice(0, 220);
+  const hookTopic = String(parsed.hookTopic || '').trim().slice(0, 160);
+  let suggestedPresetKeys = Array.isArray(parsed.suggestedPresetKeys)
+    ? parsed.suggestedPresetKeys.map((k) => String(k || '').trim()).filter((k) => allowedKeys.has(k))
+    : [];
+  // Dedup, cap to 3, and always have at least one suggestion as a fallback.
+  suggestedPresetKeys = Array.from(new Set(suggestedPresetKeys)).slice(0, 3);
+  if (suggestedPresetKeys.length === 0) suggestedPresetKeys = ['mrbeast-bold'];
+
+  return { tags, emotion, context, hookTopic, suggestedPresetKeys };
+}
+
 // High-conversion concept generation. Like generateThumbnailConcepts but
 // constrained to the chosen preset's allowed layouts (filtered by hasFace).
 async function generateHighConversionConcepts({ transcript, hint, videoTitle, aspectLabel, count, preset, hasFace }) {
@@ -1974,6 +2041,234 @@ router.get('/', requireAuth, (req, res) => {
         box-shadow: 0 4px 12px rgba(108, 58, 237, 0.3);
       }
 
+      /* ===== AI Generated wizard ===== */
+      .wiz {
+        margin-top: 0.5rem;
+      }
+      .wiz-steps {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin: 0.25rem 0 1.25rem;
+        overflow-x: auto;
+        padding-bottom: 0.25rem;
+      }
+      .wiz-step {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        opacity: 0.55;
+        transition: opacity 0.2s ease;
+        flex: 0 0 auto;
+      }
+      .wiz-step.active,
+      .wiz-step.done {
+        opacity: 1;
+      }
+      .wiz-step-circle {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .wiz-step.active .wiz-step-circle {
+        background: linear-gradient(135deg, #6c3aed, #ff007a);
+        border-color: transparent;
+        color: #fff;
+        box-shadow: 0 0 0 4px rgba(108, 58, 237, 0.2);
+      }
+      .wiz-step.done .wiz-step-circle {
+        background: #2bb573;
+        border-color: transparent;
+        color: #fff;
+      }
+      .wiz-step-label {
+        font-size: 0.85rem;
+        color: var(--text);
+        white-space: nowrap;
+      }
+      .wiz-step-sep {
+        flex: 1 1 auto;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.08);
+        min-width: 12px;
+        max-width: 60px;
+      }
+      .wiz-panel {
+        display: none;
+      }
+      .wiz-panel.active {
+        display: block;
+      }
+      .wiz-panel-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 0.25rem;
+      }
+      .wiz-panel-sub {
+        font-size: 0.9rem;
+        color: var(--text-muted, #b8b8c9);
+        margin-bottom: 1rem;
+      }
+      .wiz-optional {
+        font-size: 0.8rem;
+        color: var(--text-muted, #b8b8c9);
+        font-weight: 400;
+        margin-left: 0.25rem;
+      }
+      .wiz-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .wiz-actions-right {
+        display: flex;
+        gap: 0.5rem;
+      }
+      .wiz-back,
+      .wiz-skip,
+      .wiz-next {
+        padding: 0.55rem 1.1rem;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: var(--surface);
+        color: var(--text);
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .wiz-back:hover:not(:disabled),
+      .wiz-skip:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .wiz-next {
+        background: linear-gradient(135deg, #6c3aed, #ff007a);
+        border-color: transparent;
+        color: #fff;
+      }
+      .wiz-next:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(108, 58, 237, 0.35);
+      }
+      .wiz-back:disabled,
+      .wiz-next:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .wiz-analyze-status {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-top: 1rem;
+        padding: 0.7rem 0.9rem;
+        background: rgba(108, 58, 237, 0.08);
+        border: 1px solid rgba(108, 58, 237, 0.18);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 0.9rem;
+      }
+      .wiz-analysis-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin: 0 0 1rem;
+      }
+      .wiz-chip {
+        padding: 0.3rem 0.7rem;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        font-size: 0.78rem;
+        color: var(--text);
+      }
+      .wiz-chip.emotion {
+        background: rgba(255, 0, 122, 0.12);
+        border-color: rgba(255, 0, 122, 0.3);
+      }
+      .wiz-chip.context {
+        background: rgba(108, 58, 237, 0.10);
+        border-color: rgba(108, 58, 237, 0.25);
+        width: 100%;
+        border-radius: 8px;
+      }
+      .wiz-count-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin: 0.5rem 0 0.5rem;
+      }
+      .wiz-count-range {
+        flex: 1 1 auto;
+        accent-color: #6c3aed;
+        height: 6px;
+      }
+      .wiz-count-display {
+        flex: 0 0 auto;
+        min-width: 64px;
+        height: 56px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #6c3aed, #ff007a);
+        color: #fff;
+        font-size: 1.6rem;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .wiz-review {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+        margin: 0.5rem 0 1.25rem;
+        padding: 0.9rem 1rem;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 10px;
+      }
+      .wiz-review-row {
+        display: flex;
+        gap: 0.6rem;
+        font-size: 0.9rem;
+      }
+      .wiz-review-label {
+        flex: 0 0 110px;
+        color: var(--text-muted, #b8b8c9);
+      }
+      .wiz-review-value {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .hc-preset-card.recommended {
+        position: relative;
+        box-shadow: 0 0 0 2px rgba(255, 0, 122, 0.4), 0 6px 18px rgba(255, 0, 122, 0.15);
+      }
+      .hc-preset-card.recommended::after {
+        content: "★ Recommended";
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        background: linear-gradient(135deg, #ff007a, #ff7a00);
+        color: #fff;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        letter-spacing: 0.02em;
+      }
+
       /* ===== High-Conversion AI tab: preset grid + face uploader ===== */
       .hc-preset-grid {
         display: grid;
@@ -2473,7 +2768,7 @@ ${pageStyles}
 
     <main class="main-content">
       <div class="page-header">
-        <h1><img src="/images/section-icons/A-103.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">AI Thumbnails</h1>
+        <h1><img src="/images/dashboard-icons/ai-thumbnails.png?v=2" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;display:inline-block">AI Thumbnails</h1>
         <p>Generate professional YouTube thumbnails with AI styling</p>
       </div>
 
@@ -2494,7 +2789,7 @@ ${pageStyles}
 
           <div id="uploadTab" class="tab-content">
             <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-              <div class="upload-icon"><img src="/images/section-icons/A-54.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
+              <div class="upload-icon">🎬</div>
               <div class="upload-text">Drop your video file here</div>
               <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
               <input type="file" id="fileInput" name="videoFile" class="file-input" accept="video/*">
@@ -2507,9 +2802,60 @@ ${pageStyles}
               High-conversion thumbnails modeled after proven, top-creator layouts. The AI analyzes your video, chooses a winning layout, and renders the finished thumbnail.
             </div>
 
-            <!-- Preset gallery — each card is a visual sample of what that preset produces -->
-            <label class="url-input-label" style="margin-top: 0.5rem;">Style preset</label>
-            <div class="hc-preset-grid">
+            <!-- ============ 5-STEP WIZARD ============ -->
+            <div class="wiz" id="aiWiz">
+
+              <!-- Step indicator -->
+              <div class="wiz-steps">
+                <div class="wiz-step active" data-step="1"><div class="wiz-step-circle">1</div><div class="wiz-step-label">Video</div></div>
+                <div class="wiz-step-sep"></div>
+                <div class="wiz-step" data-step="2"><div class="wiz-step-circle">2</div><div class="wiz-step-label">Style</div></div>
+                <div class="wiz-step-sep"></div>
+                <div class="wiz-step" data-step="3"><div class="wiz-step-circle">3</div><div class="wiz-step-label">Face</div></div>
+                <div class="wiz-step-sep"></div>
+                <div class="wiz-step" data-step="4"><div class="wiz-step-circle">4</div><div class="wiz-step-label">Batch</div></div>
+                <div class="wiz-step-sep"></div>
+                <div class="wiz-step" data-step="5"><div class="wiz-step-circle">5</div><div class="wiz-step-label">Generate</div></div>
+              </div>
+
+              <!-- ============ STEP 1 — VIDEO INGESTION ============ -->
+              <div class="wiz-panel active" data-panel="1">
+                <div class="wiz-panel-title">Pick a video to analyze</div>
+                <div class="wiz-panel-sub">Paste a YouTube URL or upload a file. We'll start analyzing the moment you continue.</div>
+
+                <div class="ai-source-tabs" role="tablist">
+                  <button type="button" class="ai-source-tab active" data-aisource="url">YouTube URL</button>
+                  <button type="button" class="ai-source-tab" data-aisource="upload">Upload Video</button>
+                </div>
+
+                <div class="ai-source-content" data-aisource-content="url">
+                  <input type="text" id="aiYoutubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
+                </div>
+
+                <div class="ai-source-content" data-aisource-content="upload" style="display:none">
+                  <div class="upload-area" id="aiUploadArea" onclick="document.getElementById('aiFileInput').click()">
+                    <div class="upload-icon">🎬</div>
+                    <div class="upload-text">Drop your video file here</div>
+                    <div class="upload-subtext">Or click to select &bull; MP4, MOV, WebM supported</div>
+                    <input type="file" id="aiFileInput" class="file-input" accept="video/*">
+                    <div id="aiFileName" class="file-name" style="display: none;"></div>
+                  </div>
+                </div>
+
+                <div id="wizAnalyzeStatus" class="wiz-analyze-status" style="display:none;">
+                  <span class="spinner"></span>
+                  <span id="wizAnalyzeStatusMsg">Analyzing video…</span>
+                </div>
+              </div>
+
+              <!-- ============ STEP 2 — STYLE PRESET (skippable) ============ -->
+              <div class="wiz-panel" data-panel="2">
+                <div class="wiz-panel-title">Pick a style preset <span class="wiz-optional">(optional)</span></div>
+                <div class="wiz-panel-sub">Recommended presets are based on your video's content. Skip to let the AI choose.</div>
+
+                <div id="wizAnalysisChips" class="wiz-analysis-chips" style="display:none;"></div>
+
+                <div class="hc-preset-grid">
 
               <button type="button" class="hc-preset-card active" data-preset="mrbeast-bold">
                 <svg class="hc-preset-svg" viewBox="0 0 280 158" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
@@ -2620,79 +2966,82 @@ ${pageStyles}
                 </div>
               </button>
 
-            </div>
-
-            <!-- Optional face uploader, collapsed by default -->
-            <details class="hc-face-disclosure">
-              <summary class="hc-face-summary">
-                <span>Add your face (optional)</span>
-                <span class="hc-face-summary-hint">— enables face-in-thumbnail layouts</span>
-              </summary>
-              <div class="hc-face-body">
-                <div class="upload-area" id="hcFaceArea" onclick="document.getElementById('hcFaceInput').click()">
-                  <div class="upload-icon"><img src="/images/section-icons/A-62.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
-                  <div class="upload-text">Drop a headshot here</div>
-                  <div class="upload-subtext">PNG / JPG up to 8 MB &bull; clear head-and-shoulders shot works best</div>
-                  <input type="file" id="hcFaceInput" class="file-input" accept="image/png,image/jpeg,image/jpg,image/webp">
                 </div>
-                <div id="hcFacePreview" class="hc-face-preview" style="display:none;">
-                  <img id="hcFacePreviewImg" alt="Face preview" />
-                  <div class="hc-face-preview-meta">
-                    <div id="hcFacePreviewName"></div>
-                    <button type="button" class="hc-face-remove" id="hcFaceRemove">Remove</button>
+              </div>
+
+              <!-- ============ STEP 3 — FACE (skippable) ============ -->
+              <div class="wiz-panel" data-panel="3">
+                <div class="wiz-panel-title">Add your face <span class="wiz-optional">(optional)</span></div>
+                <div class="wiz-panel-sub">Upload a clear headshot to unlock face-in-thumbnail layouts. Skip to keep things text-and-background only.</div>
+
+                <div class="hc-face-body">
+                  <div class="upload-area" id="hcFaceArea" onclick="document.getElementById('hcFaceInput').click()">
+                    <div class="upload-icon">👤</div>
+                    <div class="upload-text">Drop a headshot here</div>
+                    <div class="upload-subtext">PNG / JPG up to 8 MB &bull; clear head-and-shoulders shot works best</div>
+                    <input type="file" id="hcFaceInput" class="file-input" accept="image/png,image/jpeg,image/jpg,image/webp">
+                  </div>
+                  <div id="hcFacePreview" class="hc-face-preview" style="display:none;">
+                    <img id="hcFacePreviewImg" alt="Face preview" />
+                    <div class="hc-face-preview-meta">
+                      <div id="hcFacePreviewName"></div>
+                      <button type="button" class="hc-face-remove" id="hcFaceRemove">Remove</button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </details>
 
-            <!-- Video source picker -->
-            <label class="url-input-label" style="margin-top: 1.25rem;">Video source</label>
-            <div class="ai-source-tabs" role="tablist">
-              <button type="button" class="ai-source-tab active" data-aisource="url">YouTube URL</button>
-              <button type="button" class="ai-source-tab" data-aisource="upload">Upload Video</button>
-            </div>
+              <!-- ============ STEP 4 — BATCH ============ -->
+              <div class="wiz-panel" data-panel="4">
+                <div class="wiz-panel-title">How many thumbnails?</div>
+                <div class="wiz-panel-sub">Pick between 1 and 4. Each one uses a different layout from your chosen preset.</div>
 
-            <div class="ai-source-content" data-aisource-content="url">
-              <input type="text" id="aiYoutubeUrl" class="url-input" placeholder="https://youtube.com/watch?v=..." />
-            </div>
+                <div class="wiz-count-row">
+                  <input type="range" id="wizCountRange" class="wiz-count-range" min="1" max="4" value="3" />
+                  <div class="wiz-count-display"><span id="wizCountValue">3</span></div>
+                </div>
 
-            <div class="ai-source-content" data-aisource-content="upload" style="display:none">
-              <div class="upload-area" id="aiUploadArea" onclick="document.getElementById('aiFileInput').click()">
-                <div class="upload-icon"><img src="/images/section-icons/A-54.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
-                <div class="upload-text">Drop your video file here</div>
-                <div class="upload-subtext">Or click to select &bull; MP4, MOV, WebM supported</div>
-                <input type="file" id="aiFileInput" class="file-input" accept="video/*">
-                <div id="aiFileName" class="file-name" style="display: none;"></div>
-              </div>
-            </div>
+                <div class="ai-controls">
+                  <label class="url-input-label" style="margin-top: 1.25rem;">Aspect ratio</label>
+                  <div class="ai-aspect-row">
+                    <button type="button" class="ai-aspect-btn active" data-aspect="16:9">16:9 &bull; YouTube</button>
+                    <button type="button" class="ai-aspect-btn" data-aspect="9:16">9:16 &bull; Shorts / TikTok</button>
+                    <button type="button" class="ai-aspect-btn" data-aspect="1:1">1:1 &bull; Square</button>
+                  </div>
 
-            <div class="ai-controls">
-              <label class="url-input-label">Aspect ratio</label>
-              <div class="ai-aspect-row">
-                <button type="button" class="ai-aspect-btn active" data-aspect="16:9">16:9 &bull; YouTube</button>
-                <button type="button" class="ai-aspect-btn" data-aspect="9:16">9:16 &bull; Shorts / TikTok</button>
-                <button type="button" class="ai-aspect-btn" data-aspect="1:1">1:1 &bull; Square</button>
+                  <label class="url-input-label" style="margin-top: 1.25rem;">Style hint (optional)</label>
+                  <input type="text" id="aiStyleHint" class="url-input" placeholder="e.g. bright and energetic, dark cinematic, bold minimal" maxlength="300" />
+                </div>
               </div>
 
-              <label class="url-input-label" style="margin-top: 1.25rem;">Number of thumbnails</label>
-              <div class="ai-aspect-row">
-                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="1">1</button>
-                <button type="button" class="ai-aspect-btn ai-count-btn" data-count="2">2</button>
-                <button type="button" class="ai-aspect-btn ai-count-btn active" data-count="3">3</button>
+              <!-- ============ STEP 5 — REVIEW + GENERATE ============ -->
+              <div class="wiz-panel" data-panel="5">
+                <div class="wiz-panel-title">Ready to generate</div>
+                <div class="wiz-panel-sub">Review your choices below, then hit Generate.</div>
+
+                <div class="wiz-review" id="wizReview"></div>
+
+                <button type="button" class="action-button" id="aiGenerateBtn">
+                  Generate 3 AI Thumbnails
+                </button>
+
+                <div id="aiProgress" class="ai-progress" style="display: none;">
+                  <span class="spinner"></span>
+                  <span id="aiProgressMsg">Starting&hellip;</span>
+                </div>
               </div>
 
-              <label class="url-input-label" style="margin-top: 1.25rem;">Style hint (optional)</label>
-              <input type="text" id="aiStyleHint" class="url-input" placeholder="e.g. bright and energetic, dark cinematic, bold minimal" maxlength="300" />
-            </div>
+              <!-- ============ WIZARD NAVIGATION ============ -->
+              <div class="wiz-actions">
+                <button type="button" class="wiz-back" id="wizBackBtn" disabled>← Back</button>
+                <div class="wiz-actions-right">
+                  <button type="button" class="wiz-skip" id="wizSkipBtn" style="display:none;">Skip</button>
+                  <button type="button" class="wiz-next" id="wizNextBtn" disabled>Continue →</button>
+                </div>
+              </div>
 
-            <button type="button" class="action-button" id="aiGenerateBtn" disabled>
-              Generate 3 AI Thumbnails
-            </button>
-
-            <div id="aiProgress" class="ai-progress" style="display: none;">
-              <span class="spinner"></span>
-              <span id="aiProgressMsg">Starting&hellip;</span>
             </div>
+            <!-- ============ /WIZARD ============ -->
           </div>
 
           <button type="submit" class="action-button" id="extractBtn" disabled style="display: none;">
@@ -2845,7 +3194,7 @@ ${pageStyles}
     fileInput.addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
         const name = e.target.files[0].name;
-        fileName.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + name;
+        fileName.textContent = '🎬 ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }
@@ -2869,7 +3218,7 @@ ${pageStyles}
       if (files.length > 0) {
         fileInput.files = files;
         const name = files[0].name;
-        fileName.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + name;
+        fileName.textContent = '🎬 ' + name;
         fileName.style.display = 'block';
         checkInputs();
       }
@@ -3098,22 +3447,34 @@ ${pageStyles}
     }
 
     // ===========================================================
-    // AI Generated tab — high-conversion flow (preset + optional face)
+    // AI Generated tab — 5-step wizard with eager analysis
     // ===========================================================
     var aiActiveSource = 'url';
     var aiActiveAspect = '16:9';
     var aiActiveCount = 3;
-    var aiActivePreset = 'mrbeast-bold';
-    var aiFaceFile = null; // File object from hcFaceInput
+    var aiActivePreset = null;        // null = user skipped, backend will pick from analysis
+    var aiFaceFile = null;            // File object from hcFaceInput
+    var wizAnalysisJobId = null;      // jobId returned by /analyze
+    var wizAnalysisResult = null;     // {tags, emotion, context, hookTopic, suggestedPresetKeys, videoTitle}
+    var wizAnalyzeInFlight = null;    // Promise of in-flight /analyze call (null when idle)
+    var wizCurrentStep = 1;
 
-    // Preset cards
+    // Preset cards — clicking selects; clicking the active card deselects (so user can "skip" by deselecting)
     document.querySelectorAll('.hc-preset-card').forEach(card => {
       card.addEventListener('click', () => {
-        aiActivePreset = card.dataset.preset;
-        document.querySelectorAll('.hc-preset-card').forEach(c => c.classList.remove('active'));
-        card.classList.add('active');
+        if (card.classList.contains('active')) {
+          // Deselect
+          aiActivePreset = null;
+          card.classList.remove('active');
+        } else {
+          aiActivePreset = card.dataset.preset;
+          document.querySelectorAll('.hc-preset-card').forEach(c => c.classList.remove('active'));
+          card.classList.add('active');
+        }
       });
     });
+    // Default: nothing pre-selected. Clear the initial .active class on mrbeast-bold so user makes a real choice.
+    document.querySelectorAll('.hc-preset-card.active').forEach(c => c.classList.remove('active'));
 
     // Optional face uploader
     const hcFaceInput = document.getElementById('hcFaceInput');
@@ -3184,20 +3545,21 @@ ${pageStyles}
       });
     });
 
-    // Count buttons — keep the generate button label in sync with selection
+    // Count slider — keep the generate button label in sync with selection
     function updateGenerateBtnLabel() {
       const btn = document.getElementById('aiGenerateBtn');
       if (!btn || btn.classList.contains('loading')) return;
       btn.innerHTML = 'Generate ' + aiActiveCount + ' AI Thumbnail' + (aiActiveCount === 1 ? '' : 's');
     }
-    document.querySelectorAll('.ai-count-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        aiActiveCount = parseInt(btn.dataset.count, 10) || 3;
-        document.querySelectorAll('.ai-count-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+    const wizCountRange = document.getElementById('wizCountRange');
+    const wizCountValue = document.getElementById('wizCountValue');
+    if (wizCountRange) {
+      wizCountRange.addEventListener('input', () => {
+        aiActiveCount = Math.min(Math.max(parseInt(wizCountRange.value, 10) || 3, 1), 4);
+        if (wizCountValue) wizCountValue.textContent = String(aiActiveCount);
         updateGenerateBtnLabel();
       });
-    });
+    }
 
     const aiYoutubeUrlEl = document.getElementById('aiYoutubeUrl');
     const aiFileInputEl = document.getElementById('aiFileInput');
@@ -3211,7 +3573,7 @@ ${pageStyles}
     if (aiFileInputEl) {
       aiFileInputEl.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-          aiFileNameEl.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + e.target.files[0].name;
+          aiFileNameEl.textContent = '🎬 ' + e.target.files[0].name;
           aiFileNameEl.style.display = 'block';
         }
         checkAIInputs();
@@ -3225,7 +3587,7 @@ ${pageStyles}
         aiUploadAreaEl.classList.remove('dragover');
         if (e.dataTransfer.files.length > 0) {
           aiFileInputEl.files = e.dataTransfer.files;
-          aiFileNameEl.innerHTML = '<img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> ' + e.dataTransfer.files[0].name;
+          aiFileNameEl.textContent = '🎬 ' + e.dataTransfer.files[0].name;
           aiFileNameEl.style.display = 'block';
           checkAIInputs();
         }
@@ -3233,9 +3595,13 @@ ${pageStyles}
     }
 
     function checkAIInputs() {
+      // On the wizard, Step 1's Continue button is what we gate on input validity.
       const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
       const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
-      if (aiGenerateBtn) aiGenerateBtn.disabled = !(hasUrl || hasFile);
+      const wizNextBtn = document.getElementById('wizNextBtn');
+      if (wizCurrentStep === 1 && wizNextBtn) {
+        wizNextBtn.disabled = !(hasUrl || hasFile);
+      }
     }
 
     // Cycle progress messages while the backend is working.
@@ -3278,10 +3644,16 @@ ${pageStyles}
         const formData = new FormData();
         formData.set('inputMode', aiActiveSource);
         formData.set('aspect', aiActiveAspect);
-        formData.set('styleHint', document.getElementById('aiStyleHint').value.trim());
+        const styleHintEl = document.getElementById('aiStyleHint');
+        formData.set('styleHint', styleHintEl ? styleHintEl.value.trim() : '');
         formData.set('count', String(aiActiveCount));
-        formData.set('preset', aiActivePreset);
+        // Preset is optional (Step 2 skippable) — only send when chosen
+        if (aiActivePreset) formData.set('preset', aiActivePreset);
+        if (wizAnalysisJobId) formData.set('analysisJobId', wizAnalysisJobId);
         if (aiFaceFile) formData.set('faceFile', aiFaceFile);
+        // If we already analyzed via /analyze, the server reuses the cached
+        // video file — we still send youtubeUrl/videoFile as a safety fallback
+        // in case the cache entry expired.
         if (hasUrl) formData.set('youtubeUrl', aiYoutubeUrlEl.value.trim());
         if (hasFile) formData.set('videoFile', aiFileInputEl.files[0]);
 
@@ -3306,6 +3678,7 @@ ${pageStyles}
         } finally {
           stopAIProgress();
           aiGenerateBtn.classList.remove('loading');
+          aiGenerateBtn.disabled = false;
           aiGenerateBtn.innerHTML = 'Generate ' + aiActiveCount + ' AI Thumbnail' + (aiActiveCount === 1 ? '' : 's');
           checkAIInputs();
         }
@@ -3354,6 +3727,244 @@ ${pageStyles}
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
+
+    // ===========================================================
+    // Wizard navigation & eager analysis
+    // -----------------------------------------------------------
+    // The wizard has 5 panels. Step 2 (preset) and Step 3 (face) are
+    // skippable — the Skip button advances without committing a choice.
+    // After Step 1 (Continue) we fire /analyze in the background; the
+    // wizard advances to Step 2 immediately, and analysis chips +
+    // recommended-preset highlights stream in when the promise resolves.
+    // ===========================================================
+    (function setupWizard() {
+      const wizRoot = document.getElementById('aiWiz');
+      if (!wizRoot) return;
+      const backBtn = document.getElementById('wizBackBtn');
+      const skipBtn = document.getElementById('wizSkipBtn');
+      const nextBtn = document.getElementById('wizNextBtn');
+      const analyzeStatus = document.getElementById('wizAnalyzeStatus');
+      const analyzeStatusMsg = document.getElementById('wizAnalyzeStatusMsg');
+      const chipsEl = document.getElementById('wizAnalysisChips');
+      const reviewEl = document.getElementById('wizReview');
+      const TOTAL_STEPS = 5;
+
+      function showStep(n) {
+        wizCurrentStep = n;
+        wizRoot.querySelectorAll('.wiz-panel').forEach((p) => {
+          p.classList.toggle('active', parseInt(p.dataset.panel, 10) === n);
+        });
+        wizRoot.querySelectorAll('.wiz-step').forEach((s) => {
+          const sn = parseInt(s.dataset.step, 10);
+          s.classList.toggle('active', sn === n);
+          s.classList.toggle('done', sn < n);
+        });
+
+        // Back enabled on every step except 1
+        backBtn.disabled = (n === 1);
+
+        // Skip only on steps 2 and 3
+        skipBtn.style.display = (n === 2 || n === 3) ? '' : 'none';
+
+        // Next button label + state
+        if (n === TOTAL_STEPS) {
+          nextBtn.style.display = 'none';
+        } else {
+          nextBtn.style.display = '';
+        }
+        if (n === 4) {
+          nextBtn.innerHTML = 'Review →';
+        } else if (n === TOTAL_STEPS - 1) {
+          nextBtn.innerHTML = 'Continue →';
+        } else if (n === 1) {
+          nextBtn.innerHTML = 'Continue →';
+        } else {
+          nextBtn.innerHTML = 'Continue →';
+        }
+
+        // Per-step Next gating
+        if (n === 1) {
+          checkAIInputs(); // gates on hasUrl || hasFile
+        } else {
+          nextBtn.disabled = false;
+        }
+
+        // Step 5: build review pane
+        if (n === TOTAL_STEPS) {
+          renderReview();
+        }
+      }
+
+      function renderReview() {
+        if (!reviewEl) return;
+        const rows = [];
+        const src = aiActiveSource === 'url'
+          ? ((aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim()) || '—')
+          : ((aiFileInputEl && aiFileInputEl.files[0] && aiFileInputEl.files[0].name) || '—');
+        rows.push({ label: 'Source', value: src });
+        if (wizAnalysisResult && wizAnalysisResult.videoTitle) {
+          rows.push({ label: 'Title', value: wizAnalysisResult.videoTitle });
+        }
+        if (wizAnalysisResult && wizAnalysisResult.emotion) {
+          rows.push({ label: 'Tone', value: wizAnalysisResult.emotion });
+        }
+        if (wizAnalysisResult && wizAnalysisResult.tags && wizAnalysisResult.tags.length) {
+          rows.push({ label: 'Topics', value: wizAnalysisResult.tags.slice(0, 5).join(', ') });
+        }
+        rows.push({ label: 'Style', value: aiActivePreset ? presetDisplayName(aiActivePreset) : 'AI choice (auto)' });
+        rows.push({ label: 'Face', value: aiFaceFile ? aiFaceFile.name : 'None (text-only layouts)' });
+        rows.push({ label: 'Aspect', value: aiActiveAspect });
+        rows.push({ label: 'Count', value: String(aiActiveCount) });
+        const styleHintVal = (document.getElementById('aiStyleHint') || {}).value || '';
+        if (styleHintVal.trim()) rows.push({ label: 'Hint', value: styleHintVal.trim() });
+
+        reviewEl.innerHTML = rows.map((r) =>
+          '<div class="wiz-review-row"><div class="wiz-review-label">' + escapeHtml(r.label) +
+          '</div><div class="wiz-review-value">' + escapeHtml(r.value) + '</div></div>'
+        ).join('');
+        updateGenerateBtnLabel();
+      }
+
+      function presetDisplayName(key) {
+        const card = document.querySelector('.hc-preset-card[data-preset="' + key + '"] .hc-preset-name');
+        return card ? card.textContent.trim() : key;
+      }
+
+      function renderAnalysisChips() {
+        if (!chipsEl || !wizAnalysisResult) return;
+        const parts = [];
+        if (wizAnalysisResult.emotion) {
+          parts.push('<span class="wiz-chip emotion">Tone: ' + escapeHtml(wizAnalysisResult.emotion) + '</span>');
+        }
+        (wizAnalysisResult.tags || []).slice(0, 6).forEach((t) => {
+          parts.push('<span class="wiz-chip">' + escapeHtml(t) + '</span>');
+        });
+        if (wizAnalysisResult.context) {
+          parts.push('<span class="wiz-chip context">' + escapeHtml(wizAnalysisResult.context) + '</span>');
+        }
+        if (parts.length === 0) {
+          chipsEl.style.display = 'none';
+          return;
+        }
+        chipsEl.innerHTML = parts.join('');
+        chipsEl.style.display = 'flex';
+      }
+
+      function highlightRecommendedPresets() {
+        document.querySelectorAll('.hc-preset-card').forEach((c) => c.classList.remove('recommended'));
+        if (!wizAnalysisResult || !Array.isArray(wizAnalysisResult.suggestedPresetKeys)) return;
+        wizAnalysisResult.suggestedPresetKeys.forEach((k) => {
+          const card = document.querySelector('.hc-preset-card[data-preset="' + k + '"]');
+          if (card) card.classList.add('recommended');
+        });
+      }
+
+      async function runAnalysis() {
+        if (wizAnalyzeInFlight) return wizAnalyzeInFlight;
+
+        const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
+        const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
+        if (!hasUrl && !hasFile) return null;
+
+        if (analyzeStatus) analyzeStatus.style.display = 'flex';
+        if (analyzeStatusMsg) analyzeStatusMsg.textContent = 'Analyzing video (this can take 30-60s)…';
+
+        const fd = new FormData();
+        fd.set('inputMode', aiActiveSource);
+        const styleHintEl = document.getElementById('aiStyleHint');
+        if (styleHintEl) fd.set('styleHint', styleHintEl.value.trim());
+        if (hasUrl) fd.set('youtubeUrl', aiYoutubeUrlEl.value.trim());
+        if (hasFile) fd.set('videoFile', aiFileInputEl.files[0]);
+
+        wizAnalyzeInFlight = (async () => {
+          try {
+            const resp = await fetch('/ai-thumbnail/analyze', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (!resp.ok || !data.success) throw new Error(data.message || 'Analysis failed');
+            wizAnalysisJobId = data.jobId;
+            wizAnalysisResult = {
+              videoTitle: data.videoTitle || '',
+              tags: data.tags || [],
+              emotion: data.emotion || '',
+              context: data.context || '',
+              hookTopic: data.hookTopic || '',
+              suggestedPresetKeys: data.suggestedPresetKeys || []
+            };
+            renderAnalysisChips();
+            highlightRecommendedPresets();
+            if (analyzeStatusMsg) analyzeStatusMsg.textContent = 'Analysis complete';
+            if (analyzeStatus) {
+              setTimeout(() => { if (analyzeStatus) analyzeStatus.style.display = 'none'; }, 1200);
+            }
+          } catch (err) {
+            console.warn('[wizard] analysis failed:', err.message);
+            // Graceful fallback: the wizard still works, /ai-generate will
+            // re-transcribe and choose a preset on its own.
+            wizAnalysisJobId = null;
+            wizAnalysisResult = null;
+            if (analyzeStatusMsg) analyzeStatusMsg.textContent = 'Analysis unavailable — continuing without it';
+            if (analyzeStatus) {
+              setTimeout(() => { if (analyzeStatus) analyzeStatus.style.display = 'none'; }, 2500);
+            }
+          } finally {
+            wizAnalyzeInFlight = null;
+          }
+        })();
+        return wizAnalyzeInFlight;
+      }
+
+      // Navigation handlers
+      backBtn.addEventListener('click', () => {
+        if (wizCurrentStep > 1) showStep(wizCurrentStep - 1);
+      });
+      skipBtn.addEventListener('click', () => {
+        // Skip behavior: clear that step's selection and advance
+        if (wizCurrentStep === 2) {
+          aiActivePreset = null;
+          document.querySelectorAll('.hc-preset-card').forEach((c) => c.classList.remove('active'));
+        } else if (wizCurrentStep === 3) {
+          if (typeof setFaceFile === 'function') setFaceFile(null);
+        }
+        showStep(Math.min(wizCurrentStep + 1, TOTAL_STEPS));
+      });
+      nextBtn.addEventListener('click', () => {
+        // Step 1: kick off analysis in the background, then immediately advance to Step 2
+        if (wizCurrentStep === 1) {
+          runAnalysis().catch(() => {});
+        }
+        showStep(Math.min(wizCurrentStep + 1, TOTAL_STEPS));
+      });
+
+      // Reset wizard if user switches input source (so we don't keep stale analysis)
+      document.querySelectorAll('.ai-source-tab').forEach((b) => {
+        b.addEventListener('click', () => {
+          wizAnalysisJobId = null;
+          wizAnalysisResult = null;
+          if (chipsEl) { chipsEl.style.display = 'none'; chipsEl.innerHTML = ''; }
+          document.querySelectorAll('.hc-preset-card').forEach((c) => c.classList.remove('recommended'));
+        });
+      });
+      if (aiYoutubeUrlEl) {
+        aiYoutubeUrlEl.addEventListener('input', () => {
+          // URL changed — invalidate any prior analysis
+          if (wizAnalysisJobId) {
+            wizAnalysisJobId = null;
+            wizAnalysisResult = null;
+          }
+        });
+      }
+      if (aiFileInputEl) {
+        aiFileInputEl.addEventListener('change', () => {
+          if (wizAnalysisJobId) {
+            wizAnalysisJobId = null;
+            wizAnalysisResult = null;
+          }
+        });
+      }
+
+      // Boot
+      showStep(1);
+    })();
 
     // ===========================================================
     // Canvas-based Text Overlay Editor
@@ -3774,11 +4385,127 @@ router.get('/download/:filename', requireAuth, (req, res) => {
   }
 });
 
+// POST - /analyze
+// Wizard Step 1 callback. Downloads / accepts a video, transcribes it, and
+// runs GPT-4o-mini analysis to extract content tags, emotion, context, hook
+// topic, and 1-3 preset suggestions. The result + the local video path are
+// cached in ANALYSIS_CACHE by jobId so /ai-generate can skip re-transcribing
+// the same video on Step 5. Returns 200 even on partial failure (e.g. no
+// transcript) so the wizard can still proceed with a degraded analysis.
+router.post('/analyze', requireAuth, upload.single('videoFile'), async (req, res) => {
+  let videoPath = null;
+  let ownedVideoPath = null;
+  let audioPath = null;
+
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ success: false, message: 'OpenAI API key not configured on the server' });
+    }
+
+    const inputMode = (req.body.inputMode || 'upload').toString();
+    const youtubeUrl = (req.body.youtubeUrl || '').toString().trim();
+    const styleHint = (req.body.styleHint || '').toString().slice(0, 300);
+    const videoFile = req.file;
+
+    let videoTitle = '';
+    if (inputMode === 'url' && youtubeUrl) {
+      if (!isValidYouTubeUrl(youtubeUrl)) {
+        return res.status(400).json({ success: false, message: 'Please enter a valid YouTube URL' });
+      }
+      try {
+        videoPath = await downloadYouTubeVideo(youtubeUrl);
+        ownedVideoPath = videoPath;
+      } catch (dlErr) {
+        console.error('[AI Thumbnail Analyze] YouTube download failed:', dlErr.message);
+        return res.status(400).json({ success: false, message: 'Could not download that YouTube video. It may be private, age-restricted, or blocked from this server.' });
+      }
+      videoTitle = await getYouTubeTitle(youtubeUrl).catch(() => '');
+    } else if (videoFile) {
+      // Move the upload out of multer's temp dir into our own cache-owned path
+      // so the analysis cache controls its lifecycle (instead of multer's).
+      const cachedPath = path.join(uploadDir, 'analysis-' + uuidv4().slice(0, 10) + path.extname(videoFile.originalname || '.mp4'));
+      try {
+        fs.copyFileSync(videoFile.path, cachedPath);
+        try { fs.unlinkSync(videoFile.path); } catch (e) {}
+        videoPath = cachedPath;
+        ownedVideoPath = cachedPath;
+      } catch (cpErr) {
+        console.error('[AI Thumbnail Analyze] Failed to stage uploaded video:', cpErr.message);
+        return res.status(500).json({ success: false, message: 'Could not stage uploaded video for analysis' });
+      }
+    } else {
+      return res.status(400).json({ success: false, message: 'Please provide a YouTube URL or upload a video' });
+    }
+
+    if (!videoPath || !fs.existsSync(videoPath)) {
+      return res.status(400).json({ success: false, message: 'Video file not found on server' });
+    }
+
+    // Transcribe (best-effort — analysis can still run without it)
+    let transcript = '';
+    try {
+      audioPath = await extractAudioForAIThumbnail(videoPath);
+      transcript = await transcribeForAIThumbnail(audioPath);
+    } catch (err) {
+      console.warn('[AI Thumbnail Analyze] Transcription failed, continuing with empty transcript:', err.message);
+      transcript = '';
+    }
+
+    let analysis;
+    try {
+      analysis = await analyzeVideoContent({
+        transcript,
+        videoTitle,
+        styleHint,
+        presetKeys: Object.keys(CREATOR_PRESETS)
+      });
+    } catch (anErr) {
+      console.warn('[AI Thumbnail Analyze] Analysis failed, returning defaults:', anErr.message);
+      analysis = {
+        tags: [],
+        emotion: '',
+        context: '',
+        hookTopic: '',
+        suggestedPresetKeys: ['mrbeast-bold']
+      };
+    }
+
+    const jobId = uuidv4();
+    ANALYSIS_CACHE.set(jobId, {
+      createdAt: Date.now(),
+      videoPath,
+      ownedVideoPath,
+      videoTitle,
+      transcript,
+      analysis
+    });
+
+    res.json({
+      success: true,
+      jobId,
+      videoTitle,
+      tags: analysis.tags,
+      emotion: analysis.emotion,
+      context: analysis.context,
+      hookTopic: analysis.hookTopic,
+      suggestedPresetKeys: analysis.suggestedPresetKeys,
+      transcriptPreview: transcript ? transcript.slice(0, 400) : ''
+    });
+  } catch (error) {
+    console.error('[AI Thumbnail Analyze] Unhandled error:', error);
+    // If we owned a downloaded file but failed before caching, clean it up
+    if (ownedVideoPath) { try { fs.unlinkSync(ownedVideoPath); } catch (e) {} }
+    res.status(500).json({ success: false, message: error.message || 'Analysis failed' });
+  } finally {
+    if (audioPath) { try { fs.unlinkSync(audioPath); } catch (e) {} }
+  }
+});
+
 // POST - AI-Generated Thumbnails
-// Accepts a video (uploaded file OR YouTube URL), transcribes the audio,
-// asks GPT-4o-mini to propose N thumbnail concepts rooted in the video's
-// most interesting moments, then renders each concept into an image via
-// GPT-image-1 in parallel. Returns the array of generated thumbnails.
+// Accepts a video (uploaded file OR YouTube URL) OR an analysisJobId from a
+// prior /analyze call. Transcribes if needed, asks GPT-4o-mini to propose N
+// thumbnail concepts rooted in the video's most interesting moments, then
+// renders each concept into an image via Flux Schnell in parallel.
 router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', maxCount: 1 }, { name: 'faceFile', maxCount: 1 }]), async (req, res) => {
   let videoPath = null;
   let downloadedYoutubeFile = null;
@@ -3794,35 +4521,72 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     const youtubeUrl = (req.body.youtubeUrl || '').toString().trim();
     const aspect = ['16:9', '9:16', '1:1'].includes(req.body.aspect) ? req.body.aspect : '16:9';
     const styleHint = (req.body.styleHint || '').toString().slice(0, 300);
-    const requestedCount = Math.min(Math.max(parseInt(req.body.count, 10) || 3, 1), 3);
-    const presetKey = (req.body.preset || 'mrbeast-bold').toString();
-    const preset = CREATOR_PRESETS[presetKey] || CREATOR_PRESETS['mrbeast-bold'];
+    const requestedCount = Math.min(Math.max(parseInt(req.body.count, 10) || 3, 1), 4);
+    // Preset is OPTIONAL in the wizard. If the user skipped Step 2 we fall
+    // back to their analysis-suggested preset, then to mrbeast-bold.
+    const rawPresetKey = (req.body.preset || '').toString().trim();
+    const analysisJobId = (req.body.analysisJobId || '').toString().trim();
     const videoFile = req.files && req.files.videoFile && req.files.videoFile[0];
     const faceFile = req.files && req.files.faceFile && req.files.faceFile[0];
 
-    // Resolve the source video path
+    // If the wizard already analyzed the video, reuse the cached video path,
+    // transcript, and title — saves a re-download and re-transcribe pass.
+    const cached = analysisJobId ? ANALYSIS_CACHE.get(analysisJobId) : null;
     let videoTitle = '';
-    if (inputMode === 'url' && youtubeUrl) {
-      if (!isValidYouTubeUrl(youtubeUrl)) {
-        return res.status(400).json({ success: false, message: 'Please enter a valid YouTube URL' });
-      }
-      try {
-        videoPath = await downloadYouTubeVideo(youtubeUrl);
-        downloadedYoutubeFile = videoPath;
-      } catch (dlErr) {
-        console.error('[AI Thumbnail AI-Gen] YouTube download failed:', dlErr.message);
-        return res.status(400).json({ success: false, message: 'Could not download that YouTube video. It may be private, age-restricted, or blocked from this server.' });
-      }
-      videoTitle = await getYouTubeTitle(youtubeUrl).catch(() => '');
-    } else if (videoFile) {
-      videoPath = videoFile.path;
+    let transcript = '';
+    let analysis = null;
+
+    if (cached && fs.existsSync(cached.videoPath)) {
+      videoPath = cached.videoPath;
+      // Don't unlink the cached video here — the cache owns it and the
+      // GC will clean it up. Track separately so we don't double-delete.
+      videoTitle = cached.videoTitle || '';
+      transcript = cached.transcript || '';
+      analysis = cached.analysis || null;
     } else {
-      return res.status(400).json({ success: false, message: 'Please provide a YouTube URL or upload a video' });
+      // Resolve the source video path
+      if (inputMode === 'url' && youtubeUrl) {
+        if (!isValidYouTubeUrl(youtubeUrl)) {
+          return res.status(400).json({ success: false, message: 'Please enter a valid YouTube URL' });
+        }
+        try {
+          videoPath = await downloadYouTubeVideo(youtubeUrl);
+          downloadedYoutubeFile = videoPath;
+        } catch (dlErr) {
+          console.error('[AI Thumbnail AI-Gen] YouTube download failed:', dlErr.message);
+          return res.status(400).json({ success: false, message: 'Could not download that YouTube video. It may be private, age-restricted, or blocked from this server.' });
+        }
+        videoTitle = await getYouTubeTitle(youtubeUrl).catch(() => '');
+      } else if (videoFile) {
+        videoPath = videoFile.path;
+      } else {
+        return res.status(400).json({ success: false, message: 'Please provide a YouTube URL or upload a video' });
+      }
+
+      if (!videoPath || !fs.existsSync(videoPath)) {
+        return res.status(400).json({ success: false, message: 'Video file not found on server' });
+      }
+
+      // Extract audio + transcribe (only if we didn't get it from the cache)
+      try {
+        audioPath = await extractAudioForAIThumbnail(videoPath);
+        transcript = await transcribeForAIThumbnail(audioPath);
+      } catch (err) {
+        console.warn('[AI Thumbnail AI-Gen] Transcription step failed, continuing with empty transcript:', err.message);
+        transcript = '';
+      }
     }
 
-    if (!videoPath || !fs.existsSync(videoPath)) {
-      return res.status(400).json({ success: false, message: 'Video file not found on server' });
+    // Choose preset: explicit body wins, else analysis suggestion, else mrbeast-bold
+    let presetKey = rawPresetKey;
+    if (!presetKey || !CREATOR_PRESETS[presetKey]) {
+      if (analysis && analysis.suggestedPresetKeys && analysis.suggestedPresetKeys[0] && CREATOR_PRESETS[analysis.suggestedPresetKeys[0]]) {
+        presetKey = analysis.suggestedPresetKeys[0];
+      } else {
+        presetKey = 'mrbeast-bold';
+      }
     }
+    const preset = CREATOR_PRESETS[presetKey] || CREATOR_PRESETS['mrbeast-bold'];
 
     // Optional: extract face cutout (cached per hash so re-uploads are free)
     let hasFace = false;
@@ -3834,16 +4598,6 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
         console.warn('[AI Thumbnail AI-Gen] Face cutout failed, continuing without face:', faceErr.message);
         hasFace = false;
       }
-    }
-
-    // Extract audio + transcribe
-    let transcript = '';
-    try {
-      audioPath = await extractAudioForAIThumbnail(videoPath);
-      transcript = await transcribeForAIThumbnail(audioPath);
-    } catch (err) {
-      console.warn('[AI Thumbnail AI-Gen] Transcription step failed, continuing with empty transcript:', err.message);
-      transcript = '';
     }
 
     // If transcription yielded nothing AND we have no title, the model has
