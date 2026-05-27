@@ -5035,9 +5035,11 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
         }
       }
 
-      // Stage 2 — creator segmentation (only when a face was detected to avoid
-      // wasting a Replicate call on frames with no human)
-      if (frame.facePresent) {
+      // Stage 2 — creator segmentation (only when there's likely a face to
+      // avoid wasting a Replicate call on frames with no human). GPT-4o-mini
+      // sets facePresent unreliably, so use emotionScore as the robust signal:
+      // any non-trivial emotion score (>3) implies the model saw a face.
+      if (frame.facePresent || (frame.emotionScore || 0) > 3) {
         try {
           creatorMaskPath = await extractCreatorFromFrame(composeFrame);
           segmented = true;
