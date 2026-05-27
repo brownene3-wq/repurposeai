@@ -25,7 +25,7 @@ console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not
 const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require('../middleware/auth');
 const { requireCredits } = require('../middleware/credits');
 const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
-const { shortsOps, brandKitOps, calendarOps } = require('../db/database');
+const { shortsOps, brandKitOps, calendarOps, clipRenderOps, connectedAccountOps } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 
 // Guard boot — OpenAI SDK throws at construction if apiKey is empty,
@@ -4458,6 +4458,23 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
     const outputPath = path.join(CLIPS_DIR, filename);
     const tempOutputPath = outputPath + '.encoding.mp4'; // Encode to temp file, rename when done
 
+    // Insert a clip_renders row so /shorts/clips can show this even after
+    // /tmp is wiped. Best-effort: failures don't block the render.
+    try {
+      await clipRenderOps.create(req.user.id, {
+        analysisId: req.body.analysisId || null,
+        momentIndex: momentIndex,
+        filename,
+        momentTitle: moment.title || null,
+        videoTitle: analysis.video_title || null,
+        sourceUrl: analysis.video_url || null,
+        status: 'rendering',
+        progressMessage: 'Starting...'
+      });
+    } catch (e) {
+      console.error('clipRenderOps.create failed:', e.message);
+    }
+
     // Send initial response
     res.json({
       success: true,
@@ -4840,10 +4857,17 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
         // Remove progress file LAST to signal completion
         try { fs.unlinkSync(progressPath); } catch (e) {}
         console.log(`  Clip ready: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
+        // Mark the clip_renders row ready so /shorts/clips reflects it.
+        try {
+          let finalSize = 0;
+          try { finalSize = fs.statSync(outputPath).size; } catch (e) {}
+          await clipRenderOps.updateStatusByFilename(filename, 'ready', { fileSize: finalSize, progressMessage: null, errorMessage: null });
+        } catch (e) { console.error('clipRenderOps ready-update failed:', e.message); }
 
       } catch (err) {
         clearTimeout(timeout);
         writeError(`Clip generation failed: ${err.message}`);
+        try { await clipRenderOps.updateStatusByFilename(filename, 'failed', { errorMessage: String(err && err.message || err) }); } catch (e) {}
       }
     })();
 
@@ -12469,6 +12493,707 @@ ${paginationHtml}
         btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narrated Video';
       }
     }
+
+    ${getThemeScript()}
+  </script>
+</body>
+</html>`;
+}
+
+
+// ===== My Clips page (Phase B–E of the My Clips feature) =====
+//
+// Routes:
+//   GET  /shorts/clips                       - server-rendered page shell
+//   GET  /shorts/api/clips                   - list clips for the user
+//   GET  /shorts/api/clips/storage           - aggregate storage usage
+//   POST /shorts/api/clips/:id/delete        - soft-delete + unlink file
+//   POST /shorts/api/clips/:id/send-to-drive - upload .mp4 to Google Drive
+//   POST /shorts/api/clips/:id/send-to-dropbox - upload .mp4 to Dropbox
+//
+// Authentication: requireAuth. All ownership-checked via clipRenderOps.
+
+// ---- Helpers ----
+
+// Reconcile the disk state of a 'rendering' row in case the server restarted
+// or crashed while encoding. Updates the row in-place if state has moved.
+async function reconcileRenderRow(row) {
+  try {
+    if (!row || row.status === 'ready' || row.status === 'failed' || row.status === 'deleted') return row;
+    const full = path.join(CLIPS_DIR, row.filename);
+    const progressPath = full + '.progress';
+    const errorPath = full + '.error';
+    if (fs.existsSync(errorPath)) {
+      let errMsg = 'Clip generation failed';
+      try { errMsg = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
+      const updated = await clipRenderOps.updateStatus(row.id, 'failed', { errorMessage: errMsg, progressMessage: null });
+      return updated || row;
+    }
+    if (fs.existsSync(full)) {
+      let size = 0;
+      try { size = fs.statSync(full).size; } catch (e) {}
+      const stillProcessing = fs.existsSync(progressPath);
+      if (size > 10000 && !stillProcessing) {
+        const updated = await clipRenderOps.updateStatus(row.id, 'ready', { fileSize: size, progressMessage: null, errorMessage: null });
+        return updated || row;
+      }
+      // Still encoding — pull current message if any.
+      if (stillProcessing) {
+        let msg = null;
+        try { msg = fs.readFileSync(progressPath, 'utf8') || null; } catch (e) {}
+        if (msg && msg !== row.progress_message) {
+          const updated = await clipRenderOps.updateStatus(row.id, 'rendering', { progressMessage: msg });
+          return updated || row;
+        }
+      }
+    }
+    return row;
+  } catch (e) {
+    console.error('reconcileRenderRow error:', e.message);
+    return row;
+  }
+}
+
+// GET /shorts/api/clips - list the user's clip renders.
+router.get('/api/clips', requireAuth, async (req, res) => {
+  try {
+    const opts = {
+      limit: req.query.limit ? Math.min(Number(req.query.limit) || 100, 500) : 100,
+      offset: req.query.offset ? Math.max(Number(req.query.offset) || 0, 0) : 0,
+      status: req.query.status || 'all',
+      sortBy: req.query.sortBy || 'created_at',
+      sortDir: req.query.sortDir || 'desc',
+    };
+    let rows = await clipRenderOps.getByUser(req.user.id, opts);
+    // Reconcile any 'rendering' rows against disk in case we missed an update.
+    const reconciled = await Promise.all(rows.map(reconcileRenderRow));
+    // Also surface whether the file is currently on disk (downloadable).
+    const enriched = reconciled.map(r => {
+      let onDisk = false;
+      try { onDisk = fs.existsSync(path.join(CLIPS_DIR, r.filename)); } catch (e) {}
+      return {
+        id: r.id,
+        analysisId: r.analysis_id,
+        momentIndex: r.moment_index,
+        filename: r.filename,
+        momentTitle: r.moment_title,
+        videoTitle: r.video_title,
+        sourceUrl: r.source_url,
+        status: r.status,
+        progress: r.progress_message,
+        error: r.error_message,
+        fileSize: Number(r.file_size || 0),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        readyAt: r.ready_at,
+        onDisk
+      };
+    });
+    res.json({ clips: enriched });
+  } catch (err) {
+    console.error('GET /api/clips error:', err);
+    res.status(500).json({ error: err.message, clips: [] });
+  }
+});
+
+router.get('/api/clips/storage', requireAuth, async (req, res) => {
+  try {
+    const s = await clipRenderOps.totalStorageBytes(req.user.id);
+    res.json({ totalBytes: s.total, count: s.count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/clips/:id/delete', requireAuth, async (req, res) => {
+  try {
+    const row = await clipRenderOps.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Clip not found' });
+    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    // Unlink the disk file (best-effort).
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename)); } catch (e) {}
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.progress')); } catch (e) {}
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.error')); } catch (e) {}
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.encoding.mp4')); } catch (e) {}
+    const updated = await clipRenderOps.softDelete(req.params.id, req.user.id);
+    res.json({ success: true, clip: updated });
+  } catch (err) {
+    console.error('Delete clip error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Drive/Dropbox upload helpers ----
+
+// Refresh a Google access token when expired. Returns updated row from
+// connected_accounts (or original if refresh failed).
+async function refreshGoogleAccessToken(acct) {
+  try {
+    const now = Date.now();
+    const exp = acct.token_expires_at ? new Date(acct.token_expires_at).getTime() : 0;
+    if (exp - now > 60_000) return acct; // still valid
+    if (!acct.refresh_token) return acct;
+    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || '';
+    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET || '';
+    if (!clientId || !clientSecret) return acct;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: acct.refresh_token
+    });
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+    const data = await r.json();
+    if (!data.access_token) { console.error('Google token refresh failed:', data); return acct; }
+    const newExpiresAt = new Date(Date.now() + (data.expires_in || 3600) * 1000);
+    const updated = await connectedAccountOps.update(acct.id, {
+      accessToken: data.access_token,
+      tokenExpiresAt: newExpiresAt
+    });
+    return updated || { ...acct, access_token: data.access_token, token_expires_at: newExpiresAt };
+  } catch (e) {
+    console.error('refreshGoogleAccessToken error:', e.message);
+    return acct;
+  }
+}
+
+// Multipart upload to Drive. Returns { ok, fileId, link, error }.
+async function uploadToDrive(accessToken, localPath, displayName) {
+  try {
+    const fileBytes = fs.readFileSync(localPath);
+    const boundary = '-------SPLICORA' + Date.now();
+    const metadata = JSON.stringify({ name: displayName, mimeType: 'video/mp4' });
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+      `--${boundary}\r\nContent-Type: video/mp4\r\n\r\n`
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--`);
+    const body = Buffer.concat([head, fileBytes, tail]);
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'Content-Length': String(body.length)
+      },
+      body
+    });
+    const data = await r.json();
+    if (!r.ok || !data.id) return { ok: false, error: data.error?.message || ('HTTP ' + r.status) };
+    return { ok: true, fileId: data.id, link: data.webViewLink || ('https://drive.google.com/file/d/' + data.id + '/view'), name: data.name };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+router.post('/api/clips/:id/send-to-drive', requireAuth, async (req, res) => {
+  try {
+    const row = await clipRenderOps.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Clip not found' });
+    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const full = path.join(CLIPS_DIR, row.filename);
+    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Drive.' });
+    const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'googledrive');
+    if (!accounts || accounts.length === 0) {
+      return res.status(412).json({ error: 'Google Drive not connected.', connectUrl: '/auth/googledrive/connect?redirect=/shorts/clips' });
+    }
+    const acct = await refreshGoogleAccessToken(accounts[0]);
+    if (!acct.access_token) return res.status(401).json({ error: 'Drive access token unavailable. Please reconnect Drive.' });
+    const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
+    const result = await uploadToDrive(acct.access_token, full, displayName);
+    if (!result.ok) return res.status(502).json({ error: result.error || 'Drive upload failed' });
+    res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
+  } catch (err) {
+    console.error('send-to-drive error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function refreshDropboxAccessToken(acct) {
+  try {
+    const now = Date.now();
+    const exp = acct.token_expires_at ? new Date(acct.token_expires_at).getTime() : 0;
+    if (exp - now > 60_000) return acct;
+    if (!acct.refresh_token) return acct;
+    const clientId = process.env.DROPBOX_APP_KEY || '';
+    const clientSecret = process.env.DROPBOX_APP_SECRET || '';
+    if (!clientId || !clientSecret) return acct;
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: acct.refresh_token,
+      client_id: clientId,
+      client_secret: clientSecret
+    });
+    const r = await fetch('https://api.dropboxapi.com/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+    const data = await r.json();
+    if (!data.access_token) { console.error('Dropbox token refresh failed:', data); return acct; }
+    const newExpiresAt = data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null;
+    const updated = await connectedAccountOps.update(acct.id, {
+      accessToken: data.access_token,
+      tokenExpiresAt: newExpiresAt
+    });
+    return updated || { ...acct, access_token: data.access_token, token_expires_at: newExpiresAt };
+  } catch (e) {
+    console.error('refreshDropboxAccessToken error:', e.message);
+    return acct;
+  }
+}
+
+async function uploadToDropbox(accessToken, localPath, displayName) {
+  try {
+    const fileBytes = fs.readFileSync(localPath);
+    const args = { path: '/Splicora/' + displayName, mode: 'add', autorename: true, mute: false };
+    const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Dropbox-API-Arg': JSON.stringify(args),
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(fileBytes.length)
+      },
+      body: fileBytes
+    });
+    const data = await r.json();
+    if (!r.ok || !data.id) return { ok: false, error: data.error_summary || data.error?.['.tag'] || ('HTTP ' + r.status) };
+    // Create a shareable link (best-effort).
+    let link = null;
+    try {
+      const sr = await fetch('https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: data.path_display || data.path_lower, settings: { requested_visibility: 'public' } })
+      });
+      const sd = await sr.json();
+      link = sd.url || null;
+      if (!link && sd.error_summary && sd.error_summary.indexOf('shared_link_already_exists') >= 0) {
+        // Fetch the existing link.
+        const lr = await fetch('https://api.dropboxapi.com/2/sharing/list_shared_links', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: data.path_display || data.path_lower })
+        });
+        const ld = await lr.json();
+        link = (ld.links && ld.links[0] && ld.links[0].url) || null;
+      }
+    } catch (e) { console.error('Dropbox share link error:', e.message); }
+    return { ok: true, fileId: data.id, link, name: data.name };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+router.post('/api/clips/:id/send-to-dropbox', requireAuth, async (req, res) => {
+  try {
+    const row = await clipRenderOps.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Clip not found' });
+    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const full = path.join(CLIPS_DIR, row.filename);
+    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Dropbox.' });
+    const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'dropbox');
+    if (!accounts || accounts.length === 0) {
+      return res.status(412).json({ error: 'Dropbox not connected.', connectUrl: '/auth/dropbox/connect?redirect=/shorts/clips' });
+    }
+    const acct = await refreshDropboxAccessToken(accounts[0]);
+    if (!acct.access_token) return res.status(401).json({ error: 'Dropbox access token unavailable. Please reconnect Dropbox.' });
+    const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
+    const result = await uploadToDropbox(acct.access_token, full, displayName);
+    if (!result.ok) return res.status(502).json({ error: result.error || 'Dropbox upload failed' });
+    res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
+  } catch (err) {
+    console.error('send-to-dropbox error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- My Clips page ----
+router.get('/clips', requireAuth, async (req, res) => {
+  try {
+    res.send(renderMyClipsPage(req.user, req.teamPermissions));
+  } catch (err) {
+    console.error('GET /shorts/clips error:', err);
+    res.status(500).send('Failed to load My Clips page');
+  }
+});
+
+function renderMyClipsPage(user, teamPermissions) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  ${getHeadHTML('My Clips')}
+  <style>
+    ${getBaseCSS()}
+    .clips-toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin: 16px 0 20px;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+    }
+    body.light .clips-toolbar { background: rgba(108,58,237,0.04); border-color: rgba(108,58,237,0.10); }
+    .clips-toolbar select, .clips-toolbar input {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .clips-storage {
+      margin-left: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .clips-storage strong { color: #e056fd; font-weight: 700; font-size: 13px; }
+
+    .clip-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .clip-card-mc {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    body.light .clip-card-mc { background: #fff; border-color: rgba(108,58,237,0.10); }
+    .clip-card-mc:hover { transform: translateY(-2px); border-color: rgba(108,58,237,0.40); }
+    .clip-card-mc-thumb {
+      aspect-ratio: 9 / 16;
+      max-height: 220px;
+      background: linear-gradient(135deg, rgba(108,58,237,0.18), rgba(236,72,153,0.14));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 36px;
+      position: relative;
+    }
+    .clip-card-mc-thumb video { width: 100%; height: 100%; object-fit: cover; }
+    .clip-card-mc-body { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .clip-card-mc-title { font-weight: 700; font-size: 14px; color: var(--text); line-height: 1.3;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .clip-card-mc-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
+    .clip-card-mc-meta span { display: inline-flex; align-items: center; gap: 4px; }
+    .clip-status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .clip-status-ready { background: rgba(34, 197, 94, 0.18); color: #4ade80; }
+    .clip-status-rendering { background: rgba(108, 58, 237, 0.25); color: #c4b5fd; }
+    .clip-status-failed { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+    .clip-card-mc-actions {
+      display: flex;
+      gap: 4px;
+      padding: 10px 12px 12px;
+      flex-wrap: wrap;
+      border-top: 1px solid rgba(255,255,255,0.04);
+    }
+    body.light .clip-card-mc-actions { border-top-color: rgba(0,0,0,0.05); }
+    .clip-card-mc-actions button, .clip-card-mc-actions a {
+      flex: 1 1 calc(50% - 4px);
+      min-width: 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: background 0.15s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .clip-card-mc-actions button:hover, .clip-card-mc-actions a:hover { background: rgba(108,58,237,0.20); }
+    .clip-card-mc-actions .btn-primary {
+      background: linear-gradient(135deg, #FF0050, #FF4500);
+      color: #fff;
+      border-color: transparent;
+    }
+    .clip-card-mc-actions .btn-primary:hover { filter: brightness(1.1); }
+    .clip-card-mc-actions .btn-danger {
+      background: rgba(239, 68, 68, 0.12);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+    .clip-card-mc-progress {
+      height: 4px;
+      background: rgba(255,255,255,0.08);
+      position: relative;
+      overflow: hidden;
+    }
+    .clip-card-mc-progress-bar {
+      position: absolute; top: 0; left: 0; bottom: 0; width: 0%;
+      background: linear-gradient(90deg, #6c5ce7, #e056fd);
+      animation: clip-mc-shimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes clip-mc-shimmer { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+    .clip-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--text-muted);
+    }
+    .clip-empty img { width: 64px; opacity: 0.6; margin-bottom: 16px; }
+    .clip-empty a {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 8px 18px;
+      background: linear-gradient(135deg, #6c5ce7, #e056fd);
+      color: #fff;
+      border-radius: 999px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; background: rgba(0,0,0,0.85); color: #fff; border-radius: 8px; font-size: 13px; z-index: 9999; }
+  </style>
+</head>
+<body class="dashboard">
+  ${getThemeToggle()}
+  ${getSidebar('my-clips', user, teamPermissions)}
+
+  <main class="main-content">
+    <div class="header">
+      <h1 class="header-title"><img src="/images/section-icons/A-112.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">My Clips</h1>
+      <p class="header-subtitle">Every clip you have rendered — download, publish, delete, or send to Drive/Dropbox.</p>
+    </div>
+
+    <div class="clips-toolbar">
+      <label style="font-size:12px;color:var(--text-muted);font-weight:600;">Status
+        <select id="clipsStatus" onchange="loadClips()" style="margin-left:6px;">
+          <option value="all">All</option>
+          <option value="ready">Ready</option>
+          <option value="rendering">Rendering</option>
+          <option value="failed">Failed</option>
+        </select>
+      </label>
+      <label style="font-size:12px;color:var(--text-muted);font-weight:600;">Sort by
+        <select id="clipsSort" onchange="loadClips()" style="margin-left:6px;">
+          <option value="created_at:desc">Newest first</option>
+          <option value="created_at:asc">Oldest first</option>
+          <option value="title:asc">Title A–Z</option>
+          <option value="size:desc">Largest file</option>
+          <option value="size:asc">Smallest file</option>
+        </select>
+      </label>
+      <button onclick="loadClips()" style="padding:6px 14px;border-radius:8px;border:1px solid rgba(108,58,237,0.4);background:rgba(108,58,237,0.18);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Refresh</button>
+      <div class="clips-storage">
+        <span>Storage used</span>
+        <span><strong id="storageBytes">—</strong> across <strong id="storageCount">0</strong> clips</span>
+      </div>
+    </div>
+
+    <div class="clip-grid" id="clipGrid">
+      <div class="clip-empty">Loading your clips…</div>
+    </div>
+  </main>
+
+  <script>
+    function formatBytes(b) {
+      if (!b) return '0 B';
+      const u = ['B','KB','MB','GB','TB'];
+      let i = 0; let n = b;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return n.toFixed(n < 10 && i > 0 ? 1 : 0) + ' ' + u[i];
+    }
+    function formatDate(s) {
+      if (!s) return '';
+      const d = new Date(s);
+      if (isNaN(d)) return '';
+      const now = new Date();
+      const diffSec = Math.round((now - d) / 1000);
+      if (diffSec < 60) return 'just now';
+      if (diffSec < 3600) return Math.round(diffSec / 60) + 'm ago';
+      if (diffSec < 86400) return Math.round(diffSec / 3600) + 'h ago';
+      if (diffSec < 604800) return Math.round(diffSec / 86400) + 'd ago';
+      return d.toLocaleDateString();
+    }
+    function showToast(msg) {
+      const t = document.createElement('div');
+      t.className = 'toast'; t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    async function loadClips() {
+      const status = document.getElementById('clipsStatus').value;
+      const [sortBy, sortDir] = document.getElementById('clipsSort').value.split(':');
+      const grid = document.getElementById('clipGrid');
+      grid.innerHTML = '<div class="clip-empty">Loading…</div>';
+      try {
+        const params = new URLSearchParams({ status, sortBy, sortDir });
+        const [resp, storageResp] = await Promise.all([
+          fetch('/shorts/api/clips?' + params.toString(), { credentials: 'same-origin' }),
+          fetch('/shorts/api/clips/storage', { credentials: 'same-origin' })
+        ]);
+        const data = await resp.json();
+        const stor = await storageResp.json();
+        document.getElementById('storageBytes').textContent = formatBytes(stor.totalBytes || 0);
+        document.getElementById('storageCount').textContent = stor.count || 0;
+        render(data.clips || []);
+      } catch (e) {
+        grid.innerHTML = '<div class="clip-empty">Error loading clips: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function render(clips) {
+      const grid = document.getElementById('clipGrid');
+      if (!clips.length) {
+        grid.innerHTML = '<div class="clip-empty"><div style="font-size:42px;margin-bottom:8px;">\u{1F3AC}</div><div>No clips yet — render one from a Smart Shorts analysis to see it here.</div><a href="/shorts">Go to Smart Shorts</a></div>';
+        return;
+      }
+      grid.innerHTML = clips.map(c => {
+        const statusClass = 'clip-status-' + (c.status || 'rendering');
+        const statusLabel = c.status === 'ready' ? 'Ready' : c.status === 'failed' ? 'Failed' : c.status === 'rendering' ? 'Rendering' : c.status;
+        const thumb = c.status === 'ready' && c.onDisk
+          ? '<video src="/shorts/clip/download/' + encodeURIComponent(c.filename) + '" muted preload="metadata"></video>'
+          : '<span>\u{1F3AC}</span>';
+        const progressHtml = c.status === 'rendering'
+          ? '<div class="clip-card-mc-progress"><div class="clip-card-mc-progress-bar" style="width:' + parsePct(c.progress) + '%"></div></div>'
+          : '';
+        const sourceLink = c.sourceUrl ? '<span title="' + escapeHtml(c.sourceUrl) + '">\u{1F517} ' + escapeHtml((c.videoTitle || c.sourceUrl || '').slice(0, 28)) + '</span>' : '';
+        const actions = [];
+        if (c.status === 'ready' && c.onDisk) {
+          actions.push('<a class="btn-primary" href="/shorts/clip/download/' + encodeURIComponent(c.filename) + '" download="' + escapeHtml(c.filename) + '">⬇ Download</a>');
+        } else if (c.status === 'ready' && !c.onDisk) {
+          actions.push('<button onclick="retryRender(\'' + c.analysisId + '\', ' + c.momentIndex + ', this)" title="File expired on the server (Railway /tmp wipe). Re-render to download.">↻ Re-render</button>');
+        } else if (c.status === 'failed') {
+          actions.push('<button onclick="retryRender(\'' + c.analysisId + '\', ' + c.momentIndex + ', this)">↻ Retry</button>');
+        }
+        if (c.analysisId) {
+          actions.push('<a href="/shorts?openAnalysis=' + encodeURIComponent(c.analysisId) + '&publishMoment=' + c.momentIndex + '">↗ Publish</a>');
+        }
+        if (c.status === 'ready' && c.onDisk) {
+          actions.push('<button onclick="sendToDrive(\'' + c.id + '\', this)">☁ Drive</button>');
+          actions.push('<button onclick="sendToDropbox(\'' + c.id + '\', this)">\u{1F4E6} Dropbox</button>');
+        }
+        actions.push('<button class="btn-danger" onclick="deleteClip(\'' + c.id + '\', this)">\u{1F5D1} Delete</button>');
+        return (
+          '<div class="clip-card-mc" data-clip-id="' + c.id + '">' +
+            '<div class="clip-card-mc-thumb">' + thumb + '</div>' +
+            progressHtml +
+            '<div class="clip-card-mc-body">' +
+              '<div class="clip-card-mc-title">' + escapeHtml(c.momentTitle || c.filename) + '</div>' +
+              '<div class="clip-card-mc-meta">' +
+                '<span class="clip-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
+                (c.fileSize ? '<span>\u{1F4BE} ' + formatBytes(c.fileSize) + '</span>' : '') +
+                '<span>\u{1F552} ' + formatDate(c.createdAt) + '</span>' +
+                sourceLink +
+              '</div>' +
+              (c.status === 'failed' && c.error ? '<div style="font-size:11px;color:#fca5a5;margin-top:4px;">' + escapeHtml(c.error.slice(0, 140)) + '</div>' : '') +
+              (c.status === 'rendering' && c.progress ? '<div style="font-size:11px;color:#c4b5fd;margin-top:4px;">' + escapeHtml(c.progress) + '</div>' : '') +
+            '</div>' +
+            '<div class="clip-card-mc-actions">' + actions.join('') + '</div>' +
+          '</div>'
+        );
+      }).join('');
+    }
+
+    function parsePct(msg) {
+      if (!msg) return 8;
+      const m = String(msg).match(/(\d+(?:\.\d+)?)\s*%/);
+      return m ? Math.min(100, Math.max(2, parseFloat(m[1]))) : 8;
+    }
+
+    async function deleteClip(id, btn) {
+      if (!confirm('Delete this clip? The file will be removed from the server.')) return;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const r = await fetch('/shorts/api/clips/' + id + '/delete', { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+        document.querySelector('[data-clip-id="' + id + '"]')?.remove();
+        showToast('Clip deleted');
+        loadClips();
+      } catch (e) {
+        showToast('Delete failed: ' + e.message);
+        btn.disabled = false; btn.textContent = '\u{1F5D1} Delete';
+      }
+    }
+
+    async function sendToDrive(id, btn) {
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Uploading…';
+      try {
+        const r = await fetch('/shorts/api/clips/' + id + '/send-to-drive', { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json();
+        if (r.status === 412 && d.connectUrl) {
+          if (confirm('Google Drive not connected. Open the connect flow now?')) window.location.href = d.connectUrl;
+          btn.disabled = false; btn.textContent = orig; return;
+        }
+        if (!r.ok) throw new Error(d.error || 'Drive upload failed');
+        showToast('Uploaded to Drive');
+        if (d.link) window.open(d.link, '_blank');
+      } catch (e) {
+        showToast('Drive upload failed: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    async function sendToDropbox(id, btn) {
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Uploading…';
+      try {
+        const r = await fetch('/shorts/api/clips/' + id + '/send-to-dropbox', { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json();
+        if (r.status === 412 && d.connectUrl) {
+          if (confirm('Dropbox not connected. Open the connect flow now?')) window.location.href = d.connectUrl;
+          btn.disabled = false; btn.textContent = orig; return;
+        }
+        if (!r.ok) throw new Error(d.error || 'Dropbox upload failed');
+        showToast('Uploaded to Dropbox');
+        if (d.link) window.open(d.link, '_blank');
+      } catch (e) {
+        showToast('Dropbox upload failed: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    function retryRender(analysisId, momentIndex, btn) {
+      // Easiest: drop the user on the Smart Shorts page with the analysis
+      // pre-opened so they can click Download Clip again.
+      window.location.href = '/shorts?openAnalysis=' + encodeURIComponent(analysisId);
+    }
+
+    loadClips();
+    // Auto-refresh every 8s so in-flight renders surface progress.
+    setInterval(loadClips, 8000);
 
     ${getThemeScript()}
   </script>
