@@ -1066,14 +1066,16 @@ async function extractCandidateFrames(videoPath, count = 8) {
 
   const jobId = uuidv4().slice(0, 8);
 
-  // Run all ffmpeg extracts in parallel — each call produces BOTH a full-res
-  // frame and a 384-wide preview using a single -filter_complex split.
+  // Build the list of tasks. We run them in batches of 4 (instead of 8 in
+  // one shot) so the 8 ffmpeg processes don't all serialize on the same
+  // video file's I/O and starve each other within the per-frame timeout.
+  // Per-frame timeout bumped to 45s to handle large/4K source videos.
   const tasks = [];
   for (let i = 0; i < count; i++) {
     const ts = startCut + i * step + step / 2;
     const framePath = path.join(outputDir, `frame-${jobId}-${i}.jpg`);
     const previewPath = path.join(outputDir, `frame-${jobId}-${i}-prev.jpg`);
-    tasks.push(new Promise((resolve) => {
+    tasks.push(() => new Promise((resolve) => {
       const proc = spawn(ffmpegPath, [
         '-ss', String(ts.toFixed(2)),
         '-i', videoPath,
@@ -1089,12 +1091,19 @@ async function extractCandidateFrames(videoPath, count = 8) {
         previewPath
       ]);
       let timedOut = false;
-      const killer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL'); } catch (e) {} }, 15000);
+      const killer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL'); } catch (e) {} }, 45000);
       proc.on('close', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut }); });
       proc.on('error', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut: true }); });
     }));
   }
-  const results = await Promise.all(tasks);
+  // Run in batches of 4
+  const results = [];
+  const batchSize = 4;
+  for (let i = 0; i < tasks.length; i += batchSize) {
+    const batch = tasks.slice(i, i + batchSize).map((fn) => fn());
+    const batchResults = await Promise.all(batch);
+    results.push(...batchResults);
+  }
 
   const frames = [];
   for (const r of results) {
