@@ -1066,43 +1066,57 @@ async function extractCandidateFrames(videoPath, count = 8) {
 
   const jobId = uuidv4().slice(0, 8);
 
-  // Run all ffmpeg extracts in parallel — each call produces BOTH a full-res
-  // frame and a 384-wide preview using a single -filter_complex split.
+  // Single-output extraction per frame. The previous filter_complex split
+  // approach (one ffmpeg producing BOTH a full-res frame and a 384px preview)
+  // proved unreliable across codecs — some files would hang at seek and burn
+  // the entire 45s timeout. Single output + accurate seek (-ss AFTER -i) is
+  // boringly reliable. We scale to 640px wide so the vision-scoring upload
+  // stays small (~40KB per frame).
   const tasks = [];
   for (let i = 0; i < count; i++) {
     const ts = startCut + i * step + step / 2;
     const framePath = path.join(outputDir, `frame-${jobId}-${i}.jpg`);
-    const previewPath = path.join(outputDir, `frame-${jobId}-${i}-prev.jpg`);
-    tasks.push(new Promise((resolve) => {
+    tasks.push(() => new Promise((resolve) => {
       const proc = spawn(ffmpegPath, [
-        '-ss', String(ts.toFixed(2)),
+        '-y',
         '-i', videoPath,
+        '-ss', String(ts.toFixed(2)),
         '-frames:v', '1',
-        '-filter_complex', '[0:v]split=2[a][b];[b]scale=384:-1[prev]',
-        '-map', '[a]',
-        '-q:v', '2',
-        '-y',
-        framePath,
-        '-map', '[prev]',
-        '-q:v', '4',
-        '-y',
-        previewPath
+        '-vf', 'scale=640:-1',
+        '-q:v', '3',
+        framePath
       ]);
       let timedOut = false;
-      const killer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL'); } catch (e) {} }, 15000);
-      proc.on('close', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut }); });
-      proc.on('error', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut: true }); });
+      let stderr = '';
+      const killer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL'); } catch (e) {} }, 30000);
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => { clearTimeout(killer); resolve({ ts, framePath, timedOut, code, stderr: stderr.slice(-400) }); });
+      proc.on('error', (err) => { clearTimeout(killer); resolve({ ts, framePath, timedOut: true, errMsg: err.message }); });
     }));
   }
-  const results = await Promise.all(tasks);
+  // Run in batches of 4 to limit concurrent I/O on the source video
+  const results = [];
+  const batchSize = 4;
+  for (let i = 0; i < tasks.length; i += batchSize) {
+    const batch = tasks.slice(i, i + batchSize).map((fn) => fn());
+    const batchResults = await Promise.all(batch);
+    results.push(...batchResults);
+  }
+
+  // Log failures for visibility so we can see WHY frames aren't being made
+  const failed = results.filter((r) => r.timedOut || (r.code !== 0));
+  if (failed.length > 0) {
+    console.warn('[extractCandidateFrames] ' + failed.length + '/' + results.length + ' frames failed. First failure: timedOut=' + failed[0].timedOut + ' code=' + failed[0].code + ' stderr=' + (failed[0].stderr || failed[0].errMsg || ''));
+  }
 
   const frames = [];
   for (const r of results) {
-    if (r.timedOut) continue;
+    if (r.timedOut || r.code !== 0) continue;
     if (fs.existsSync(r.framePath) && fs.statSync(r.framePath).size > 1000) {
+      // previewPath is the same file — scoreCandidateFrames will use it as-is.
       frames.push({
         path: r.framePath,
-        previewPath: fs.existsSync(r.previewPath) ? r.previewPath : r.framePath,
+        previewPath: r.framePath,
         timestamp: r.ts
       });
     }
@@ -1222,7 +1236,7 @@ async function runFaceSwap(targetFramePath, userFacePath) {
 // Stage 5 — Composite the chosen frame with text overlay. The frame is
 // optionally enhanced (subtle color punch + slight vignette) before the
 // title is burned in using the preset's typography rules.
-async function renderFrameBasedComposite({ framePath, title, preset, outputPath }) {
+async function renderFrameBasedComposite({ framePath, creatorMaskPath, title, preset, outputPath }) {
   const dims = await getFrameDimensions(framePath);
   const W = dims.width;
   const H = dims.height;
@@ -1237,44 +1251,63 @@ async function renderFrameBasedComposite({ framePath, title, preset, outputPath 
   const font = findSystemFont() || '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
   const fontSize = Math.max(28, Math.round(preset.fontSizePct * H));
   const outlineW = Math.max(2, Math.round(fontSize * preset.outlineWidthPct));
-
-  // Title placement: top-left safe zone (works on any aspect)
-  // Coords are computed in ffmpeg's drawtext expression form
   const xExpr = Math.round(W * 0.04);
   const yExpr = Math.round(H * 0.06);
 
-  // Build the filter graph:
-  //   eq=brightness=0.02:saturation=1.15  — subtle pop
-  //   vignette=PI/5                       — gentle vignette to focus eye
-  //   drawtext=...                        — burn the title with thick outline + drop shadow
-  const filterParts = [
-    `eq=brightness=0.02:saturation=1.15`,
-    `vignette=PI/5`,
-    [
-      `drawtext=`,
-      `fontfile='${font}':`,
-      `textfile='${textfilePath}':`,
-      `fontsize=${fontSize}:`,
-      `fontcolor=${preset.textColor || 'white'}:`,
-      `borderw=${outlineW}:`,
-      `bordercolor=${preset.outlineColor || 'black'}:`,
-      `shadowcolor=black@0.55:`,
-      `shadowx=4:`,
-      `shadowy=4:`,
-      `x=${xExpr}:`,
-      `y=${yExpr}`
-    ].join('')
-  ];
-  const filter = filterParts.join(',');
+  const drawtextExpr = [
+    `drawtext=`,
+    `fontfile='${font}':`,
+    `textfile='${textfilePath}':`,
+    `fontsize=${fontSize}:`,
+    `fontcolor=${preset.textColor || 'white'}:`,
+    `borderw=${outlineW}:`,
+    `bordercolor=${preset.outlineColor || 'black'}:`,
+    `shadowcolor=black@0.55:`,
+    `shadowx=4:`,
+    `shadowy=4:`,
+    `x=${xExpr}:`,
+    `y=${yExpr}`
+  ].join('');
 
-  await new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, [
+  // === BRANCH A: creator mask available — multi-layer composite ===
+  // Stage 2 high-CTR formula:
+  //   1. bg = original frame, heavy boxblur + slight darken + saturation lift
+  //   2. cr = creator cutout, scaled to ~1.15× canvas height, centered horizontally,
+  //      positioned so the upper-body / face sits in the upper-middle band
+  //   3. drawtext on top with preset typography
+  // Mirrors Photoshop layering used by top creators (face blow-up over blurred bg).
+  let ffmpegArgs;
+  if (creatorMaskPath && fs.existsSync(creatorMaskPath)) {
+    const targetH = Math.round(H * 1.15);                  // creator slightly bigger than canvas
+    const overlayY = Math.round(-H * 0.08);                // shift up so face dominates
+    const filter =
+      `[0:v]boxblur=24:1,eq=brightness=-0.06:saturation=1.18,vignette=PI/4[bg];` +
+      `[1:v]scale=-1:${targetH}:flags=lanczos[cr];` +
+      `[bg][cr]overlay=(W-w)/2:${overlayY}[withcr];` +
+      `[withcr]${drawtextExpr}[out]`;
+    ffmpegArgs = [
+      '-i', framePath,
+      '-i', creatorMaskPath,
+      '-filter_complex', filter,
+      '-map', '[out]',
+      '-q:v', '2',
+      '-y',
+      outputPath
+    ];
+  } else {
+    // === BRANCH B: no creator mask — single-layer fallback (original behavior) ===
+    const filter = `eq=brightness=0.02:saturation=1.15,vignette=PI/5,${drawtextExpr}`;
+    ffmpegArgs = [
       '-i', framePath,
       '-vf', filter,
       '-q:v', '2',
       '-y',
       outputPath
-    ]);
+    ];
+  }
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, ffmpegArgs);
     let stderr = '';
     proc.stderr.on('data', (d) => { stderr += d.toString(); });
     proc.on('close', (code) => {
@@ -1289,6 +1322,40 @@ async function renderFrameBasedComposite({ framePath, title, preset, outputPath 
   });
 }
 
+// Stage 2 — Extract the creator (person foreground) from a chosen video
+// frame. Returns the path to a transparent-bg PNG cutout. Cached per
+// frame-hash so a re-run on the same frame doesn't re-pay the rembg cost.
+const FRAME_CREATOR_CACHE_DIR = path.join('/tmp', 'repurpose-frame-creators');
+try { if (!fs.existsSync(FRAME_CREATOR_CACHE_DIR)) fs.mkdirSync(FRAME_CREATOR_CACHE_DIR, { recursive: true }); } catch (e) {}
+
+async function extractCreatorFromFrame(framePath) {
+  if (!process.env.REPLICATE_API_TOKEN) throw new Error('REPLICATE_API_TOKEN not configured');
+  if (!replicate) throw new Error('Replicate SDK not installed on this server.');
+
+  const crypto = require('crypto');
+  const buf = fs.readFileSync(framePath);
+  const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
+  const cachedPath = path.join(FRAME_CREATOR_CACHE_DIR, hash + '.png');
+  if (fs.existsSync(cachedPath) && fs.statSync(cachedPath).size > 1000) return cachedPath;
+
+  const dataUri = 'data:image/jpeg;base64,' + buf.toString('base64');
+  const prediction = await replicate.predictions.create({
+    model: '851-labs/background-remover',
+    input: { image: dataUri }
+  });
+  const final = await replicate.wait(prediction, { interval: 1500 });
+  if (final.status !== 'succeeded') {
+    throw new Error('frame-creator-extract ' + final.status + ': ' + (final.error || 'unknown'));
+  }
+  const out = final.output;
+  const url = Array.isArray(out) ? out[0] : out;
+  if (!url || typeof url !== 'string') throw new Error('background-remover returned no URL');
+
+  const imgResp = await fetch(url);
+  if (!imgResp.ok) throw new Error('Failed to download creator cutout: HTTP ' + imgResp.status);
+  fs.writeFileSync(cachedPath, Buffer.from(await imgResp.arrayBuffer()));
+  return cachedPath;
+}
 // Run a face image through Replicate's background remover and return the
 // path to the local PNG cutout. Cached per-hash so re-uploads of the same
 // face don't re-pay rembg costs within the lifetime of /tmp.
@@ -4947,11 +5014,18 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     while (titles.length < chosenFrames.length) titles.push('WATCH THIS');
     const hookTopic = (typeof hookTopicEarly !== 'undefined' && hookTopicEarly) || (videoTitle || '').slice(0, 80);
 
-    // Stage 4 + 5: for each chosen frame, optionally face-swap, then composite + text
+    // Stage 4 + 5 + 2: for each chosen frame:
+    //   (a) optionally face-swap user's headshot onto the creator
+    //   (b) if the frame had a detected face, segment the creator from bg
+    //   (c) composite via renderFrameBasedComposite (multi-layer when mask present)
     const jobId = uuidv4().slice(0, 10);
     const results = await Promise.allSettled(chosenFrames.map(async (frame, index) => {
       let composeFrame = frame.path;
       let swapped = false;
+      let creatorMaskPath = null;
+      let segmented = false;
+
+      // Stage 5 — face-swap first so the segmentation captures the swapped face
       if (hasFace && faceFile && fs.existsSync(faceFile.path)) {
         try {
           composeFrame = await runFaceSwap(frame.path, faceFile.path);
@@ -4960,10 +5034,25 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
           console.warn('[AI Thumbnail AI-Gen] face-swap failed on frame ' + index + ', using original:', swapErr.message);
         }
       }
+
+      // Stage 2 — creator segmentation (only when there's likely a face to
+      // avoid wasting a Replicate call on frames with no human). GPT-4o-mini
+      // sets facePresent unreliably, so use emotionScore as the robust signal:
+      // any non-trivial emotion score (>3) implies the model saw a face.
+      if (frame.facePresent || (frame.emotionScore || 0) > 3) {
+        try {
+          creatorMaskPath = await extractCreatorFromFrame(composeFrame);
+          segmented = true;
+        } catch (segErr) {
+          console.warn('[AI Thumbnail AI-Gen] creator segmentation failed on frame ' + index + ', falling back to single-layer:', segErr.message);
+        }
+      }
+
       const filename = 'hc-thumb-' + jobId + '-' + index + '.png';
       const outputPath = path.join(outputDir, filename);
       await renderFrameBasedComposite({
         framePath: composeFrame,
+        creatorMaskPath,
         title: titles[index],
         preset,
         outputPath
@@ -4974,7 +5063,8 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
         timestamp: frame.timestamp,
         scores: { overall: frame.overall, emotion: frame.emotionScore, contrast: frame.contrastScore, composition: frame.compositionScore },
         sceneNote: frame.note,
-        faceSwapped: swapped
+        faceSwapped: swapped,
+        creatorSegmented: segmented
       };
     }));
 
@@ -4990,6 +5080,7 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
           sceneNote: r.value.sceneNote,
           scores: r.value.scores,
           faceSwapped: r.value.faceSwapped,
+          creatorSegmented: r.value.creatorSegmented,
           preset: preset.key
         });
       } else {

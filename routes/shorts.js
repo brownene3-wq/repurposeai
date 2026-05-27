@@ -6607,6 +6607,60 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       background: rgba(108,58,237,0.04);
       border-color: rgba(108,58,237,0.10);
     }
+    /* Per-clip progress bar (shown while Download Clip / B-Roll / Narration is processing) */
+    .clip-progress {
+      display: none;
+      margin-top: 8px;
+      padding: 4px 0 2px;
+    }
+    .clip-progress.active { display: block; }
+    .clip-progress-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .clip-progress-label {
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.2px;
+    }
+    .clip-progress-pct {
+      font-weight: 700;
+      color: #e056fd;
+      font-variant-numeric: tabular-nums;
+    }
+    .clip-progress-track {
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      position: relative;
+    }
+    body.light .clip-progress-track { background: rgba(0,0,0,0.07); }
+    .clip-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #6c5ce7, #e056fd, #a29bfe, #e056fd, #6c5ce7);
+      background-size: 200% 100%;
+      animation: clip-progress-shimmer 2.4s linear infinite;
+      border-radius: 999px;
+      transition: width 0.45s ease;
+    }
+    .clip-progress.indeterminate .clip-progress-bar {
+      animation: clip-progress-shimmer 1.6s linear infinite, clip-progress-pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes clip-progress-shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    @keyframes clip-progress-pulse {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+
     .clip-toolbar-row-label {
       font-size: 0.66rem;
       font-weight: 700;
@@ -9348,6 +9402,17 @@ ${paginationHtml}
                 </button>
               </div>
 
+              <!-- Per-clip progress bar (driven by downloadClip / B-Roll / Narration polling) -->
+              <div class="clip-progress" id="clip-progress-\${idx}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="clip-progress-info">
+                  <span class="clip-progress-label" id="clip-progress-label-\${idx}">Starting\u2026</span>
+                  <span class="clip-progress-pct" id="clip-progress-pct-\${idx}">0%</span>
+                </div>
+                <div class="clip-progress-track">
+                  <div class="clip-progress-bar" id="clip-progress-bar-\${idx}"></div>
+                </div>
+              </div>
+
             </div>
           \`;
           card.onclick = (e) => {
@@ -9701,6 +9766,76 @@ ${paginationHtml}
       });
     }
 
+    // ---- Per-clip progress bar helpers ----
+    function clipProgressShow(momentIndex, label) {
+      var box = document.getElementById('clip-progress-' + momentIndex);
+      if (!box) return;
+      box.classList.add('active');
+      box.classList.add('indeterminate');
+      var lbl = document.getElementById('clip-progress-label-' + momentIndex);
+      var pct = document.getElementById('clip-progress-pct-' + momentIndex);
+      var bar = document.getElementById('clip-progress-bar-' + momentIndex);
+      if (lbl) lbl.textContent = label || 'Starting\u2026';
+      if (pct) pct.textContent = '';
+      if (bar) bar.style.width = '6%';
+      box.setAttribute('aria-valuenow', '0');
+    }
+    function clipProgressUpdate(momentIndex, label, percent) {
+      var box = document.getElementById('clip-progress-' + momentIndex);
+      if (!box) return;
+      var lbl = document.getElementById('clip-progress-label-' + momentIndex);
+      var pctEl = document.getElementById('clip-progress-pct-' + momentIndex);
+      var bar = document.getElementById('clip-progress-bar-' + momentIndex);
+      if (lbl && label) lbl.textContent = label;
+      if (typeof percent === 'number' && !isNaN(percent)) {
+        box.classList.remove('indeterminate');
+        var p = Math.max(0, Math.min(100, Math.round(percent)));
+        if (bar) bar.style.width = p + '%';
+        if (pctEl) pctEl.textContent = p + '%';
+        box.setAttribute('aria-valuenow', String(p));
+      } else {
+        box.classList.add('indeterminate');
+        if (pctEl) pctEl.textContent = '';
+        if (bar) {
+          var cur = parseFloat((bar.style.width || '0').replace('%','')) || 0;
+          var next = Math.min(90, cur + 2);
+          bar.style.width = next + '%';
+        }
+      }
+    }
+    function clipProgressFinish(momentIndex, success) {
+      var box = document.getElementById('clip-progress-' + momentIndex);
+      if (!box) return;
+      var bar = document.getElementById('clip-progress-bar-' + momentIndex);
+      var pctEl = document.getElementById('clip-progress-pct-' + momentIndex);
+      var lbl = document.getElementById('clip-progress-label-' + momentIndex);
+      box.classList.remove('indeterminate');
+      if (success) {
+        if (bar) bar.style.width = '100%';
+        if (pctEl) pctEl.textContent = '100%';
+        if (lbl) lbl.textContent = 'Done';
+        box.setAttribute('aria-valuenow', '100');
+        setTimeout(function(){ box.classList.remove('active'); }, 1200);
+      } else {
+        box.classList.remove('active');
+      }
+    }
+    function parseClipProgressMessage(msg) {
+      if (!msg) return { label: null, percent: null };
+      var match = msg.match(/(\\d+(?:\\.\\d+)?)\\s*%/);
+      var percent = match ? parseFloat(match[1]) : null;
+      var label = null;
+      var colonIdx = msg.indexOf(':');
+      if (colonIdx > 0) {
+        label = msg.slice(0, colonIdx).trim();
+      } else if (msg !== 'Still processing...') {
+        label = msg.length > 40 ? msg.slice(0, 40) + '\u2026' : msg;
+      } else {
+        label = 'Processing\u2026';
+      }
+      return { label: label, percent: percent };
+    }
+
     async function downloadClip(analysisId, momentIndex, btn) {
       const originalText = btn.textContent;
       btn.disabled = true;
@@ -9748,6 +9883,9 @@ ${paginationHtml}
         btn.style.background = 'linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%)';
         btn.style.color = '#fff';
 
+        // Surface a visible progress bar on the card for this clip.
+        clipProgressShow(momentIndex, 'Starting clip\u2026');
+
         // Poll for clip readiness
         let attempts = 0;
         const maxAttempts = 150; // 5 minutes max
@@ -9759,9 +9897,11 @@ ${paginationHtml}
 
             if (statusData.failed) {
               clearInterval(pollInterval);
+              clipProgressFinish(momentIndex, false);
               showToast(statusData.message || 'Clip generation failed'); btn.disabled = false; btn.textContent = originalText; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)'; return;
             } else if (statusData.ready) {
               clearInterval(pollInterval);
+              clipProgressFinish(momentIndex, true);
               btn.textContent = 'Downloading...';
 
               // Trigger download
@@ -9783,10 +9923,13 @@ ${paginationHtml}
               btn.dataset.lastFilename = filename;
             } else if (attempts >= maxAttempts) {
               clearInterval(pollInterval);
+              clipProgressFinish(momentIndex, false);
               showToast('Clip generation timed out. Please try again.'); btn.disabled = false; btn.textContent = originalText; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)'; return;
             } else {
-              // Update progress with server message
+              // Update progress with server message and drive the visible bar.
               const msg = statusData.message || '';
+              const parsed = parseClipProgressMessage(msg);
+              clipProgressUpdate(momentIndex, parsed.label, parsed.percent);
               if (msg.startsWith('Encoding:')) {
                 btn.textContent = msg;
               } else if (msg !== 'Still processing...') {
@@ -9798,11 +9941,13 @@ ${paginationHtml}
             }
           } catch (pollError) {
             clearInterval(pollInterval);
+            clipProgressFinish(momentIndex, false);
             showToast(pollError.message || 'Failed to check clip status'); btn.disabled = false; btn.textContent = originalText; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
           }
         }, 2000);
 
       } catch (error) {
+        clipProgressFinish(momentIndex, false);
         showToast(error.message || 'Failed to generate clip');
         btn.disabled = false;
         btn.textContent = originalText;
