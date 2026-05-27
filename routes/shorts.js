@@ -305,7 +305,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
   // Track each downloader's failure reason so we can surface them in
   // the final user-facing error message when all three fall over. Albert
   // was seeing a generic 'Video download failed' with no actionable info.
-  const failureLog = { cobalt: null, ytdlp: null, ytdlcore: null, apify: null };
+  const failureLog = { cobalt: null, ytdlp: null, ytdlcore: null, apify: null, scrapingbee: null };
 
   try {
     writeProgress('Downloading video...');
@@ -453,10 +453,39 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     }
 
+    // ScrapingBee paid fallback. Activated when SCRAPINGBEE_API_KEY is set.
+    // Routes a fresh yt-dlp invocation through ScrapingBee's premium proxy
+    // (their managed pool of residential IPs with cookie rotation on
+    // their side). This is the workhorse paid layer for Splicora — fires
+    // when Cobalt + the 5 IPRoyal ISP proxies + ytdl-core have all failed.
+    // Cost: ~75-200 credits per video (Freelance plan = 250K credits/mo).
+    try {
+      const { downloadWithScrapingBee, isScrapingBeeEnabled } = require('../utils/scrapingbee-youtube');
+      if (isScrapingBeeEnabled()) {
+        await downloadWithScrapingBee(videoUrl, cachedVideoPath, ytdlpPath, YTDLP_COMMON_ARGS, writeProgress);
+        if (fs.existsSync(cachedVideoPath) && fs.statSync(cachedVideoPath).size > 10000) {
+          try { fs.unlinkSync(lockPath); } catch (e) {}
+          const entry = { path: cachedVideoPath, refCount: 1, timer: null };
+          videoDownloadCache.set(cacheKey, entry);
+          console.log(`  ScrapingBee fallback succeeded for ${videoId} (${(fs.statSync(cachedVideoPath).size / 1024 / 1024).toFixed(1)}MB)`);
+          return cachedVideoPath;
+        }
+        failureLog.scrapingbee = 'ScrapingBee yt-dlp completed but downloaded file is missing/too small';
+        try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+      } else {
+        failureLog.scrapingbee = 'SCRAPINGBEE_API_KEY not set';
+      }
+    } catch (sbErr) {
+      failureLog.scrapingbee = String(sbErr.message || sbErr).slice(0, 200);
+      console.log(`  ScrapingBee fallback failed for ${videoId}: ${failureLog.scrapingbee}`);
+      try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
+    }
+
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     const haveCookies = !!getYoutubeCookiesArgs().length;
     const apifyConfigured = !!process.env.APIFY_API_TOKEN;
+    const scrapingBeeConfigured = !!process.env.SCRAPINGBEE_API_KEY;
     // Surface the per-downloader failure reasons so the user (and the
     // operator reading Railway logs) sees which specific path broke.
     const reasonLines = [];
@@ -464,6 +493,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     if (failureLog.ytdlp)    reasonLines.push('yt-dlp: '   + failureLog.ytdlp);
     if (failureLog.ytdlcore) reasonLines.push('ytdl-core: ' + failureLog.ytdlcore);
     if (failureLog.apify)    reasonLines.push('Apify: '     + failureLog.apify);
+    if (failureLog.scrapingbee) reasonLines.push('ScrapingBee: ' + failureLog.scrapingbee);
     const reasonBlock = reasonLines.length ? ' Causes — ' + reasonLines.join(' | ') : '';
     // Surface every unblock path the operator can take. Apify is the
     // shortest path (2 min, free tier ≈ 2000 downloads/mo) — call it
@@ -471,8 +501,8 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     // option. If both are missing, we list both. If cookies are
     // configured but appear expired, prompt for a re-export.
     const hints = [];
-    if (!apifyConfigured) {
-      hints.push('Set APIFY_API_TOKEN in Railway env (apify.com — free tier covers ~2000 downloads/mo) for an instant residential-IP fallback.');
+    if (!scrapingBeeConfigured) {
+      hints.push('Set SCRAPINGBEE_API_KEY in Railway env (scrapingbee.com — Freelance plan $49.99/mo covers ~1,250-3,300 downloads) so the chain has a managed-proxy fallback.');
     }
     if (!haveCookies) {
       hints.push('Or set YT_COOKIES_BASE64 to a base64-encoded Netscape cookies.txt from a logged-in YouTube account, then redeploy.');
