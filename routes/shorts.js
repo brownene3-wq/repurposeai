@@ -7707,7 +7707,15 @@ ${paginationHtml}
       try {
         var resp = await fetch('/shorts/api/' + encodeURIComponent(analysisId));
         if (!resp.ok) throw new Error('Failed to load new analysis');
-        var data = await resp.json();
+        var raw = await resp.json();
+        // /shorts/api/:id wraps its payload in { analysis: {...} } — unwrap
+        // and tolerate either shape so the next reshape doesn't break us.
+        var data = (raw && raw.analysis) ? raw.analysis : raw;
+        // moments may still arrive as a JSON string if the server didn't
+        // pre-parse (defense in depth — the endpoint *should* parse it).
+        if (typeof data.moments === 'string') {
+          try { data.moments = JSON.parse(data.moments); } catch (e) { data.moments = []; }
+        }
         var moments = Array.isArray(data.moments) ? data.moments : [];
         var ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
         var vidMatch = (data.video_url || '').match(ytRegex);
