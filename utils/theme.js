@@ -206,6 +206,7 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/repurpose', icon: '<img src="/images/section-icons/A-101.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/repurpose/history', icon: '<img src="/images/section-icons/A-112.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Library', key: 'library', perm: 'use_repurpose' },
     { href: '/shorts', icon: '<img src="/images/section-icons/A-1.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
+    { href: '/shorts/clips', icon: '<img src="/images/section-icons/A-112.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'My Clips', key: 'my-clips', perm: 'use_shorts' },
     { href: '/video-editor', icon: '<img src="/images/section-icons/A-2.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
     // --- AI & Creative Tools ---
     { href: '/ai-captions', icon: '<img src="/images/section-icons/A-3.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
