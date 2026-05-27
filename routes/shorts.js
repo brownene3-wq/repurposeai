@@ -411,6 +411,43 @@ function buildTranscriptText(segments) {
   }).join(' ');
 }
 
+// Like _repurposeMod.transcribeUploadedFile but returns a transcript
+// pre-formatted with [HH:MM:SS.mmm] segment timestamps so the /clip
+// caption pipeline (parseTranscriptToSegments → generateASSSubtitles)
+// can find segments inside the moment's window. Uses Whisper's
+// verbose_json response so we get segment.start / segment.end / text
+// triplets instead of just the joined text.
+async function transcribeUploadedFileTimestamped(audioPath) {
+  let stat;
+  try { stat = fs.statSync(audioPath); } catch (e) { throw new Error('Audio file not found at ' + audioPath); }
+  const sizeMB = stat.size / (1024 * 1024);
+  if (sizeMB > 24.5) {
+    throw new Error('Audio is ' + sizeMB.toFixed(1) + 'MB after extraction. Whisper limit is 25MB. Please upload a shorter clip.');
+  }
+  console.log('[transcribeUploadedFileTimestamped] path=' + audioPath + ' size=' + sizeMB.toFixed(2) + 'MB');
+  const fileStream = fs.createReadStream(audioPath);
+  const response = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: fileStream,
+    response_format: 'verbose_json',
+    timestamp_granularities: ['segment']
+  });
+  // Whisper returns { text, segments:[{start, end, text, ...}], ... }.
+  // We format each segment exactly the way buildTranscriptText does so
+  // parseTranscriptToSegments matches without any custom regex tweaks.
+  if (!response || !Array.isArray(response.segments) || response.segments.length === 0) {
+    // Fall back to the plain-text body so we at least preserve the
+    // transcript for AI moment detection, even if captions won't
+    // render. Better than throwing.
+    return (response && response.text) ? String(response.text) : '';
+  }
+  return response.segments.map(seg => {
+    const startSec = Math.max(0, Number(seg.start) || 0);
+    const text = String(seg.text || '').trim();
+    return text ? `[${formatTimestamp(startSec)}] ${text}` : '';
+  }).filter(Boolean).join(' ');
+}
+
 // Helper: Parse stored transcript text back into timed segments
 // Transcript format: "[HH:MM:SS.mmm] text" or legacy "[HH:MM:SS] text"
 function parseTranscriptToSegments(transcriptText) {
@@ -1402,7 +1439,17 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
     sendUpdate({ status: 'transcribing', message: 'Transcribing with AI...' });
     let transcriptText;
     try {
-      transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+      // Use the timestamped variant so the stored transcript carries
+      // [HH:MM:SS.mmm] markers — required for the caption pipeline in
+      // /shorts/clip to find segments inside each moment's window.
+      // Falls back to plain Whisper text if verbose_json returns no
+      // segments (very rare; happens on truly silent audio).
+      try {
+        transcriptText = await transcribeUploadedFileTimestamped(audioPath);
+      } catch (timedErr) {
+        console.warn('[analyze-upload] timestamped transcription failed, falling back to plain text:', timedErr.message);
+        transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+      }
     } catch (err) {
       sendUpdate({ status: 'error', message: 'Transcription failed: ' + (err.message || 'unknown error') });
       return res.end();
