@@ -1016,6 +1016,257 @@ const LAYOUT_LIBRARY = {
   }
 };
 
+// ============================================================================
+// Frame-based thumbnail pipeline (replaces Flux Schnell synthetic backgrounds)
+// ----------------------------------------------------------------------------
+// The new flow follows the 5-stage spec:
+//   1. Extract evenly-spaced candidate frames from the video (ffmpeg)
+//   2. Score each frame for thumbnail-virality using GPT-4o-mini vision
+//      (face presence, emotion intensity, contrast, composition)
+//   3. Pick the top N frames matching the requested count
+//   4. (Optional) Face-swap the user's uploaded headshot onto the chosen frame
+//      using Replicate cdingram/face-swap (InsightFace-based)
+//   5. Composite: enhance frame + burn in 1-4 word ALL-CAPS hook title with
+//      preset typography
+// ============================================================================
+
+// Get video duration in seconds (via ffprobe). Returns 0 on failure so callers
+// can degrade gracefully (we just take frames at fixed timestamps).
+function getVideoDuration(videoPath) {
+  return new Promise((resolve) => {
+    const ffprobePath = ffmpegPath === 'ffmpeg' ? 'ffprobe' : ffmpegPath.replace(/ffmpeg([^/]*)$/, 'ffprobe$1');
+    const proc = spawn(ffprobePath, [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      videoPath
+    ]);
+    let out = '';
+    proc.stdout.on('data', (d) => { out += d.toString(); });
+    proc.on('close', () => {
+      const n = parseFloat(out.trim());
+      resolve(Number.isFinite(n) && n > 0 ? n : 0);
+    });
+    proc.on('error', () => resolve(0));
+  });
+}
+
+// Stage 1 — Extract `count` evenly-spaced candidate frames from the video.
+// Skips the first 5% and last 5% (intros/outros are usually weak). Returns
+// an array of { path, timestamp } sorted by timestamp.
+async function extractCandidateFrames(videoPath, count = 12) {
+  const duration = await getVideoDuration(videoPath);
+  // If we can't get duration, fall back to fixed timestamps assuming the
+  // video is at least 60s. ffmpeg will fail silently for frames past the end.
+  const dur = duration > 0 ? duration : 60;
+  const startCut = dur * 0.05;
+  const endCut = dur * 0.95;
+  const usable = Math.max(1, endCut - startCut);
+  const step = usable / count;
+
+  const jobId = uuidv4().slice(0, 8);
+  const frames = [];
+  for (let i = 0; i < count; i++) {
+    const ts = startCut + i * step + step / 2;
+    const framePath = path.join(outputDir, `frame-${jobId}-${i}.jpg`);
+    await new Promise((resolve) => {
+      const proc = spawn(ffmpegPath, [
+        '-ss', String(ts.toFixed(2)),
+        '-i', videoPath,
+        '-frames:v', '1',
+        '-q:v', '2',
+        '-y',
+        framePath
+      ]);
+      proc.on('close', () => resolve());
+      proc.on('error', () => resolve());
+    });
+    if (fs.existsSync(framePath) && fs.statSync(framePath).size > 1000) {
+      frames.push({ path: framePath, timestamp: ts });
+    }
+  }
+  return frames;
+}
+
+// Stage 2 — Score candidate frames using GPT-4o-mini vision in a single
+// batched call. Each frame is uploaded as a base64 data URI and the model
+// returns JSON with per-frame scores + reasoning.
+async function scoreCandidateFrames(frames) {
+  if (!frames || frames.length === 0) return [];
+  // Build the multimodal user message
+  const imageContents = frames.map((f, i) => {
+    const buf = fs.readFileSync(f.path);
+    const b64 = buf.toString('base64');
+    return {
+      type: 'image_url',
+      image_url: { url: 'data:image/jpeg;base64,' + b64, detail: 'low' }
+    };
+  });
+  const systemPrompt = 'You are a YouTube thumbnail art director scoring video frames for click-through potential. For each frame, judge:\n- facePresent: is there a clear human face in the frame? (boolean)\n- emotionScore: 0-10 strength of facial emotion / expression (use 0 for no face)\n- contrastScore: 0-10 visual contrast and pop\n- compositionScore: 0-10 framing/clarity for thumbnail use\n- overall: 0-10 your final thumbnail-virality verdict\n- note: 4-12 word description of what the frame shows\n\nReturn JSON shaped EXACTLY as: { "scores": [ { "i": 0, "facePresent": true|false, "emotionScore": 0-10, "contrastScore": 0-10, "compositionScore": 0-10, "overall": 0-10, "note": "..." }, ... ] }';
+  const userContent = [
+    { type: 'text', text: 'Score these ' + frames.length + ' candidate frames (indexed 0 to ' + (frames.length - 1) + ').' },
+    ...imageContents
+  ];
+  const resp = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent }
+    ]
+  });
+  const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
+  if (!raw) throw new Error('Vision scoring returned empty');
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (e) { throw new Error('Vision scoring returned invalid JSON'); }
+  const scores = Array.isArray(parsed.scores) ? parsed.scores : [];
+  // Merge scores back onto frames, preserving frames missing scores with a 0 default
+  return frames.map((f, i) => {
+    const s = scores.find((x) => x && x.i === i) || {};
+    return {
+      ...f,
+      facePresent: !!s.facePresent,
+      emotionScore: Number(s.emotionScore) || 0,
+      contrastScore: Number(s.contrastScore) || 0,
+      compositionScore: Number(s.compositionScore) || 0,
+      overall: Number(s.overall) || 0,
+      note: String(s.note || '').slice(0, 120)
+    };
+  });
+}
+
+// Pick the top N frames by overall score, but enforce diversity: avoid two
+// frames within 2 seconds of each other (likely near-identical).
+function pickTopFrames(scored, n) {
+  const sorted = [...scored].sort((a, b) => b.overall - a.overall);
+  const picked = [];
+  for (const f of sorted) {
+    if (picked.length >= n) break;
+    const tooClose = picked.some((p) => Math.abs(p.timestamp - f.timestamp) < 2);
+    if (!tooClose) picked.push(f);
+  }
+  // If diversity rule starved us, top up from the sorted list
+  for (const f of sorted) {
+    if (picked.length >= n) break;
+    if (!picked.includes(f)) picked.push(f);
+  }
+  return picked;
+}
+
+// Stage 4 — Face-swap the user's uploaded face onto the target video frame
+// using Replicate cdingram/face-swap (InsightFace-based, ~$0.001/run).
+// Returns path to swapped frame PNG. Throws on failure so caller can fall
+// back to the original frame.
+const FACE_SWAP_CACHE_DIR = path.join('/tmp', 'repurpose-face-swaps');
+try { if (!fs.existsSync(FACE_SWAP_CACHE_DIR)) fs.mkdirSync(FACE_SWAP_CACHE_DIR, { recursive: true }); } catch (e) {}
+
+async function runFaceSwap(targetFramePath, userFacePath) {
+  if (!process.env.REPLICATE_API_TOKEN) throw new Error('REPLICATE_API_TOKEN not configured');
+  if (!replicate) throw new Error('Replicate SDK not installed on this server.');
+
+  const crypto = require('crypto');
+  const frameBuf = fs.readFileSync(targetFramePath);
+  const faceBuf = fs.readFileSync(userFacePath);
+  const hash = crypto.createHash('sha256').update(frameBuf).update(faceBuf).digest('hex').slice(0, 16);
+  const cached = path.join(FACE_SWAP_CACHE_DIR, hash + '.png');
+  if (fs.existsSync(cached) && fs.statSync(cached).size > 1000) return cached;
+
+  const frameUri = 'data:image/jpeg;base64,' + frameBuf.toString('base64');
+  const facemime = (path.extname(userFacePath) || '.jpg').toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
+  const faceUri = 'data:' + facemime + ';base64,' + faceBuf.toString('base64');
+
+  const prediction = await replicate.predictions.create({
+    model: 'cdingram/face-swap',
+    input: {
+      input_image: frameUri,
+      swap_image: faceUri
+    }
+  });
+  const final = await replicate.wait(prediction, { interval: 1500 });
+  if (final.status !== 'succeeded') {
+    throw new Error('face-swap ' + final.status + ': ' + (final.error || 'unknown'));
+  }
+  const out = final.output;
+  const url = Array.isArray(out) ? out[0] : out;
+  if (!url || typeof url !== 'string') throw new Error('face-swap returned no image URL');
+
+  const imgResp = await fetch(url);
+  if (!imgResp.ok) throw new Error('Failed to download face-swap: HTTP ' + imgResp.status);
+  fs.writeFileSync(cached, Buffer.from(await imgResp.arrayBuffer()));
+  return cached;
+}
+
+// Stage 5 — Composite the chosen frame with text overlay. The frame is
+// optionally enhanced (subtle color punch + slight vignette) before the
+// title is burned in using the preset's typography rules.
+async function renderFrameBasedComposite({ framePath, title, preset, outputPath }) {
+  const dims = await getFrameDimensions(framePath);
+  const W = dims.width;
+  const H = dims.height;
+
+  let cleanTitle = String(title || '').trim().slice(0, 80);
+  if (preset.caseTransform === 'upper') cleanTitle = cleanTitle.toUpperCase();
+  else if (preset.caseTransform === 'lower') cleanTitle = cleanTitle.toLowerCase();
+
+  const textfilePath = path.join(outputDir, 'hctitle-' + uuidv4().slice(0, 8) + '.txt');
+  fs.writeFileSync(textfilePath, cleanTitle);
+
+  const font = findSystemFont() || '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+  const fontSize = Math.max(28, Math.round(preset.fontSizePct * H));
+  const outlineW = Math.max(2, Math.round(fontSize * preset.outlineWidthPct));
+
+  // Title placement: top-left safe zone (works on any aspect)
+  // Coords are computed in ffmpeg's drawtext expression form
+  const xExpr = Math.round(W * 0.04);
+  const yExpr = Math.round(H * 0.06);
+
+  // Build the filter graph:
+  //   eq=brightness=0.02:saturation=1.15  — subtle pop
+  //   vignette=PI/5                       — gentle vignette to focus eye
+  //   drawtext=...                        — burn the title with thick outline + drop shadow
+  const filterParts = [
+    `eq=brightness=0.02:saturation=1.15`,
+    `vignette=PI/5`,
+    [
+      `drawtext=`,
+      `fontfile='${font}':`,
+      `textfile='${textfilePath}':`,
+      `fontsize=${fontSize}:`,
+      `fontcolor=${preset.textColor || 'white'}:`,
+      `borderw=${outlineW}:`,
+      `bordercolor=${preset.outlineColor || 'black'}:`,
+      `shadowcolor=black@0.55:`,
+      `shadowx=4:`,
+      `shadowy=4:`,
+      `x=${xExpr}:`,
+      `y=${yExpr}`
+    ].join('')
+  ];
+  const filter = filterParts.join(',');
+
+  await new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, [
+      '-i', framePath,
+      '-vf', filter,
+      '-q:v', '2',
+      '-y',
+      outputPath
+    ]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('close', (code) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      if (code === 0) resolve();
+      else reject(new Error('ffmpeg composite failed (' + code + '): ' + stderr.slice(-600)));
+    });
+    proc.on('error', (err) => {
+      try { fs.unlinkSync(textfilePath); } catch (e) {}
+      reject(err);
+    });
+  });
+}
+
 // Run a face image through Replicate's background remover and return the
 // path to the local PNG cutout. Cached per-hash so re-uploads of the same
 // face don't re-pay rembg costs within the lifetime of /tmp.
@@ -2007,6 +2258,19 @@ router.get('/', requireAuth, (req, res) => {
         color: var(--text);
         font-weight: 600;
         font-size: 0.95rem;
+      }
+
+      .ai-thumb-badge {
+        display: inline-block;
+        margin-left: 0.4rem;
+        padding: 0.12rem 0.5rem;
+        background: linear-gradient(135deg, #6c3aed, #ff007a);
+        color: #fff;
+        font-size: 0.7rem;
+        font-weight: 700;
+        border-radius: 999px;
+        vertical-align: middle;
+        letter-spacing: 0.02em;
       }
 
       .ai-thumb-caption {
@@ -3609,12 +3873,11 @@ ${pageStyles}
     function startAIProgress() {
       const stages = [
         'Downloading video…',
-        'Extracting audio…',
-        'Transcribing with Whisper (this usually takes the longest)…',
-        'Identifying the most interesting moments…',
-        'Designing thumbnail concepts…',
-        'Generating images with GPT-image-1 (this can take 20-40 seconds)…',
-        'Rendering final thumbnails…'
+        'Extracting audio + sampling frames…',
+        'Scoring frames for virality (face, emotion, contrast)…',
+        'Picking the highest-CTR moments…',
+        (aiFaceFile ? 'Face-swapping your headshot onto chosen frames…' : 'Preparing the chosen frames…'),
+        'Burning in hook text + composing the final thumbnails…'
       ];
       let idx = 0;
       aiProgressMsgEl.textContent = stages[0];
@@ -3701,18 +3964,20 @@ ${pageStyles}
       }
       caption.textContent = bits.join(' · ');
 
-      const angleLabel = { character: 'Character Focus', action: 'Action Focus', object: 'Object Focus' };
       data.thumbnails.forEach(thumb => {
         const card = document.createElement('div');
         card.className = 'ai-thumb-card';
         const typeLabel = thumb.outputType || 'Generated Thumbnail';
-        const angleText = thumb.angle && angleLabel[thumb.angle] ? angleLabel[thumb.angle] : '';
+        const tsLabel = (typeof thumb.timestamp === 'number') ? ' &middot; ' + formatTs(thumb.timestamp) : '';
+        const scoreLabel = (thumb.scores && typeof thumb.scores.overall === 'number')
+          ? ' &middot; CTR score ' + thumb.scores.overall.toFixed(1) + '/10' : '';
+        const swapBadge = thumb.faceSwapped ? '<span class="ai-thumb-badge">face-swapped</span>' : '';
         card.innerHTML = \`
           <img src="/ai-thumbnail/serve/\${thumb.filename}" class="ai-thumb-image" alt="\${(thumb.title || 'AI Thumbnail').replace(/"/g, '&quot;')}">
           <div class="ai-thumb-body">
-            <div class="ai-thumb-kicker">\${escapeHtml(typeLabel)}\${angleText ? ' &middot; ' + escapeHtml(angleText) : ''}</div>
-            <div class="ai-thumb-title">\${escapeHtml(thumb.title || 'AI Thumbnail')}</div>
-            \${thumb.moment ? '<div class="ai-thumb-moment">' + escapeHtml(thumb.moment) + '</div>' : ''}
+            <div class="ai-thumb-kicker">\${escapeHtml(typeLabel)}\${tsLabel}\${scoreLabel}</div>
+            <div class="ai-thumb-title">\${escapeHtml(thumb.title || 'AI Thumbnail')} \${swapBadge}</div>
+            \${thumb.sceneNote ? '<div class="ai-thumb-moment">' + escapeHtml(thumb.sceneNote) + '</div>' : ''}
             <a href="/ai-thumbnail/download/\${thumb.filename}" class="ai-thumb-download" download>Download</a>
           </div>
         \`;
@@ -3720,6 +3985,13 @@ ${pageStyles}
       });
       section.dataset.hasResults = '1';
       section.style.display = 'block';
+    }
+
+    function formatTs(s) {
+      const sec = Math.max(0, Math.floor(s));
+      const m = Math.floor(sec / 60);
+      const r = sec % 60;
+      return m + ':' + String(r).padStart(2, '0');
     }
 
     function escapeHtml(s) {
@@ -4600,57 +4872,104 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
       }
     }
 
-    // If transcription yielded nothing AND we have no title, the model has
-    // nothing to work with — ask the user to add a hint.
-    if (!transcript && !videoTitle && !styleHint) {
-      return res.status(400).json({
-        success: false,
-        message: 'Could not extract any audio or title from the video. Add a style hint describing the video and try again.'
-      });
-    }
-
-    // Generate concepts via GPT-4o-mini (constrained to preset's allowed layouts)
-    const aspectLabel = aspect === '16:9' ? 'Horizontal 16:9 (YouTube)'
-      : aspect === '9:16' ? 'Vertical 9:16 (Shorts / TikTok / Reels)'
-      : 'Square 1:1 (Instagram)';
-
-    let concepts;
+    // ===== NEW: Frame-based pipeline =====
+    // Stage 1: extract candidate frames
+    let scoredFrames = [];
     try {
-      concepts = await generateHighConversionConcepts({
-        transcript,
-        hint: styleHint,
-        videoTitle,
-        aspectLabel,
-        count: requestedCount,
-        preset,
-        hasFace
-      });
-    } catch (err) {
-      console.error('[AI Thumbnail AI-Gen] Concept generation failed:', err.message);
-      return res.status(500).json({ success: false, message: 'Could not generate thumbnail concepts: ' + err.message });
+      const candidates = await extractCandidateFrames(videoPath, 12);
+      if (candidates.length === 0) {
+        return res.status(500).json({ success: false, message: 'Could not extract any frames from the video.' });
+      }
+      // Stage 2: score them with vision
+      try {
+        scoredFrames = await scoreCandidateFrames(candidates);
+      } catch (scoreErr) {
+        console.warn('[AI Thumbnail AI-Gen] Frame scoring failed, falling back to even-spread selection:', scoreErr.message);
+        // Fallback: pretend every frame scored equally so we can still pick top N
+        scoredFrames = candidates.map((c, i) => ({ ...c, facePresent: false, emotionScore: 0, contrastScore: 5, compositionScore: 5, overall: 5, note: 'unscored' }));
+      }
+    } catch (extractErr) {
+      console.error('[AI Thumbnail AI-Gen] Frame extraction failed:', extractErr.message);
+      return res.status(500).json({ success: false, message: 'Could not extract frames: ' + extractErr.message });
     }
 
-    // Generate composites in parallel
+    // Stage 3: pick top N
+    const chosenFrames = pickTopFrames(scoredFrames, requestedCount);
+
+    // Title generation: 1-4 word ALL CAPS hooks, one per chosen frame.
+    // We pass the frame's "note" as scene context to GPT-4o-mini so the hook
+    // is grounded in what the frame actually shows.
+    let titles = [];
+    try {
+      const sceneNotes = chosenFrames.map((f, i) => `Frame ${i+1} (${f.timestamp.toFixed(1)}s): ${f.note}`).join('\n');
+      const safeTranscript = (transcript || '').slice(0, 6000);
+      const titleSystem = 'You write punchy, high-CTR YouTube thumbnail titles. For each of the ' + chosenFrames.length + ' frames listed, write ONE hook title — 1 to 4 words, ALL CAPS, curiosity-driving, NOT the video title. Examples: UNREAL!, ZOOM HACK, BORING VS PRO, THE TRUTH, $1 vs $1M.\n\nReturn JSON shaped EXACTLY as: { "hookTopic": "...", "titles": ["TITLE 1", "TITLE 2", ...] } with one title per frame in order.';
+      const titleUser = 'Video title: ' + (videoTitle || '(unknown)') + '\nUser style hint: ' + (styleHint || '(none)') + '\n\nFrames:\n' + sceneNotes + '\n\nTranscript (may be truncated):\n"""\n' + (safeTranscript || '(no transcript)') + '\n"""';
+      const resp = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.85,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: titleSystem },
+          { role: 'user', content: titleUser }
+        ]
+      });
+      const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
+      const parsed = raw ? JSON.parse(raw) : {};
+      titles = Array.isArray(parsed.titles) ? parsed.titles : [];
+      var hookTopicEarly = String(parsed.hookTopic || '').slice(0, 160);
+    } catch (titleErr) {
+      console.warn('[AI Thumbnail AI-Gen] Title generation failed, using fallbacks:', titleErr.message);
+    }
+    // Ensure we have one title per frame (fallback to generic)
+    while (titles.length < chosenFrames.length) titles.push('WATCH THIS');
+    const hookTopic = (typeof hookTopicEarly !== 'undefined' && hookTopicEarly) || (videoTitle || '').slice(0, 80);
+
+    // Stage 4 + 5: for each chosen frame, optionally face-swap, then composite + text
     const jobId = uuidv4().slice(0, 10);
-    const results = await Promise.allSettled(concepts.map((concept, index) =>
-      generateHighConversionThumbnail({ concept, preset, aspect, jobId, index, facePath: faceCutoutPath })
-        .then((img) => ({ ...img, concept }))
-    ));
+    const results = await Promise.allSettled(chosenFrames.map(async (frame, index) => {
+      let composeFrame = frame.path;
+      let swapped = false;
+      if (hasFace && faceFile && fs.existsSync(faceFile.path)) {
+        try {
+          composeFrame = await runFaceSwap(frame.path, faceFile.path);
+          swapped = true;
+        } catch (swapErr) {
+          console.warn('[AI Thumbnail AI-Gen] face-swap failed on frame ' + index + ', using original:', swapErr.message);
+        }
+      }
+      const filename = 'hc-thumb-' + jobId + '-' + index + '.png';
+      const outputPath = path.join(outputDir, filename);
+      await renderFrameBasedComposite({
+        framePath: composeFrame,
+        title: titles[index],
+        preset,
+        outputPath
+      });
+      return {
+        filename,
+        title: titles[index],
+        timestamp: frame.timestamp,
+        scores: { overall: frame.overall, emotion: frame.emotionScore, contrast: frame.contrastScore, composition: frame.compositionScore },
+        sceneNote: frame.note,
+        faceSwapped: swapped
+      };
+    }));
 
     const thumbnails = [];
     const failures = [];
-    let hookTopic = '';
     results.forEach((r, i) => {
       if (r.status === 'fulfilled') {
         thumbnails.push({
           filename: r.value.filename,
           outputType: 'Generated Thumbnail',
-          title: r.value.concept.title,
-          layout: r.value.concept.layout,
-          preset: preset.key,
-          prompt: r.value.concept.backgroundPrompt
+          title: r.value.title,
+          timestamp: r.value.timestamp,
+          sceneNote: r.value.sceneNote,
+          scores: r.value.scores,
+          faceSwapped: r.value.faceSwapped,
+          preset: preset.key
         });
-        if (!hookTopic && r.value.concept.hookTopic) hookTopic = r.value.concept.hookTopic;
       } else {
         failures.push({ index: i, error: r.reason && r.reason.message ? r.reason.message : String(r.reason) });
       }
