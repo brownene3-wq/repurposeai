@@ -1350,7 +1350,55 @@ async function fetchTranscriptFromYtdlpJson(videoId) {
 }
 
 // Helper: Fetch video title using yt-dlp
+// Resolve a YouTube video title from a videoId. yt-dlp alone has been
+// failing for most videos because of YouTube's anti-bot wall on
+// datacenter IPs — the metadata request gets the same 'Sign in to
+// confirm you're not a bot' challenge as the video download. So:
+//   1) Try YouTube oEmbed first. No auth, no IP block, ~200ms.
+//   2) If oEmbed fails (rare — video deleted, regional block,
+//      network glitch), fall through to yt-dlp.
+//   3) If both fail, return the literal 'YouTube Video' fallback so
+//      the card still renders without throwing.
 function fetchVideoTitle(videoId) {
+  return new Promise((resolve) => {
+    const https = require('https');
+    const url = 'https://www.youtube.com/oembed?format=json&url=' +
+                encodeURIComponent('https://www.youtube.com/watch?v=' + videoId);
+    const settled = { v: false };
+    const finish = (title) => { if (!settled.v) { settled.v = true; resolve(title); } };
+
+    let req;
+    try {
+      req = https.get(url, { headers: { 'Accept': 'application/json' } }, (r) => {
+        if (r.statusCode !== 200) {
+          r.resume();
+          return _fallbackYtdlpTitle(videoId).then(finish);
+        }
+        let body = '';
+        r.on('data', (d) => { body += d.toString(); });
+        r.on('end', () => {
+          try {
+            const j = JSON.parse(body);
+            if (j && j.title && String(j.title).trim()) {
+              return finish(String(j.title).trim());
+            }
+          } catch (_) {}
+          _fallbackYtdlpTitle(videoId).then(finish);
+        });
+        r.on('error', () => _fallbackYtdlpTitle(videoId).then(finish));
+      });
+      req.setTimeout(5000, () => {
+        try { req.destroy(); } catch (_) {}
+        _fallbackYtdlpTitle(videoId).then(finish);
+      });
+      req.on('error', () => _fallbackYtdlpTitle(videoId).then(finish));
+    } catch (_) {
+      _fallbackYtdlpTitle(videoId).then(finish);
+    }
+  });
+}
+
+function _fallbackYtdlpTitle(videoId) {
   return new Promise((resolve) => {
     const proc = spawn('yt-dlp', [
       '--skip-download', '--print', 'title', ...YTDLP_COMMON_ARGS,
