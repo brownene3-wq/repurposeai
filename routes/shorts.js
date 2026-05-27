@@ -6544,6 +6544,26 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
        suppressed. Re-enabled when _updateMomentLoader clears the
        disabled state. */
     .moment-preview-shell .moment-control-disabled{opacity:0.35;pointer-events:none;}
+    /* Floating-button layout on /shorts.
+       The page renders two fixed top-right widgets: the global theme
+       toggle (.theme-toggle, 36px round, top:1.2rem right:1.5rem) and
+       the page-specific Calendar pill (#calendarFloatBtn). Without
+       offset they collide — toggle's z-index:100 loses to the pill's
+       100000 and gets visually buried. We:
+         1) Push the Calendar pill left by 80px so the toggle's
+            right:24px slot is fully clear.
+         2) Bump the theme toggle's z-index to 99999 so it sits above
+            normal page content but still below modals (which live at
+            z-index 99999+ for backdrops, 100001+ for calendar).
+         3) Add a hover affordance so the toggle reads as interactive.
+       Mobile (<=768px): the toggle shrinks to 32px and slides to
+       right:1rem, so the Calendar pill shifts to right:60px and also
+       shrinks slightly. */
+    .theme-toggle{z-index:99999 !important;}
+    .theme-toggle:hover{transform:scale(1.05);box-shadow:0 4px 12px rgba(108,58,237,0.25);}
+    @media (max-width: 768px) {
+      #calendarFloatBtn{right:60px !important;padding:8px 14px !important;font-size:13px !important;}
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
@@ -7037,7 +7057,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
 ${paginationHtml}
           <!-- Floating Calendar Button -->
-    <button id="calendarFloatBtn" onclick="openShortsCalendar()" style="position:fixed;top:18px;right:24px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
+    <button id="calendarFloatBtn" onclick="openShortsCalendar()" style="position:fixed;top:18px;right:80px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendar
     </button>
 
