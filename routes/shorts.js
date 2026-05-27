@@ -2514,6 +2514,319 @@ router.get('/api/my-renders', requireAuth, async (req, res) => {
 });
 
 
+// ===== My Clips page (Phase B–E of the My Clips feature) =====
+//
+// Routes:
+//   GET  /shorts/clips                       - server-rendered page shell
+//   GET  /shorts/api/clips                   - list clips for the user
+//   GET  /shorts/api/clips/storage           - aggregate storage usage
+//   POST /shorts/api/clips/:id/delete        - soft-delete + unlink file
+//   POST /shorts/api/clips/:id/send-to-drive - upload .mp4 to Google Drive
+//   POST /shorts/api/clips/:id/send-to-dropbox - upload .mp4 to Dropbox
+//
+// Authentication: requireAuth. All ownership-checked via clipRenderOps.
+
+// ---- Helpers ----
+
+// Reconcile the disk state of a 'rendering' row in case the server restarted
+// or crashed while encoding. Updates the row in-place if state has moved.
+async function reconcileRenderRow(row) {
+  try {
+    if (!row || row.status === 'ready' || row.status === 'failed' || row.status === 'deleted') return row;
+    const full = path.join(CLIPS_DIR, row.filename);
+    const progressPath = full + '.progress';
+    const errorPath = full + '.error';
+    if (fs.existsSync(errorPath)) {
+      let errMsg = 'Clip generation failed';
+      try { errMsg = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
+      const updated = await clipRenderOps.updateStatus(row.id, 'failed', { errorMessage: errMsg, progressMessage: null });
+      return updated || row;
+    }
+    if (fs.existsSync(full)) {
+      let size = 0;
+      try { size = fs.statSync(full).size; } catch (e) {}
+      const stillProcessing = fs.existsSync(progressPath);
+      if (size > 10000 && !stillProcessing) {
+        const updated = await clipRenderOps.updateStatus(row.id, 'ready', { fileSize: size, progressMessage: null, errorMessage: null });
+        return updated || row;
+      }
+      // Still encoding — pull current message if any.
+      if (stillProcessing) {
+        let msg = null;
+        try { msg = fs.readFileSync(progressPath, 'utf8') || null; } catch (e) {}
+        if (msg && msg !== row.progress_message) {
+          const updated = await clipRenderOps.updateStatus(row.id, 'rendering', { progressMessage: msg });
+          return updated || row;
+        }
+      }
+    }
+    return row;
+  } catch (e) {
+    console.error('reconcileRenderRow error:', e.message);
+    return row;
+  }
+}
+
+// GET /shorts/api/clips - list the user's clip renders.
+router.get('/api/clips', requireAuth, async (req, res) => {
+  try {
+    const opts = {
+      limit: req.query.limit ? Math.min(Number(req.query.limit) || 100, 500) : 100,
+      offset: req.query.offset ? Math.max(Number(req.query.offset) || 0, 0) : 0,
+      status: req.query.status || 'all',
+      sortBy: req.query.sortBy || 'created_at',
+      sortDir: req.query.sortDir || 'desc',
+    };
+    let rows = await clipRenderOps.getByUser(req.user.id, opts);
+    // Reconcile any 'rendering' rows against disk in case we missed an update.
+    const reconciled = await Promise.all(rows.map(reconcileRenderRow));
+    // Also surface whether the file is currently on disk (downloadable).
+    const enriched = reconciled.map(r => {
+      let onDisk = false;
+      try { onDisk = fs.existsSync(path.join(CLIPS_DIR, r.filename)); } catch (e) {}
+      return {
+        id: r.id,
+        analysisId: r.analysis_id,
+        momentIndex: r.moment_index,
+        filename: r.filename,
+        momentTitle: r.moment_title,
+        videoTitle: r.video_title,
+        sourceUrl: r.source_url,
+        status: r.status,
+        progress: r.progress_message,
+        error: r.error_message,
+        fileSize: Number(r.file_size || 0),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        readyAt: r.ready_at,
+        onDisk
+      };
+    });
+    res.json({ clips: enriched });
+  } catch (err) {
+    console.error('GET /api/clips error:', err);
+    res.status(500).json({ error: err.message, clips: [] });
+  }
+});
+
+router.get('/api/clips/storage', requireAuth, async (req, res) => {
+  try {
+    const s = await clipRenderOps.totalStorageBytes(req.user.id);
+    res.json({ totalBytes: s.total, count: s.count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/clips/:id/delete', requireAuth, async (req, res) => {
+  try {
+    const row = await clipRenderOps.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Clip not found' });
+    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    // Unlink the disk file (best-effort).
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename)); } catch (e) {}
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.progress')); } catch (e) {}
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.error')); } catch (e) {}
+    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.encoding.mp4')); } catch (e) {}
+    const updated = await clipRenderOps.softDelete(req.params.id, req.user.id);
+    res.json({ success: true, clip: updated });
+  } catch (err) {
+    console.error('Delete clip error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Drive/Dropbox upload helpers ----
+
+// Refresh a Google access token when expired. Returns updated row from
+// connected_accounts (or original if refresh failed).
+async function refreshGoogleAccessToken(acct) {
+  try {
+    const now = Date.now();
+    const exp = acct.token_expires_at ? new Date(acct.token_expires_at).getTime() : 0;
+    if (exp - now > 60_000) return acct; // still valid
+    if (!acct.refresh_token) return acct;
+    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || '';
+    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET || '';
+    if (!clientId || !clientSecret) return acct;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: acct.refresh_token
+    });
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+    const data = await r.json();
+    if (!data.access_token) { console.error('Google token refresh failed:', data); return acct; }
+    const newExpiresAt = new Date(Date.now() + (data.expires_in || 3600) * 1000);
+    const updated = await connectedAccountOps.update(acct.id, {
+      accessToken: data.access_token,
+      tokenExpiresAt: newExpiresAt
+    });
+    return updated || { ...acct, access_token: data.access_token, token_expires_at: newExpiresAt };
+  } catch (e) {
+    console.error('refreshGoogleAccessToken error:', e.message);
+    return acct;
+  }
+}
+
+// Multipart upload to Drive. Returns { ok, fileId, link, error }.
+async function uploadToDrive(accessToken, localPath, displayName) {
+  try {
+    const fileBytes = fs.readFileSync(localPath);
+    const boundary = '-------SPLICORA' + Date.now();
+    const metadata = JSON.stringify({ name: displayName, mimeType: 'video/mp4' });
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+      `--${boundary}\r\nContent-Type: video/mp4\r\n\r\n`
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--`);
+    const body = Buffer.concat([head, fileBytes, tail]);
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'Content-Length': String(body.length)
+      },
+      body
+    });
+    const data = await r.json();
+    if (!r.ok || !data.id) return { ok: false, error: data.error?.message || ('HTTP ' + r.status) };
+    return { ok: true, fileId: data.id, link: data.webViewLink || ('https://drive.google.com/file/d/' + data.id + '/view'), name: data.name };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+router.post('/api/clips/:id/send-to-drive', requireAuth, async (req, res) => {
+  try {
+    const row = await clipRenderOps.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Clip not found' });
+    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const full = path.join(CLIPS_DIR, row.filename);
+    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Drive.' });
+    const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'googledrive');
+    if (!accounts || accounts.length === 0) {
+      return res.status(412).json({ error: 'Google Drive not connected.', connectUrl: '/auth/googledrive/connect?redirect=/shorts/clips' });
+    }
+    const acct = await refreshGoogleAccessToken(accounts[0]);
+    if (!acct.access_token) return res.status(401).json({ error: 'Drive access token unavailable. Please reconnect Drive.' });
+    const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
+    const result = await uploadToDrive(acct.access_token, full, displayName);
+    if (!result.ok) return res.status(502).json({ error: result.error || 'Drive upload failed' });
+    res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
+  } catch (err) {
+    console.error('send-to-drive error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function refreshDropboxAccessToken(acct) {
+  try {
+    const now = Date.now();
+    const exp = acct.token_expires_at ? new Date(acct.token_expires_at).getTime() : 0;
+    if (exp - now > 60_000) return acct;
+    if (!acct.refresh_token) return acct;
+    const clientId = process.env.DROPBOX_APP_KEY || '';
+    const clientSecret = process.env.DROPBOX_APP_SECRET || '';
+    if (!clientId || !clientSecret) return acct;
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: acct.refresh_token,
+      client_id: clientId,
+      client_secret: clientSecret
+    });
+    const r = await fetch('https://api.dropboxapi.com/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+    const data = await r.json();
+    if (!data.access_token) { console.error('Dropbox token refresh failed:', data); return acct; }
+    const newExpiresAt = data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null;
+    const updated = await connectedAccountOps.update(acct.id, {
+      accessToken: data.access_token,
+      tokenExpiresAt: newExpiresAt
+    });
+    return updated || { ...acct, access_token: data.access_token, token_expires_at: newExpiresAt };
+  } catch (e) {
+    console.error('refreshDropboxAccessToken error:', e.message);
+    return acct;
+  }
+}
+
+async function uploadToDropbox(accessToken, localPath, displayName) {
+  try {
+    const fileBytes = fs.readFileSync(localPath);
+    const args = { path: '/Splicora/' + displayName, mode: 'add', autorename: true, mute: false };
+    const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Dropbox-API-Arg': JSON.stringify(args),
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(fileBytes.length)
+      },
+      body: fileBytes
+    });
+    const data = await r.json();
+    if (!r.ok || !data.id) return { ok: false, error: data.error_summary || data.error?.['.tag'] || ('HTTP ' + r.status) };
+    // Create a shareable link (best-effort).
+    let link = null;
+    try {
+      const sr = await fetch('https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: data.path_display || data.path_lower, settings: { requested_visibility: 'public' } })
+      });
+      const sd = await sr.json();
+      link = sd.url || null;
+      if (!link && sd.error_summary && sd.error_summary.indexOf('shared_link_already_exists') >= 0) {
+        // Fetch the existing link.
+        const lr = await fetch('https://api.dropboxapi.com/2/sharing/list_shared_links', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: data.path_display || data.path_lower })
+        });
+        const ld = await lr.json();
+        link = (ld.links && ld.links[0] && ld.links[0].url) || null;
+      }
+    } catch (e) { console.error('Dropbox share link error:', e.message); }
+    return { ok: true, fileId: data.id, link, name: data.name };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+router.post('/api/clips/:id/send-to-dropbox', requireAuth, async (req, res) => {
+  try {
+    const row = await clipRenderOps.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Clip not found' });
+    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    const full = path.join(CLIPS_DIR, row.filename);
+    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Dropbox.' });
+    const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'dropbox');
+    if (!accounts || accounts.length === 0) {
+      return res.status(412).json({ error: 'Dropbox not connected.', connectUrl: '/auth/dropbox/connect?redirect=/shorts/clips' });
+    }
+    const acct = await refreshDropboxAccessToken(accounts[0]);
+    if (!acct.access_token) return res.status(401).json({ error: 'Dropbox access token unavailable. Please reconnect Dropbox.' });
+    const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
+    const result = await uploadToDropbox(acct.access_token, full, displayName);
+    if (!result.ok) return res.status(502).json({ error: result.error || 'Dropbox upload failed' });
+    res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
+  } catch (err) {
+    console.error('send-to-dropbox error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 router.get('/api/:id', requireAuth, async (req, res) => {
   try {
     const analysis = await shortsOps.getById(req.params.id);
@@ -12500,318 +12813,6 @@ ${paginationHtml}
 </html>`;
 }
 
-
-// ===== My Clips page (Phase B–E of the My Clips feature) =====
-//
-// Routes:
-//   GET  /shorts/clips                       - server-rendered page shell
-//   GET  /shorts/api/clips                   - list clips for the user
-//   GET  /shorts/api/clips/storage           - aggregate storage usage
-//   POST /shorts/api/clips/:id/delete        - soft-delete + unlink file
-//   POST /shorts/api/clips/:id/send-to-drive - upload .mp4 to Google Drive
-//   POST /shorts/api/clips/:id/send-to-dropbox - upload .mp4 to Dropbox
-//
-// Authentication: requireAuth. All ownership-checked via clipRenderOps.
-
-// ---- Helpers ----
-
-// Reconcile the disk state of a 'rendering' row in case the server restarted
-// or crashed while encoding. Updates the row in-place if state has moved.
-async function reconcileRenderRow(row) {
-  try {
-    if (!row || row.status === 'ready' || row.status === 'failed' || row.status === 'deleted') return row;
-    const full = path.join(CLIPS_DIR, row.filename);
-    const progressPath = full + '.progress';
-    const errorPath = full + '.error';
-    if (fs.existsSync(errorPath)) {
-      let errMsg = 'Clip generation failed';
-      try { errMsg = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
-      const updated = await clipRenderOps.updateStatus(row.id, 'failed', { errorMessage: errMsg, progressMessage: null });
-      return updated || row;
-    }
-    if (fs.existsSync(full)) {
-      let size = 0;
-      try { size = fs.statSync(full).size; } catch (e) {}
-      const stillProcessing = fs.existsSync(progressPath);
-      if (size > 10000 && !stillProcessing) {
-        const updated = await clipRenderOps.updateStatus(row.id, 'ready', { fileSize: size, progressMessage: null, errorMessage: null });
-        return updated || row;
-      }
-      // Still encoding — pull current message if any.
-      if (stillProcessing) {
-        let msg = null;
-        try { msg = fs.readFileSync(progressPath, 'utf8') || null; } catch (e) {}
-        if (msg && msg !== row.progress_message) {
-          const updated = await clipRenderOps.updateStatus(row.id, 'rendering', { progressMessage: msg });
-          return updated || row;
-        }
-      }
-    }
-    return row;
-  } catch (e) {
-    console.error('reconcileRenderRow error:', e.message);
-    return row;
-  }
-}
-
-// GET /shorts/api/clips - list the user's clip renders.
-router.get('/api/clips', requireAuth, async (req, res) => {
-  try {
-    const opts = {
-      limit: req.query.limit ? Math.min(Number(req.query.limit) || 100, 500) : 100,
-      offset: req.query.offset ? Math.max(Number(req.query.offset) || 0, 0) : 0,
-      status: req.query.status || 'all',
-      sortBy: req.query.sortBy || 'created_at',
-      sortDir: req.query.sortDir || 'desc',
-    };
-    let rows = await clipRenderOps.getByUser(req.user.id, opts);
-    // Reconcile any 'rendering' rows against disk in case we missed an update.
-    const reconciled = await Promise.all(rows.map(reconcileRenderRow));
-    // Also surface whether the file is currently on disk (downloadable).
-    const enriched = reconciled.map(r => {
-      let onDisk = false;
-      try { onDisk = fs.existsSync(path.join(CLIPS_DIR, r.filename)); } catch (e) {}
-      return {
-        id: r.id,
-        analysisId: r.analysis_id,
-        momentIndex: r.moment_index,
-        filename: r.filename,
-        momentTitle: r.moment_title,
-        videoTitle: r.video_title,
-        sourceUrl: r.source_url,
-        status: r.status,
-        progress: r.progress_message,
-        error: r.error_message,
-        fileSize: Number(r.file_size || 0),
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        readyAt: r.ready_at,
-        onDisk
-      };
-    });
-    res.json({ clips: enriched });
-  } catch (err) {
-    console.error('GET /api/clips error:', err);
-    res.status(500).json({ error: err.message, clips: [] });
-  }
-});
-
-router.get('/api/clips/storage', requireAuth, async (req, res) => {
-  try {
-    const s = await clipRenderOps.totalStorageBytes(req.user.id);
-    res.json({ totalBytes: s.total, count: s.count });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/api/clips/:id/delete', requireAuth, async (req, res) => {
-  try {
-    const row = await clipRenderOps.getById(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Clip not found' });
-    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    // Unlink the disk file (best-effort).
-    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename)); } catch (e) {}
-    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.progress')); } catch (e) {}
-    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.error')); } catch (e) {}
-    try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.encoding.mp4')); } catch (e) {}
-    const updated = await clipRenderOps.softDelete(req.params.id, req.user.id);
-    res.json({ success: true, clip: updated });
-  } catch (err) {
-    console.error('Delete clip error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---- Drive/Dropbox upload helpers ----
-
-// Refresh a Google access token when expired. Returns updated row from
-// connected_accounts (or original if refresh failed).
-async function refreshGoogleAccessToken(acct) {
-  try {
-    const now = Date.now();
-    const exp = acct.token_expires_at ? new Date(acct.token_expires_at).getTime() : 0;
-    if (exp - now > 60_000) return acct; // still valid
-    if (!acct.refresh_token) return acct;
-    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || '';
-    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET || '';
-    if (!clientId || !clientSecret) return acct;
-    const params = new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: 'refresh_token',
-      refresh_token: acct.refresh_token
-    });
-    const r = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
-    });
-    const data = await r.json();
-    if (!data.access_token) { console.error('Google token refresh failed:', data); return acct; }
-    const newExpiresAt = new Date(Date.now() + (data.expires_in || 3600) * 1000);
-    const updated = await connectedAccountOps.update(acct.id, {
-      accessToken: data.access_token,
-      tokenExpiresAt: newExpiresAt
-    });
-    return updated || { ...acct, access_token: data.access_token, token_expires_at: newExpiresAt };
-  } catch (e) {
-    console.error('refreshGoogleAccessToken error:', e.message);
-    return acct;
-  }
-}
-
-// Multipart upload to Drive. Returns { ok, fileId, link, error }.
-async function uploadToDrive(accessToken, localPath, displayName) {
-  try {
-    const fileBytes = fs.readFileSync(localPath);
-    const boundary = '-------SPLICORA' + Date.now();
-    const metadata = JSON.stringify({ name: displayName, mimeType: 'video/mp4' });
-    const head = Buffer.from(
-      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
-      `--${boundary}\r\nContent-Type: video/mp4\r\n\r\n`
-    );
-    const tail = Buffer.from(`\r\n--${boundary}--`);
-    const body = Buffer.concat([head, fileBytes, tail]);
-    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + accessToken,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
-        'Content-Length': String(body.length)
-      },
-      body
-    });
-    const data = await r.json();
-    if (!r.ok || !data.id) return { ok: false, error: data.error?.message || ('HTTP ' + r.status) };
-    return { ok: true, fileId: data.id, link: data.webViewLink || ('https://drive.google.com/file/d/' + data.id + '/view'), name: data.name };
-  } catch (e) {
-    return { ok: false, error: e.message || String(e) };
-  }
-}
-
-router.post('/api/clips/:id/send-to-drive', requireAuth, async (req, res) => {
-  try {
-    const row = await clipRenderOps.getById(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Clip not found' });
-    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const full = path.join(CLIPS_DIR, row.filename);
-    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Drive.' });
-    const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'googledrive');
-    if (!accounts || accounts.length === 0) {
-      return res.status(412).json({ error: 'Google Drive not connected.', connectUrl: '/auth/googledrive/connect?redirect=/shorts/clips' });
-    }
-    const acct = await refreshGoogleAccessToken(accounts[0]);
-    if (!acct.access_token) return res.status(401).json({ error: 'Drive access token unavailable. Please reconnect Drive.' });
-    const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
-    const result = await uploadToDrive(acct.access_token, full, displayName);
-    if (!result.ok) return res.status(502).json({ error: result.error || 'Drive upload failed' });
-    res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
-  } catch (err) {
-    console.error('send-to-drive error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-async function refreshDropboxAccessToken(acct) {
-  try {
-    const now = Date.now();
-    const exp = acct.token_expires_at ? new Date(acct.token_expires_at).getTime() : 0;
-    if (exp - now > 60_000) return acct;
-    if (!acct.refresh_token) return acct;
-    const clientId = process.env.DROPBOX_APP_KEY || '';
-    const clientSecret = process.env.DROPBOX_APP_SECRET || '';
-    if (!clientId || !clientSecret) return acct;
-    const params = new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: acct.refresh_token,
-      client_id: clientId,
-      client_secret: clientSecret
-    });
-    const r = await fetch('https://api.dropboxapi.com/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
-    });
-    const data = await r.json();
-    if (!data.access_token) { console.error('Dropbox token refresh failed:', data); return acct; }
-    const newExpiresAt = data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null;
-    const updated = await connectedAccountOps.update(acct.id, {
-      accessToken: data.access_token,
-      tokenExpiresAt: newExpiresAt
-    });
-    return updated || { ...acct, access_token: data.access_token, token_expires_at: newExpiresAt };
-  } catch (e) {
-    console.error('refreshDropboxAccessToken error:', e.message);
-    return acct;
-  }
-}
-
-async function uploadToDropbox(accessToken, localPath, displayName) {
-  try {
-    const fileBytes = fs.readFileSync(localPath);
-    const args = { path: '/Splicora/' + displayName, mode: 'add', autorename: true, mute: false };
-    const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + accessToken,
-        'Dropbox-API-Arg': JSON.stringify(args),
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': String(fileBytes.length)
-      },
-      body: fileBytes
-    });
-    const data = await r.json();
-    if (!r.ok || !data.id) return { ok: false, error: data.error_summary || data.error?.['.tag'] || ('HTTP ' + r.status) };
-    // Create a shareable link (best-effort).
-    let link = null;
-    try {
-      const sr = await fetch('https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: data.path_display || data.path_lower, settings: { requested_visibility: 'public' } })
-      });
-      const sd = await sr.json();
-      link = sd.url || null;
-      if (!link && sd.error_summary && sd.error_summary.indexOf('shared_link_already_exists') >= 0) {
-        // Fetch the existing link.
-        const lr = await fetch('https://api.dropboxapi.com/2/sharing/list_shared_links', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: data.path_display || data.path_lower })
-        });
-        const ld = await lr.json();
-        link = (ld.links && ld.links[0] && ld.links[0].url) || null;
-      }
-    } catch (e) { console.error('Dropbox share link error:', e.message); }
-    return { ok: true, fileId: data.id, link, name: data.name };
-  } catch (e) {
-    return { ok: false, error: e.message || String(e) };
-  }
-}
-
-router.post('/api/clips/:id/send-to-dropbox', requireAuth, async (req, res) => {
-  try {
-    const row = await clipRenderOps.getById(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Clip not found' });
-    if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const full = path.join(CLIPS_DIR, row.filename);
-    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Dropbox.' });
-    const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'dropbox');
-    if (!accounts || accounts.length === 0) {
-      return res.status(412).json({ error: 'Dropbox not connected.', connectUrl: '/auth/dropbox/connect?redirect=/shorts/clips' });
-    }
-    const acct = await refreshDropboxAccessToken(accounts[0]);
-    if (!acct.access_token) return res.status(401).json({ error: 'Dropbox access token unavailable. Please reconnect Dropbox.' });
-    const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
-    const result = await uploadToDropbox(acct.access_token, full, displayName);
-    if (!result.ok) return res.status(502).json({ error: result.error || 'Dropbox upload failed' });
-    res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
-  } catch (err) {
-    console.error('send-to-dropbox error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ---- My Clips page ----
 router.get('/clips', requireAuth, async (req, res) => {
