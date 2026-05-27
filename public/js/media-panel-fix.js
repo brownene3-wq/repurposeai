@@ -492,6 +492,19 @@
     clip.parentNode.insertBefore(right, clip.nextSibling);
     makeClipInteractive(right);
 
+    // Task #136 — When the razored clip is part of an auto-pair, the
+    // RIGHT halves of every paired clip need to form a new pair so
+    // they continue to behave as one unit. assignRightPair (passed via
+    // options) lets the recursive caller stamp the same new pair id
+    // onto each right half. If the leader has a linkPair and the caller
+    // didn't specify one, we keep things simple by clearing linkPair on
+    // the right half — the leader's left half + the partner's left
+    // half stay paired under the original id, the rights become free.
+    if (options.assignRightPair){
+      right.dataset.linkPair = options.assignRightPair;
+      right.classList.add('clip-link-paired');
+    }
+
     updateTimelineInfo();
 
     // Silent recursive call from the linked-split block below: skip the
@@ -522,6 +535,28 @@
         // guard would reject those anyway).
         if (cutTimelinePx > cl + 6 && cutTimelinePx < cl + cw - 6){
           if (razorSplit(c, cutTimelinePx - cl, { silent: true })) linkedSplitCount++;
+        }
+      });
+    }
+
+    // Task #136 — Always also split linkPair partners (auto-extract
+    // pairing), regardless of Link Tracks state. The right halves of
+    // ALL paired clips share a new pair id so they stay grouped.
+    var pairPartners = findLinkPairPartners(clip);
+    if (pairPartners.length){
+      var cutPx2 = left + cutXInClip;
+      var newPair = 'pair_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+      // The leader's right half joins the new pair too.
+      right.dataset.linkPair = newPair;
+      right.classList.add('clip-link-paired');
+      pairPartners.forEach(function(p){
+        var pl = parseFloat(p.style.left)  || 0;
+        var pw = parseFloat(p.style.width) || 0;
+        if (cutPx2 > pl + 6 && cutPx2 < pl + pw - 6){
+          // Recursive silent split + stamp newPair on the partner's right half.
+          if (razorSplit(p, cutPx2 - pl, { silent: true, assignRightPair: newPair })){
+            linkedSplitCount++;
+          }
         }
       });
     }
@@ -588,13 +623,15 @@
     // types fall through with an empty list (menu hidden).
     var items = [];
     if ((clip.dataset.clipType || '') === 'vid' && clip.dataset.mediaUrl){
+      // Task #136 — Label flips to "Unlink Audio" when the clip is part
+      // of an auto-extract pair, since the handler now BREAKS the link
+      // instead of extracting from scratch. Falls back to the legacy
+      // "Extract Audio" label for unpaired clips.
+      var hasPair = !!clip.dataset.linkPair;
       items.push({
-        icon: '🎵',
-        label: 'Extract Audio',
+        icon: hasPair ? '🔓' : '🎵',
+        label: hasPair ? 'Unlink Audio' : 'Extract Audio',
         run: function(){
-          // The action operates on the SELECTED V1 clip via getActiveClip,
-          // and the contextmenu handler above already marked _clipCtxTarget
-          // selected — so calling the existing handler is a drop-in.
           if (typeof window.clipActionExtractAudio === 'function'){
             window.clipActionExtractAudio();
           } else if (typeof clipActionExtractAudio === 'function'){
@@ -755,6 +792,19 @@
         });
         group = expanded;
       }
+      // Task #136 — Always expand with linkPair partners (auto-extract
+      // pairing). Runs even when Link Tracks is OFF so the auto-paired
+      // V1+A1 from a single upload move as one unit until the user
+      // explicitly clicks Extract Audio to break the pair.
+      (function(){
+        var pairExp = group.slice();
+        group.forEach(function(g){
+          findLinkPairPartners(g).forEach(function(p){
+            if (pairExp.indexOf(p) === -1) pairExp.push(p);
+          });
+        });
+        group = pairExp;
+      })();
 
       var startX = e.clientX;
       // Snapshot each group-member's starting position so we can restore
@@ -1158,9 +1208,20 @@
       // line up against this clip's matching edge so we can apply the
       // same px delta to them as the leader moves. Left-handle matches
       // by start position; right-handle matches by end position.
+      // Task #136 — Always union in linkPair partners so auto-paired
+      // V1+A1 clips trim together regardless of Link Tracks state.
       var linkedState = (function(){
-        if (!_timelineState.linked) return [];
-        var sources = (side === 'l') ? findLinkedClips(clip) : findLinkedClipsByRight(clip);
+        var sources = [];
+        var seen = new Set();
+        function add(c){
+          if (c === clip || seen.has(c)) return;
+          seen.add(c); sources.push(c);
+        }
+        if (_timelineState.linked){
+          var edgeMatches = (side === 'l') ? findLinkedClips(clip) : findLinkedClipsByRight(clip);
+          edgeMatches.forEach(add);
+        }
+        findLinkPairPartners(clip).forEach(add);
         return sources.map(function(c){
           var t = c.dataset.clipType || '';
           return {
@@ -1612,7 +1673,90 @@
       _progAutoEnabledOnce = true;
       try { toggleProgramMonitor(); } catch(_){}
     }
+    // Task #136 — Auto-extract audio for new V1 video clips so the
+    // editor opens with the audio stream pre-detached + linked to its
+    // video parent. Skipped for audio/image clips and for clips that
+    // already carry a linkPair (draft restore re-runs).
+    if (mediaType === 'vid' && mediaUrl && mediaUrl.indexOf('blob:') !== 0){
+      if (!clip.dataset.linkPair){
+        try { autoExtractAudioPair(clip); } catch(_){}
+      }
+    }
   }
+
+  // Task #136 — Background audio auto-extract triggered by
+  // addClipToTimeline on every fresh V1 video. Calls /extract-audio,
+  // creates an A1 clip at the same timeline-x with matching width +
+  // sourceOffset + duration, tags both clips with a shared
+  // dataset.linkPair so subsequent drag/delete/trim/razor handlers
+  // treat them as one unit, and mutes the V1 source so playback
+  // doesn't double up. Silent on failure (e.g. no audio track in the
+  // source) — the V1 clip stays as-is.
+  function autoExtractAudioPair(v1Clip){
+    if (!v1Clip || v1Clip.dataset.clipType !== 'vid') return;
+    var url = v1Clip.dataset.mediaUrl || '';
+    if (!url || url.indexOf('blob:') === 0) return;
+    if (v1Clip.dataset.linkPair) return;
+    // Stamp a pending flag immediately so concurrent triggers don't
+    // race onto the same clip.
+    v1Clip.dataset.linkPairPending = '1';
+    fetch('/video-editor/extract-audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mediaUrl: url })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      delete v1Clip.dataset.linkPairPending;
+      if (!d || !d.success || !d.mediaUrl) return;            // silent skip
+      if (!v1Clip.isConnected) return;                         // user deleted it
+      if (v1Clip.dataset.linkPair) return;                     // already paired
+
+      var pairId = 'pair_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+      v1Clip.dataset.linkPair = pairId;
+      v1Clip.dataset.muted    = 'true';
+      v1Clip.classList.add('clip-link-paired');
+
+      var a1 = document.querySelector('.mt-track-audio');
+      if (!a1) return;
+
+      var leftPx  = parseFloat(v1Clip.style.left)  || 0;
+      var widthPx = parseFloat(v1Clip.style.width) || 0;
+      var dur     = parseFloat(v1Clip.dataset.duration) || 0;
+      var srcOff  = parseFloat(v1Clip.dataset.sourceOffset) || 0;
+
+      var audClip = document.createElement('div');
+      audClip.className = 'mt-clip mt-clip-audio clip-link-paired';
+      audClip.dataset.fileName       = '🎵 ' + (v1Clip.dataset.fileName || 'audio');
+      audClip.dataset.clipType       = 'aud';
+      audClip.dataset.mediaUrl       = d.mediaUrl;
+      audClip.dataset.serverFilename = d.filename;
+      audClip.dataset.duration       = String(dur);
+      audClip.dataset.sourceOffset   = String(srcOff);
+      audClip.dataset.linkPair       = pairId;
+      audClip.dataset.addedAt        = String(Date.now() * 1000 + (addClipToTimeline._seq = ((addClipToTimeline._seq || 0) + 1)));
+      audClip.style.zIndex     = String(100 + (addClipToTimeline._seq % 1000));
+      audClip.style.left       = leftPx + 'px';
+      audClip.style.width      = widthPx + 'px';
+      audClip.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+      audClip.style.color      = '#fff';
+      audClip.style.padding    = '4px 8px';
+      audClip.style.fontSize   = '10px';
+      audClip.style.overflow   = 'hidden';
+      audClip.style.textOverflow = 'ellipsis';
+      audClip.style.whiteSpace = 'nowrap';
+      audClip.style.userSelect = 'none';
+      audClip.textContent      = audClip.dataset.fileName;
+      a1.appendChild(audClip);
+
+      try { makeClipInteractive(audClip); } catch(_){}
+      try { attachFilmstripOrWaveform(audClip); } catch(_){}
+      updateTimelineInfo();
+      pushTimelineHistory();
+    }).catch(function(err){
+      delete v1Clip.dataset.linkPairPending;
+      console.warn('[auto-extract]', err);
+    });
+  }
+  try { window.autoExtractAudioPair = autoExtractAudioPair; } catch(_){}
 
   // Toolbar: Razor / Select (mutually exclusive) + Snap (independent boolean).
   function setActiveTool(tool){
@@ -1684,6 +1828,43 @@
     }
     return out;
   }
+
+  // Task #136 — Per-pair link semantics. When a video clip is uploaded
+  // we auto-extract its audio and tag both clips with the same
+  // dataset.linkPair value. The drag / delete / trim / razor handlers
+  // call findLinkPairPartners() to expand their target group with any
+  // clip sharing that pair id, so the auto-paired V1 + A1 always move
+  // together until the user explicitly breaks the pair via the
+  // Extract Audio button (which clears the linkPair attribute on both
+  // sides). Independent of the Link Tracks toggle — pairs work even
+  // when Link Tracks is OFF.
+  function findLinkPairPartners(clip){
+    if (!clip) return [];
+    var pair = clip.dataset.linkPair;
+    if (!pair) return [];
+    var out = [];
+    var nodes = document.querySelectorAll('[data-link-pair="' + pair + '"]');
+    for (var i = 0; i < nodes.length; i++){
+      if (nodes[i] !== clip) out.push(nodes[i]);
+    }
+    return out;
+  }
+  function unlinkClipPair(clip){
+    if (!clip) return 0;
+    var pair = clip.dataset.linkPair;
+    if (!pair) return 0;
+    var count = 0;
+    document.querySelectorAll('[data-link-pair="' + pair + '"]').forEach(function(c){
+      delete c.dataset.linkPair;
+      c.classList.remove('clip-link-paired');
+      count++;
+    });
+    return count;
+  }
+  try {
+    window.findLinkPairPartners = findLinkPairPartners;
+    window.unlinkClipPair = unlinkClipPair;
+  } catch(_){}
 
   // ── Timeline history (Undo / Redo) ─────────────────────────────
   // Full-snapshot history of all tracks' clips. Pushed after every
@@ -3179,15 +3360,22 @@
       // another track that starts at the same timeline-x as a selected
       // clip. This way deleting a V1 video also pulls its A1 audio (and
       // any T1 caption sitting under it).
+      // Task #136 — Always also remove linkPair partners (auto-extract
+      // pairing), regardless of Link Tracks state.
       var toRemove = Array.from(selected);
+      var seenDel = new Set(toRemove);
       if (_timelineState.linked){
-        var seen = new Set(toRemove);
         toRemove.slice().forEach(function(c){
           findLinkedClips(c).forEach(function(l){
-            if (!seen.has(l)){ seen.add(l); toRemove.push(l); }
+            if (!seenDel.has(l)){ seenDel.add(l); toRemove.push(l); }
           });
         });
       }
+      toRemove.slice().forEach(function(c){
+        findLinkPairPartners(c).forEach(function(p){
+          if (!seenDel.has(p)){ seenDel.add(p); toRemove.push(p); }
+        });
+      });
       var removedVideo = toRemove.some(function(c){ return c.classList.contains('mt-clip-video'); });
       toRemove.forEach(function(c){ c.remove(); });
       updateTimelineInfo();
@@ -5129,6 +5317,23 @@
       showToast('Extract Audio is for V1 video clips');
       return;
     }
+
+    // Task #136 — When the clip is part of an auto-extracted pair,
+    // Extract Audio means "break the link" so the user can edit the
+    // V1 and A1 segments independently. Falls through to the legacy
+    // extract path only when no linkPair exists (older project, or
+    // an unpaired clip that somehow ended up on the timeline).
+    if (clip.dataset.linkPair){
+      var pairId = clip.dataset.linkPair;
+      var partnerCount = findLinkPairPartners(clip).length;
+      unlinkClipPair(clip);
+      pushTimelineHistory();
+      showToast(partnerCount > 0
+        ? 'Audio unlinked from video — edit independently'
+        : 'Audio link cleared');
+      return;
+    }
+
     var mediaUrl = clip.dataset.mediaUrl || '';
     if (!mediaUrl){ showToast('Clip has no media URL'); return; }
 

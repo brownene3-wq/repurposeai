@@ -922,6 +922,12 @@ async function renderEditor(req, res) {
        are visually associated on the timeline (set by Link Audio in MIXING). */
     .mt-clip.audio-linked{box-shadow:inset 0 0 0 2px #22d3ee, 0 0 4px rgba(34,211,238,.4)}
     .mt-clip.audio-linked::before{content:'\ud83d\udd17';position:absolute;left:4px;top:2px;color:#22d3ee;font-size:9px;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.8)}
+    /* Task #136 \u2014 Auto-extract pair indicator. A small purple chain
+       glyph on the LEFT edge of every clip that's part of an active
+       linkPair. Click Extract Audio to break the pair. Distinct color
+       from .audio-linked (cyan) so a single A1 clip can be both
+       audio-grouped AND paired with V1 without overlapping visuals. */
+    .mt-clip.clip-link-paired::after{content:'\ud83d\udd17';position:absolute;right:4px;bottom:2px;color:#a78bfa;font-size:9px;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.8);z-index:5}
     /* Enhanced-audio marker — small \u2728 sparkle pinned to the top-left of
        V1 clips whose audio has been cleaned via AI \u2192 Enhance Audio.
        Uses ::before so it doesn't collide with the reverse badge (::after). */
