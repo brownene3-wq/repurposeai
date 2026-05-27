@@ -2590,7 +2590,17 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     const moment = moments[momentIdx];
     if (!moment || !moment.timeRange) return res.status(404).end();
 
-    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}.mp4`);
+    // Version-tag the cached preview filename. Bumped to v2 when the
+    // 'Math.max(1, endSec-startSec)' duration floor was removed —
+    // without this bump, the OLD 1-second cached MP4s on disk would
+    // still match _preview_<id>_m<idx>.mp4 and the cache-hit path
+    // would serve them forever (Railway's /tmp persists across some
+    // restarts, so the broken files don't auto-clear). The v2 suffix
+    // forces a regen, and the embedded ${durationTag} also
+    // invalidates if the GPT-extracted timeRange ever changes for an
+    // existing moment.
+    const durationTag = '_d' + Math.round((parseTimeRange(moment.timeRange).end - parseTimeRange(moment.timeRange).start) || 0) + 's';
+    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}_v2${durationTag}.mp4`);
 
     // Helper to stream the cached file with proper headers.
     const sendCached = () => {
