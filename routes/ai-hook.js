@@ -339,8 +339,11 @@ router.get('/', requireAuth, (req, res) => {
         }
       }
       /* Quick Import Bar mode buttons — theme-aware so light/dark both
-         render correctly. Active state uses the theme primary color
-         rather than a hardcoded purple. */
+         render correctly. All purple uses var(--primary) /
+         var(--primary-light) so the brand color stays consistent.
+         The light-mode inactive border override is scoped to
+         :not(.active) so the active state's var(--primary) border
+         applies in BOTH modes without losing the specificity battle. */
       .qib-mode-btn {
         padding: 10px 20px;
         background: var(--dark-2);
@@ -352,9 +355,9 @@ router.get('/', requireAuth, (req, res) => {
         font-size: 0.8rem;
         transition: background 0.2s, color 0.2s, border-color 0.2s;
       }
-      [data-theme="light"] .qib-mode-btn,
-      body.light .qib-mode-btn,
-      html.light .qib-mode-btn {
+      [data-theme="light"] .qib-mode-btn:not(.active),
+      body.light .qib-mode-btn:not(.active),
+      html.light .qib-mode-btn:not(.active) {
         border-color: rgba(0,0,0,0.08);
       }
       .qib-mode-btn:hover:not(.active) {
