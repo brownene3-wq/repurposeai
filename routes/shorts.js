@@ -7647,8 +7647,13 @@ ${paginationHtml}
           '<div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; position:relative; z-index:1;">' +
             '<div class="analyze-placeholder-spinner" style="margin-top:2px;"></div>' +
             '<div style="flex:1; min-width:0;">' +
-              '<div class="card-title" style="margin-bottom:4px;">Analyzing video</div>' +
-              '<div class="card-meta" style="font-size:11px; word-break:break-all; opacity:0.8;">' + _escHtmlAP(url) + '</div>' +
+              // Title slot — starts as a generic placeholder, gets
+              // overwritten by the real YouTube title once oEmbed
+              // returns. The original URL lives in the meta line below
+              // as a fallback that also gets cleared when the title
+              // lands.
+              '<div class="card-title analyze-placeholder-title" style="margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">Fetching video title…</div>' +
+              '<div class="card-meta analyze-placeholder-url" style="font-size:11px; word-break:break-all; opacity:0.65;">' + _escHtmlAP(url) + '</div>' +
             '</div>' +
             '<div class="analyze-placeholder-pct" style="font-size:13px; font-weight:700; color:#a78bfa; flex-shrink:0;">0%</div>' +
           '</div>' +
@@ -7683,7 +7688,47 @@ ${paginationHtml}
           try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { el.scrollIntoView(); }
         }
       });
+      // Async: pull the real YouTube title via the public oEmbed
+      // endpoint (no auth, CORS-allowed) and swap it into the card.
+      // If the fetch fails — network glitch, non-YouTube URL, or
+      // YouTube returns 401 — we silently fall back to keeping the
+      // URL visible so the card still tells the user *which* video
+      // is being analyzed.
+      _swapPlaceholderTitle(placeholderId, url);
       return placeholderId;
+    }
+    function _swapPlaceholderTitle(placeholderId, url) {
+      try {
+        var oembedUrl = 'https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url);
+        fetch(oembedUrl, { mode: 'cors', credentials: 'omit' })
+          .then(function(r) { return (r && r.ok) ? r.json() : null; })
+          .then(function(data) {
+            var card = document.getElementById(placeholderId);
+            if (!card) return;
+            var titleEl = card.querySelector('.analyze-placeholder-title');
+            var urlEl = card.querySelector('.analyze-placeholder-url');
+            if (data && data.title) {
+              if (titleEl) titleEl.textContent = data.title;
+              // Hide the URL fallback once the title is in — keeps the
+              // card visually clean and matches the final swapped-in
+              // analysis card layout.
+              if (urlEl) urlEl.style.display = 'none';
+            } else if (titleEl) {
+              // oEmbed returned no title — make the URL the headline.
+              titleEl.textContent = url;
+              if (urlEl) urlEl.style.display = 'none';
+            }
+          })
+          .catch(function() {
+            // Total fetch failure — keep the URL visible and clear
+            // the 'Fetching video title…' string so the card doesn't
+            // sit lying about loading forever.
+            var card = document.getElementById(placeholderId);
+            if (!card) return;
+            var titleEl = card.querySelector('.analyze-placeholder-title');
+            if (titleEl) titleEl.textContent = 'Analyzing video';
+          });
+      } catch (_) { /* swallow — placeholder stays in fallback state */ }
     }
     function updateAnalyzePlaceholder(placeholderId, pct, stage, etaSec) {
       var card = document.getElementById(placeholderId);
