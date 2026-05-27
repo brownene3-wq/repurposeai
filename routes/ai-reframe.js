@@ -1391,35 +1391,77 @@ router.get('/', requireAuth, (req, res) => {
         padding: 2rem;
         margin-bottom: 2rem;
       }
-      .input-tabs {
-        display: flex;
-        gap: 1rem;
-        margin-bottom: 2rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      /* Unified ingest panel — mirrors Smart Shorts' upload-section look
+         (dashed primary border, subtle primary tint). Holds both the URL
+         input and the file drag-and-drop zone on the same screen. */
+      .ingest-panel {
+        background: rgba(108, 58, 237, 0.05);
+        border: 2px dashed var(--primary);
+        border-radius: 12px;
+        padding: 1.75rem 1.75rem 1.5rem;
+        margin-bottom: 1.5rem;
       }
-      .input-tab {
-        padding: 0.75rem 1.5rem;
-        background: none;
-        border: none;
-        color: var(--text-muted);
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 0.95rem;
-        border-bottom: 2px solid transparent;
-        transition: all 0.3s;
+      .ingest-head {
+        text-align: center;
+        margin-bottom: 1rem;
       }
-      .input-tab.active {
-        color: var(--primary);
-        border-bottom-color: var(--primary);
-      }
-      .input-tab:hover {
+      .ingest-head h3 {
         color: var(--text);
+        margin: 0 0 .35rem;
+        font-size: 1.15rem;
+        font-weight: 700;
       }
-      .tab-content {
-        display: none;
+      .ingest-head p {
+        color: var(--text-muted);
+        margin: 0;
+        font-size: 0.85rem;
       }
-      .tab-content.active {
-        display: block;
+      .ingest-url {
+        width: 100%;
+        box-sizing: border-box;
+        background: var(--surface);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        color: var(--text);
+        font-size: 0.95rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      .ingest-url:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(108, 58, 237, 0.18);
+      }
+      .ingest-url::placeholder { color: var(--text-dim); }
+      .ingest-divider {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 1rem 0;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .ingest-divider::before,
+      .ingest-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      /* Nested drop zone — keep the original .upload-area look but soften the
+         dashed border so it doesn't fight with the parent panel's dashed
+         border, and use a slightly inset background. */
+      .ingest-drop {
+        background: rgba(0, 0, 0, 0.15);
+        border: 1px dashed rgba(108, 58, 237, 0.45);
+      }
+      .ingest-drop:hover,
+      .ingest-drop.dragover {
+        background: rgba(108, 58, 237, 0.08);
+        border-color: var(--primary);
       }
       .url-input {
         width: 100%;
@@ -1702,17 +1744,29 @@ ${pageStyles}
 
       <div class="input-section">
         <form id="reframeForm" enctype="multipart/form-data">
-          <div class="input-tabs">
-            <button type="button" class="input-tab active" data-tab="url">YouTube URL</button>
-            <button type="button" class="input-tab" data-tab="upload">Upload File</button>
-          </div>
-
-          <div id="urlTab" class="tab-content active">
-            <input type="text" class="url-input" id="youtubeUrl" name="youtubeUrl" placeholder="Paste YouTube video URL here...">
-          </div>
-
-          <div id="uploadTab" class="tab-content">
-            <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+          <!-- Unified ingest panel (mirrors the Smart Shorts upload-section
+               look: dashed-purple bordered container, subtle purple tint).
+               Both ingest methods coexist — paste a URL or drop a file. The
+               backend still distinguishes them via the inputMode form field;
+               the JS submit handler auto-picks which side the user provided
+               (file wins if both are filled). -->
+          <div class="ingest-panel">
+            <div class="ingest-head">
+              <h3>Drop a link</h3>
+              <p>Paste a YouTube URL or drop a video file below</p>
+            </div>
+            <input
+              type="url"
+              id="youtubeUrl"
+              name="youtubeUrl"
+              class="ingest-url"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="https://youtube.com/watch?v=..."
+            >
+            <div class="ingest-divider"><span>or</span></div>
+            <div class="upload-area ingest-drop" id="uploadArea" onclick="document.getElementById('fileInput').click()">
               <div class="upload-icon"><img src="/images/section-icons/A-61.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
               <div class="upload-text">Drop your video file here</div>
               <div class="upload-subtext">Or click to select • MP4, MOV, WebM supported</div>
@@ -1889,16 +1943,9 @@ ${pageStyles}
       errorDiv.style.display = 'none';
     }
 
-    // Tab switching
-    document.querySelectorAll('.input-tab').forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        const tabName = e.target.dataset.tab;
-        document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        e.target.classList.add('active');
-        document.getElementById(tabName + 'Tab').classList.add('active');
-      });
-    });
+    // (Tab-switching code removed — both inputs now coexist in a single
+    // unified panel. The submit handler auto-detects which ingest method
+    // the user filled in.)
 
     // File upload
     const fileInput = document.getElementById('fileInput');
@@ -1954,24 +2001,29 @@ ${pageStyles}
       });
     });
 
-    // Track which input tab is active
-    var activeInputTab = 'url';
-    document.querySelectorAll('.input-tab').forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        activeInputTab = e.target.dataset.tab;
-        checkInputs(); // Re-evaluate button state when tab changes
-      });
-    });
+    // Auto-pick which ingest method the user filled in. A file wins if both
+    // are present (uploaded videos are more reliable than yt-dlp downloads).
+    // The activeInputTab variable is kept for compatibility with the existing
+    // grid-flow helpers; it is no longer driven by a UI tab.
+    function currentInputMode() {
+      if (fileInput.files.length > 0) return 'upload';
+      if (youtubeUrl.value.trim().length > 0) return 'url';
+      return 'upload'; // default — server validates anyway
+    }
+    var activeInputTab = currentInputMode();
 
     document.querySelectorAll('input[name="aspect"]').forEach(checkbox => {
       checkbox.addEventListener('change', checkInputs);
     });
 
     function checkInputs() {
-      const hasUrl = activeInputTab === 'url' && youtubeUrl.value.trim().length > 0;
-      const hasFile = activeInputTab === 'upload' && fileInput.files.length > 0;
+      // Both inputs are always visible now — enable the submit button as
+      // long as EITHER one is filled in. Re-derive activeInputTab too so
+      // the form-submit handler downstream picks the right path.
+      const hasUrl  = youtubeUrl.value.trim().length > 0;
+      const hasFile = fileInput.files.length > 0;
+      activeInputTab = currentInputMode();
       const hasAspectRatio = document.querySelectorAll('input[name="aspect"]:checked').length > 0;
-
       reframeBtn.disabled = !(hasUrl || hasFile) || !hasAspectRatio;
     }
 
@@ -2154,11 +2206,12 @@ ${pageStyles}
 
     function getCurrentInput() {
       // Returns { kind: 'url'|'file', value, valid }
-      if (activeInputTab === 'url') {
-        const v = youtubeUrl.value.trim();
-        return { kind: 'url', value: v, valid: v.length > 0 };
+      // Both inputs are visible at once — pick file if present, otherwise URL.
+      if (fileInput.files.length > 0) {
+        return { kind: 'file', value: fileInput.files[0], valid: true };
       }
-      return { kind: 'file', value: fileInput.files[0], valid: fileInput.files.length > 0 };
+      const v = youtubeUrl.value.trim();
+      return { kind: 'url', value: v, valid: v.length > 0 };
     }
 
     // Style preset cards
@@ -2297,11 +2350,14 @@ ${pageStyles}
       e.preventDefault();
       clearError();
 
-      var useUrl = activeInputTab === 'url' && youtubeUrl.value.trim().length > 0;
-      var useFile = activeInputTab === 'upload' && fileInput.files.length > 0;
+      // File wins if both are filled (uploads are more reliable than yt-dlp);
+      // otherwise fall back to URL.
+      var useFile = fileInput.files.length > 0;
+      var useUrl  = !useFile && youtubeUrl.value.trim().length > 0;
+      activeInputTab = useFile ? 'upload' : 'url';
 
       if (!useUrl && !useFile) {
-        showError(activeInputTab === 'url' ? 'Please paste a YouTube URL' : 'Please upload a video file');
+        showError('Paste a YouTube URL or drop a video file to get started.');
         return;
       }
 
