@@ -6544,6 +6544,15 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
        suppressed. Re-enabled when _updateMomentLoader clears the
        disabled state. */
     .moment-preview-shell .moment-control-disabled{opacity:0.35;pointer-events:none;}
+    /* Analyze placeholder card — shown immediately when the user
+       confirms the disclaimer, before the SSE pipeline finishes.
+       Pointer-events disabled so the user can't open it mid-build.
+       Subtle purple ring + glow signals "in flight". */
+    .card.analyze-placeholder{position:relative;cursor:default;pointer-events:none;border:1px solid rgba(108,58,237,0.30) !important;box-shadow:0 0 0 1px rgba(108,58,237,0.18), 0 6px 22px rgba(108,58,237,0.12) !important;background:linear-gradient(180deg,rgba(108,58,237,0.04),rgba(236,72,153,0.02)) !important;}
+    .card.analyze-placeholder::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent 0,transparent 12px,rgba(108,58,237,0.04) 12px,rgba(108,58,237,0.04) 24px);border-radius:inherit;pointer-events:none;}
+    .analyze-placeholder-spinner{width:18px;height:18px;border:2.5px solid rgba(108,58,237,0.22);border-top-color:#a78bfa;border-radius:50%;flex-shrink:0;animation:momentPreviewSpin 0.9s linear infinite;}
+    .analyze-placeholder-bar{width:100%;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;}
+    .analyze-placeholder-fill{height:100%;background:linear-gradient(90deg,#6C3AED,#EC4899);border-radius:3px;transition:width 0.5s ease;}
     /* Floating-button layout on /shorts.
        The page renders two fixed top-right widgets: the global theme
        toggle (.theme-toggle, 36px round, top:1.2rem right:1.5rem) and
@@ -7599,11 +7608,176 @@ ${paginationHtml}
       }
     }
 
+    // ── Analyze placeholder card ─────────────────────────────────────
+    // After the user accepts the disclaimer, we drop a non-interactive
+    // placeholder card into the analyses grid and scroll to it. The
+    // SSE pipeline then drives a percentage + stage label + ETA on
+    // that placeholder. On 'completed' the placeholder is swapped for
+    // the real analysis card (fetched from /shorts/api/:id) without a
+    // full page reload, preserving any client-side state.
+    function _escHtmlAP(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function insertAnalyzePlaceholder(url) {
+      var container = document.getElementById('analysesContainer');
+      if (!container) return null;
+      var placeholderId = 'analyze-placeholder-' + Date.now();
+      var html =
+        '<div class="card analyze-placeholder" id="' + placeholderId + '" aria-busy="true" aria-disabled="true">' +
+          '<div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; position:relative; z-index:1;">' +
+            '<div class="analyze-placeholder-spinner" style="margin-top:2px;"></div>' +
+            '<div style="flex:1; min-width:0;">' +
+              '<div class="card-title" style="margin-bottom:4px;">Analyzing video</div>' +
+              '<div class="card-meta" style="font-size:11px; word-break:break-all; opacity:0.8;">' + _escHtmlAP(url) + '</div>' +
+            '</div>' +
+            '<div class="analyze-placeholder-pct" style="font-size:13px; font-weight:700; color:#a78bfa; flex-shrink:0;">0%</div>' +
+          '</div>' +
+          '<div class="analyze-placeholder-bar" style="margin-bottom:8px; position:relative; z-index:1;">' +
+            '<div class="analyze-placeholder-fill" style="width:5%;"></div>' +
+          '</div>' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:var(--text-muted); position:relative; z-index:1;">' +
+            '<span class="analyze-placeholder-stage">Starting…</span>' +
+            '<span class="analyze-placeholder-eta">Calculating ETA…</span>' +
+          '</div>' +
+        '</div>';
+      // Two layouts to handle: empty-state (no analyses yet) vs an
+      // existing cards-grid. In the first case we replace the
+      // empty-state with a brand-new grid; otherwise prepend to grid.
+      var emptyState = container.querySelector('.empty-state');
+      if (emptyState) {
+        container.innerHTML = '<div class="cards-grid">' + html + '</div>';
+      } else {
+        var grid = container.querySelector('.cards-grid');
+        if (grid) {
+          grid.insertAdjacentHTML('afterbegin', html);
+        } else {
+          container.insertAdjacentHTML('afterbegin', '<div class="cards-grid">' + html + '</div>');
+        }
+      }
+      // Smooth scroll the placeholder into view (centered when
+      // possible) so the user immediately sees that work is queued.
+      // Defer with rAF so the layout has settled.
+      requestAnimationFrame(function() {
+        var el = document.getElementById(placeholderId);
+        if (el && typeof el.scrollIntoView === 'function') {
+          try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { el.scrollIntoView(); }
+        }
+      });
+      return placeholderId;
+    }
+    function updateAnalyzePlaceholder(placeholderId, pct, stage, etaSec) {
+      var card = document.getElementById(placeholderId);
+      if (!card) return;
+      var fill = card.querySelector('.analyze-placeholder-fill');
+      var pctEl = card.querySelector('.analyze-placeholder-pct');
+      var stageEl = card.querySelector('.analyze-placeholder-stage');
+      var etaEl = card.querySelector('.analyze-placeholder-eta');
+      if (typeof pct === 'number') {
+        var clamped = Math.max(5, Math.min(100, pct));
+        if (fill) fill.style.width = clamped + '%';
+        if (pctEl) pctEl.textContent = Math.round(clamped) + '%';
+      }
+      if (stageEl && stage) stageEl.textContent = stage;
+      if (etaEl) {
+        if (etaSec == null) etaEl.textContent = '';
+        else if (etaSec <= 0) etaEl.textContent = 'Almost done…';
+        else if (etaSec < 60) etaEl.textContent = '~' + Math.round(etaSec) + 's remaining';
+        else etaEl.textContent = '~' + Math.round(etaSec / 60) + 'm remaining';
+      }
+    }
+    // Map SSE status strings to {pct, etaSec}. Numbers are rough
+    // averages; the placeholder's elapsed-time tracker tightens them.
+    function statusToProgress(status) {
+      switch (status) {
+        case 'fetching_transcript': return { pct: 20, etaSec: 50 };
+        case 'fetching_title':      return { pct: 35, etaSec: 35 };
+        case 'creating_record':     return { pct: 45, etaSec: 25 };
+        case 'analyzing':           return { pct: 70, etaSec: 12 };
+        case 'completed':           return { pct: 100, etaSec: 0 };
+        default:                    return { pct: null, etaSec: null };
+      }
+    }
+    // Pull the real analysis JSON and replace the placeholder with
+    // the same markup the server-side template would have rendered
+    // for this card. Kept in lockstep with the renderShortsPage card
+    // template so swap-in is visually seamless.
+    async function replaceAnalyzePlaceholder(placeholderId, analysisId) {
+      try {
+        var resp = await fetch('/shorts/api/' + encodeURIComponent(analysisId));
+        if (!resp.ok) throw new Error('Failed to load new analysis');
+        var data = await resp.json();
+        var moments = Array.isArray(data.moments) ? data.moments : [];
+        var ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+        var vidMatch = (data.video_url || '').match(ytRegex);
+        var vidId = vidMatch ? vidMatch[1] : null;
+        var createdAt = data.created_at ? new Date(data.created_at) : new Date();
+        var dateStr = createdAt.toLocaleDateString();
+        var html =
+          '<div class="card" onclick="viewAnalysis(\'' + data.id + '\')" style="position:relative;">' +
+            '<button onclick="event.stopPropagation(); event.preventDefault(); deleteAnalysis(\'' + data.id + '\', this); return false;" title="Delete" ' +
+              'style="position:absolute; top:10px; right:10px; background:rgba(239,68,68,0.9); border:2px solid rgba(255,255,255,0.3); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; z-index:10; transition:all 0.2s; font-weight:bold;" ' +
+              'onmouseover="this.style.background=\'#ef4444\'; this.style.transform=\'scale(1.15)\'" ' +
+              'onmouseout="this.style.background=\'rgba(239,68,68,0.9)\'; this.style.transform=\'scale(1)\'">&times;</button>' +
+            (vidId ? '<img src="https://img.youtube.com/vi/' + vidId + '/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">' : '') +
+            '<div class="card-header">' +
+              '<div class="card-title">' + _escHtmlAP(data.video_title || 'YouTube Video') + '</div>' +
+              '<div class="card-meta">' + _escHtmlAP(dateStr) + '</div>' +
+            '</div>' +
+            '<div class="card-meta" style="margin-bottom: 12px;">' + moments.length + ' moments</div>' +
+            '<div class="moments-list">' +
+              moments.slice(0, 3).map(function(m) {
+                return '<div class="moment-item">' +
+                  '<div class="moment-item-title">' + _escHtmlAP(m.title || 'Moment') + '</div>' +
+                  '<div class="virality-score">' + (parseInt(m.viralityScore, 10) || 0) + '% viral</div>' +
+                '</div>';
+              }).join('') +
+              (moments.length > 3 ? '<div style="padding: 8px 0; color: #666; font-size: 12px;">+' + (moments.length - 3) + ' more</div>' : '') +
+            '</div>' +
+          '</div>';
+        var placeholder = document.getElementById(placeholderId);
+        if (placeholder) placeholder.outerHTML = html;
+      } catch (err) {
+        console.error('replaceAnalyzePlaceholder failed:', err);
+        // Fallback: full reload to recover into a known-good UI.
+        setTimeout(function() { location.reload(); }, 1200);
+      }
+    }
+    function markAnalyzePlaceholderError(placeholderId, message) {
+      var card = document.getElementById(placeholderId);
+      if (!card) return;
+      // Stop the spinner + paint a red error state, keep card on the
+      // page so the user can see what failed. They can close it later.
+      var spinner = card.querySelector('.analyze-placeholder-spinner');
+      if (spinner) spinner.style.display = 'none';
+      var fill = card.querySelector('.analyze-placeholder-fill');
+      if (fill) {
+        fill.style.background = '#ef4444';
+        fill.style.width = '100%';
+      }
+      var pctEl = card.querySelector('.analyze-placeholder-pct');
+      if (pctEl) { pctEl.textContent = 'Error'; pctEl.style.color = '#ef4444'; }
+      var stageEl = card.querySelector('.analyze-placeholder-stage');
+      if (stageEl) { stageEl.textContent = message || 'Analysis failed'; stageEl.style.color = '#fca5a5'; }
+      var etaEl = card.querySelector('.analyze-placeholder-eta');
+      if (etaEl) etaEl.textContent = '';
+      card.style.pointerEvents = 'auto';
+      card.style.cursor = 'default';
+    }
+
     async function _runAnalyze(url) {
       const btn = document.querySelector('.btn-primary');
       const btnText = document.getElementById('analyzeBtn');
       btn.disabled = true;
       btnText.innerHTML = '<span class="loading"></span> Analyzing...';
+
+      // Drop a placeholder card into the analyses grid immediately so
+      // the user has something to look at while the SSE pipeline runs.
+      // statusToProgress / updateAnalyzePlaceholder drive its percent
+      // and stage label as SSE messages arrive.
+      const placeholderId = insertAnalyzePlaceholder(url);
+      const analyzeStart = Date.now();
 
       try {
         const response = await fetch('/shorts/analyze', {
@@ -7647,12 +7821,34 @@ ${paginationHtml}
                 continue;
               }
               if (data.status === 'completed') {
+                updateAnalyzePlaceholder(placeholderId, 100, 'Analysis complete!', 0);
                 showToast('Analysis complete!');
-                setTimeout(() => location.reload(), 1500);
+                // Swap the placeholder for the real card. If we have
+                // analysisId from SSE, fetch it directly; otherwise
+                // fall back to a soft reload as a last resort.
+                if (data.analysisId) {
+                  await replaceAnalyzePlaceholder(placeholderId, data.analysisId);
+                } else {
+                  setTimeout(function() { location.reload(); }, 1200);
+                }
+                btn.disabled = false;
+                btnText.textContent = 'Analyze';
+                var urlInput = document.getElementById('videoUrl');
+                if (urlInput) urlInput.value = '';
               } else if (data.status === 'error') {
                 throw new Error(data.message || 'Analysis failed');
-              } else if (data.message) {
-                btnText.textContent = data.message;
+              } else if (data.status || data.message) {
+                // Drive the placeholder progress from SSE status. We
+                // also tighten ETA using elapsed time once we're past
+                // the first event.
+                var prog = statusToProgress(data.status);
+                var elapsed = (Date.now() - analyzeStart) / 1000;
+                var etaSec = (prog.etaSec != null)
+                  ? Math.max(0, prog.etaSec)
+                  : null;
+                var stageMsg = data.message || data.status || 'Working…';
+                updateAnalyzePlaceholder(placeholderId, prog.pct, stageMsg, etaSec);
+                btnText.textContent = data.message || 'Analyzing...';
               }
             }
           }
@@ -7663,6 +7859,7 @@ ${paginationHtml}
         btnText.textContent = 'Analyze';
       } catch (error) {
         showToast(error.message || 'Analysis failed');
+        markAnalyzePlaceholderError(placeholderId, error.message || 'Analysis failed');
         btn.disabled = false;
         btnText.textContent = 'Analyze';
       }
