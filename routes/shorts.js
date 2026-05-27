@@ -4342,8 +4342,13 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
     })();
 
   } catch (error) {
-    console.error('Error starting clip generation:', error);
-    res.status(500).json({ error: 'Failed to start clip generation' });
+    // Surface the actual error message so the client sees what
+    // really broke (DB lookup, body parse, brand kit fetch, etc.)
+    // instead of the generic placeholder. The full stack still
+    // goes to Railway logs via console.error.
+    console.error('Error starting clip generation:', error && error.stack || error);
+    var msg = (error && error.message) ? String(error.message).slice(0, 300) : String(error).slice(0, 300);
+    res.status(500).json({ error: 'Failed to start clip generation: ' + msg });
   }
 });
 
