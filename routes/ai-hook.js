@@ -338,6 +338,34 @@ router.get('/', requireAuth, (req, res) => {
           padding: 1.5rem;
         }
       }
+      /* Quick Import Bar mode buttons — theme-aware so light/dark both
+         render correctly. Active state uses the theme primary color
+         rather than a hardcoded purple. */
+      .qib-mode-btn {
+        padding: 10px 20px;
+        background: var(--dark-2);
+        color: var(--text-muted);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.8rem;
+        transition: background 0.2s, color 0.2s, border-color 0.2s;
+      }
+      [data-theme="light"] .qib-mode-btn,
+      body.light .qib-mode-btn,
+      html.light .qib-mode-btn {
+        border-color: rgba(0,0,0,0.08);
+      }
+      .qib-mode-btn:hover:not(.active) {
+        color: var(--text);
+        border-color: var(--primary-light);
+      }
+      .qib-mode-btn.active {
+        background: var(--primary);
+        color: #fff;
+        border-color: var(--primary);
+      }
     </style>
   `;
 
@@ -386,9 +414,9 @@ ${pageStyles}
       <!-- Quick Import Bar (input mode selector + active panel) -->
       <div style="background:var(--surface);border-radius:16px;padding:1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle)">
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:1.25rem">
-          <button type="button" id="modeUrlBtn" onclick="setInputMode('youtube')" style="padding:10px 20px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> URL Input</button>
-          <button type="button" id="modeUploadBtn" onclick="setInputMode('upload')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s"><img src="/images/section-icons/A-74.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Upload</button>
-          <button type="button" id="modeTextBtn" onclick="setInputMode('text')" style="padding:10px 20px;background:var(--dark-2);color:var(--text-muted);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;transition:all 0.2s"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text/Transcript</button>
+          <button type="button" id="modeUrlBtn" class="qib-mode-btn active" onclick="setInputMode('youtube')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> URL Input</button>
+          <button type="button" id="modeUploadBtn" class="qib-mode-btn" onclick="setInputMode('upload')"><img src="/images/section-icons/A-74.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Upload</button>
+          <button type="button" id="modeTextBtn" class="qib-mode-btn" onclick="setInputMode('text')"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text/Transcript</button>
         </div>
 
         <!-- URL Input panel -->
@@ -542,34 +570,23 @@ ${pageStyles}
       var uploadBtn = document.getElementById('modeUploadBtn');
       var textBtn = document.getElementById('modeTextBtn');
 
-      // Hide all panels
+      // Hide all panels and clear active state. Active styling lives in
+      // the .qib-mode-btn.active CSS rule, which uses theme variables so
+      // both light and dark mode render correctly.
       urlPanel.style.display = 'none';
       uploadPanel.style.display = 'none';
       textPanel.style.display = 'none';
+      [urlBtn, uploadBtn, textBtn].forEach(function(btn) { btn.classList.remove('active'); });
 
-      // Reset all buttons to inactive
-      [urlBtn, uploadBtn, textBtn].forEach(function(btn) {
-        btn.style.background = 'var(--dark-2)';
-        btn.style.color = 'var(--text-muted)';
-        btn.style.borderColor = 'rgba(255,255,255,0.1)';
-      });
-
-      // Show active panel and highlight active button
-      var activeBtn;
       if (mode === 'youtube') {
         urlPanel.style.display = 'block';
-        activeBtn = urlBtn;
+        urlBtn.classList.add('active');
       } else if (mode === 'upload') {
         uploadPanel.style.display = 'block';
-        activeBtn = uploadBtn;
+        uploadBtn.classList.add('active');
       } else if (mode === 'text') {
         textPanel.style.display = 'block';
-        activeBtn = textBtn;
-      }
-      if (activeBtn) {
-        activeBtn.style.background = 'var(--primary)';
-        activeBtn.style.color = '#fff';
-        activeBtn.style.borderColor = 'var(--primary)';
+        textBtn.classList.add('active');
       }
     }
 
@@ -639,7 +656,7 @@ ${pageStyles}
           }
         } else if (data.noKey) {
           voiceSelect.innerHTML = '<option value="">No ElevenLabs key connected</option>';
-          voiceHint.innerHTML = 'Connect your ElevenLabs API key in <a href="/brand-voice" style="color:#6C3AED;font-weight:600">Brand Voice</a> or <a href="/settings" style="color:#6C3AED;font-weight:600">Settings</a> to enable voice selection.';
+          voiceHint.innerHTML = 'Connect your ElevenLabs API key in <a href="/settings#apikeys" style="color:var(--primary);font-weight:600;text-decoration:underline">Settings</a> to enable voice selection.';
           voiceHint.style.display = 'block';
         } else {
           voiceSelect.innerHTML = '<option value="">No voices available</option>';
