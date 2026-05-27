@@ -27,7 +27,9 @@ const COSTS = {
 const CAPS = {
   free: 25,
   starter: 50,
-  pro: 100,
+  // TEMP — bumped 100 -> 500 on Albert's request for testing.
+  // Revert to 100 before going live.
+  pro: 500,
   teams: 500,
   // Legacy alias — kept only because old code referenced it.
   enterprise: 500

@@ -60,19 +60,163 @@ const YTDLP_COMMON_ARGS = [
 
 // Pass --cookies <path> to yt-dlp when YT_COOKIES_PATH is configured and
 // the file exists. This lets yt-dlp authenticate as a real YouTube user
-// and bypass the "Sign in to confirm you're not a bot" wall that hits
+// and bypass the "Sign in to confirm you\'re not a bot" wall that hits
 // every Railway datacenter IP. Same pattern used by /ai-thumbnail,
 // /ai-broll, and /video-editor.
+//
+// COOKIE POOL: YT_COOKIES_PATH can be either:
+//   (a) A single .txt file → classic single-cookie behavior (unchanged).
+//   (b) A directory of .txt files → pick a random one per request,
+//       blacklist any cookie that fails 3+ times in a row. This gives
+//       us YouTube-account rotation without hammering one account.
+//
+// Failure tracking lives in memory and resets on process restart — that\'s
+// intentional so a temporary YouTube outage doesn\'t permanently blacklist
+// otherwise-healthy cookies. Call markCookieFailed(path) from the download
+// chain when a request using that cookie fails so we can demote it.
+
+const _cookieFailures = new Map(); // path -> { count, lastFail }
+const COOKIE_BLACKLIST_THRESHOLD = 3;
+const COOKIE_BLACKLIST_WINDOW_MS = 30 * 60 * 1000; // 30 min
+
+function _listCookieFiles(dir) {
+  try {
+    return fs.readdirSync(dir)
+      .filter(f => f.toLowerCase().endsWith('.txt'))
+      .map(f => path.join(dir, f))
+      .filter(full => {
+        // Skip files blacklisted within the recent window.
+        const failure = _cookieFailures.get(full);
+        if (!failure) return true;
+        if (Date.now() - failure.lastFail > COOKIE_BLACKLIST_WINDOW_MS) {
+          _cookieFailures.delete(full);
+          return true;
+        }
+        return failure.count < COOKIE_BLACKLIST_THRESHOLD;
+      });
+  } catch (_) {
+    return [];
+  }
+}
+
+function _pickRandomCookie(dir) {
+  const candidates = _listCookieFiles(dir);
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+// Most callers want the args array. They can also use getYoutubeCookiesPath()
+// to get just the path string so they can pass it to markCookieFailed later.
+function getYoutubeCookiesPath() {
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg) return null;
+  try {
+    const stat = fs.statSync(cfg);
+    if (stat.isDirectory()) return _pickRandomCookie(cfg);
+    if (stat.isFile()) return cfg;
+  } catch (_) {}
+  return null;
+}
+
 function getYoutubeCookiesArgs() {
-  const p = process.env.YT_COOKIES_PATH;
-  if (p && fs.existsSync(p)) return ['--cookies', p];
+  const chosen = getYoutubeCookiesPath();
+  if (chosen) return ['--cookies', chosen];
   return [];
 }
 
+function markCookieFailed(cookiePath) {
+  if (!cookiePath) return;
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg || cookiePath === cfg) return; // never blacklist a single-file cookie
+  const existing = _cookieFailures.get(cookiePath) || { count: 0, lastFail: 0 };
+  existing.count += 1;
+  existing.lastFail = Date.now();
+  _cookieFailures.set(cookiePath, existing);
+  if (existing.count >= COOKIE_BLACKLIST_THRESHOLD) {
+    console.warn('[cookie-pool] blacklisting ' + path.basename(cookiePath) + ' after ' + existing.count + ' consecutive failures');
+  }
+}
+
+function getCookiePoolStats() {
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg) return { configured: false };
+  try {
+    if (fs.statSync(cfg).isFile()) return { configured: true, mode: 'single', failures: {} };
+  } catch (_) { return { configured: true, mode: 'broken', failures: {} }; }
+  const all = (() => { try { return fs.readdirSync(cfg).filter(f => f.toLowerCase().endsWith('.txt')); } catch (_) { return []; } })();
+  const failures = {};
+  for (const [k, v] of _cookieFailures.entries()) {
+    failures[path.basename(k)] = v.count;
+  }
+  return { configured: true, mode: 'pool', total: all.length, available: _listCookieFiles(cfg).length, failures };
+}
+
+// PROXY POOL: YT_PROXY_URL can be a single proxy URL OR a comma-separated
+// list of URLs. With a list we pick a random one per request, blacklist
+// any that fail 3+ times in a row inside a 30-minute window so we don't
+// keep hitting a dead/banned IP.
+//
+// Each IPRoyal ISP proxy is one sticky IP — buying 5 in different cities
+// + rotating between them is what brings real-world block resistance from
+// ~85% (single proxy) to ~95-98% (pool). Pair this with the cookie pool
+// (one cookie per proxy) for the best results.
+const _proxyFailures = new Map();
+const PROXY_BLACKLIST_THRESHOLD = 3;
+const PROXY_BLACKLIST_WINDOW_MS = 30 * 60 * 1000;
+
+function _listProxies() {
+  const cfg = process.env.YT_PROXY_URL;
+  if (!cfg) return [];
+  return cfg.split(',').map(s => s.trim()).filter(Boolean).filter(url => {
+    const failure = _proxyFailures.get(url);
+    if (!failure) return true;
+    if (Date.now() - failure.lastFail > PROXY_BLACKLIST_WINDOW_MS) {
+      _proxyFailures.delete(url);
+      return true;
+    }
+    return failure.count < PROXY_BLACKLIST_THRESHOLD;
+  });
+}
+
+function getYoutubeProxyUrl() {
+  const pool = _listProxies();
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function getYoutubeProxyArgs() {
-  const p = process.env.YT_PROXY_URL;
-  if (p) return ['--proxy', p];
+  const chosen = getYoutubeProxyUrl();
+  if (chosen) return ['--proxy', chosen];
   return [];
+}
+
+function markProxyFailed(proxyUrl) {
+  if (!proxyUrl) return;
+  const cfg = process.env.YT_PROXY_URL || '';
+  if (!cfg.includes(',')) return; // single-proxy mode: don't blacklist the only one we have
+  const existing = _proxyFailures.get(proxyUrl) || { count: 0, lastFail: 0 };
+  existing.count += 1;
+  existing.lastFail = Date.now();
+  _proxyFailures.set(proxyUrl, existing);
+  if (existing.count >= PROXY_BLACKLIST_THRESHOLD) {
+    try {
+      const masked = proxyUrl.replace(/:\/\/([^@]*@)/, '://***@');
+      console.warn('[proxy-pool] blacklisting ' + masked + ' after ' + existing.count + ' failures');
+    } catch (_) {}
+  }
+}
+
+function getProxyPoolStats() {
+  const cfg = process.env.YT_PROXY_URL;
+  if (!cfg) return { configured: false };
+  const all = cfg.split(',').map(s => s.trim()).filter(Boolean);
+  const failures = {};
+  for (const [k, v] of _proxyFailures.entries()) {
+    // Mask credentials in stats output
+    const masked = k.replace(/:\/\/([^@]*@)/, '://***@');
+    failures[masked] = v.count;
+  }
+  return { configured: true, total: all.length, available: _listProxies().length, failures };
 }
 
 // Clips directory
@@ -312,6 +456,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     const haveCookies = !!getYoutubeCookiesArgs().length;
+    const apifyConfigured = !!process.env.APIFY_API_TOKEN;
     // Surface the per-downloader failure reasons so the user (and the
     // operator reading Railway logs) sees which specific path broke.
     const reasonLines = [];
@@ -320,9 +465,21 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     if (failureLog.ytdlcore) reasonLines.push('ytdl-core: ' + failureLog.ytdlcore);
     if (failureLog.apify)    reasonLines.push('Apify: '     + failureLog.apify);
     const reasonBlock = reasonLines.length ? ' Causes — ' + reasonLines.join(' | ') : '';
-    const cookiesHint = haveCookies
-      ? ' (YouTube cookies appear configured; they may have expired — re-export cookies.txt from a freshly-logged-in browser.)'
-      : ' Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in YouTube account, then redeploy.';
+    // Surface every unblock path the operator can take. Apify is the
+    // shortest path (2 min, free tier ≈ 2000 downloads/mo) — call it
+    // out first when it isn't configured. YT cookies are the secondary
+    // option. If both are missing, we list both. If cookies are
+    // configured but appear expired, prompt for a re-export.
+    const hints = [];
+    if (!apifyConfigured) {
+      hints.push('Set APIFY_API_TOKEN in Railway env (apify.com — free tier covers ~2000 downloads/mo) for an instant residential-IP fallback.');
+    }
+    if (!haveCookies) {
+      hints.push('Or set YT_COOKIES_BASE64 to a base64-encoded Netscape cookies.txt from a logged-in YouTube account, then redeploy.');
+    } else {
+      hints.push('YouTube cookies appear configured but may have expired — re-export cookies.txt from a freshly-logged-in browser and reset YT_COOKIES_BASE64.');
+    }
+    const cookiesHint = hints.length ? ' ' + hints.join(' ') : '';
     throw new Error('Video download failed for ' + videoId + '.' + reasonBlock + cookiesHint);
   }
 }
@@ -396,6 +553,43 @@ function buildTranscriptText(segments) {
     const timestamp = formatTimestamp(seg.offset / 1000);
     return `[${timestamp}] ${seg.text}`;
   }).join(' ');
+}
+
+// Like _repurposeMod.transcribeUploadedFile but returns a transcript
+// pre-formatted with [HH:MM:SS.mmm] segment timestamps so the /clip
+// caption pipeline (parseTranscriptToSegments → generateASSSubtitles)
+// can find segments inside the moment's window. Uses Whisper's
+// verbose_json response so we get segment.start / segment.end / text
+// triplets instead of just the joined text.
+async function transcribeUploadedFileTimestamped(audioPath) {
+  let stat;
+  try { stat = fs.statSync(audioPath); } catch (e) { throw new Error('Audio file not found at ' + audioPath); }
+  const sizeMB = stat.size / (1024 * 1024);
+  if (sizeMB > 24.5) {
+    throw new Error('Audio is ' + sizeMB.toFixed(1) + 'MB after extraction. Whisper limit is 25MB. Please upload a shorter clip.');
+  }
+  console.log('[transcribeUploadedFileTimestamped] path=' + audioPath + ' size=' + sizeMB.toFixed(2) + 'MB');
+  const fileStream = fs.createReadStream(audioPath);
+  const response = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: fileStream,
+    response_format: 'verbose_json',
+    timestamp_granularities: ['segment']
+  });
+  // Whisper returns { text, segments:[{start, end, text, ...}], ... }.
+  // We format each segment exactly the way buildTranscriptText does so
+  // parseTranscriptToSegments matches without any custom regex tweaks.
+  if (!response || !Array.isArray(response.segments) || response.segments.length === 0) {
+    // Fall back to the plain-text body so we at least preserve the
+    // transcript for AI moment detection, even if captions won't
+    // render. Better than throwing.
+    return (response && response.text) ? String(response.text) : '';
+  }
+  return response.segments.map(seg => {
+    const startSec = Math.max(0, Number(seg.start) || 0);
+    const text = String(seg.text || '').trim();
+    return text ? `[${formatTimestamp(startSec)}] ${text}` : '';
+  }).filter(Boolean).join(' ');
 }
 
 // Helper: Parse stored transcript text back into timed segments
@@ -1300,7 +1494,55 @@ async function fetchTranscriptFromYtdlpJson(videoId) {
 }
 
 // Helper: Fetch video title using yt-dlp
+// Resolve a YouTube video title from a videoId. yt-dlp alone has been
+// failing for most videos because of YouTube's anti-bot wall on
+// datacenter IPs — the metadata request gets the same 'Sign in to
+// confirm you're not a bot' challenge as the video download. So:
+//   1) Try YouTube oEmbed first. No auth, no IP block, ~200ms.
+//   2) If oEmbed fails (rare — video deleted, regional block,
+//      network glitch), fall through to yt-dlp.
+//   3) If both fail, return the literal 'YouTube Video' fallback so
+//      the card still renders without throwing.
 function fetchVideoTitle(videoId) {
+  return new Promise((resolve) => {
+    const https = require('https');
+    const url = 'https://www.youtube.com/oembed?format=json&url=' +
+                encodeURIComponent('https://www.youtube.com/watch?v=' + videoId);
+    const settled = { v: false };
+    const finish = (title) => { if (!settled.v) { settled.v = true; resolve(title); } };
+
+    let req;
+    try {
+      req = https.get(url, { headers: { 'Accept': 'application/json' } }, (r) => {
+        if (r.statusCode !== 200) {
+          r.resume();
+          return _fallbackYtdlpTitle(videoId).then(finish);
+        }
+        let body = '';
+        r.on('data', (d) => { body += d.toString(); });
+        r.on('end', () => {
+          try {
+            const j = JSON.parse(body);
+            if (j && j.title && String(j.title).trim()) {
+              return finish(String(j.title).trim());
+            }
+          } catch (_) {}
+          _fallbackYtdlpTitle(videoId).then(finish);
+        });
+        r.on('error', () => _fallbackYtdlpTitle(videoId).then(finish));
+      });
+      req.setTimeout(5000, () => {
+        try { req.destroy(); } catch (_) {}
+        _fallbackYtdlpTitle(videoId).then(finish);
+      });
+      req.on('error', () => _fallbackYtdlpTitle(videoId).then(finish));
+    } catch (_) {
+      _fallbackYtdlpTitle(videoId).then(finish);
+    }
+  });
+}
+
+function _fallbackYtdlpTitle(videoId) {
   return new Promise((resolve) => {
     const proc = spawn('yt-dlp', [
       '--skip-download', '--print', 'title', ...YTDLP_COMMON_ARGS,
@@ -1389,7 +1631,17 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
     sendUpdate({ status: 'transcribing', message: 'Transcribing with AI...' });
     let transcriptText;
     try {
-      transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+      // Use the timestamped variant so the stored transcript carries
+      // [HH:MM:SS.mmm] markers — required for the caption pipeline in
+      // /shorts/clip to find segments inside each moment's window.
+      // Falls back to plain Whisper text if verbose_json returns no
+      // segments (very rare; happens on truly silent audio).
+      try {
+        transcriptText = await transcribeUploadedFileTimestamped(audioPath);
+      } catch (timedErr) {
+        console.warn('[analyze-upload] timestamped transcription failed, falling back to plain text:', timedErr.message);
+        transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+      }
     } catch (err) {
       sendUpdate({ status: 'error', message: 'Transcription failed: ' + (err.message || 'unknown error') });
       return res.end();
@@ -2554,6 +2806,141 @@ function formatTimestampCompat(totalSeconds) {
 // that resolves once the writer finishes.
 const previewGenerationLocks = new Map();
 
+// Resolve the on-disk source file for an analysis whose video_url
+// starts with 'upload://'. Uploaded files are written by
+// /analyze-upload to CLIPS_DIR as 'upload-<analysisId>.<ext>'. Returns
+// the absolute path or null if nothing matches (e.g. Railway redeploy
+// wiped /tmp). The .mp3 / .progress / .error siblings are filtered out.
+function findUploadedSourcePath(analysisId) {
+  let files = [];
+  try { files = fs.readdirSync(CLIPS_DIR); } catch (e) { return null; }
+  const match = files.find(f =>
+    f.startsWith('upload-' + analysisId + '.') &&
+    !f.endsWith('.mp3') &&
+    !f.endsWith('.progress') &&
+    !f.endsWith('.error')
+  );
+  return match ? path.join(CLIPS_DIR, match) : null;
+}
+
+// Extract a single JPEG frame from a video source at the given offset
+// (seconds). Used by the upload-thumbnail endpoints below; the output
+// is small (~10-40 KB) so we don't bother with a concurrency lock.
+function extractFrameAt(sourcePath, atSec, outPath) {
+  return new Promise((resolve, reject) => {
+    const ffArgs = [
+      '-y',
+      '-ss', String(Math.max(0, atSec)),
+      '-i', sourcePath,
+      '-frames:v', '1',
+      '-q:v', '4',
+      '-f', 'image2',
+      outPath
+    ];
+    const proc = spawn(ffmpegPath, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', e => settle(reject, e));
+    proc.on('close', code => code === 0
+      ? settle(resolve)
+      : settle(reject, new Error('ffmpeg frame exit ' + code + ': ' + stderr.slice(-200))));
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      settle(reject, new Error('ffmpeg frame timeout (20s)'));
+    }, 20000);
+  });
+}
+
+// GET /upload-thumbnail/:analysisId
+// JPEG frame extracted at the 1-second mark of an uploaded video,
+// used as the main analysis card's hero image. Falls back to frame 0
+// if the source is shorter than 1 second.
+router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) return res.status(503).end();
+    const analysisId = req.params.analysisId;
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
+    if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+      res.setHeader('Content-Type', 'image/jpeg');
+      return res.sendFile(outPath);
+    }
+    const sourcePath = findUploadedSourcePath(analysisId);
+    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    try {
+      await extractFrameAt(sourcePath, 1.0, outPath);
+    } catch (e) {
+      try { await extractFrameAt(sourcePath, 0, outPath); } catch (e2) {
+        console.error('  upload-thumbnail extract failed:', e2.message);
+        return res.status(500).end();
+      }
+    }
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
+    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+    res.setHeader('Content-Type', 'image/jpeg');
+    return res.sendFile(outPath);
+  } catch (err) {
+    console.error('upload-thumbnail error:', err);
+    return res.status(500).end();
+  }
+});
+
+// GET /upload-moment-thumbnail/:analysisId/:momentIdx
+// JPEG frame extracted at the MIDDLE of the moment's [start, end]
+// window so the per-moment card has a representative still. Cached
+// at CLIPS_DIR/_uthumb_<id>_m<idx>.jpg.
+router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) return res.status(503).end();
+    const analysisId = req.params.analysisId;
+    const momentIdx = parseInt(req.params.momentIdx, 10);
+    if (!Number.isFinite(momentIdx) || momentIdx < 0) return res.status(400).end();
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
+    if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
+    let moments = analysis.moments || [];
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIdx];
+    if (!moment || !moment.timeRange) return res.status(404).end();
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_m${momentIdx}.jpg`);
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+      res.setHeader('Content-Type', 'image/jpeg');
+      return res.sendFile(outPath);
+    }
+    const sourcePath = findUploadedSourcePath(analysisId);
+    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    let startSec, endSec;
+    try {
+      const r = parseTimeRange(moment.timeRange);
+      startSec = r.start; endSec = r.end;
+    } catch (e) { return res.status(400).end(); }
+    const midSec = (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec > startSec)
+      ? startSec + (endSec - startSec) / 2
+      : (Number.isFinite(startSec) ? startSec : 0);
+    try {
+      await extractFrameAt(sourcePath, midSec, outPath);
+    } catch (e) {
+      console.error('  upload-moment-thumbnail extract failed:', e.message);
+      return res.status(500).end();
+    }
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
+    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+    res.setHeader('Content-Type', 'image/jpeg');
+    return res.sendFile(outPath);
+  } catch (err) {
+    console.error('upload-moment-thumbnail error:', err);
+    return res.status(500).end();
+  }
+});
+
 // GET /moment-preview/:analysisId/:momentIdx
 // Returns a 9:16 vertical, center-cropped, trimmed-to-timeRange MP4 for
 // a single moment so the analysis card can autoplay it in a <video> tag.
@@ -2577,7 +2964,17 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     const moment = moments[momentIdx];
     if (!moment || !moment.timeRange) return res.status(404).end();
 
-    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}.mp4`);
+    // Version-tag the cached preview filename. Bumped to v2 when the
+    // 'Math.max(1, endSec-startSec)' duration floor was removed —
+    // without this bump, the OLD 1-second cached MP4s on disk would
+    // still match _preview_<id>_m<idx>.mp4 and the cache-hit path
+    // would serve them forever (Railway's /tmp persists across some
+    // restarts, so the broken files don't auto-clear). The v2 suffix
+    // forces a regen, and the embedded ${durationTag} also
+    // invalidates if the GPT-extracted timeRange ever changes for an
+    // existing moment.
+    const durationTag = '_d' + Math.round((parseTimeRange(moment.timeRange).end - parseTimeRange(moment.timeRange).start) || 0) + 's';
+    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}_v2${durationTag}.mp4`);
 
     // Helper to stream the cached file with proper headers.
     const sendCached = () => {
@@ -2616,12 +3013,22 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     // this is > 0, so no minimum floor is needed.
     const duration = endSec - startSec;
 
-    // Extract YouTube videoId from the analysis URL.
-    const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
-    const vidMatch = (analysis.video_url || '').match(ytRegex);
-    if (!vidMatch) return res.status(400).end();
-    const videoId = vidMatch[1];
-    const videoUrl = analysis.video_url;
+    // Resolve the source video path. For uploaded analyses
+    // (video_url='upload://...') the source already sits in CLIPS_DIR
+    // as upload-<analysisId>.<ext> — no download chain needed. For
+    // YouTube URLs we go through the standard getOrDownloadVideo
+    // chain (Cobalt → yt-dlp → ytdl-core → Apify).
+    const isUpload = (analysis.video_url || '').startsWith('upload://');
+    let videoId = null, videoUrl = analysis.video_url, sourceVideoPath = null;
+    if (isUpload) {
+      sourceVideoPath = findUploadedSourcePath(analysisId);
+      if (!sourceVideoPath) return res.status(404).json({ error: 'Uploaded source missing — re-upload the video.' });
+    } else {
+      const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+      const vidMatch = (analysis.video_url || '').match(ytRegex);
+      if (!vidMatch) return res.status(400).end();
+      videoId = vidMatch[1];
+    }
 
     // Register lock so concurrent requests block instead of racing.
     let lockResolve, lockReject;
@@ -2632,9 +3039,12 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     previewGenerationLocks.set(outPath, lockPromise);
 
     try {
-      // Reuse the cached source video if available; download otherwise.
-      const ytdlpPath = 'yt-dlp';
-      const sourceVideoPath = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, () => {});
+      // For YouTube, reuse the cached source video if available;
+      // download otherwise. For uploads, sourceVideoPath is already set.
+      if (!isUpload) {
+        const ytdlpPath = 'yt-dlp';
+        sourceVideoPath = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, () => {});
+      }
 
       // ffmpeg pipeline:
       //   -ss before -i = fast seek (keyframe-accurate enough for a preview)
@@ -4329,8 +4739,13 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
     })();
 
   } catch (error) {
-    console.error('Error starting clip generation:', error);
-    res.status(500).json({ error: 'Failed to start clip generation' });
+    // Surface the actual error message so the client sees what
+    // really broke (DB lookup, body parse, brand kit fetch, etc.)
+    // instead of the generic placeholder. The full stack still
+    // goes to Railway logs via console.error.
+    console.error('Error starting clip generation:', error && error.stack || error);
+    var msg = (error && error.message) ? String(error.message).slice(0, 300) : String(error).slice(0, 300);
+    res.status(500).json({ error: 'Failed to start clip generation: ' + msg });
   }
 });
 
@@ -6544,6 +6959,35 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
        suppressed. Re-enabled when _updateMomentLoader clears the
        disabled state. */
     .moment-preview-shell .moment-control-disabled{opacity:0.35;pointer-events:none;}
+    /* Analyze placeholder card — shown immediately when the user
+       confirms the disclaimer, before the SSE pipeline finishes.
+       Pointer-events disabled so the user can't open it mid-build.
+       Subtle purple ring + glow signals "in flight". */
+    .card.analyze-placeholder{position:relative;cursor:default;pointer-events:none;border:1px solid rgba(108,58,237,0.30) !important;box-shadow:0 0 0 1px rgba(108,58,237,0.18), 0 6px 22px rgba(108,58,237,0.12) !important;background:linear-gradient(180deg,rgba(108,58,237,0.04),rgba(236,72,153,0.02)) !important;}
+    .card.analyze-placeholder::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent 0,transparent 12px,rgba(108,58,237,0.04) 12px,rgba(108,58,237,0.04) 24px);border-radius:inherit;pointer-events:none;}
+    .analyze-placeholder-spinner{width:18px;height:18px;border:2.5px solid rgba(108,58,237,0.22);border-top-color:#a78bfa;border-radius:50%;flex-shrink:0;animation:momentPreviewSpin 0.9s linear infinite;}
+    .analyze-placeholder-bar{width:100%;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;}
+    .analyze-placeholder-fill{height:100%;background:linear-gradient(90deg,#6C3AED,#EC4899);border-radius:3px;transition:width 0.5s ease;}
+    /* Floating-button layout on /shorts.
+       The page renders two fixed top-right widgets: the global theme
+       toggle (.theme-toggle, 36px round, top:1.2rem right:1.5rem) and
+       the page-specific Calendar pill (#calendarFloatBtn). Without
+       offset they collide — toggle's z-index:100 loses to the pill's
+       100000 and gets visually buried. We:
+         1) Push the Calendar pill left by 80px so the toggle's
+            right:24px slot is fully clear.
+         2) Bump the theme toggle's z-index to 99999 so it sits above
+            normal page content but still below modals (which live at
+            z-index 99999+ for backdrops, 100001+ for calendar).
+         3) Add a hover affordance so the toggle reads as interactive.
+       Mobile (<=768px): the toggle shrinks to 32px and slides to
+       right:1rem, so the Calendar pill shifts to right:60px and also
+       shrinks slightly. */
+    .theme-toggle{z-index:99999 !important;}
+    .theme-toggle:hover{transform:scale(1.05);box-shadow:0 4px 12px rgba(108,58,237,0.25);}
+    @media (max-width: 768px) {
+      #calendarFloatBtn{right:60px !important;padding:8px 14px !important;font-size:13px !important;}
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
@@ -7001,10 +7445,16 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         ` : `
           <div class="cards-grid">
             ${analyses.map(analysis => {
-              // Extract video ID for thumbnail
+              // Resolve the thumbnail src. YouTube URLs use img.youtube.com.
+              // upload:// URLs use /shorts/upload-thumbnail/<id> which
+              // lazily ffmpegs a frame from the uploaded source file.
               const ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
               const vidMatch = (analysis.video_url || '').match(ytRegex);
               const vidId = vidMatch ? vidMatch[1] : null;
+              const isUploadCard = (analysis.video_url || '').startsWith('upload://');
+              const thumbSrc = vidId
+                ? `https://img.youtube.com/vi/${vidId}/mqdefault.jpg`
+                : (isUploadCard ? `/shorts/upload-thumbnail/${analysis.id}` : null);
               return `
               <div class="card" onclick="viewAnalysis('${analysis.id}')" style="position:relative;">
                 <button onclick="event.stopPropagation(); event.preventDefault(); deleteAnalysis('${analysis.id}', this); return false;" title="Delete"
@@ -7014,7 +7464,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
                   onmouseover="this.style.background='#ef4444'; this.style.transform='scale(1.15)'"
                   onmouseout="this.style.background='rgba(239,68,68,0.9)'; this.style.transform='scale(1)'"
                 >&times;</button>
-                ${vidId ? `<img src="https://img.youtube.com/vi/${vidId}/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">` : ''}
+                ${thumbSrc ? `<img src="${thumbSrc}" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;background:#000;" onerror="this.style.display='none'">` : ''}
                 <div class="card-header">
                   <div class="card-title">${analysis.video_title || 'YouTube Video'}</div>
                   <div class="card-meta">${new Date(analysis.created_at).toLocaleDateString()}</div>
@@ -7037,7 +7487,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
 ${paginationHtml}
           <!-- Floating Calendar Button -->
-    <button id="calendarFloatBtn" onclick="openShortsCalendar()" style="position:fixed;top:18px;right:24px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
+    <button id="calendarFloatBtn" onclick="openShortsCalendar()" style="position:fixed;top:18px;right:80px;z-index:100000;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:50px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 20px rgba(108,58,237,0.4);display:flex;align-items:center;gap:8px;transition:transform 0.2s;">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Calendar
     </button>
 
@@ -7579,11 +8029,233 @@ ${paginationHtml}
       }
     }
 
+    // ── Analyze placeholder card ─────────────────────────────────────
+    // After the user accepts the disclaimer, we drop a non-interactive
+    // placeholder card into the analyses grid and scroll to it. The
+    // SSE pipeline then drives a percentage + stage label + ETA on
+    // that placeholder. On 'completed' the placeholder is swapped for
+    // the real analysis card (fetched from /shorts/api/:id) without a
+    // full page reload, preserving any client-side state.
+    function _escHtmlAP(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function insertAnalyzePlaceholder(url) {
+      var container = document.getElementById('analysesContainer');
+      if (!container) return null;
+      var placeholderId = 'analyze-placeholder-' + Date.now();
+      var html =
+        '<div class="card analyze-placeholder" id="' + placeholderId + '" aria-busy="true" aria-disabled="true">' +
+          '<div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; position:relative; z-index:1;">' +
+            '<div class="analyze-placeholder-spinner" style="margin-top:2px;"></div>' +
+            '<div style="flex:1; min-width:0;">' +
+              // Title slot — starts as a generic placeholder, gets
+              // overwritten by the real YouTube title once oEmbed
+              // returns. The original URL lives in the meta line below
+              // as a fallback that also gets cleared when the title
+              // lands.
+              '<div class="card-title analyze-placeholder-title" style="margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">Fetching video title…</div>' +
+              '<div class="card-meta analyze-placeholder-url" style="font-size:11px; word-break:break-all; opacity:0.65;">' + _escHtmlAP(url) + '</div>' +
+            '</div>' +
+            '<div class="analyze-placeholder-pct" style="font-size:13px; font-weight:700; color:#a78bfa; flex-shrink:0;">0%</div>' +
+          '</div>' +
+          '<div class="analyze-placeholder-bar" style="margin-bottom:8px; position:relative; z-index:1;">' +
+            '<div class="analyze-placeholder-fill" style="width:5%;"></div>' +
+          '</div>' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:var(--text-muted); position:relative; z-index:1;">' +
+            '<span class="analyze-placeholder-stage">Starting…</span>' +
+            '<span class="analyze-placeholder-eta">Calculating ETA…</span>' +
+          '</div>' +
+        '</div>';
+      // Two layouts to handle: empty-state (no analyses yet) vs an
+      // existing cards-grid. In the first case we replace the
+      // empty-state with a brand-new grid; otherwise prepend to grid.
+      var emptyState = container.querySelector('.empty-state');
+      if (emptyState) {
+        container.innerHTML = '<div class="cards-grid">' + html + '</div>';
+      } else {
+        var grid = container.querySelector('.cards-grid');
+        if (grid) {
+          grid.insertAdjacentHTML('afterbegin', html);
+        } else {
+          container.insertAdjacentHTML('afterbegin', '<div class="cards-grid">' + html + '</div>');
+        }
+      }
+      // Smooth scroll the placeholder into view (centered when
+      // possible) so the user immediately sees that work is queued.
+      // Defer with rAF so the layout has settled.
+      requestAnimationFrame(function() {
+        var el = document.getElementById(placeholderId);
+        if (el && typeof el.scrollIntoView === 'function') {
+          try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { el.scrollIntoView(); }
+        }
+      });
+      // Async: pull the real YouTube title via the public oEmbed
+      // endpoint (no auth, CORS-allowed) and swap it into the card.
+      // If the fetch fails — network glitch, non-YouTube URL, or
+      // YouTube returns 401 — we silently fall back to keeping the
+      // URL visible so the card still tells the user *which* video
+      // is being analyzed.
+      _swapPlaceholderTitle(placeholderId, url);
+      return placeholderId;
+    }
+    function _swapPlaceholderTitle(placeholderId, url) {
+      try {
+        var oembedUrl = 'https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url);
+        fetch(oembedUrl, { mode: 'cors', credentials: 'omit' })
+          .then(function(r) { return (r && r.ok) ? r.json() : null; })
+          .then(function(data) {
+            var card = document.getElementById(placeholderId);
+            if (!card) return;
+            var titleEl = card.querySelector('.analyze-placeholder-title');
+            var urlEl = card.querySelector('.analyze-placeholder-url');
+            if (data && data.title) {
+              if (titleEl) titleEl.textContent = data.title;
+              // Hide the URL fallback once the title is in — keeps the
+              // card visually clean and matches the final swapped-in
+              // analysis card layout.
+              if (urlEl) urlEl.style.display = 'none';
+            } else if (titleEl) {
+              // oEmbed returned no title — make the URL the headline.
+              titleEl.textContent = url;
+              if (urlEl) urlEl.style.display = 'none';
+            }
+          })
+          .catch(function() {
+            // Total fetch failure — keep the URL visible and clear
+            // the 'Fetching video title…' string so the card doesn't
+            // sit lying about loading forever.
+            var card = document.getElementById(placeholderId);
+            if (!card) return;
+            var titleEl = card.querySelector('.analyze-placeholder-title');
+            if (titleEl) titleEl.textContent = 'Analyzing video';
+          });
+      } catch (_) { /* swallow — placeholder stays in fallback state */ }
+    }
+    function updateAnalyzePlaceholder(placeholderId, pct, stage, etaSec) {
+      var card = document.getElementById(placeholderId);
+      if (!card) return;
+      var fill = card.querySelector('.analyze-placeholder-fill');
+      var pctEl = card.querySelector('.analyze-placeholder-pct');
+      var stageEl = card.querySelector('.analyze-placeholder-stage');
+      var etaEl = card.querySelector('.analyze-placeholder-eta');
+      if (typeof pct === 'number') {
+        var clamped = Math.max(5, Math.min(100, pct));
+        if (fill) fill.style.width = clamped + '%';
+        if (pctEl) pctEl.textContent = Math.round(clamped) + '%';
+      }
+      if (stageEl && stage) stageEl.textContent = stage;
+      if (etaEl) {
+        if (etaSec == null) etaEl.textContent = '';
+        else if (etaSec <= 0) etaEl.textContent = 'Almost done…';
+        else if (etaSec < 60) etaEl.textContent = '~' + Math.round(etaSec) + 's remaining';
+        else etaEl.textContent = '~' + Math.round(etaSec / 60) + 'm remaining';
+      }
+    }
+    // Map SSE status strings to {pct, etaSec}. Numbers are rough
+    // averages; the placeholder's elapsed-time tracker tightens them.
+    function statusToProgress(status) {
+      switch (status) {
+        case 'fetching_transcript': return { pct: 20, etaSec: 50 };
+        case 'fetching_title':      return { pct: 35, etaSec: 35 };
+        case 'creating_record':     return { pct: 45, etaSec: 25 };
+        case 'analyzing':           return { pct: 70, etaSec: 12 };
+        case 'completed':           return { pct: 100, etaSec: 0 };
+        default:                    return { pct: null, etaSec: null };
+      }
+    }
+    // Pull the real analysis JSON and replace the placeholder with
+    // the same markup the server-side template would have rendered
+    // for this card. Kept in lockstep with the renderShortsPage card
+    // template so swap-in is visually seamless.
+    async function replaceAnalyzePlaceholder(placeholderId, analysisId) {
+      try {
+        var resp = await fetch('/shorts/api/' + encodeURIComponent(analysisId));
+        if (!resp.ok) throw new Error('Failed to load new analysis');
+        var raw = await resp.json();
+        // /shorts/api/:id wraps its payload in { analysis: {...} } — unwrap
+        // and tolerate either shape so the next reshape doesn't break us.
+        var data = (raw && raw.analysis) ? raw.analysis : raw;
+        // moments may still arrive as a JSON string if the server didn't
+        // pre-parse (defense in depth — the endpoint *should* parse it).
+        if (typeof data.moments === 'string') {
+          try { data.moments = JSON.parse(data.moments); } catch (e) { data.moments = []; }
+        }
+        var moments = Array.isArray(data.moments) ? data.moments : [];
+        var ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
+        var vidMatch = (data.video_url || '').match(ytRegex);
+        var vidId = vidMatch ? vidMatch[1] : null;
+        var isUploadCard = (data.video_url || '').indexOf('upload://') === 0;
+        var thumbSrc = vidId
+          ? ('https://img.youtube.com/vi/' + vidId + '/mqdefault.jpg')
+          : (isUploadCard ? ('/shorts/upload-thumbnail/' + data.id) : null);
+        var createdAt = data.created_at ? new Date(data.created_at) : new Date();
+        var dateStr = createdAt.toLocaleDateString();
+        var html =
+          '<div class="card" onclick="viewAnalysis(\\'' + data.id + '\\')" style="position:relative;">' +
+            '<button onclick="event.stopPropagation(); event.preventDefault(); deleteAnalysis(\\'' + data.id + '\\', this); return false;" title="Delete" ' +
+              'style="position:absolute; top:10px; right:10px; background:rgba(239,68,68,0.9); border:2px solid rgba(255,255,255,0.3); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; z-index:10; transition:all 0.2s; font-weight:bold;" ' +
+              'onmouseover="this.style.background=\\'#ef4444\\'; this.style.transform=\\'scale(1.15)\\'" ' +
+              'onmouseout="this.style.background=\\'rgba(239,68,68,0.9)\\'; this.style.transform=\\'scale(1)\\'">&times;</button>' +
+            (thumbSrc ? '<img src="' + thumbSrc + '" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;background:#000;" onerror="this.style.display=\\'none\\'">' : '') +
+            '<div class="card-header">' +
+              '<div class="card-title">' + _escHtmlAP(data.video_title || 'YouTube Video') + '</div>' +
+              '<div class="card-meta">' + _escHtmlAP(dateStr) + '</div>' +
+            '</div>' +
+            '<div class="card-meta" style="margin-bottom: 12px;">' + moments.length + ' moments</div>' +
+            '<div class="moments-list">' +
+              moments.slice(0, 3).map(function(m) {
+                return '<div class="moment-item">' +
+                  '<div class="moment-item-title">' + _escHtmlAP(m.title || 'Moment') + '</div>' +
+                  '<div class="virality-score">' + (parseInt(m.viralityScore, 10) || 0) + '% viral</div>' +
+                '</div>';
+              }).join('') +
+              (moments.length > 3 ? '<div style="padding: 8px 0; color: #666; font-size: 12px;">+' + (moments.length - 3) + ' more</div>' : '') +
+            '</div>' +
+          '</div>';
+        var placeholder = document.getElementById(placeholderId);
+        if (placeholder) placeholder.outerHTML = html;
+      } catch (err) {
+        console.error('replaceAnalyzePlaceholder failed:', err);
+        // Fallback: full reload to recover into a known-good UI.
+        setTimeout(function() { location.reload(); }, 1200);
+      }
+    }
+    function markAnalyzePlaceholderError(placeholderId, message) {
+      var card = document.getElementById(placeholderId);
+      if (!card) return;
+      // Stop the spinner + paint a red error state, keep card on the
+      // page so the user can see what failed. They can close it later.
+      var spinner = card.querySelector('.analyze-placeholder-spinner');
+      if (spinner) spinner.style.display = 'none';
+      var fill = card.querySelector('.analyze-placeholder-fill');
+      if (fill) {
+        fill.style.background = '#ef4444';
+        fill.style.width = '100%';
+      }
+      var pctEl = card.querySelector('.analyze-placeholder-pct');
+      if (pctEl) { pctEl.textContent = 'Error'; pctEl.style.color = '#ef4444'; }
+      var stageEl = card.querySelector('.analyze-placeholder-stage');
+      if (stageEl) { stageEl.textContent = message || 'Analysis failed'; stageEl.style.color = '#fca5a5'; }
+      var etaEl = card.querySelector('.analyze-placeholder-eta');
+      if (etaEl) etaEl.textContent = '';
+      card.style.pointerEvents = 'auto';
+      card.style.cursor = 'default';
+    }
+
     async function _runAnalyze(url) {
       const btn = document.querySelector('.btn-primary');
       const btnText = document.getElementById('analyzeBtn');
       btn.disabled = true;
       btnText.innerHTML = '<span class="loading"></span> Analyzing...';
+
+      // Drop a placeholder card into the analyses grid immediately so
+      // the user has something to look at while the SSE pipeline runs.
+      // statusToProgress / updateAnalyzePlaceholder drive its percent
+      // and stage label as SSE messages arrive.
+      const placeholderId = insertAnalyzePlaceholder(url);
+      const analyzeStart = Date.now();
 
       try {
         const response = await fetch('/shorts/analyze', {
@@ -7627,12 +8299,34 @@ ${paginationHtml}
                 continue;
               }
               if (data.status === 'completed') {
+                updateAnalyzePlaceholder(placeholderId, 100, 'Analysis complete!', 0);
                 showToast('Analysis complete!');
-                setTimeout(() => location.reload(), 1500);
+                // Swap the placeholder for the real card. If we have
+                // analysisId from SSE, fetch it directly; otherwise
+                // fall back to a soft reload as a last resort.
+                if (data.analysisId) {
+                  await replaceAnalyzePlaceholder(placeholderId, data.analysisId);
+                } else {
+                  setTimeout(function() { location.reload(); }, 1200);
+                }
+                btn.disabled = false;
+                btnText.textContent = 'Analyze';
+                var urlInput = document.getElementById('videoUrl');
+                if (urlInput) urlInput.value = '';
               } else if (data.status === 'error') {
                 throw new Error(data.message || 'Analysis failed');
-              } else if (data.message) {
-                btnText.textContent = data.message;
+              } else if (data.status || data.message) {
+                // Drive the placeholder progress from SSE status. We
+                // also tighten ETA using elapsed time once we're past
+                // the first event.
+                var prog = statusToProgress(data.status);
+                var elapsed = (Date.now() - analyzeStart) / 1000;
+                var etaSec = (prog.etaSec != null)
+                  ? Math.max(0, prog.etaSec)
+                  : null;
+                var stageMsg = data.message || data.status || 'Working…';
+                updateAnalyzePlaceholder(placeholderId, prog.pct, stageMsg, etaSec);
+                btnText.textContent = data.message || 'Analyzing...';
               }
             }
           }
@@ -7643,6 +8337,7 @@ ${paginationHtml}
         btnText.textContent = 'Analyze';
       } catch (error) {
         showToast(error.message || 'Analysis failed');
+        markAnalyzePlaceholderError(placeholderId, error.message || 'Analysis failed');
         btn.disabled = false;
         btnText.textContent = 'Analyze';
       }
@@ -8444,12 +9139,21 @@ ${paginationHtml}
           //   - Center button: togglePlayPause swaps between ▶ and ‖.
           //   - Top-right mute toggle stays; bottom-left timeRange badge
           //     stays.
-          const videoEmbed = videoId ? \`
+          // Render the 9:16 preview shell for BOTH YouTube and uploaded
+          // analyses. The /shorts/moment-preview endpoint handles both
+          // source types; only the poster differs (YouTube mqdefault vs
+          // an ffmpeg-extracted frame from the uploaded file via
+          // /shorts/upload-moment-thumbnail/<id>/<idx>).
+          const isUploadAnalysis = (analysis.video_url || '').indexOf('upload://') === 0;
+          const _posterUrl = videoId
+            ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
+            : (isUploadAnalysis ? \`/shorts/upload-moment-thumbnail/\${id}/\${idx}\` : '');
+          const videoEmbed = (videoId || isUploadAnalysis) ? \`
             <div class="moment-preview-shell" id="moment-preview-\${idx}"
               style="position:relative; width:100%; max-width:220px; aspect-ratio:9/16; margin:0 auto 14px; background:#0a0612; border:1px solid rgba(108,58,237,0.20); border-radius:14px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,0.35);">
               <video
                 src="/shorts/moment-preview/\${id}/\${idx}"
-                poster="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg"
+                poster="\${_posterUrl}"
                 autoplay muted playsinline preload="auto"
                 style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
                 onloadstart="registerMomentPreview(this)"
