@@ -312,6 +312,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     try { fs.unlinkSync(lockPath); } catch (e) {}
     try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     const haveCookies = !!getYoutubeCookiesArgs().length;
+    const apifyConfigured = !!process.env.APIFY_API_TOKEN;
     // Surface the per-downloader failure reasons so the user (and the
     // operator reading Railway logs) sees which specific path broke.
     const reasonLines = [];
@@ -320,9 +321,21 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
     if (failureLog.ytdlcore) reasonLines.push('ytdl-core: ' + failureLog.ytdlcore);
     if (failureLog.apify)    reasonLines.push('Apify: '     + failureLog.apify);
     const reasonBlock = reasonLines.length ? ' Causes — ' + reasonLines.join(' | ') : '';
-    const cookiesHint = haveCookies
-      ? ' (YouTube cookies appear configured; they may have expired — re-export cookies.txt from a freshly-logged-in browser.)'
-      : ' Set the YT_COOKIES_PATH env var to a Netscape-format cookies.txt exported from a logged-in YouTube account, then redeploy.';
+    // Surface every unblock path the operator can take. Apify is the
+    // shortest path (2 min, free tier ≈ 2000 downloads/mo) — call it
+    // out first when it isn't configured. YT cookies are the secondary
+    // option. If both are missing, we list both. If cookies are
+    // configured but appear expired, prompt for a re-export.
+    const hints = [];
+    if (!apifyConfigured) {
+      hints.push('Set APIFY_API_TOKEN in Railway env (apify.com — free tier covers ~2000 downloads/mo) for an instant residential-IP fallback.');
+    }
+    if (!haveCookies) {
+      hints.push('Or set YT_COOKIES_BASE64 to a base64-encoded Netscape cookies.txt from a logged-in YouTube account, then redeploy.');
+    } else {
+      hints.push('YouTube cookies appear configured but may have expired — re-export cookies.txt from a freshly-logged-in browser and reset YT_COOKIES_BASE64.');
+    }
+    const cookiesHint = hints.length ? ' ' + hints.join(' ') : '';
     throw new Error('Video download failed for ' + videoId + '.' + reasonBlock + cookiesHint);
   }
 }
