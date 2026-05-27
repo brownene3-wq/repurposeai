@@ -2405,6 +2405,115 @@ router.get('/history', requireAuth, async (req, res) => {
 });
 
 // GET /api/:id - Get specific analysis
+// GET /api/my-renders - List the logged-in user's in-flight + recently-ready
+// clip renders. Used by the /shorts UI to (a) show a persistent banner when
+// the user has clips rendering in the background and (b) re-attach the
+// per-card progress bar to a mid-render moment when the user returns to the
+// page. Filenames carry the analysisId + moment index (see /clip POST), so
+// we parse them and verify ownership against the analysis row.
+router.get('/api/my-renders', requireAuth, async (req, res) => {
+  try {
+    if (!fs.existsSync(CLIPS_DIR)) return res.json({ renders: [] });
+    const files = fs.readdirSync(CLIPS_DIR);
+
+    // Parse filenames of the form <safeTitle>_a<analysisId>_m<momentIndex>_<ts>.mp4
+    // Anchor at the end so a safeTitle that happens to contain _aX_mY doesn't
+    // false-match. .progress / .error / .encoding.mp4 are sibling files keyed
+    // off the same base name.
+    const FN_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4$/;
+    const PROG_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4\.progress$/;
+    const ERR_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4\.error$/;
+
+    // First pass: collect every (analysisId, momentIndex) we see across mp4 /
+    // .progress / .error / .encoding.mp4 siblings. Keep the newest timestamp.
+    const seen = new Map(); // key = aId + ':' + mIdx -> { analysisId, momentIndex, ts, filename }
+    function note(analysisId, momentIndex, ts, filename) {
+      const key = analysisId + ':' + momentIndex;
+      const existing = seen.get(key);
+      if (!existing || ts > existing.ts) {
+        seen.set(key, { analysisId, momentIndex: Number(momentIndex), ts, filename });
+      }
+    }
+    for (const f of files) {
+      let m;
+      if ((m = f.match(FN_RE))) note(m[1], m[2], Number(m[3]), f);
+      else if ((m = f.match(PROG_RE))) note(m[1], m[2], Number(m[3]), f.replace(/\.progress$/, ''));
+      else if ((m = f.match(ERR_RE))) note(m[1], m[2], Number(m[3]), f.replace(/\.error$/, ''));
+    }
+
+    // Second pass: figure out status for each and filter by ownership.
+    const analysisCache = new Map();
+    const out = [];
+    for (const entry of seen.values()) {
+      // Ownership check: look up the analysis once and verify user_id.
+      let analysis = analysisCache.get(entry.analysisId);
+      if (analysis === undefined) {
+        try { analysis = await shortsOps.getById(entry.analysisId); }
+        catch (e) { analysis = null; }
+        analysisCache.set(entry.analysisId, analysis);
+      }
+      if (!analysis || analysis.user_id !== req.user.id) continue;
+
+      const fullPath = path.join(CLIPS_DIR, entry.filename);
+      const progressPath = fullPath + '.progress';
+      const errorPath = fullPath + '.error';
+      const encodingPath = fullPath + '.encoding.mp4';
+
+      let status = 'unknown';
+      let progress = null;
+      let size = 0;
+
+      if (fs.existsSync(errorPath)) {
+        status = 'failed';
+        try { progress = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
+      } else if (fs.existsSync(progressPath)) {
+        status = 'rendering';
+        try { progress = fs.readFileSync(progressPath, 'utf8') || 'Still processing...'; } catch (e) { progress = 'Still processing...'; }
+      } else if (fs.existsSync(fullPath)) {
+        try { size = fs.statSync(fullPath).size; } catch (e) {}
+        if (size > 10000) status = 'ready';
+        else status = 'rendering';
+      } else if (fs.existsSync(encodingPath)) {
+        status = 'rendering';
+        progress = 'Encoding...';
+      } else {
+        // Nothing on disk anymore (Railway /tmp wipe?) — skip.
+        continue;
+      }
+
+      // Extract a friendly moment title from the analysis row if we have it.
+      let momentTitle = null;
+      try {
+        let moments = analysis.moments;
+        if (typeof moments === 'string') moments = JSON.parse(moments);
+        if (Array.isArray(moments) && moments[entry.momentIndex]) {
+          momentTitle = moments[entry.momentIndex].title || null;
+        }
+      } catch (e) {}
+
+      out.push({
+        analysisId: entry.analysisId,
+        momentIndex: entry.momentIndex,
+        filename: entry.filename,
+        status,
+        progress,
+        size,
+        momentTitle,
+        videoTitle: analysis.video_title || null,
+        updatedAt: entry.ts
+      });
+    }
+
+    // Sort newest first so the banner / library lists feel intuitive.
+    out.sort((a, b) => b.updatedAt - a.updatedAt);
+    res.json({ renders: out });
+  } catch (err) {
+    console.error('my-renders error:', err);
+    res.status(500).json({ error: err.message, renders: [] });
+  }
+});
+
+
 router.get('/api/:id', requireAuth, async (req, res) => {
   try {
     const analysis = await shortsOps.getById(req.params.id);
@@ -4857,115 +4966,6 @@ router.get('/clip/debug', requireAuth, (req, res) => {
     res.json({ error: err.message, clips_dir: CLIPS_DIR });
   }
 });
-// GET /api/my-renders - List the logged-in user's in-flight + recently-ready
-// clip renders. Used by the /shorts UI to (a) show a persistent banner when
-// the user has clips rendering in the background and (b) re-attach the
-// per-card progress bar to a mid-render moment when the user returns to the
-// page. Filenames carry the analysisId + moment index (see /clip POST), so
-// we parse them and verify ownership against the analysis row.
-router.get('/api/my-renders', requireAuth, async (req, res) => {
-  try {
-    if (!fs.existsSync(CLIPS_DIR)) return res.json({ renders: [] });
-    const files = fs.readdirSync(CLIPS_DIR);
-
-    // Parse filenames of the form <safeTitle>_a<analysisId>_m<momentIndex>_<ts>.mp4
-    // Anchor at the end so a safeTitle that happens to contain _aX_mY doesn't
-    // false-match. .progress / .error / .encoding.mp4 are sibling files keyed
-    // off the same base name.
-    const FN_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4$/;
-    const PROG_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4\.progress$/;
-    const ERR_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4\.error$/;
-
-    // First pass: collect every (analysisId, momentIndex) we see across mp4 /
-    // .progress / .error / .encoding.mp4 siblings. Keep the newest timestamp.
-    const seen = new Map(); // key = aId + ':' + mIdx -> { analysisId, momentIndex, ts, filename }
-    function note(analysisId, momentIndex, ts, filename) {
-      const key = analysisId + ':' + momentIndex;
-      const existing = seen.get(key);
-      if (!existing || ts > existing.ts) {
-        seen.set(key, { analysisId, momentIndex: Number(momentIndex), ts, filename });
-      }
-    }
-    for (const f of files) {
-      let m;
-      if ((m = f.match(FN_RE))) note(m[1], m[2], Number(m[3]), f);
-      else if ((m = f.match(PROG_RE))) note(m[1], m[2], Number(m[3]), f.replace(/\.progress$/, ''));
-      else if ((m = f.match(ERR_RE))) note(m[1], m[2], Number(m[3]), f.replace(/\.error$/, ''));
-    }
-
-    // Second pass: figure out status for each and filter by ownership.
-    const analysisCache = new Map();
-    const out = [];
-    for (const entry of seen.values()) {
-      // Ownership check: look up the analysis once and verify user_id.
-      let analysis = analysisCache.get(entry.analysisId);
-      if (analysis === undefined) {
-        try { analysis = await shortsOps.getById(entry.analysisId); }
-        catch (e) { analysis = null; }
-        analysisCache.set(entry.analysisId, analysis);
-      }
-      if (!analysis || analysis.user_id !== req.user.id) continue;
-
-      const fullPath = path.join(CLIPS_DIR, entry.filename);
-      const progressPath = fullPath + '.progress';
-      const errorPath = fullPath + '.error';
-      const encodingPath = fullPath + '.encoding.mp4';
-
-      let status = 'unknown';
-      let progress = null;
-      let size = 0;
-
-      if (fs.existsSync(errorPath)) {
-        status = 'failed';
-        try { progress = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
-      } else if (fs.existsSync(progressPath)) {
-        status = 'rendering';
-        try { progress = fs.readFileSync(progressPath, 'utf8') || 'Still processing...'; } catch (e) { progress = 'Still processing...'; }
-      } else if (fs.existsSync(fullPath)) {
-        try { size = fs.statSync(fullPath).size; } catch (e) {}
-        if (size > 10000) status = 'ready';
-        else status = 'rendering';
-      } else if (fs.existsSync(encodingPath)) {
-        status = 'rendering';
-        progress = 'Encoding...';
-      } else {
-        // Nothing on disk anymore (Railway /tmp wipe?) — skip.
-        continue;
-      }
-
-      // Extract a friendly moment title from the analysis row if we have it.
-      let momentTitle = null;
-      try {
-        let moments = analysis.moments;
-        if (typeof moments === 'string') moments = JSON.parse(moments);
-        if (Array.isArray(moments) && moments[entry.momentIndex]) {
-          momentTitle = moments[entry.momentIndex].title || null;
-        }
-      } catch (e) {}
-
-      out.push({
-        analysisId: entry.analysisId,
-        momentIndex: entry.momentIndex,
-        filename: entry.filename,
-        status,
-        progress,
-        size,
-        momentTitle,
-        videoTitle: analysis.video_title || null,
-        updatedAt: entry.ts
-      });
-    }
-
-    // Sort newest first so the banner / library lists feel intuitive.
-    out.sort((a, b) => b.updatedAt - a.updatedAt);
-    res.json({ renders: out });
-  } catch (err) {
-    console.error('my-renders error:', err);
-    res.status(500).json({ error: err.message, renders: [] });
-  }
-});
-
-
 // POST /narrate - Generate narration for a clip
 router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async (req, res) => {
   try {
