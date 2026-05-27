@@ -7709,17 +7709,17 @@ ${paginationHtml}
         if (!resp.ok) throw new Error('Failed to load new analysis');
         var data = await resp.json();
         var moments = Array.isArray(data.moments) ? data.moments : [];
-        var ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+        var ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
         var vidMatch = (data.video_url || '').match(ytRegex);
         var vidId = vidMatch ? vidMatch[1] : null;
         var createdAt = data.created_at ? new Date(data.created_at) : new Date();
         var dateStr = createdAt.toLocaleDateString();
         var html =
-          '<div class="card" onclick="viewAnalysis(\'' + data.id + '\')" style="position:relative;">' +
-            '<button onclick="event.stopPropagation(); event.preventDefault(); deleteAnalysis(\'' + data.id + '\', this); return false;" title="Delete" ' +
+          '<div class="card" onclick="viewAnalysis(\\'' + data.id + '\\')" style="position:relative;">' +
+            '<button onclick="event.stopPropagation(); event.preventDefault(); deleteAnalysis(\\'' + data.id + '\\', this); return false;" title="Delete" ' +
               'style="position:absolute; top:10px; right:10px; background:rgba(239,68,68,0.9); border:2px solid rgba(255,255,255,0.3); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; z-index:10; transition:all 0.2s; font-weight:bold;" ' +
-              'onmouseover="this.style.background=\'#ef4444\'; this.style.transform=\'scale(1.15)\'" ' +
-              'onmouseout="this.style.background=\'rgba(239,68,68,0.9)\'; this.style.transform=\'scale(1)\'">&times;</button>' +
+              'onmouseover="this.style.background=\\'#ef4444\\'; this.style.transform=\\'scale(1.15)\\'" ' +
+              'onmouseout="this.style.background=\\'rgba(239,68,68,0.9)\\'; this.style.transform=\\'scale(1)\\'">&times;</button>' +
             (vidId ? '<img src="https://img.youtube.com/vi/' + vidId + '/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">' : '') +
             '<div class="card-header">' +
               '<div class="card-title">' + _escHtmlAP(data.video_title || 'YouTube Video') + '</div>' +
