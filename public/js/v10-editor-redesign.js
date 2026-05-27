@@ -1282,15 +1282,15 @@
         rpBtn('\u2744\ufe0f','Freeze','Freeze')+
         rpBtn('\ud83c\udfaf','Keyframe','Keyframe')+
       '</div>'+
-      // Task #133 — Extract Audio. Detaches the V1 clip's embedded
-      // audio: server extracts the audio stream, returns a new mp3 the
-      // editor drops onto A1 at the same timeline position. The V1
-      // clip is muted so the two don't double-play. The new A1 clip
-      // inherits standard interactive handlers (drag, trim, cut,
-      // volume) like any uploaded audio asset.
+      // Task #137 — Renamed from "Extract Audio" to "Unlink Audio".
+      // Post-Task #136 the audio is auto-extracted at upload time and
+      // paired with the video; this button now breaks that pair so the
+      // two assets can be edited independently. The data-v10-clip-action
+      // key stays "ExtractAudio" so window.clipActionExtractAudio is
+      // still the dispatcher — only the user-facing label moves.
       '<div class="v10-rp-section-title">AUDIO</div>'+
       '<div class="v10-rp-grid">'+
-        rpBtn('\ud83c\udfb5','Extract Audio','ExtractAudio')+
+        rpBtn('\ud83d\udd13','Unlink Audio','ExtractAudio')+
       '</div>';
 
     // Wire all clip-action buttons FIRST so wireRPToast doesn't overwrite

@@ -555,6 +555,43 @@ function buildTranscriptText(segments) {
   }).join(' ');
 }
 
+// Like _repurposeMod.transcribeUploadedFile but returns a transcript
+// pre-formatted with [HH:MM:SS.mmm] segment timestamps so the /clip
+// caption pipeline (parseTranscriptToSegments → generateASSSubtitles)
+// can find segments inside the moment's window. Uses Whisper's
+// verbose_json response so we get segment.start / segment.end / text
+// triplets instead of just the joined text.
+async function transcribeUploadedFileTimestamped(audioPath) {
+  let stat;
+  try { stat = fs.statSync(audioPath); } catch (e) { throw new Error('Audio file not found at ' + audioPath); }
+  const sizeMB = stat.size / (1024 * 1024);
+  if (sizeMB > 24.5) {
+    throw new Error('Audio is ' + sizeMB.toFixed(1) + 'MB after extraction. Whisper limit is 25MB. Please upload a shorter clip.');
+  }
+  console.log('[transcribeUploadedFileTimestamped] path=' + audioPath + ' size=' + sizeMB.toFixed(2) + 'MB');
+  const fileStream = fs.createReadStream(audioPath);
+  const response = await openai.audio.transcriptions.create({
+    model: 'whisper-1',
+    file: fileStream,
+    response_format: 'verbose_json',
+    timestamp_granularities: ['segment']
+  });
+  // Whisper returns { text, segments:[{start, end, text, ...}], ... }.
+  // We format each segment exactly the way buildTranscriptText does so
+  // parseTranscriptToSegments matches without any custom regex tweaks.
+  if (!response || !Array.isArray(response.segments) || response.segments.length === 0) {
+    // Fall back to the plain-text body so we at least preserve the
+    // transcript for AI moment detection, even if captions won't
+    // render. Better than throwing.
+    return (response && response.text) ? String(response.text) : '';
+  }
+  return response.segments.map(seg => {
+    const startSec = Math.max(0, Number(seg.start) || 0);
+    const text = String(seg.text || '').trim();
+    return text ? `[${formatTimestamp(startSec)}] ${text}` : '';
+  }).filter(Boolean).join(' ');
+}
+
 // Helper: Parse stored transcript text back into timed segments
 // Transcript format: "[HH:MM:SS.mmm] text" or legacy "[HH:MM:SS] text"
 function parseTranscriptToSegments(transcriptText) {
@@ -1457,7 +1494,55 @@ async function fetchTranscriptFromYtdlpJson(videoId) {
 }
 
 // Helper: Fetch video title using yt-dlp
+// Resolve a YouTube video title from a videoId. yt-dlp alone has been
+// failing for most videos because of YouTube's anti-bot wall on
+// datacenter IPs — the metadata request gets the same 'Sign in to
+// confirm you're not a bot' challenge as the video download. So:
+//   1) Try YouTube oEmbed first. No auth, no IP block, ~200ms.
+//   2) If oEmbed fails (rare — video deleted, regional block,
+//      network glitch), fall through to yt-dlp.
+//   3) If both fail, return the literal 'YouTube Video' fallback so
+//      the card still renders without throwing.
 function fetchVideoTitle(videoId) {
+  return new Promise((resolve) => {
+    const https = require('https');
+    const url = 'https://www.youtube.com/oembed?format=json&url=' +
+                encodeURIComponent('https://www.youtube.com/watch?v=' + videoId);
+    const settled = { v: false };
+    const finish = (title) => { if (!settled.v) { settled.v = true; resolve(title); } };
+
+    let req;
+    try {
+      req = https.get(url, { headers: { 'Accept': 'application/json' } }, (r) => {
+        if (r.statusCode !== 200) {
+          r.resume();
+          return _fallbackYtdlpTitle(videoId).then(finish);
+        }
+        let body = '';
+        r.on('data', (d) => { body += d.toString(); });
+        r.on('end', () => {
+          try {
+            const j = JSON.parse(body);
+            if (j && j.title && String(j.title).trim()) {
+              return finish(String(j.title).trim());
+            }
+          } catch (_) {}
+          _fallbackYtdlpTitle(videoId).then(finish);
+        });
+        r.on('error', () => _fallbackYtdlpTitle(videoId).then(finish));
+      });
+      req.setTimeout(5000, () => {
+        try { req.destroy(); } catch (_) {}
+        _fallbackYtdlpTitle(videoId).then(finish);
+      });
+      req.on('error', () => _fallbackYtdlpTitle(videoId).then(finish));
+    } catch (_) {
+      _fallbackYtdlpTitle(videoId).then(finish);
+    }
+  });
+}
+
+function _fallbackYtdlpTitle(videoId) {
   return new Promise((resolve) => {
     const proc = spawn('yt-dlp', [
       '--skip-download', '--print', 'title', ...YTDLP_COMMON_ARGS,
@@ -1546,7 +1631,17 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
     sendUpdate({ status: 'transcribing', message: 'Transcribing with AI...' });
     let transcriptText;
     try {
-      transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+      // Use the timestamped variant so the stored transcript carries
+      // [HH:MM:SS.mmm] markers — required for the caption pipeline in
+      // /shorts/clip to find segments inside each moment's window.
+      // Falls back to plain Whisper text if verbose_json returns no
+      // segments (very rare; happens on truly silent audio).
+      try {
+        transcriptText = await transcribeUploadedFileTimestamped(audioPath);
+      } catch (timedErr) {
+        console.warn('[analyze-upload] timestamped transcription failed, falling back to plain text:', timedErr.message);
+        transcriptText = await _repurposeMod.transcribeUploadedFile(audioPath);
+      }
     } catch (err) {
       sendUpdate({ status: 'error', message: 'Transcription failed: ' + (err.message || 'unknown error') });
       return res.end();
@@ -2711,6 +2806,141 @@ function formatTimestampCompat(totalSeconds) {
 // that resolves once the writer finishes.
 const previewGenerationLocks = new Map();
 
+// Resolve the on-disk source file for an analysis whose video_url
+// starts with 'upload://'. Uploaded files are written by
+// /analyze-upload to CLIPS_DIR as 'upload-<analysisId>.<ext>'. Returns
+// the absolute path or null if nothing matches (e.g. Railway redeploy
+// wiped /tmp). The .mp3 / .progress / .error siblings are filtered out.
+function findUploadedSourcePath(analysisId) {
+  let files = [];
+  try { files = fs.readdirSync(CLIPS_DIR); } catch (e) { return null; }
+  const match = files.find(f =>
+    f.startsWith('upload-' + analysisId + '.') &&
+    !f.endsWith('.mp3') &&
+    !f.endsWith('.progress') &&
+    !f.endsWith('.error')
+  );
+  return match ? path.join(CLIPS_DIR, match) : null;
+}
+
+// Extract a single JPEG frame from a video source at the given offset
+// (seconds). Used by the upload-thumbnail endpoints below; the output
+// is small (~10-40 KB) so we don't bother with a concurrency lock.
+function extractFrameAt(sourcePath, atSec, outPath) {
+  return new Promise((resolve, reject) => {
+    const ffArgs = [
+      '-y',
+      '-ss', String(Math.max(0, atSec)),
+      '-i', sourcePath,
+      '-frames:v', '1',
+      '-q:v', '4',
+      '-f', 'image2',
+      outPath
+    ];
+    const proc = spawn(ffmpegPath, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', e => settle(reject, e));
+    proc.on('close', code => code === 0
+      ? settle(resolve)
+      : settle(reject, new Error('ffmpeg frame exit ' + code + ': ' + stderr.slice(-200))));
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      settle(reject, new Error('ffmpeg frame timeout (20s)'));
+    }, 20000);
+  });
+}
+
+// GET /upload-thumbnail/:analysisId
+// JPEG frame extracted at the 1-second mark of an uploaded video,
+// used as the main analysis card's hero image. Falls back to frame 0
+// if the source is shorter than 1 second.
+router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) return res.status(503).end();
+    const analysisId = req.params.analysisId;
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
+    if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+      res.setHeader('Content-Type', 'image/jpeg');
+      return res.sendFile(outPath);
+    }
+    const sourcePath = findUploadedSourcePath(analysisId);
+    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    try {
+      await extractFrameAt(sourcePath, 1.0, outPath);
+    } catch (e) {
+      try { await extractFrameAt(sourcePath, 0, outPath); } catch (e2) {
+        console.error('  upload-thumbnail extract failed:', e2.message);
+        return res.status(500).end();
+      }
+    }
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
+    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+    res.setHeader('Content-Type', 'image/jpeg');
+    return res.sendFile(outPath);
+  } catch (err) {
+    console.error('upload-thumbnail error:', err);
+    return res.status(500).end();
+  }
+});
+
+// GET /upload-moment-thumbnail/:analysisId/:momentIdx
+// JPEG frame extracted at the MIDDLE of the moment's [start, end]
+// window so the per-moment card has a representative still. Cached
+// at CLIPS_DIR/_uthumb_<id>_m<idx>.jpg.
+router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegAvailable) return res.status(503).end();
+    const analysisId = req.params.analysisId;
+    const momentIdx = parseInt(req.params.momentIdx, 10);
+    if (!Number.isFinite(momentIdx) || momentIdx < 0) return res.status(400).end();
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
+    if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
+    let moments = analysis.moments || [];
+    if (typeof moments === 'string') {
+      try { moments = JSON.parse(moments); } catch (e) { moments = []; }
+    }
+    const moment = moments[momentIdx];
+    if (!moment || !moment.timeRange) return res.status(404).end();
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_m${momentIdx}.jpg`);
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+      res.setHeader('Content-Type', 'image/jpeg');
+      return res.sendFile(outPath);
+    }
+    const sourcePath = findUploadedSourcePath(analysisId);
+    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    let startSec, endSec;
+    try {
+      const r = parseTimeRange(moment.timeRange);
+      startSec = r.start; endSec = r.end;
+    } catch (e) { return res.status(400).end(); }
+    const midSec = (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec > startSec)
+      ? startSec + (endSec - startSec) / 2
+      : (Number.isFinite(startSec) ? startSec : 0);
+    try {
+      await extractFrameAt(sourcePath, midSec, outPath);
+    } catch (e) {
+      console.error('  upload-moment-thumbnail extract failed:', e.message);
+      return res.status(500).end();
+    }
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
+    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+    res.setHeader('Content-Type', 'image/jpeg');
+    return res.sendFile(outPath);
+  } catch (err) {
+    console.error('upload-moment-thumbnail error:', err);
+    return res.status(500).end();
+  }
+});
+
 // GET /moment-preview/:analysisId/:momentIdx
 // Returns a 9:16 vertical, center-cropped, trimmed-to-timeRange MP4 for
 // a single moment so the analysis card can autoplay it in a <video> tag.
@@ -2734,7 +2964,17 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     const moment = moments[momentIdx];
     if (!moment || !moment.timeRange) return res.status(404).end();
 
-    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}.mp4`);
+    // Version-tag the cached preview filename. Bumped to v2 when the
+    // 'Math.max(1, endSec-startSec)' duration floor was removed —
+    // without this bump, the OLD 1-second cached MP4s on disk would
+    // still match _preview_<id>_m<idx>.mp4 and the cache-hit path
+    // would serve them forever (Railway's /tmp persists across some
+    // restarts, so the broken files don't auto-clear). The v2 suffix
+    // forces a regen, and the embedded ${durationTag} also
+    // invalidates if the GPT-extracted timeRange ever changes for an
+    // existing moment.
+    const durationTag = '_d' + Math.round((parseTimeRange(moment.timeRange).end - parseTimeRange(moment.timeRange).start) || 0) + 's';
+    const outPath = path.join(CLIPS_DIR, `_preview_${analysisId}_m${momentIdx}_v2${durationTag}.mp4`);
 
     // Helper to stream the cached file with proper headers.
     const sendCached = () => {
@@ -2773,12 +3013,22 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     // this is > 0, so no minimum floor is needed.
     const duration = endSec - startSec;
 
-    // Extract YouTube videoId from the analysis URL.
-    const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
-    const vidMatch = (analysis.video_url || '').match(ytRegex);
-    if (!vidMatch) return res.status(400).end();
-    const videoId = vidMatch[1];
-    const videoUrl = analysis.video_url;
+    // Resolve the source video path. For uploaded analyses
+    // (video_url='upload://...') the source already sits in CLIPS_DIR
+    // as upload-<analysisId>.<ext> — no download chain needed. For
+    // YouTube URLs we go through the standard getOrDownloadVideo
+    // chain (Cobalt → yt-dlp → ytdl-core → Apify).
+    const isUpload = (analysis.video_url || '').startsWith('upload://');
+    let videoId = null, videoUrl = analysis.video_url, sourceVideoPath = null;
+    if (isUpload) {
+      sourceVideoPath = findUploadedSourcePath(analysisId);
+      if (!sourceVideoPath) return res.status(404).json({ error: 'Uploaded source missing — re-upload the video.' });
+    } else {
+      const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+      const vidMatch = (analysis.video_url || '').match(ytRegex);
+      if (!vidMatch) return res.status(400).end();
+      videoId = vidMatch[1];
+    }
 
     // Register lock so concurrent requests block instead of racing.
     let lockResolve, lockReject;
@@ -2789,9 +3039,12 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     previewGenerationLocks.set(outPath, lockPromise);
 
     try {
-      // Reuse the cached source video if available; download otherwise.
-      const ytdlpPath = 'yt-dlp';
-      const sourceVideoPath = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, () => {});
+      // For YouTube, reuse the cached source video if available;
+      // download otherwise. For uploads, sourceVideoPath is already set.
+      if (!isUpload) {
+        const ytdlpPath = 'yt-dlp';
+        sourceVideoPath = await getOrDownloadVideo(videoId, videoUrl, ytdlpPath, () => {});
+      }
 
       // ffmpeg pipeline:
       //   -ss before -i = fast seek (keyframe-accurate enough for a preview)
@@ -7192,10 +7445,16 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
         ` : `
           <div class="cards-grid">
             ${analyses.map(analysis => {
-              // Extract video ID for thumbnail
+              // Resolve the thumbnail src. YouTube URLs use img.youtube.com.
+              // upload:// URLs use /shorts/upload-thumbnail/<id> which
+              // lazily ffmpegs a frame from the uploaded source file.
               const ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
               const vidMatch = (analysis.video_url || '').match(ytRegex);
               const vidId = vidMatch ? vidMatch[1] : null;
+              const isUploadCard = (analysis.video_url || '').startsWith('upload://');
+              const thumbSrc = vidId
+                ? `https://img.youtube.com/vi/${vidId}/mqdefault.jpg`
+                : (isUploadCard ? `/shorts/upload-thumbnail/${analysis.id}` : null);
               return `
               <div class="card" onclick="viewAnalysis('${analysis.id}')" style="position:relative;">
                 <button onclick="event.stopPropagation(); event.preventDefault(); deleteAnalysis('${analysis.id}', this); return false;" title="Delete"
@@ -7205,7 +7464,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
                   onmouseover="this.style.background='#ef4444'; this.style.transform='scale(1.15)'"
                   onmouseout="this.style.background='rgba(239,68,68,0.9)'; this.style.transform='scale(1)'"
                 >&times;</button>
-                ${vidId ? `<img src="https://img.youtube.com/vi/${vidId}/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">` : ''}
+                ${thumbSrc ? `<img src="${thumbSrc}" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;background:#000;" onerror="this.style.display='none'">` : ''}
                 <div class="card-header">
                   <div class="card-title">${analysis.video_title || 'YouTube Video'}</div>
                   <div class="card-meta">${new Date(analysis.created_at).toLocaleDateString()}</div>
@@ -7927,6 +8186,10 @@ ${paginationHtml}
         var ytRegex = new RegExp('(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/embed/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})');
         var vidMatch = (data.video_url || '').match(ytRegex);
         var vidId = vidMatch ? vidMatch[1] : null;
+        var isUploadCard = (data.video_url || '').indexOf('upload://') === 0;
+        var thumbSrc = vidId
+          ? ('https://img.youtube.com/vi/' + vidId + '/mqdefault.jpg')
+          : (isUploadCard ? ('/shorts/upload-thumbnail/' + data.id) : null);
         var createdAt = data.created_at ? new Date(data.created_at) : new Date();
         var dateStr = createdAt.toLocaleDateString();
         var html =
@@ -7935,7 +8198,7 @@ ${paginationHtml}
               'style="position:absolute; top:10px; right:10px; background:rgba(239,68,68,0.9); border:2px solid rgba(255,255,255,0.3); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; z-index:10; transition:all 0.2s; font-weight:bold;" ' +
               'onmouseover="this.style.background=\\'#ef4444\\'; this.style.transform=\\'scale(1.15)\\'" ' +
               'onmouseout="this.style.background=\\'rgba(239,68,68,0.9)\\'; this.style.transform=\\'scale(1)\\'">&times;</button>' +
-            (vidId ? '<img src="https://img.youtube.com/vi/' + vidId + '/mqdefault.jpg" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;">' : '') +
+            (thumbSrc ? '<img src="' + thumbSrc + '" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;background:#000;" onerror="this.style.display=\\'none\\'">' : '') +
             '<div class="card-header">' +
               '<div class="card-title">' + _escHtmlAP(data.video_title || 'YouTube Video') + '</div>' +
               '<div class="card-meta">' + _escHtmlAP(dateStr) + '</div>' +
@@ -8876,12 +9139,21 @@ ${paginationHtml}
           //   - Center button: togglePlayPause swaps between ▶ and ‖.
           //   - Top-right mute toggle stays; bottom-left timeRange badge
           //     stays.
-          const videoEmbed = videoId ? \`
+          // Render the 9:16 preview shell for BOTH YouTube and uploaded
+          // analyses. The /shorts/moment-preview endpoint handles both
+          // source types; only the poster differs (YouTube mqdefault vs
+          // an ffmpeg-extracted frame from the uploaded file via
+          // /shorts/upload-moment-thumbnail/<id>/<idx>).
+          const isUploadAnalysis = (analysis.video_url || '').indexOf('upload://') === 0;
+          const _posterUrl = videoId
+            ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
+            : (isUploadAnalysis ? \`/shorts/upload-moment-thumbnail/\${id}/\${idx}\` : '');
+          const videoEmbed = (videoId || isUploadAnalysis) ? \`
             <div class="moment-preview-shell" id="moment-preview-\${idx}"
               style="position:relative; width:100%; max-width:220px; aspect-ratio:9/16; margin:0 auto 14px; background:#0a0612; border:1px solid rgba(108,58,237,0.20); border-radius:14px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,0.35);">
               <video
                 src="/shorts/moment-preview/\${id}/\${idx}"
-                poster="https://img.youtube.com/vi/\${videoId}/mqdefault.jpg"
+                poster="\${_posterUrl}"
                 autoplay muted playsinline preload="auto"
                 style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
                 onloadstart="registerMomentPreview(this)"
