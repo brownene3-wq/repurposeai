@@ -4857,6 +4857,114 @@ router.get('/clip/debug', requireAuth, (req, res) => {
     res.json({ error: err.message, clips_dir: CLIPS_DIR });
   }
 });
+// GET /api/my-renders - List the logged-in user's in-flight + recently-ready
+// clip renders. Used by the /shorts UI to (a) show a persistent banner when
+// the user has clips rendering in the background and (b) re-attach the
+// per-card progress bar to a mid-render moment when the user returns to the
+// page. Filenames carry the analysisId + moment index (see /clip POST), so
+// we parse them and verify ownership against the analysis row.
+router.get('/api/my-renders', requireAuth, async (req, res) => {
+  try {
+    if (!fs.existsSync(CLIPS_DIR)) return res.json({ renders: [] });
+    const files = fs.readdirSync(CLIPS_DIR);
+
+    // Parse filenames of the form <safeTitle>_a<analysisId>_m<momentIndex>_<ts>.mp4
+    // Anchor at the end so a safeTitle that happens to contain _aX_mY doesn't
+    // false-match. .progress / .error / .encoding.mp4 are sibling files keyed
+    // off the same base name.
+    const FN_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4$/;
+    const PROG_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4\.progress$/;
+    const ERR_RE = /_a([^_]+)_m(\d+)_(\d+)\.mp4\.error$/;
+
+    // First pass: collect every (analysisId, momentIndex) we see across mp4 /
+    // .progress / .error / .encoding.mp4 siblings. Keep the newest timestamp.
+    const seen = new Map(); // key = aId + ':' + mIdx -> { analysisId, momentIndex, ts, filename }
+    function note(analysisId, momentIndex, ts, filename) {
+      const key = analysisId + ':' + momentIndex;
+      const existing = seen.get(key);
+      if (!existing || ts > existing.ts) {
+        seen.set(key, { analysisId, momentIndex: Number(momentIndex), ts, filename });
+      }
+    }
+    for (const f of files) {
+      let m;
+      if ((m = f.match(FN_RE))) note(m[1], m[2], Number(m[3]), f);
+      else if ((m = f.match(PROG_RE))) note(m[1], m[2], Number(m[3]), f.replace(/\.progress$/, ''));
+      else if ((m = f.match(ERR_RE))) note(m[1], m[2], Number(m[3]), f.replace(/\.error$/, ''));
+    }
+
+    // Second pass: figure out status for each and filter by ownership.
+    const analysisCache = new Map();
+    const out = [];
+    for (const entry of seen.values()) {
+      // Ownership check: look up the analysis once and verify user_id.
+      let analysis = analysisCache.get(entry.analysisId);
+      if (analysis === undefined) {
+        try { analysis = await shortsOps.getById(entry.analysisId); }
+        catch (e) { analysis = null; }
+        analysisCache.set(entry.analysisId, analysis);
+      }
+      if (!analysis || analysis.user_id !== req.user.id) continue;
+
+      const fullPath = path.join(CLIPS_DIR, entry.filename);
+      const progressPath = fullPath + '.progress';
+      const errorPath = fullPath + '.error';
+      const encodingPath = fullPath + '.encoding.mp4';
+
+      let status = 'unknown';
+      let progress = null;
+      let size = 0;
+
+      if (fs.existsSync(errorPath)) {
+        status = 'failed';
+        try { progress = fs.readFileSync(errorPath, 'utf8'); } catch (e) {}
+      } else if (fs.existsSync(progressPath)) {
+        status = 'rendering';
+        try { progress = fs.readFileSync(progressPath, 'utf8') || 'Still processing...'; } catch (e) { progress = 'Still processing...'; }
+      } else if (fs.existsSync(fullPath)) {
+        try { size = fs.statSync(fullPath).size; } catch (e) {}
+        if (size > 10000) status = 'ready';
+        else status = 'rendering';
+      } else if (fs.existsSync(encodingPath)) {
+        status = 'rendering';
+        progress = 'Encoding...';
+      } else {
+        // Nothing on disk anymore (Railway /tmp wipe?) — skip.
+        continue;
+      }
+
+      // Extract a friendly moment title from the analysis row if we have it.
+      let momentTitle = null;
+      try {
+        let moments = analysis.moments;
+        if (typeof moments === 'string') moments = JSON.parse(moments);
+        if (Array.isArray(moments) && moments[entry.momentIndex]) {
+          momentTitle = moments[entry.momentIndex].title || null;
+        }
+      } catch (e) {}
+
+      out.push({
+        analysisId: entry.analysisId,
+        momentIndex: entry.momentIndex,
+        filename: entry.filename,
+        status,
+        progress,
+        size,
+        momentTitle,
+        videoTitle: analysis.video_title || null,
+        updatedAt: entry.ts
+      });
+    }
+
+    // Sort newest first so the banner / library lists feel intuitive.
+    out.sort((a, b) => b.updatedAt - a.updatedAt);
+    res.json({ renders: out });
+  } catch (err) {
+    console.error('my-renders error:', err);
+    res.status(500).json({ error: err.message, renders: [] });
+  }
+});
+
 
 // POST /narrate - Generate narration for a clip
 router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async (req, res) => {
@@ -6607,6 +6715,54 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
       background: rgba(108,58,237,0.04);
       border-color: rgba(108,58,237,0.10);
     }
+    /* Persistent banner — visible whenever the user has clip renders running in the background. */
+    .bg-render-banner {
+      display: none;
+      margin: 14px 24px 0;
+      padding: 11px 14px;
+      background: linear-gradient(135deg, rgba(108,58,237,0.20), rgba(236,72,153,0.14));
+      border: 1px solid rgba(108,58,237,0.40);
+      border-radius: 12px;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text);
+      box-shadow: 0 6px 24px -10px rgba(108,58,237,0.40);
+    }
+    .bg-render-banner.active { display: flex; }
+    .bg-render-banner-icon {
+      font-size: 20px;
+      line-height: 1;
+      filter: drop-shadow(0 0 6px rgba(236,72,153,0.5));
+    }
+    .bg-render-banner-text { flex: 1; min-width: 0; }
+    .bg-render-banner-text strong { color: #e056fd; font-weight: 700; }
+    .bg-render-banner-list {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bg-render-banner-action {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: rgba(108,58,237,0.25);
+      color: #fff;
+      border: 1px solid rgba(108,58,237,0.5);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .bg-render-banner-action:hover { background: rgba(108,58,237,0.40); }
+    body.light .bg-render-banner {
+      background: linear-gradient(135deg, rgba(108,58,237,0.08), rgba(236,72,153,0.06));
+      border-color: rgba(108,58,237,0.25);
+    }
+
     /* Per-clip progress bar (shown while Download Clip / B-Roll / Narration is processing) */
     .clip-progress {
       display: none;
@@ -7052,6 +7208,18 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
 
   <!-- Main content -->
   <main class="main-content">
+      <!-- Background-render banner. Shown whenever the user has clip renders
+           still running on the server, so closing/leaving the modal doesn't
+           feel like losing the work. Populated by refreshBackgroundRenderBanner(). -->
+      <div class="bg-render-banner" id="bgRenderBanner" role="status" aria-live="polite">
+        <span class="bg-render-banner-icon" aria-hidden="true">\u{1F3AC}</span>
+        <div class="bg-render-banner-text">
+          <strong id="bgRenderBannerCount">0</strong> <span id="bgRenderBannerNoun">clips rendering</span> in background
+          <div class="bg-render-banner-list" id="bgRenderBannerList"></div>
+        </div>
+        <button type="button" class="bg-render-banner-action" id="bgRenderBannerAction" onclick="openMostRecentBackgroundRender()">View</button>
+      </div>
+
       <div class="header">
         <h1 class="header-title"><img src="/images/section-icons/A-1.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Smart Shorts</h1>
         <p class="header-subtitle">Transform any YouTube video into viral short-form content</p>
@@ -9438,6 +9606,20 @@ ${paginationHtml}
           container.appendChild(card);
         });
 
+        // Re-attach the per-card progress bar to any moment whose clip is
+        // still rendering in the background (e.g. user closed the modal,
+        // navigated away, and just came back to /shorts).
+        window.__bgReattached = new Set(); // reset on every modal open
+        try {
+          if (Array.isArray(window.__bgRenders) && window.__bgRenders.length) {
+            tryReattachOpenMoments(window.__bgRenders);
+          } else {
+            // Force a fresh fetch so reattach can happen even before the 5s
+            // banner poll tick fires.
+            refreshBackgroundRenderBanner();
+          }
+        } catch (e) { /* non-fatal */ }
+
         document.getElementById('analysisModal').classList.add('active');
       } catch (error) {
         showToast('Error loading analysis: ' + error.message);
@@ -9835,6 +10017,169 @@ ${paginationHtml}
       }
       return { label: label, percent: percent };
     }
+
+    // Reusable poller that drives a moment card's progress bar from the
+    // server-side .progress file for a given filename. Returns a Promise
+    // that resolves when the clip is ready or rejects on failure/timeout.
+    // Called both from downloadClip() (after the POST returns) and from
+    // reattachBackgroundRenders() on /shorts page load.
+    function attachClipPolling(opts) {
+      var analysisId = opts.analysisId;
+      var momentIndex = opts.momentIndex;
+      var filename = opts.filename;
+      var btn = opts.btn || null;
+      var maxAttempts = opts.maxAttempts || 300; // ~10 min at 2s intervals
+      var onReady = opts.onReady || function(){};
+      var onFail = opts.onFail || function(){};
+      var triggerDownloadOnReady = opts.triggerDownloadOnReady !== false;
+      var originalText = btn ? btn.textContent : null;
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Processing\u2026';
+        btn.style.background = 'linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%)';
+        btn.style.color = '#fff';
+      }
+      clipProgressShow(momentIndex, 'Reattaching\u2026');
+      var attempts = 0;
+      var poll;
+      var done = false;
+      function cleanup() { if (poll) clearInterval(poll); }
+      poll = setInterval(async function() {
+        attempts++;
+        try {
+          var resp = await fetch('/shorts/clip/status/' + encodeURIComponent(filename));
+          var data = await resp.json();
+          if (data.failed) {
+            done = true; cleanup(); clipProgressFinish(momentIndex, false);
+            if (btn) { btn.disabled = false; btn.textContent = originalText || 'Download Clip'; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)'; }
+            showToast(data.message || 'Clip generation failed');
+            onFail(data);
+            return;
+          }
+          if (data.ready) {
+            done = true; cleanup(); clipProgressFinish(momentIndex, true);
+            if (btn) { btn.textContent = 'Downloading\u2026'; }
+            if (triggerDownloadOnReady) {
+              var link = document.createElement('a');
+              link.href = '/shorts/clip/download/' + encodeURIComponent(filename);
+              link.download = filename;
+              document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            }
+            if (btn) {
+              setTimeout(function() {
+                btn.disabled = false;
+                btn.textContent = 'Download Clip';
+                btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)';
+              }, 2000);
+              btn.dataset.lastFilename = filename;
+            }
+            onReady(data);
+            return;
+          }
+          if (attempts >= maxAttempts) {
+            done = true; cleanup(); clipProgressFinish(momentIndex, false);
+            if (btn) { btn.disabled = false; btn.textContent = originalText || 'Download Clip'; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)'; }
+            showToast('Clip generation timed out. Please try again.');
+            onFail({ timedOut: true });
+            return;
+          }
+          // In-flight: parse progress message and drive the bar.
+          var msg = data.message || '';
+          var parsed = parseClipProgressMessage(msg);
+          clipProgressUpdate(momentIndex, parsed.label, parsed.percent);
+          if (btn) {
+            if (msg.startsWith('Encoding:')) btn.textContent = msg;
+            else if (msg !== 'Still processing...') btn.textContent = msg.substring(0, 30);
+            else btn.textContent = 'Processing' + '.'.repeat((attempts % 3) + 1);
+          }
+        } catch (e) {
+          done = true; cleanup(); clipProgressFinish(momentIndex, false);
+          if (btn) { btn.disabled = false; btn.textContent = originalText || 'Download Clip'; btn.style.background = 'linear-gradient(135deg, #FF0050 0%, #FF4500 100%)'; }
+          showToast(e.message || 'Failed to check clip status');
+          onFail({ error: e });
+        }
+      }, 2000);
+      return { cancel: cleanup, get done() { return done; } };
+    }
+
+    // ---- Background renders state shared across the page ----
+    window.__bgRenders = []; // last fetched [{analysisId, momentIndex, status, ...}]
+    window.__bgReattached = new Set(); // analysisId+':'+momentIndex pairs we already wired up
+
+    // Fetch /shorts/api/my-renders and update the banner.
+    async function refreshBackgroundRenderBanner() {
+      try {
+        var resp = await fetch('/shorts/api/my-renders', { credentials: 'same-origin' });
+        if (!resp.ok) return [];
+        var data = await resp.json();
+        var renders = (data.renders || []).filter(function(r) { return r.status === 'rendering'; });
+        window.__bgRenders = renders;
+        var banner = document.getElementById('bgRenderBanner');
+        if (!banner) return renders;
+        var count = document.getElementById('bgRenderBannerCount');
+        var noun = document.getElementById('bgRenderBannerNoun');
+        var list = document.getElementById('bgRenderBannerList');
+        if (renders.length === 0) {
+          banner.classList.remove('active');
+        } else {
+          banner.classList.add('active');
+          if (count) count.textContent = renders.length;
+          if (noun) noun.textContent = renders.length === 1 ? 'clip rendering' : 'clips rendering';
+          if (list) list.textContent = renders.slice(0, 3).map(function(r) { return r.momentTitle || ('Clip a' + r.analysisId + ' / m' + r.momentIndex); }).join(' \u2022 ');
+        }
+        // If the analysis modal is open, re-attach progress to any matching cards.
+        tryReattachOpenMoments(renders);
+        return renders;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    // Click handler for the banner's "View" button: open the most-recent
+    // analysis that currently has a render in flight so the user can see the bar.
+    window.openMostRecentBackgroundRender = function openMostRecentBackgroundRender() {
+      var renders = window.__bgRenders || [];
+      if (renders.length === 0) return;
+      // Renders are sorted newest-first server-side. Open the analysis modal.
+      var top = renders[0];
+      if (typeof viewAnalysis === 'function') viewAnalysis(top.analysisId);
+    };
+
+    // When the analysis modal is open and the user has matching in-flight
+    // renders, hook the progress bar onto each card so they see progress
+    // immediately instead of a stale "Download Clip" button.
+    function tryReattachOpenMoments(renders) {
+      if (!renders || renders.length === 0) return;
+      var modalOpen = document.getElementById('momentsContainer');
+      if (!modalOpen) return;
+      // The currently-open analysis ID is on window.__currentAnalysis (set by viewAnalysis).
+      var current = window.__currentAnalysis;
+      if (!current) return;
+      var openId = String(current.id != null ? current.id : '');
+      renders.forEach(function(r) {
+        if (String(r.analysisId) !== openId) return;
+        var key = r.analysisId + ':' + r.momentIndex;
+        if (window.__bgReattached.has(key)) return;
+        var btn = document.getElementById('clip-btn-' + r.momentIndex);
+        if (!btn) return;
+        window.__bgReattached.add(key);
+        attachClipPolling({
+          analysisId: r.analysisId,
+          momentIndex: r.momentIndex,
+          filename: r.filename,
+          btn: btn,
+          triggerDownloadOnReady: false  // they didn't just click; don't surprise-download
+        });
+      });
+    }
+
+    // Kick off banner polling — on page load and every 5s.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', refreshBackgroundRenderBanner);
+    } else {
+      refreshBackgroundRenderBanner();
+    }
+    setInterval(refreshBackgroundRenderBanner, 5000);
 
     async function downloadClip(analysisId, momentIndex, btn) {
       const originalText = btn.textContent;
