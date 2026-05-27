@@ -1054,7 +1054,7 @@ function getVideoDuration(videoPath) {
 // Stage 1 — Extract `count` evenly-spaced candidate frames from the video.
 // Skips the first 5% and last 5% (intros/outros are usually weak). Returns
 // an array of { path, timestamp } sorted by timestamp.
-async function extractCandidateFrames(videoPath, count = 12) {
+async function extractCandidateFrames(videoPath, count = 8) {
   const duration = await getVideoDuration(videoPath);
   // If we can't get duration, fall back to fixed timestamps assuming the
   // video is at least 60s. ffmpeg will fail silently for frames past the end.
@@ -1065,37 +1065,59 @@ async function extractCandidateFrames(videoPath, count = 12) {
   const step = usable / count;
 
   const jobId = uuidv4().slice(0, 8);
-  const frames = [];
+
+  // Run all ffmpeg extracts in parallel — each call produces BOTH a full-res
+  // frame and a 384-wide preview using a single -filter_complex split.
+  const tasks = [];
   for (let i = 0; i < count; i++) {
     const ts = startCut + i * step + step / 2;
     const framePath = path.join(outputDir, `frame-${jobId}-${i}.jpg`);
-    await new Promise((resolve) => {
+    const previewPath = path.join(outputDir, `frame-${jobId}-${i}-prev.jpg`);
+    tasks.push(new Promise((resolve) => {
       const proc = spawn(ffmpegPath, [
         '-ss', String(ts.toFixed(2)),
         '-i', videoPath,
         '-frames:v', '1',
+        '-filter_complex', '[0:v]split=2[a][b];[b]scale=384:-1[prev]',
+        '-map', '[a]',
         '-q:v', '2',
         '-y',
-        framePath
+        framePath,
+        '-map', '[prev]',
+        '-q:v', '4',
+        '-y',
+        previewPath
       ]);
-      proc.on('close', () => resolve());
-      proc.on('error', () => resolve());
-    });
-    if (fs.existsSync(framePath) && fs.statSync(framePath).size > 1000) {
-      frames.push({ path: framePath, timestamp: ts });
+      let timedOut = false;
+      const killer = setTimeout(() => { timedOut = true; try { proc.kill('SIGKILL'); } catch (e) {} }, 15000);
+      proc.on('close', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut }); });
+      proc.on('error', () => { clearTimeout(killer); resolve({ ts, framePath, previewPath, timedOut: true }); });
+    }));
+  }
+  const results = await Promise.all(tasks);
+
+  const frames = [];
+  for (const r of results) {
+    if (r.timedOut) continue;
+    if (fs.existsSync(r.framePath) && fs.statSync(r.framePath).size > 1000) {
+      frames.push({
+        path: r.framePath,
+        previewPath: fs.existsSync(r.previewPath) ? r.previewPath : r.framePath,
+        timestamp: r.ts
+      });
     }
   }
   return frames;
 }
 
 // Stage 2 — Score candidate frames using GPT-4o-mini vision in a single
-// batched call. Each frame is uploaded as a base64 data URI and the model
-// returns JSON with per-frame scores + reasoning.
+// batched call. Uses the small downscaled previews (384px wide) so the
+// total OpenAI payload stays under ~500 KB even with 8 frames.
 async function scoreCandidateFrames(frames) {
   if (!frames || frames.length === 0) return [];
-  // Build the multimodal user message
-  const imageContents = frames.map((f, i) => {
-    const buf = fs.readFileSync(f.path);
+  // Build the multimodal user message — use previewPath, NOT path.
+  const imageContents = frames.map((f) => {
+    const buf = fs.readFileSync(f.previewPath || f.path);
     const b64 = buf.toString('base64');
     return {
       type: 'image_url',
@@ -4876,7 +4898,7 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     // Stage 1: extract candidate frames
     let scoredFrames = [];
     try {
-      const candidates = await extractCandidateFrames(videoPath, 12);
+      const candidates = await extractCandidateFrames(videoPath, 8);
       if (candidates.length === 0) {
         return res.status(500).json({ success: false, message: 'Could not extract any frames from the video.' });
       }
