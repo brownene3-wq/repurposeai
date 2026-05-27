@@ -13126,7 +13126,7 @@ function renderMyClipsPage(user, teamPermissions) {
 
     function parsePct(msg) {
       if (!msg) return 8;
-      const m = String(msg).match(/(\d+(?:\.\d+)?)\s*%/);
+      const m = String(msg).match(/(\\d+(?:\\.\\d+)?)\\s*%/);
       return m ? Math.min(100, Math.max(2, parseFloat(m[1]))) : 8;
     }
 
