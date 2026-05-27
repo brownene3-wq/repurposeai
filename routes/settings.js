@@ -837,6 +837,32 @@ router.get('/', requireAuth, async (req, res) => {
         }
       }
 
+      // Deep-link support: /settings#apikeys (or any valid section name) opens
+      // that section on load. Other pages link here with the appropriate hash
+      // when they want to direct the user to a specific settings section.
+      (function openSectionFromHash() {
+        function applyHash() {
+          var hash = (window.location.hash || '').replace(/^#/, '');
+          if (!hash) return;
+          var btn = document.querySelector('.settings-nav-btn[data-section="' + hash + '"]');
+          if (btn) {
+            switchSection(hash, btn);
+            // Scroll the corresponding section into view in case the user
+            // landed on a long page where the section is below the fold.
+            var section = document.getElementById('section-' + hash);
+            if (section && typeof section.scrollIntoView === 'function') {
+              section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }
+        }
+        // Run once on initial load and again whenever the hash changes.
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', applyHash);
+        } else {
+          applyHash();
+        }
+        window.addEventListener('hashchange', applyHash);
+      })();
 </script>
     </body></html>
   `);
