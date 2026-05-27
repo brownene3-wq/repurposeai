@@ -60,19 +60,163 @@ const YTDLP_COMMON_ARGS = [
 
 // Pass --cookies <path> to yt-dlp when YT_COOKIES_PATH is configured and
 // the file exists. This lets yt-dlp authenticate as a real YouTube user
-// and bypass the "Sign in to confirm you're not a bot" wall that hits
+// and bypass the "Sign in to confirm you\'re not a bot" wall that hits
 // every Railway datacenter IP. Same pattern used by /ai-thumbnail,
 // /ai-broll, and /video-editor.
+//
+// COOKIE POOL: YT_COOKIES_PATH can be either:
+//   (a) A single .txt file → classic single-cookie behavior (unchanged).
+//   (b) A directory of .txt files → pick a random one per request,
+//       blacklist any cookie that fails 3+ times in a row. This gives
+//       us YouTube-account rotation without hammering one account.
+//
+// Failure tracking lives in memory and resets on process restart — that\'s
+// intentional so a temporary YouTube outage doesn\'t permanently blacklist
+// otherwise-healthy cookies. Call markCookieFailed(path) from the download
+// chain when a request using that cookie fails so we can demote it.
+
+const _cookieFailures = new Map(); // path -> { count, lastFail }
+const COOKIE_BLACKLIST_THRESHOLD = 3;
+const COOKIE_BLACKLIST_WINDOW_MS = 30 * 60 * 1000; // 30 min
+
+function _listCookieFiles(dir) {
+  try {
+    return fs.readdirSync(dir)
+      .filter(f => f.toLowerCase().endsWith('.txt'))
+      .map(f => path.join(dir, f))
+      .filter(full => {
+        // Skip files blacklisted within the recent window.
+        const failure = _cookieFailures.get(full);
+        if (!failure) return true;
+        if (Date.now() - failure.lastFail > COOKIE_BLACKLIST_WINDOW_MS) {
+          _cookieFailures.delete(full);
+          return true;
+        }
+        return failure.count < COOKIE_BLACKLIST_THRESHOLD;
+      });
+  } catch (_) {
+    return [];
+  }
+}
+
+function _pickRandomCookie(dir) {
+  const candidates = _listCookieFiles(dir);
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+// Most callers want the args array. They can also use getYoutubeCookiesPath()
+// to get just the path string so they can pass it to markCookieFailed later.
+function getYoutubeCookiesPath() {
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg) return null;
+  try {
+    const stat = fs.statSync(cfg);
+    if (stat.isDirectory()) return _pickRandomCookie(cfg);
+    if (stat.isFile()) return cfg;
+  } catch (_) {}
+  return null;
+}
+
 function getYoutubeCookiesArgs() {
-  const p = process.env.YT_COOKIES_PATH;
-  if (p && fs.existsSync(p)) return ['--cookies', p];
+  const chosen = getYoutubeCookiesPath();
+  if (chosen) return ['--cookies', chosen];
   return [];
 }
 
+function markCookieFailed(cookiePath) {
+  if (!cookiePath) return;
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg || cookiePath === cfg) return; // never blacklist a single-file cookie
+  const existing = _cookieFailures.get(cookiePath) || { count: 0, lastFail: 0 };
+  existing.count += 1;
+  existing.lastFail = Date.now();
+  _cookieFailures.set(cookiePath, existing);
+  if (existing.count >= COOKIE_BLACKLIST_THRESHOLD) {
+    console.warn('[cookie-pool] blacklisting ' + path.basename(cookiePath) + ' after ' + existing.count + ' consecutive failures');
+  }
+}
+
+function getCookiePoolStats() {
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg) return { configured: false };
+  try {
+    if (fs.statSync(cfg).isFile()) return { configured: true, mode: 'single', failures: {} };
+  } catch (_) { return { configured: true, mode: 'broken', failures: {} }; }
+  const all = (() => { try { return fs.readdirSync(cfg).filter(f => f.toLowerCase().endsWith('.txt')); } catch (_) { return []; } })();
+  const failures = {};
+  for (const [k, v] of _cookieFailures.entries()) {
+    failures[path.basename(k)] = v.count;
+  }
+  return { configured: true, mode: 'pool', total: all.length, available: _listCookieFiles(cfg).length, failures };
+}
+
+// PROXY POOL: YT_PROXY_URL can be a single proxy URL OR a comma-separated
+// list of URLs. With a list we pick a random one per request, blacklist
+// any that fail 3+ times in a row inside a 30-minute window so we don't
+// keep hitting a dead/banned IP.
+//
+// Each IPRoyal ISP proxy is one sticky IP — buying 5 in different cities
+// + rotating between them is what brings real-world block resistance from
+// ~85% (single proxy) to ~95-98% (pool). Pair this with the cookie pool
+// (one cookie per proxy) for the best results.
+const _proxyFailures = new Map();
+const PROXY_BLACKLIST_THRESHOLD = 3;
+const PROXY_BLACKLIST_WINDOW_MS = 30 * 60 * 1000;
+
+function _listProxies() {
+  const cfg = process.env.YT_PROXY_URL;
+  if (!cfg) return [];
+  return cfg.split(',').map(s => s.trim()).filter(Boolean).filter(url => {
+    const failure = _proxyFailures.get(url);
+    if (!failure) return true;
+    if (Date.now() - failure.lastFail > PROXY_BLACKLIST_WINDOW_MS) {
+      _proxyFailures.delete(url);
+      return true;
+    }
+    return failure.count < PROXY_BLACKLIST_THRESHOLD;
+  });
+}
+
+function getYoutubeProxyUrl() {
+  const pool = _listProxies();
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function getYoutubeProxyArgs() {
-  const p = process.env.YT_PROXY_URL;
-  if (p) return ['--proxy', p];
+  const chosen = getYoutubeProxyUrl();
+  if (chosen) return ['--proxy', chosen];
   return [];
+}
+
+function markProxyFailed(proxyUrl) {
+  if (!proxyUrl) return;
+  const cfg = process.env.YT_PROXY_URL || '';
+  if (!cfg.includes(',')) return; // single-proxy mode: don't blacklist the only one we have
+  const existing = _proxyFailures.get(proxyUrl) || { count: 0, lastFail: 0 };
+  existing.count += 1;
+  existing.lastFail = Date.now();
+  _proxyFailures.set(proxyUrl, existing);
+  if (existing.count >= PROXY_BLACKLIST_THRESHOLD) {
+    try {
+      const masked = proxyUrl.replace(/:\/\/([^@]*@)/, '://***@');
+      console.warn('[proxy-pool] blacklisting ' + masked + ' after ' + existing.count + ' failures');
+    } catch (_) {}
+  }
+}
+
+function getProxyPoolStats() {
+  const cfg = process.env.YT_PROXY_URL;
+  if (!cfg) return { configured: false };
+  const all = cfg.split(',').map(s => s.trim()).filter(Boolean);
+  const failures = {};
+  for (const [k, v] of _proxyFailures.entries()) {
+    // Mask credentials in stats output
+    const masked = k.replace(/:\/\/([^@]*@)/, '://***@');
+    failures[masked] = v.count;
+  }
+  return { configured: true, total: all.length, available: _listProxies().length, failures };
 }
 
 // Clips directory
