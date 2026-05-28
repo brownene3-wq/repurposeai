@@ -4070,59 +4070,28 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
       }
     }
 
-    // Post-now path — we need a media path on disk. Reuse the most recent
-    // rendered clip for this analysis/moment if present; otherwise return a
-    // clear error so the UI can prompt the user to click Download Clip
-    // first. (Rendering synchronously here would block the request for
-    // 30-60 seconds.)
-    //
-    // Race-condition guard: the front-end button switches back to "Download
-    // Clip" the instant the render endpoint finishes writing the .progress
-    // file, but the atomic-rename of the .mp4 may still be a few hundred ms
-    // behind. If the user clicks Publish right at that boundary, we'd see
-    // no candidates and bail with "No rendered clip found". Retry the lookup
-    // a few times with a small delay before erroring so the rename has time
-    // to complete. Also wait while a .progress or .encoding.mp4 file exists
-    // for this analysis+moment — that means a render is genuinely in flight.
-    const fs = require('fs');
-    const path = require('path');
-    const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
-    const tag = '_m' + momentIndex + '_';
-    const tryFindClip = () => {
-      try {
-        const files = fs.readdirSync(CLIPS_DIR);
-        const candidates = files
-          .filter(f => f.endsWith('.mp4') && !f.endsWith('.encoding.mp4') && f.includes(analysisId))
-          .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
-          .sort((a, b) => b.mtime - a.mtime);
-        const exact = candidates.find(c => c.f.includes(tag));
-        const pick = exact || candidates[0];
-        if (pick && fs.statSync(pick.full).size > 10000) return pick.full;
-      } catch (_) {}
-      return null;
-    };
-    const renderInFlight = () => {
-      try {
-        const files = fs.readdirSync(CLIPS_DIR);
-        return files.some(f =>
-          f.includes(analysisId) && (f.endsWith('.progress') || f.endsWith('.encoding.mp4'))
-        );
-      } catch (_) { return false; }
-    };
-    let mediaPath = tryFindClip();
-    // Retry for up to ~10 seconds while a render is in flight, or 3 seconds
-    // for the rename race when no render is active.
-    const startTs = Date.now();
-    while (!mediaPath) {
-      const inFlight = renderInFlight();
-      const elapsed = Date.now() - startTs;
-      if (!inFlight && elapsed >= 3000) break;
-      if (inFlight && elapsed >= 60000) break; // hard cap — render shouldn't take >60s past the button toggle
-      await new Promise(r => setTimeout(r, 500));
-      mediaPath = tryFindClip();
+    // Post-now path — we need a media path on disk. Use the shared
+    // resolver: it checks /tmp first (hot path), then waits out the
+    // rename race if a render is in flight, then falls back to the
+    // clip_renders DB row + R2 backup so the publish still works after
+    // Railway wipes /tmp on redeploy.
+    const { resolveClipPath } = require('../utils/clipResolver');
+    const resolved = await resolveClipPath(req.user.id, analysisId, momentIndex, clipRenderOps, { waitForInFlight: true });
+    if (!resolved || !resolved.path) {
+      // Tailor the error message based on why we couldn't resolve.
+      // 'no-db-row' means the user never rendered this clip → original
+      // message. Anything else means we tried R2 and failed → friendlier
+      // recovery hint.
+      const reason = resolved && resolved.reason || 'unknown';
+      const msg = reason === 'no-db-row' || reason === 'missing-args'
+        ? 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.'
+        : 'Your clip is on file but couldn\'t be restored to the server right now. Click "Re-render" on the clip in My Clips and try Publish again.';
+      console.warn('[publish-moment] resolveClipPath failed:', reason, 'analysis=' + analysisId + ' moment=' + momentIndex);
+      return res.status(409).json({ success: false, error: msg });
     }
-    if (!mediaPath) {
-      return res.status(409).json({ success: false, error: 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.' });
+    const mediaPath = resolved.path;
+    if (resolved.source === 'r2-restored') {
+      console.log('[publish-moment] restored clip from R2:', mediaPath);
     }
 
     const result = await publishToConnection(req.user.id, connectionId, {
