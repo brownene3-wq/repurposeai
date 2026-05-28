@@ -1911,6 +1911,19 @@ module.exports = {
     async getByFilename(filename) {
       return (await pool.query(`SELECT * FROM clip_renders WHERE filename = $1 ORDER BY created_at DESC LIMIT 1`, [filename])).rows[0];
     },
+    // Find the most-recent ready clip for a given analysis + moment for
+    // a specific user. Used by /shorts/api/publish-moment + scheduler so
+    // they can resolve a clip via the DB even after Railway wipes /tmp.
+    async getByAnalysisAndMoment(userId, analysisId, momentIndex) {
+      const result = await pool.query(
+        `SELECT * FROM clip_renders
+         WHERE user_id = $1 AND analysis_id = $2 AND moment_index = $3 AND deleted_at IS NULL
+         ORDER BY (status = 'ready') DESC, ready_at DESC NULLS LAST, created_at DESC
+         LIMIT 1`,
+        [userId, analysisId, momentIndex == null ? null : Number(momentIndex)]
+      );
+      return result.rows[0];
+    },
     async updateStatus(id, status, opts = {}) {
       const fields = ['status = $1', 'updated_at = CURRENT_TIMESTAMP'];
       const vals = [status];

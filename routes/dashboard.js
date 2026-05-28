@@ -62,7 +62,18 @@ router.get('/', requireAuth, async (req, res) => {
   } catch (e) { console.error('Dashboard recent shorts error:', e); }
   const recentShortsHtml = recentShorts.length === 0 ? '' : recentShorts.map(s => {
     const vid = extractYouTubeId(s.video_url);
-    const thumb = vid ? `https://img.youtube.com/vi/${vid}/mqdefault.jpg` : '';
+    // Pick the right thumbnail source for this project:
+    //   • YouTube URL  → public mqdefault.jpg
+    //   • upload://    → our /shorts/upload-thumbnail/:id endpoint, which
+    //     serves the persisted JPEG from smart_shorts.thumbnail_jpeg
+    //     (with a live-extract fallback). Survives Railway /tmp wipes.
+    //   • anything else → fallback icon
+    let thumb = '';
+    if (vid) {
+      thumb = `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
+    } else if (typeof s.video_url === 'string' && s.video_url.startsWith('upload://')) {
+      thumb = `/shorts/upload-thumbnail/${encodeURIComponent(s.id)}`;
+    }
     const title = (s.video_title || 'Untitled project').slice(0, 80);
     let clipCount = 0;
     if (s.moments) {

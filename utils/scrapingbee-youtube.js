@@ -69,9 +69,26 @@ async function downloadWithScrapingBee(videoUrl, destPath, ytdlpPath, ytdlpCommo
     '--no-part',
     '--force-overwrites',
     '--proxy', proxyUrl,
+    // Make a stuck socket fail fast so we either succeed within budget
+    // or move on. ScrapingBee proxy mode + YouTube tends to stall mid-
+    // stream rather than error out, so a short socket-timeout is
+    // critical for surfacing failures within the 360s overall cap.
+    '--socket-timeout', '20',
+    '--retries', '3',
+    '--fragment-retries', '3',
+    // Capture verbose log so the .stderr we surface explains what
+    // actually went wrong inside yt-dlp (proxy auth, TLS, segment
+    // requests, etc.) instead of just a generic timeout.
+    '-v',
     ...(Array.isArray(ytdlpCommonArgs) ? ytdlpCommonArgs : []),
     videoUrl,
   ];
+
+  // Persist the last ~16KB of stderr to disk so the operator can read it
+  // via /shorts/clip/debug after a failure (the existing surface only
+  // keeps the last 300 chars in the error string).
+  const stderrLogPath = destPath + '.scrapingbee.log';
+  try { fs.unlinkSync(stderrLogPath); } catch (_) {}
 
   await new Promise((resolve, reject) => {
     const proc = spawn(ytdlpPath || 'yt-dlp', args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -83,8 +100,12 @@ async function downloadWithScrapingBee(videoUrl, destPath, ytdlpPath, ytdlpCommo
       if (pct && writeProgress) writeProgress('ScrapingBee: ' + Math.round(parseFloat(pct[1])) + '%');
     });
     proc.stderr.on('data', (d) => {
-      stderr += d.toString();
-      const pct = d.toString().match(/(\d+\.?\d*)%/);
+      const chunk = d.toString();
+      stderr += chunk;
+      // Keep the log file size bounded to ~64KB so we don't fill /tmp.
+      if (stderr.length > 65536) stderr = stderr.slice(-65536);
+      try { fs.appendFileSync(stderrLogPath, chunk); } catch (_) {}
+      const pct = chunk.match(/(\d+\.?\d*)%/);
       if (pct && writeProgress) writeProgress('ScrapingBee: ' + Math.round(parseFloat(pct[1])) + '%');
     });
     proc.on('error', (err) => settle(reject, err));
@@ -96,8 +117,8 @@ async function downloadWithScrapingBee(videoUrl, destPath, ytdlpPath, ytdlpCommo
     // we give yt-dlp more time than usual before giving up.
     const timer = setTimeout(() => {
       try { proc.kill('SIGKILL'); } catch (_) {}
-      settle(reject, new Error('ScrapingBee download timed out after 360s'));
-    }, 360000);
+      settle(reject, new Error('ScrapingBee download timed out after 180s (verbose log in ' + stderrLogPath + ')'));
+    }, 180000);
   });
 
   if (!fs.existsSync(destPath)) throw new Error('ScrapingBee: yt-dlp produced no output file');

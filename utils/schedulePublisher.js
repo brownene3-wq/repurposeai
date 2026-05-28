@@ -34,7 +34,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const { calendarOps, pool } = require('../db/database');
+const { calendarOps, clipRenderOps, pool } = require('../db/database');
+const { resolveClipPath } = require('./clipResolver');
 const wf = require('../services/workflowEngine');
 
 // Same directory routes/shorts.js writes clips to.
@@ -101,7 +102,7 @@ function buildSourceItem(entry) {
 // if it exists and is non-empty; otherwise searches CLIPS_DIR for the most
 // recent mp4 that matches the entry's analysis_id (+ optional '_m<idx>_'
 // tag). Returns null if nothing usable is found.
-function resolveClipPath(entry) {
+function resolveLegacyClipPath(entry) {
   // 1. Explicit clip_filename (the atcModal flow sets this).
   const explicit = (entry.clip_filename || '').trim();
   if (explicit) {
@@ -144,7 +145,18 @@ function resolveClipPath(entry) {
 //   - Phase-2 path: entry has connection_id → publishToConnection
 //   - Legacy path:  entry has only platform → workflowEngine direct
 async function publishOneEntry(entry) {
-  const mediaPath = resolveClipPath(entry);
+  // Try the legacy clip_filename-aware resolver first (handles the
+  // atcModal flow that sets a literal filename). Fall through to the
+  // shared resolver that knows about /tmp scan + clip_renders DB +
+  // R2 backup, so scheduled publishes survive Railway /tmp wipes.
+  let mediaPath = resolveLegacyClipPath(entry);
+  if (!mediaPath && entry.analysis_id != null && entry.moment_index != null) {
+    const r = await resolveClipPath(entry.user_id, entry.analysis_id, entry.moment_index, clipRenderOps);
+    if (r && r.path) {
+      mediaPath = r.path;
+      if (r.source === 'r2-restored') console.log('[schedulePublisher] restored clip from R2 for entry', entry.id);
+    }
+  }
   if (!mediaPath) {
     throw new Error(
       'No rendered clip on disk for this entry. Click Download Clip on the ' +
