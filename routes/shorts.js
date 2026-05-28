@@ -12459,7 +12459,9 @@ ${paginationHtml}
         if (cascadeCount > 0) {
           showCascadeDeleteModal(cascadeCount, resolve);
         } else {
-          resolve(window.confirm('Delete this analysis? This cannot be undone.'));
+          // Platform-themed confirm modal — replaces the old browser
+          // window.confirm() which broke visual consistency.
+          showDeleteAnalysisModal(resolve);
         }
       });
       if (!proceed) return;
@@ -12488,6 +12490,47 @@ ${paginationHtml}
       } catch (err) {
         showToast('Error: ' + err.message);
       }
+    }
+
+    // Styled confirmation modal for the no-cascade delete path. Same
+    // visual language as #cascadeDeleteModal (red-tinted border, red
+    // gradient confirm CTA) so the two delete flows feel like one
+    // family rather than mixing a browser-native prompt with a custom
+    // modal. Lazy-builds once, reuses across opens, removes its key
+    // listener on close so escape only ever closes the active modal.
+    function showDeleteAnalysisModal(onChoice) {
+      let m = document.getElementById('deleteAnalysisModal');
+      if (!m) {
+        m = document.createElement('div');
+        m.id = 'deleteAnalysisModal';
+        m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px';
+        m.innerHTML =
+          '<div style="background:var(--surface);border:1px solid rgba(239,68,68,0.40);border-radius:14px;width:100%;max-width:440px;padding:24px;box-shadow:0 0 0 1px rgba(239,68,68,0.20),0 18px 60px rgba(239,68,68,0.18)">' +
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+              '<span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.35);flex-shrink:0;">' +
+                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>' +
+              '</span>' +
+              '<h3 style="margin:0;font-size:1.05rem;font-weight:800;color:var(--text)">Delete this analysis?</h3>' +
+            '</div>' +
+            '<p style="color:var(--text-muted);font-size:0.88rem;line-height:1.5;margin:0 0 18px">This will permanently remove the analysis and all of its viral moments. This action cannot be undone.</p>' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px">' +
+              '<button id="delAnaCancel" type="button" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.55rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;transition:background .15s;" onmouseenter="this.style.background=\\'rgba(255,255,255,0.06)\\'" onmouseleave="this.style.background=\\'transparent\\'">Cancel</button>' +
+              '<button id="delAnaConfirm" type="button" style="background:linear-gradient(135deg,#ef4444,#f97316);color:#fff;border:none;padding:0.55rem 1.4rem;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;box-shadow:0 4px 14px rgba(239,68,68,0.30);transition:transform .15s,box-shadow .15s;" onmouseenter="this.style.transform=\\'translateY(-1px)\\';this.style.boxShadow=\\'0 6px 18px rgba(239,68,68,0.45)\\'" onmouseleave="this.style.transform=\\'none\\';this.style.boxShadow=\\'0 4px 14px rgba(239,68,68,0.30)\\'">Delete</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(m);
+        m.addEventListener('click', (e) => { if (e.target === m) closeDel(false); });
+      }
+      m.style.display = 'flex';
+      function closeDel(result) {
+        m.style.display = 'none';
+        document.removeEventListener('keydown', onKey);
+        onChoice(result);
+      }
+      function onKey(e){ if (e.key === 'Escape') closeDel(false); }
+      m.querySelector('#delAnaCancel').onclick = () => closeDel(false);
+      m.querySelector('#delAnaConfirm').onclick = () => closeDel(true);
+      document.addEventListener('keydown', onKey);
     }
 
     function showCascadeDeleteModal(count, onChoice){
