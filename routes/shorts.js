@@ -8428,8 +8428,9 @@ ${paginationHtml}
           <video id="momentPreviewVideo" controls playsinline preload="metadata"
             style="display:none;position:absolute;inset:0;width:100%;height:100%;background:#000;"></video>
         </div>
-        <div style="margin-top:10px;font-size:0.74rem;color:var(--text-muted);line-height:1.45;">
-          Playback starts at the moment's start time and stops automatically at its end time.
+        <div style="margin-top:12px;padding:9px 12px;background:rgba(108,58,237,0.12);border:1px solid rgba(108,58,237,0.30);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:0.74rem;color:#d8c9ff;line-height:1.45;font-weight:600;letter-spacing:0.01em;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>Playback starts at the moment's start time and stops automatically at its end time.</span>
         </div>
       </div>
     </div>
