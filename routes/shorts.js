@@ -4094,14 +4094,53 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
       console.log('[publish-moment] restored clip from R2:', mediaPath);
     }
 
+    const resolvedTitle = title || moment.title || ('Viral moment ' + (momentIndex + 1));
+    const resolvedCaption = caption || moment.description || '';
     const result = await publishToConnection(req.user.id, connectionId, {
-      title: title || moment.title || ('Viral moment ' + (momentIndex + 1)),
+      title: resolvedTitle,
       description: description || caption || moment.description || '',
-      caption: caption || moment.description || '',
+      caption: resolvedCaption,
       mediaPath
     });
     if (!result.success) return res.status(400).json(result);
-    return res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+
+    // Auto-sync the successful Post Now into the project calendar so the
+    // user can see everything they've published in one place. Uses the
+    // client's local timestamp (req.body.clientNow ISO string) if it was
+    // sent, otherwise falls back to the server's now. Failures here
+    // never block the publish response — the post already succeeded.
+    let calendarEntryId = null;
+    try {
+      const now = (() => {
+        const c = req.body && req.body.clientNow;
+        if (c) { const d = new Date(c); if (!isNaN(d.getTime())) return d; }
+        return new Date();
+      })();
+      const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+      const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      const entry = await calendarOps.create({
+        userId: req.user.id,
+        title: resolvedTitle,
+        platform: acct.platform,
+        scheduledDate: dateStr,
+        scheduledTime: timeStr,
+        status: 'published',
+        contentText: resolvedCaption,
+        analysisId, momentIndex,
+        notes: '',
+        color: '#10B981', // success green so published items pop on the calendar
+        autoPublish: false,
+        clipFilename: '',
+        connectionId: acct.id,
+        reminderEmail: '',
+        reminderMinutes: 0
+      });
+      calendarEntryId = entry && entry.id;
+    } catch (calErr) {
+      console.warn('[publish-moment] calendar auto-sync failed:', calErr.message);
+    }
+
+    return res.json({ success: true, platform: acct.platform, externalId: result.externalId || null, calendarEntryId });
   } catch (err) {
     console.error('[POST /shorts/api/publish-moment]', err.message);
     res.status(500).json({ success: false, error: 'Publish failed' });

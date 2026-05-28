@@ -7702,7 +7702,11 @@ setTimeout(function sidebarLayoutFix(){
         connectionId: connectionId,
         title: document.getElementById('vePublishTitle').value.trim(),
         caption: document.getElementById('vePublishCaption').value.trim(),
-        description: document.getElementById('vePublishCaption').value.trim()
+        description: document.getElementById('vePublishCaption').value.trim(),
+        // User's local timestamp — server uses this to stamp the
+        // auto-synced calendar entry so it shows up in the user's
+        // own timezone rather than Railway's UTC.
+        clientNow: new Date().toISOString()
       };
       if (_veMode === 'later') {
         var d = document.getElementById('vePublishDate').value;
@@ -9495,14 +9499,52 @@ router.post('/api/publish-export', requireAuth, async (req, res) => {
     if (!fs.existsSync(mediaPath)) {
       return res.status(404).json({ success: false, error: 'Export file not found. The server may have restarted since you exported. Re-export the timeline and try again.' });
     }
+    const resolvedTitle = title || safe.replace(/\.[a-z0-9]+$/i, '');
+    const resolvedCaption = caption || description || '';
     const result = await publishToConnection(req.user.id, connectionId, {
-      title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+      title: resolvedTitle,
       description: description || caption || '',
-      caption: caption || description || '',
+      caption: resolvedCaption,
       mediaPath
     });
     if (!result.success) return res.status(400).json(result);
-    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+
+    // Auto-sync the successful Post Now into the project calendar so it
+    // shows up alongside scheduled posts. Failures here are swallowed so
+    // the publish response stays clean — the post already went out.
+    let calendarEntryId = null;
+    try {
+      const { calendarOps } = require('../db/database');
+      const now = (() => {
+        const c = req.body && req.body.clientNow;
+        if (c) { const d = new Date(c); if (!isNaN(d.getTime())) return d; }
+        return new Date();
+      })();
+      const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+      const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      const entry = await calendarOps.create({
+        userId: req.user.id,
+        title: resolvedTitle,
+        platform: acct.platform,
+        scheduledDate: dateStr,
+        scheduledTime: timeStr,
+        status: 'published',
+        contentText: resolvedCaption,
+        analysisId: null, momentIndex: null,
+        notes: '',
+        color: '#10B981',
+        autoPublish: false,
+        clipFilename: safe,
+        connectionId: acct.id,
+        reminderEmail: '',
+        reminderMinutes: 0
+      });
+      calendarEntryId = entry && entry.id;
+    } catch (calErr) {
+      console.warn('[video-editor publish-export] calendar auto-sync failed:', calErr.message);
+    }
+
+    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null, calendarEntryId });
   } catch (err) {
     console.error('[POST /video-editor/api/publish-export]', err.message);
     res.status(500).json({ success: false, error: err.message || 'Publish failed' });

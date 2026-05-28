@@ -188,7 +188,11 @@ function getPublishMomentModalJS() {
         connectionId: connectionId,
         title: document.getElementById('publishTitle').value.trim(),
         caption: document.getElementById('publishCaption').value.trim(),
-        description: document.getElementById('publishCaption').value.trim()
+        description: document.getElementById('publishCaption').value.trim(),
+        // User's local timestamp — server uses this to stamp the
+        // auto-synced calendar entry so it shows up in the user's
+        // own timezone rather than Railway's UTC.
+        clientNow: new Date().toISOString()
       };
       if (_publishMode === 'later') {
         var d = document.getElementById('publishDate').value;
