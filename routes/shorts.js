@@ -29,6 +29,7 @@ const { shortsOps, brandKitOps, calendarOps, clipRenderOps, connectedAccountOps 
 const r2 = require('../utils/r2');
 const emailUtils = require('../utils/email');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
+const { getPublishMomentModalHTML, getPublishMomentModalJS } = require('./_publishMomentModal');
 
 // Guard boot — OpenAI SDK throws at construction if apiKey is empty,
 // which would crash the entire server at startup. Use a placeholder so
@@ -4069,59 +4070,28 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
       }
     }
 
-    // Post-now path — we need a media path on disk. Reuse the most recent
-    // rendered clip for this analysis/moment if present; otherwise return a
-    // clear error so the UI can prompt the user to click Download Clip
-    // first. (Rendering synchronously here would block the request for
-    // 30-60 seconds.)
-    //
-    // Race-condition guard: the front-end button switches back to "Download
-    // Clip" the instant the render endpoint finishes writing the .progress
-    // file, but the atomic-rename of the .mp4 may still be a few hundred ms
-    // behind. If the user clicks Publish right at that boundary, we'd see
-    // no candidates and bail with "No rendered clip found". Retry the lookup
-    // a few times with a small delay before erroring so the rename has time
-    // to complete. Also wait while a .progress or .encoding.mp4 file exists
-    // for this analysis+moment — that means a render is genuinely in flight.
-    const fs = require('fs');
-    const path = require('path');
-    const CLIPS_DIR = path.join('/tmp', 'repurpose-clips');
-    const tag = '_m' + momentIndex + '_';
-    const tryFindClip = () => {
-      try {
-        const files = fs.readdirSync(CLIPS_DIR);
-        const candidates = files
-          .filter(f => f.endsWith('.mp4') && !f.endsWith('.encoding.mp4') && f.includes(analysisId))
-          .map(f => ({ f, full: path.join(CLIPS_DIR, f), mtime: fs.statSync(path.join(CLIPS_DIR, f)).mtimeMs }))
-          .sort((a, b) => b.mtime - a.mtime);
-        const exact = candidates.find(c => c.f.includes(tag));
-        const pick = exact || candidates[0];
-        if (pick && fs.statSync(pick.full).size > 10000) return pick.full;
-      } catch (_) {}
-      return null;
-    };
-    const renderInFlight = () => {
-      try {
-        const files = fs.readdirSync(CLIPS_DIR);
-        return files.some(f =>
-          f.includes(analysisId) && (f.endsWith('.progress') || f.endsWith('.encoding.mp4'))
-        );
-      } catch (_) { return false; }
-    };
-    let mediaPath = tryFindClip();
-    // Retry for up to ~10 seconds while a render is in flight, or 3 seconds
-    // for the rename race when no render is active.
-    const startTs = Date.now();
-    while (!mediaPath) {
-      const inFlight = renderInFlight();
-      const elapsed = Date.now() - startTs;
-      if (!inFlight && elapsed >= 3000) break;
-      if (inFlight && elapsed >= 60000) break; // hard cap — render shouldn't take >60s past the button toggle
-      await new Promise(r => setTimeout(r, 500));
-      mediaPath = tryFindClip();
+    // Post-now path — we need a media path on disk. Use the shared
+    // resolver: it checks /tmp first (hot path), then waits out the
+    // rename race if a render is in flight, then falls back to the
+    // clip_renders DB row + R2 backup so the publish still works after
+    // Railway wipes /tmp on redeploy.
+    const { resolveClipPath } = require('../utils/clipResolver');
+    const resolved = await resolveClipPath(req.user.id, analysisId, momentIndex, clipRenderOps, { waitForInFlight: true });
+    if (!resolved || !resolved.path) {
+      // Tailor the error message based on why we couldn't resolve.
+      // 'no-db-row' means the user never rendered this clip → original
+      // message. Anything else means we tried R2 and failed → friendlier
+      // recovery hint.
+      const reason = resolved && resolved.reason || 'unknown';
+      const msg = reason === 'no-db-row' || reason === 'missing-args'
+        ? 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.'
+        : 'Your clip is on file but couldn\'t be restored to the server right now. Click "Re-render" on the clip in My Clips and try Publish again.';
+      console.warn('[publish-moment] resolveClipPath failed:', reason, 'analysis=' + analysisId + ' moment=' + momentIndex);
+      return res.status(409).json({ success: false, error: msg });
     }
-    if (!mediaPath) {
-      return res.status(409).json({ success: false, error: 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.' });
+    const mediaPath = resolved.path;
+    if (resolved.source === 'r2-restored') {
+      console.log('[publish-moment] restored clip from R2:', mediaPath);
     }
 
     const result = await publishToConnection(req.user.id, connectionId, {
@@ -8435,86 +8405,7 @@ ${paginationHtml}
       </div>
     </div>
 
-    <!-- Phase 2b — Publish Modal. Opened from each moment card's
-         "Publish to..." button. Reads /api/connections to populate the
-         account picker. Post Now hits the unified
-         /shorts/api/publish-moment endpoint; Schedule for Later creates
-         a calendar_entries row carrying the connection_id, which the
-         existing schedulePublisher cron picks up. -->
-    <div id="publishModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closePublishModal()">
-      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-        <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
-          Publish This Moment
-        </h3>
-        <div id="publishSubtitle" style="color:var(--text-muted);font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>
-        <input type="hidden" id="publishMomentRef">
-
-        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>
-        <select id="publishAccount" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
-          <option value="">Loading your connected accounts...</option>
-        </select>
-        <div id="publishNoAccounts" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">
-          You don\'t have any social accounts connected yet.
-          <a href="/distribute/connections" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;margin-top:8px;">
-            Connect an account <span style="font-size:0.9em;">&rarr;</span>
-          </a>
-        </div>
-
-        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>
-        <input type="text" id="publishTitle" maxlength="120" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
-
-        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Caption / Description</label>
-        <textarea id="publishCaption" rows="4" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:80px;"></textarea>
-
-        <div style="display:flex;gap:8px;margin-bottom:14px;background:var(--dark);border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">
-          <button id="publishTabNow" type="button" onclick="setPublishMode(\'now\')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>
-          <button id="publishTabLater" type="button" onclick="setPublishMode(\'later\')" style="flex:1;background:transparent;color:var(--text-muted);border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>
-        </div>
-
-        <div id="publishLaterFields" style="display:none;margin-bottom:14px;">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
-            <div>
-              <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label>
-              <input type="date" id="publishDate" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
-            </div>
-            <div>
-              <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label>
-              <input type="time" id="publishTime" value="12:00" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;">
-            </div>
-          </div>
-
-          <!-- Suggest peak time for the picked account's platform -->
-          <button type="button" id="publishPeakBtn" onclick="publishSuggestPeakTime()" style="display:flex;align-items:center;gap:8px;width:100%;background:linear-gradient(135deg,rgba(108,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(108,58,237,0.30);border-radius:8px;padding:10px 12px;color:#a78bfa;cursor:pointer;font-family:inherit;font-size:0.82rem;font-weight:600;margin-bottom:14px;transition:all .15s">
-            <span style="font-size:1em;">&#x2728;</span> Suggest peak time for this platform
-            <span id="publishPeakHint" style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:auto;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-          </button>
-
-          <!-- Notification reminder -->
-          <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notification</label>
-          <select id="publishReminder" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;" onchange="publishToggleReminderEmail()">
-            <option value="0">None</option>
-            <option value="15">15 minutes before</option>
-            <option value="60">1 hour before</option>
-            <option value="1440">1 day before</option>
-            <option value="2880">2 days before</option>
-          </select>
-          <input type="email" id="publishReminderEmail" placeholder="Email for reminder" style="display:none;width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
-          <div id="publishReminderSpacer" style="margin-bottom:14px;"></div>
-
-          <!-- Notes -->
-          <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Notes</label>
-          <textarea id="publishNotes" rows="4" placeholder="Any notes for this scheduled post" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;resize:vertical;min-height:80px;"></textarea>
-        </div>
-
-        <div id="publishStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>
-
-        <div style="display:flex;justify-content:flex-end;gap:8px;">
-          <button onclick="closePublishModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
-          <button id="publishSubmitBtn" onclick="submitPublish()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Publish</button>
-        </div>
-      </div>
-    </div>
+    ${getPublishMomentModalHTML()}
 
     <!-- Copyright disclaimer modal (Analyze gate) — shown after the user
          clicks "Analyze" on the import panel. Confirm proceeds with the
@@ -8531,6 +8422,38 @@ ${paginationHtml}
         <div style="display:flex;justify-content:flex-end;gap:8px;">
           <button id="analyzeConfirmCancel" type="button" onclick="closeAnalyzeConfirm()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.55rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button>
           <button id="analyzeConfirmOk" type="button" onclick="confirmAnalyze()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.55rem 1.4rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Yes, proceed</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Moment Preview Modal — opens when a moment thumbnail is clicked.
+         Renders a YouTube iframe scoped to the moment's start/end seconds
+         using the privacy-enhanced embed URL with start= / end= params.
+         For uploaded analyses (no videoId), we swap the iframe for a
+         <video> element pointed at /shorts/moment-preview/<id>/<idx>
+         which serves the same trimmed MP4 from the on-disk source. -->
+    <div id="momentPreviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);z-index:10002;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeMomentPreview()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:780px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <div style="min-width:0;">
+            <div id="momentPreviewTitle" style="font-size:0.98rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Moment preview</div>
+            <div id="momentPreviewRange" style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;"></div>
+          </div>
+          <button type="button" onclick="closeMomentPreview()" aria-label="Close preview"
+            style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:var(--text);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;">&times;</button>
+        </div>
+        <!-- 16:9 frame so the embedded player never crops awkwardly -->
+        <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;">
+          <iframe id="momentPreviewIframe" src="" title="Moment preview"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowfullscreen
+            style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;"></iframe>
+          <video id="momentPreviewVideo" controls playsinline preload="metadata"
+            style="display:none;position:absolute;inset:0;width:100%;height:100%;background:#000;"></video>
+        </div>
+        <div style="margin-top:12px;padding:9px 12px;background:rgba(108,58,237,0.12);border:1px solid rgba(108,58,237,0.30);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:0.74rem;color:#d8c9ff;line-height:1.45;font-weight:600;letter-spacing:0.01em;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>Playback starts at the moment's start time and stops automatically at its end time.</span>
         </div>
       </div>
     </div>
@@ -9434,53 +9357,7 @@ ${paginationHtml}
     // Later. Schedule reuses the existing calendar_entries auto-publish
     // machinery so the schedulePublisher cron picks it up.
     // ─────────────────────────────────────────────────────────────────────
-    var _publishConnections = [];
-    var _publishMode = 'now';
-
-    async function openPublishModal(analysisId, momentIdx) {
-      var analysis = window.lastAnalysisData || window.currentAnalysis;
-      if (analysis && (analysis.id !== analysisId && analysis._id !== analysisId)) analysis = null;
-      var moment = analysis && analysis.moments ? analysis.moments[momentIdx] : null;
-      var defaultTitle = moment ? (moment.title || ('Viral moment ' + (momentIdx + 1))) : ('Viral moment ' + (momentIdx + 1));
-      var defaultCaption = moment ? (moment.description || moment.reason || '') : '';
-
-      document.getElementById('publishMomentRef').value = analysisId + '|' + momentIdx;
-      document.getElementById('publishTitle').value = defaultTitle.slice(0, 120);
-      document.getElementById('publishCaption').value = defaultCaption;
-      var now = new Date(); now.setMinutes(now.getMinutes() + 60);
-      document.getElementById('publishDate').value = now.toISOString().slice(0, 10);
-      document.getElementById('publishTime').value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-      setPublishMode('now');
-      document.getElementById('publishStatus').style.display = 'none';
-      document.getElementById('publishModal').style.display = 'flex';
-
-      // Pull live connections.
-      var sel = document.getElementById('publishAccount');
-      var noAcct = document.getElementById('publishNoAccounts');
-      sel.innerHTML = '<option value="">Loading...</option>';
-      try {
-        var resp = await fetch('/api/connections', { credentials: 'same-origin' });
-        var data = await resp.json();
-        _publishConnections = (data && data.accounts) || [];
-        // Filter to platforms where we can actually publish video.
-        var supported = ['tiktok','instagram','youtube','facebook','twitter','linkedin','pinterest'];
-        _publishConnections = _publishConnections.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
-        if (_publishConnections.length === 0) {
-          sel.style.display = 'none';
-          noAcct.style.display = 'block';
-        } else {
-          sel.style.display = '';
-          noAcct.style.display = 'none';
-          sel.innerHTML = _publishConnections.map(function(c) {
-            var label = (c.platform.charAt(0).toUpperCase() + c.platform.slice(1)) +
-              ' \u2014 ' + (c.accountName || c.platformUsername || c.id);
-            return '<option value="' + c.id + '" data-platform="' + c.platform + '">' + label + '</option>';
-          }).join('');
-        }
-      } catch (e) {
-        sel.innerHTML = '<option value="">Failed to load accounts</option>';
-      }
-    }
+    ${getPublishMomentModalJS()}
     // ── Analyze confirmation gate ────────────────────────────────────
     // The Analyze button on the import panel routes through this gate so
     // the user has to acknowledge the copyright disclaimer before the
@@ -9503,6 +9380,62 @@ ${paginationHtml}
       closeAnalyzeConfirm();
       if (!url) return;
       _runAnalyze(url);
+    }
+
+    // ── Moment preview modal (ba76736-style revert) ───────────────────
+    // Opens a popup modal scoped to a single moment's [start, end]
+    // window. For YouTube videos we use the privacy-enhanced
+    // youtube-nocookie.com /embed/ URL with start= / end= so YouTube
+    // itself bounds playback. For uploaded analyses we use a native
+    // <video> element pointed at /shorts/moment-preview/<id>/<idx>,
+    // which already serves the trimmed MP4 from the on-disk source.
+    // The video/iframe elements coexist in the modal; we show one and
+    // hide the other based on which source we got.
+    function openMomentPreview(videoIdOrAnalysisId, startSec, endSec, timeRange, title, sourceType, momentIdx) {
+      var modal = document.getElementById('momentPreviewModal');
+      var iframe = document.getElementById('momentPreviewIframe');
+      var video = document.getElementById('momentPreviewVideo');
+      var titleEl = document.getElementById('momentPreviewTitle');
+      var rangeEl = document.getElementById('momentPreviewRange');
+      if (!modal) return;
+      var s = Math.max(0, Math.floor(Number(startSec) || 0));
+      var e = Math.max(s + 1, Math.floor(Number(endSec) || (s + 30)));
+      if (sourceType === 'upload') {
+        // Uploaded video: use the trimmed MP4 endpoint.
+        if (iframe) { iframe.src = ''; iframe.style.display = 'none'; }
+        if (video) {
+          video.style.display = 'block';
+          video.src = '/shorts/moment-preview/' + encodeURIComponent(videoIdOrAnalysisId) +
+                      '/' + encodeURIComponent(momentIdx);
+          video.currentTime = 0;
+          var p = video.play();
+          if (p && typeof p.catch === 'function') p.catch(function(){});
+        }
+      } else {
+        // YouTube: use the embed iframe with start=/end= bounding.
+        if (video) { try { video.pause(); } catch (_) {} video.src = ''; video.style.display = 'none'; }
+        if (iframe) {
+          iframe.style.display = 'block';
+          iframe.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoIdOrAnalysisId)
+            + '?start=' + s
+            + '&end=' + e
+            + '&autoplay=1'
+            + '&rel=0'
+            + '&modestbranding=1'
+            + '&playsinline=1';
+        }
+      }
+      if (titleEl) titleEl.textContent = title || 'Moment preview';
+      if (rangeEl) rangeEl.textContent = timeRange ? ('Playing ' + timeRange) : '';
+      modal.style.display = 'flex';
+    }
+    function closeMomentPreview() {
+      var modal = document.getElementById('momentPreviewModal');
+      var iframe = document.getElementById('momentPreviewIframe');
+      var video = document.getElementById('momentPreviewVideo');
+      if (iframe) iframe.src = '';
+      if (video) { try { video.pause(); } catch (_) {} video.src = ''; video.style.display = 'none'; }
+      if (modal) modal.style.display = 'none';
     }
 
     // ── Native 9:16 moment preview ───────────────────────────────────
@@ -9743,132 +9676,7 @@ ${paginationHtml}
       btn.setAttribute('aria-label', vid.muted ? 'Unmute preview' : 'Mute preview');
     }
 
-    function closePublishModal() {
-      document.getElementById('publishModal').style.display = 'none';
-    }
-    function setPublishMode(mode) {
-      _publishMode = mode;
-      var nowBtn = document.getElementById('publishTabNow');
-      var laterBtn = document.getElementById('publishTabLater');
-      var laterFields = document.getElementById('publishLaterFields');
-      var submitBtn = document.getElementById('publishSubmitBtn');
-      if (mode === 'now') {
-        nowBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; nowBtn.style.color = '#fff';
-        laterBtn.style.background = 'transparent'; laterBtn.style.color = 'var(--text-muted)';
-        laterFields.style.display = 'none';
-        submitBtn.textContent = 'Publish now';
-      } else {
-        laterBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; laterBtn.style.color = '#fff';
-        nowBtn.style.background = 'transparent'; nowBtn.style.color = 'var(--text-muted)';
-        laterFields.style.display = 'block';
-        submitBtn.textContent = 'Schedule';
-      }
-    }
-    async function submitPublish() {
-      var btn = document.getElementById('publishSubmitBtn');
-      var statusEl = document.getElementById('publishStatus');
-      var connectionId = document.getElementById('publishAccount').value;
-      if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
-      var ref = (document.getElementById('publishMomentRef').value || '').split('|');
-      var payload = {
-        analysisId: ref[0] || null,
-        momentIndex: ref[1] != null && ref[1] !== '' ? Number(ref[1]) : null,
-        connectionId: connectionId,
-        title: document.getElementById('publishTitle').value.trim(),
-        caption: document.getElementById('publishCaption').value.trim(),
-        description: document.getElementById('publishCaption').value.trim()
-      };
-      if (_publishMode === 'later') {
-        var d = document.getElementById('publishDate').value;
-        var t = document.getElementById('publishTime').value || '12:00';
-        if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
-        payload.scheduledAt = d + 'T' + t + ':00';
-        // Extra fields merged from the legacy 'Schedule This Moment' modal
-        // so both flows now collect the same scheduling metadata.
-        var remVal = parseInt(document.getElementById('publishReminder').value || '0', 10) || 0;
-        var remEmail = document.getElementById('publishReminderEmail').value.trim();
-        if (remVal > 0 && !remEmail) {
-          statusEl.style.display = 'block';
-          statusEl.textContent = 'Enter an email to receive the reminder.';
-          return;
-        }
-        payload.reminderMinutes = remVal;
-        payload.reminderEmail = remVal > 0 ? remEmail : '';
-        payload.notes = document.getElementById('publishNotes').value;
-      }
-      btn.disabled = true; var orig = btn.textContent; btn.textContent = _publishMode === 'now' ? 'Publishing\u2026' : 'Scheduling\u2026';
-      statusEl.style.display = 'block';
-      statusEl.textContent = _publishMode === 'now' ? 'Rendering clip and posting\u2026 this can take a moment.' : 'Scheduling the post\u2026';
-      try {
-        var resp = await fetch('/shorts/api/publish-moment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        var data = await resp.json();
-        if (!resp.ok || !data.success) throw new Error(data.error || 'Failed');
-        if (_publishMode === 'now') {
-          statusEl.textContent = 'Posted! ' + (data.platform ? '\u2014 ' + data.platform : '');
-          showToast('Published to ' + (data.platform || 'platform'));
-        } else {
-          statusEl.textContent = 'Scheduled for ' + (data.scheduledFor || payload.scheduledAt);
-          showToast('Scheduled');
-        }
-        setTimeout(closePublishModal, 1500);
-      } catch (e) {
-        statusEl.textContent = 'Error: ' + e.message;
-      } finally {
-        btn.disabled = false; btn.textContent = orig;
-      }
-    }
 
-    // Peak-time suggestion for the publishModal — reads the picked
-    // account's platform from the publishAccount select's data attribute
-    // and fills in publishDate/publishTime.
-    async function publishSuggestPeakTime() {
-      var btn = document.getElementById('publishPeakBtn');
-      var hint = document.getElementById('publishPeakHint');
-      var sel = document.getElementById('publishAccount');
-      var opt = sel && sel.selectedOptions && sel.selectedOptions[0];
-      var platform = opt ? (opt.getAttribute('data-platform') || '') : '';
-      if (!platform) {
-        if (typeof showToast === 'function') showToast('Pick an account first.');
-        return;
-      }
-      var orig = hint.textContent;
-      hint.textContent = 'Thinking…';
-      btn.disabled = true;
-      try {
-        var resp = await fetch('/dashboard/calendar/api/peak-time?platform=' + encodeURIComponent(platform));
-        if (!resp.ok) throw new Error('Failed');
-        var d = await resp.json();
-        if (d.date) document.getElementById('publishDate').value = d.date;
-        if (d.time) document.getElementById('publishTime').value = d.time;
-        hint.textContent = d.date && d.time ? (d.date + ' · ' + d.time) : '';
-        if (typeof showToast === 'function') showToast(d.reasoning || ('Peak time set: ' + d.date + ' ' + d.time));
-      } catch (e) {
-        hint.textContent = orig;
-        if (typeof showToast === 'function') showToast('Peak time unavailable');
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    // Show/hide the reminder-email input depending on whether a non-zero
-    // reminder window is picked.
-    function publishToggleReminderEmail() {
-      var v = parseInt(document.getElementById('publishReminder').value || '0', 10);
-      var email = document.getElementById('publishReminderEmail');
-      var spacer = document.getElementById('publishReminderSpacer');
-      if (v > 0) {
-        email.style.display = 'block';
-        if (spacer) spacer.style.display = 'none';
-      } else {
-        email.style.display = 'none';
-        email.value = '';
-        if (spacer) spacer.style.display = 'block';
-      }
-    }
 
     // ESC closes the add-to-calendar modal
     document.addEventListener('keydown', function(e){
@@ -9962,87 +9770,44 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Native 9:16 vertical preview. The server returns an MP4 that
-          // is already trimmed to the moment's [start, end] window and
-          // center-cropped to 9:16, so the browser just plays it once
-          // (no infinite loop). The container is locked to aspect-ratio
-          // 9:16 with a capped width so the moment card stays a sensible
-          // height even when 8 cards stack.
-          //   - <video> autoplay+muted+playsinline so it kicks off when
-          //     scrolled into view, but no loop attribute — plays once
-          //     then stops on the last frame until the user clicks play.
-          //   - poster falls back to YouTube's mqdefault frame while the
-          //     trimmed MP4 is still being generated server-side.
-          //   - registerMomentPreview() wires IntersectionObserver +
-          //     listens for native play / pause / ended events so the
-          //     center play/pause button icon stays in sync.
-          //   - Center button: togglePlayPause swaps between ▶ and ‖.
-          //   - Top-right mute toggle stays; bottom-left timeRange badge
-          //     stays.
-          // Render the 9:16 preview shell for BOTH YouTube and uploaded
-          // analyses. The /shorts/moment-preview endpoint handles both
-          // source types; only the poster differs (YouTube mqdefault vs
-          // an ffmpeg-extracted frame from the uploaded file via
-          // /shorts/upload-moment-thumbnail/<id>/<idx>).
+          // Static 16:9 thumbnail + click-to-preview popup (ba76736 revert).
+          // Layout matches the landing-page analysis card thumbnails:
+          // mqdefault.jpg for YouTube videos (16:9 native, no crop),
+          // upload-moment-thumbnail for uploads (ffmpeg-extracted frame
+          // from the on-disk source). Clicking the button opens the
+          // shared #momentPreviewModal which plays either a YouTube
+          // embed (YT) or the local trimmed MP4 (upload).
           const isUploadAnalysis = (analysis.video_url || '').indexOf('upload://') === 0;
-          const _posterUrl = videoId
+          const _thumbSrc = videoId
             ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
             : (isUploadAnalysis ? \`/shorts/upload-moment-thumbnail/\${id}/\${idx}\` : '');
+          const _safeRange = (moment.timeRange || '').replace(/'/g, "\\'");
+          const _safeTitle = (moment.title || 'Moment').replace(/'/g, "\\'");
+          const _previewArgs = videoId
+            ? \`'\${videoId}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}', 'youtube'\`
+            : \`'\${id}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}', 'upload', \${idx}\`;
           const videoEmbed = (videoId || isUploadAnalysis) ? \`
-            <div class="moment-preview-shell" id="moment-preview-\${idx}"
-              style="position:relative; width:100%; max-width:220px; aspect-ratio:9/16; margin:0 auto 14px; background:#0a0612; border:1px solid rgba(108,58,237,0.20); border-radius:14px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,0.35);">
-              <video
-                src="/shorts/moment-preview/\${id}/\${idx}"
-                poster="\${_posterUrl}"
-                autoplay muted playsinline preload="auto"
-                style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
-                onloadstart="registerMomentPreview(this)"
-                onloadeddata="registerMomentPreview(this)"
-                onerror="_onMomentPreviewError(this)"></video>
-              <!-- Loading overlay — status text escalates the longer
-                   generation takes so users know it isn't frozen.
-                   _updateMomentLoader() toggles display based on the
-                   video's readyState and the latest network event. -->
-              <div class="moment-preview-loader" aria-hidden="true">
-                <div class="moment-preview-spinner"></div>
-                <div class="moment-preview-loader-text">Loading</div>
+            <button type="button" id="thumb-btn-\${idx}" onclick="openMomentPreview(\${_previewArgs})" title="Click to preview this moment"
+              style="display:block; position:relative; text-decoration:none; aspect-ratio:16/9; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
+              <img src="\${_thumbSrc}" alt="Clip thumbnail"
+                onerror="this.onerror=null; this.style.display='none'; var bg=this.parentElement; if(bg) bg.style.background='linear-gradient(135deg,#1a1430,#0a0612)';"
+                style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy" />
+              <div style="position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 50%,rgba(0,0,0,0.55) 100%); pointer-events:none;"></div>
+              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                width:54px; height:54px; background:rgba(108,58,237,0.92); border-radius:50%;
+                display:flex; align-items:center; justify-content:center; color:#fff;
+                box-shadow:0 6px 18px rgba(0,0,0,0.45);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
               </div>
-              <div class="moment-preview-fallback" aria-hidden="true"
-                style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:14px; text-align:center; color:#cfc6e6; font-size:11px; line-height:1.4; background:linear-gradient(180deg,#1a1430,#0a0612);">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <div class="moment-preview-fallback-text" style="color:#aaa;">Preview unavailable</div>
-                <button type="button" class="moment-preview-retry" onclick="_retryMomentPreview(this)" style="margin-top:4px;background:rgba(108,58,237,0.18);border:1px solid rgba(108,58,237,0.40);color:#c4b5fd;padding:5px 12px;border-radius:999px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.04em;text-transform:uppercase;">Retry</button>
-              </div>
-              <!-- Center play/pause toggle. Icons live as sibling SVGs;
-                   _syncMomentPlayPauseIcon shows whichever matches the
-                   <video>'s current state. -->
-              <button type="button" class="moment-pp-btn" onclick="togglePlayPause(this)" title="Play / pause preview" aria-label="Play preview"
-                style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:54px; height:54px; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:4; transition:opacity .2s, background .15s;"
-                onmouseenter="this.style.background='rgba(108,58,237,0.85)'; this.style.opacity='1';"
-                onmouseleave="this.style.background='rgba(0,0,0,0.55)';">
-                <!-- Play triangle (shown when paused / ended). -->
-                <svg class="pp-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-                <!-- Pause bars (shown while playing). -->
-                <svg class="pp-pause" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
-                  <rect x="6" y="5" width="4" height="14" rx="1"/>
-                  <rect x="14" y="5" width="4" height="14" rx="1"/>
-                </svg>
-              </button>
-              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78); padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em; z-index:2;">
+              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78);
+                padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em;">
                 \${moment.timeRange}
               </div>
-              <button type="button" class="moment-mute-btn" onclick="toggleMomentMute(this)" title="Unmute preview" aria-label="Unmute preview"
-                style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.18); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:3;">
-                <svg class="mute-on" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
-                </svg>
-                <svg class="mute-off" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
-                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-                </svg>
-              </button>
-            </div>
+              <div style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65);
+                padding:3px 8px; border-radius:6px; color:#fff; font-size:10px; font-weight:600;">
+                Click to preview
+              </div>
+            </button>
           \` : '';
 
           var viralColor = moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b';
@@ -13222,9 +12987,34 @@ function renderMyClipsPage(user, teamPermissions) {
     }
     .clip-card-mc-actions .btn-primary:hover { filter: brightness(1.1); }
     .clip-card-mc-actions .btn-danger {
-      background: rgba(239, 68, 68, 0.12);
-      color: #fca5a5;
-      border-color: rgba(239, 68, 68, 0.25);
+      background: var(--error, #EF4444);
+      color: #fff;
+      border-color: transparent;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      box-shadow: 0 1px 2px rgba(220, 38, 38, 0.25);
+    }
+    .clip-card-mc-actions .btn-danger:hover {
+      background: #DC2626;
+      box-shadow: 0 2px 6px rgba(220, 38, 38, 0.45);
+      transform: translateY(-1px);
+    }
+    .clip-card-mc-actions .btn-danger:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 2px;
+    }
+    /* Light mode: the white outline-on-focus stays high-contrast, and
+       the solid red still passes contrast against the white card. */
+    body.light .clip-card-mc-actions .btn-danger {
+      background: #DC2626;
+      box-shadow: 0 1px 3px rgba(220, 38, 38, 0.30);
+    }
+    body.light .clip-card-mc-actions .btn-danger:hover {
+      background: #B91C1C;
+      box-shadow: 0 2px 8px rgba(185, 28, 28, 0.45);
+    }
+    body.light .clip-card-mc-actions .btn-danger:focus-visible {
+      outline-color: #DC2626;
     }
     .clip-card-mc-progress {
       height: 4px;
@@ -13299,7 +13089,11 @@ function renderMyClipsPage(user, teamPermissions) {
     </div>
   </main>
 
+  ${getPublishMomentModalHTML()}
+
   <script>
+    ${getPublishMomentModalJS()}
+
     function formatBytes(b) {
       if (!b) return '0 B';
       const u = ['B','KB','MB','GB','TB'];
@@ -13377,7 +13171,11 @@ function renderMyClipsPage(user, teamPermissions) {
           actions.push('<button onclick="retryRender(\\'' + c.analysisId + '\\', ' + c.momentIndex + ', this)">↻ Retry</button>');
         }
         if (c.analysisId) {
-          actions.push('<a href="/shorts?openAnalysis=' + encodeURIComponent(c.analysisId) + '&publishMoment=' + c.momentIndex + '">↗ Publish</a>');
+          // Open the SAME publishModal that Smart Shorts uses, in-place.
+          // Use a thin adapter so we don't have to escape clip metadata
+          // through a triple-nested onclick attribute — the adapter
+          // looks up the live clip object from window.__myClipsState.
+          actions.push('<button onclick="publishClipFromMyClips(\\'' + c.id + '\\')" title="Publish this clip to a connected social account">↗ Publish</button>');
         }
         if (c.status === 'ready' && c.onDisk) {
           actions.push('<button onclick="sendToDrive(\\'' + c.id + '\\', this)">☁ Drive</button>');
@@ -13409,6 +13207,25 @@ function renderMyClipsPage(user, teamPermissions) {
       if (!msg) return 8;
       const m = String(msg).match(/(\\d+(?:\\.\\d+)?)\\s*%/);
       return m ? Math.min(100, Math.max(2, parseFloat(m[1]))) : 8;
+    }
+
+    // Open the shared 'Publish This Moment' modal for a clip from
+    // My Clips. We resolve the clip out of window.__myClipsState so we
+    // can pass the human title as the modal's default, even though
+    // window.lastAnalysisData isn't populated on this page.
+    function publishClipFromMyClips(clipId) {
+      var clips = window.__myClipsState || [];
+      var clip = null;
+      for (var i = 0; i < clips.length; i++) { if (String(clips[i].id) === String(clipId)) { clip = clips[i]; break; } }
+      if (!clip) { showToast('Clip not found — refresh the page.'); return; }
+      if (clip.analysisId == null || clip.momentIndex == null) {
+        showToast('This clip is missing its analysis link.');
+        return;
+      }
+      openPublishModal(clip.analysisId, clip.momentIndex, {
+        title: clip.momentTitle || clip.videoTitle || '',
+        caption: ''
+      });
     }
 
     async function deleteClip(id, btn) {
