@@ -188,7 +188,14 @@ function getPublishMomentModalJS() {
         connectionId: connectionId,
         title: document.getElementById('publishTitle').value.trim(),
         caption: document.getElementById('publishCaption').value.trim(),
-        description: document.getElementById('publishCaption').value.trim()
+        description: document.getElementById('publishCaption').value.trim(),
+        // User's local wall-clock — server stamps the auto-synced
+        // calendar entry with these so it shows up in the user's own
+        // timezone rather than Railway's UTC. Sent as discrete date
+        // + time strings (NOT toISOString) so the user's local clock
+        // survives the UTC server.
+        clientDate: (function(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); })(),
+        clientTime: (function(){ var d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); })()
       };
       if (_publishMode === 'later') {
         var d = document.getElementById('publishDate').value;

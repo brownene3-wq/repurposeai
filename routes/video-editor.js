@@ -1104,10 +1104,15 @@ async function renderEditor(req, res) {
               <h3>📹 Upload Your Video</h3>
               <p>Drop your video here or click to browse</p>
               <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:12px">
-                <button type="button" class="upload-button">Select Video</button>
+                <button type="button" class="upload-button" id="selectVideoBtn">Select Video</button>
                 <button type="button" class="upload-button" id="dropboxImportBtn" style="background:linear-gradient(135deg,#0061FF,#0041B3)"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
               </div>
-              <input type="file" id="fileInput" style="display:none" accept="video/*">
+              <!-- Task #142 — Visually-hidden file input that Safari
+                   can still .click() programmatically. display:none
+                   blocks programmatic clicks in WebKit; absolute-
+                   off-screen sizing keeps the input clickable while
+                   invisible to the user. -->
+              <input type="file" id="fileInput" accept="video/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none">
               <div style="display:flex;align-items:center;gap:8px;margin-top:12px;width:100%;max-width:560px">
                 <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
                 <span style="color:var(--text-muted);font-size:.8rem">or drop a link</span>
@@ -2084,10 +2089,53 @@ function showToast(message, type = 'success') {
     const videoPlayer = document.getElementById('videoPlayer');
     const videoPreviewArea = document.getElementById('videoPreviewArea');
 
-    document.querySelector('.upload-button')?.addEventListener('click', (e) => {
+    // Task #142 — Bulletproof Select Video wiring.
+    //   • resetUploadZoneState() runs unconditionally on script load
+    //     (so a stale disabled state from a previous session can't
+    //     persist past hard refresh).
+    //   • MutationObserver on .has-video catches Delete Clip and any
+    //     future re-show path.
+    //   • Document-level click delegation uses the button's id, not a
+    //     class selector — survives DOM rewires that might reorder
+    //     .upload-button matches.
+    function resetUploadZoneState(){
+      if (uploadZone){
+        uploadZone.style.opacity = '';
+        uploadZone.style.pointerEvents = '';
+        uploadZone.classList.remove('dragover');
+      }
+      var b = document.getElementById('selectVideoBtn');
+      if (b){
+        b.disabled = false;
+        b.textContent = 'Select Video';
+      }
+    }
+    // Run once on load.
+    resetUploadZoneState();
+
+    if (uploadZone){
+      var _uzObs = new MutationObserver(function(){
+        if (!uploadZone.classList.contains('has-video')) resetUploadZoneState();
+      });
+      _uzObs.observe(uploadZone, { attributes: true, attributeFilter: ['class'] });
+    }
+
+    // Delegated click handler — catches the Select Video button no
+    // matter when it's added to the DOM. capture:true so we win
+    // against any other handler that might stopImmediatePropagation.
+    document.addEventListener('click', function(e){
+      var btn = e.target && e.target.closest && e.target.closest('#selectVideoBtn');
+      if (!btn) return;
       e.stopPropagation();
-      fileInput.click();
-    });
+      e.preventDefault();
+      // Clear stale blockers, re-enable the button, then forward the
+      // click to the hidden file input. The reset runs FIRST so a
+      // bygone "Uploading..." text or .disabled flag can't block this
+      // user gesture from opening the file picker.
+      resetUploadZoneState();
+      try { fileInput.click(); }
+      catch (err){ console.error('[upload] fileInput.click() threw:', err); }
+    }, true);
 
     uploadZone.addEventListener('click', (e) => {
       if (e.target === fileInput) return;
@@ -2101,22 +2149,84 @@ function showToast(message, type = 'success') {
       if (file) await uploadVideo(file);
     });
 
-    uploadZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      uploadZone.classList.add('dragover');
-    });
-
-    uploadZone.addEventListener('dragleave', () => {
-      uploadZone.classList.remove('dragover');
-    });
-
-    uploadZone.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      uploadZone.classList.remove('dragover');
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('video/')) {
-        await uploadVideo(file);
+    // Task #142 — Drop a file from the OS file picker / Finder /
+    // Explorer onto the upload panel and treat it exactly like Select
+    // Video. Three robustness fixes vs. the old handler:
+    //   1. dragover/dragenter both call preventDefault() AND set
+    //      dropEffect='copy'. Without dropEffect the browser may
+    //      reject the drop silently (especially on Windows).
+    //   2. Drop is captured at document level too, in case the user
+    //      releases slightly outside uploadZone's hit-rect after
+    //      dragging (browser still fires drop on document body).
+    //   3. MIME filter is permissive: the file input uses
+    //      accept="video/*" which permits files by extension even
+    //      when the OS reports an empty MIME (.mkv, some .mov
+    //      variants, files served as application/octet-stream).
+    //      We mirror that with an extension fallback so the drop
+    //      path doesn't reject things Select Video would accept.
+    var VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v', '.mpg', '.mpeg', '.ogv', '.3gp', '.wmv', '.flv', '.ts'];
+    function looksLikeVideoFile(file){
+      if (!file) return false;
+      var t = (file.type || '').toLowerCase();
+      if (t.indexOf('video/') === 0) return true;
+      var n = (file.name || '').toLowerCase();
+      for (var i = 0; i < VIDEO_EXTS.length; i++){
+        if (n.endsWith(VIDEO_EXTS[i])) return true;
       }
+      // No MIME and no recognizable extension — let uploadVideo decide.
+      // It will reject on the server side if it's truly not a video.
+      return !t || t === 'application/octet-stream';
+    }
+
+    function handleDragOver(e){
+      // preventDefault is REQUIRED on dragover to opt into receiving
+      // a drop event. Without it the OS treats the panel as
+      // non-droppable and the cursor shows a "no-entry" icon.
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      uploadZone.classList.add('dragover');
+    }
+    function handleDragLeave(e){
+      // Only clear the visual state when leaving the upload zone
+      // entirely (relatedTarget check) — without this, hovering a
+      // child element re-fires dragleave and strobes the highlight.
+      if (e && e.relatedTarget && uploadZone.contains(e.relatedTarget)) return;
+      uploadZone.classList.remove('dragover');
+    }
+    async function handleDrop(e){
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      var dt = e.dataTransfer;
+      if (!dt || !dt.files || !dt.files.length) return;
+      var file = dt.files[0];
+      if (!looksLikeVideoFile(file)){
+        showToast("That doesn't look like a video file. Try MP4, MOV, WEBM, or MKV.");
+        return;
+      }
+      try {
+        await uploadVideo(file);
+      } catch (err){
+        console.error('[upload] drop upload failed:', err);
+        showToast('Upload failed: ' + (err && err.message || 'unknown error'));
+      }
+    }
+
+    uploadZone.addEventListener('dragenter', handleDragOver);
+    uploadZone.addEventListener('dragover', handleDragOver);
+    uploadZone.addEventListener('dragleave', handleDragLeave);
+    uploadZone.addEventListener('drop', handleDrop);
+
+    // Suppress the browser's default "open file in new tab" behavior
+    // when the user releases the drag slightly outside uploadZone.
+    // Without these, dropping anywhere on the page navigates away
+    // from the editor and the user loses their session.
+    document.addEventListener('dragover', function(e){
+      if (e.target && uploadZone.contains(e.target)) return;
+      e.preventDefault();
+    });
+    document.addEventListener('drop', function(e){
+      if (e.target && uploadZone.contains(e.target)) return;
+      e.preventDefault();
     });
 
     async function uploadVideo(file) {
@@ -2209,6 +2319,17 @@ function showToast(message, type = 'success') {
           }
         } catch (_) {}
 
+        // Task #141 — Reset button + zone state on SUCCESS too, not
+        // just in the catch. The success path used to leave
+        // uploadBtn.disabled=true and uploadZone.pointerEvents='none'
+        // baked in. .has-video hid the zone immediately so the dead
+        // button wasn't visible, but the moment the user deleted the
+        // V1 clip and the zone reappeared, the button was unclickable
+        // and clicking it did nothing.
+        uploadBtn.textContent = originalText;
+        uploadBtn.disabled = false;
+        uploadZone.style.opacity = '';
+        uploadZone.style.pointerEvents = '';
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
         uploadBtn.textContent = originalText;
@@ -3890,6 +4011,22 @@ function showToast(message, type = 'success') {
         customFilename = 'Untitled Project ' + _stamp;
         if (_projInput) _projInput.value = 'Untitled Project';
       }
+      // Task #140 — Wait for any in-flight auto-extract promotions to
+      // settle before serializing. Without this, a fast user-click
+      // right after upload captures the V1 clip's mediaUrl while it
+      // is still blob:, and the server can't resolve it. Cap the wait
+      // at 30s so a stuck promotion can't hold the export forever.
+      var _exportBtn0 = document.getElementById('exportButton');
+      var _pendingClips = Array.from(document.querySelectorAll('.mt-clip[data-link-pair-pending], .mt-clip-video[data-link-pair-pending]'));
+      if (_pendingClips.length){
+        if (_exportBtn0) _exportBtn0.innerHTML = '⏳ Finishing audio extract…';
+        var _waitStart = Date.now();
+        while (Date.now() - _waitStart < 30000){
+          var still = Array.from(document.querySelectorAll('[data-link-pair-pending]'));
+          if (!still.length) break;
+          await new Promise(function(r){ setTimeout(r, 150); });
+        }
+      }
       var timelineClips = Array.from(document.querySelectorAll('.mt-clip'))
         .map(function(c){
           var track = c.parentElement;
@@ -4062,10 +4199,29 @@ function showToast(message, type = 'success') {
           var blobClips = timelineClips.filter(function(c){
             return c.mediaUrl && c.mediaUrl.indexOf('blob:') === 0;
           });
+          // Task #140 \u2014 HEAD-check non-blob server URLs so a stale
+          // file (Railway /tmp wipe) is logged before we trust the
+          // server to find it. Just diagnostic \u2014 surfaces in console.
+          (async function diagnoseStale(){
+            for (var si = 0; si < timelineClips.length; si++){
+              var sc = timelineClips[si];
+              if (!sc.mediaUrl || sc.mediaUrl.indexOf('blob:') === 0) continue;
+              if (sc.mediaUrl.indexOf('/video-editor/download/') === -1) continue;
+              try {
+                var hr = await fetch(sc.mediaUrl, { method: 'HEAD', credentials: 'same-origin' });
+                if (!hr.ok) console.warn('[export] stale URL', sc.filename, sc.mediaUrl);
+              } catch(_){}
+            }
+          })();
+          // Task #140 \u2014 Track failures so we abort instead of letting
+          // the server fail on bad URLs with the misleading "files
+          // uploaded via the sidebar live only in your browser" toast.
+          var _exportFailures = [];
           if (blobClips.length > 0){
             button.innerHTML = '\u2b06\ufe0f Uploading ' + blobClips.length + ' local file' + (blobClips.length === 1 ? '' : 's') + '\u2026';
             for (var bi = 0; bi < blobClips.length; bi++){
               var bc = blobClips[bi];
+              var _bcOldUrl = bc.mediaUrl;
               try {
                 var blobResp = await fetch(bc.mediaUrl);
                 var blobData = await blobResp.blob();
@@ -4096,10 +4252,28 @@ function showToast(message, type = 'success') {
                   throw new Error(upData.error || 'Blob upload failed');
                 }
                 bc.mediaUrl = upData.serveUrl;
+                // Persist on the DOM clip so a retry doesn't re-upload.
+                try {
+                  document.querySelectorAll('.mt-clip').forEach(function(el){
+                    if (el.dataset.mediaUrl === _bcOldUrl) el.dataset.mediaUrl = upData.serveUrl;
+                  });
+                } catch(_){}
               } catch (upErr){
-                console.warn('[export] blob upload failed for', bc.filename, upErr);
-                showToast('Could not upload "' + (bc.filename || 'clip') + '" — will be skipped', 'error');
+                console.error('[export] blob upload failed for', bc.filename, upErr);
+                _exportFailures.push(bc.filename || 'clip');
               }
+            }
+            // Task #140 — abort with a clear error if any blob upload
+            // failed. The previous "silent and continue" path produced
+            // the misleading "Source file not found on server" toast
+            // because the server received the un-uploaded blob URL.
+            if (_exportFailures.length){
+              button.disabled = false;
+              button.innerHTML = '🎬 Export Video';
+              throw new Error('Could not upload ' + _exportFailures.length + ' local file' +
+                (_exportFailures.length === 1 ? '' : 's') + ' to the server: ' +
+                _exportFailures.join(', ') +
+                '. Try re-uploading from the Media panel and exporting again.');
             }
           }
 
@@ -7613,7 +7787,12 @@ setTimeout(function sidebarLayoutFix(){
         connectionId: connectionId,
         title: document.getElementById('vePublishTitle').value.trim(),
         caption: document.getElementById('vePublishCaption').value.trim(),
-        description: document.getElementById('vePublishCaption').value.trim()
+        description: document.getElementById('vePublishCaption').value.trim(),
+        // User's local wall-clock — server stamps the auto-synced
+        // calendar entry with these so it shows up in the user's own
+        // timezone rather than Railway's UTC.
+        clientDate: (function(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); })(),
+        clientTime: (function(){ var d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); })()
       };
       if (_veMode === 'later') {
         var d = document.getElementById('vePublishDate').value;
@@ -8374,8 +8553,17 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
 
       var srcPath = urlToFilePath(clip.mediaUrl);
       if (!srcPath){
+        // Task #140 — Specific guidance per failure mode. A blob URL
+        // means the frontend pre-upload step silently skipped or
+        // failed; a server URL that resolves but has no file means
+        // /tmp was wiped (Railway restart) or the file was rotated
+        // away. Both fixes are user-actionable: re-upload from the
+        // Media panel and retry.
+        var isBlob = clip.mediaUrl && clip.mediaUrl.indexOf('blob:') === 0;
         throw new Error('Source file not found on server: ' + (clip.filename || clip.mediaUrl) +
-          ' (files uploaded via the sidebar + Upload button live only in your browser and can\'t be exported yet)');
+          (isBlob
+            ? ' (the local file was never promoted to the server — re-upload from the Media panel and try again)'
+            : ' (the server\'s /tmp may have been wiped since this clip was uploaded — re-upload from the Media panel and try again)'));
       }
 
       var segPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_clip.mp4');
@@ -9397,14 +9585,58 @@ router.post('/api/publish-export', requireAuth, async (req, res) => {
     if (!fs.existsSync(mediaPath)) {
       return res.status(404).json({ success: false, error: 'Export file not found. The server may have restarted since you exported. Re-export the timeline and try again.' });
     }
+    const resolvedTitle = title || safe.replace(/\.[a-z0-9]+$/i, '');
+    const resolvedCaption = caption || description || '';
     const result = await publishToConnection(req.user.id, connectionId, {
-      title: title || safe.replace(/\.[a-z0-9]+$/i, ''),
+      title: resolvedTitle,
       description: description || caption || '',
-      caption: caption || description || '',
+      caption: resolvedCaption,
       mediaPath
     });
     if (!result.success) return res.status(400).json(result);
-    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
+
+    // Auto-sync the successful Post Now into the project calendar so it
+    // shows up alongside scheduled posts. Failures here are swallowed so
+    // the publish response stays clean — the post already went out.
+    let calendarEntryId = null;
+    try {
+      const { calendarOps } = require('../db/database');
+      const cDate = (req.body && req.body.clientDate) || null;
+      const cTime = (req.body && req.body.clientTime) || null;
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const timeRe = /^\d{2}:\d{2}$/;
+      let dateStr, timeStr;
+      if (cDate && dateRe.test(cDate) && cTime && timeRe.test(cTime)) {
+        dateStr = cDate;
+        timeStr = cTime;
+      } else {
+        const now = new Date();
+        dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+        timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      }
+      const entry = await calendarOps.create({
+        userId: req.user.id,
+        title: resolvedTitle,
+        platform: acct.platform,
+        scheduledDate: dateStr,
+        scheduledTime: timeStr,
+        status: 'published',
+        contentText: resolvedCaption,
+        analysisId: null, momentIndex: null,
+        notes: '',
+        color: '#10B981',
+        autoPublish: false,
+        clipFilename: safe,
+        connectionId: acct.id,
+        reminderEmail: '',
+        reminderMinutes: 0
+      });
+      calendarEntryId = entry && entry.id;
+    } catch (calErr) {
+      console.warn('[video-editor publish-export] calendar auto-sync failed:', calErr.message);
+    }
+
+    res.json({ success: true, platform: acct.platform, externalId: result.externalId || null, calendarEntryId });
   } catch (err) {
     console.error('[POST /video-editor/api/publish-export]', err.message);
     res.status(500).json({ success: false, error: err.message || 'Publish failed' });
