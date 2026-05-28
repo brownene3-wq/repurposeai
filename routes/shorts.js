@@ -12933,9 +12933,34 @@ function renderMyClipsPage(user, teamPermissions) {
     }
     .clip-card-mc-actions .btn-primary:hover { filter: brightness(1.1); }
     .clip-card-mc-actions .btn-danger {
-      background: rgba(239, 68, 68, 0.12);
-      color: #fca5a5;
-      border-color: rgba(239, 68, 68, 0.25);
+      background: var(--error, #EF4444);
+      color: #fff;
+      border-color: transparent;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      box-shadow: 0 1px 2px rgba(220, 38, 38, 0.25);
+    }
+    .clip-card-mc-actions .btn-danger:hover {
+      background: #DC2626;
+      box-shadow: 0 2px 6px rgba(220, 38, 38, 0.45);
+      transform: translateY(-1px);
+    }
+    .clip-card-mc-actions .btn-danger:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 2px;
+    }
+    /* Light mode: the white outline-on-focus stays high-contrast, and
+       the solid red still passes contrast against the white card. */
+    body.light .clip-card-mc-actions .btn-danger {
+      background: #DC2626;
+      box-shadow: 0 1px 3px rgba(220, 38, 38, 0.30);
+    }
+    body.light .clip-card-mc-actions .btn-danger:hover {
+      background: #B91C1C;
+      box-shadow: 0 2px 8px rgba(185, 28, 28, 0.45);
+    }
+    body.light .clip-card-mc-actions .btn-danger:focus-visible {
+      outline-color: #DC2626;
     }
     .clip-card-mc-progress {
       height: 4px;
