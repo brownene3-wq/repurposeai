@@ -2601,7 +2601,33 @@ async function reconcileRenderRow(row) {
           return updated || row;
         }
       }
+      return row;
     }
+
+    // File isn't on disk. Try R2 next — it's the source of truth post-restart.
+    if (r2.isConfigured()) {
+      try {
+        const r2Key = row.r2_key || ('clips/' + row.filename);
+        const head = await r2.headObject(r2Key);
+        if (head.exists && head.size > 10000) {
+          const updated = await clipRenderOps.updateStatus(row.id, 'ready', { fileSize: head.size, progressMessage: null, errorMessage: null, r2Key: r2Key });
+          return updated || row;
+        }
+      } catch (e) {}
+    }
+
+    // Nothing on disk, nothing in R2, no .progress file — this render is
+    // a zombie. If it has been sitting in 'rendering' for more than 15 minutes
+    // it almost certainly died from a container restart or crash. Mark failed
+    // so the UI stops showing a phantom "Rendering" forever.
+    const createdAt = row.created_at ? new Date(row.created_at).getTime() : 0;
+    const ageMin = createdAt ? (Date.now() - createdAt) / 60000 : 0;
+    if (ageMin > 15 && !fs.existsSync(progressPath)) {
+      const msg = 'Render did not complete (container restart or crash). Click Re-render to try again.';
+      const updated = await clipRenderOps.updateStatus(row.id, 'failed', { errorMessage: msg, progressMessage: null });
+      return updated || row;
+    }
+
     return row;
   } catch (e) {
     console.error('reconcileRenderRow error:', e.message);
