@@ -120,6 +120,8 @@ const initDatabase = async () => {
       `ALTER TABLE brand_voices ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false`,
       // Brand kits - ElevenLabs integration
       `ALTER TABLE brand_kits ADD COLUMN IF NOT EXISTS elevenlabs_api_key TEXT DEFAULT ''`,
+      // Clip renders: R2 object key for the uploaded .mp4
+      `ALTER TABLE clip_renders ADD COLUMN IF NOT EXISTS r2_key TEXT`,
     ];
     for (const sql of migrations) {
       try { await pool.query(sql); } catch (e) { /* table or column may not exist yet */ }
@@ -1854,6 +1856,7 @@ module.exports = {
       if (opts.errorMessage !== undefined) { vals.push(opts.errorMessage); fields.push(`error_message = $${vals.length}`); }
       if (opts.fileSize !== undefined) { vals.push(opts.fileSize); fields.push(`file_size = $${vals.length}`); }
       if (opts.thumbnailUrl !== undefined) { vals.push(opts.thumbnailUrl); fields.push(`thumbnail_url = $${vals.length}`); }
+      if (opts.r2Key !== undefined) { vals.push(opts.r2Key); fields.push(`r2_key = $${vals.length}`); }
       if (status === 'ready') { fields.push('ready_at = CURRENT_TIMESTAMP'); }
       vals.push(id);
       const sql = `UPDATE clip_renders SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`;
