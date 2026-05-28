@@ -122,6 +122,7 @@ const initDatabase = async () => {
       `ALTER TABLE brand_kits ADD COLUMN IF NOT EXISTS elevenlabs_api_key TEXT DEFAULT ''`,
       // Clip renders: R2 object key for the uploaded .mp4
       `ALTER TABLE clip_renders ADD COLUMN IF NOT EXISTS r2_key TEXT`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_clip_ready BOOLEAN DEFAULT true`,
     ];
     for (const sql of migrations) {
       try { await pool.query(sql); } catch (e) { /* table or column may not exist yet */ }

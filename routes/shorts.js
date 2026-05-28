@@ -27,6 +27,7 @@ const { requireCredits } = require('../middleware/credits');
 const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { shortsOps, brandKitOps, calendarOps, clipRenderOps, connectedAccountOps } = require('../db/database');
 const r2 = require('../utils/r2');
+const emailUtils = require('../utils/email');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 
 // Guard boot — OpenAI SDK throws at construction if apiKey is empty,
@@ -283,12 +284,12 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
       proc.stdout.on('data', (d) => {
         stdout += d.toString();
-        const pct = d.toString().match(/(\\d+\\.?\\d*)%/);
+        const pct = d.toString().match(/(\d+\.?\d*)%/);
         if (pct) writeProgress('Downloading: ' + Math.round(parseFloat(pct[1])) + '%');
       });
       proc.stderr.on('data', (d) => {
         stderr += d.toString();
-        const pct = d.toString().match(/(\\d+\\.?\\d*)%/);
+        const pct = d.toString().match(/(\d+\.?\d*)%/);
         if (pct) writeProgress('Downloading: ' + Math.round(parseFloat(pct[1])) + '%');
       });
       proc.on('error', (err) => settle(reject, err));
@@ -2555,6 +2556,34 @@ router.get('/api/my-renders', requireAuth, async (req, res) => {
   }
 });
 
+
+
+// HMAC-signed unsubscribe token so the recipient can opt out without
+// logging in. Token = base64url(payload) + '.' + base64url(HMAC-SHA256(payload)).
+function makeClipReadyUnsubToken(userId) {
+  const _crypto = require('crypto');
+  const secret = process.env.JWT_SECRET || 'splicora-default-secret';
+  const payload = JSON.stringify({ uid: userId, scope: 'clip_ready', iat: Date.now() });
+  const b64 = (b) => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const p = b64(payload);
+  const sig = b64(_crypto.createHmac('sha256', secret).update(p).digest());
+  return p + '.' + sig;
+}
+function verifyClipReadyUnsubToken(token) {
+  try {
+    const _crypto = require('crypto');
+    const secret = process.env.JWT_SECRET || 'splicora-default-secret';
+    const [p, sig] = String(token || '').split('.');
+    if (!p || !sig) return null;
+    const b64 = (b) => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+    const expected = b64(_crypto.createHmac('sha256', secret).update(p).digest());
+    if (expected !== sig) return null;
+    const raw = Buffer.from(p.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const data = JSON.parse(raw);
+    if (data.scope !== 'clip_ready' || !data.uid) return null;
+    return data;
+  } catch (e) { return null; }
+}
 
 // ===== My Clips page (Phase B–E of the My Clips feature) =====
 //
@@ -5343,6 +5372,24 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
         try {
           await clipRenderOps.updateStatusByFilename(filename, 'ready', { fileSize: finalSize, progressMessage: null, errorMessage: null, r2Key: r2Key });
         } catch (e) { console.error('clipRenderOps ready-update failed:', e.message); }
+
+        // Premium 'clip ready' email. Honors the user's notify_clip_ready
+        // preference. Best-effort — failure here doesn't affect the render.
+        try {
+          const usr = req.user;
+          if (usr && usr.notify_clip_ready !== false && usr.email) {
+            const clipForEmail = {
+              filename,
+              moment_title: moment.title || null,
+              video_title: analysis.video_title || null,
+              file_size: finalSize
+            };
+            const unsubToken = makeClipReadyUnsubToken(usr.id);
+            const unsubscribeUrl = 'https://splicora.ai/shorts/notifications/clip-ready/unsubscribe?token=' + encodeURIComponent(unsubToken);
+            emailUtils.sendClipReadyEmail({ user: usr, clip: clipForEmail, unsubscribeUrl })
+              .catch(e => console.error('Clip-ready email failed:', e && e.message || e));
+          }
+        } catch (e) { console.error('Clip-ready email setup failed:', e.message); }
 
       } catch (err) {
         clearTimeout(timeout);
