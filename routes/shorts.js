@@ -13091,8 +13091,81 @@ function renderMyClipsPage(user, teamPermissions) {
 
   ${getPublishMomentModalHTML()}
 
+  <!-- Themed confirmation modal — replaces window.confirm() for the
+       Delete / connect-flow prompts on this page. Driven by the
+       showConfirm({ title, message, confirmLabel, danger }) helper
+       defined in the page script below. -->
+  <div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:10010;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)resolveConfirm(false)">
+    <div style="background:var(--surface);border:1px solid rgba(255,255,255,0.10);border-radius:16px;width:100%;max-width:440px;padding:22px 24px;box-shadow:0 24px 60px rgba(0,0,0,0.55);">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">
+        <div id="confirmIcon" style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:rgba(239,68,68,0.14);display:flex;align-items:center;justify-content:center;color:#EF4444;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <h3 id="confirmTitle" style="margin:0 0 4px;font-size:1.02rem;font-weight:700;color:var(--text);line-height:1.3;">Delete this clip?</h3>
+          <p id="confirmMessage" style="margin:0;font-size:0.86rem;color:var(--text-muted);line-height:1.5;">The file will be removed from the server.</p>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+        <button type="button" onclick="resolveConfirm(false)" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:0.55rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;font-family:inherit;">Cancel</button>
+        <button type="button" id="confirmOkBtn" onclick="resolveConfirm(true)" style="background:#EF4444;border:none;color:#fff;padding:0.55rem 1.2rem;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;font-family:inherit;box-shadow:0 1px 2px rgba(220,38,38,0.30);">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     ${getPublishMomentModalJS()}
+
+    // Themed replacement for window.confirm(). Returns a Promise that
+    // resolves to true (OK) / false (Cancel / backdrop / Escape).
+    // opts = { title?, message?, confirmLabel?, cancelLabel?, danger? }
+    // 'danger:true' is the default — we use this for destructive actions
+    // (Delete). 'danger:false' switches the confirm button to the brand
+    // gradient for non-destructive confirms (e.g. "open connect flow").
+    var _confirmResolve = null;
+    function resolveConfirm(v) {
+      var m = document.getElementById('confirmModal');
+      if (m) m.style.display = 'none';
+      if (_confirmResolve) { var r = _confirmResolve; _confirmResolve = null; r(!!v); }
+    }
+    function showConfirm(opts) {
+      opts = opts || {};
+      var titleEl = document.getElementById('confirmTitle');
+      var msgEl = document.getElementById('confirmMessage');
+      var okBtn = document.getElementById('confirmOkBtn');
+      var iconWrap = document.getElementById('confirmIcon');
+      titleEl.textContent = opts.title || 'Are you sure?';
+      msgEl.textContent = opts.message || '';
+      okBtn.textContent = opts.confirmLabel || 'Confirm';
+      // Danger styling vs. brand-gradient styling.
+      var danger = opts.danger !== false; // default true
+      if (danger) {
+        okBtn.style.background = '#EF4444';
+        okBtn.style.boxShadow = '0 1px 2px rgba(220,38,38,0.30)';
+        iconWrap.style.background = 'rgba(239,68,68,0.14)';
+        iconWrap.style.color = '#EF4444';
+        iconWrap.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+      } else {
+        okBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)';
+        okBtn.style.boxShadow = 'none';
+        iconWrap.style.background = 'rgba(108,58,237,0.18)';
+        iconWrap.style.color = '#a78bfa';
+        iconWrap.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+      }
+      document.getElementById('confirmModal').style.display = 'flex';
+      // Focus the confirm button for keyboard users (Enter to accept).
+      setTimeout(function() { try { okBtn.focus(); } catch (_) {} }, 30);
+      return new Promise(function(resolve) { _confirmResolve = resolve; });
+    }
+    // Escape closes (resolves false). Bound once.
+    if (!window.__confirmEscWired) {
+      window.__confirmEscWired = true;
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        var m = document.getElementById('confirmModal');
+        if (m && m.style.display === 'flex') resolveConfirm(false);
+      });
+    }
 
     function formatBytes(b) {
       if (!b) return '0 B';
@@ -13229,7 +13302,8 @@ function renderMyClipsPage(user, teamPermissions) {
     }
 
     async function deleteClip(id, btn) {
-      if (!confirm('Delete this clip? The file will be removed from the server.')) return;
+      var ok = await showConfirm({ title: 'Delete this clip?', message: 'The file will be removed from the server. This cannot be undone.', confirmLabel: 'Delete', danger: true });
+      if (!ok) return;
       btn.disabled = true; btn.textContent = '…';
       try {
         const r = await fetch('/shorts/api/clips/' + id + '/delete', { method: 'POST', credentials: 'same-origin' });
@@ -13251,7 +13325,8 @@ function renderMyClipsPage(user, teamPermissions) {
         const r = await fetch('/shorts/api/clips/' + id + '/send-to-drive', { method: 'POST', credentials: 'same-origin' });
         const d = await r.json();
         if (r.status === 412 && d.connectUrl) {
-          if (confirm('Google Drive not connected. Open the connect flow now?')) window.location.href = d.connectUrl;
+          var ok = await showConfirm({ title: 'Connect Google Drive?', message: 'Google Drive isn\\'t connected yet. Open the connect flow now to finish uploading this clip.', confirmLabel: 'Connect Drive', danger: false });
+          if (ok) window.location.href = d.connectUrl;
           btn.disabled = false; btn.textContent = orig; return;
         }
         if (!r.ok) throw new Error(d.error || 'Drive upload failed');
@@ -13271,7 +13346,8 @@ function renderMyClipsPage(user, teamPermissions) {
         const r = await fetch('/shorts/api/clips/' + id + '/send-to-dropbox', { method: 'POST', credentials: 'same-origin' });
         const d = await r.json();
         if (r.status === 412 && d.connectUrl) {
-          if (confirm('Dropbox not connected. Open the connect flow now?')) window.location.href = d.connectUrl;
+          var ok = await showConfirm({ title: 'Connect Dropbox?', message: 'Dropbox isn\\'t connected yet. Open the connect flow now to finish uploading this clip.', confirmLabel: 'Connect Dropbox', danger: false });
+          if (ok) window.location.href = d.connectUrl;
           btn.disabled = false; btn.textContent = orig; return;
         }
         if (!r.ok) throw new Error(d.error || 'Dropbox upload failed');
