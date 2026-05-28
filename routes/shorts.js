@@ -8403,6 +8403,37 @@ ${paginationHtml}
       </div>
     </div>
 
+    <!-- Moment Preview Modal — opens when a moment thumbnail is clicked.
+         Renders a YouTube iframe scoped to the moment's start/end seconds
+         using the privacy-enhanced embed URL with start= / end= params.
+         For uploaded analyses (no videoId), we swap the iframe for a
+         <video> element pointed at /shorts/moment-preview/<id>/<idx>
+         which serves the same trimmed MP4 from the on-disk source. -->
+    <div id="momentPreviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);z-index:10002;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)closeMomentPreview()">
+      <div style="background:var(--surface);border:1px solid rgba(108,58,237,0.25);border-radius:16px;width:100%;max-width:780px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <div style="min-width:0;">
+            <div id="momentPreviewTitle" style="font-size:0.98rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Moment preview</div>
+            <div id="momentPreviewRange" style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;"></div>
+          </div>
+          <button type="button" onclick="closeMomentPreview()" aria-label="Close preview"
+            style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:var(--text);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;">&times;</button>
+        </div>
+        <!-- 16:9 frame so the embedded player never crops awkwardly -->
+        <div style="position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;">
+          <iframe id="momentPreviewIframe" src="" title="Moment preview"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowfullscreen
+            style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;"></iframe>
+          <video id="momentPreviewVideo" controls playsinline preload="metadata"
+            style="display:none;position:absolute;inset:0;width:100%;height:100%;background:#000;"></video>
+        </div>
+        <div style="margin-top:10px;font-size:0.74rem;color:var(--text-muted);line-height:1.45;">
+          Playback starts at the moment's start time and stops automatically at its end time.
+        </div>
+      </div>
+    </div>
+
 </main>
 
   <!-- Calendar Entry Modal -->
@@ -9327,6 +9358,62 @@ ${paginationHtml}
       _runAnalyze(url);
     }
 
+    // ── Moment preview modal (ba76736-style revert) ───────────────────
+    // Opens a popup modal scoped to a single moment's [start, end]
+    // window. For YouTube videos we use the privacy-enhanced
+    // youtube-nocookie.com /embed/ URL with start= / end= so YouTube
+    // itself bounds playback. For uploaded analyses we use a native
+    // <video> element pointed at /shorts/moment-preview/<id>/<idx>,
+    // which already serves the trimmed MP4 from the on-disk source.
+    // The video/iframe elements coexist in the modal; we show one and
+    // hide the other based on which source we got.
+    function openMomentPreview(videoIdOrAnalysisId, startSec, endSec, timeRange, title, sourceType, momentIdx) {
+      var modal = document.getElementById('momentPreviewModal');
+      var iframe = document.getElementById('momentPreviewIframe');
+      var video = document.getElementById('momentPreviewVideo');
+      var titleEl = document.getElementById('momentPreviewTitle');
+      var rangeEl = document.getElementById('momentPreviewRange');
+      if (!modal) return;
+      var s = Math.max(0, Math.floor(Number(startSec) || 0));
+      var e = Math.max(s + 1, Math.floor(Number(endSec) || (s + 30)));
+      if (sourceType === 'upload') {
+        // Uploaded video: use the trimmed MP4 endpoint.
+        if (iframe) { iframe.src = ''; iframe.style.display = 'none'; }
+        if (video) {
+          video.style.display = 'block';
+          video.src = '/shorts/moment-preview/' + encodeURIComponent(videoIdOrAnalysisId) +
+                      '/' + encodeURIComponent(momentIdx);
+          video.currentTime = 0;
+          var p = video.play();
+          if (p && typeof p.catch === 'function') p.catch(function(){});
+        }
+      } else {
+        // YouTube: use the embed iframe with start=/end= bounding.
+        if (video) { try { video.pause(); } catch (_) {} video.src = ''; video.style.display = 'none'; }
+        if (iframe) {
+          iframe.style.display = 'block';
+          iframe.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoIdOrAnalysisId)
+            + '?start=' + s
+            + '&end=' + e
+            + '&autoplay=1'
+            + '&rel=0'
+            + '&modestbranding=1'
+            + '&playsinline=1';
+        }
+      }
+      if (titleEl) titleEl.textContent = title || 'Moment preview';
+      if (rangeEl) rangeEl.textContent = timeRange ? ('Playing ' + timeRange) : '';
+      modal.style.display = 'flex';
+    }
+    function closeMomentPreview() {
+      var modal = document.getElementById('momentPreviewModal');
+      var iframe = document.getElementById('momentPreviewIframe');
+      var video = document.getElementById('momentPreviewVideo');
+      if (iframe) iframe.src = '';
+      if (video) { try { video.pause(); } catch (_) {} video.src = ''; video.style.display = 'none'; }
+      if (modal) modal.style.display = 'none';
+    }
+
     // ── Native 9:16 moment preview ───────────────────────────────────
     // Each moment card embeds a <video src="/shorts/moment-preview/.../...">
     // trimmed server-side to the moment's start/end window. Behavior:
@@ -9659,87 +9746,44 @@ ${paginationHtml}
           const startSec = timeToSeconds(rangeParts[0]);
           const endSec = rangeParts[1] ? timeToSeconds(rangeParts[1]) : startSec + 60;
 
-          // Native 9:16 vertical preview. The server returns an MP4 that
-          // is already trimmed to the moment's [start, end] window and
-          // center-cropped to 9:16, so the browser just plays it once
-          // (no infinite loop). The container is locked to aspect-ratio
-          // 9:16 with a capped width so the moment card stays a sensible
-          // height even when 8 cards stack.
-          //   - <video> autoplay+muted+playsinline so it kicks off when
-          //     scrolled into view, but no loop attribute — plays once
-          //     then stops on the last frame until the user clicks play.
-          //   - poster falls back to YouTube's mqdefault frame while the
-          //     trimmed MP4 is still being generated server-side.
-          //   - registerMomentPreview() wires IntersectionObserver +
-          //     listens for native play / pause / ended events so the
-          //     center play/pause button icon stays in sync.
-          //   - Center button: togglePlayPause swaps between ▶ and ‖.
-          //   - Top-right mute toggle stays; bottom-left timeRange badge
-          //     stays.
-          // Render the 9:16 preview shell for BOTH YouTube and uploaded
-          // analyses. The /shorts/moment-preview endpoint handles both
-          // source types; only the poster differs (YouTube mqdefault vs
-          // an ffmpeg-extracted frame from the uploaded file via
-          // /shorts/upload-moment-thumbnail/<id>/<idx>).
+          // Static 16:9 thumbnail + click-to-preview popup (ba76736 revert).
+          // Layout matches the landing-page analysis card thumbnails:
+          // mqdefault.jpg for YouTube videos (16:9 native, no crop),
+          // upload-moment-thumbnail for uploads (ffmpeg-extracted frame
+          // from the on-disk source). Clicking the button opens the
+          // shared #momentPreviewModal which plays either a YouTube
+          // embed (YT) or the local trimmed MP4 (upload).
           const isUploadAnalysis = (analysis.video_url || '').indexOf('upload://') === 0;
-          const _posterUrl = videoId
+          const _thumbSrc = videoId
             ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
             : (isUploadAnalysis ? \`/shorts/upload-moment-thumbnail/\${id}/\${idx}\` : '');
+          const _safeRange = (moment.timeRange || '').replace(/'/g, "\\'");
+          const _safeTitle = (moment.title || 'Moment').replace(/'/g, "\\'");
+          const _previewArgs = videoId
+            ? \`'\${videoId}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}', 'youtube'\`
+            : \`'\${id}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}', 'upload', \${idx}\`;
           const videoEmbed = (videoId || isUploadAnalysis) ? \`
-            <div class="moment-preview-shell" id="moment-preview-\${idx}"
-              style="position:relative; width:100%; max-width:220px; aspect-ratio:9/16; margin:0 auto 14px; background:#0a0612; border:1px solid rgba(108,58,237,0.20); border-radius:14px; overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,0.35);">
-              <video
-                src="/shorts/moment-preview/\${id}/\${idx}"
-                poster="\${_posterUrl}"
-                autoplay muted playsinline preload="auto"
-                style="width:100%; height:100%; object-fit:cover; display:block; background:#000;"
-                onloadstart="registerMomentPreview(this)"
-                onloadeddata="registerMomentPreview(this)"
-                onerror="_onMomentPreviewError(this)"></video>
-              <!-- Loading overlay — status text escalates the longer
-                   generation takes so users know it isn't frozen.
-                   _updateMomentLoader() toggles display based on the
-                   video's readyState and the latest network event. -->
-              <div class="moment-preview-loader" aria-hidden="true">
-                <div class="moment-preview-spinner"></div>
-                <div class="moment-preview-loader-text">Loading</div>
+            <button type="button" id="thumb-btn-\${idx}" onclick="openMomentPreview(\${_previewArgs})" title="Click to preview this moment"
+              style="display:block; position:relative; text-decoration:none; aspect-ratio:16/9; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
+              <img src="\${_thumbSrc}" alt="Clip thumbnail"
+                onerror="this.onerror=null; this.style.display='none'; var bg=this.parentElement; if(bg) bg.style.background='linear-gradient(135deg,#1a1430,#0a0612)';"
+                style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy" />
+              <div style="position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 50%,rgba(0,0,0,0.55) 100%); pointer-events:none;"></div>
+              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                width:54px; height:54px; background:rgba(108,58,237,0.92); border-radius:50%;
+                display:flex; align-items:center; justify-content:center; color:#fff;
+                box-shadow:0 6px 18px rgba(0,0,0,0.45);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
               </div>
-              <div class="moment-preview-fallback" aria-hidden="true"
-                style="display:none; position:absolute; inset:0; align-items:center; justify-content:center; flex-direction:column; gap:8px; padding:14px; text-align:center; color:#cfc6e6; font-size:11px; line-height:1.4; background:linear-gradient(180deg,#1a1430,#0a0612);">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <div class="moment-preview-fallback-text" style="color:#aaa;">Preview unavailable</div>
-                <button type="button" class="moment-preview-retry" onclick="_retryMomentPreview(this)" style="margin-top:4px;background:rgba(108,58,237,0.18);border:1px solid rgba(108,58,237,0.40);color:#c4b5fd;padding:5px 12px;border-radius:999px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.04em;text-transform:uppercase;">Retry</button>
-              </div>
-              <!-- Center play/pause toggle. Icons live as sibling SVGs;
-                   _syncMomentPlayPauseIcon shows whichever matches the
-                   <video>'s current state. -->
-              <button type="button" class="moment-pp-btn" onclick="togglePlayPause(this)" title="Play / pause preview" aria-label="Play preview"
-                style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:54px; height:54px; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.25); color:#fff; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:4; transition:opacity .2s, background .15s;"
-                onmouseenter="this.style.background='rgba(108,58,237,0.85)'; this.style.opacity='1';"
-                onmouseleave="this.style.background='rgba(0,0,0,0.55)';">
-                <!-- Play triangle (shown when paused / ended). -->
-                <svg class="pp-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-                <!-- Pause bars (shown while playing). -->
-                <svg class="pp-pause" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
-                  <rect x="6" y="5" width="4" height="14" rx="1"/>
-                  <rect x="14" y="5" width="4" height="14" rx="1"/>
-                </svg>
-              </button>
-              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78); padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em; z-index:2;">
+              <div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.78);
+                padding:3px 8px; border-radius:6px; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.02em;">
                 \${moment.timeRange}
               </div>
-              <button type="button" class="moment-mute-btn" onclick="toggleMomentMute(this)" title="Unmute preview" aria-label="Unmute preview"
-                style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.18); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; z-index:3;">
-                <svg class="mute-on" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
-                </svg>
-                <svg class="mute-off" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
-                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-                </svg>
-              </button>
-            </div>
+              <div style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.65);
+                padding:3px 8px; border-radius:6px; color:#fff; font-size:10px; font-weight:600;">
+                Click to preview
+              </div>
+            </button>
           \` : '';
 
           var viralColor = moment.viralityScore >= 80 ? '#10b981' : moment.viralityScore >= 60 ? '#f39c12' : '#ff6b6b';
