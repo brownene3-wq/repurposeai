@@ -13295,9 +13295,97 @@ function renderMyClipsPage(user, teamPermissions) {
       window.location.href = '/shorts?openAnalysis=' + encodeURIComponent(analysisId);
     }
 
+    // Smart polling: only re-fetch while at least one clip is rendering,
+    // and only mutate those specific cards in place (no full grid redraw).
+    var _pollTimer = null;
+    function scheduleSmartPoll() {
+      if (_pollTimer) return; // already scheduled
+      var inflight = (window.__myClipsState || []).some(function(c) { return c.status === 'rendering'; });
+      if (!inflight) return;
+      _pollTimer = setTimeout(function() {
+        _pollTimer = null;
+        refreshRenderingCardsOnly().then(scheduleSmartPoll);
+      }, 5000);
+    }
+
+    // Re-fetch the clip list, but only touch DOM for cards whose state changed.
+    async function refreshRenderingCardsOnly() {
+      try {
+        var resp = await fetch('/shorts/api/clips?' + new URLSearchParams({
+          status: document.getElementById('clipsStatus').value,
+          sortBy: (document.getElementById('clipsSort').value.split(':')[0]),
+          sortDir: (document.getElementById('clipsSort').value.split(':')[1] || 'desc')
+        }).toString(), { credentials: 'same-origin' });
+        if (!resp.ok) return;
+        var data = await resp.json();
+        var fresh = data.clips || [];
+        var byId = {};
+        fresh.forEach(function(c) { byId[c.id] = c; });
+        var prev = window.__myClipsState || [];
+        var transitioned = false;
+        prev.forEach(function(old) {
+          var cur = byId[old.id];
+          if (!cur) return;
+          // For clips that were rendering, update their card in place.
+          if (old.status === 'rendering') {
+            updateCardInPlace(cur);
+            if (cur.status !== 'rendering') transitioned = true;
+          }
+        });
+        // If anything transitioned out of rendering OR new clips appeared, do
+        // a full refresh so storage counter + new rows are correct.
+        if (transitioned || fresh.length !== prev.length) {
+          window.__myClipsState = fresh;
+          // Refresh storage indicator without redrawing the grid.
+          fetch('/shorts/api/clips/storage', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(s) {
+              var sb = document.getElementById('storageBytes');
+              var sc = document.getElementById('storageCount');
+              if (sb) sb.textContent = formatBytes(s.totalBytes || 0);
+              if (sc) sc.textContent = s.count || 0;
+            }).catch(function(){});
+          // If a clip transitioned to ready/failed, redraw the whole grid
+          // so action buttons (Download/Drive/Dropbox) appear correctly.
+          if (transitioned) render(fresh);
+        } else {
+          window.__myClipsState = fresh;
+        }
+      } catch (e) { /* swallow — retry on next tick */ }
+    }
+
+    function updateCardInPlace(clip) {
+      var card = document.querySelector('[data-clip-id="' + clip.id + '"]');
+      if (!card) return;
+      // Update progress message
+      var info = card.querySelector('div[style*="color:#c4b5fd"]');
+      if (info && clip.progress && clip.status === 'rendering') {
+        info.textContent = clip.progress;
+      }
+      // Update the bar width if we can parse a percentage out of progress
+      var bar = card.querySelector('.clip-card-mc-progress-bar');
+      if (bar && clip.progress) {
+        bar.style.width = parsePct(clip.progress) + '%';
+      }
+      // Update status badge if it changed
+      var badge = card.querySelector('.clip-status-badge');
+      if (badge && clip.status) {
+        var newClass = 'clip-status-badge clip-status-' + clip.status;
+        var newLabel = clip.status === 'ready' ? 'Ready' : clip.status === 'failed' ? 'Failed' : clip.status === 'rendering' ? 'Rendering' : clip.status;
+        if (badge.className !== newClass) badge.className = newClass;
+        if (badge.textContent !== newLabel) badge.textContent = newLabel;
+      }
+    }
+
+    // Wrap render() so we also track state + schedule a poll if needed.
+    var _origRender = render;
+    render = function(clips) {
+      window.__myClipsState = clips || [];
+      _origRender(clips);
+      scheduleSmartPoll();
+    };
+
     loadClips();
-    // Auto-refresh every 8s so in-flight renders surface progress.
-    setInterval(loadClips, 8000);
 
     ${getThemeScript()}
   </script>
