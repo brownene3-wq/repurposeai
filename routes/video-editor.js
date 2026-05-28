@@ -4206,7 +4206,7 @@ function showToast(message, type = 'success') {
             for (var si = 0; si < timelineClips.length; si++){
               var sc = timelineClips[si];
               if (!sc.mediaUrl || sc.mediaUrl.indexOf('blob:') === 0) continue;
-              if (!/\/video-editor\/download\//.test(sc.mediaUrl)) continue;
+              if (sc.mediaUrl.indexOf('/video-editor/download/') === -1) continue;
               try {
                 var hr = await fetch(sc.mediaUrl, { method: 'HEAD', credentials: 'same-origin' });
                 if (!hr.ok) console.warn('[export] stale URL', sc.filename, sc.mediaUrl);
