@@ -279,6 +279,24 @@ const initDatabase = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+    // Persisted thumbnail bytes for uploaded videos. CLIPS_DIR lives in
+    // /tmp, which Railway wipes on every redeploy — the cached .jpg
+    // files on disk disappear and the uploaded source file disappears
+    // with them, so re-extraction also fails. Persisting the JPEG
+    // bytes here means cards stay populated indefinitely.
+    try { await pool.query(`ALTER TABLE smart_shorts ADD COLUMN IF NOT EXISTS thumbnail_jpeg BYTEA`); } catch (e) {}
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS smart_shorts_moment_thumbnails (
+          analysis_id TEXT NOT NULL,
+          moment_idx INTEGER NOT NULL,
+          jpeg_data BYTEA NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (analysis_id, moment_idx),
+          FOREIGN KEY (analysis_id) REFERENCES smart_shorts(id) ON DELETE CASCADE
+        )
+      `);
+    } catch (e) {}
 
     // Clip renders table — every time the user clicks Download Clip we
     // insert a row here so the /shorts/clips page can show "every clip ever
@@ -1017,15 +1035,58 @@ const shortsOps = {
     return result.rows[0];
   },
   async getByUserId(userId, limit = 20, offset = 0) {
+    // Excludes thumbnail_jpeg so listing 15+ rows doesn't transfer
+    // megabytes of binary on every /shorts page load.
     const result = await pool.query(
-      `SELECT * FROM smart_shorts WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      `SELECT id, user_id, video_url, video_title, transcript, moments, status, created_at
+       FROM smart_shorts WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
       [userId, limit, offset]
     );
     return result.rows;
   },
   async getById(id) {
-    const result = await pool.query(`SELECT * FROM smart_shorts WHERE id = $1`, [id]);
+    // Same — exclude thumbnail_jpeg from the default fetch. Callers
+    // that need the bytes use getThumbnail(id).
+    const result = await pool.query(
+      `SELECT id, user_id, video_url, video_title, transcript, moments, status, created_at
+       FROM smart_shorts WHERE id = $1`,
+      [id]
+    );
     return result.rows[0];
+  },
+  async setThumbnail(id, jpegBuffer) {
+    if (!jpegBuffer || !Buffer.isBuffer(jpegBuffer)) return;
+    await pool.query(
+      `UPDATE smart_shorts SET thumbnail_jpeg = $1 WHERE id = $2`,
+      [jpegBuffer, id]
+    );
+  },
+  async getThumbnail(id) {
+    const result = await pool.query(
+      `SELECT thumbnail_jpeg FROM smart_shorts WHERE id = $1`,
+      [id]
+    );
+    const row = result.rows[0];
+    return (row && row.thumbnail_jpeg) ? row.thumbnail_jpeg : null;
+  },
+  async setMomentThumbnail(analysisId, momentIdx, jpegBuffer) {
+    if (!jpegBuffer || !Buffer.isBuffer(jpegBuffer)) return;
+    await pool.query(
+      `INSERT INTO smart_shorts_moment_thumbnails (analysis_id, moment_idx, jpeg_data)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (analysis_id, moment_idx)
+       DO UPDATE SET jpeg_data = EXCLUDED.jpeg_data, created_at = CURRENT_TIMESTAMP`,
+      [analysisId, momentIdx, jpegBuffer]
+    );
+  },
+  async getMomentThumbnail(analysisId, momentIdx) {
+    const result = await pool.query(
+      `SELECT jpeg_data FROM smart_shorts_moment_thumbnails
+       WHERE analysis_id = $1 AND moment_idx = $2`,
+      [analysisId, momentIdx]
+    );
+    const row = result.rows[0];
+    return (row && row.jpeg_data) ? row.jpeg_data : null;
   },
   async delete(id) {
     const result = await pool.query(`DELETE FROM smart_shorts WHERE id = $1 RETURNING *`, [id]);

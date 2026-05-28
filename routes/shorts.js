@@ -3370,9 +3370,15 @@ function extractFrameAt(sourcePath, atSec, outPath) {
 }
 
 // GET /upload-thumbnail/:analysisId
-// JPEG frame extracted at the 1-second mark of an uploaded video,
-// used as the main analysis card's hero image. Falls back to frame 0
-// if the source is shorter than 1 second.
+// JPEG frame for an uploaded video's main analysis card hero image.
+// Lookup order:
+//   1) Postgres smart_shorts.thumbnail_jpeg (persists across redeploys)
+//   2) Disk cache at CLIPS_DIR/_uthumb_<id>.jpg (warm cache during the
+//      same container lifetime)
+//   3) Live extract from the uploaded source video at the 1-second
+//      mark (frame 0 fallback if the source is shorter than 1s),
+//      then persist to both DB and disk so future requests survive
+//      Railway's /tmp wipe.
 router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
   try {
     if (!ffmpegAvailable) return res.status(503).end();
@@ -3380,14 +3386,34 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
     const analysis = await shortsOps.getById(analysisId);
     if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
     if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
-    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
-    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+
+    const sendBytes = (bytes) => {
       res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
       res.setHeader('Content-Type', 'image/jpeg');
-      return res.sendFile(outPath);
+      return res.end(bytes);
+    };
+
+    // 1) Postgres — canonical store, survives /tmp wipes.
+    try {
+      const dbBytes = await shortsOps.getThumbnail(analysisId);
+      if (dbBytes && dbBytes.length > 256) return sendBytes(dbBytes);
+    } catch (e) { console.warn('  upload-thumbnail DB read failed:', e.message); }
+
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
+
+    // 2) Disk — warm cache. Promote to DB on first hit.
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      const bytes = fs.readFileSync(outPath);
+      shortsOps.setThumbnail(analysisId, bytes).catch(e =>
+        console.warn('  upload-thumbnail DB promote failed:', e.message));
+      return sendBytes(bytes);
     }
+
+    // 3) Live extract from source.
     const sourcePath = findUploadedSourcePath(analysisId);
-    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    if (!sourcePath) {
+      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
+    }
     try {
       await extractFrameAt(sourcePath, 1.0, outPath);
     } catch (e) {
@@ -3397,9 +3423,11 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
       }
     }
     if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
-    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
-    res.setHeader('Content-Type', 'image/jpeg');
-    return res.sendFile(outPath);
+    const bytes = fs.readFileSync(outPath);
+    // Persist to DB so future requests survive /tmp wipes.
+    shortsOps.setThumbnail(analysisId, bytes).catch(e =>
+      console.warn('  upload-thumbnail DB persist failed:', e.message));
+    return sendBytes(bytes);
   } catch (err) {
     console.error('upload-thumbnail error:', err);
     return res.status(500).end();
@@ -3407,9 +3435,10 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
 });
 
 // GET /upload-moment-thumbnail/:analysisId/:momentIdx
-// JPEG frame extracted at the MIDDLE of the moment's [start, end]
-// window so the per-moment card has a representative still. Cached
-// at CLIPS_DIR/_uthumb_<id>_m<idx>.jpg.
+// JPEG frame at the MIDDLE of a moment's [start, end] window, used
+// as the per-moment card thumbnail. Same DB → disk → live-extract
+// lookup chain as /upload-thumbnail; persisted bytes live in
+// smart_shorts_moment_thumbnails keyed by (analysis_id, moment_idx).
 router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async (req, res) => {
   try {
     if (!ffmpegAvailable) return res.status(503).end();
@@ -3425,14 +3454,34 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
     }
     const moment = moments[momentIdx];
     if (!moment || !moment.timeRange) return res.status(404).end();
-    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_m${momentIdx}.jpg`);
-    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+
+    const sendBytes = (bytes) => {
       res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
       res.setHeader('Content-Type', 'image/jpeg');
-      return res.sendFile(outPath);
+      return res.end(bytes);
+    };
+
+    // 1) Postgres
+    try {
+      const dbBytes = await shortsOps.getMomentThumbnail(analysisId, momentIdx);
+      if (dbBytes && dbBytes.length > 256) return sendBytes(dbBytes);
+    } catch (e) { console.warn('  upload-moment-thumbnail DB read failed:', e.message); }
+
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_m${momentIdx}.jpg`);
+
+    // 2) Disk
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      const bytes = fs.readFileSync(outPath);
+      shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
+        console.warn('  upload-moment-thumbnail DB promote failed:', e.message));
+      return sendBytes(bytes);
     }
+
+    // 3) Live extract
     const sourcePath = findUploadedSourcePath(analysisId);
-    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    if (!sourcePath) {
+      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
+    }
     let startSec, endSec;
     try {
       const r = parseTimeRange(moment.timeRange);
@@ -3448,9 +3497,10 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       return res.status(500).end();
     }
     if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
-    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
-    res.setHeader('Content-Type', 'image/jpeg');
-    return res.sendFile(outPath);
+    const bytes = fs.readFileSync(outPath);
+    shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
+      console.warn('  upload-moment-thumbnail DB persist failed:', e.message));
+    return sendBytes(bytes);
   } catch (err) {
     console.error('upload-moment-thumbnail error:', err);
     return res.status(500).end();
