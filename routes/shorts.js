@@ -9830,8 +9830,8 @@ ${paginationHtml}
           const _thumbSrc = videoId
             ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
             : (isUploadAnalysis ? \`/shorts/upload-moment-thumbnail/\${id}/\${idx}\` : '');
-          const _safeRange = (moment.timeRange || '').replace(/'/g, "\\'");
-          const _safeTitle = (moment.title || 'Moment').replace(/'/g, "\\'");
+          const _safeRange = (moment.timeRange || '').replace(/'/g, "\\\\'");
+          const _safeTitle = (moment.title || 'Moment').replace(/'/g, "\\\\'");
           const _previewArgs = videoId
             ? \`'\${videoId}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}', 'youtube'\`
             : \`'\${id}', \${startSec}, \${endSec}, '\${_safeRange}', '\${_safeTitle}', 'upload', \${idx}\`;
