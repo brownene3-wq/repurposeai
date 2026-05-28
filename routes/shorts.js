@@ -27,6 +27,7 @@ const { requireCredits } = require('../middleware/credits');
 const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { shortsOps, brandKitOps, calendarOps, clipRenderOps, connectedAccountOps } = require('../db/database');
 const r2 = require('../utils/r2');
+const emailUtils = require('../utils/email');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 
 // Guard boot — OpenAI SDK throws at construction if apiKey is empty,
@@ -283,12 +284,12 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
       proc.stdout.on('data', (d) => {
         stdout += d.toString();
-        const pct = d.toString().match(/(\\d+\\.?\\d*)%/);
+        const pct = d.toString().match(/(\d+\.?\d*)%/);
         if (pct) writeProgress('Downloading: ' + Math.round(parseFloat(pct[1])) + '%');
       });
       proc.stderr.on('data', (d) => {
         stderr += d.toString();
-        const pct = d.toString().match(/(\\d+\\.?\\d*)%/);
+        const pct = d.toString().match(/(\d+\.?\d*)%/);
         if (pct) writeProgress('Downloading: ' + Math.round(parseFloat(pct[1])) + '%');
       });
       proc.on('error', (err) => settle(reject, err));
@@ -2556,6 +2557,34 @@ router.get('/api/my-renders', requireAuth, async (req, res) => {
 });
 
 
+
+// HMAC-signed unsubscribe token so the recipient can opt out without
+// logging in. Token = base64url(payload) + '.' + base64url(HMAC-SHA256(payload)).
+function makeClipReadyUnsubToken(userId) {
+  const _crypto = require('crypto');
+  const secret = process.env.JWT_SECRET || 'splicora-default-secret';
+  const payload = JSON.stringify({ uid: userId, scope: 'clip_ready', iat: Date.now() });
+  const b64 = (b) => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const p = b64(payload);
+  const sig = b64(_crypto.createHmac('sha256', secret).update(p).digest());
+  return p + '.' + sig;
+}
+function verifyClipReadyUnsubToken(token) {
+  try {
+    const _crypto = require('crypto');
+    const secret = process.env.JWT_SECRET || 'splicora-default-secret';
+    const [p, sig] = String(token || '').split('.');
+    if (!p || !sig) return null;
+    const b64 = (b) => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+    const expected = b64(_crypto.createHmac('sha256', secret).update(p).digest());
+    if (expected !== sig) return null;
+    const raw = Buffer.from(p.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const data = JSON.parse(raw);
+    if (data.scope !== 'clip_ready' || !data.uid) return null;
+    return data;
+  } catch (e) { return null; }
+}
+
 // ===== My Clips page (Phase B–E of the My Clips feature) =====
 //
 // Routes:
@@ -3370,9 +3399,15 @@ function extractFrameAt(sourcePath, atSec, outPath) {
 }
 
 // GET /upload-thumbnail/:analysisId
-// JPEG frame extracted at the 1-second mark of an uploaded video,
-// used as the main analysis card's hero image. Falls back to frame 0
-// if the source is shorter than 1 second.
+// JPEG frame for an uploaded video's main analysis card hero image.
+// Lookup order:
+//   1) Postgres smart_shorts.thumbnail_jpeg (persists across redeploys)
+//   2) Disk cache at CLIPS_DIR/_uthumb_<id>.jpg (warm cache during the
+//      same container lifetime)
+//   3) Live extract from the uploaded source video at the 1-second
+//      mark (frame 0 fallback if the source is shorter than 1s),
+//      then persist to both DB and disk so future requests survive
+//      Railway's /tmp wipe.
 router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
   try {
     if (!ffmpegAvailable) return res.status(503).end();
@@ -3380,14 +3415,34 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
     const analysis = await shortsOps.getById(analysisId);
     if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
     if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
-    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
-    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+
+    const sendBytes = (bytes) => {
       res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
       res.setHeader('Content-Type', 'image/jpeg');
-      return res.sendFile(outPath);
+      return res.end(bytes);
+    };
+
+    // 1) Postgres — canonical store, survives /tmp wipes.
+    try {
+      const dbBytes = await shortsOps.getThumbnail(analysisId);
+      if (dbBytes && dbBytes.length > 256) return sendBytes(dbBytes);
+    } catch (e) { console.warn('  upload-thumbnail DB read failed:', e.message); }
+
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
+
+    // 2) Disk — warm cache. Promote to DB on first hit.
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      const bytes = fs.readFileSync(outPath);
+      shortsOps.setThumbnail(analysisId, bytes).catch(e =>
+        console.warn('  upload-thumbnail DB promote failed:', e.message));
+      return sendBytes(bytes);
     }
+
+    // 3) Live extract from source.
     const sourcePath = findUploadedSourcePath(analysisId);
-    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    if (!sourcePath) {
+      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
+    }
     try {
       await extractFrameAt(sourcePath, 1.0, outPath);
     } catch (e) {
@@ -3397,9 +3452,11 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
       }
     }
     if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
-    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
-    res.setHeader('Content-Type', 'image/jpeg');
-    return res.sendFile(outPath);
+    const bytes = fs.readFileSync(outPath);
+    // Persist to DB so future requests survive /tmp wipes.
+    shortsOps.setThumbnail(analysisId, bytes).catch(e =>
+      console.warn('  upload-thumbnail DB persist failed:', e.message));
+    return sendBytes(bytes);
   } catch (err) {
     console.error('upload-thumbnail error:', err);
     return res.status(500).end();
@@ -3407,9 +3464,10 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
 });
 
 // GET /upload-moment-thumbnail/:analysisId/:momentIdx
-// JPEG frame extracted at the MIDDLE of the moment's [start, end]
-// window so the per-moment card has a representative still. Cached
-// at CLIPS_DIR/_uthumb_<id>_m<idx>.jpg.
+// JPEG frame at the MIDDLE of a moment's [start, end] window, used
+// as the per-moment card thumbnail. Same DB → disk → live-extract
+// lookup chain as /upload-thumbnail; persisted bytes live in
+// smart_shorts_moment_thumbnails keyed by (analysis_id, moment_idx).
 router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async (req, res) => {
   try {
     if (!ffmpegAvailable) return res.status(503).end();
@@ -3425,14 +3483,34 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
     }
     const moment = moments[momentIdx];
     if (!moment || !moment.timeRange) return res.status(404).end();
-    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_m${momentIdx}.jpg`);
-    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+
+    const sendBytes = (bytes) => {
       res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
       res.setHeader('Content-Type', 'image/jpeg');
-      return res.sendFile(outPath);
+      return res.end(bytes);
+    };
+
+    // 1) Postgres
+    try {
+      const dbBytes = await shortsOps.getMomentThumbnail(analysisId, momentIdx);
+      if (dbBytes && dbBytes.length > 256) return sendBytes(dbBytes);
+    } catch (e) { console.warn('  upload-moment-thumbnail DB read failed:', e.message); }
+
+    const outPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_m${momentIdx}.jpg`);
+
+    // 2) Disk
+    if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+      const bytes = fs.readFileSync(outPath);
+      shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
+        console.warn('  upload-moment-thumbnail DB promote failed:', e.message));
+      return sendBytes(bytes);
     }
+
+    // 3) Live extract
     const sourcePath = findUploadedSourcePath(analysisId);
-    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    if (!sourcePath) {
+      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
+    }
     let startSec, endSec;
     try {
       const r = parseTimeRange(moment.timeRange);
@@ -3448,9 +3526,10 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       return res.status(500).end();
     }
     if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
-    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
-    res.setHeader('Content-Type', 'image/jpeg');
-    return res.sendFile(outPath);
+    const bytes = fs.readFileSync(outPath);
+    shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
+      console.warn('  upload-moment-thumbnail DB persist failed:', e.message));
+    return sendBytes(bytes);
   } catch (err) {
     console.error('upload-moment-thumbnail error:', err);
     return res.status(500).end();
@@ -5293,6 +5372,24 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
         try {
           await clipRenderOps.updateStatusByFilename(filename, 'ready', { fileSize: finalSize, progressMessage: null, errorMessage: null, r2Key: r2Key });
         } catch (e) { console.error('clipRenderOps ready-update failed:', e.message); }
+
+        // Premium 'clip ready' email. Honors the user's notify_clip_ready
+        // preference. Best-effort — failure here doesn't affect the render.
+        try {
+          const usr = req.user;
+          if (usr && usr.notify_clip_ready !== false && usr.email) {
+            const clipForEmail = {
+              filename,
+              moment_title: moment.title || null,
+              video_title: analysis.video_title || null,
+              file_size: finalSize
+            };
+            const unsubToken = makeClipReadyUnsubToken(usr.id);
+            const unsubscribeUrl = 'https://splicora.ai/shorts/notifications/clip-ready/unsubscribe?token=' + encodeURIComponent(unsubToken);
+            emailUtils.sendClipReadyEmail({ user: usr, clip: clipForEmail, unsubscribeUrl })
+              .catch(e => console.error('Clip-ready email failed:', e && e.message || e));
+          }
+        } catch (e) { console.error('Clip-ready email setup failed:', e.message); }
 
       } catch (err) {
         clearTimeout(timeout);
@@ -7940,8 +8037,9 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               style="width:100%;padding:10px 12px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:13px;resize:vertical;min-height:60px;font-family:inherit;"></textarea>
           </div>
           <div style="display:flex;gap:10px;align-items:center;">
-            <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()" style="background:linear-gradient(135deg,#00b894,#00cec9);padding:10px 24px;">
-              <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narrated Video
+            <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()"
+              style="padding:.7rem 1.5rem;font-weight:600;letter-spacing:.01em;">
+              <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:4px"> Generate Narrated Video
             </button>
             <button class="btn" onclick="downloadQuickNarrateScript()" style="background:transparent;border:1px solid var(--text-muted);color:var(--text-muted);padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;">📄 Download Script</button> <span id="qn-status" style="font-size:13px;color:var(--text-muted);"></span>
           </div>
