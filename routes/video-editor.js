@@ -1104,10 +1104,15 @@ async function renderEditor(req, res) {
               <h3>📹 Upload Your Video</h3>
               <p>Drop your video here or click to browse</p>
               <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:12px">
-                <button type="button" class="upload-button">Select Video</button>
+                <button type="button" class="upload-button" id="selectVideoBtn">Select Video</button>
                 <button type="button" class="upload-button" id="dropboxImportBtn" style="background:linear-gradient(135deg,#0061FF,#0041B3)"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
               </div>
-              <input type="file" id="fileInput" style="display:none" accept="video/*">
+              <!-- Task #142 — Visually-hidden file input that Safari
+                   can still .click() programmatically. display:none
+                   blocks programmatic clicks in WebKit; absolute-
+                   off-screen sizing keeps the input clickable while
+                   invisible to the user. -->
+              <input type="file" id="fileInput" accept="video/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none">
               <div style="display:flex;align-items:center;gap:8px;margin-top:12px;width:100%;max-width:560px">
                 <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
                 <span style="color:var(--text-muted);font-size:.8rem">or drop a link</span>
@@ -2084,35 +2089,53 @@ function showToast(message, type = 'success') {
     const videoPlayer = document.getElementById('videoPlayer');
     const videoPreviewArea = document.getElementById('videoPreviewArea');
 
-    // Task #141 — Reset the upload zone + button state whenever
-    // the .has-video class flips off. Covers Delete Clip (line ~4577)
-    // and any other future path that re-shows the upload zone, so a
-    // stale disabled / pointer-events:none from a previous upload
-    // can't strand the Select Video button.
+    // Task #142 — Bulletproof Select Video wiring.
+    //   • resetUploadZoneState() runs unconditionally on script load
+    //     (so a stale disabled state from a previous session can't
+    //     persist past hard refresh).
+    //   • MutationObserver on .has-video catches Delete Clip and any
+    //     future re-show path.
+    //   • Document-level click delegation uses the button's id, not a
+    //     class selector — survives DOM rewires that might reorder
+    //     .upload-button matches.
+    function resetUploadZoneState(){
+      if (uploadZone){
+        uploadZone.style.opacity = '';
+        uploadZone.style.pointerEvents = '';
+        uploadZone.classList.remove('dragover');
+      }
+      var b = document.getElementById('selectVideoBtn');
+      if (b){
+        b.disabled = false;
+        b.textContent = 'Select Video';
+      }
+    }
+    // Run once on load.
+    resetUploadZoneState();
+
     if (uploadZone){
       var _uzObs = new MutationObserver(function(){
-        if (!uploadZone.classList.contains('has-video')){
-          uploadZone.style.opacity = '';
-          uploadZone.style.pointerEvents = '';
-          var b = document.querySelector('.upload-button');
-          if (b){ b.disabled = false; b.textContent = 'Select Video'; }
-        }
+        if (!uploadZone.classList.contains('has-video')) resetUploadZoneState();
       });
       _uzObs.observe(uploadZone, { attributes: true, attributeFilter: ['class'] });
     }
 
-    document.querySelector('.upload-button')?.addEventListener('click', (e) => {
+    // Delegated click handler — catches the Select Video button no
+    // matter when it's added to the DOM. capture:true so we win
+    // against any other handler that might stopImmediatePropagation.
+    document.addEventListener('click', function(e){
+      var btn = e.target && e.target.closest && e.target.closest('#selectVideoBtn');
+      if (!btn) return;
       e.stopPropagation();
-      // Task #141 — Defensive: clear any stale inline blockers before
-      // forwarding the click so even a corrupted state from a bygone
-      // upload can't keep the file picker from opening.
-      if (uploadZone){
-        uploadZone.style.pointerEvents = '';
-        uploadZone.style.opacity = '';
-      }
-      e.currentTarget.disabled = false;
-      fileInput.click();
-    });
+      e.preventDefault();
+      // Clear stale blockers, re-enable the button, then forward the
+      // click to the hidden file input. The reset runs FIRST so a
+      // bygone "Uploading..." text or .disabled flag can't block this
+      // user gesture from opening the file picker.
+      resetUploadZoneState();
+      try { fileInput.click(); }
+      catch (err){ console.error('[upload] fileInput.click() threw:', err); }
+    }, true);
 
     uploadZone.addEventListener('click', (e) => {
       if (e.target === fileInput) return;
@@ -2126,22 +2149,84 @@ function showToast(message, type = 'success') {
       if (file) await uploadVideo(file);
     });
 
-    uploadZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      uploadZone.classList.add('dragover');
-    });
-
-    uploadZone.addEventListener('dragleave', () => {
-      uploadZone.classList.remove('dragover');
-    });
-
-    uploadZone.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      uploadZone.classList.remove('dragover');
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('video/')) {
-        await uploadVideo(file);
+    // Task #142 — Drop a file from the OS file picker / Finder /
+    // Explorer onto the upload panel and treat it exactly like Select
+    // Video. Three robustness fixes vs. the old handler:
+    //   1. dragover/dragenter both call preventDefault() AND set
+    //      dropEffect='copy'. Without dropEffect the browser may
+    //      reject the drop silently (especially on Windows).
+    //   2. Drop is captured at document level too, in case the user
+    //      releases slightly outside uploadZone's hit-rect after
+    //      dragging (browser still fires drop on document body).
+    //   3. MIME filter is permissive: the file input uses
+    //      accept="video/*" which permits files by extension even
+    //      when the OS reports an empty MIME (.mkv, some .mov
+    //      variants, files served as application/octet-stream).
+    //      We mirror that with an extension fallback so the drop
+    //      path doesn't reject things Select Video would accept.
+    var VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v', '.mpg', '.mpeg', '.ogv', '.3gp', '.wmv', '.flv', '.ts'];
+    function looksLikeVideoFile(file){
+      if (!file) return false;
+      var t = (file.type || '').toLowerCase();
+      if (t.indexOf('video/') === 0) return true;
+      var n = (file.name || '').toLowerCase();
+      for (var i = 0; i < VIDEO_EXTS.length; i++){
+        if (n.endsWith(VIDEO_EXTS[i])) return true;
       }
+      // No MIME and no recognizable extension — let uploadVideo decide.
+      // It will reject on the server side if it's truly not a video.
+      return !t || t === 'application/octet-stream';
+    }
+
+    function handleDragOver(e){
+      // preventDefault is REQUIRED on dragover to opt into receiving
+      // a drop event. Without it the OS treats the panel as
+      // non-droppable and the cursor shows a "no-entry" icon.
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      uploadZone.classList.add('dragover');
+    }
+    function handleDragLeave(e){
+      // Only clear the visual state when leaving the upload zone
+      // entirely (relatedTarget check) — without this, hovering a
+      // child element re-fires dragleave and strobes the highlight.
+      if (e && e.relatedTarget && uploadZone.contains(e.relatedTarget)) return;
+      uploadZone.classList.remove('dragover');
+    }
+    async function handleDrop(e){
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      var dt = e.dataTransfer;
+      if (!dt || !dt.files || !dt.files.length) return;
+      var file = dt.files[0];
+      if (!looksLikeVideoFile(file)){
+        showToast('That doesn\'t look like a video file. Try MP4, MOV, WEBM, or MKV.');
+        return;
+      }
+      try {
+        await uploadVideo(file);
+      } catch (err){
+        console.error('[upload] drop upload failed:', err);
+        showToast('Upload failed: ' + (err && err.message || 'unknown error'));
+      }
+    }
+
+    uploadZone.addEventListener('dragenter', handleDragOver);
+    uploadZone.addEventListener('dragover', handleDragOver);
+    uploadZone.addEventListener('dragleave', handleDragLeave);
+    uploadZone.addEventListener('drop', handleDrop);
+
+    // Suppress the browser's default "open file in new tab" behavior
+    // when the user releases the drag slightly outside uploadZone.
+    // Without these, dropping anywhere on the page navigates away
+    // from the editor and the user loses their session.
+    document.addEventListener('dragover', function(e){
+      if (e.target && uploadZone.contains(e.target)) return;
+      e.preventDefault();
+    });
+    document.addEventListener('drop', function(e){
+      if (e.target && uploadZone.contains(e.target)) return;
+      e.preventDefault();
     });
 
     async function uploadVideo(file) {
