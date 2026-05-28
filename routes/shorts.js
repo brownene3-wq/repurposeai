@@ -4111,13 +4111,23 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
     // never block the publish response — the post already succeeded.
     let calendarEntryId = null;
     try {
-      const now = (() => {
-        const c = req.body && req.body.clientNow;
-        if (c) { const d = new Date(c); if (!isNaN(d.getTime())) return d; }
-        return new Date();
-      })();
-      const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-      const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      // Prefer the client's pre-formatted local date+time strings so
+      // the calendar entry reflects the user's wall clock, not Railway's
+      // UTC. Fall back to the server's clock if the client didn't send
+      // them (legacy callers).
+      const cDate = (req.body && req.body.clientDate) || null;
+      const cTime = (req.body && req.body.clientTime) || null;
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const timeRe = /^\d{2}:\d{2}$/;
+      let dateStr, timeStr;
+      if (cDate && dateRe.test(cDate) && cTime && timeRe.test(cTime)) {
+        dateStr = cDate;
+        timeStr = cTime;
+      } else {
+        const now = new Date();
+        dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+        timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      }
       const entry = await calendarOps.create({
         userId: req.user.id,
         title: resolvedTitle,

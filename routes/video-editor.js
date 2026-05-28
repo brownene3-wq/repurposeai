@@ -7703,10 +7703,11 @@ setTimeout(function sidebarLayoutFix(){
         title: document.getElementById('vePublishTitle').value.trim(),
         caption: document.getElementById('vePublishCaption').value.trim(),
         description: document.getElementById('vePublishCaption').value.trim(),
-        // User's local timestamp — server uses this to stamp the
-        // auto-synced calendar entry so it shows up in the user's
-        // own timezone rather than Railway's UTC.
-        clientNow: new Date().toISOString()
+        // User's local wall-clock — server stamps the auto-synced
+        // calendar entry with these so it shows up in the user's own
+        // timezone rather than Railway's UTC.
+        clientDate: (function(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); })(),
+        clientTime: (function(){ var d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); })()
       };
       if (_veMode === 'later') {
         var d = document.getElementById('vePublishDate').value;
@@ -9515,13 +9516,19 @@ router.post('/api/publish-export', requireAuth, async (req, res) => {
     let calendarEntryId = null;
     try {
       const { calendarOps } = require('../db/database');
-      const now = (() => {
-        const c = req.body && req.body.clientNow;
-        if (c) { const d = new Date(c); if (!isNaN(d.getTime())) return d; }
-        return new Date();
-      })();
-      const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-      const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      const cDate = (req.body && req.body.clientDate) || null;
+      const cTime = (req.body && req.body.clientTime) || null;
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const timeRe = /^\d{2}:\d{2}$/;
+      let dateStr, timeStr;
+      if (cDate && dateRe.test(cDate) && cTime && timeRe.test(cTime)) {
+        dateStr = cDate;
+        timeStr = cTime;
+      } else {
+        const now = new Date();
+        dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+        timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      }
       const entry = await calendarOps.create({
         userId: req.user.id,
         title: resolvedTitle,
