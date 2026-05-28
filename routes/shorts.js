@@ -7940,8 +7940,9 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
               style="width:100%;padding:10px 12px;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--text);font-size:13px;resize:vertical;min-height:60px;font-family:inherit;"></textarea>
           </div>
           <div style="display:flex;gap:10px;align-items:center;">
-            <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()" style="background:linear-gradient(135deg,#00b894,#00cec9);padding:10px 24px;">
-              <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narrated Video
+            <button class="btn btn-primary" id="qn-btn" onclick="quickNarrate()"
+              style="padding:.7rem 1.5rem;font-weight:600;letter-spacing:.01em;">
+              <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:4px"> Generate Narrated Video
             </button>
             <button class="btn" onclick="downloadQuickNarrateScript()" style="background:transparent;border:1px solid var(--text-muted);color:var(--text-muted);padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;">📄 Download Script</button> <span id="qn-status" style="font-size:13px;color:var(--text-muted);"></span>
           </div>
