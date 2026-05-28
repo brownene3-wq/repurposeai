@@ -2200,7 +2200,7 @@ function showToast(message, type = 'success') {
       if (!dt || !dt.files || !dt.files.length) return;
       var file = dt.files[0];
       if (!looksLikeVideoFile(file)){
-        showToast('That doesn\'t look like a video file. Try MP4, MOV, WEBM, or MKV.');
+        showToast("That doesn't look like a video file. Try MP4, MOV, WEBM, or MKV.");
         return;
       }
       try {
