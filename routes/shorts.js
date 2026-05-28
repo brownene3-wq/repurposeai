@@ -26,6 +26,7 @@ const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require
 const { requireCredits } = require('../middleware/credits');
 const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { shortsOps, brandKitOps, calendarOps, clipRenderOps, connectedAccountOps } = require('../db/database');
+const r2 = require('../utils/r2');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript, getBrandKitModal } = require('../utils/theme');
 
 // Guard boot — OpenAI SDK throws at construction if apiKey is empty,
@@ -2506,6 +2507,17 @@ router.get('/api/my-renders', requireAuth, async (req, res) => {
       } else if (fs.existsSync(encodingPath)) {
         status = 'rendering';
         progress = 'Encoding...';
+      } else if (r2.isConfigured()) {
+        // Not on disk — check R2.
+        const r2Key = entry.r2_key || ('clips/' + entry.filename);
+        const head = await r2.headObject(r2Key);
+        if (head.exists) {
+          status = 'ready';
+          size = head.size || 0;
+        } else {
+          // Nothing anywhere — skip (don't list as a phantom).
+          continue;
+        }
       } else {
         // Nothing on disk anymore (Railway /tmp wipe?) — skip.
         continue;
@@ -2610,10 +2622,15 @@ router.get('/api/clips', requireAuth, async (req, res) => {
     let rows = await clipRenderOps.getByUser(req.user.id, opts);
     // Reconcile any 'rendering' rows against disk in case we missed an update.
     const reconciled = await Promise.all(rows.map(reconcileRenderRow));
-    // Also surface whether the file is currently on disk (downloadable).
-    const enriched = reconciled.map(r => {
+    // Also surface whether the file is currently retrievable (downloadable).
+    // We treat onDisk=true if EITHER /tmp has the file OR R2 has it.
+    const enriched = await Promise.all(reconciled.map(async r => {
       let onDisk = false;
       try { onDisk = fs.existsSync(path.join(CLIPS_DIR, r.filename)); } catch (e) {}
+      if (!onDisk && r2.isConfigured()) {
+        const head = await r2.headObject(r.r2_key || ('clips/' + r.filename));
+        if (head.exists) onDisk = true;
+      }
       return {
         id: r.id,
         analysisId: r.analysis_id,
@@ -2631,7 +2648,7 @@ router.get('/api/clips', requireAuth, async (req, res) => {
         readyAt: r.ready_at,
         onDisk
       };
-    });
+    }));
     res.json({ clips: enriched });
   } catch (err) {
     console.error('GET /api/clips error:', err);
@@ -2658,6 +2675,10 @@ router.post('/api/clips/:id/delete', requireAuth, async (req, res) => {
     try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.progress')); } catch (e) {}
     try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.error')); } catch (e) {}
     try { fs.unlinkSync(path.join(CLIPS_DIR, row.filename + '.encoding.mp4')); } catch (e) {}
+    // Best-effort R2 cleanup as well.
+    if (r2.isConfigured()) {
+      try { await r2.deleteObject(row.r2_key || ('clips/' + row.filename)); } catch (e) {}
+    }
     const updated = await clipRenderOps.softDelete(req.params.id, req.user.id);
     res.json({ success: true, clip: updated });
   } catch (err) {
@@ -2738,8 +2759,17 @@ router.post('/api/clips/:id/send-to-drive', requireAuth, async (req, res) => {
     const row = await clipRenderOps.getById(req.params.id);
     if (!row) return res.status(404).json({ error: 'Clip not found' });
     if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const full = path.join(CLIPS_DIR, row.filename);
-    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Drive.' });
+    let full = path.join(CLIPS_DIR, row.filename);
+    let r2Bytes = null;
+    if (!fs.existsSync(full)) {
+      // Try R2 fallback before failing.
+      if (r2.isConfigured()) {
+        const r2Key = row.r2_key || ('clips/' + row.filename);
+        const got = await r2.getObject(r2Key);
+        if (got.ok) { r2Bytes = got.body; }
+      }
+      if (!r2Bytes) return res.status(410).json({ error: 'Clip file is no longer available. Re-render to send to Drive.' });
+    }
     const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'googledrive');
     if (!accounts || accounts.length === 0) {
       return res.status(412).json({ error: 'Google Drive not connected.', connectUrl: '/auth/googledrive/connect?redirect=/shorts/clips' });
@@ -2747,7 +2777,7 @@ router.post('/api/clips/:id/send-to-drive', requireAuth, async (req, res) => {
     const acct = await refreshGoogleAccessToken(accounts[0]);
     if (!acct.access_token) return res.status(401).json({ error: 'Drive access token unavailable. Please reconnect Drive.' });
     const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
-    const result = await uploadToDrive(acct.access_token, full, displayName);
+    const result = r2Bytes ? await uploadToDriveBytes(acct.access_token, r2Bytes, displayName) : await uploadToDrive(acct.access_token, full, displayName);
     if (!result.ok) return res.status(502).json({ error: result.error || 'Drive upload failed' });
     res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
   } catch (err) {
@@ -2838,8 +2868,16 @@ router.post('/api/clips/:id/send-to-dropbox', requireAuth, async (req, res) => {
     const row = await clipRenderOps.getById(req.params.id);
     if (!row) return res.status(404).json({ error: 'Clip not found' });
     if (row.user_id !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
-    const full = path.join(CLIPS_DIR, row.filename);
-    if (!fs.existsSync(full)) return res.status(410).json({ error: 'Clip file is no longer on disk. Re-render to send to Dropbox.' });
+    let full = path.join(CLIPS_DIR, row.filename);
+    let r2Bytes = null;
+    if (!fs.existsSync(full)) {
+      if (r2.isConfigured()) {
+        const r2Key = row.r2_key || ('clips/' + row.filename);
+        const got = await r2.getObject(r2Key);
+        if (got.ok) { r2Bytes = got.body; }
+      }
+      if (!r2Bytes) return res.status(410).json({ error: 'Clip file is no longer available. Re-render to send to Dropbox.' });
+    }
     const accounts = await connectedAccountOps.getByUserAndPlatform(req.user.id, 'dropbox');
     if (!accounts || accounts.length === 0) {
       return res.status(412).json({ error: 'Dropbox not connected.', connectUrl: '/auth/dropbox/connect?redirect=/shorts/clips' });
@@ -2847,7 +2885,7 @@ router.post('/api/clips/:id/send-to-dropbox', requireAuth, async (req, res) => {
     const acct = await refreshDropboxAccessToken(accounts[0]);
     if (!acct.access_token) return res.status(401).json({ error: 'Dropbox access token unavailable. Please reconnect Dropbox.' });
     const displayName = (row.moment_title ? (row.moment_title + ' ') : '') + '(Splicora).mp4';
-    const result = await uploadToDropbox(acct.access_token, full, displayName);
+    const result = r2Bytes ? await uploadToDropboxBytes(acct.access_token, r2Bytes, displayName) : await uploadToDropbox(acct.access_token, full, displayName);
     if (!result.ok) return res.status(502).json({ error: result.error || 'Dropbox upload failed' });
     res.json({ success: true, link: result.link, fileId: result.fileId, name: result.name });
   } catch (err) {
@@ -5200,11 +5238,34 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
         // Remove progress file LAST to signal completion
         try { fs.unlinkSync(progressPath); } catch (e) {}
         console.log(`  Clip ready: ${filename} (${(size / 1024 / 1024).toFixed(1)}MB)`);
+        // Upload the rendered clip to Cloudflare R2 so it survives Railway
+        // /tmp wipes. We compute size first, then upload, then unlink /tmp
+        // (only after the upload succeeds — never lose a clip we just made).
+        let finalSize = 0;
+        try { finalSize = fs.statSync(outputPath).size; } catch (e) {}
+
+        let r2Key = null;
+        if (r2.isConfigured()) {
+          try {
+            const bytes = fs.readFileSync(outputPath);
+            const key = 'clips/' + filename;
+            const put = await r2.putObject(key, bytes, 'video/mp4');
+            if (put.ok) {
+              r2Key = key;
+              console.log('  Uploaded to R2: ' + key + ' (' + (bytes.length / 1024 / 1024).toFixed(1) + 'MB)');
+              // Safe to delete local copy now — R2 has it.
+              try { fs.unlinkSync(outputPath); } catch (e) {}
+            } else {
+              console.error('  R2 upload failed: ' + (put.error || put.status));
+            }
+          } catch (e) {
+            console.error('  R2 upload exception:', e.message);
+          }
+        }
+
         // Mark the clip_renders row ready so /shorts/clips reflects it.
         try {
-          let finalSize = 0;
-          try { finalSize = fs.statSync(outputPath).size; } catch (e) {}
-          await clipRenderOps.updateStatusByFilename(filename, 'ready', { fileSize: finalSize, progressMessage: null, errorMessage: null });
+          await clipRenderOps.updateStatusByFilename(filename, 'ready', { fileSize: finalSize, progressMessage: null, errorMessage: null, r2Key: r2Key });
         } catch (e) { console.error('clipRenderOps ready-update failed:', e.message); }
 
       } catch (err) {
@@ -5264,10 +5325,22 @@ router.get('/clip/status/:filename', requireAuth, (req, res) => {
 });
 
 // GET /clip/download/:filename - Download generated clip
-// Supports Range requests for QuickTime/browser video player compatibility
-router.get('/clip/download/:filename', requireAuth, (req, res) => {
+// Supports Range requests for QuickTime/browser video player compatibility.
+// New: if the local /tmp copy is gone (Railway wipe), stream from R2 instead.
+router.get('/clip/download/:filename', requireAuth, async (req, res) => {
   const filename = path.basename(req.params.filename); // Prevent path traversal
   const filePath = path.join(CLIPS_DIR, filename);
+
+  // If the local file is missing, try R2.
+  if (!fs.existsSync(filePath) && r2.isConfigured()) {
+    try {
+      const row = await clipRenderOps.getByFilename(filename);
+      const key = (row && row.r2_key) ? row.r2_key : ('clips/' + filename);
+      const streamed = await r2.streamObjectToRes(key, res, filename);
+      if (streamed) return;
+    } catch (e) { console.error('R2 download fallback failed:', e.message); }
+    return res.status(404).json({ error: 'Clip not found locally or in R2.' });
+  }
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Clip not found. It may still be processing or has expired.' });
