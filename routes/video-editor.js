@@ -2084,8 +2084,33 @@ function showToast(message, type = 'success') {
     const videoPlayer = document.getElementById('videoPlayer');
     const videoPreviewArea = document.getElementById('videoPreviewArea');
 
+    // Task #141 — Reset the upload zone + button state whenever
+    // the .has-video class flips off. Covers Delete Clip (line ~4577)
+    // and any other future path that re-shows the upload zone, so a
+    // stale disabled / pointer-events:none from a previous upload
+    // can't strand the Select Video button.
+    if (uploadZone){
+      var _uzObs = new MutationObserver(function(){
+        if (!uploadZone.classList.contains('has-video')){
+          uploadZone.style.opacity = '';
+          uploadZone.style.pointerEvents = '';
+          var b = document.querySelector('.upload-button');
+          if (b){ b.disabled = false; b.textContent = 'Select Video'; }
+        }
+      });
+      _uzObs.observe(uploadZone, { attributes: true, attributeFilter: ['class'] });
+    }
+
     document.querySelector('.upload-button')?.addEventListener('click', (e) => {
       e.stopPropagation();
+      // Task #141 — Defensive: clear any stale inline blockers before
+      // forwarding the click so even a corrupted state from a bygone
+      // upload can't keep the file picker from opening.
+      if (uploadZone){
+        uploadZone.style.pointerEvents = '';
+        uploadZone.style.opacity = '';
+      }
+      e.currentTarget.disabled = false;
       fileInput.click();
     });
 
@@ -2209,6 +2234,17 @@ function showToast(message, type = 'success') {
           }
         } catch (_) {}
 
+        // Task #141 — Reset button + zone state on SUCCESS too, not
+        // just in the catch. The success path used to leave
+        // uploadBtn.disabled=true and uploadZone.pointerEvents='none'
+        // baked in. .has-video hid the zone immediately so the dead
+        // button wasn't visible, but the moment the user deleted the
+        // V1 clip and the zone reappeared, the button was unclickable
+        // and clicking it did nothing.
+        uploadBtn.textContent = originalText;
+        uploadBtn.disabled = false;
+        uploadZone.style.opacity = '';
+        uploadZone.style.pointerEvents = '';
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
         uploadBtn.textContent = originalText;
