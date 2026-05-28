@@ -5481,6 +5481,60 @@ router.get('/clip/download/:filename', requireAuth, async (req, res) => {
   }
 });
 
+// GET /diagnostics/scrapingbee - admin-only health check for the
+// ScrapingBee paid fallback. Calls their /1.0/usage endpoint and tries a
+// simple proxy probe against an HTTP test URL. Returns:
+//   - usage:    { max_api_credit, used_api_credit, max_concurrency, current_concurrency }
+//                 (or {error} when the API key is missing/invalid)
+//   - proxyTest: { ok, status, ms, body } — small TLS test through the
+//                premium proxy to confirm yt-dlp can actually reach the
+//                proxy from Railway. Verifies network reachability +
+//                proxy auth without burning many credits.
+router.get('/diagnostics/scrapingbee', requireAuth, async (req, res) => {
+  try {
+    const apiKey = process.env.SCRAPINGBEE_API_KEY || '';
+    const out = { apiKeyConfigured: !!apiKey, apiKeyLength: apiKey.length };
+    if (!apiKey) return res.json(out);
+
+    // 1) Usage endpoint — fastest signal on whether the key is valid.
+    try {
+      const u = await fetch('https://app.scrapingbee.com/api/v1/usage?api_key=' + encodeURIComponent(apiKey));
+      const text = await u.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch (e) { parsed = { raw: text.slice(0, 300) }; }
+      out.usage = { status: u.status, body: parsed };
+    } catch (e) { out.usage = { error: e.message }; }
+
+    // 2) Proxy probe via ScrapingBee's classic API (one-shot fetch). This
+    // tests the proxy chain ScrapingBee will use for our yt-dlp request
+    // without us needing to install a proxy-agent npm package.
+    try {
+      const start = Date.now();
+      const sbApi = 'https://app.scrapingbee.com/api/v1?' + new URLSearchParams({
+        api_key: apiKey,
+        url: 'https://httpbin.org/ip',
+        premium_proxy: 'true',
+        country_code: 'us'
+      }).toString();
+      const r = await fetch(sbApi);
+      const body = await r.text();
+      out.proxyTest = {
+        ok: r.ok,
+        status: r.status,
+        ms: Date.now() - start,
+        creditsCost: r.headers.get('spb-cost') || null,
+        body: body.slice(0, 800)
+      };
+    } catch (e) {
+      out.proxyTest = { ok: false, error: e.message, code: e.code };
+    }
+
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /clip/debug - Debug endpoint to see clip file states
 router.get('/clip/debug', requireAuth, (req, res) => {
   try {
