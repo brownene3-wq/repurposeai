@@ -3890,6 +3890,22 @@ function showToast(message, type = 'success') {
         customFilename = 'Untitled Project ' + _stamp;
         if (_projInput) _projInput.value = 'Untitled Project';
       }
+      // Task #140 — Wait for any in-flight auto-extract promotions to
+      // settle before serializing. Without this, a fast user-click
+      // right after upload captures the V1 clip's mediaUrl while it
+      // is still blob:, and the server can't resolve it. Cap the wait
+      // at 30s so a stuck promotion can't hold the export forever.
+      var _exportBtn0 = document.getElementById('exportButton');
+      var _pendingClips = Array.from(document.querySelectorAll('.mt-clip[data-link-pair-pending], .mt-clip-video[data-link-pair-pending]'));
+      if (_pendingClips.length){
+        if (_exportBtn0) _exportBtn0.innerHTML = '⏳ Finishing audio extract…';
+        var _waitStart = Date.now();
+        while (Date.now() - _waitStart < 30000){
+          var still = Array.from(document.querySelectorAll('[data-link-pair-pending]'));
+          if (!still.length) break;
+          await new Promise(function(r){ setTimeout(r, 150); });
+        }
+      }
       var timelineClips = Array.from(document.querySelectorAll('.mt-clip'))
         .map(function(c){
           var track = c.parentElement;
@@ -4062,10 +4078,29 @@ function showToast(message, type = 'success') {
           var blobClips = timelineClips.filter(function(c){
             return c.mediaUrl && c.mediaUrl.indexOf('blob:') === 0;
           });
+          // Task #140 \u2014 HEAD-check non-blob server URLs so a stale
+          // file (Railway /tmp wipe) is logged before we trust the
+          // server to find it. Just diagnostic \u2014 surfaces in console.
+          (async function diagnoseStale(){
+            for (var si = 0; si < timelineClips.length; si++){
+              var sc = timelineClips[si];
+              if (!sc.mediaUrl || sc.mediaUrl.indexOf('blob:') === 0) continue;
+              if (!/\/video-editor\/download\//.test(sc.mediaUrl)) continue;
+              try {
+                var hr = await fetch(sc.mediaUrl, { method: 'HEAD', credentials: 'same-origin' });
+                if (!hr.ok) console.warn('[export] stale URL', sc.filename, sc.mediaUrl);
+              } catch(_){}
+            }
+          })();
+          // Task #140 \u2014 Track failures so we abort instead of letting
+          // the server fail on bad URLs with the misleading "files
+          // uploaded via the sidebar live only in your browser" toast.
+          var _exportFailures = [];
           if (blobClips.length > 0){
             button.innerHTML = '\u2b06\ufe0f Uploading ' + blobClips.length + ' local file' + (blobClips.length === 1 ? '' : 's') + '\u2026';
             for (var bi = 0; bi < blobClips.length; bi++){
               var bc = blobClips[bi];
+              var _bcOldUrl = bc.mediaUrl;
               try {
                 var blobResp = await fetch(bc.mediaUrl);
                 var blobData = await blobResp.blob();
@@ -4096,10 +4131,28 @@ function showToast(message, type = 'success') {
                   throw new Error(upData.error || 'Blob upload failed');
                 }
                 bc.mediaUrl = upData.serveUrl;
+                // Persist on the DOM clip so a retry doesn't re-upload.
+                try {
+                  document.querySelectorAll('.mt-clip').forEach(function(el){
+                    if (el.dataset.mediaUrl === _bcOldUrl) el.dataset.mediaUrl = upData.serveUrl;
+                  });
+                } catch(_){}
               } catch (upErr){
-                console.warn('[export] blob upload failed for', bc.filename, upErr);
-                showToast('Could not upload "' + (bc.filename || 'clip') + '" — will be skipped', 'error');
+                console.error('[export] blob upload failed for', bc.filename, upErr);
+                _exportFailures.push(bc.filename || 'clip');
               }
+            }
+            // Task #140 — abort with a clear error if any blob upload
+            // failed. The previous "silent and continue" path produced
+            // the misleading "Source file not found on server" toast
+            // because the server received the un-uploaded blob URL.
+            if (_exportFailures.length){
+              button.disabled = false;
+              button.innerHTML = '🎬 Export Video';
+              throw new Error('Could not upload ' + _exportFailures.length + ' local file' +
+                (_exportFailures.length === 1 ? '' : 's') + ' to the server: ' +
+                _exportFailures.join(', ') +
+                '. Try re-uploading from the Media panel and exporting again.');
             }
           }
 
@@ -8374,8 +8427,17 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
 
       var srcPath = urlToFilePath(clip.mediaUrl);
       if (!srcPath){
+        // Task #140 — Specific guidance per failure mode. A blob URL
+        // means the frontend pre-upload step silently skipped or
+        // failed; a server URL that resolves but has no file means
+        // /tmp was wiped (Railway restart) or the file was rotated
+        // away. Both fixes are user-actionable: re-upload from the
+        // Media panel and retry.
+        var isBlob = clip.mediaUrl && clip.mediaUrl.indexOf('blob:') === 0;
         throw new Error('Source file not found on server: ' + (clip.filename || clip.mediaUrl) +
-          ' (files uploaded via the sidebar + Upload button live only in your browser and can\'t be exported yet)');
+          (isBlob
+            ? ' (the local file was never promoted to the server — re-upload from the Media panel and try again)'
+            : ' (the server\'s /tmp may have been wiped since this clip was uploaded — re-upload from the Media panel and try again)'));
       }
 
       var segPath = path.join(workDir, 'seg_' + String(segments.length).padStart(4, '0') + '_clip.mp4');
