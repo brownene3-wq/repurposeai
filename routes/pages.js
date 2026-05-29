@@ -437,7 +437,7 @@ router.get('/', async (req, res) => {
             <div class="platform-row"><span class="name">Instagram</span><span class="badge badge-on">LIVE</span></div>
             <div class="platform-row"><span class="name">Facebook</span><span class="badge badge-on">LIVE</span></div>
             <div class="platform-row"><span class="name">Threads</span><span class="badge badge-on">LIVE</span></div>
-            <div class="platform-row"><span class="name">TikTok</span><span class="badge badge-rev">REVIEW</span></div>
+            <div class="platform-row"><span class="name">TikTok</span><span class="badge badge-on">LIVE</span></div>
             <div class="platform-row"><span class="name">Pinterest</span><span class="badge badge-rev">REVIEW</span></div>
             <div class="platform-row"><span class="name">YouTube</span><span class="badge badge-soon">SOON</span></div>
             <div class="platform-row"><span class="name">X / Twitter</span><span class="badge badge-soon">SOON</span></div>
