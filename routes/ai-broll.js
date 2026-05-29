@@ -1252,7 +1252,7 @@ function openBrollSelectionModal(items) {
   if (!modal || !grid) return;
   window.__selectedClipIds = []; // reset selection order on each open
   grid.innerHTML = '';
-  if (subtitle) subtitle.textContent = items.length + ' clips suggested by AI based on your video transcript. Tap a card to select. Tap Preview to play it inline.';
+  if (subtitle) subtitle.textContent = items.length + ' clips suggested by AI based on your video transcript. All previews are playing - click a card to select it.';
 
   items.forEach(function (item, i) {
     var card = document.createElement('div');
@@ -1266,29 +1266,36 @@ function openBrollSelectionModal(items) {
     thumbDiv.className = 'broll-thumb-area';
     thumbDiv.style.cssText = 'position:relative;aspect-ratio:16/9;background:#000 center/cover no-repeat;background-image:url("' + thumb + '")';
 
-    // Upper-right selection indicator (circular check)
+    // Inline auto-playing muted looping video preview. Each card starts its own
+    // playback as soon as the modal opens so users can scan all five at once.
+    var previewSrc = item.videoPreviewUrl || item.videoDownloadUrl || '';
+    if (previewSrc) {
+      var vid = document.createElement('video');
+      vid.src = previewSrc;
+      vid.muted = true;          // autoplay requires muted in all modern browsers
+      vid.loop = true;
+      vid.autoplay = true;
+      vid.playsInline = true;    // iOS/Safari: keep inline, dont open fullscreen
+      vid.setAttribute('playsinline', '');
+      vid.setAttribute('webkit-playsinline', '');
+      vid.preload = 'auto';
+      vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;pointer-events:none;z-index:1';
+      vid.addEventListener('error', function () { try { vid.remove(); } catch (_) {} });
+      vid.addEventListener('loadeddata', function () { vid.play().catch(function () {}); });
+      thumbDiv.appendChild(vid);
+    }
+
+    // Upper-right selection indicator (circular check) — sits above the video
     var indicator = document.createElement('div');
     indicator.className = 'broll-select-indicator';
-    indicator.style.cssText = 'position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.55);border:2px solid rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;z-index:2;transition:all 0.15s;pointer-events:none';
+    indicator.style.cssText = 'position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.55);border:2px solid rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;z-index:3;transition:all 0.15s;pointer-events:none';
     thumbDiv.appendChild(indicator);
 
-    // Duration badge in upper-LEFT (moved out of upper-right where indicator now lives)
+    // Duration badge in upper-LEFT (above the video too)
     var dur = document.createElement('div');
-    dur.style.cssText = 'position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 8px;border-radius:6px;font-size:0.75rem;z-index:2';
+    dur.style.cssText = 'position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 8px;border-radius:6px;font-size:0.75rem;z-index:3;pointer-events:none';
     dur.textContent = (item.duration || 0) + 's';
     thumbDiv.appendChild(dur);
-
-    // Preview button (bottom-left)
-    var prevBtn = document.createElement('button');
-    prevBtn.type = 'button';
-    prevBtn.className = 'broll-preview-btn';
-    prevBtn.style.cssText = 'position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,0.75);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;z-index:2';
-    prevBtn.textContent = '▶ Preview';
-    prevBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      _brollTogglePreview(card, item);
-    });
-    thumbDiv.appendChild(prevBtn);
 
     card.appendChild(thumbDiv);
 
@@ -1307,10 +1314,9 @@ function openBrollSelectionModal(items) {
     }
     card.appendChild(info);
 
-    // Click anywhere on card (except preview button) → toggle selection
-    card.addEventListener('click', function (e) {
-      // Don't toggle when interacting with controls/video
-      if (e.target.closest('.broll-preview-btn') || e.target.closest('video')) return;
+    // Click anywhere on the card → toggle selection. The inline preview video
+    // has pointer-events:none so the click reaches the card.
+    card.addEventListener('click', function () {
       _brollToggleSelect(item.id, card);
     });
 
