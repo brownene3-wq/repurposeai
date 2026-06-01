@@ -1024,8 +1024,69 @@ ${pageStyles}
       e.target.classList.add('active');
     }
 
+    // ─── Credit confirmation step (shown before /ai-broll/generate runs) ───
+    var AI_BROLL_COST = 2; // mirrors middleware/credits.js
+    async function showCreditConfirmModal() {
+      var modal = document.getElementById('creditConfirmModal');
+      if (!modal) return;
+      document.getElementById('creditCostNum').textContent = AI_BROLL_COST;
+      document.getElementById('creditCostBig').textContent = AI_BROLL_COST + ' credits';
+      document.getElementById('creditCostUnit').textContent = AI_BROLL_COST === 1 ? 'credit' : 'credits';
+      document.getElementById('creditUsedTxt').textContent = '—';
+      document.getElementById('creditRemainAfter').textContent = '—';
+      document.getElementById('creditProgressBar').style.width = '0%';
+      var warn = document.getElementById('creditWarningRow');
+      warn.textContent = 'Charge happens only after the job completes successfully — if anything errors, nothing is deducted.';
+      warn.style.color = 'var(--text-muted)';
+      var btn = document.getElementById('creditConfirmBtn');
+      btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer';
+      btn.textContent = 'Yes, use credits & generate';
+      modal.style.display = 'flex';
+      try {
+        var r = await fetch('/dashboard/api/credits-breakdown', { headers: { 'Accept':'application/json' } });
+        if (r.ok) {
+          var d = await r.json();
+          var used = d.used || 0;
+          var cap = d.cap || 0;
+          var afterUsed = used + AI_BROLL_COST;
+          var pct = cap > 0 ? Math.min(100, Math.round((afterUsed / cap) * 100)) : 0;
+          document.getElementById('creditUsedTxt').textContent = used + ' / ' + cap;
+          document.getElementById('creditRemainAfter').textContent = Math.max(0, cap - afterUsed) + ' / ' + cap;
+          document.getElementById('creditProgressBar').style.width = pct + '%';
+          if (afterUsed > cap) {
+            warn.textContent = 'Heads up: this would exceed your monthly cap. Upgrade your plan to continue.';
+            warn.style.color = '#EC4899';
+            btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
+            btn.textContent = 'Out of credits';
+          }
+        }
+      } catch (_) { /* soft-fail */ }
+    }
+    function closeCreditConfirmModal() {
+      var modal = document.getElementById('creditConfirmModal');
+      if (modal) modal.style.display = 'none';
+    }
+    async function confirmAndProceed() {
+      var modal = document.getElementById('creditConfirmModal');
+      if (modal) modal.style.display = 'none';
+      window.__brollConfirmedCredits = true;
+      var form = document.getElementById('brollForm');
+      if (form.requestSubmit) form.requestSubmit();
+      else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    }
+    window.showCreditConfirmModal = showCreditConfirmModal;
+    window.closeCreditConfirmModal = closeCreditConfirmModal;
+    window.confirmAndProceed = confirmAndProceed;
+
     document.getElementById('brollForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      // ─── Credit confirmation step: show themed modal first, then re-fire submit ───
+      if (!window.__brollConfirmedCredits) {
+        showCreditConfirmModal();
+        return;
+      }
+      window.__brollConfirmedCredits = false;
 
       // Source of truth: the staged primary from the new ingestion flow,
       // OR the active input mode if no primary has been staged yet.
