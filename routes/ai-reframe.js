@@ -70,34 +70,61 @@ console.log('[AI Reframe] ffmpeg=' + ffmpegPath + ' ffprobe=' + ffprobePath);
 let ytdlpPath = null;
 try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
 
-// Common yt-dlp args (same as shorts.js)
+// Common yt-dlp args — mirrors the Smart Shorts stack which is the
+// proven working pattern on this dyno. Key elements:
+//   1. Combined player_client list (tv,ios,web_safari,web,mweb,android)
+//      — yt-dlp tries each in order in a SINGLE invocation. tv & ios
+//      bypass the "Sign in to confirm you're not a bot" wall most often.
+//   2. POT-token provider plugin args on EVERY call. The bgutil server
+//      runs on localhost:4416 (started by Dockerfile CMD); without these
+//      args, many player_clients now refuse to return playable URLs.
+//   3. --js-runtimes/--remote-components keep the plugin happy in newer
+//      yt-dlp builds.
+// TODO: factor cookie/proxy helpers + this block into a shared module.
 const YTDLP_COMMON_ARGS = [
   '--no-warnings',
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtube:player_client=tv,ios,web_safari,web,mweb,android',
+  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+  '--js-runtimes', 'node',
+  '--remote-components', 'ejs:github',
   '--retries', '3',
   '--extractor-retries', '3',
 ];
 
-// YouTube ships frequent anti-bot updates; no single yt-dlp strategy stays
-// reliable for long. We cycle through several player_client backends and
-// keep the first one that produces a real file. Order is fastest/most-
-// reliable first. The bgutil POT provider plugin is the historical default
-// but breaks the moment its localhost server goes down — keep it as a last
-// resort, not the first choice.
-const YTDLP_CLIENT_STRATEGIES = [
-  { name: 'ios',                args: ['--extractor-args', 'youtube:player_client=ios'] },
-  { name: 'mweb',               args: ['--extractor-args', 'youtube:player_client=mweb'] },
-  { name: 'tv',                 args: ['--extractor-args', 'youtube:player_client=tv'] },
-  { name: 'android',            args: ['--extractor-args', 'youtube:player_client=android'] },
-  { name: 'web_safari',         args: ['--extractor-args', 'youtube:player_client=web_safari'] },
-  { name: 'bgutil-pot-provider', args: [
-      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-      '--js-runtimes', 'node',
-      '--remote-components', 'ejs:github',
-    ] },
-];
+// Pass --cookies <file> when YT_COOKIES_PATH is configured. Mirrors the
+// Smart Shorts cookie loader: path can be a single .txt file or a directory
+// containing several (random pick per request). Cookies from a logged-in
+// browser are what reliably bypass YouTube's "confirm you're not a bot"
+// wall on datacenter IPs like Railway.
+function getYoutubeCookiesArgs() {
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg) return [];
+  try {
+    const st = fs.statSync(cfg);
+    if (st.isFile()) return ['--cookies', cfg];
+    if (st.isDirectory()) {
+      const files = fs.readdirSync(cfg)
+        .filter(f => f.toLowerCase().endsWith('.txt'))
+        .map(f => path.join(cfg, f));
+      if (files.length) return ['--cookies', files[Math.floor(Math.random() * files.length)]];
+    }
+  } catch (_) {}
+  return [];
+}
+
+// Pass --proxy <url> when YT_PROXY_URL is configured. Comma-separated
+// list rotates per request. Residential proxies are what move datacenter
+// success rates from ~60% to ~95% against YouTube's IP blocks.
+function getYoutubeProxyArgs() {
+  const cfg = process.env.YT_PROXY_URL;
+  if (!cfg) return [];
+  const pool = cfg.split(',').map(s => s.trim()).filter(Boolean);
+  if (!pool.length) return [];
+  return ['--proxy', pool[Math.floor(Math.random() * pool.length)]];
+}
 
 // Validate YouTube URL
 function isValidYouTubeUrl(url) {
@@ -114,36 +141,6 @@ function isValidYouTubeUrl(url) {
 function extractVideoId(url) {
   const match = url.match(/(?:v=|\/shorts\/|youtu\.be\/|\/embed\/)([\w-]+)/);
   return match ? match[1] : null;
-}
-
-// Download YouTube video using yt-dlp with ytdl-core fallback
-function tryYtDlpStrategy(strategy, videoUrl, outputPath) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '--no-playlist',
-      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-      '--merge-output-format', 'mp4',
-      '-o', outputPath,
-      '--no-part',
-      '--force-overwrites',
-      ...YTDLP_COMMON_ARGS,
-      ...strategy.args,
-      ...getYoutubeCookiesArgs(),
-      ...getYoutubeProxyArgs(),
-      videoUrl,
-    ];
-    const proc = spawn(ytdlpPath, args);
-    let stderr = '';
-    proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.on('error', reject);
-    proc.on('close', code => {
-      if (code === 0) resolve();
-      else reject(new Error('exit ' + code + ': ' + stderr.slice(-500).trim()));
-    });
-    // 90s per strategy — six strategies × 90s = 9min worst case, but most
-    // either succeed in <20s or fail fast.
-    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('strategy timed out')); }, 90000);
-  });
 }
 
 async function downloadYouTubeVideo(videoUrl) {
@@ -169,30 +166,72 @@ async function downloadYouTubeVideo(videoUrl) {
 
   const failures = [];
 
-  // Strategy 1: yt-dlp, cycling through player_client backends
+  // ---- Strategy 1: ONE yt-dlp call with the full Smart-Shorts stack ----
+  // The previous code cycled through six per-client strategies, but each
+  // strategy appended its own `--extractor-args youtube:player_client=X`
+  // AFTER YTDLP_COMMON_ARGS. yt-dlp uses the LATER value for duplicate
+  // extractor-args, so the combined-client list in YTDLP_COMMON_ARGS was
+  // always overridden by the strategy's single-client value — defeating
+  // the whole point of the combined fallback chain.
+  //
+  // Smart Shorts uses one call with the combined list and it works on
+  // this dyno. Mirror that exactly: yt-dlp internally walks
+  // tv -> ios -> web_safari -> web -> mweb -> android, with POT tokens,
+  // cookies, and proxy all attached. One success and we stop.
   if (ytdlpPath) {
-    for (const strat of YTDLP_CLIENT_STRATEGIES) {
-      try {
-        console.log(`[AI Reframe] yt-dlp ${strat.name} → ${videoUrl}`);
-        await tryYtDlpStrategy(strat, videoUrl, outputPath);
-        const got = findOutputFile();
-        if (got) {
-          console.log(`[AI Reframe] yt-dlp ${strat.name} succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
-          return got;
-        }
-        failures.push(`${strat.name}: no file produced`);
-      } catch (err) {
-        const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
-        console.log(`[AI Reframe] yt-dlp ${strat.name} failed: ${msg}`);
-        failures.push(`${strat.name}: ${msg}`);
-        // Keep going — try the next strategy
+    const cookiesArgs = getYoutubeCookiesArgs();
+    const proxyArgs   = getYoutubeProxyArgs();
+    try {
+      console.log(`[AI Reframe] yt-dlp → ${videoUrl} ` +
+                  `(cookies=${cookiesArgs.length > 0} proxy=${proxyArgs.length > 0})`);
+      await new Promise((resolve, reject) => {
+        const args = [
+          '--no-playlist',
+          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--merge-output-format', 'mp4',
+          '-o', outputPath,
+          '--no-part',
+          '--force-overwrites',
+          ...cookiesArgs,
+          ...proxyArgs,
+          ...YTDLP_COMMON_ARGS,
+          videoUrl,
+        ];
+        const proc = spawn(ytdlpPath, args);
+        let stderr = '';
+        proc.stderr.on('data', d => { stderr += d.toString(); });
+        proc.on('error', reject);
+        proc.on('close', code => {
+          if (code === 0) resolve();
+          else reject(new Error('exit ' + code + ': ' + stderr.slice(-800).trim()));
+        });
+        // 4-minute hard cap. yt-dlp's internal client walk is fast; if it
+        // hasn't returned by 4 min something is wedged.
+        setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('yt-dlp timed out')); }, 4 * 60 * 1000);
+      });
+      const got = findOutputFile();
+      if (got) {
+        console.log(`[AI Reframe] yt-dlp succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
+        return got;
       }
-      // Clean up partials between strategies
-      try { fs.unlinkSync(outputPath); } catch (e) {}
+      failures.push('yt-dlp: no file produced');
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      failures.push('yt-dlp: ' + msg.slice(0, 400));
+      // Print the full stderr trail server-side so Railway logs show
+      // exactly what YouTube said. The user only sees the friendly fallback.
+      console.log(`[AI Reframe] yt-dlp failed for ${videoUrl}:\n${msg.slice(0, 2000)}`);
+      if (msg.includes('Sign in to confirm') || msg.includes('PO Token') ||
+          msg.includes('player request') || msg.includes('429')) {
+        console.log('[AI Reframe] >> YouTube anti-bot wall. Set YT_COOKIES_PATH and/or YT_PROXY_URL on the Railway env to fix.');
+      }
     }
+    try { fs.unlinkSync(outputPath); } catch (e) {}
   }
 
-  // Strategy 2: @distube/ytdl-core fallback (different extraction code path)
+  // ---- Strategy 2: @distube/ytdl-core fallback ----
+  // Different extraction code path — sometimes works when yt-dlp is
+  // blocked even with cookies, and vice versa.
   if (ytdl) {
     try {
       console.log(`[AI Reframe] ytdl-core fallback → ${videoUrl}`);
@@ -212,15 +251,15 @@ async function downloadYouTubeVideo(videoUrl) {
       }
       failures.push('ytdl-core: no file produced');
     } catch (err) {
-      const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
+      const msg = (err && err.message ? err.message : String(err)).slice(0, 400);
       console.log(`[AI Reframe] ytdl-core failed: ${msg}`);
-      failures.push(`ytdl-core: ${msg}`);
+      failures.push('ytdl-core: ' + msg);
     }
   }
 
-  // All strategies exhausted. Log the full failure trail server-side so we
+  // All paths exhausted. Log the full failure trail server-side so we
   // can diagnose from Railway logs without leaking it to the user.
-  console.error(`[AI Reframe] ALL download strategies failed for ${videoUrl}:\n  - ` + failures.join('\n  - '));
+  console.error(`[AI Reframe] ALL download paths failed for ${videoUrl}:\n  - ` + failures.join('\n  - '));
   throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or YouTube may be blocking automated downloads. Try uploading the file directly.');
 }
 
