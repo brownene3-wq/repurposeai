@@ -17,6 +17,7 @@ const COSTS = {
   'enhance-audio': 3,
   'ai-captions':  2,
   'ai-thumbnail': 2,
+  'ai-broll':     2,
   'ai-hook':      1
 };
 

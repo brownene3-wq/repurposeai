@@ -10,6 +10,7 @@ try { __ytdl = require('@distube/ytdl-core'); } catch (e) { console.warn('[ai-br
 const https = require('https');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
+const { requireCredits, costFor } = require('../middleware/credits');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -877,6 +878,45 @@ ${pageStyles}
       <div class="video-modal-actions">
         <button class="btn-use-clip" onclick="useSelectedClip()">Use This Clip</button>
         <button class="btn-cancel" onclick="closeVideoModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credit Confirmation Modal — shown before /ai-broll/generate runs -->
+  <div class="video-modal" id="creditConfirmModal" style="display:none">
+    <div class="video-modal-content" style="max-width:520px">
+      <div class="video-modal-header">
+        <h3 style="margin:0">Heads up — this will use credits</h3>
+        <button class="video-modal-close" onclick="closeCreditConfirmModal()">&times;</button>
+      </div>
+      <div style="padding:0 4px 8px 4px;color:var(--text);font-size:0.95rem;line-height:1.5">
+        <p style="margin:0 0 1rem 0">
+          Generating B-roll runs a transcript analysis (Whisper + GPT) and queries the stock library.
+          This will deduct <strong id="creditCostNum" style="color:var(--text)">2</strong>
+          <span id="creditCostUnit">credits</span> from your monthly allowance.
+        </p>
+        <div style="background:var(--dark-2);border:var(--border-subtle);border-radius:10px;padding:1rem;margin:1rem 0">
+          <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px">
+            <span>This action</span>
+            <span id="creditCostBig" style="color:var(--text);font-weight:600">2 credits</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px">
+            <span>Used this month</span>
+            <span id="creditUsedTxt" style="color:var(--text)">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--text-muted);margin-bottom:8px">
+            <span>Remaining after</span>
+            <span id="creditRemainAfter" style="color:var(--text);font-weight:600">—</span>
+          </div>
+          <div style="height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">
+            <div id="creditProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width 0.3s"></div>
+          </div>
+        </div>
+        <p id="creditWarningRow" style="margin:0;font-size:0.8rem;color:var(--text-muted)">Charge happens only after the job completes successfully — if anything errors, nothing is deducted.</p>
+      </div>
+      <div class="video-modal-actions" style="margin-top:1rem">
+        <button type="button" class="btn-cancel" onclick="closeCreditConfirmModal()">Cancel</button>
+        <button type="button" class="btn-use-clip" id="creditConfirmBtn" onclick="confirmAndProceed()">Yes, use credits & generate</button>
       </div>
     </div>
   </div>
@@ -1841,7 +1881,7 @@ function formatPixabayVideos(pixabayHits) {
 }
 
 // POST - Generate B-roll
-router.post('/generate', requireAuth, upload.single('video'), async (req, res) => {
+router.post('/generate', requireAuth, requireCredits('ai-broll'), upload.single('video'), async (req, res) => {
   try {
     const { inputType, url, mode, prompt } = req.body;
 

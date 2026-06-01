@@ -884,7 +884,8 @@ const FEATURE_LABELS = {
   'enhance-audio': 'Enhance Audio',
   'ai-captions':   'AI Captions',
   'ai-thumbnail':  'AI Thumbnails',
-  'ai-hook':       'AI Hooks'
+  'ai-hook':       'AI Hooks',
+  'ai-broll': 'AI B-Roll'
 };
 
 router.get('/api/credits-breakdown', requireAuth, async (req, res) => {
