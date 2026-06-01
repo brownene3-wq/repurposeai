@@ -933,7 +933,7 @@ ${pageStyles}
       <div class="video-modal-actions" style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
         <span id="brollSelectionCount" style="color:var(--text-muted);font-size:0.85rem;margin-right:auto"></span>
         <button type="button" class="btn-cancel" onclick="closeBrollSelectionModal()">Cancel</button>
-        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">Done</button>
+        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">Download Clip with B-Roll</button>
       </div>
     </div>
   </div>
@@ -1351,75 +1351,189 @@ function openBrollSelectionModal(items) {
   var grid = document.getElementById('brollSelectionGrid');
   var subtitle = document.getElementById('brollSelectionSubtitle');
   if (!modal || !grid) return;
-  window.__selectedClipIds = []; // reset selection order on each open
+  window.__selectedClipIds = []; // reset selection order
+  window.__brollItemsLive = items; // mutable copy for swap logic
   grid.innerHTML = '';
-  if (subtitle) subtitle.textContent = items.length + ' clips suggested by AI based on your video transcript. All previews are playing - click a card to select it.';
+  grid.style.display = 'block'; // override grid → flow vertically for the Smart-Shorts-style scene list
+  if (subtitle) subtitle.textContent = items.length + ' scenes selected for your video. Each preview is playing — uncheck scenes you don’t want, swap if the AI picked the wrong angle, then continue.';
 
-  items.forEach(function (item, i) {
+  items.forEach(function (item, sIdx) {
     var card = document.createElement('div');
-    card.style.cssText = 'background:var(--dark-2);border:2px solid var(--border-subtle);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:all 0.15s';
+    card.style.cssText = 'margin-bottom:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px';
     card.dataset.itemId = item.id;
-    var why = item.sceneDescription || item.searchQueryUsed || '';
-    var thumb = (item.thumbnailUrl || '').replace(/'/g, '%27');
-    var name = item.name || ('Clip ' + (i+1));
+    card.dataset.sceneIdx = sIdx;
 
-    var thumbDiv = document.createElement('div');
-    thumbDiv.className = 'broll-thumb-area';
-    thumbDiv.style.cssText = 'position:relative;aspect-ratio:16/9;background:#000 center/cover no-repeat;background-image:url("' + thumb + '")';
+    var why = item.why || item.sceneDescription || item.searchQueryUsed || '';
+    var sceneDesc = item.sceneDescription || '';
+    var hintRaw = (item.timestamp_hint || item.moment || 'middle').toString().toLowerCase();
+    var hintLabel = hintRaw.charAt(0).toUpperCase() + hintRaw.slice(1);
+    var hintColor = hintRaw === 'beginning' || hintRaw === 'intro' ? '#10b981' :
+                    hintRaw === 'end' || hintRaw === 'outro' || hintRaw === 'conclusion' ? '#f97316' :
+                    hintRaw === 'middle' ? '#3b82f6' : '#a29bfe';
 
-    // Inline auto-playing muted looping video preview. Each card starts its own
-    // playback as soon as the modal opens so users can scan all five at once.
-    var previewSrc = item.videoPreviewUrl || item.videoDownloadUrl || '';
-    if (previewSrc) {
-      var vid = document.createElement('video');
-      vid.src = previewSrc;
-      vid.muted = true;          // autoplay requires muted in all modern browsers
-      vid.loop = true;
-      vid.autoplay = true;
-      vid.playsInline = true;    // iOS/Safari: keep inline, dont open fullscreen
-      vid.setAttribute('playsinline', '');
-      vid.setAttribute('webkit-playsinline', '');
-      vid.preload = 'auto';
-      vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;pointer-events:none;z-index:1';
-      vid.addEventListener('error', function () { try { vid.remove(); } catch (_) {} });
-      vid.addEventListener('loadeddata', function () { vid.play().catch(function () {}); });
-      thumbDiv.appendChild(vid);
-    }
-
-    // Upper-right selection indicator (circular check) — sits above the video
-    var indicator = document.createElement('div');
-    indicator.className = 'broll-select-indicator';
-    indicator.style.cssText = 'position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.55);border:2px solid rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;z-index:3;transition:all 0.15s;pointer-events:none';
-    thumbDiv.appendChild(indicator);
-
-    // Duration badge in upper-LEFT (above the video too)
-    var dur = document.createElement('div');
-    dur.style.cssText = 'position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 8px;border-radius:6px;font-size:0.75rem;z-index:3;pointer-events:none';
-    dur.textContent = (item.duration || 0) + 's';
-    thumbDiv.appendChild(dur);
-
-    card.appendChild(thumbDiv);
-
-    // Info area below thumbnail
-    var info = document.createElement('div');
-    info.style.cssText = 'padding:10px 12px;flex:1';
-    var ttl = document.createElement('div');
-    ttl.style.cssText = 'font-weight:600;color:var(--text);font-size:0.9rem;line-height:1.3;margin-bottom:4px';
-    ttl.textContent = name;
-    info.appendChild(ttl);
-    if (why) {
-      var w = document.createElement('div');
-      w.style.cssText = 'color:var(--text-muted);font-size:0.75rem;line-height:1.4';
-      w.textContent = '— ' + why;
-      info.appendChild(w);
-    }
-    card.appendChild(info);
-
-    // Click anywhere on the card → toggle selection. The inline preview video
-    // has pointer-events:none so the click reaches the card.
-    card.addEventListener('click', function () {
-      _brollToggleSelect(item.id, card);
+    // ─── Header row: checkbox + badge + description + why ───
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:flex-start;gap:10px;margin-bottom:10px';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'broll-card-checkbox';
+    cb.dataset.itemId = item.id;
+    cb.checked = true;
+    cb.style.cssText = 'margin-top:4px;width:18px;height:18px;accent-color:var(--primary);cursor:pointer;flex-shrink:0';
+    cb.addEventListener('change', function (e) {
+      var id = item.id;
+      var idx = window.__selectedClipIds.indexOf(id);
+      if (cb.checked && idx < 0) window.__selectedClipIds.push(id);
+      else if (!cb.checked && idx >= 0) window.__selectedClipIds.splice(idx, 1);
+      updateBrollSelectionCount();
     });
+    // Start everything selected (matches Smart Shorts default).
+    window.__selectedClipIds.push(item.id);
+    header.appendChild(cb);
+
+    var info = document.createElement('div');
+    info.style.flex = '1';
+    info.innerHTML =
+      '<span style="display:inline-block;font-size:10px;color:#fff;background:' + hintColor + ';padding:3px 10px;border-radius:10px;text-transform:uppercase;font-weight:600;letter-spacing:0.5px">' + hintLabel + '</span>' +
+      (sceneDesc ? '<p style="font-size:13px;color:var(--text);margin:6px 0 0 0;line-height:1.4">' + sceneDesc + '</p>' : '') +
+      (why ? '<p style="font-size:11px;color:var(--text-muted);margin:4px 0 0 0;font-style:italic">' + why + '</p>' : '');
+    header.appendChild(info);
+    card.appendChild(header);
+
+    // ─── Auto-pick row: video + AUTO-PICK badge + position/duration selects + swap button ───
+    var pickRow = document.createElement('div');
+    pickRow.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+    pickRow.dataset.role = 'pick-row';
+
+    var vidWrap = document.createElement('div');
+    vidWrap.style.cssText = 'position:relative;flex-shrink:0';
+    vidWrap.dataset.role = 'vid-wrap';
+    var v = document.createElement('video');
+    v.src = item.videoPreviewUrl || item.videoDownloadUrl || '';
+    v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+    v.setAttribute('playsinline',''); v.setAttribute('webkit-playsinline','');
+    v.preload = 'auto';
+    v.style.cssText = 'width:180px;height:101px;object-fit:cover;border-radius:8px;display:block;border:2px solid var(--primary);background:#000';
+    v.addEventListener('loadeddata', function () { v.play().catch(function(){}); });
+    vidWrap.appendChild(v);
+    var badge = document.createElement('span');
+    badge.style.cssText = 'position:absolute;top:6px;left:6px;background:var(--primary);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:0.5px';
+    badge.textContent = 'AUTO-PICK';
+    vidWrap.appendChild(badge);
+    var dur = document.createElement('span');
+    dur.style.cssText = 'position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,0.7);color:#fff;font-size:10px;padding:2px 6px;border-radius:3px';
+    dur.textContent = (item.duration || 0) + 's';
+    vidWrap.appendChild(dur);
+    pickRow.appendChild(vidWrap);
+
+    var controls = document.createElement('div');
+    controls.style.cssText = 'flex:1;min-width:160px;display:flex;flex-direction:column;gap:6px';
+
+    var artistDiv = document.createElement('div');
+    artistDiv.style.cssText = 'font-size:11px;color:var(--text-muted)';
+    artistDiv.textContent = 'By ' + (item.artist || 'Pixabay');
+    controls.appendChild(artistDiv);
+
+    // Position selector
+    var posWrap = document.createElement('div');
+    posWrap.innerHTML = '<label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px">Position in clip:</label>';
+    var posSel = document.createElement('select');
+    posSel.dataset.role = 'position';
+    posSel.style.cssText = 'font-size:12px;padding:5px 8px;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:6px;width:100%;cursor:pointer';
+    [['beginning','Beginning (first 3s)'],['middle','Middle (halfway)'],['end','End (last 8s)'],['quarter','25% in'],['three-quarter','75% in']].forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p[0]; o.textContent = p[1];
+      if (hintRaw === p[0] || (!hintRaw && p[0] === 'middle')) o.selected = true;
+      posSel.appendChild(o);
+    });
+    posWrap.appendChild(posSel);
+    controls.appendChild(posWrap);
+
+    // Duration selector
+    var durWrap = document.createElement('div');
+    durWrap.innerHTML = '<label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px">B-Roll duration:</label>';
+    var durSel = document.createElement('select');
+    durSel.dataset.role = 'duration';
+    durSel.style.cssText = 'font-size:12px;padding:5px 8px;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:6px;width:100%;cursor:pointer';
+    [3, 5, 8].forEach(function (d) {
+      var o = document.createElement('option');
+      o.value = String(d); o.textContent = d + ' seconds';
+      if (d === 5) o.selected = true;
+      durSel.appendChild(o);
+    });
+    durWrap.appendChild(durSel);
+    controls.appendChild(durWrap);
+
+    // Swap scene button — toggles the alternatives drawer
+    if (item.alternatives && item.alternatives.length > 0) {
+      var swapBtn = document.createElement('button');
+      swapBtn.type = 'button';
+      swapBtn.style.cssText = 'font-size:11px;background:rgba(255,255,255,0.08);color:var(--text);border:none;padding:6px 10px;border-radius:6px;cursor:pointer;width:100%;margin-top:2px;transition:background 0.15s';
+      swapBtn.textContent = 'Swap Scene (' + item.alternatives.length + ' more)';
+      swapBtn.addEventListener('mouseenter', function () { swapBtn.style.background = 'rgba(255,255,255,0.15)'; });
+      swapBtn.addEventListener('mouseleave', function () { swapBtn.style.background = 'rgba(255,255,255,0.08)'; });
+      swapBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var drawer = card.querySelector('[data-role="alt-drawer"]');
+        if (!drawer) return;
+        var open = drawer.style.display !== 'none';
+        drawer.style.display = open ? 'none' : 'flex';
+        // When opening, ensure all alt videos start playing (some browsers pause hidden video)
+        if (!open) drawer.querySelectorAll('video').forEach(function (vv) { vv.play().catch(function(){}); });
+      });
+      controls.appendChild(swapBtn);
+    }
+
+    pickRow.appendChild(controls);
+    card.appendChild(pickRow);
+
+    // ─── Alternatives drawer (hidden by default; auto-loops on open) ───
+    if (item.alternatives && item.alternatives.length > 0) {
+      var drawer = document.createElement('div');
+      drawer.dataset.role = 'alt-drawer';
+      drawer.style.cssText = 'display:none;gap:10px;margin-top:10px;overflow-x:auto;padding:4px 2px';
+      item.alternatives.forEach(function (alt, aIdx) {
+        var altCard = document.createElement('div');
+        altCard.style.cssText = 'flex-shrink:0;width:140px;cursor:pointer;text-align:center;position:relative';
+        altCard.title = 'Click to use this clip instead';
+        var altVid = document.createElement('video');
+        altVid.src = alt.videoPreviewUrl || alt.videoDownloadUrl || '';
+        altVid.muted = true; altVid.loop = true; altVid.autoplay = true; altVid.playsInline = true;
+        altVid.setAttribute('playsinline',''); altVid.setAttribute('webkit-playsinline','');
+        altVid.preload = 'auto';
+        altVid.style.cssText = 'width:140px;height:79px;object-fit:cover;border-radius:5px;display:block;border:1px solid rgba(255,255,255,0.15);background:#000';
+        altVid.addEventListener('loadeddata', function () { altVid.play().catch(function(){}); });
+        altCard.appendChild(altVid);
+        var altDur = document.createElement('div');
+        altDur.style.cssText = 'font-size:9px;color:var(--text-muted);margin-top:3px';
+        altDur.textContent = (alt.duration || 0) + 's · ' + (alt.artist || 'Pixabay');
+        altCard.appendChild(altDur);
+        var useHint = document.createElement('div');
+        useHint.style.cssText = 'font-size:9px;color:var(--primary);margin-top:1px;font-weight:600';
+        useHint.textContent = 'Click to use';
+        altCard.appendChild(useHint);
+        // Swap the alt with the auto-pick when clicked
+        altCard.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var oldPrimary = {
+            id: item.id, name: item.name, thumbnailUrl: item.thumbnailUrl,
+            videoPreviewUrl: item.videoPreviewUrl, videoDownloadUrl: item.videoDownloadUrl,
+            duration: item.duration, artist: item.artist
+          };
+          item.videoPreviewUrl = alt.videoPreviewUrl;
+          item.videoDownloadUrl = alt.videoDownloadUrl;
+          item.thumbnailUrl = alt.thumbnailUrl;
+          item.duration = alt.duration;
+          item.artist = alt.artist;
+          // Replace the slot in alternatives with the old primary
+          item.alternatives[aIdx] = oldPrimary;
+          // Re-render this single card by re-opening the modal with the (mutated) items list.
+          openBrollSelectionModal(window.__brollItemsLive);
+        });
+        drawer.appendChild(altCard);
+      });
+      card.appendChild(drawer);
+    }
 
     grid.appendChild(card);
   });
@@ -1435,7 +1549,7 @@ function updateBrollSelectionCount() {
   var btn = document.getElementById('brollConfirmBtn');
   if (countEl) countEl.textContent = checked + ' of ' + total + ' selected';
   if (btn) {
-    btn.textContent = checked > 0 ? ('Done (' + checked + ')') : 'Done';
+    btn.textContent = checked > 0 ? ('Download Clip with B-Roll (' + checked + ')') : 'Download Clip with B-Roll';
     btn.disabled = checked === 0;
     btn.style.opacity = checked === 0 ? '0.5' : '1';
     btn.style.cursor = checked === 0 ? 'not-allowed' : 'pointer';
@@ -2014,13 +2128,24 @@ router.post('/generate', requireAuth, requireCredits('ai-broll'), upload.single(
             // Decorate with the AI-generated context so the modal can show why.
             item.searchQueryUsed = q;
             item.sceneDescription = scene.scene_description || '';
-            item.moment = scene.moment || '';
+            item.moment = scene.moment || scene.timestamp_hint || '';
+            item.timestamp_hint = scene.timestamp_hint || scene.moment || 'middle';
+            item.why = scene.why || '';
+            // Expose up to 3 alternatives so the Swap Scene drawer has options.
+            item.alternatives = formatted.slice(1, 4).map(function (a) { return {
+              id: a.id, name: a.name, thumbnailUrl: a.thumbnailUrl,
+              videoPreviewUrl: a.videoPreviewUrl, videoDownloadUrl: a.videoDownloadUrl,
+              duration: a.duration, artist: a.artist
+            }; });
             brollItems.push(item);
           } else {
             const fb = generateFallbackItems([q], 1)[0];
             fb.searchQueryUsed = q;
             fb.sceneDescription = scene.scene_description || '';
-            fb.moment = scene.moment || '';
+            fb.moment = scene.moment || scene.timestamp_hint || '';
+            fb.timestamp_hint = scene.timestamp_hint || scene.moment || 'middle';
+            fb.why = scene.why || '';
+            fb.alternatives = [];
             brollItems.push(fb);
           }
         }
