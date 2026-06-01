@@ -1576,7 +1576,7 @@ async function confirmBrollSelection() {
   var btn = document.getElementById('brollConfirmBtn');
   if (btn) { btn.disabled = true; }
 
-  if (!hasPrimary && sourceUrl && /^https?:\/\//i.test(sourceUrl) && window.__aiBrollImportUrlAsPrimary) {
+  if (!hasPrimary && sourceUrl && /^https?:\\/\\//i.test(sourceUrl) && window.__aiBrollImportUrlAsPrimary) {
     try {
       if (btn) btn.textContent = 'Importing primary video...';
       await window.__aiBrollImportUrlAsPrimary(sourceUrl);
