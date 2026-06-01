@@ -2724,7 +2724,7 @@ router.get('/history', requireAuth, (req, res) => {
           div.innerHTML = '\
           <div style="background:#16112a;border:1px solid rgba(108,58,237,0.30);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif">\
             <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">✈️ Publish Generated Post</h3>\
-            <div id="rpPublishSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
+            <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
             <select id="rpPubAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;"><option value="">Loading…</option></select>\
             <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
