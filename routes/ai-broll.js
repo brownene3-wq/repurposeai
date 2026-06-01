@@ -1565,6 +1565,61 @@ function closeBrollSelectionModal() {
   }
 }
 
+function showBrollUploadFallback(errMsg) {
+  var sub = document.getElementById('brollSelectionSubtitle');
+  if (sub) sub.textContent = 'We couldn\'t download the source video automatically. Upload a local copy to continue.';
+  var grid = document.getElementById('brollSelectionGrid');
+  if (!grid) return;
+  Array.from(grid.children).forEach(function (el) { el.style.display = 'none'; });
+  var panel = document.createElement('div');
+  panel.id = 'brollUploadFallback';
+  panel.style.cssText = 'background:rgba(236,72,153,0.06);border:1px solid rgba(236,72,153,0.25);border-radius:10px;padding:18px;margin:8px 4px';
+  panel.innerHTML =
+    '<div style="font-size:0.95rem;color:var(--text);font-weight:600;margin-bottom:8px">YouTube blocked the download.</div>' +
+    '<div style="font-size:0.85rem;color:var(--text-muted);line-height:1.5;margin-bottom:14px">Your B-roll selection is still here. To finish the render, upload a local copy of the same video below. Splicing will resume immediately.</div>' +
+    '<div style="margin-bottom:8px"><input type="file" id="brollFallbackFile" accept="video/*" style="display:none">' +
+      '<button type="button" id="brollFallbackBtn" class="btn-use-clip" style="display:inline-block">Upload local copy</button>' +
+    '</div>' +
+    '<div id="brollFallbackStatus" style="font-size:0.78rem;color:var(--text-muted);margin-top:6px"></div>' +
+    '<details style="margin-top:12px;font-size:0.78rem;color:var(--text-muted)">' +
+      '<summary style="cursor:pointer">Server error detail</summary>' +
+      '<pre style="margin-top:6px;padding:8px;background:rgba(0,0,0,0.25);border-radius:6px;white-space:pre-wrap;font-size:0.72rem">' + (errMsg || 'unknown') + '</pre>' +
+    '</details>';
+  grid.appendChild(panel);
+  var input = document.getElementById('brollFallbackFile');
+  var trigger = document.getElementById('brollFallbackBtn');
+  var status = document.getElementById('brollFallbackStatus');
+  trigger.addEventListener('click', function () { input.click(); });
+  input.addEventListener('change', async function () {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    trigger.disabled = true; trigger.textContent = 'Uploading...';
+    status.textContent = 'Uploading ' + file.name + '...';
+    try {
+      var fd = new FormData(); fd.append('video', file);
+      var r = await fetch('/ai-broll/upload-primary', { method: 'POST', body: fd });
+      if (!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.error || ('Upload failed (' + r.status + ')')); }
+      var data = await r.json();
+      if (window.__aiBrollState) {
+        window.__aiBrollState.primary = {
+          filename: data.filename,
+          originalName: file.name,
+          duration: data.duration || 0,
+          serveUrl: data.serveUrl || ('/video-editor/download/' + data.filename),
+          source: 'upload'
+        };
+      }
+      status.textContent = 'Uploaded. Continuing render...';
+      panel.remove();
+      Array.from(grid.children).forEach(function (el) { el.style.display = ''; });
+      setTimeout(function () { confirmBrollSelection(); }, 200);
+    } catch (err) {
+      status.textContent = 'Upload failed: ' + (err.message || err);
+      trigger.disabled = false; trigger.textContent = 'Upload local copy';
+    }
+  });
+}
+
 async function confirmBrollSelection() {
   var ids = (window.__selectedClipIds || []).slice();
   if (ids.length === 0) { showToast('Pick at least one scene first'); return; }
@@ -1582,13 +1637,14 @@ async function confirmBrollSelection() {
       await window.__aiBrollImportUrlAsPrimary(sourceUrl);
       hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
     } catch (err) {
-      showToast('Primary import failed: ' + (err.message || err));
+      // Don't lose the user\'s selection — offer an Upload fallback inside the modal instead.
+      showBrollUploadFallback(err.message || String(err));
       if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
       return;
     }
   }
   if (!hasPrimary) {
-    showToast('Upload or paste a video URL first so we know what to splice into.');
+    showBrollUploadFallback('No primary video has been imported yet.');
     if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
     return;
   }
