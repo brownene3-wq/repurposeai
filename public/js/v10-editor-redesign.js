@@ -4179,7 +4179,7 @@
       '</div>' +
       '<div id="bkList" style="min-height:100px"></div>' +
       '<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px">' +
-        '<a href="/brand-templates" target="_blank" rel="noopener" ' +
+        '<a href="/settings?section=brandtemplates" target="_blank" rel="noopener" ' +
           'style="color:#a78bfa;font-size:11px;text-decoration:none">\u27a4 Create / edit templates</a>' +
         '<button id="bkClose" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Close</button>' +
       '</div>';
@@ -4215,7 +4215,7 @@
         listEl.innerHTML =
           '<div style="padding:24px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.15);border-radius:8px;text-align:center;font-size:12px;color:#8886a0;line-height:1.5">' +
             'No saved templates yet.<br>' +
-            '<a href="/brand-templates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Go to Brand Templates</a> to create one.' +
+            '<a href="/settings?section=brandtemplates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Open Brand Templates in Settings</a> to create one.' +
           '</div>';
         return;
       }

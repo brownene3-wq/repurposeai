@@ -568,7 +568,7 @@ router.get('/', requireAuth, async (req, res) => {
         <div class="settings-section" id="section-brandtemplates">
           <div class="settings-card">
             <h2><span class="icon"><img src="/images/section-icons/A-118.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Brand Templates</h2>
-            <p class="desc">Build reusable brand looks — aspect ratio, caption style, and logo placement — and apply them to any clip you render. <a href="/brand-templates" style="color:var(--primary,#6C3AED);text-decoration:none;font-weight:600;">Open in full page &rarr;</a></p>
+            <p class="desc">Build reusable brand looks — aspect ratio, caption style, and logo placement — and apply them to any clip you render.</p>
             <div style="margin-top:1.2rem;background:var(--dark-2,#0f0f0f);border-radius:14px;border:1px solid rgba(255,255,255,0.06);overflow:hidden;">
               <iframe id="brandTemplatesFrame" src="/brand-templates?embed=1" style="width:100%;height:1100px;border:0;display:block;background:transparent;" title="Brand Templates" loading="lazy"></iframe>
             </div>
