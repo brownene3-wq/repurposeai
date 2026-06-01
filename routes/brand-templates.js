@@ -447,7 +447,7 @@ ${pageStyles}
             <strong>Where these templates show up:</strong> Once saved, your aspect ratio, caption style, and logo are applied automatically when you render clips and export videos. Pick one from the Brand Kit picker on:
             <span class="where-list">
               <a class="pill" href="/shorts" target="_blank" rel="noopener" title="Open Smart Shorts">Smart Shorts</a>
-              <a class="pill" href="/video-editor" target="_blank" rel="noopener" title="Open Video Editor">Video Editor timeline</a>
+              <a class="pill" href="/video-editor" target="_blank" rel="noopener" title="Open Video Editor">Video Editor</a>
               <a class="pill" href="/shorts/clips" target="_blank" rel="noopener" title="Open My Clips">My Clips</a>
             </span>
           </div>
@@ -705,10 +705,10 @@ ${embed ? '</div>' : '    </main>\n  </div>'}
         container.innerHTML = '<div class="empty-templates">' +
           '<strong>No saved templates yet.</strong>' +
           'Build one below in three quick steps — aspect ratio, caption style, and an optional logo. ' +
-          'Saved templates will then show up in the Brand Kit picker on Smart Shorts, the Video Editor timeline, and My Clips so you can apply them with one click.' +
+          'Saved templates will then show up in the Brand Kit picker on Smart Shorts, the Video Editor, and My Clips so you can apply them with one click.' +
           '<span class="where-list">' +
             '<span class="pill">Smart Shorts</span>' +
-            '<span class="pill">Video Editor timeline</span>' +
+            '<span class="pill">Video Editor</span>' +
             '<span class="pill">My Clips</span>' +
           '</span>' +
         '</div>';
