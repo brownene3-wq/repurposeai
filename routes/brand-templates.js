@@ -391,12 +391,23 @@ router.get('/', requireAuth, (req, res) => {
 <style>${css}</style>
 ${pageStyles}
 </head>
-<body${embed ? ' style="background:transparent"' : ''}>
-  <div class="${embed ? 'dashboard embed' : 'dashboard'}">
+<body${embed ? ' style="background:transparent;height:auto;overflow:visible"' : ''}>
+  ${embed
+    ? `<style>
+        /* Embed mode — override the base .dashboard/.main-content CSS
+           that's designed for full-page layouts. We want the wizard to
+           flow naturally inside the parent iframe with no fixed height
+           and no margin-left gutter. */
+        html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
+        body { padding: 1.5rem 1.25rem 2rem; }
+        .dashboard-embed-shell { display: block; height: auto; overflow: visible; }
+      </style>
+      <div class="dashboard-embed-shell">`
+    : `<div class="dashboard">
     ${sidebar}
     ${themeToggle}
-    <main class="${embed ? 'main-content embed' : 'main-content'}" ${embed ? 'style="margin-left:0;padding:0 0 2rem"' : ''}>
-      ${embed ? '' : `<div class="page-header">
+    <main class="main-content">
+      <div class="page-header">
         <h1><img src="/images/section-icons/A-118.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Templates</h1>
         <p>Create consistent branded videos in 3 easy steps</p>
       </div>`}
@@ -493,8 +504,7 @@ ${pageStyles}
           <button class="btn-save" id="saveBtn" onclick="saveTemplate()" style="display: none;">Save Template</button>
         </div>
       </div>
-    </main>
-  </div>
+${embed ? '</div>' : '    </main>\n  </div>'}
 
   <!-- Name prompt modal -->
   <div class="bt-modal-backdrop" id="nameModal">
