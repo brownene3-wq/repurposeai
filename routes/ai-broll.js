@@ -1567,7 +1567,7 @@ function closeBrollSelectionModal() {
 
 function showBrollUploadFallback(errMsg) {
   var sub = document.getElementById('brollSelectionSubtitle');
-  if (sub) sub.textContent = 'We couldn\'t download the source video automatically. Upload a local copy to continue.';
+  if (sub) sub.textContent = 'We could not download the source video automatically. Upload a local copy to continue.';
   var grid = document.getElementById('brollSelectionGrid');
   if (!grid) return;
   Array.from(grid.children).forEach(function (el) { el.style.display = 'none'; });
