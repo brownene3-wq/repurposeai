@@ -117,6 +117,7 @@ router.get('/', requireAuth, async (req, res) => {
           <button class="settings-nav-btn" data-section="appearance" onclick="switchSection('appearance',this)">Appearance</button>
           <button class="settings-nav-btn" data-section="privacy" onclick="switchSection('privacy',this)">Data & Privacy</button>
           <button class="settings-nav-btn" data-section="apikeys" onclick="switchSection('apikeys',this)">API Keys</button>
+          <button class="settings-nav-btn" data-section="brandtemplates" onclick="switchSection('brandtemplates',this)">Brand Templates</button>
         </div>
 
         <!-- ===== PROFILE SECTION ===== -->
@@ -558,6 +559,21 @@ router.get('/', requireAuth, async (req, res) => {
             <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem"><img src="/images/section-icons/A-105.png" alt="" style="height:16px;width:16px;vertical-align:middle;border-radius:3px;margin-right:4px"> Your API keys are encrypted and stored securely. They are never shared with third parties.</p>
           </div>
 
+        <!-- ===== BRAND TEMPLATES SECTION ===== -->
+        <!-- The wizard lives in an iframe to /brand-templates?embed=1
+             so the Settings tab is guaranteed pixel-for-pixel identical
+             to the standalone page. Both surfaces read/write the same
+             brandTemplates cookie, so saves round-trip between them. -->
+        <div class="settings-section" id="section-brandtemplates">
+          <div class="settings-card">
+            <h2><span class="icon"><img src="/images/section-icons/A-118.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Brand Templates</h2>
+            <p class="desc">Build reusable brand looks — aspect ratio, caption style, and logo placement — and apply them to any clip you render. <a href="/brand-templates" style="color:var(--primary,#6C3AED);text-decoration:none;font-weight:600;">Open in full page &rarr;</a></p>
+            <div style="margin-top:1.2rem;background:var(--dark-2,#0f0f0f);border-radius:14px;border:1px solid rgba(255,255,255,0.06);overflow:hidden;">
+              <iframe id="brandTemplatesFrame" src="/brand-templates?embed=1" style="width:100%;height:1100px;border:0;display:block;background:transparent;" title="Brand Templates" loading="lazy"></iframe>
+            </div>
+            <p style="font-size:.75rem;color:var(--text-muted);margin-top:.65rem"><img src="/images/section-icons/A-105.png" alt="" style="height:16px;width:16px;vertical-align:middle;border-radius:3px;margin-right:4px"> Templates saved here also appear on the Brand Templates page, in the Video Editor, and in Smart Shorts.</p>
+          </div>
+
       </div>
     </div>
 
@@ -595,6 +611,17 @@ router.get('/', requireAuth, async (req, res) => {
         document.getElementById('section-' + name).classList.add('active');
         btn.classList.add('active');
       }
+
+      // Auto-size the embedded Brand Templates iframe based on the
+      // height it posts back. Cap at 60vh minimum so the wizard always
+      // has a sensible default if postMessage hasn't fired yet.
+      window.addEventListener('message', function(e) {
+        if (!e || !e.data || e.data.type !== 'brand-templates-height') return;
+        var iframe = document.getElementById('brandTemplatesFrame');
+        if (!iframe) return;
+        var h = Math.max(600, Math.min(4000, Number(e.data.height) || 0));
+        if (h && Math.abs(iframe.clientHeight - h) > 8) iframe.style.height = h + 'px';
+      });
 
       // Save individual setting via API
       async function saveSetting(el) {

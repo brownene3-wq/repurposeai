@@ -186,10 +186,14 @@ function safeFilename(filename) {
 
 // GET - Main Brand Templates page (list + wizard)
 router.get('/', requireAuth, (req, res) => {
+  // embed=1 strips the sidebar + page-header chrome so the wizard can
+  // be iframed cleanly into other pages (currently: Settings → Brand
+  // Templates tab). Same auth, same data store (cookie), same JS.
+  const embed = req.query.embed === '1' || req.query.embed === 'true';
   const css = getBaseCSS();
   const headHTML = getHeadHTML('Brand Templates');
-  const sidebar = getSidebar('brand-templates', req.user, req.teamPermissions);
-  const themeToggle = getThemeToggle();
+  const sidebar = embed ? '' : getSidebar('brand-templates', req.user, req.teamPermissions);
+  const themeToggle = embed ? '' : getThemeToggle();
   const themeScript = getThemeScript();
 
   const templates = readTemplates(req);
@@ -387,15 +391,15 @@ router.get('/', requireAuth, (req, res) => {
 <style>${css}</style>
 ${pageStyles}
 </head>
-<body>
-  <div class="dashboard">
+<body${embed ? ' style="background:transparent"' : ''}>
+  <div class="${embed ? 'dashboard embed' : 'dashboard'}">
     ${sidebar}
     ${themeToggle}
-    <main class="main-content">
-      <div class="page-header">
+    <main class="${embed ? 'main-content embed' : 'main-content'}" ${embed ? 'style="margin-left:0;padding:0 0 2rem"' : ''}>
+      ${embed ? '' : `<div class="page-header">
         <h1><img src="/images/section-icons/A-118.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Templates</h1>
         <p>Create consistent branded videos in 3 easy steps</p>
-      </div>
+      </div>`}
 
       <div class="wizard-container">
 
@@ -508,6 +512,32 @@ ${pageStyles}
   <div class="toast" id="toast"></div>
 
   <script>
+    // Embedded mode: report our content height to the parent (Settings
+    // tab iframe) so it can auto-size without scrollbars or clipping.
+    (function() {
+      try {
+        if (window.parent === window) return;
+        if (!new URLSearchParams(location.search).has('embed')) return;
+        var report = function() {
+          var h = Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.offsetHeight
+          );
+          try { window.parent.postMessage({ type: 'brand-templates-height', height: h }, '*'); } catch(_) {}
+        };
+        window.addEventListener('load', report);
+        window.addEventListener('resize', report);
+        // Also re-report whenever the DOM changes — new template cards,
+        // wizard step changes, logo preview swaps, etc.
+        if ('ResizeObserver' in window) {
+          new ResizeObserver(report).observe(document.documentElement);
+        } else {
+          setInterval(report, 1500);
+        }
+      } catch (_) {}
+    })();
     let currentStep = 1;
     // State for the wizard (draft being built/edited).
     let templateData = {
