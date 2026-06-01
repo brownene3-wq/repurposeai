@@ -7921,10 +7921,10 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Batch Analyze</div>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Process multiple videos at once</div>
         </div>
-        <div onclick="openBrandKitModal()" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
+        <div onclick="window.location.href='/settings?section=brandtemplates'" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#a29bfe';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(108,92,231,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
           <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/section-icons/A-13.png" alt="Brand Kit" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
           <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:4px;">Brand Kit</div>
-          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Customize with your brand identity</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Manage your brand templates</div>
         </div>
         <div onclick="toggleToolPanel('autoGenPanel', this)" style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:14px;padding:20px 16px;cursor:pointer;transition:all 0.25s ease;text-align:center;position:relative;overflow:hidden;" onmouseenter="this.style.borderColor='#e056fd';this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 24px rgba(224,86,253,0.15)'" onmouseleave="if(!this.classList.contains('tool-active')){this.style.borderColor='var(--border-subtle)';this.style.transform='none';this.style.boxShadow='none'}">
           <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;overflow:hidden;"><img src="/images/section-icons/A-14.png" alt="Auto-Generate" style="width:48px;height:48px;object-fit:cover;border-radius:12px;"></div>
@@ -9970,11 +9970,27 @@ ${paginationHtml}
                 <option value="sv">Swedish</option>
               </select>
                   </span>
-                  <label class="clip-captions-toggle" title="Apply your saved Brand Kit (logo/watermark) to this clip">
-                    <input type="checkbox" id="brandkit-\${idx}"
-                      style="accent-color:#a78bfa; width:14px; height:14px;">
-                    <span>Brand Template</span>
-                  </label>
+                  <!-- Per-moment Brand Template selector. Replaces the
+                       legacy on/off checkbox + global selectedTemplateId
+                       indirection with a real dropdown so the user can
+                       pick a different template per moment. populateBrand
+                       SelectsAfterRender() lazy-fetches /brand-templates
+                       /list and fills the <option>s on first moments
+                       modal open; the chosen template id rides on the
+                       /shorts/clip request via selectedBrandTemplateId.
+                       The Edit link deep-links straight to the
+                       Settings → Brand Templates tab. -->
+                  <div class="moment-brand-selector" style="display:inline-flex; align-items:center; gap:6px; flex-wrap:nowrap;">
+                    <select id="brand-template-\${idx}" class="clip-tool-select brand-template-select" onchange="onBrandTemplateChange(this, \${idx})" title="Brand Template" style="max-width:170px;">
+                      <option value="">No brand template</option>
+                    </select>
+                    <img id="brand-logo-\${idx}" class="brand-logo-preview" src="" alt=""
+                      style="display:none; width:24px; height:24px; object-fit:cover; border-radius:5px; border:1px solid rgba(255,255,255,0.10); background:#0a0612; flex-shrink:0;">
+                    <a href="/settings?section=brandtemplates" class="brand-edit-link" title="Edit brand templates in Settings"
+                      style="font-size:11px; font-weight:600; color:#c4b5fd; text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid rgba(108,58,237,0.30); background:rgba(108,58,237,0.10); letter-spacing:0.02em; transition:background .15s, transform .15s; white-space:nowrap;"
+                      onmouseenter="this.style.background='rgba(108,58,237,0.22)';this.style.transform='translateY(-1px)'"
+                      onmouseleave="this.style.background='rgba(108,58,237,0.10)';this.style.transform='none'">Edit</a>
+                  </div>
                 </div>
               </div>
 
@@ -10037,6 +10053,13 @@ ${paginationHtml}
           }
           container.appendChild(card);
         });
+
+        // Populate the per-moment Brand Template selectors with the
+        // user's saved templates. Lazy — fetches /brand-templates/list
+        // once per session, then fills every <select id^=brand-template->
+        // currently in the DOM. The chosen value persists per moment
+        // via localStorage so reopening the modal restores selection.
+        populateBrandSelectsAfterRender();
 
         // Re-attach the per-card progress bar to any moment whose clip is
         // still rendering in the background (e.g. user closed the modal,
@@ -10613,6 +10636,77 @@ ${paginationHtml}
     }
     setInterval(refreshBackgroundRenderBanner, 5000);
 
+    // ── Brand Template selectors ─────────────────────────────────────
+    // populateBrandSelectsAfterRender() runs after the moments modal
+    // appends its cards. Fetches /brand-templates/list once per session
+    // (cached in window.__brandTemplates) and fills each
+    // <select id^=brand-template-…> with the saved templates. The
+    // logo preview thumbnail next to each select is updated by
+    // updateBrandLogoPreview() whenever the selection changes; the
+    // chosen template id is remembered per moment via localStorage so
+    // reopening the modal keeps the user's choice.
+    async function populateBrandSelectsAfterRender() {
+      var selectors = document.querySelectorAll('select.brand-template-select');
+      if (!selectors.length) return;
+      try {
+        if (!window.__brandTemplates) {
+          var r = await fetch('/brand-templates/list');
+          if (r && r.ok) {
+            var d = await r.json();
+            window.__brandTemplates = Array.isArray(d.templates) ? d.templates : [];
+          } else {
+            window.__brandTemplates = [];
+          }
+        }
+        selectors.forEach(populateBrandSelect);
+      } catch (e) {
+        console.warn('[brand templates] load failed:', e && e.message);
+      }
+    }
+    function populateBrandSelect(sel) {
+      if (!sel) return;
+      // Wipe any options past the first ('No brand template') so
+      // re-population is idempotent across modal opens.
+      while (sel.options.length > 1) sel.remove(1);
+      var templates = window.__brandTemplates || [];
+      templates.forEach(function(t) {
+        if (!t || !t.id) return;
+        var opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = t.name || 'Untitled template';
+        if (t.logoUrl) opt.dataset.logoUrl = t.logoUrl;
+        sel.appendChild(opt);
+      });
+      // Restore previous selection (per moment).
+      try {
+        var remembered = localStorage.getItem(sel.id);
+        if (remembered) {
+          var match = Array.from(sel.options).find(function(o) { return o.value === remembered; });
+          if (match) sel.value = remembered;
+        }
+      } catch (e) {}
+      updateBrandLogoPreview(sel);
+    }
+    function onBrandTemplateChange(sel, momentIdx) {
+      try { localStorage.setItem(sel.id, sel.value || ''); } catch (e) {}
+      updateBrandLogoPreview(sel);
+    }
+    function updateBrandLogoPreview(sel) {
+      if (!sel) return;
+      var idx = sel.id.replace('brand-template-', '');
+      var img = document.getElementById('brand-logo-' + idx);
+      if (!img) return;
+      var opt = sel.options[sel.selectedIndex];
+      var logoUrl = (opt && opt.dataset && opt.dataset.logoUrl) ? opt.dataset.logoUrl : '';
+      if (logoUrl) {
+        img.src = logoUrl;
+        img.style.display = 'inline-block';
+      } else {
+        img.style.display = 'none';
+        img.removeAttribute('src');
+      }
+    }
+
     async function downloadClip(analysisId, momentIndex, btn) {
       const originalText = btn.textContent;
       btn.disabled = true;
@@ -10629,15 +10723,13 @@ ${paginationHtml}
                 const captionStyle = captionStyleSelect ? captionStyleSelect.value : 'classic';
 
       try {
-        // Per-clip Brand Template toggle
-        const brandKitCheckbox = document.getElementById('brandkit-' + momentIndex);
-        const applyBrandKit = brandKitCheckbox ? brandKitCheckbox.checked : true;
-
-        // Pull the user's currently-selected brand template (set via the
-        // shared Brand Kit modal's Select button on /shorts). Server applies
-        // it when applyBrandKit is true.
-        let selectedBrandTemplateId = null;
-        try { selectedBrandTemplateId = localStorage.getItem('brandKitSelectedTemplateId') || null; } catch (e) {}
+        // Per-clip Brand Template selector. The new dropdown was
+        // populated by populateBrandSelectsAfterRender() with the user's
+        // saved templates; empty value means 'no brand template' and the
+        // server skips the logo/watermark overlay entirely.
+        const brandTemplateSelect = document.getElementById('brand-template-' + momentIndex);
+        const selectedBrandTemplateId = (brandTemplateSelect && brandTemplateSelect.value) ? brandTemplateSelect.value : null;
+        const applyBrandKit = !!selectedBrandTemplateId;
 
         // Request clip generation
         const response = await fetch('/shorts/clip', {
