@@ -210,7 +210,10 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/video-editor', icon: '<img src="/images/section-icons/A-2.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
     // --- AI & Creative Tools ---
     { href: '/ai-captions', icon: '<img src="/images/section-icons/A-3.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
-    { href: '/caption-presets', icon: '<img src="/images/section-icons/A-4.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
+    // Caption Styles intentionally removed from the sidebar — it's now reached
+    // via the 'Add Captions' button inside AI Captions > Presets. The /caption-
+    // presets route itself is still mounted (see server.js) and remains
+    // directly reachable by URL or by the in-app link from AI Captions.
     { href: '/ai-hook', icon: '<img src="/images/section-icons/A-5.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
     { href: '/ai-reframe', icon: '<img src="/images/section-icons/A-6.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
     { href: '/ai-thumbnail', icon: '<img src="/images/section-icons/A-103.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
