@@ -1567,71 +1567,122 @@ function closeBrollSelectionModal() {
 
 async function confirmBrollSelection() {
   var ids = (window.__selectedClipIds || []).slice();
-  if (ids.length === 0) {
-    showToast('Pick at least one clip first');
+  if (ids.length === 0) { showToast('Pick at least one scene first'); return; }
+
+  // Need a primary video to splice into. If none is staged, try to import the
+  // URL from heroLinkInput now.
+  var hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
+  var sourceUrl = !hasPrimary ? ((document.getElementById('heroLinkInput') || {}).value || '').trim() : '';
+  var btn = document.getElementById('brollConfirmBtn');
+  if (btn) { btn.disabled = true; }
+
+  if (!hasPrimary && sourceUrl && /^https?:\/\//i.test(sourceUrl) && window.__aiBrollImportUrlAsPrimary) {
+    try {
+      if (btn) btn.textContent = 'Importing primary video...';
+      await window.__aiBrollImportUrlAsPrimary(sourceUrl);
+      hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
+    } catch (err) {
+      showToast('Primary import failed: ' + (err.message || err));
+      if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
+      return;
+    }
+  }
+  if (!hasPrimary) {
+    showToast('Upload or paste a video URL first so we know what to splice into.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
     return;
   }
-  var btn = document.getElementById('brollConfirmBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Staging…'; }
-  var staged = 0, failed = 0;
-  // Iterate IN SELECTION ORDER so the editor V1 timeline matches the user\'s selection sequence.
-  for (var i = 0; i < ids.length; i++) {
-    var id = ids[i];
-    var item = (window.brollItemsData || []).find(function (x) { return x.id === id; });
-    if (!item) { failed++; continue; }
-    var dl = item.videoDownloadUrl || item.videoPreviewUrl;
-    if (!dl || !/^https:\\/\\//i.test(dl)) { failed++; continue; }
+
+  // Collect selected scenes from the live items array using the position +
+  // duration selects rendered into each card.
+  var items = window.__brollItemsLive || [];
+  var brollScenes = [];
+  ids.forEach(function (id) {
+    var item = items.find(function (x) { return x.id === id; });
+    if (!item) return;
+    var card = document.querySelector('#brollSelectionGrid [data-item-id="' + id + '"]');
+    var posEl = card && card.querySelector('[data-role="position"]');
+    var durEl = card && card.querySelector('[data-role="duration"]');
+    brollScenes.push({
+      videoUrl: item.videoDownloadUrl || item.videoPreviewUrl,
+      position: posEl ? posEl.value : 'middle',
+      duration: durEl ? parseInt(durEl.value, 10) : 5
+    });
+  });
+
+  // Stop all the preview videos to free CPU + bandwidth during the render
+  document.querySelectorAll('#brollSelectionGrid video').forEach(function (v) { try { v.pause(); } catch (_) {} });
+
+  if (btn) btn.textContent = 'Rendering... (this can take a few minutes)';
+
+  // Kick off the server-side render
+  var rendering;
+  try {
+    var r = await fetch('/ai-broll/render-with-broll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primary: window.__aiBrollState.primary, brollScenes: brollScenes })
+    });
+    rendering = await r.json();
+    if (!r.ok) throw new Error(rendering.error || 'Render request failed');
+  } catch (err) {
+    showToast('Could not start render: ' + (err.message || err));
+    if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
+    return;
+  }
+
+  // Render the in-modal "rendering..." state
+  var grid = document.getElementById('brollSelectionGrid');
+  var sub = document.getElementById('brollSelectionSubtitle');
+  if (sub) sub.textContent = 'Building your final clip with the B-roll spliced in. This usually takes 1-3 minutes depending on length.';
+  if (grid) {
+    grid.style.display = 'flex';
+    grid.style.flexDirection = 'column';
+    grid.style.alignItems = 'center';
+    grid.style.justifyContent = 'center';
+    grid.style.minHeight = '180px';
+    grid.innerHTML =
+      '<div style="text-align:center;padding:30px 20px;width:100%">' +
+        '<div style="font-size:0.95rem;color:var(--text);margin-bottom:14px" id="aiBrollRenderStatus">Starting render...</div>' +
+        '<div style="width:80%;max-width:480px;margin:0 auto;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">' +
+          '<div id="aiBrollRenderPulse" style="height:100%;width:30%;background:linear-gradient(90deg,#6C3AED,#EC4899);border-radius:3px;animation:aiBrollPulse 1.8s ease-in-out infinite"></div>' +
+        '</div>' +
+        '<style>@keyframes aiBrollPulse { 0%,100%{margin-left:0%}50%{margin-left:70%} }</style>' +
+      '</div>';
+  }
+
+  // Poll status until ready or error (max 12 minutes)
+  var statusEl = document.getElementById('aiBrollRenderStatus');
+  var deadline = Date.now() + 12 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await new Promise(function (r) { setTimeout(r, 2500); });
     try {
-      var r = await fetch('/ai-broll/download-inline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: dl, name: item.name })
-      });
-      var data = await r.json();
-      if (!r.ok || !data.filename) { failed++; continue; }
-      if (window.__aiBrollStageClip) {
-        window.__aiBrollStageClip({
-          filename: data.filename,
-          name: item.name,
-          duration: data.duration || item.duration || 0,
-          serveUrl: data.mediaUrl
-        });
-      }
-      staged++;
-    } catch (err) { failed++; }
-  }
-  if (btn) { btn.disabled = false; }
-  closeBrollSelectionModal();
-
-  if (staged > 0) {
-    // ─── If we have a YouTube/source URL but no primary staged yet, import it
-    //     now so the primary lands on V1 and the selected B-roll on V2/V1+ ───
-    var hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
-    var sourceUrl = !hasPrimary ? ((document.getElementById('heroLinkInput') || {}).value || '').trim() : '';
-    var importingMsg = (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) ? 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + '. Importing primary video…' : null;
-    var openingMsg = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + ', opening editor in a new tab…';
-    if (failed > 0) openingMsg += ' (' + failed + ' failed to download)';
-    if (importingMsg) showToast(importingMsg);
-
-    (async function () {
-      // 1) If we have a source URL and no primary, try to import it as primary.
-      if (sourceUrl && !hasPrimary && /^https?:\\/\\//i.test(sourceUrl) && window.__aiBrollImportUrlAsPrimary) {
-        try {
-          await window.__aiBrollImportUrlAsPrimary(sourceUrl);
-        } catch (err) {
-          // Soft-fail — the project will be created B-roll-only with a notice.
-          showToast('Primary import failed (' + (err.message || 'unknown') + '). Continuing with B-roll only.');
+      var sr = await fetch(rendering.statusUrl);
+      var sd = await sr.json();
+      if (sd.status === 'ready') {
+        if (statusEl) statusEl.textContent = 'Done!';
+        if (grid) {
+          grid.innerHTML =
+            '<div style="text-align:center;padding:30px 20px;width:100%">' +
+              '<div style="font-size:1.05rem;color:var(--text);font-weight:600;margin-bottom:10px">Your clip is ready</div>' +
+              '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:18px">' + (Math.round(sd.sizeBytes / 1024 / 1024 * 10) / 10) + ' MB</div>' +
+              '<a href="' + sd.downloadUrl + '" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Clip with B-Roll</a>' +
+              '<div style="margin-top:14px;font-size:0.8rem;color:var(--text-muted)">You can also Cancel to close this modal and run another generation.</div>' +
+            '</div>';
         }
+        if (btn) { btn.style.display = 'none'; }
+        return;
       }
-      // 2) Open editor in a new tab.
-      showToast(openingMsg);
-      setTimeout(function () {
-        if (window.__aiBrollOpenInEditor) window.__aiBrollOpenInEditor({ newTab: true });
-      }, 400);
-    })();
-  } else {
-    showToast('Could not stage any clips. Try again.');
+      if (sd.status === 'error') {
+        if (statusEl) statusEl.textContent = 'Render failed: ' + (sd.message || 'unknown');
+        if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
+        return;
+      }
+      if (statusEl) statusEl.textContent = sd.message || 'Working...';
+    } catch (_) { /* keep polling */ }
   }
+  if (statusEl) statusEl.textContent = 'Timed out. Try again with fewer or shorter B-roll scenes.';
+  if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
 }
 
 // ═══ AI B-Roll media ingestion + project handoff (client) ═══
@@ -2894,6 +2945,276 @@ router.post('/create-project', requireAuth, async (req, res) => {
     console.error('[ai-broll create-project]', err);
     res.status(500).json({ error: err.message || 'Failed to create project' });
   }
+});
+
+
+// ═════════════════════════════════════════════════════════════════════
+// POST /ai-broll/render-with-broll
+// Splice selected B-roll clips into the primary video and produce a single
+// downloadable mp4. Returns immediately with a filename + statusUrl; the
+// actual ffmpeg work runs in the background. Client polls /render-status.
+// Body: { primary: {filename}, brollScenes: [{videoUrl, position, duration, insertSec?}] }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/render-with-broll', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath) {
+      return res.status(503).json({ error: 'ffmpeg not available on this server' });
+    }
+    var body = req.body || {};
+    var primary = body.primary || {};
+    var brollScenes = Array.isArray(body.brollScenes) ? body.brollScenes : [];
+    if (!primary.filename) return res.status(400).json({ error: 'primary.filename is required' });
+    if (brollScenes.length === 0) return res.status(400).json({ error: 'At least one B-roll scene is required' });
+
+    var primaryPath = resolveStagedFile(primary.filename);
+    if (!primaryPath || !fs.existsSync(primaryPath)) {
+      return res.status(404).json({ error: 'Primary video not found on server. Re-import it and try again.' });
+    }
+
+    var safeName = String(primary.originalName || 'video').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 30);
+    var filename = safeName + '_broll_' + Date.now() + '.mp4';
+    var outputPath = path.join(outputDir, filename);
+    var progressPath = outputPath + '.progress';
+
+    function writeProgress(msg) { try { fs.writeFileSync(progressPath, msg); } catch (_) {} }
+    function writeError(msg) {
+      try { fs.unlinkSync(progressPath); } catch (_) {}
+      try { fs.unlinkSync(outputPath); } catch (_) {}
+      try { fs.writeFileSync(outputPath + '.error', msg); } catch (_) {}
+    }
+
+    // Respond immediately so the client can start polling.
+    res.json({
+      success: true,
+      status: 'processing',
+      filename: filename,
+      statusUrl: '/ai-broll/render-status/' + encodeURIComponent(filename),
+      downloadUrl: '/video-editor/download/' + filename
+    });
+
+    // ─── Background ffmpeg pipeline ───
+    (async function () {
+      var tempFiles = [];
+      var timeoutHandle = setTimeout(function () { writeError('Timed out after 12 minutes'); }, 12 * 60 * 1000);
+
+      function runFFmpeg(args, timeoutMs) {
+        return new Promise(function (resolve, reject) {
+          var proc = spawn(ffmpegPath, args);
+          var stderr = '';
+          proc.stderr.on('data', function (d) {
+            stderr += d.toString();
+            var m = d.toString().match(/time=(\d+:\d+:\d+)/);
+            if (m) writeProgress('Encoding: ' + m[1]);
+          });
+          proc.on('error', reject);
+          proc.on('close', function (code) {
+            if (code === 0) resolve();
+            else reject(new Error('ffmpeg exit ' + code + ': ' + stderr.slice(-400)));
+          });
+          if (timeoutMs) setTimeout(function () { try { proc.kill('SIGKILL'); } catch (_) {} reject(new Error('ffmpeg timed out')); }, timeoutMs);
+        });
+      }
+
+      function ffprobe(filePath) {
+        return new Promise(function (resolve) {
+          var ffprobeBin = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+          var p = spawn(ffprobeBin, [
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height : format=duration',
+            '-of', 'json', filePath
+          ]);
+          var out = '';
+          p.stdout.on('data', function (d) { out += d.toString(); });
+          p.on('close', function () {
+            try {
+              var j = JSON.parse(out);
+              var s = (j.streams && j.streams[0]) || {};
+              var f = j.format || {};
+              resolve({
+                width: parseInt(s.width, 10) || 1920,
+                height: parseInt(s.height, 10) || 1080,
+                duration: parseFloat(f.duration) || 0
+              });
+            } catch (_) { resolve({ width: 1920, height: 1080, duration: 0 }); }
+          });
+          p.on('error', function () { resolve({ width: 1920, height: 1080, duration: 0 }); });
+        });
+      }
+
+      try {
+        // STEP 1: probe primary to learn resolution + duration
+        writeProgress('Reading primary video...');
+        var meta = await ffprobe(primaryPath);
+        var W = meta.width, H = meta.height, primaryDur = meta.duration;
+        if (primaryDur < 1) throw new Error('Primary video has no readable duration');
+
+        // STEP 2: download + reformat each B-roll clip
+        writeProgress('Downloading B-roll clips...');
+        var brollSegments = [];
+        for (var i = 0; i < brollScenes.length; i++) {
+          var scene = brollScenes[i];
+          var url = scene.videoUrl || scene.videoDownloadUrl || scene.videoPreviewUrl;
+          if (!url) continue;
+          writeProgress('Downloading B-roll ' + (i + 1) + '/' + brollScenes.length + '...');
+          var rawPath = outputPath + '.broll_raw_' + i + '.mp4';
+          var fmtPath = outputPath + '.broll_fmt_' + i + '.mp4';
+          tempFiles.push(rawPath, fmtPath);
+          try {
+            // Download via https (follow redirects)
+            await new Promise(function (resolve, reject) {
+              function fetchUrl(u, depth) {
+                if (depth > 5) return reject(new Error('Too many redirects'));
+                https.get(u, function (resp) {
+                  if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                    resp.resume();
+                    return fetchUrl(resp.headers.location, depth + 1);
+                  }
+                  if (resp.statusCode !== 200) return reject(new Error('HTTP ' + resp.statusCode));
+                  var ws = fs.createWriteStream(rawPath);
+                  resp.pipe(ws);
+                  ws.on('finish', resolve);
+                  ws.on('error', reject);
+                }).on('error', reject);
+              }
+              fetchUrl(url, 0);
+            });
+
+            // Reformat: scale to primary resolution, trim to chosen duration
+            var brollDur = Math.min(parseFloat(scene.duration) || 5, 12);
+            await runFFmpeg([
+              '-y', '-i', rawPath,
+              '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100', '-t', String(brollDur),
+              '-vf', 'scale=' + W + ':' + H + ':force_original_aspect_ratio=increase:flags=lanczos,crop=' + W + ':' + H + ',setsar=1',
+              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+              '-c:a', 'aac', '-b:a', '128k', '-map', '0:v:0', '-map', '1:a:0', '-shortest',
+              '-movflags', '+faststart',
+              fmtPath
+            ], 120000);
+
+            brollSegments.push({
+              path: fmtPath,
+              position: scene.position || 'middle',
+              insertSec: scene.insertSec != null ? parseFloat(scene.insertSec) : null,
+              duration: brollDur
+            });
+          } catch (e) {
+            console.error('[ai-broll render] B-roll ' + i + ' failed:', e.message);
+          }
+        }
+
+        if (brollSegments.length === 0) throw new Error('All B-roll downloads failed');
+
+        // STEP 3: compute insertion points
+        var sorted = brollSegments.map(function (b) {
+          var at;
+          if (b.insertSec != null) at = b.insertSec;
+          else if (b.position === 'beginning') at = Math.min(3, primaryDur * 0.05);
+          else if (b.position === 'end') at = Math.max(primaryDur - 8, primaryDur * 0.85);
+          else if (b.position === 'quarter') at = primaryDur * 0.25;
+          else if (b.position === 'three-quarter') at = primaryDur * 0.75;
+          else at = primaryDur * 0.5;
+          return Object.assign({}, b, { insertAt: Math.max(0.5, Math.min(at, primaryDur - 0.5)) });
+        }).sort(function (a, b) { return a.insertAt - b.insertAt; });
+
+        // STEP 4: split primary at each insertion point + interleave B-roll
+        writeProgress('Splicing B-roll into primary...');
+        var parts = [];
+        var cursor = 0;
+        for (var j = 0; j < sorted.length; j++) {
+          var br = sorted[j];
+          if (br.insertAt > cursor + 0.5) {
+            var pPart = outputPath + '.part_main_' + j + '.mp4';
+            tempFiles.push(pPart);
+            await runFFmpeg([
+              '-y', '-ss', String(cursor), '-i', primaryPath,
+              '-t', String(br.insertAt - cursor),
+              '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
+              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+              '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+              '-movflags', '+faststart', pPart
+            ], 120000);
+            parts.push(pPart);
+          }
+          parts.push(br.path);
+          cursor = br.insertAt;
+        }
+        if (cursor < primaryDur - 0.5) {
+          var lastPart = outputPath + '.part_main_last.mp4';
+          tempFiles.push(lastPart);
+          await runFFmpeg([
+            '-y', '-ss', String(cursor), '-i', primaryPath,
+            '-t', String(primaryDur - cursor),
+            '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+            '-movflags', '+faststart', lastPart
+          ], 120000);
+          parts.push(lastPart);
+        }
+
+        // STEP 5: concat all parts
+        writeProgress('Combining final video...');
+        var concatList = outputPath + '.concat.txt';
+        tempFiles.push(concatList);
+        fs.writeFileSync(concatList, parts.map(function (p) { return "file '" + p.replace(/'/g, "'\\''") + "'"; }).join('\n'), 'utf8');
+        await runFFmpeg([
+          '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+          '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
+          outputPath
+        ], 240000);
+
+        clearTimeout(timeoutHandle);
+        if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 50000) {
+          throw new Error('Final encoding produced empty/invalid file');
+        }
+        try { fs.unlinkSync(progressPath); } catch (_) {}
+        tempFiles.forEach(function (f) { try { fs.unlinkSync(f); } catch (_) {} });
+        console.log('[ai-broll render] ready:', filename);
+
+        // Log usage for storage breakdown
+        try { featureUsageOps.log(req.user.id, 'ai_broll_render').catch(function(){}); } catch(_) {}
+      } catch (err) {
+        clearTimeout(timeoutHandle);
+        console.error('[ai-broll render]', err);
+        writeError(err.message || 'Render failed');
+        tempFiles.forEach(function (f) { try { fs.unlinkSync(f); } catch (_) {} });
+      }
+    })();
+  } catch (err) {
+    console.error('[ai-broll render outer]', err);
+    res.status(500).json({ error: err.message || 'Render failed' });
+  }
+});
+
+// GET /ai-broll/render-status/:filename — poll progress / completion
+router.get('/render-status/:filename', requireAuth, function (req, res) {
+  var filename = String(req.params.filename || '').replace(/[^A-Za-z0-9_.\-]/g, '');
+  if (!filename) return res.status(400).json({ error: 'invalid filename' });
+  var outputPath = path.join(outputDir, filename);
+  var progressPath = outputPath + '.progress';
+  var errorPath = outputPath + '.error';
+
+  if (fs.existsSync(errorPath)) {
+    var errMsg = 'Render failed';
+    try { errMsg = fs.readFileSync(errorPath, 'utf8'); } catch (_) {}
+    return res.json({ status: 'error', message: errMsg });
+  }
+  if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 50000) {
+    return res.json({
+      status: 'ready',
+      downloadUrl: '/video-editor/download/' + filename,
+      sizeBytes: fs.statSync(outputPath).size
+    });
+  }
+  if (fs.existsSync(progressPath)) {
+    var msg = 'Working...';
+    try { msg = fs.readFileSync(progressPath, 'utf8'); } catch (_) {}
+    return res.json({ status: 'processing', message: msg });
+  }
+  res.json({ status: 'unknown', message: 'No active render for this filename' });
 });
 
 
