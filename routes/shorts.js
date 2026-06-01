@@ -9985,7 +9985,7 @@ ${paginationHtml}
                       <option value="">No brand template</option>
                     </select>
                     <img id="brand-logo-\${idx}" class="brand-logo-preview" src="" alt=""
-                      style="display:none; width:24px; height:24px; object-fit:cover; border-radius:5px; border:1px solid rgba(255,255,255,0.10); background:#0a0612; flex-shrink:0;">
+                      style="display:none; height:26px; width:auto; max-width:72px; min-width:26px; object-fit:contain; border-radius:5px; border:1px solid rgba(255,255,255,0.10); background:#0a0612; flex-shrink:0; padding:2px;">
                     <a href="/settings?section=brandtemplates" class="brand-edit-link" title="Edit brand templates in Settings"
                       style="font-size:11px; font-weight:600; color:#c4b5fd; text-decoration:none; padding:3px 8px; border-radius:6px; border:1px solid rgba(108,58,237,0.30); background:rgba(108,58,237,0.10); letter-spacing:0.02em; transition:background .15s, transform .15s; white-space:nowrap;"
                       onmouseenter="this.style.background='rgba(108,58,237,0.22)';this.style.transform='translateY(-1px)'"
