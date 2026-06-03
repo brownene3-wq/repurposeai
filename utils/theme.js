@@ -237,7 +237,11 @@ function getSidebar(activePage, user, teamPermissions) {
     // server.js so the page still loads if anyone hits the URL directly.
     // { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-113.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
-    { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    // Hidden per Albert — Brand Voice now lives as a tab inside
+    // /settings. /brand-voice route stays mounted in server.js so the
+    // Settings iframe + any other consumers (apply-voice endpoints,
+    // direct links) continue to work. One-line uncomment to revert.
+    // { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
     // Brand Templates moved into /settings as a tab. The standalone
     // /brand-templates route is still mounted so the iframe + save
     // API + Brand Kit modal CTAs continue to work, but it's no longer
