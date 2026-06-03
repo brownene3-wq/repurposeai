@@ -260,6 +260,27 @@ async function downloadYouTubeVideo(videoUrl) {
   // All paths exhausted. Log the full failure trail server-side so we
   // can diagnose from Railway logs without leaking it to the user.
   console.error(`[AI Reframe] ALL download paths failed for ${videoUrl}:\n  - ` + failures.join('\n  - '));
+
+  // ---- Strategy 3: ScrapingBee paid fallback ($49.99/mo Freelance plan).
+  // When the IPRoyal proxies + ytdl-core both fail (typical when YouTube's
+  // bot detection is aggressive that hour), route a fresh yt-dlp through
+  // ScrapingBee's premium residential proxy pool.
+  try {
+    const { downloadWithScrapingBee, isScrapingBeeEnabled } = require('../utils/scrapingbee-youtube');
+    if (isScrapingBeeEnabled()) {
+      console.log('[AI Reframe] Trying ScrapingBee paid fallback...');
+      await downloadWithScrapingBee(videoUrl, outputPath, ytdlpPath || 'yt-dlp', YTDLP_COMMON_ARGS, () => {});
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
+        console.log(`[AI Reframe] ScrapingBee download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+        return outputPath;
+      }
+    } else {
+      console.log('[AI Reframe] ScrapingBee not configured (SCRAPINGBEE_API_KEY missing)');
+    }
+  } catch (err) {
+    console.log(`[AI Reframe] ScrapingBee fallback failed: ${(err && err.message || err).toString().slice(0, 200)}`);
+  }
+
   throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or YouTube may be blocking automated downloads. Try uploading the file directly.');
 }
 

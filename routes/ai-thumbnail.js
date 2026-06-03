@@ -184,6 +184,27 @@ async function downloadYouTubeVideo(videoUrl) {
     }
   }
 
+
+  // ---- Strategy 3: ScrapingBee paid fallback ($49.99/mo Freelance plan).
+  // When the IPRoyal proxies + ytdl-core both fail (typical when YouTube's
+  // bot detection is aggressive that hour), route a fresh yt-dlp through
+  // ScrapingBee's premium residential proxy pool.
+  try {
+    const { downloadWithScrapingBee, isScrapingBeeEnabled } = require('../utils/scrapingbee-youtube');
+    if (isScrapingBeeEnabled()) {
+      console.log('[AI Thumbnail] Trying ScrapingBee paid fallback...');
+      await downloadWithScrapingBee(videoUrl, outputPath, ytdlpPath || 'yt-dlp', YTDLP_COMMON_ARGS, () => {});
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
+        console.log(`[AI Thumbnail] ScrapingBee download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+        return outputPath;
+      }
+    } else {
+      console.log('[AI Thumbnail] ScrapingBee not configured (SCRAPINGBEE_API_KEY missing)');
+    }
+  } catch (err) {
+    console.log(`[AI Thumbnail] ScrapingBee fallback failed: ${(err && err.message || err).toString().slice(0, 200)}`);
+  }
+
   throw new Error('YOUTUBE_DOWNLOAD_FAILED');
 }
 
