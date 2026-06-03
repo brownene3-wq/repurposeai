@@ -358,7 +358,7 @@ router.get('/', async (req, res) => {
 </head>
 <body>
  <nav class="nav"><div class="nav-inner">
-    <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:46px;"></a>
+    <a href="/" class="nav-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:46px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:46px;"></a>
     <button class="mobile-nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mobile-open')">&#9776;</button>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -938,7 +938,7 @@ router.get('/', async (req, res) => {
   <footer class="footer">
     <div class="footer-grid">
       <div class="footer-brand">
-        <a href="/" class="nav-logo"><img src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:46px;"></a>
+        <a href="/" class="nav-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:46px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:46px;"></a>
         <p>AI-powered content creation platform. Turn one YouTube video into optimized content for every major social platform.</p>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#how-it-works">How It Works</a><a href="/dashboard">Dashboard</a><a href="#get-app" style="color:var(--primary-light)"><img src="/images/splicora-app-icon.png?v=5" alt="" style="height:14px;border-radius:3px;vertical-align:middle;margin-right:4px;">Get the App</a></div>
