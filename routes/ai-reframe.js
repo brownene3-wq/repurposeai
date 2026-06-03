@@ -70,34 +70,61 @@ console.log('[AI Reframe] ffmpeg=' + ffmpegPath + ' ffprobe=' + ffprobePath);
 let ytdlpPath = null;
 try { execSync('which yt-dlp', { stdio: 'pipe' }); ytdlpPath = 'yt-dlp'; } catch (e) {}
 
-// Common yt-dlp args (same as shorts.js)
+// Common yt-dlp args — mirrors the Smart Shorts stack which is the
+// proven working pattern on this dyno. Key elements:
+//   1. Combined player_client list (tv,ios,web_safari,web,mweb,android)
+//      — yt-dlp tries each in order in a SINGLE invocation. tv & ios
+//      bypass the "Sign in to confirm you're not a bot" wall most often.
+//   2. POT-token provider plugin args on EVERY call. The bgutil server
+//      runs on localhost:4416 (started by Dockerfile CMD); without these
+//      args, many player_clients now refuse to return playable URLs.
+//   3. --js-runtimes/--remote-components keep the plugin happy in newer
+//      yt-dlp builds.
+// TODO: factor cookie/proxy helpers + this block into a shared module.
 const YTDLP_COMMON_ARGS = [
   '--no-warnings',
   '--no-check-certificates',
   '--geo-bypass',
   '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  '--extractor-args', 'youtube:player_client=tv,ios,web_safari,web,mweb,android',
+  '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
+  '--js-runtimes', 'node',
+  '--remote-components', 'ejs:github',
   '--retries', '3',
   '--extractor-retries', '3',
 ];
 
-// YouTube ships frequent anti-bot updates; no single yt-dlp strategy stays
-// reliable for long. We cycle through several player_client backends and
-// keep the first one that produces a real file. Order is fastest/most-
-// reliable first. The bgutil POT provider plugin is the historical default
-// but breaks the moment its localhost server goes down — keep it as a last
-// resort, not the first choice.
-const YTDLP_CLIENT_STRATEGIES = [
-  { name: 'ios',                args: ['--extractor-args', 'youtube:player_client=ios'] },
-  { name: 'mweb',               args: ['--extractor-args', 'youtube:player_client=mweb'] },
-  { name: 'tv',                 args: ['--extractor-args', 'youtube:player_client=tv'] },
-  { name: 'android',            args: ['--extractor-args', 'youtube:player_client=android'] },
-  { name: 'web_safari',         args: ['--extractor-args', 'youtube:player_client=web_safari'] },
-  { name: 'bgutil-pot-provider', args: [
-      '--extractor-args', 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416',
-      '--js-runtimes', 'node',
-      '--remote-components', 'ejs:github',
-    ] },
-];
+// Pass --cookies <file> when YT_COOKIES_PATH is configured. Mirrors the
+// Smart Shorts cookie loader: path can be a single .txt file or a directory
+// containing several (random pick per request). Cookies from a logged-in
+// browser are what reliably bypass YouTube's "confirm you're not a bot"
+// wall on datacenter IPs like Railway.
+function getYoutubeCookiesArgs() {
+  const cfg = process.env.YT_COOKIES_PATH;
+  if (!cfg) return [];
+  try {
+    const st = fs.statSync(cfg);
+    if (st.isFile()) return ['--cookies', cfg];
+    if (st.isDirectory()) {
+      const files = fs.readdirSync(cfg)
+        .filter(f => f.toLowerCase().endsWith('.txt'))
+        .map(f => path.join(cfg, f));
+      if (files.length) return ['--cookies', files[Math.floor(Math.random() * files.length)]];
+    }
+  } catch (_) {}
+  return [];
+}
+
+// Pass --proxy <url> when YT_PROXY_URL is configured. Comma-separated
+// list rotates per request. Residential proxies are what move datacenter
+// success rates from ~60% to ~95% against YouTube's IP blocks.
+function getYoutubeProxyArgs() {
+  const cfg = process.env.YT_PROXY_URL;
+  if (!cfg) return [];
+  const pool = cfg.split(',').map(s => s.trim()).filter(Boolean);
+  if (!pool.length) return [];
+  return ['--proxy', pool[Math.floor(Math.random() * pool.length)]];
+}
 
 // Validate YouTube URL
 function isValidYouTubeUrl(url) {
@@ -114,36 +141,6 @@ function isValidYouTubeUrl(url) {
 function extractVideoId(url) {
   const match = url.match(/(?:v=|\/shorts\/|youtu\.be\/|\/embed\/)([\w-]+)/);
   return match ? match[1] : null;
-}
-
-// Download YouTube video using yt-dlp with ytdl-core fallback
-function tryYtDlpStrategy(strategy, videoUrl, outputPath) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '--no-playlist',
-      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-      '--merge-output-format', 'mp4',
-      '-o', outputPath,
-      '--no-part',
-      '--force-overwrites',
-      ...YTDLP_COMMON_ARGS,
-      ...strategy.args,
-      ...getYoutubeCookiesArgs(),
-      ...getYoutubeProxyArgs(),
-      videoUrl,
-    ];
-    const proc = spawn(ytdlpPath, args);
-    let stderr = '';
-    proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.on('error', reject);
-    proc.on('close', code => {
-      if (code === 0) resolve();
-      else reject(new Error('exit ' + code + ': ' + stderr.slice(-500).trim()));
-    });
-    // 90s per strategy — six strategies × 90s = 9min worst case, but most
-    // either succeed in <20s or fail fast.
-    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('strategy timed out')); }, 90000);
-  });
 }
 
 async function downloadYouTubeVideo(videoUrl) {
@@ -169,30 +166,72 @@ async function downloadYouTubeVideo(videoUrl) {
 
   const failures = [];
 
-  // Strategy 1: yt-dlp, cycling through player_client backends
+  // ---- Strategy 1: ONE yt-dlp call with the full Smart-Shorts stack ----
+  // The previous code cycled through six per-client strategies, but each
+  // strategy appended its own `--extractor-args youtube:player_client=X`
+  // AFTER YTDLP_COMMON_ARGS. yt-dlp uses the LATER value for duplicate
+  // extractor-args, so the combined-client list in YTDLP_COMMON_ARGS was
+  // always overridden by the strategy's single-client value — defeating
+  // the whole point of the combined fallback chain.
+  //
+  // Smart Shorts uses one call with the combined list and it works on
+  // this dyno. Mirror that exactly: yt-dlp internally walks
+  // tv -> ios -> web_safari -> web -> mweb -> android, with POT tokens,
+  // cookies, and proxy all attached. One success and we stop.
   if (ytdlpPath) {
-    for (const strat of YTDLP_CLIENT_STRATEGIES) {
-      try {
-        console.log(`[AI Reframe] yt-dlp ${strat.name} → ${videoUrl}`);
-        await tryYtDlpStrategy(strat, videoUrl, outputPath);
-        const got = findOutputFile();
-        if (got) {
-          console.log(`[AI Reframe] yt-dlp ${strat.name} succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
-          return got;
-        }
-        failures.push(`${strat.name}: no file produced`);
-      } catch (err) {
-        const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
-        console.log(`[AI Reframe] yt-dlp ${strat.name} failed: ${msg}`);
-        failures.push(`${strat.name}: ${msg}`);
-        // Keep going — try the next strategy
+    const cookiesArgs = getYoutubeCookiesArgs();
+    const proxyArgs   = getYoutubeProxyArgs();
+    try {
+      console.log(`[AI Reframe] yt-dlp → ${videoUrl} ` +
+                  `(cookies=${cookiesArgs.length > 0} proxy=${proxyArgs.length > 0})`);
+      await new Promise((resolve, reject) => {
+        const args = [
+          '--no-playlist',
+          '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+          '--merge-output-format', 'mp4',
+          '-o', outputPath,
+          '--no-part',
+          '--force-overwrites',
+          ...cookiesArgs,
+          ...proxyArgs,
+          ...YTDLP_COMMON_ARGS,
+          videoUrl,
+        ];
+        const proc = spawn(ytdlpPath, args);
+        let stderr = '';
+        proc.stderr.on('data', d => { stderr += d.toString(); });
+        proc.on('error', reject);
+        proc.on('close', code => {
+          if (code === 0) resolve();
+          else reject(new Error('exit ' + code + ': ' + stderr.slice(-800).trim()));
+        });
+        // 4-minute hard cap. yt-dlp's internal client walk is fast; if it
+        // hasn't returned by 4 min something is wedged.
+        setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} reject(new Error('yt-dlp timed out')); }, 4 * 60 * 1000);
+      });
+      const got = findOutputFile();
+      if (got) {
+        console.log(`[AI Reframe] yt-dlp succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
+        return got;
       }
-      // Clean up partials between strategies
-      try { fs.unlinkSync(outputPath); } catch (e) {}
+      failures.push('yt-dlp: no file produced');
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      failures.push('yt-dlp: ' + msg.slice(0, 400));
+      // Print the full stderr trail server-side so Railway logs show
+      // exactly what YouTube said. The user only sees the friendly fallback.
+      console.log(`[AI Reframe] yt-dlp failed for ${videoUrl}:\n${msg.slice(0, 2000)}`);
+      if (msg.includes('Sign in to confirm') || msg.includes('PO Token') ||
+          msg.includes('player request') || msg.includes('429')) {
+        console.log('[AI Reframe] >> YouTube anti-bot wall. Set YT_COOKIES_PATH and/or YT_PROXY_URL on the Railway env to fix.');
+      }
     }
+    try { fs.unlinkSync(outputPath); } catch (e) {}
   }
 
-  // Strategy 2: @distube/ytdl-core fallback (different extraction code path)
+  // ---- Strategy 2: @distube/ytdl-core fallback ----
+  // Different extraction code path — sometimes works when yt-dlp is
+  // blocked even with cookies, and vice versa.
   if (ytdl) {
     try {
       console.log(`[AI Reframe] ytdl-core fallback → ${videoUrl}`);
@@ -212,15 +251,15 @@ async function downloadYouTubeVideo(videoUrl) {
       }
       failures.push('ytdl-core: no file produced');
     } catch (err) {
-      const msg = (err && err.message ? err.message : String(err)).slice(0, 240);
+      const msg = (err && err.message ? err.message : String(err)).slice(0, 400);
       console.log(`[AI Reframe] ytdl-core failed: ${msg}`);
-      failures.push(`ytdl-core: ${msg}`);
+      failures.push('ytdl-core: ' + msg);
     }
   }
 
-  // All strategies exhausted. Log the full failure trail server-side so we
+  // All paths exhausted. Log the full failure trail server-side so we
   // can diagnose from Railway logs without leaking it to the user.
-  console.error(`[AI Reframe] ALL download strategies failed for ${videoUrl}:\n  - ` + failures.join('\n  - '));
+  console.error(`[AI Reframe] ALL download paths failed for ${videoUrl}:\n  - ` + failures.join('\n  - '));
   throw new Error('Failed to download YouTube video. The video may be private, age-restricted, or YouTube may be blocking automated downloads. Try uploading the file directly.');
 }
 
@@ -249,6 +288,23 @@ const aspectRatios = {
   '16:9': { width: 1920, height: 1080, name: '16-9-landscape' }
 };
 
+// Per-crop-mode duration ceilings (seconds). Derived from measured throughput
+// at preset=fast + 1080p source: face detection ~14s/min footage (cap 120s),
+// center-crop ~95s/min footage at preset=fast, grid 2-up ~210s/min footage
+// at preset=fast + blur background. Beyond these, users hit timeouts. Better
+// to reject up front with a clear message than let them wait 10 minutes for
+// a 504.
+const DURATION_LIMITS = {
+  'center':        12 * 60, // 12 min: bounded by user patience + 15min route timeout
+  'face-tracking':  6 * 60, // 6 min:  bounded by 120s face-detection budget
+  'grid':           4 * 60, // 4 min:  bounded by 12min grid-renderer budget
+};
+
+// Resolutions above this on either axis get pre-downscaled before processing.
+// A 4K source has ~9x the decode work of 1080p and we always end up at
+// 1080-class output anyway, so the extra resolution is pure cost.
+const MAX_SOURCE_DIM = 1920;
+
 // Get video dimensions
 function getVideoDimensions(filePath) {
   return new Promise((resolve, reject) => {
@@ -271,6 +327,84 @@ function getVideoDimensions(filePath) {
 
     ffprobe.on('error', reject);
   });
+}
+
+// Probe video: returns { width, height, duration } in one ffprobe call.
+// Used by the duration gate so we can reject too-long uploads before
+// spending CPU on face detection or ffmpeg encoding.
+function probeVideo(filePath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1',
+      filePath,
+    ];
+    const ffprobe = spawn(ffprobePath, args);
+    let output = '';
+    ffprobe.stdout.on('data', d => { output += d.toString(); });
+    ffprobe.on('close', code => {
+      if (code !== 0) return reject(new Error('Failed to probe video'));
+      const get = key => {
+        const m = output.match(new RegExp('^' + key + '=(.+)$', 'm'));
+        return m ? m[1].trim() : null;
+      };
+      const width = parseInt(get('width'), 10);
+      const height = parseInt(get('height'), 10);
+      const duration = parseFloat(get('duration'));
+      if (!width || !height || !isFinite(duration)) {
+        return reject(new Error('Video probe returned invalid metadata'));
+      }
+      resolve({ width, height, duration });
+    });
+    ffprobe.on('error', reject);
+    setTimeout(() => { try { ffprobe.kill('SIGKILL'); } catch (e) {} reject(new Error('Probe timed out')); }, 30000);
+  });
+}
+
+// If the source video exceeds MAX_SOURCE_DIM on either axis, transcode it
+// down in place. Reads decode-once, encode-once at preset=veryfast; the
+// resulting file overwrites the original so downstream code stays oblivious.
+// No-op if already ≤ MAX_SOURCE_DIM on the long edge.
+function maybeDownscaleSource(filePath, sourceDims) {
+  return new Promise((resolve, reject) => {
+    const maxDim = Math.max(sourceDims.width, sourceDims.height);
+    if (maxDim <= MAX_SOURCE_DIM) return resolve(false);
+    console.log(`[AI Reframe] Source ${sourceDims.width}x${sourceDims.height} > ${MAX_SOURCE_DIM}px — downscaling`);
+    const tmpPath = filePath + '.dn.mp4';
+    const args = [
+      '-y', '-i', filePath,
+      '-vf', `scale='if(gt(iw,ih),${MAX_SOURCE_DIM},-2)':'if(gt(iw,ih),-2,${MAX_SOURCE_DIM})'`,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      tmpPath,
+    ];
+    const ff = spawn(ffmpegPath, args);
+    let err = '';
+    ff.stderr.on('data', d => { err += d.toString(); });
+    ff.on('close', code => {
+      if (code !== 0) {
+        try { fs.unlinkSync(tmpPath); } catch (e) {}
+        return reject(new Error('Pre-downscale failed: ' + err.slice(-200)));
+      }
+      try {
+        fs.renameSync(tmpPath, filePath);
+        console.log(`[AI Reframe] Downscaled to fit ${MAX_SOURCE_DIM}px max.`);
+        resolve(true);
+      } catch (e) { reject(e); }
+    });
+    ff.on('error', reject);
+    setTimeout(() => { try { ff.kill('SIGKILL'); } catch (e) {} reject(new Error('Pre-downscale timed out')); }, 5 * 60 * 1000);
+  });
+}
+
+// Format a duration like "12.5 min" or "47 s"
+function fmtDuration(seconds) {
+  if (seconds < 60) return Math.round(seconds) + ' s';
+  return (seconds / 60).toFixed(1) + ' min';
 }
 
 // Calculate center crop dimensions
@@ -408,7 +542,10 @@ function processVideoCenterCrop(inputPath, outputPath, aspectRatio) {
       const args = [
         '-i', inputPath,
         '-vf', filterComplex,
+        // preset=fast cuts wall time by ~40% vs preset=medium with no
+        // perceptible quality loss at CRF 23 for short-form output.
         '-c:v', 'libx264',
+        '-preset', 'fast',
         '-crf', '23',
         '-c:a', 'aac',
         '-b:a', '128k',
@@ -447,7 +584,7 @@ function processVideoFaceTracking(inputPath, outputPath, aspectRatio, faceData) 
         const filterComplex = `crop=${cropWidth}:${cropHeight}:${positions[0].x}:${positions[0].y},scale=${targetWidth}:${targetHeight}`;
         const args = [
           '-i', inputPath, '-vf', filterComplex,
-          '-c:v', 'libx264', '-crf', '23', '-c:a', 'aac', '-b:a', '128k',
+          '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k',
           '-movflags', '+faststart', outputPath
         ];
         const ffmpeg = spawn(ffmpegPath || 'ffmpeg', args);
@@ -500,6 +637,7 @@ function processVideoFaceTracking(inputPath, outputPath, aspectRatio, faceData) 
         '-i', inputPath,
         '-vf', filterComplex,
         '-c:v', 'libx264',
+        '-preset', 'fast',
         '-crf', '23',
         '-c:a', 'aac',
         '-b:a', '128k',
@@ -943,7 +1081,9 @@ function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubject
         '-map', '[vout]',
         '-map', '0:a?',
         '-c:v', 'libx264',
-        '-preset', 'medium',
+        // preset=fast keeps the grid renderer comfortably under the 12-min
+        // ffmpeg timeout for clips up to ~4 min, even with the blur background.
+        '-preset', 'fast',
         '-crf', '23',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
@@ -969,11 +1109,13 @@ function processVideoMultiGrid(inputPath, outputPath, detection, selectedSubject
         try { fs.unlinkSync(scriptPath); } catch (e) {}
         reject(err);
       });
-      // 8-minute safety timeout
+      // 12-minute safety timeout — leaves headroom for a 4-min clip
+      // through the grid renderer's slowest path (blur background +
+      // 4-up overlay).
       setTimeout(() => {
         try { ffmpeg.kill('SIGKILL'); } catch (e) {}
         reject(new Error('Grid render timed out'));
-      }, 8 * 60 * 1000);
+      }, 12 * 60 * 1000);
     } catch (e) {
       reject(e);
     }
@@ -1074,6 +1216,28 @@ router.post('/detect-subjects', requireAuth, requireCredits('ai-reframe'), requi
 
     if (!inputPath || !fs.existsSync(inputPath)) {
       return res.status(400).json({ success: false, message: 'No video input provided' });
+    }
+
+    // ---- Duration gate + 1080p downscale (pre-detection) ----
+    let probe;
+    try {
+      probe = await probeVideo(inputPath);
+    } catch (e) {
+      try { fs.unlinkSync(inputPath); } catch (_) {}
+      return res.status(400).json({ success: false, message: 'Could not read this video. The file may be corrupted or in an unsupported format.' });
+    }
+    const gridCap = DURATION_LIMITS.grid;
+    if (probe.duration > gridCap) {
+      try { fs.unlinkSync(inputPath); } catch (_) {}
+      return res.status(400).json({
+        success: false,
+        message: `This clip is ${fmtDuration(probe.duration)}. The maximum for Multi-Person Grid is ${fmtDuration(gridCap)}. Trim the clip and try again.`,
+      });
+    }
+    try {
+      await maybeDownscaleSource(inputPath, probe);
+    } catch (e) {
+      console.error('[AI Reframe Grid] Pre-downscale failed:', e.message);
     }
 
     console.log('[AI Reframe Grid] Running detection on', inputPath);
@@ -2570,8 +2734,21 @@ ${pageStyles}
 });
 
 // POST - Process video
+// Overall route timeout for the legacy single-render path. Center crop on
+// a 12-min clip at preset=fast peaks around 11min of CPU on Railway. 15min
+// is enough headroom for any duration we accept (capped per-mode above).
+const PROCESS_ROUTE_TIMEOUT_MS = 15 * 60 * 1000;
+
 router.post('/process', requireAuth, upload.single('videoFile'), async (req, res) => {
   let downloadedPath = null; // Track YouTube downloads for cleanup
+  let timedOut = false;
+  const routeTimer = setTimeout(() => {
+    timedOut = true;
+    if (!res.headersSent) {
+      res.status(504).json({ success: false, message: 'Processing timed out. Try a shorter clip or a faster preset.' });
+    }
+    if (downloadedPath) { try { fs.unlinkSync(downloadedPath); } catch (_) {} }
+  }, PROCESS_ROUTE_TIMEOUT_MS);
   try {
     const youtubeUrl = req.body.youtubeUrl || '';
     const inputMode = req.body.inputMode || 'upload';
@@ -2609,6 +2786,29 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
 
     if (!fs.existsSync(inputPath)) {
       return res.status(400).json({ success: false, message: 'Video file not found' });
+    }
+
+    // ---- Duration gate + 1080p downscale (pre-pipeline) ----
+    let probe;
+    try {
+      probe = await probeVideo(inputPath);
+    } catch (e) {
+      return res.status(400).json({ success: false, message: 'Could not read this video. The file may be corrupted or in an unsupported format.' });
+    }
+    const durationCap = DURATION_LIMITS[cropMode] || DURATION_LIMITS.center;
+    if (probe.duration > durationCap) {
+      try { fs.unlinkSync(inputPath); } catch (_) {}
+      return res.status(400).json({
+        success: false,
+        message: `This clip is ${fmtDuration(probe.duration)}. The maximum for ${cropMode === 'grid' ? 'Multi-Person Grid' : cropMode === 'face-tracking' ? 'AI Face Tracking' : 'Center Crop'} is ${fmtDuration(durationCap)}. Trim the clip and try again.`,
+      });
+    }
+    try {
+      await maybeDownscaleSource(inputPath, probe);
+    } catch (e) {
+      console.error('[AI Reframe] Pre-downscale failed:', e.message);
+      // Non-fatal — fall through and let the main pipeline cope with the
+      // original full-resolution source. Worst case: it takes longer.
     }
 
     // Run face detection if face-tracking mode selected
@@ -2681,15 +2881,21 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
       // Surface the first failure reason so the user sees something
       // actionable instead of a generic "Video processing failed" wall.
       const detail = failures.length ? ' (' + failures[0].slice(0, 200) + ')' : '';
+      clearTimeout(routeTimer);
+      if (timedOut) return;
       return res.status(500).json({ success: false, message: 'Video processing failed' + detail });
     }
 
+    clearTimeout(routeTimer);
+    if (timedOut) return;
     res.json({ success: true, files: results });
     featureUsageOps.log(req.user.id, 'ai_reframe').catch(() => {});
   } catch (error) {
     console.error('Processing error:', error);
     // Clean up downloaded file on error
     if (downloadedPath) { try { fs.unlinkSync(downloadedPath); } catch (e) {} }
+    clearTimeout(routeTimer);
+    if (timedOut) return;
     res.status(500).json({ success: false, message: error.message || 'Processing failed' });
   }
 });

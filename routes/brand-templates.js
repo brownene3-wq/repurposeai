@@ -186,10 +186,14 @@ function safeFilename(filename) {
 
 // GET - Main Brand Templates page (list + wizard)
 router.get('/', requireAuth, (req, res) => {
+  // embed=1 strips the sidebar + page-header chrome so the wizard can
+  // be iframed cleanly into other pages (currently: Settings → Brand
+  // Templates tab). Same auth, same data store (cookie), same JS.
+  const embed = req.query.embed === '1' || req.query.embed === 'true';
   const css = getBaseCSS();
   const headHTML = getHeadHTML('Brand Templates');
-  const sidebar = getSidebar('brand-templates', req.user, req.teamPermissions);
-  const themeToggle = getThemeToggle();
+  const sidebar = embed ? '' : getSidebar('brand-templates', req.user, req.teamPermissions);
+  const themeToggle = embed ? '' : getThemeToggle();
   const themeScript = getThemeScript();
 
   const templates = readTemplates(req);
@@ -265,13 +269,37 @@ router.get('/', requireAuth, (req, res) => {
       .saved-template-actions button:hover { background: rgba(108,58,237,0.15); border-color: var(--primary); }
       .saved-template-actions button.danger:hover { background: rgba(239,68,68,0.15); border-color: #ef4444; color: #ef4444; }
       .empty-templates {
-        padding: 1.25rem;
+        padding: 1.5rem 1.25rem;
         border: 1px dashed rgba(255,255,255,0.15);
         border-radius: 12px;
         color: var(--text-muted);
         text-align: center;
         font-size: 0.9rem;
+        line-height: 1.55;
       }
+      .empty-templates strong { color: var(--text); font-weight: 600; display: block; margin-bottom: 0.4rem; font-size: 0.95rem; }
+      .empty-templates .where-list { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; justify-content: center; }
+      .empty-templates .where-list .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: rgba(108,58,237,0.12); border: 1px solid rgba(108,58,237,0.30); color: var(--text); font-size: 0.78rem; font-weight: 600; }
+      .bt-help-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px 16px;
+        margin-bottom: 1.25rem;
+        background: linear-gradient(135deg, rgba(108,58,237,0.10), rgba(236,72,153,0.06));
+        border: 1px solid rgba(108,58,237,0.28);
+        border-radius: 12px;
+        line-height: 1.5;
+      }
+      .bt-help-banner .bt-help-icon { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: rgba(108,58,237,0.20); color: #c4b5fd; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; }
+      .bt-help-banner .bt-help-body { flex: 1; min-width: 0; color: var(--text); font-size: 0.85rem; }
+      .bt-help-banner .bt-help-body strong { font-weight: 700; color: var(--text); }
+      .bt-help-banner .bt-help-body .where-list { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+      .bt-help-banner .bt-help-body .where-list .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: rgba(108,58,237,0.14); border: 1px solid rgba(108,58,237,0.35); color: #c4b5fd; font-size: 0.74rem; font-weight: 600; text-decoration: none; }
+      .bt-help-banner .bt-help-body .where-list .pill:hover { background: rgba(108,58,237,0.22); }
+      body.light .bt-help-banner { background: linear-gradient(135deg, rgba(108,58,237,0.06), rgba(236,72,153,0.04)); border-color: rgba(108,58,237,0.18); }
+      body.light .bt-help-banner .bt-help-icon { background: rgba(108,58,237,0.10); color: #6C3AED; }
+      body.light .bt-help-banner .bt-help-body .where-list .pill { background: rgba(108,58,237,0.06); color: #6C3AED; border-color: rgba(108,58,237,0.22); }
       .wizard-header { background: var(--surface); border: var(--border-subtle); border-radius: 12px; padding: 2rem; margin-bottom: 2rem; }
       .wizard-mode-banner {
         display: none;
@@ -387,17 +415,43 @@ router.get('/', requireAuth, (req, res) => {
 <style>${css}</style>
 ${pageStyles}
 </head>
-<body>
-  <div class="dashboard">
+<body${embed ? ' style="background:transparent;height:auto;overflow:visible"' : ''}>
+  ${embed
+    ? `<style>
+        /* Embed mode — override the base .dashboard/.main-content CSS
+           that's designed for full-page layouts. We want the wizard to
+           flow naturally inside the parent iframe with no fixed height
+           and no margin-left gutter. */
+        html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
+        body { padding: 1.5rem 1.25rem 2rem; }
+        .dashboard-embed-shell { display: block; height: auto; overflow: visible; }
+      </style>
+      <div class="dashboard-embed-shell">`
+    : `<div class="dashboard">
     ${sidebar}
     ${themeToggle}
     <main class="main-content">
       <div class="page-header">
         <h1><img src="/images/section-icons/A-118.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Templates</h1>
         <p>Create consistent branded videos in 3 easy steps</p>
-      </div>
+      </div>`}
 
       <div class="wizard-container">
+
+        <!-- Persistent helper banner — explains where the templates
+             actually get used so users aren't left wondering after the
+             save flow. Same content in standalone and Settings embed. -->
+        <div class="bt-help-banner" role="note" aria-label="How Brand Templates are used">
+          <div class="bt-help-icon" aria-hidden="true">i</div>
+          <div class="bt-help-body">
+            <strong>Where these templates show up:</strong> Once saved, your aspect ratio, caption style, and logo are applied automatically when you render clips and export videos. Pick one from the Brand Kit picker on:
+            <span class="where-list">
+              <a class="pill" href="/shorts" target="_blank" rel="noopener" title="Open Smart Shorts">Smart Shorts</a>
+              <a class="pill" href="/video-editor" target="_blank" rel="noopener" title="Open Video Editor">Video Editor</a>
+              <a class="pill" href="/shorts/clips" target="_blank" rel="noopener" title="Open My Clips">My Clips</a>
+            </span>
+          </div>
+        </div>
 
         <!-- Saved templates list -->
         <div class="saved-templates-section" id="savedTemplatesSection">
@@ -489,8 +543,7 @@ ${pageStyles}
           <button class="btn-save" id="saveBtn" onclick="saveTemplate()" style="display: none;">Save Template</button>
         </div>
       </div>
-    </main>
-  </div>
+${embed ? '</div>' : '    </main>\n  </div>'}
 
   <!-- Name prompt modal -->
   <div class="bt-modal-backdrop" id="nameModal">
@@ -508,6 +561,32 @@ ${pageStyles}
   <div class="toast" id="toast"></div>
 
   <script>
+    // Embedded mode: report our content height to the parent (Settings
+    // tab iframe) so it can auto-size without scrollbars or clipping.
+    (function() {
+      try {
+        if (window.parent === window) return;
+        if (!new URLSearchParams(location.search).has('embed')) return;
+        var report = function() {
+          var h = Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.offsetHeight
+          );
+          try { window.parent.postMessage({ type: 'brand-templates-height', height: h }, '*'); } catch(_) {}
+        };
+        window.addEventListener('load', report);
+        window.addEventListener('resize', report);
+        // Also re-report whenever the DOM changes — new template cards,
+        // wizard step changes, logo preview swaps, etc.
+        if ('ResizeObserver' in window) {
+          new ResizeObserver(report).observe(document.documentElement);
+        } else {
+          setInterval(report, 1500);
+        }
+      } catch (_) {}
+    })();
     let currentStep = 1;
     // State for the wizard (draft being built/edited).
     let templateData = {
@@ -623,7 +702,16 @@ ${pageStyles}
       countEl.textContent = savedTemplates.length ? savedTemplates.length + ' saved' : '';
 
       if (!savedTemplates.length) {
-        container.innerHTML = '<div class="empty-templates">No saved templates yet. Build one below and click Save Template.</div>';
+        container.innerHTML = '<div class="empty-templates">' +
+          '<strong>No saved templates yet.</strong>' +
+          'Build one below in three quick steps — aspect ratio, caption style, and an optional logo. ' +
+          'Saved templates will then show up in the Brand Kit picker on Smart Shorts, the Video Editor, and My Clips so you can apply them with one click.' +
+          '<span class="where-list">' +
+            '<span class="pill">Smart Shorts</span>' +
+            '<span class="pill">Video Editor</span>' +
+            '<span class="pill">My Clips</span>' +
+          '</span>' +
+        '</div>';
         return;
       }
 

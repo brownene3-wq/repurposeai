@@ -397,7 +397,7 @@ router.get('/', requireAuth, async (req, res) => {
             <span class="tool-icon"><img src="/images/section-icons/A-117.png" alt="Brand Voice"></span>
             <span class="tool-label">Brand Voice</span>
           </a>
-          <a href="/brand-templates" class="tool-card">
+          <a href="/settings?section=brandtemplates" class="tool-card">
             <span class="tool-icon"><img src="/images/section-icons/A-118.png" alt="Brand Templates"></span>
             <span class="tool-label">Brand Templates</span>
             <span class="tool-badge">New</span>
@@ -884,7 +884,8 @@ const FEATURE_LABELS = {
   'enhance-audio': 'Enhance Audio',
   'ai-captions':   'AI Captions',
   'ai-thumbnail':  'AI Thumbnails',
-  'ai-hook':       'AI Hooks'
+  'ai-hook':       'AI Hooks',
+  'ai-broll': 'AI B-Roll'
 };
 
 router.get('/api/credits-breakdown', requireAuth, async (req, res) => {

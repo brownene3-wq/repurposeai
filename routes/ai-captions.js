@@ -2812,6 +2812,16 @@ router.get('/', requireAuth, async (req, res) => {
                 </div>
               </div>
 
+              <!-- Add Captions: jumps the user to the full Caption Styles
+                   catalog (/caption-presets) so they can Add more styles to
+                   their Presets tab. Rendered as a regular <a> so it works
+                   even before a video is uploaded (Generate Captions stays
+                   disabled until upload, but Add Captions is always live). -->
+              <a href="/caption-presets" class="btn-secondary" id="addCaptionsBtn"
+                 style="display: block; width: 100%; margin-bottom: 0.5rem; text-align: center; text-decoration: none;">
+                Add Captions
+              </a>
+
               <div class="actions">
                 <button class="btn-primary" style="flex: 1;" id="generateBtn" onclick="generateCaptions()" disabled>
                   <span class="spinner hidden" id="spinner"></span>

@@ -10,6 +10,7 @@ try { __ytdl = require('@distube/ytdl-core'); } catch (e) { console.warn('[ai-br
 const https = require('https');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth } = require('../middleware/auth');
+const { requireCredits, costFor } = require('../middleware/credits');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
 
@@ -881,6 +882,45 @@ ${pageStyles}
     </div>
   </div>
 
+  <!-- Credit Confirmation Modal — shown before /ai-broll/generate runs -->
+  <div class="video-modal" id="creditConfirmModal" style="display:none">
+    <div class="video-modal-content" style="max-width:520px">
+      <div class="video-modal-header">
+        <h3 style="margin:0">Heads up — this will use credits</h3>
+        <button class="video-modal-close" onclick="closeCreditConfirmModal()">&times;</button>
+      </div>
+      <div style="padding:0 4px 8px 4px;color:var(--text);font-size:0.95rem;line-height:1.5">
+        <p style="margin:0 0 1rem 0">
+          Generating B-roll runs a transcript analysis (Whisper + GPT) and queries the stock library.
+          This will deduct <strong id="creditCostNum" style="color:var(--text)">2</strong>
+          <span id="creditCostUnit">credits</span> from your monthly allowance.
+        </p>
+        <div style="background:var(--dark-2);border:var(--border-subtle);border-radius:10px;padding:1rem;margin:1rem 0">
+          <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px">
+            <span>This action</span>
+            <span id="creditCostBig" style="color:var(--text);font-weight:600">2 credits</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px">
+            <span>Used this month</span>
+            <span id="creditUsedTxt" style="color:var(--text)">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.85rem;color:var(--text-muted);margin-bottom:8px">
+            <span>Remaining after</span>
+            <span id="creditRemainAfter" style="color:var(--text);font-weight:600">—</span>
+          </div>
+          <div style="height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">
+            <div id="creditProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width 0.3s"></div>
+          </div>
+        </div>
+        <p id="creditWarningRow" style="margin:0;font-size:0.8rem;color:var(--text-muted)">Charge happens only after the job completes successfully — if anything errors, nothing is deducted.</p>
+      </div>
+      <div class="video-modal-actions" style="margin-top:1rem">
+        <button type="button" class="btn-cancel" onclick="closeCreditConfirmModal()">Cancel</button>
+        <button type="button" class="btn-use-clip" id="creditConfirmBtn" onclick="confirmAndProceed()">Yes, use credits & generate</button>
+      </div>
+    </div>
+  </div>
+
   <!-- B-Roll Selection Modal (multi-select via checkboxes) -->
   <div class="video-modal" id="brollSelectionModal" style="display:none">
     <div class="video-modal-content" style="max-width:1100px">
@@ -893,7 +933,7 @@ ${pageStyles}
       <div class="video-modal-actions" style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
         <span id="brollSelectionCount" style="color:var(--text-muted);font-size:0.85rem;margin-right:auto"></span>
         <button type="button" class="btn-cancel" onclick="closeBrollSelectionModal()">Cancel</button>
-        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">Done</button>
+        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">Download Clip with B-Roll</button>
       </div>
     </div>
   </div>
@@ -984,8 +1024,69 @@ ${pageStyles}
       e.target.classList.add('active');
     }
 
+    // ─── Credit confirmation step (shown before /ai-broll/generate runs) ───
+    var AI_BROLL_COST = 2; // mirrors middleware/credits.js
+    async function showCreditConfirmModal() {
+      var modal = document.getElementById('creditConfirmModal');
+      if (!modal) return;
+      document.getElementById('creditCostNum').textContent = AI_BROLL_COST;
+      document.getElementById('creditCostBig').textContent = AI_BROLL_COST + ' credits';
+      document.getElementById('creditCostUnit').textContent = AI_BROLL_COST === 1 ? 'credit' : 'credits';
+      document.getElementById('creditUsedTxt').textContent = '—';
+      document.getElementById('creditRemainAfter').textContent = '—';
+      document.getElementById('creditProgressBar').style.width = '0%';
+      var warn = document.getElementById('creditWarningRow');
+      warn.textContent = 'Charge happens only after the job completes successfully — if anything errors, nothing is deducted.';
+      warn.style.color = 'var(--text-muted)';
+      var btn = document.getElementById('creditConfirmBtn');
+      btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer';
+      btn.textContent = 'Yes, use credits & generate';
+      modal.style.display = 'flex';
+      try {
+        var r = await fetch('/dashboard/api/credits-breakdown', { headers: { 'Accept':'application/json' } });
+        if (r.ok) {
+          var d = await r.json();
+          var used = d.used || 0;
+          var cap = d.cap || 0;
+          var afterUsed = used + AI_BROLL_COST;
+          var pct = cap > 0 ? Math.min(100, Math.round((afterUsed / cap) * 100)) : 0;
+          document.getElementById('creditUsedTxt').textContent = used + ' / ' + cap;
+          document.getElementById('creditRemainAfter').textContent = Math.max(0, cap - afterUsed) + ' / ' + cap;
+          document.getElementById('creditProgressBar').style.width = pct + '%';
+          if (afterUsed > cap) {
+            warn.textContent = 'Heads up: this would exceed your monthly cap. Upgrade your plan to continue.';
+            warn.style.color = '#EC4899';
+            btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
+            btn.textContent = 'Out of credits';
+          }
+        }
+      } catch (_) { /* soft-fail */ }
+    }
+    function closeCreditConfirmModal() {
+      var modal = document.getElementById('creditConfirmModal');
+      if (modal) modal.style.display = 'none';
+    }
+    async function confirmAndProceed() {
+      var modal = document.getElementById('creditConfirmModal');
+      if (modal) modal.style.display = 'none';
+      window.__brollConfirmedCredits = true;
+      var form = document.getElementById('brollForm');
+      if (form.requestSubmit) form.requestSubmit();
+      else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    }
+    window.showCreditConfirmModal = showCreditConfirmModal;
+    window.closeCreditConfirmModal = closeCreditConfirmModal;
+    window.confirmAndProceed = confirmAndProceed;
+
     document.getElementById('brollForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      // ─── Credit confirmation step: show themed modal first, then re-fire submit ───
+      if (!window.__brollConfirmedCredits) {
+        showCreditConfirmModal();
+        return;
+      }
+      window.__brollConfirmedCredits = false;
 
       // Source of truth: the staged primary from the new ingestion flow,
       // OR the active input mode if no primary has been staged yet.
@@ -1250,75 +1351,189 @@ function openBrollSelectionModal(items) {
   var grid = document.getElementById('brollSelectionGrid');
   var subtitle = document.getElementById('brollSelectionSubtitle');
   if (!modal || !grid) return;
-  window.__selectedClipIds = []; // reset selection order on each open
+  window.__selectedClipIds = []; // reset selection order
+  window.__brollItemsLive = items; // mutable copy for swap logic
   grid.innerHTML = '';
-  if (subtitle) subtitle.textContent = items.length + ' clips suggested by AI based on your video transcript. All previews are playing - click a card to select it.';
+  grid.style.display = 'block'; // override grid → flow vertically for the Smart-Shorts-style scene list
+  if (subtitle) subtitle.textContent = items.length + ' scenes selected for your video. Each preview is playing — uncheck scenes you don’t want, swap if the AI picked the wrong angle, then continue.';
 
-  items.forEach(function (item, i) {
+  items.forEach(function (item, sIdx) {
     var card = document.createElement('div');
-    card.style.cssText = 'background:var(--dark-2);border:2px solid var(--border-subtle);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;transition:all 0.15s';
+    card.style.cssText = 'margin-bottom:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px';
     card.dataset.itemId = item.id;
-    var why = item.sceneDescription || item.searchQueryUsed || '';
-    var thumb = (item.thumbnailUrl || '').replace(/'/g, '%27');
-    var name = item.name || ('Clip ' + (i+1));
+    card.dataset.sceneIdx = sIdx;
 
-    var thumbDiv = document.createElement('div');
-    thumbDiv.className = 'broll-thumb-area';
-    thumbDiv.style.cssText = 'position:relative;aspect-ratio:16/9;background:#000 center/cover no-repeat;background-image:url("' + thumb + '")';
+    var why = item.why || item.sceneDescription || item.searchQueryUsed || '';
+    var sceneDesc = item.sceneDescription || '';
+    var hintRaw = (item.timestamp_hint || item.moment || 'middle').toString().toLowerCase();
+    var hintLabel = hintRaw.charAt(0).toUpperCase() + hintRaw.slice(1);
+    var hintColor = hintRaw === 'beginning' || hintRaw === 'intro' ? '#10b981' :
+                    hintRaw === 'end' || hintRaw === 'outro' || hintRaw === 'conclusion' ? '#f97316' :
+                    hintRaw === 'middle' ? '#3b82f6' : '#a29bfe';
 
-    // Inline auto-playing muted looping video preview. Each card starts its own
-    // playback as soon as the modal opens so users can scan all five at once.
-    var previewSrc = item.videoPreviewUrl || item.videoDownloadUrl || '';
-    if (previewSrc) {
-      var vid = document.createElement('video');
-      vid.src = previewSrc;
-      vid.muted = true;          // autoplay requires muted in all modern browsers
-      vid.loop = true;
-      vid.autoplay = true;
-      vid.playsInline = true;    // iOS/Safari: keep inline, dont open fullscreen
-      vid.setAttribute('playsinline', '');
-      vid.setAttribute('webkit-playsinline', '');
-      vid.preload = 'auto';
-      vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;pointer-events:none;z-index:1';
-      vid.addEventListener('error', function () { try { vid.remove(); } catch (_) {} });
-      vid.addEventListener('loadeddata', function () { vid.play().catch(function () {}); });
-      thumbDiv.appendChild(vid);
-    }
-
-    // Upper-right selection indicator (circular check) — sits above the video
-    var indicator = document.createElement('div');
-    indicator.className = 'broll-select-indicator';
-    indicator.style.cssText = 'position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.55);border:2px solid rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;z-index:3;transition:all 0.15s;pointer-events:none';
-    thumbDiv.appendChild(indicator);
-
-    // Duration badge in upper-LEFT (above the video too)
-    var dur = document.createElement('div');
-    dur.style.cssText = 'position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 8px;border-radius:6px;font-size:0.75rem;z-index:3;pointer-events:none';
-    dur.textContent = (item.duration || 0) + 's';
-    thumbDiv.appendChild(dur);
-
-    card.appendChild(thumbDiv);
-
-    // Info area below thumbnail
-    var info = document.createElement('div');
-    info.style.cssText = 'padding:10px 12px;flex:1';
-    var ttl = document.createElement('div');
-    ttl.style.cssText = 'font-weight:600;color:var(--text);font-size:0.9rem;line-height:1.3;margin-bottom:4px';
-    ttl.textContent = name;
-    info.appendChild(ttl);
-    if (why) {
-      var w = document.createElement('div');
-      w.style.cssText = 'color:var(--text-muted);font-size:0.75rem;line-height:1.4';
-      w.textContent = '— ' + why;
-      info.appendChild(w);
-    }
-    card.appendChild(info);
-
-    // Click anywhere on the card → toggle selection. The inline preview video
-    // has pointer-events:none so the click reaches the card.
-    card.addEventListener('click', function () {
-      _brollToggleSelect(item.id, card);
+    // ─── Header row: checkbox + badge + description + why ───
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:flex-start;gap:10px;margin-bottom:10px';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'broll-card-checkbox';
+    cb.dataset.itemId = item.id;
+    cb.checked = true;
+    cb.style.cssText = 'margin-top:4px;width:18px;height:18px;accent-color:var(--primary);cursor:pointer;flex-shrink:0';
+    cb.addEventListener('change', function (e) {
+      var id = item.id;
+      var idx = window.__selectedClipIds.indexOf(id);
+      if (cb.checked && idx < 0) window.__selectedClipIds.push(id);
+      else if (!cb.checked && idx >= 0) window.__selectedClipIds.splice(idx, 1);
+      updateBrollSelectionCount();
     });
+    // Start everything selected (matches Smart Shorts default).
+    window.__selectedClipIds.push(item.id);
+    header.appendChild(cb);
+
+    var info = document.createElement('div');
+    info.style.flex = '1';
+    info.innerHTML =
+      '<span style="display:inline-block;font-size:10px;color:#fff;background:' + hintColor + ';padding:3px 10px;border-radius:10px;text-transform:uppercase;font-weight:600;letter-spacing:0.5px">' + hintLabel + '</span>' +
+      (sceneDesc ? '<p style="font-size:13px;color:var(--text);margin:6px 0 0 0;line-height:1.4">' + sceneDesc + '</p>' : '') +
+      (why ? '<p style="font-size:11px;color:var(--text-muted);margin:4px 0 0 0;font-style:italic">' + why + '</p>' : '');
+    header.appendChild(info);
+    card.appendChild(header);
+
+    // ─── Auto-pick row: video + AUTO-PICK badge + position/duration selects + swap button ───
+    var pickRow = document.createElement('div');
+    pickRow.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+    pickRow.dataset.role = 'pick-row';
+
+    var vidWrap = document.createElement('div');
+    vidWrap.style.cssText = 'position:relative;flex-shrink:0';
+    vidWrap.dataset.role = 'vid-wrap';
+    var v = document.createElement('video');
+    v.src = item.videoPreviewUrl || item.videoDownloadUrl || '';
+    v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+    v.setAttribute('playsinline',''); v.setAttribute('webkit-playsinline','');
+    v.preload = 'auto';
+    v.style.cssText = 'width:180px;height:101px;object-fit:cover;border-radius:8px;display:block;border:2px solid var(--primary);background:#000';
+    v.addEventListener('loadeddata', function () { v.play().catch(function(){}); });
+    vidWrap.appendChild(v);
+    var badge = document.createElement('span');
+    badge.style.cssText = 'position:absolute;top:6px;left:6px;background:var(--primary);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:0.5px';
+    badge.textContent = 'AUTO-PICK';
+    vidWrap.appendChild(badge);
+    var dur = document.createElement('span');
+    dur.style.cssText = 'position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,0.7);color:#fff;font-size:10px;padding:2px 6px;border-radius:3px';
+    dur.textContent = (item.duration || 0) + 's';
+    vidWrap.appendChild(dur);
+    pickRow.appendChild(vidWrap);
+
+    var controls = document.createElement('div');
+    controls.style.cssText = 'flex:1;min-width:160px;display:flex;flex-direction:column;gap:6px';
+
+    var artistDiv = document.createElement('div');
+    artistDiv.style.cssText = 'font-size:11px;color:var(--text-muted)';
+    artistDiv.textContent = 'By ' + (item.artist || 'Pixabay');
+    controls.appendChild(artistDiv);
+
+    // Position selector
+    var posWrap = document.createElement('div');
+    posWrap.innerHTML = '<label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px">Position in clip:</label>';
+    var posSel = document.createElement('select');
+    posSel.dataset.role = 'position';
+    posSel.style.cssText = 'font-size:12px;padding:5px 8px;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:6px;width:100%;cursor:pointer';
+    [['beginning','Beginning (first 3s)'],['middle','Middle (halfway)'],['end','End (last 8s)'],['quarter','25% in'],['three-quarter','75% in']].forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p[0]; o.textContent = p[1];
+      if (hintRaw === p[0] || (!hintRaw && p[0] === 'middle')) o.selected = true;
+      posSel.appendChild(o);
+    });
+    posWrap.appendChild(posSel);
+    controls.appendChild(posWrap);
+
+    // Duration selector
+    var durWrap = document.createElement('div');
+    durWrap.innerHTML = '<label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:2px">B-Roll duration:</label>';
+    var durSel = document.createElement('select');
+    durSel.dataset.role = 'duration';
+    durSel.style.cssText = 'font-size:12px;padding:5px 8px;background:var(--dark-2);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:6px;width:100%;cursor:pointer';
+    [3, 5, 8].forEach(function (d) {
+      var o = document.createElement('option');
+      o.value = String(d); o.textContent = d + ' seconds';
+      if (d === 5) o.selected = true;
+      durSel.appendChild(o);
+    });
+    durWrap.appendChild(durSel);
+    controls.appendChild(durWrap);
+
+    // Swap scene button — toggles the alternatives drawer
+    if (item.alternatives && item.alternatives.length > 0) {
+      var swapBtn = document.createElement('button');
+      swapBtn.type = 'button';
+      swapBtn.style.cssText = 'font-size:11px;background:rgba(255,255,255,0.08);color:var(--text);border:none;padding:6px 10px;border-radius:6px;cursor:pointer;width:100%;margin-top:2px;transition:background 0.15s';
+      swapBtn.textContent = 'Swap Scene (' + item.alternatives.length + ' more)';
+      swapBtn.addEventListener('mouseenter', function () { swapBtn.style.background = 'rgba(255,255,255,0.15)'; });
+      swapBtn.addEventListener('mouseleave', function () { swapBtn.style.background = 'rgba(255,255,255,0.08)'; });
+      swapBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var drawer = card.querySelector('[data-role="alt-drawer"]');
+        if (!drawer) return;
+        var open = drawer.style.display !== 'none';
+        drawer.style.display = open ? 'none' : 'flex';
+        // When opening, ensure all alt videos start playing (some browsers pause hidden video)
+        if (!open) drawer.querySelectorAll('video').forEach(function (vv) { vv.play().catch(function(){}); });
+      });
+      controls.appendChild(swapBtn);
+    }
+
+    pickRow.appendChild(controls);
+    card.appendChild(pickRow);
+
+    // ─── Alternatives drawer (hidden by default; auto-loops on open) ───
+    if (item.alternatives && item.alternatives.length > 0) {
+      var drawer = document.createElement('div');
+      drawer.dataset.role = 'alt-drawer';
+      drawer.style.cssText = 'display:none;gap:10px;margin-top:10px;overflow-x:auto;padding:4px 2px';
+      item.alternatives.forEach(function (alt, aIdx) {
+        var altCard = document.createElement('div');
+        altCard.style.cssText = 'flex-shrink:0;width:140px;cursor:pointer;text-align:center;position:relative';
+        altCard.title = 'Click to use this clip instead';
+        var altVid = document.createElement('video');
+        altVid.src = alt.videoPreviewUrl || alt.videoDownloadUrl || '';
+        altVid.muted = true; altVid.loop = true; altVid.autoplay = true; altVid.playsInline = true;
+        altVid.setAttribute('playsinline',''); altVid.setAttribute('webkit-playsinline','');
+        altVid.preload = 'auto';
+        altVid.style.cssText = 'width:140px;height:79px;object-fit:cover;border-radius:5px;display:block;border:1px solid rgba(255,255,255,0.15);background:#000';
+        altVid.addEventListener('loadeddata', function () { altVid.play().catch(function(){}); });
+        altCard.appendChild(altVid);
+        var altDur = document.createElement('div');
+        altDur.style.cssText = 'font-size:9px;color:var(--text-muted);margin-top:3px';
+        altDur.textContent = (alt.duration || 0) + 's · ' + (alt.artist || 'Pixabay');
+        altCard.appendChild(altDur);
+        var useHint = document.createElement('div');
+        useHint.style.cssText = 'font-size:9px;color:var(--primary);margin-top:1px;font-weight:600';
+        useHint.textContent = 'Click to use';
+        altCard.appendChild(useHint);
+        // Swap the alt with the auto-pick when clicked
+        altCard.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var oldPrimary = {
+            id: item.id, name: item.name, thumbnailUrl: item.thumbnailUrl,
+            videoPreviewUrl: item.videoPreviewUrl, videoDownloadUrl: item.videoDownloadUrl,
+            duration: item.duration, artist: item.artist
+          };
+          item.videoPreviewUrl = alt.videoPreviewUrl;
+          item.videoDownloadUrl = alt.videoDownloadUrl;
+          item.thumbnailUrl = alt.thumbnailUrl;
+          item.duration = alt.duration;
+          item.artist = alt.artist;
+          // Replace the slot in alternatives with the old primary
+          item.alternatives[aIdx] = oldPrimary;
+          // Re-render this single card by re-opening the modal with the (mutated) items list.
+          openBrollSelectionModal(window.__brollItemsLive);
+        });
+        drawer.appendChild(altCard);
+      });
+      card.appendChild(drawer);
+    }
 
     grid.appendChild(card);
   });
@@ -1334,7 +1549,7 @@ function updateBrollSelectionCount() {
   var btn = document.getElementById('brollConfirmBtn');
   if (countEl) countEl.textContent = checked + ' of ' + total + ' selected';
   if (btn) {
-    btn.textContent = checked > 0 ? ('Done (' + checked + ')') : 'Done';
+    btn.textContent = checked > 0 ? ('Download Clip with B-Roll (' + checked + ')') : 'Download Clip with B-Roll';
     btn.disabled = checked === 0;
     btn.style.opacity = checked === 0 ? '0.5' : '1';
     btn.style.cursor = checked === 0 ? 'not-allowed' : 'pointer';
@@ -1350,73 +1565,180 @@ function closeBrollSelectionModal() {
   }
 }
 
+function showBrollUploadFallback(errMsg) {
+  var sub = document.getElementById('brollSelectionSubtitle');
+  if (sub) sub.textContent = 'We could not download the source video automatically. Upload a local copy to continue.';
+  var grid = document.getElementById('brollSelectionGrid');
+  if (!grid) return;
+  Array.from(grid.children).forEach(function (el) { el.style.display = 'none'; });
+  var panel = document.createElement('div');
+  panel.id = 'brollUploadFallback';
+  panel.style.cssText = 'background:rgba(236,72,153,0.06);border:1px solid rgba(236,72,153,0.25);border-radius:10px;padding:18px;margin:8px 4px';
+  panel.innerHTML =
+    '<div style="font-size:0.95rem;color:var(--text);font-weight:600;margin-bottom:8px">YouTube blocked the download.</div>' +
+    '<div style="font-size:0.85rem;color:var(--text-muted);line-height:1.5;margin-bottom:14px">Your B-roll selection is still here. To finish the render, upload a local copy of the same video below. Splicing will resume immediately.</div>' +
+    '<div style="margin-bottom:8px"><input type="file" id="brollFallbackFile" accept="video/*" style="display:none">' +
+      '<button type="button" id="brollFallbackBtn" class="btn-use-clip" style="display:inline-block">Upload local copy</button>' +
+    '</div>' +
+    '<div id="brollFallbackStatus" style="font-size:0.78rem;color:var(--text-muted);margin-top:6px"></div>' +
+    '<details style="margin-top:12px;font-size:0.78rem;color:var(--text-muted)">' +
+      '<summary style="cursor:pointer">Server error detail</summary>' +
+      '<pre style="margin-top:6px;padding:8px;background:rgba(0,0,0,0.25);border-radius:6px;white-space:pre-wrap;font-size:0.72rem">' + (errMsg || 'unknown') + '</pre>' +
+    '</details>';
+  grid.appendChild(panel);
+  var input = document.getElementById('brollFallbackFile');
+  var trigger = document.getElementById('brollFallbackBtn');
+  var status = document.getElementById('brollFallbackStatus');
+  trigger.addEventListener('click', function () { input.click(); });
+  input.addEventListener('change', async function () {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    trigger.disabled = true; trigger.textContent = 'Uploading...';
+    status.textContent = 'Uploading ' + file.name + '...';
+    try {
+      var fd = new FormData(); fd.append('video', file);
+      var r = await fetch('/ai-broll/upload-primary', { method: 'POST', body: fd });
+      if (!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.error || ('Upload failed (' + r.status + ')')); }
+      var data = await r.json();
+      if (window.__aiBrollState) {
+        window.__aiBrollState.primary = {
+          filename: data.filename,
+          originalName: file.name,
+          duration: data.duration || 0,
+          serveUrl: data.serveUrl || ('/video-editor/download/' + data.filename),
+          source: 'upload'
+        };
+      }
+      status.textContent = 'Uploaded. Continuing render...';
+      panel.remove();
+      Array.from(grid.children).forEach(function (el) { el.style.display = ''; });
+      setTimeout(function () { confirmBrollSelection(); }, 200);
+    } catch (err) {
+      status.textContent = 'Upload failed: ' + (err.message || err);
+      trigger.disabled = false; trigger.textContent = 'Upload local copy';
+    }
+  });
+}
+
 async function confirmBrollSelection() {
   var ids = (window.__selectedClipIds || []).slice();
-  if (ids.length === 0) {
-    showToast('Pick at least one clip first');
+  if (ids.length === 0) { showToast('Pick at least one scene first'); return; }
+
+  // Need a primary video to splice into. If none is staged, try to import the
+  // URL from heroLinkInput now.
+  var hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
+  var sourceUrl = !hasPrimary ? ((document.getElementById('heroLinkInput') || {}).value || '').trim() : '';
+  var btn = document.getElementById('brollConfirmBtn');
+  if (btn) { btn.disabled = true; }
+
+  if (!hasPrimary && sourceUrl && /^https?:\\/\\//i.test(sourceUrl) && window.__aiBrollImportUrlAsPrimary) {
+    try {
+      if (btn) btn.textContent = 'Importing primary video...';
+      await window.__aiBrollImportUrlAsPrimary(sourceUrl);
+      hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
+    } catch (err) {
+      // Don't lose the user\'s selection — offer an Upload fallback inside the modal instead.
+      showBrollUploadFallback(err.message || String(err));
+      if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
+      return;
+    }
+  }
+  if (!hasPrimary) {
+    showBrollUploadFallback('No primary video has been imported yet.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
     return;
   }
-  var btn = document.getElementById('brollConfirmBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Staging…'; }
-  var staged = 0, failed = 0;
-  // Iterate IN SELECTION ORDER so the editor V1 timeline matches the user\'s selection sequence.
-  for (var i = 0; i < ids.length; i++) {
-    var id = ids[i];
-    var item = (window.brollItemsData || []).find(function (x) { return x.id === id; });
-    if (!item) { failed++; continue; }
-    var dl = item.videoDownloadUrl || item.videoPreviewUrl;
-    if (!dl || !/^https:\\/\\//i.test(dl)) { failed++; continue; }
+
+  // Collect selected scenes from the live items array using the position +
+  // duration selects rendered into each card.
+  var items = window.__brollItemsLive || [];
+  var brollScenes = [];
+  ids.forEach(function (id) {
+    var item = items.find(function (x) { return x.id === id; });
+    if (!item) return;
+    var card = document.querySelector('#brollSelectionGrid [data-item-id="' + id + '"]');
+    var posEl = card && card.querySelector('[data-role="position"]');
+    var durEl = card && card.querySelector('[data-role="duration"]');
+    brollScenes.push({
+      videoUrl: item.videoDownloadUrl || item.videoPreviewUrl,
+      position: posEl ? posEl.value : 'middle',
+      duration: durEl ? parseInt(durEl.value, 10) : 5
+    });
+  });
+
+  // Stop all the preview videos to free CPU + bandwidth during the render
+  document.querySelectorAll('#brollSelectionGrid video').forEach(function (v) { try { v.pause(); } catch (_) {} });
+
+  if (btn) btn.textContent = 'Rendering... (this can take a few minutes)';
+
+  // Kick off the server-side render
+  var rendering;
+  try {
+    var r = await fetch('/ai-broll/render-with-broll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primary: window.__aiBrollState.primary, brollScenes: brollScenes })
+    });
+    rendering = await r.json();
+    if (!r.ok) throw new Error(rendering.error || 'Render request failed');
+  } catch (err) {
+    showToast('Could not start render: ' + (err.message || err));
+    if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
+    return;
+  }
+
+  // Render the in-modal "rendering..." state
+  var grid = document.getElementById('brollSelectionGrid');
+  var sub = document.getElementById('brollSelectionSubtitle');
+  if (sub) sub.textContent = 'Building your final clip with the B-roll spliced in. This usually takes 1-3 minutes depending on length.';
+  if (grid) {
+    grid.style.display = 'flex';
+    grid.style.flexDirection = 'column';
+    grid.style.alignItems = 'center';
+    grid.style.justifyContent = 'center';
+    grid.style.minHeight = '180px';
+    grid.innerHTML =
+      '<div style="text-align:center;padding:30px 20px;width:100%">' +
+        '<div style="font-size:0.95rem;color:var(--text);margin-bottom:14px" id="aiBrollRenderStatus">Starting render...</div>' +
+        '<div style="width:80%;max-width:480px;margin:0 auto;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">' +
+          '<div id="aiBrollRenderPulse" style="height:100%;width:30%;background:linear-gradient(90deg,#6C3AED,#EC4899);border-radius:3px;animation:aiBrollPulse 1.8s ease-in-out infinite"></div>' +
+        '</div>' +
+        '<style>@keyframes aiBrollPulse { 0%,100%{margin-left:0%}50%{margin-left:70%} }</style>' +
+      '</div>';
+  }
+
+  // Poll status until ready or error (max 12 minutes)
+  var statusEl = document.getElementById('aiBrollRenderStatus');
+  var deadline = Date.now() + 12 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await new Promise(function (r) { setTimeout(r, 2500); });
     try {
-      var r = await fetch('/ai-broll/download-inline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: dl, name: item.name })
-      });
-      var data = await r.json();
-      if (!r.ok || !data.filename) { failed++; continue; }
-      if (window.__aiBrollStageClip) {
-        window.__aiBrollStageClip({
-          filename: data.filename,
-          name: item.name,
-          duration: data.duration || item.duration || 0,
-          serveUrl: data.mediaUrl
-        });
-      }
-      staged++;
-    } catch (err) { failed++; }
-  }
-  if (btn) { btn.disabled = false; }
-  closeBrollSelectionModal();
-
-  if (staged > 0) {
-    // ─── If we have a YouTube/source URL but no primary staged yet, import it
-    //     now so the primary lands on V1 and the selected B-roll on V2/V1+ ───
-    var hasPrimary = !!(window.__aiBrollHasPrimary && window.__aiBrollHasPrimary());
-    var sourceUrl = !hasPrimary ? ((document.getElementById('heroLinkInput') || {}).value || '').trim() : '';
-    var importingMsg = (sourceUrl && /^https?:\\/\\//i.test(sourceUrl)) ? 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + '. Importing primary video…' : null;
-    var openingMsg = 'Staged ' + staged + ' clip' + (staged === 1 ? '' : 's') + ', opening editor in a new tab…';
-    if (failed > 0) openingMsg += ' (' + failed + ' failed to download)';
-    if (importingMsg) showToast(importingMsg);
-
-    (async function () {
-      // 1) If we have a source URL and no primary, try to import it as primary.
-      if (sourceUrl && !hasPrimary && /^https?:\\/\\//i.test(sourceUrl) && window.__aiBrollImportUrlAsPrimary) {
-        try {
-          await window.__aiBrollImportUrlAsPrimary(sourceUrl);
-        } catch (err) {
-          // Soft-fail — the project will be created B-roll-only with a notice.
-          showToast('Primary import failed (' + (err.message || 'unknown') + '). Continuing with B-roll only.');
+      var sr = await fetch(rendering.statusUrl);
+      var sd = await sr.json();
+      if (sd.status === 'ready') {
+        if (statusEl) statusEl.textContent = 'Done!';
+        if (grid) {
+          grid.innerHTML =
+            '<div style="text-align:center;padding:30px 20px;width:100%">' +
+              '<div style="font-size:1.05rem;color:var(--text);font-weight:600;margin-bottom:10px">Your clip is ready</div>' +
+              '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:18px">' + (Math.round(sd.sizeBytes / 1024 / 1024 * 10) / 10) + ' MB</div>' +
+              '<a href="' + sd.downloadUrl + '" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Clip with B-Roll</a>' +
+              '<div style="margin-top:14px;font-size:0.8rem;color:var(--text-muted)">You can also Cancel to close this modal and run another generation.</div>' +
+            '</div>';
         }
+        if (btn) { btn.style.display = 'none'; }
+        return;
       }
-      // 2) Open editor in a new tab.
-      showToast(openingMsg);
-      setTimeout(function () {
-        if (window.__aiBrollOpenInEditor) window.__aiBrollOpenInEditor({ newTab: true });
-      }, 400);
-    })();
-  } else {
-    showToast('Could not stage any clips. Try again.');
+      if (sd.status === 'error') {
+        if (statusEl) statusEl.textContent = 'Render failed: ' + (sd.message || 'unknown');
+        if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
+        return;
+      }
+      if (statusEl) statusEl.textContent = sd.message || 'Working...';
+    } catch (_) { /* keep polling */ }
   }
+  if (statusEl) statusEl.textContent = 'Timed out. Try again with fewer or shorter B-roll scenes.';
+  if (btn) { btn.disabled = false; btn.textContent = 'Download Clip with B-Roll'; }
 }
 
 // ═══ AI B-Roll media ingestion + project handoff (client) ═══
@@ -1841,7 +2163,7 @@ function formatPixabayVideos(pixabayHits) {
 }
 
 // POST - Generate B-roll
-router.post('/generate', requireAuth, upload.single('video'), async (req, res) => {
+router.post('/generate', requireAuth, requireCredits('ai-broll'), upload.single('video'), async (req, res) => {
   try {
     const { inputType, url, mode, prompt } = req.body;
 
@@ -1913,13 +2235,24 @@ router.post('/generate', requireAuth, upload.single('video'), async (req, res) =
             // Decorate with the AI-generated context so the modal can show why.
             item.searchQueryUsed = q;
             item.sceneDescription = scene.scene_description || '';
-            item.moment = scene.moment || '';
+            item.moment = scene.moment || scene.timestamp_hint || '';
+            item.timestamp_hint = scene.timestamp_hint || scene.moment || 'middle';
+            item.why = scene.why || '';
+            // Expose up to 3 alternatives so the Swap Scene drawer has options.
+            item.alternatives = formatted.slice(1, 4).map(function (a) { return {
+              id: a.id, name: a.name, thumbnailUrl: a.thumbnailUrl,
+              videoPreviewUrl: a.videoPreviewUrl, videoDownloadUrl: a.videoDownloadUrl,
+              duration: a.duration, artist: a.artist
+            }; });
             brollItems.push(item);
           } else {
             const fb = generateFallbackItems([q], 1)[0];
             fb.searchQueryUsed = q;
             fb.sceneDescription = scene.scene_description || '';
-            fb.moment = scene.moment || '';
+            fb.moment = scene.moment || scene.timestamp_hint || '';
+            fb.timestamp_hint = scene.timestamp_hint || scene.moment || 'middle';
+            fb.why = scene.why || '';
+            fb.alternatives = [];
             brollItems.push(fb);
           }
         }
@@ -2668,6 +3001,276 @@ router.post('/create-project', requireAuth, async (req, res) => {
     console.error('[ai-broll create-project]', err);
     res.status(500).json({ error: err.message || 'Failed to create project' });
   }
+});
+
+
+// ═════════════════════════════════════════════════════════════════════
+// POST /ai-broll/render-with-broll
+// Splice selected B-roll clips into the primary video and produce a single
+// downloadable mp4. Returns immediately with a filename + statusUrl; the
+// actual ffmpeg work runs in the background. Client polls /render-status.
+// Body: { primary: {filename}, brollScenes: [{videoUrl, position, duration, insertSec?}] }
+// ═════════════════════════════════════════════════════════════════════
+router.post('/render-with-broll', requireAuth, async (req, res) => {
+  try {
+    if (!ffmpegPath) {
+      return res.status(503).json({ error: 'ffmpeg not available on this server' });
+    }
+    var body = req.body || {};
+    var primary = body.primary || {};
+    var brollScenes = Array.isArray(body.brollScenes) ? body.brollScenes : [];
+    if (!primary.filename) return res.status(400).json({ error: 'primary.filename is required' });
+    if (brollScenes.length === 0) return res.status(400).json({ error: 'At least one B-roll scene is required' });
+
+    var primaryPath = resolveStagedFile(primary.filename);
+    if (!primaryPath || !fs.existsSync(primaryPath)) {
+      return res.status(404).json({ error: 'Primary video not found on server. Re-import it and try again.' });
+    }
+
+    var safeName = String(primary.originalName || 'video').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 30);
+    var filename = safeName + '_broll_' + Date.now() + '.mp4';
+    var outputPath = path.join(outputDir, filename);
+    var progressPath = outputPath + '.progress';
+
+    function writeProgress(msg) { try { fs.writeFileSync(progressPath, msg); } catch (_) {} }
+    function writeError(msg) {
+      try { fs.unlinkSync(progressPath); } catch (_) {}
+      try { fs.unlinkSync(outputPath); } catch (_) {}
+      try { fs.writeFileSync(outputPath + '.error', msg); } catch (_) {}
+    }
+
+    // Respond immediately so the client can start polling.
+    res.json({
+      success: true,
+      status: 'processing',
+      filename: filename,
+      statusUrl: '/ai-broll/render-status/' + encodeURIComponent(filename),
+      downloadUrl: '/video-editor/download/' + filename
+    });
+
+    // ─── Background ffmpeg pipeline ───
+    (async function () {
+      var tempFiles = [];
+      var timeoutHandle = setTimeout(function () { writeError('Timed out after 12 minutes'); }, 12 * 60 * 1000);
+
+      function runFFmpeg(args, timeoutMs) {
+        return new Promise(function (resolve, reject) {
+          var proc = spawn(ffmpegPath, args);
+          var stderr = '';
+          proc.stderr.on('data', function (d) {
+            stderr += d.toString();
+            var m = d.toString().match(/time=(\d+:\d+:\d+)/);
+            if (m) writeProgress('Encoding: ' + m[1]);
+          });
+          proc.on('error', reject);
+          proc.on('close', function (code) {
+            if (code === 0) resolve();
+            else reject(new Error('ffmpeg exit ' + code + ': ' + stderr.slice(-400)));
+          });
+          if (timeoutMs) setTimeout(function () { try { proc.kill('SIGKILL'); } catch (_) {} reject(new Error('ffmpeg timed out')); }, timeoutMs);
+        });
+      }
+
+      function ffprobe(filePath) {
+        return new Promise(function (resolve) {
+          var ffprobeBin = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
+          var p = spawn(ffprobeBin, [
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height : format=duration',
+            '-of', 'json', filePath
+          ]);
+          var out = '';
+          p.stdout.on('data', function (d) { out += d.toString(); });
+          p.on('close', function () {
+            try {
+              var j = JSON.parse(out);
+              var s = (j.streams && j.streams[0]) || {};
+              var f = j.format || {};
+              resolve({
+                width: parseInt(s.width, 10) || 1920,
+                height: parseInt(s.height, 10) || 1080,
+                duration: parseFloat(f.duration) || 0
+              });
+            } catch (_) { resolve({ width: 1920, height: 1080, duration: 0 }); }
+          });
+          p.on('error', function () { resolve({ width: 1920, height: 1080, duration: 0 }); });
+        });
+      }
+
+      try {
+        // STEP 1: probe primary to learn resolution + duration
+        writeProgress('Reading primary video...');
+        var meta = await ffprobe(primaryPath);
+        var W = meta.width, H = meta.height, primaryDur = meta.duration;
+        if (primaryDur < 1) throw new Error('Primary video has no readable duration');
+
+        // STEP 2: download + reformat each B-roll clip
+        writeProgress('Downloading B-roll clips...');
+        var brollSegments = [];
+        for (var i = 0; i < brollScenes.length; i++) {
+          var scene = brollScenes[i];
+          var url = scene.videoUrl || scene.videoDownloadUrl || scene.videoPreviewUrl;
+          if (!url) continue;
+          writeProgress('Downloading B-roll ' + (i + 1) + '/' + brollScenes.length + '...');
+          var rawPath = outputPath + '.broll_raw_' + i + '.mp4';
+          var fmtPath = outputPath + '.broll_fmt_' + i + '.mp4';
+          tempFiles.push(rawPath, fmtPath);
+          try {
+            // Download via https (follow redirects)
+            await new Promise(function (resolve, reject) {
+              function fetchUrl(u, depth) {
+                if (depth > 5) return reject(new Error('Too many redirects'));
+                https.get(u, function (resp) {
+                  if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                    resp.resume();
+                    return fetchUrl(resp.headers.location, depth + 1);
+                  }
+                  if (resp.statusCode !== 200) return reject(new Error('HTTP ' + resp.statusCode));
+                  var ws = fs.createWriteStream(rawPath);
+                  resp.pipe(ws);
+                  ws.on('finish', resolve);
+                  ws.on('error', reject);
+                }).on('error', reject);
+              }
+              fetchUrl(url, 0);
+            });
+
+            // Reformat: scale to primary resolution, trim to chosen duration
+            var brollDur = Math.min(parseFloat(scene.duration) || 5, 12);
+            await runFFmpeg([
+              '-y', '-i', rawPath,
+              '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100', '-t', String(brollDur),
+              '-vf', 'scale=' + W + ':' + H + ':force_original_aspect_ratio=increase:flags=lanczos,crop=' + W + ':' + H + ',setsar=1',
+              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+              '-c:a', 'aac', '-b:a', '128k', '-map', '0:v:0', '-map', '1:a:0', '-shortest',
+              '-movflags', '+faststart',
+              fmtPath
+            ], 120000);
+
+            brollSegments.push({
+              path: fmtPath,
+              position: scene.position || 'middle',
+              insertSec: scene.insertSec != null ? parseFloat(scene.insertSec) : null,
+              duration: brollDur
+            });
+          } catch (e) {
+            console.error('[ai-broll render] B-roll ' + i + ' failed:', e.message);
+          }
+        }
+
+        if (brollSegments.length === 0) throw new Error('All B-roll downloads failed');
+
+        // STEP 3: compute insertion points
+        var sorted = brollSegments.map(function (b) {
+          var at;
+          if (b.insertSec != null) at = b.insertSec;
+          else if (b.position === 'beginning') at = Math.min(3, primaryDur * 0.05);
+          else if (b.position === 'end') at = Math.max(primaryDur - 8, primaryDur * 0.85);
+          else if (b.position === 'quarter') at = primaryDur * 0.25;
+          else if (b.position === 'three-quarter') at = primaryDur * 0.75;
+          else at = primaryDur * 0.5;
+          return Object.assign({}, b, { insertAt: Math.max(0.5, Math.min(at, primaryDur - 0.5)) });
+        }).sort(function (a, b) { return a.insertAt - b.insertAt; });
+
+        // STEP 4: split primary at each insertion point + interleave B-roll
+        writeProgress('Splicing B-roll into primary...');
+        var parts = [];
+        var cursor = 0;
+        for (var j = 0; j < sorted.length; j++) {
+          var br = sorted[j];
+          if (br.insertAt > cursor + 0.5) {
+            var pPart = outputPath + '.part_main_' + j + '.mp4';
+            tempFiles.push(pPart);
+            await runFFmpeg([
+              '-y', '-ss', String(cursor), '-i', primaryPath,
+              '-t', String(br.insertAt - cursor),
+              '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
+              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+              '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+              '-movflags', '+faststart', pPart
+            ], 120000);
+            parts.push(pPart);
+          }
+          parts.push(br.path);
+          cursor = br.insertAt;
+        }
+        if (cursor < primaryDur - 0.5) {
+          var lastPart = outputPath + '.part_main_last.mp4';
+          tempFiles.push(lastPart);
+          await runFFmpeg([
+            '-y', '-ss', String(cursor), '-i', primaryPath,
+            '-t', String(primaryDur - cursor),
+            '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+            '-movflags', '+faststart', lastPart
+          ], 120000);
+          parts.push(lastPart);
+        }
+
+        // STEP 5: concat all parts
+        writeProgress('Combining final video...');
+        var concatList = outputPath + '.concat.txt';
+        tempFiles.push(concatList);
+        fs.writeFileSync(concatList, parts.map(function (p) { return "file '" + p.replace(/'/g, "'\\''") + "'"; }).join('\n'), 'utf8');
+        await runFFmpeg([
+          '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
+          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+          '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
+          outputPath
+        ], 240000);
+
+        clearTimeout(timeoutHandle);
+        if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 50000) {
+          throw new Error('Final encoding produced empty/invalid file');
+        }
+        try { fs.unlinkSync(progressPath); } catch (_) {}
+        tempFiles.forEach(function (f) { try { fs.unlinkSync(f); } catch (_) {} });
+        console.log('[ai-broll render] ready:', filename);
+
+        // Log usage for storage breakdown
+        try { featureUsageOps.log(req.user.id, 'ai_broll_render').catch(function(){}); } catch(_) {}
+      } catch (err) {
+        clearTimeout(timeoutHandle);
+        console.error('[ai-broll render]', err);
+        writeError(err.message || 'Render failed');
+        tempFiles.forEach(function (f) { try { fs.unlinkSync(f); } catch (_) {} });
+      }
+    })();
+  } catch (err) {
+    console.error('[ai-broll render outer]', err);
+    res.status(500).json({ error: err.message || 'Render failed' });
+  }
+});
+
+// GET /ai-broll/render-status/:filename — poll progress / completion
+router.get('/render-status/:filename', requireAuth, function (req, res) {
+  var filename = String(req.params.filename || '').replace(/[^A-Za-z0-9_.\-]/g, '');
+  if (!filename) return res.status(400).json({ error: 'invalid filename' });
+  var outputPath = path.join(outputDir, filename);
+  var progressPath = outputPath + '.progress';
+  var errorPath = outputPath + '.error';
+
+  if (fs.existsSync(errorPath)) {
+    var errMsg = 'Render failed';
+    try { errMsg = fs.readFileSync(errorPath, 'utf8'); } catch (_) {}
+    return res.json({ status: 'error', message: errMsg });
+  }
+  if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 50000) {
+    return res.json({
+      status: 'ready',
+      downloadUrl: '/video-editor/download/' + filename,
+      sizeBytes: fs.statSync(outputPath).size
+    });
+  }
+  if (fs.existsSync(progressPath)) {
+    var msg = 'Working...';
+    try { msg = fs.readFileSync(progressPath, 'utf8'); } catch (_) {}
+    return res.json({ status: 'processing', message: msg });
+  }
+  res.json({ status: 'unknown', message: 'No active render for this filename' });
 });
 
 
