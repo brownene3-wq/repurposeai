@@ -748,17 +748,18 @@ async function renderEditor(req, res) {
        proportional button sizing. The grid still allocates a single
        'auto' row for it so the editor body below resizes to fill the
        remaining viewport height. */
-    /* Task #144 — Editor topbar mirrors the dashboard sidebar's
-       logo origin (left:18px from the viewport corner). The CINEMA
-       SUITE block hides the dashboard sidebar entirely on this
-       page, so the topbar IS the brand-mark host. padding-left:18
-       puts the Splicora wordmark at exactly the same x as the
-       dashboard. The topbar is 56px tall and align-items:center
-       lands the 32px logo at y≈12, which is close to the
-       dashboard's y=18; the 6px delta is below the visual-noise
-       threshold and preserves the rest of the topbar's vertical
-       balance with the action buttons. */
+    /* Task #144 — Pixel-match the dashboard sidebar's Splicora logo
+       origin so navigating /dashboard → /video-editor keeps the
+       wordmark fixed on screen. The CINEMA SUITE block hides the
+       dashboard sidebar on this page, so the topbar hosts the
+       brand mark. Dashboard reference: x=18, y=18, 168x32.
+       padding-left:18 lands the logo at x=18; align-items:center
+       in the 56px topbar would naturally drop the 32px logo at
+       y=12, so the wrapping link is shifted down 6px via
+       position:relative;top:6px to hit y=18 without disturbing
+       the action buttons' vertical centering. */
     .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px 0 18px;gap:12px;height:56px;z-index:100}
+    .editor-topbar .e-logo-link{position:relative;top:6px}
     .e-logo{display:flex;align-items:center;margin-right:14px;cursor:pointer}
     .e-logo img{display:block}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
