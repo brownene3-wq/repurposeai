@@ -90,8 +90,8 @@ function getBaseCSS() {
        layout transitions); these handle every other surface. */
     .logo-light, .logo-dark{vertical-align:middle}
     .logo-dark{display:none}
-    body.light .logo-light, html.light .logo-light{display:none}
-    body.light .logo-dark, html.light .logo-dark{display:inline-block}
+    body.light .logo-light, html.light .logo-light{display:none !important}
+    body.light .logo-dark, html.light .logo-dark{display:inline-block !important}
     .sidebar .logo-full .logo-dark{display:none !important}
     body.light .sidebar .logo-full .logo-dark,html.light .sidebar .logo-full .logo-dark{display:block !important}
     body.light .sidebar .logo-full .logo-light,html.light .sidebar .logo-full .logo-light{display:none !important}
@@ -292,7 +292,7 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
-        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:32px;"></a>
+        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:32px;display:none;"></a>
         <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png?v=5" alt="S" style="height:32px;border-radius:6px;"></a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>

@@ -50,7 +50,7 @@ router.get('/', optionalAuth, (req, res) => {
   </head>
   <body>
     <nav class="nav-bar">
-      <a href="/" class="nav-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:36px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:36px;"></a>
+      <a href="/" class="nav-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:36px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:36px;display:none;"></a>
       <div class="nav-links">
         <a href="/#features">Features</a>
         <a href="/pricing">Pricing</a>
