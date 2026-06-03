@@ -13233,15 +13233,21 @@ function renderMyClipsPage(user, teamPermissions) {
     .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; background: rgba(0,0,0,0.85); color: #fff; border-radius: 8px; font-size: 13px; z-index: 9999; }
   </style>
 </head>
-<body class="dashboard">
-  ${getThemeToggle()}
-  ${getSidebar('my-clips', user, teamPermissions)}
+<body class="${embed ? 'dashboard embed' : 'dashboard'}"${embed ? ' style="background:transparent;height:auto;overflow:visible"' : ''}>
+  ${embed ? '' : getThemeToggle()}
+  ${embed ? '' : getSidebar('my-clips', user, teamPermissions)}
+
+  ${embed ? `<style>
+    html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
+    .dashboard.embed { display: block; height: auto; overflow: visible; }
+    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; }
+  </style>` : ''}
 
   <main class="main-content">
-    <div class="header">
+    ${embed ? '' : `<div class="header">
       <h1 class="header-title"><img src="/images/section-icons/A-112.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">My Clips</h1>
       <p class="header-subtitle">Every clip you have rendered — download, publish, delete, or send to Drive/Dropbox.</p>
-    </div>
+    </div>`}
 
     <div class="clips-toolbar">
       <label style="font-size:12px;color:var(--text-muted);font-weight:600;">Status
@@ -13299,6 +13305,28 @@ function renderMyClipsPage(user, teamPermissions) {
 
   <script>
     ${getPublishMomentModalJS()}
+
+    // Embedded mode: report content height to the parent (Library
+    // iframe) so it can auto-size without scrollbars or clipping.
+    (function() {
+      try {
+        if (window.parent === window) return;
+        if (!new URLSearchParams(location.search).has('embed')) return;
+        var report = function() {
+          var h = Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.offsetHeight
+          );
+          try { window.parent.postMessage({ type: 'my-clips-height', height: h }, '*'); } catch(_) {}
+        };
+        window.addEventListener('load', report);
+        window.addEventListener('resize', report);
+        if ('ResizeObserver' in window) new ResizeObserver(report).observe(document.documentElement);
+        else setInterval(report, 1500);
+      } catch (_) {}
+    })();
 
     // Themed replacement for window.confirm(). Returns a Promise that
     // resolves to true (OK) / false (Cancel / backdrop / Escape).

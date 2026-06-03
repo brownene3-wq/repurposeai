@@ -750,7 +750,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 const { requireAuth, checkPlanLimit } = require('../middleware/auth');
-const { contentOps, outputOps, brandVoiceOps } = require('../db/database');
+const { contentOps, outputOps, brandVoiceOps, userRenderOps } = require('../db/database');
 
 let client;
 function getOpenAIClient() {
@@ -2206,6 +2206,133 @@ router.get('/history', requireAuth, (req, res) => {
           color: #718096;
         }
 
+        /* ── Library tabs ─────────────────────────────────────── */
+        .lib-tabs {
+          display: flex;
+          gap: 4px;
+          flex-wrap: wrap;
+          margin: 0 0 1.5rem;
+          padding: 4px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 12px;
+        }
+        body.light .lib-tabs { background: rgba(108,58,237,0.04); border-color: rgba(108,58,237,0.10); }
+        .lib-tab {
+          flex: 1 1 auto;
+          min-width: 0;
+          padding: 9px 14px;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: var(--text-muted);
+          font-weight: 600;
+          font-size: 0.85rem;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .lib-tab:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+        .lib-tab.active { background: linear-gradient(135deg, #6C3AED, #EC4899); color: #fff; }
+        .lib-pane { display: none; }
+        .lib-pane.active { display: block; }
+        /* Per-tab render grid */
+        .lib-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+          gap: 16px;
+          margin-bottom: 1.5rem;
+        }
+        .lib-card {
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 14px;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        body.light .lib-card { background: #fff; border-color: rgba(108,58,237,0.10); }
+        .lib-card:hover { transform: translateY(-2px); border-color: rgba(108,58,237,0.40); }
+        .lib-card-thumb {
+          aspect-ratio: 16 / 9;
+          background: linear-gradient(135deg, rgba(108,58,237,0.18), rgba(236,72,153,0.14));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--text-muted);
+          font-size: 28px;
+          overflow: hidden;
+        }
+        .lib-card-thumb video, .lib-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .lib-card-thumb.image { aspect-ratio: 16 / 9; background: #0a0a0a; }
+        .lib-card-body { padding: 11px 14px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+        .lib-card-title {
+          font-weight: 700;
+          font-size: 13.5px;
+          color: var(--text);
+          line-height: 1.35;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .lib-card-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
+        .lib-card-actions {
+          display: flex;
+          gap: 4px;
+          padding: 9px 12px 12px;
+          flex-wrap: wrap;
+          border-top: 1px solid rgba(255,255,255,0.04);
+        }
+        body.light .lib-card-actions { border-top-color: rgba(0,0,0,0.05); }
+        .lib-card-actions a, .lib-card-actions button {
+          flex: 1 1 calc(50% - 4px);
+          min-width: 0;
+          padding: 6px 8px;
+          border-radius: 8px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(255,255,255,0.04);
+          color: var(--text);
+          font-size: 11px;
+          font-weight: 600;
+          cursor: pointer;
+          text-align: center;
+          text-decoration: none;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .lib-card-actions a.primary, .lib-card-actions button.primary {
+          background: linear-gradient(135deg, #6C3AED, #EC4899);
+          color: #fff;
+          border-color: transparent;
+        }
+        .lib-card-actions button.danger {
+          background: rgba(239, 68, 68, 0.10);
+          color: #fca5a5;
+          border-color: rgba(239, 68, 68, 0.25);
+        }
+        .lib-card-actions button.danger:hover { background: #EF4444; color: #fff; }
+        .lib-empty {
+          grid-column: 1 / -1;
+          text-align: center;
+          padding: 56px 20px;
+          color: var(--text-muted);
+          border: 1px dashed rgba(255,255,255,0.10);
+          border-radius: 14px;
+          line-height: 1.55;
+        }
+        .lib-empty strong { color: var(--text); font-weight: 700; display: block; margin-bottom: 6px; font-size: 1rem; }
+        .lib-storage {
+          font-size: 12px;
+          color: var(--text-muted);
+          margin: 0 0 1rem;
+        }
+        .lib-storage strong { color: #e056fd; font-weight: 700; font-size: 13px; }
+        .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; background: rgba(0,0,0,0.85); color: #fff; border-radius: 8px; font-size: 13px; z-index: 9999; display: none; }
+        .toast.show { display: block; }
+
         .content-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -2516,25 +2643,55 @@ router.get('/history', requireAuth, (req, res) => {
           ${getThemeToggle()}
           <div class="header">
             <h1><img src="/images/section-icons/A-13.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Library</h1>
-            <p>Browse and manage all your created content</p>
+            <p>Every render, edit, and post — one place to find them all.</p>
           </div>
 
-          <div class="controls">
-            <input type="text" class="search-input" id="searchInput" placeholder="Search content..." />
+          <!-- Tab bar — 8 tabs, one per output surface. Use the data-tab
+               attribute and switchTab() to swap panes. -->
+          <div class="lib-tabs" role="tablist">
+            <button class="lib-tab active" data-tab="clips"     onclick="switchTab('clips', this)">Clips</button>
+            <button class="lib-tab"        data-tab="editor"    onclick="switchTab('editor', this)">Edited Videos</button>
+            <button class="lib-tab"        data-tab="captions"  onclick="switchTab('captions', this)">Captioned Videos</button>
+            <button class="lib-tab"        data-tab="hooks"     onclick="switchTab('hooks', this)">Hook Videos</button>
+            <button class="lib-tab"        data-tab="reframe"   onclick="switchTab('reframe', this)">Reframed Videos</button>
+            <button class="lib-tab"        data-tab="broll"     onclick="switchTab('broll', this)">B-Roll Renders</button>
+            <button class="lib-tab"        data-tab="thumbs"    onclick="switchTab('thumbs', this)">Thumbnails</button>
+            <button class="lib-tab"        data-tab="posts"     onclick="switchTab('posts', this)">Posts</button>
           </div>
 
-          <div class="content-grid" id="contentGrid"></div>
-
-          <div class="empty-state" id="emptyState" style="display: none;">
-            <h2>No content yet</h2>
-            <p>Start by creating a video to see it here</p>
+          <!-- Tab 1: Clips — iframes /shorts/clips?embed=1 so the
+               existing My Clips page renders inside the Library tab
+               with identical functionality. -->
+          <div class="lib-pane active" id="pane-clips">
+            <iframe id="clipsFrame" src="/shorts/clips?embed=1" style="width:100%;min-height:900px;border:0;display:block;background:transparent;" title="My Clips" loading="eager"></iframe>
           </div>
 
-          <div class="pagination">
-            <button onclick="previousPage()" id="prevBtn">← Previous</button>
-            <span id="pageInfo" style="padding: 10px 15px; color: #888;">Page 1</span>
-            <button onclick="nextPage()" id="nextBtn">Next →</button>
+          <!-- Tabs 2-7: video/image renders from user_renders -->
+          <div class="lib-pane" id="pane-editor"></div>
+          <div class="lib-pane" id="pane-captions"></div>
+          <div class="lib-pane" id="pane-hooks"></div>
+          <div class="lib-pane" id="pane-reframe"></div>
+          <div class="lib-pane" id="pane-broll"></div>
+          <div class="lib-pane" id="pane-thumbs"></div>
+
+          <!-- Tab 8: Posts — the existing text content view, unchanged. -->
+          <div class="lib-pane" id="pane-posts">
+            <div class="controls">
+              <input type="text" class="search-input" id="searchInput" placeholder="Search content..." />
+            </div>
+            <div class="content-grid" id="contentGrid"></div>
+            <div class="empty-state" id="emptyState" style="display: none;">
+              <h2>No posts yet</h2>
+              <p>Generate text-based posts from /create or /repurpose to see them here</p>
+            </div>
+            <div class="pagination">
+              <button onclick="previousPage()" id="prevBtn">← Previous</button>
+              <span id="pageInfo" style="padding: 10px 15px; color: #888;">Page 1</span>
+              <button onclick="nextPage()" id="nextBtn">Next →</button>
+            </div>
           </div>
+
+          <div class="toast" id="libToast" role="status" aria-live="polite"></div>
         </div>
       </div>
 
@@ -2549,6 +2706,167 @@ router.get('/history', requireAuth, (req, res) => {
 
       <script>
         ${getThemeScript()}
+
+        // ── Library tab switching ────────────────────────────────────
+        // Lazy-loads each render tab the first time it's activated so
+        // we don't fire 6 API calls on page load. Iframe-based Clips
+        // tab loads immediately because it's the default.
+        var _libLoaded = { clips: true, posts: false };
+        var TOOL_BY_TAB = {
+          editor: 'video-editor',
+          captions: 'ai-captions',
+          hooks: 'ai-hook',
+          reframe: 'ai-reframe',
+          broll: 'ai-broll',
+          thumbs: 'ai-thumbnail'
+        };
+        var EMPTY_COPY = {
+          editor:   { title: 'No edited videos yet', body: 'Export a timeline from the Video Editor to see it here.' },
+          captions: { title: 'No captioned videos yet', body: 'Burn captions onto a video from AI Captions to see it here.' },
+          hooks:    { title: 'No hook videos yet', body: 'Generate a hook clip from AI Hooks to see it here.' },
+          reframe:  { title: 'No reframed videos yet', body: 'Reframe a video from AI Reframe to see outputs for every aspect ratio here.' },
+          broll:    { title: 'No B-Roll renders yet', body: 'Render a B-Roll-enhanced video from AI B-Roll to see it here.' },
+          thumbs:   { title: 'No thumbnails yet', body: 'Generate thumbnail variants from AI Thumbnails to see them here.' }
+        };
+
+        function switchTab(name, btn) {
+          document.querySelectorAll('.lib-tab').forEach(function(b){ b.classList.remove('active'); });
+          document.querySelectorAll('.lib-pane').forEach(function(p){ p.classList.remove('active'); });
+          if (btn) btn.classList.add('active');
+          else document.querySelector('.lib-tab[data-tab="' + name + '"]')?.classList.add('active');
+          var pane = document.getElementById('pane-' + name);
+          if (pane) pane.classList.add('active');
+          // Update URL so deep-links work.
+          try {
+            var u = new URL(location.href);
+            u.searchParams.set('tab', name);
+            history.replaceState(null, '', u.toString());
+          } catch (_) {}
+          // Lazy-load on first activation.
+          if (name === 'posts' && !_libLoaded.posts) {
+            loadHistory();
+            _libLoaded.posts = true;
+          } else if (TOOL_BY_TAB[name] && !_libLoaded[name]) {
+            loadLibraryTab(name);
+            _libLoaded[name] = true;
+          }
+        }
+
+        async function loadLibraryTab(name) {
+          var pane = document.getElementById('pane-' + name);
+          var tool = TOOL_BY_TAB[name];
+          if (!pane || !tool) return;
+          pane.innerHTML = '<div class="lib-empty">Loading…</div>';
+          try {
+            var resp = await fetch('/repurpose/api/library?tool=' + encodeURIComponent(tool), { credentials: 'same-origin' });
+            var data = await resp.json();
+            renderLibraryTab(name, data.items || []);
+          } catch (e) {
+            pane.innerHTML = '<div class="lib-empty">Error loading: ' + libEscape(e.message) + '</div>';
+          }
+        }
+
+        function renderLibraryTab(name, items) {
+          var pane = document.getElementById('pane-' + name);
+          if (!items.length) {
+            var copy = EMPTY_COPY[name] || { title: 'Nothing here yet', body: '' };
+            pane.innerHTML = '<div class="lib-empty"><strong>' + libEscape(copy.title) + '</strong>' + libEscape(copy.body) + '</div>';
+            return;
+          }
+          // Storage header
+          var totalBytes = items.reduce(function(s, i){ return s + (i.fileSize || 0); }, 0);
+          var head = '<div class="lib-storage">Showing <strong>' + items.length + '</strong> ' + (items.length === 1 ? 'item' : 'items') + ' · <strong>' + libFmtBytes(totalBytes) + '</strong> used.</div>';
+          var html = head + '<div class="lib-grid">' + items.map(function(it) {
+            var thumb;
+            if (it.kind === 'image') {
+              thumb = '<div class="lib-card-thumb image"><img src="' + libEscape(it.downloadUrl) + '" alt=""></div>';
+            } else if (it.onDisk) {
+              thumb = '<div class="lib-card-thumb"><video src="' + libEscape(it.downloadUrl) + '" muted preload="metadata"></video></div>';
+            } else {
+              thumb = '<div class="lib-card-thumb"><span>\u{1F3AC}</span></div>';
+            }
+            var actions = '';
+            actions += '<a class="primary" href="' + libEscape(it.downloadUrl) + '" download="' + libEscape(it.filename) + '">⬇ Download</a>';
+            actions += '<button onclick="libDelete(\\'' + it.id + '\\', this)" class="danger">\u{1F5D1} Delete</button>';
+            return (
+              '<div class="lib-card" data-render-id="' + libEscape(it.id) + '">' +
+                thumb +
+                '<div class="lib-card-body">' +
+                  '<div class="lib-card-title">' + libEscape(it.title || it.filename) + '</div>' +
+                  '<div class="lib-card-meta">' +
+                    (it.fileSize ? '<span>\u{1F4BE} ' + libFmtBytes(it.fileSize) + '</span>' : '') +
+                    '<span>\u{1F552} ' + libFmtDate(it.createdAt) + '</span>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="lib-card-actions">' + actions + '</div>' +
+              '</div>'
+            );
+          }).join('') + '</div>';
+          pane.innerHTML = html;
+        }
+
+        async function libDelete(id, btn) {
+          if (!confirm('Delete this render? The file will be removed from the server.')) return;
+          btn.disabled = true; btn.textContent = '…';
+          try {
+            var r = await fetch('/repurpose/api/library/' + encodeURIComponent(id) + '/delete', { method: 'POST', credentials: 'same-origin' });
+            var d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'Failed');
+            document.querySelector('.lib-card[data-render-id="' + id + '"]')?.remove();
+            libToast('Render deleted');
+          } catch (e) {
+            libToast('Delete failed: ' + e.message);
+            btn.disabled = false; btn.textContent = '\u{1F5D1} Delete';
+          }
+        }
+
+        function libEscape(s) {
+          return String(s == null ? '' : s)
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        }
+        function libFmtBytes(b) {
+          if (!b) return '0 B';
+          var u = ['B','KB','MB','GB','TB'];
+          var i = 0, n = b;
+          while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+          return n.toFixed(n < 10 && i > 0 ? 1 : 0) + ' ' + u[i];
+        }
+        function libFmtDate(s) {
+          if (!s) return '';
+          var d = new Date(s); if (isNaN(d)) return '';
+          var diff = Math.round((Date.now() - d) / 1000);
+          if (diff < 60) return 'just now';
+          if (diff < 3600) return Math.round(diff/60) + 'm ago';
+          if (diff < 86400) return Math.round(diff/3600) + 'h ago';
+          if (diff < 604800) return Math.round(diff/86400) + 'd ago';
+          return d.toLocaleDateString();
+        }
+        function libToast(msg) {
+          var t = document.getElementById('libToast');
+          if (!t) return;
+          t.textContent = msg; t.classList.add('show');
+          setTimeout(function(){ t.classList.remove('show'); }, 2800);
+        }
+
+        // Auto-resize the embedded Clips iframe based on its post-message.
+        window.addEventListener('message', function(e) {
+          if (!e || !e.data || e.data.type !== 'my-clips-height') return;
+          var f = document.getElementById('clipsFrame');
+          if (!f) return;
+          var h = Math.max(700, Math.min(8000, Number(e.data.height) || 0));
+          if (h && Math.abs(f.clientHeight - h) > 8) f.style.height = h + 'px';
+        });
+
+        // Deep-link: ?tab=clips|editor|captions|hooks|reframe|broll|thumbs|posts
+        (function(){
+          try {
+            var t = new URLSearchParams(location.search).get('tab');
+            if (t && document.querySelector('.lib-tab[data-tab="' + t + '"]')) {
+              switchTab(t, document.querySelector('.lib-tab[data-tab="' + t + '"]'));
+            }
+          } catch (_) {}
+        })();
+
         let allContent = [];
         let filteredContent = [];
         let currentPage = 1;
@@ -2707,7 +3025,8 @@ router.get('/history', requireAuth, (req, res) => {
           renderPage();
         });
 
-        loadHistory();
+        // loadHistory() now fires only when the Posts tab is first opened
+        // (see switchTab). The Clips tab loads via its iframe on page load.
 
         // ── Phase 2d — Repurpose Publish Modal ────────────────────────
         // Opened from each output-card's "Publish to..." button. Lists the
@@ -2942,6 +3261,129 @@ router.get('/api/history', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching history:', error);
     res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
+// ── Library API ──────────────────────────────────────────────────
+// GET /repurpose/api/library?tool=<slug>&status=<state>&sortBy=&sortDir=
+// Lists user_renders rows for the authenticated user, filtered to a
+// single tool slug used by one of the Library tabs:
+//   video-editor | ai-captions | ai-hook | ai-reframe | ai-broll | ai-thumbnail
+// Clips and Posts tabs use their own legacy endpoints (clip_renders /
+// content_items + generated_outputs), not this one.
+router.get('/api/library', requireAuth, async (req, res) => {
+  try {
+    const opts = {
+      tool:    req.query.tool    || 'all',
+      status:  req.query.status  || 'ready',
+      sortBy:  req.query.sortBy  || 'created_at',
+      sortDir: req.query.sortDir || 'desc',
+      limit:   parseInt(req.query.limit, 10) || 100,
+      offset:  parseInt(req.query.offset, 10) || 0
+    };
+    const rows = await userRenderOps.getByUser(req.user.id, opts);
+    // Build a download URL + onDisk flag so the UI can choose how to
+    // render each card. R2 fallback happens server-side on download.
+    const path = require('path');
+    const fs = require('fs');
+    const outputDir = path.join('/tmp', 'repurpose-outputs');
+    const items = rows.map(r => {
+      let onDisk = false;
+      try { onDisk = fs.existsSync(path.join(outputDir, r.filename)); } catch (_) {}
+      return {
+        id: r.id,
+        tool: r.tool,
+        kind: r.kind || 'video',
+        filename: r.filename,
+        title: r.title,
+        sourceUrl: r.source_url,
+        sourceId: r.source_id,
+        thumbnailUrl: r.thumbnail_url,
+        fileSize: Number(r.file_size || 0),
+        durationSeconds: r.duration_seconds || null,
+        status: r.status,
+        createdAt: r.created_at,
+        readyAt: r.created_at,
+        downloadUrl: '/repurpose/api/library/' + encodeURIComponent(r.id) + '/download',
+        onDisk,
+        hasR2: !!r.r2_key,
+        metadata: r.metadata || null
+      };
+    });
+    res.json({ items });
+  } catch (err) {
+    console.error('[GET /repurpose/api/library]', err);
+    res.status(500).json({ error: err.message || 'Library fetch failed' });
+  }
+});
+
+// GET /repurpose/api/library/storage?tool=<slug>
+// Aggregate file_size + count for the storage indicator in the header.
+router.get('/api/library/storage', requireAuth, async (req, res) => {
+  try {
+    const s = await userRenderOps.totalStorageBytes(req.user.id, req.query.tool || 'all');
+    res.json({ totalBytes: s.total, count: s.count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /repurpose/api/library/:id/download
+// Streams the file from /tmp first; if missing, restores from R2 to /tmp
+// and streams that. Same fallback pattern as the Smart Shorts clip
+// download endpoint, so the user can always grab their renders even
+// after a Railway redeploy wipes /tmp.
+router.get('/api/library/:id/download', requireAuth, async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const row = await userRenderOps.getById(req.params.id);
+    if (!row || row.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
+    if (row.deleted_at) return res.status(410).json({ error: 'This render has been deleted' });
+    const outputDir = path.join('/tmp', 'repurpose-outputs');
+    let full = path.join(outputDir, row.filename);
+    if (!fs.existsSync(full) && row.r2_key) {
+      try {
+        const r2 = require('../utils/r2');
+        if (r2.isConfigured()) {
+          const got = await r2.getObject(row.r2_key);
+          if (got && got.ok && got.body) {
+            try { if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true }); } catch (_) {}
+            fs.writeFileSync(full, got.body);
+          }
+        }
+      } catch (rErr) { console.warn('[library download] R2 restore failed:', rErr.message); }
+    }
+    if (!fs.existsSync(full)) {
+      return res.status(410).json({ error: 'File is no longer available. Re-render to download.' });
+    }
+    res.setHeader('Content-Disposition', 'attachment; filename="' + row.filename + '"');
+    return res.sendFile(full);
+  } catch (err) {
+    console.error('[library download]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /repurpose/api/library/:id/delete — soft-delete a render row
+// and best-effort remove the local file + R2 object.
+router.post('/api/library/:id/delete', requireAuth, async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const row = await userRenderOps.getById(req.params.id);
+    if (!row || row.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
+    try { fs.unlinkSync(path.join('/tmp', 'repurpose-outputs', row.filename)); } catch (_) {}
+    if (row.r2_key) {
+      try {
+        const r2 = require('../utils/r2');
+        if (r2.isConfigured()) await r2.deleteObject(row.r2_key);
+      } catch (_) {}
+    }
+    await userRenderOps.softDelete(req.params.id, req.user.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
