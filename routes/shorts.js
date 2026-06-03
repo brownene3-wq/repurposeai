@@ -13429,24 +13429,25 @@ function renderMyClipsPage(user, teamPermissions, opts) {
         if (window.parent === window || !window.frameElement) return;
         var parentH = window.parent.innerHeight || 800;
         var frameRect = window.frameElement.getBoundingClientRect();
-        // y=0 inside this iframe corresponds to parent-viewport-y = frameRect.top.
-        // So the parent's visible top in iframe-local coords is -frameRect.top.
-        var visibleTopInIframe = -frameRect.top;
-        // Clamp the top so the slab stays within the iframe document
-        // (avoids weird overflow on very short pages).
         var docH = document.documentElement.scrollHeight || parentH;
-        if (visibleTopInIframe < 0) visibleTopInIframe = 0;
-        if (visibleTopInIframe + parentH > docH) visibleTopInIframe = Math.max(0, docH - parentH);
-        // Convert the backdrop to absolute + match the visible slab.
+        // Compute the VISIBLE portion of this iframe in iframe-local coords.
+        // The parent's visible viewport in iframe coords runs from
+        // -frameRect.top to -frameRect.top + parentH. Clamp to [0, docH]
+        // so the slab never extends past the iframe document itself.
+        var visibleTop = Math.max(0, -frameRect.top);
+        var visibleBottom = Math.min(docH, -frameRect.top + parentH);
+        var visibleHeight = Math.max(120, visibleBottom - visibleTop);
+        // Convert the backdrop into an absolute slab matching the visible
+        // portion of the iframe. The existing flex centering inside then
+        // places the panel right in the middle of the user's view —
+        // regardless of which clip they clicked Delete on.
         modalEl.style.position = 'absolute';
-        modalEl.style.top = visibleTopInIframe + 'px';
+        modalEl.style.top = visibleTop + 'px';
         modalEl.style.left = '0';
         modalEl.style.right = '0';
         modalEl.style.bottom = 'auto';
         modalEl.style.width = '100%';
-        modalEl.style.height = parentH + 'px';
-        // Existing flex centering on the backdrop now naturally places
-        // the panel at the parent viewport's center.
+        modalEl.style.height = visibleHeight + 'px';
       } catch (_) { /* cross-origin or no frameElement — fall back to fixed */ }
     }
 
