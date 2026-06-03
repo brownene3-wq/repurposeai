@@ -82,6 +82,16 @@ function getBaseCSS() {
     body.light .sidebar,html.light .sidebar{background:#f8f8f8;border-color:#e0e0e0}
     body.light .sidebar a,html.light .sidebar a{color:#666}
     body.light .sidebar a.active,html.light .sidebar a.active{color:#6c5ce7;background:rgba(108,92,231,0.08)}
+    /* Global theme-aware brand logo swap. Pair any
+       <img class="logo-light" src="splicora-logo-wide.png"> with
+       <img class="logo-dark" src="splicora-logo-wide-dark.png"> and the
+       correct one will be visible for the active theme. The sidebar-
+       scoped rules below stay (they use !important to win over sidebar
+       layout transitions); these handle every other surface. */
+    .logo-light, .logo-dark{vertical-align:middle}
+    .logo-dark{display:none}
+    body.light .logo-light, html.light .logo-light{display:none}
+    body.light .logo-dark, html.light .logo-dark{display:inline-block}
     .sidebar .logo-full .logo-dark{display:none !important}
     body.light .sidebar .logo-full .logo-dark,html.light .sidebar .logo-full .logo-dark{display:block !important}
     body.light .sidebar .logo-full .logo-light,html.light .sidebar .logo-full .logo-light{display:none !important}
