@@ -2663,7 +2663,7 @@ router.get('/history', requireAuth, (req, res) => {
                existing My Clips page renders inside the Library tab
                with identical functionality. -->
           <div class="lib-pane active" id="pane-clips">
-            <iframe id="clipsFrame" src="/shorts/clips?embed=1" scrolling="no" style="width:100%;min-height:900px;border:0;display:block;background:transparent;overflow:hidden;" title="My Clips" loading="eager"></iframe>
+            <iframe id="clipsFrame" src="/shorts/clips?embed=1" scrolling="no" style="width:100%;height:280px;min-height:0;border:0;display:block;background:transparent;overflow:hidden;" title="My Clips" loading="eager"></iframe>
           </div>
 
           <!-- Tabs 2-7: video/image renders from user_renders -->
@@ -2862,7 +2862,10 @@ router.get('/history', requireAuth, (req, res) => {
           if (!e || !e.data || e.data.type !== 'my-clips-height') return;
           var f = document.getElementById('clipsFrame');
           if (!f) return;
-          var h = Math.max(280, Number(e.data.height) || 0);
+          // Honor the actual content height with a tiny floor for the
+          // empty-state card. Lets the iframe shrink right under the
+          // last clip when the user has just a few items.
+          var h = Math.max(140, Number(e.data.height) || 0);
           if (h && Math.abs(f.clientHeight - h) > 4) f.style.height = h + 'px';
         });
 

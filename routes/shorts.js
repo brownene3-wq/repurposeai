@@ -13261,14 +13261,15 @@ function renderMyClipsPage(user, teamPermissions, opts) {
     /* Embed mode — iframe grows to natural content height via
        postMessage; suppress this document's own scrollbar so the
        parent page's single global scrollbar handles everything.
-       overflow:hidden on html kills the iframe-level scrollbar
-       even briefly while postMessage is in-flight. Body stays
-       overflow:visible so position:fixed modals + the absolute
-       Delete-confirm backdrop still render correctly. */
-    html { background: transparent !important; height: auto !important; overflow: hidden !important; }
-    body { background: transparent !important; height: auto !important; overflow: visible !important; }
-    .dashboard.embed { display: block; height: auto; overflow: visible; }
-    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; }
+       Critically: the base theme sets body { min-height: 100vh },
+       which inside an iframe resolves to the iframe ELEMENT's CSS
+       height. That created a feedback loop where the iframe never
+       shrank below its initial min-height even for one clip. Forcing
+       min-height:0 lets body collapse to actual content height. */
+    html { background: transparent !important; height: auto !important; overflow: hidden !important; min-height: 0 !important; }
+    body { background: transparent !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+    .dashboard.embed { display: block; height: auto; min-height: 0; overflow: visible; }
+    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
   </style>` : ''}
 
   <main class="main-content">
