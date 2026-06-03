@@ -13368,9 +13368,12 @@ function renderMyClipsPage(user, teamPermissions, opts) {
       var m = document.getElementById('confirmModal');
       if (m) {
         m.style.display = 'none';
-        // Reset inline overrides from anchorConfirmToParentViewport so
-        // the next open recomputes cleanly. Restore the original
-        // fixed full-iframe backdrop styling.
+        // Reset ONLY the inline properties that
+        // anchorConfirmToParentViewport actually overrode. Touching
+        // alignItems / justifyContent / panel styles here would wipe
+        // the modal's ORIGINAL inline align-items:center +
+        // justify-content:center attributes from the CSSOM, breaking
+        // flex centering on every subsequent open.
         m.style.position = '';
         m.style.top = '';
         m.style.left = '';
@@ -13378,9 +13381,6 @@ function renderMyClipsPage(user, teamPermissions, opts) {
         m.style.bottom = '';
         m.style.width = '';
         m.style.height = '';
-        m.style.alignItems = '';
-        var p = m.firstElementChild;
-        if (p) { p.style.position = ''; p.style.top = ''; p.style.transform = ''; }
       }
       if (_confirmResolve) { var r = _confirmResolve; _confirmResolve = null; r(!!v); }
     }
