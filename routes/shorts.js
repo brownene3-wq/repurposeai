@@ -13258,13 +13258,12 @@ function renderMyClipsPage(user, teamPermissions, opts) {
   ${embed ? '' : getSidebar('my-clips', user, teamPermissions)}
 
   ${embed ? `<style>
-    /* Embed mode — let the iframe scroll its own content when the
-       parent caps the iframe height. Modals inside (.confirm modal)
-       remain centered to the iframe's visible viewport this way. */
-    html, body { background: transparent !important; height: auto !important; }
-    body { overflow-y: auto !important; overflow-x: hidden !important; }
-    .dashboard.embed { display: block; height: auto; }
-    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; }
+    /* Embed mode — iframe grows to natural content height; parent
+       page handles all scrolling via its global scrollbar. No
+       internal scrollbars in this iframe. */
+    html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
+    .dashboard.embed { display: block; height: auto; overflow: visible; }
+    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; }
   </style>` : ''}
 
   <main class="main-content">
@@ -13361,7 +13360,13 @@ function renderMyClipsPage(user, teamPermissions, opts) {
     var _confirmResolve = null;
     function resolveConfirm(v) {
       var m = document.getElementById('confirmModal');
-      if (m) m.style.display = 'none';
+      if (m) {
+        m.style.display = 'none';
+        // Reset inline overrides so the next anchor pass starts clean.
+        m.style.alignItems = '';
+        var p = m.firstElementChild;
+        if (p) { p.style.position = ''; p.style.top = ''; p.style.transform = ''; }
+      }
       if (_confirmResolve) { var r = _confirmResolve; _confirmResolve = null; r(!!v); }
     }
     function showConfirm(opts) {
@@ -13388,10 +13393,47 @@ function renderMyClipsPage(user, teamPermissions, opts) {
         iconWrap.style.color = '#a78bfa';
         iconWrap.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
       }
-      document.getElementById('confirmModal').style.display = 'flex';
+      var modalEl = document.getElementById('confirmModal');
+      modalEl.style.display = 'flex';
+      // Embed mode: position:fixed inside an iframe anchors to the
+      // iframe's own viewport, which is the tall content area, not
+      // the user's browser viewport. Re-anchor the panel to where the
+      // user is actually looking in the parent window so the modal
+      // appears in-view regardless of how far they've scrolled.
+      anchorConfirmToParentViewport(modalEl);
       // Focus the confirm button for keyboard users (Enter to accept).
       setTimeout(function() { try { okBtn.focus(); } catch (_) {} }, 30);
       return new Promise(function(resolve) { _confirmResolve = resolve; });
+    }
+
+    // Centers the confirm panel on the visible portion of the iframe
+    // as seen in the parent window. Falls back to default fixed-center
+    // behavior if we're not in an iframe or cross-origin access fails.
+    function anchorConfirmToParentViewport(modalEl) {
+      try {
+        if (window.parent === window || !window.frameElement) return;
+        // Same-origin (Splicora -> Splicora), so the parent's scroll +
+        // viewport are readable and frameElement.getBoundingClientRect
+        // gives the iframe's position in the parent's viewport.
+        var parentH = window.parent.innerHeight || 800;
+        var frameRect = window.frameElement.getBoundingClientRect();
+        // y=0 inside this iframe corresponds to parent-viewport-y = frameRect.top.
+        // Parent's visible center in iframe-local coords:
+        var centerInIframe = (parentH / 2) - frameRect.top;
+        // Clamp so the panel never tries to render outside the iframe.
+        var safeMin = 24, safeMax = Math.max(safeMin + 100, document.documentElement.scrollHeight - 24);
+        centerInIframe = Math.max(safeMin + 200, Math.min(centerInIframe, safeMax - 200));
+        // Override the backdrop's flex centering — switch to top alignment
+        // with an absolute panel offset, so the backdrop still covers the
+        // whole iframe but the panel itself sits at the visible center.
+        modalEl.style.alignItems = 'flex-start';
+        var panel = modalEl.firstElementChild;
+        if (panel) {
+          panel.style.position = 'relative';
+          panel.style.top = (centerInIframe - 100) + 'px';
+          panel.style.transform = 'translateY(-50%)';
+        }
+      } catch (_) { /* cross-origin or no frameElement — fall back */ }
     }
     // Escape closes (resolves false). Bound once.
     if (!window.__confirmEscWired) {
