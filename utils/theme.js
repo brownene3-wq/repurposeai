@@ -218,7 +218,10 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/ai-reframe', icon: '<img src="/images/section-icons/A-6.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
     { href: '/ai-thumbnail', icon: '<img src="/images/section-icons/A-103.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
     { href: '/ai-broll', icon: '<img src="/images/section-icons/A-7.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
-    { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-113.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
+    // Hidden per Albert — keep this commented line intact so re-enabling
+    // is a one-line uncomment. The /enhance-speech route stays mounted in
+    // server.js so the page still loads if anyone hits the URL directly.
+    // { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-113.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
     { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
     // Brand Templates moved into /settings as a tab. The standalone
