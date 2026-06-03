@@ -13362,7 +13362,16 @@ function renderMyClipsPage(user, teamPermissions, opts) {
       var m = document.getElementById('confirmModal');
       if (m) {
         m.style.display = 'none';
-        // Reset inline overrides so the next anchor pass starts clean.
+        // Reset inline overrides from anchorConfirmToParentViewport so
+        // the next open recomputes cleanly. Restore the original
+        // fixed full-iframe backdrop styling.
+        m.style.position = '';
+        m.style.top = '';
+        m.style.left = '';
+        m.style.right = '';
+        m.style.bottom = '';
+        m.style.width = '';
+        m.style.height = '';
         m.style.alignItems = '';
         var p = m.firstElementChild;
         if (p) { p.style.position = ''; p.style.top = ''; p.style.transform = ''; }
@@ -13406,34 +13415,56 @@ function renderMyClipsPage(user, teamPermissions, opts) {
       return new Promise(function(resolve) { _confirmResolve = resolve; });
     }
 
-    // Centers the confirm panel on the visible portion of the iframe
-    // as seen in the parent window. Falls back to default fixed-center
-    // behavior if we're not in an iframe or cross-origin access fails.
+    // Anchor the confirm modal to the parent window's currently
+    // visible viewport, not the iframe's full content area. Without
+    // this the modal centers at the middle of a possibly-very-tall
+    // iframe, and the user has to scroll the parent page to find it.
+    //
+    // Approach: turn the backdrop from a fixed full-iframe overlay
+    // into an absolute slab that exactly covers the parent's visible
+    // viewport, expressed in iframe-local coordinates. The existing
+    // flex centering then places the panel right in the user's view.
     function anchorConfirmToParentViewport(modalEl) {
       try {
         if (window.parent === window || !window.frameElement) return;
-        // Same-origin (Splicora -> Splicora), so the parent's scroll +
-        // viewport are readable and frameElement.getBoundingClientRect
-        // gives the iframe's position in the parent's viewport.
         var parentH = window.parent.innerHeight || 800;
         var frameRect = window.frameElement.getBoundingClientRect();
         // y=0 inside this iframe corresponds to parent-viewport-y = frameRect.top.
-        // Parent's visible center in iframe-local coords:
-        var centerInIframe = (parentH / 2) - frameRect.top;
-        // Clamp so the panel never tries to render outside the iframe.
-        var safeMin = 24, safeMax = Math.max(safeMin + 100, document.documentElement.scrollHeight - 24);
-        centerInIframe = Math.max(safeMin + 200, Math.min(centerInIframe, safeMax - 200));
-        // Override the backdrop's flex centering — switch to top alignment
-        // with an absolute panel offset, so the backdrop still covers the
-        // whole iframe but the panel itself sits at the visible center.
-        modalEl.style.alignItems = 'flex-start';
-        var panel = modalEl.firstElementChild;
-        if (panel) {
-          panel.style.position = 'relative';
-          panel.style.top = (centerInIframe - 100) + 'px';
-          panel.style.transform = 'translateY(-50%)';
-        }
-      } catch (_) { /* cross-origin or no frameElement — fall back */ }
+        // So the parent's visible top in iframe-local coords is -frameRect.top.
+        var visibleTopInIframe = -frameRect.top;
+        // Clamp the top so the slab stays within the iframe document
+        // (avoids weird overflow on very short pages).
+        var docH = document.documentElement.scrollHeight || parentH;
+        if (visibleTopInIframe < 0) visibleTopInIframe = 0;
+        if (visibleTopInIframe + parentH > docH) visibleTopInIframe = Math.max(0, docH - parentH);
+        // Convert the backdrop to absolute + match the visible slab.
+        modalEl.style.position = 'absolute';
+        modalEl.style.top = visibleTopInIframe + 'px';
+        modalEl.style.left = '0';
+        modalEl.style.right = '0';
+        modalEl.style.bottom = 'auto';
+        modalEl.style.width = '100%';
+        modalEl.style.height = parentH + 'px';
+        // Existing flex centering on the backdrop now naturally places
+        // the panel at the parent viewport's center.
+      } catch (_) { /* cross-origin or no frameElement — fall back to fixed */ }
+    }
+
+    // Track parent scroll while the modal is open so it follows along
+    // if the user scrolls the parent page mid-confirm. Bound once.
+    if (!window.__confirmScrollWired) {
+      window.__confirmScrollWired = true;
+      var _scrollTick = null;
+      function _reanchorIfOpen() {
+        if (_scrollTick) return;
+        _scrollTick = requestAnimationFrame(function() {
+          _scrollTick = null;
+          var m = document.getElementById('confirmModal');
+          if (m && m.style.display === 'flex') anchorConfirmToParentViewport(m);
+        });
+      }
+      try { window.parent.addEventListener('scroll', _reanchorIfOpen, { passive: true }); } catch(_) {}
+      try { window.parent.addEventListener('resize', _reanchorIfOpen); } catch(_) {}
     }
     // Escape closes (resolves false). Bound once.
     if (!window.__confirmEscWired) {
