@@ -2663,7 +2663,7 @@ router.get('/history', requireAuth, (req, res) => {
                existing My Clips page renders inside the Library tab
                with identical functionality. -->
           <div class="lib-pane active" id="pane-clips">
-            <iframe id="clipsFrame" src="/shorts/clips?embed=1" style="width:100%;min-height:900px;border:0;display:block;background:transparent;" title="My Clips" loading="eager"></iframe>
+            <iframe id="clipsFrame" src="/shorts/clips?embed=1" scrolling="no" style="width:100%;min-height:900px;border:0;display:block;background:transparent;overflow:hidden;" title="My Clips" loading="eager"></iframe>
           </div>
 
           <!-- Tabs 2-7: video/image renders from user_renders -->

@@ -13258,10 +13258,15 @@ function renderMyClipsPage(user, teamPermissions, opts) {
   ${embed ? '' : getSidebar('my-clips', user, teamPermissions)}
 
   ${embed ? `<style>
-    /* Embed mode — iframe grows to natural content height; parent
-       page handles all scrolling via its global scrollbar. No
-       internal scrollbars in this iframe. */
-    html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
+    /* Embed mode — iframe grows to natural content height via
+       postMessage; suppress this document's own scrollbar so the
+       parent page's single global scrollbar handles everything.
+       overflow:hidden on html kills the iframe-level scrollbar
+       even briefly while postMessage is in-flight. Body stays
+       overflow:visible so position:fixed modals + the absolute
+       Delete-confirm backdrop still render correctly. */
+    html { background: transparent !important; height: auto !important; overflow: hidden !important; }
+    body { background: transparent !important; height: auto !important; overflow: visible !important; }
     .dashboard.embed { display: block; height: auto; overflow: visible; }
     .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; }
   </style>` : ''}
