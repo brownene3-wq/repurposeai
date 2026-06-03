@@ -93,7 +93,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;background:rg
 </style></head><body>
 <div class="bg-orb bg-orb--1"></div><div class="bg-orb bg-orb--2"></div>
 <nav><div class="nav-inner">
-  <a href="/" class="logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:36px;"></a>
+  <a href="/" class="logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:36px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:36px;"></a>
   <button style="display:none;background:none;border:none;color:var(--text);font-size:1.5rem;cursor:pointer" class="mob-toggle" onclick="document.querySelector('.nav-links').classList.toggle('mob-open')">&#9776;</button>
   <div class="nav-links">
     <a href="/">Home</a>

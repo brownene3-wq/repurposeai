@@ -1036,7 +1036,7 @@ async function renderEditor(req, res) {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
+            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:24px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
             <!-- Task #99 \u2014 Topbar Undo/Redo/Snap/Snapshot/Link Tracks
                  now proxy to the real handlers (timeline toolbar +
                  sidebar Edit > Freeze). Inline onclick removed; wiring
