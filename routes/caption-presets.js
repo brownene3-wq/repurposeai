@@ -1188,6 +1188,9 @@ router.get('/', requireAuth, (req, res) => {
       font-weight: 700;
     }
     .header-cta:hover .cta-arrow { transform: translateX(3px); }
+    /* Back-direction CTA: arrow sits on the LEFT and nudges leftward on
+       hover so the motion matches the semantic "go back" direction. */
+    .header-cta-back:hover .cta-arrow { transform: translateX(-3px); }
     .header-cta .added-count {
       display: inline-flex;
       align-items: center;
@@ -1667,11 +1670,11 @@ ${PRESETS_VISUAL_CSS}
           <p>Choose from 100 premium caption presets across 5 categories to make your videos stand out</p>
         </div>
         <div class="header-actions">
-          <a href="/ai-captions" class="header-cta" id="viewAiCaptionsBtn"
-             title="Open the AI Captions page to use the styles you've added">
-            <span><span class="cta-label-long">View on </span>AI Captions</span>
+          <a href="/ai-captions" class="header-cta header-cta-back" id="viewAiCaptionsBtn"
+             title="Go back to the AI Captions page">
+            <span class="cta-arrow" aria-hidden="true">←</span>
+            <span><span class="cta-label-long">Go back to </span>AI Captions</span>
             <span class="added-count is-empty" id="addedCountBadge" aria-label="styles added">0</span>
-            <span class="cta-arrow" aria-hidden="true">→</span>
           </a>
         </div>
       </div>

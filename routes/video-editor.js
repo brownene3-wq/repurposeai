@@ -646,6 +646,22 @@ async function renderEditor(req, res) {
     .media-library [data-v10-folder]{display:none!important}
     .media-library .ml-body>.ml-fgrid:empty{display:none}
     .filmstrip-wrap{display:none!important}
+    /* Task #143 — INLINE the V10 LAYOUT rules too. Previously only the
+       hide-legacy rules were inlined; the three grid-restructuring rules
+       below (media-library + editor-sidebar span rows 2/4 = full-height
+       rails, timeline shrinks to grid-column 2/3 = middle only) still
+       lived inside v10-editor-redesign.js's runtime CSS injection. That
+       meant the page painted with the FALLBACK grid (media + sidebar at
+       48vh, timeline full-width across the bottom) for one frame, then
+       v10's CSS injection snapped them into rails/middle-timeline — the
+       user-visible flash on every load/refresh. Inlining here means the
+       grid resolves correctly on the very first paint; v10's runtime
+       block still asserts the same rules later as a no-op duplicate. */
+    .editor-container .media-library{grid-row:2/4!important;overflow-y:hidden;display:flex;flex-direction:column}
+    .editor-container .media-library .ml-body{flex:1 1 0;overflow-y:auto;min-height:0}
+    .editor-container .editor-sidebar{grid-row:2/4!important;overflow-y:hidden;display:flex;flex-direction:column}
+    .editor-container .timeline-container,.editor-container #timelineContainer{grid-column:2/3!important}
+    .media-library .ml-body>.ml-fgrid{display:flex;flex-direction:column;gap:5px;padding:4px 12px 8px}
     /* ═════════════════════════════════════════════════════════════════════ */
     .ml-search{padding:5px 8px}
     .ml-search input{width:100%;background:#0c0814;border:1px solid rgba(108,58,237,.1);border-radius:6px;padding:8px 10px;color:#ccc;font-size:13px;outline:none}

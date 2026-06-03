@@ -210,15 +210,24 @@ function getSidebar(activePage, user, teamPermissions) {
     { href: '/video-editor', icon: '<img src="/images/section-icons/A-2.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
     // --- AI & Creative Tools ---
     { href: '/ai-captions', icon: '<img src="/images/section-icons/A-3.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
-    { href: '/caption-presets', icon: '<img src="/images/section-icons/A-4.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Caption Styles', key: 'caption-presets', perm: 'use_repurpose' },
+    // Caption Styles intentionally removed from the sidebar — it's now reached
+    // via the 'Add Captions' button inside AI Captions > Presets. The /caption-
+    // presets route itself is still mounted (see server.js) and remains
+    // directly reachable by URL or by the in-app link from AI Captions.
     { href: '/ai-hook', icon: '<img src="/images/section-icons/A-5.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Hooks', key: 'ai-hook', perm: 'use_repurpose' },
     { href: '/ai-reframe', icon: '<img src="/images/section-icons/A-6.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Reframe', key: 'ai-reframe', perm: 'use_repurpose' },
     { href: '/ai-thumbnail', icon: '<img src="/images/section-icons/A-103.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Thumbnails', key: 'ai-thumbnail', perm: 'use_repurpose' },
     { href: '/ai-broll', icon: '<img src="/images/section-icons/A-7.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI B-Roll', key: 'ai-broll', perm: 'use_repurpose' },
-    { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-113.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
+    // Hidden per Albert — keep this commented line intact so re-enabling
+    // is a one-line uncomment. The /enhance-speech route stays mounted in
+    // server.js so the page still loads if anyone hits the URL directly.
+    // { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-113.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
     { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
-    { href: '/brand-templates', icon: '<img src="/images/section-icons/A-118.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Templates', key: 'brand-templates', perm: 'use_repurpose' },
+    // Brand Templates moved into /settings as a tab. The standalone
+    // /brand-templates route is still mounted so the iframe + save
+    // API + Brand Kit modal CTAs continue to work, but it's no longer
+    // a sidebar destination.
     { href: '/dashboard/calendar', icon: '<img src="/images/section-icons/A-8.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Calendar', key: 'calendar', perm: 'use_calendar' },
     { href: '/dashboard/analytics', icon: '<img src="/images/section-icons/A-50.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Analytics', key: 'analytics', perm: 'view_analytics' },
     // --- Account ---
@@ -265,7 +274,7 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
-        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=4" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=4" alt="Splicora" style="height:32px;"></a>
+        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:32px;"></a>
         <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png?v=5" alt="S" style="height:32px;border-radius:6px;"></a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>
@@ -514,7 +523,7 @@ function getBrandKitModal() {
         <div class="bk-sub">Pick a saved Brand Template to apply its aspect ratio, caption style, and logo to this project.</div>
         <div class="bk-list" id="bkList"></div>
         <div class="bk-footer">
-          <a href="/brand-templates" target="_blank" rel="noopener" class="bk-edit-link">➤ Create / edit templates</a>
+          <a href="/settings?section=brandtemplates" target="_blank" rel="noopener" class="bk-edit-link">➤ Create / edit templates</a>
           <button class="bk-close-btn" onclick="closeBrandKitModal()">Close</button>
         </div>
       </div>
@@ -531,7 +540,7 @@ function getBrandKitModal() {
             listEl.innerHTML =
               '<div style="padding:24px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.15);border-radius:8px;text-align:center;font-size:12px;color:#8886a0;line-height:1.5">' +
                 'No saved templates yet.<br>' +
-                '<a href="/brand-templates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Go to Brand Templates</a> to create one.' +
+                '<a href="/settings?section=brandtemplates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Open Brand Templates in Settings</a> to create one.' +
               '</div>';
             return;
           }
