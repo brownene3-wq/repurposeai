@@ -152,6 +152,29 @@ async function downloadYouTubeVideo(videoUrl, destPath, opts = {}) {
     }
   }
 
+  // Strategy 5: ScrapingBee paid fallback ($49.99/mo Freelance plan).
+  // Last-resort paid layer using their premium residential proxy pool.
+  if (!opts.audioOnly) {
+    try {
+      const { downloadWithScrapingBee, isScrapingBeeEnabled } = require('./scrapingbee-youtube');
+      if (isScrapingBeeEnabled()) {
+        console.log(`  [YouTube DL] Strategy 5: ScrapingBee paid fallback`);
+        await downloadWithScrapingBee(videoUrl, destPath, 'yt-dlp', YTDLP_BASE_ARGS, () => {});
+        if (fs.existsSync(destPath) && fs.statSync(destPath).size > 10000) {
+          console.log(`  [YouTube DL] ScrapingBee succeeded`);
+          return;
+        }
+        errors.push('ScrapingBee produced no output');
+      } else {
+        errors.push('ScrapingBee: SCRAPINGBEE_API_KEY missing');
+      }
+    } catch (e) {
+      console.log(`  [YouTube DL] ScrapingBee failed: ${e.message}`);
+      errors.push('ScrapingBee: ' + (e.message || '').slice(0, 200));
+      try { fs.unlinkSync(destPath); } catch (_) {}
+    }
+  }
+
   // All strategies failed
   const hasProxy = !!proxyArgs.length;
   const hasCookies = !!cookiesArgs.length;
