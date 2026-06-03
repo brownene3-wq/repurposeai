@@ -748,8 +748,18 @@ async function renderEditor(req, res) {
        proportional button sizing. The grid still allocates a single
        'auto' row for it so the editor body below resizes to fill the
        remaining viewport height. */
-    .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px;gap:12px;height:56px;z-index:100}
-    .e-logo{margin-right:14px;cursor:pointer}
+    /* Task #144 — Editor topbar mirrors the dashboard sidebar's
+       logo origin (left:18px from the viewport corner). The CINEMA
+       SUITE block hides the dashboard sidebar entirely on this
+       page, so the topbar IS the brand-mark host. padding-left:18
+       puts the Splicora wordmark at exactly the same x as the
+       dashboard. The topbar is 56px tall and align-items:center
+       lands the 32px logo at y≈12, which is close to the
+       dashboard's y=18; the 6px delta is below the visual-noise
+       threshold and preserves the rest of the topbar's vertical
+       balance with the action buttons. */
+    .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px 0 18px;gap:12px;height:56px;z-index:100}
+    .e-logo{display:flex;align-items:center;margin-right:14px;cursor:pointer}
     .e-logo img{display:block}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
     .e-tb{padding:8px 16px;font-size:13px;font-weight:600;color:#a78bfa;background:transparent;border:1px solid rgba(108,58,237,.25);border-radius:8px;cursor:pointer;transition:all .2s}
@@ -1036,15 +1046,21 @@ async function renderEditor(req, res) {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <!-- Task #144 — Drop the editor topbar's duplicate Splicora
-                 logo. The dashboard sidebar (rendered above by
-                 getSidebar()) already shows the full Splicora wordmark
-                 at the top-left, so the topbar copy created a visible
-                 stacked-twin effect when users navigated from the
-                 dashboard to the editor. The sidebar's own logo retains
-                 the Go-to-Dashboard click target (Task #81 tooltip is
-                 wired there too), so no nav affordance is lost. -->
-
+            <!-- Task #144 — Single Splicora wordmark in the editor
+                 topbar. The dashboard sidebar is hidden on this page
+                 (.dashboard .sidebar{display:none!important} in the
+                 CINEMA SUITE block), so the topbar is the only place
+                 the logo can live. The previous version of this link
+                 rendered BOTH logo-light AND logo-dark img tags with
+                 no theme CSS scoping them to .e-logo, so both images
+                 stacked vertically — that was the duplicated-logo
+                 effect users saw on load. Restored as a single img
+                 with no theme variant (editor is dark-only), and
+                 .e-logo is sized + aligned to match the dashboard's
+                 sidebar logo position (x≈18px, y≈18px from the
+                 viewport corner) so navigating dashboard → editor
+                 doesn't shift the wordmark. -->
+            <a href="/dashboard" class="splicora-tt e-logo-link" style="text-decoration:none;display:flex;align-items:center" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;display:block"></span></a><div class="e-sep"></div>
             <!-- Task #99 \u2014 Topbar Undo/Redo/Snap/Snapshot/Link Tracks
                  now proxy to the real handlers (timeline toolbar +
                  sidebar Edit > Freeze). Inline onclick removed; wiring
