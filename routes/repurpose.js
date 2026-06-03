@@ -2848,13 +2848,36 @@ router.get('/history', requireAuth, (req, res) => {
           setTimeout(function(){ t.classList.remove('show'); }, 2800);
         }
 
-        // Auto-resize the embedded Clips iframe based on its post-message.
+        // Auto-resize the embedded Clips iframe.
+        //
+        // Two competing requirements:
+        //   • Few clips → iframe should shrink right under the last
+        //     card so the Library page has no dead space.
+        //   • Many clips → iframe should NOT grow to its full content
+        //     height, because position:fixed modals inside the iframe
+        //     (e.g. Delete confirm) center to the iframe's viewport.
+        //     A 4000px-tall iframe places the modal 2000px below the
+        //     fold, forcing the user to scroll the parent page to find
+        //     it. Capping the iframe at ~75% of the browser viewport
+        //     keeps modals visible and lets the iframe scroll
+        //     internally for the rest of the list.
         window.addEventListener('message', function(e) {
           if (!e || !e.data || e.data.type !== 'my-clips-height') return;
           var f = document.getElementById('clipsFrame');
           if (!f) return;
-          var h = Math.max(700, Math.min(8000, Number(e.data.height) || 0));
-          if (h && Math.abs(f.clientHeight - h) > 8) f.style.height = h + 'px';
+          var content = Number(e.data.height) || 0;
+          var cap = Math.max(560, Math.round((window.innerHeight || 900) * 0.75));
+          var h = Math.min(Math.max(280, content), cap);
+          if (h && Math.abs(f.clientHeight - h) > 4) f.style.height = h + 'px';
+        });
+        // Also recompute on parent resize so the cap tracks the user's
+        // browser window changes.
+        window.addEventListener('resize', function(){
+          var f = document.getElementById('clipsFrame');
+          if (!f) return;
+          var cap = Math.max(560, Math.round((window.innerHeight || 900) * 0.75));
+          var cur = parseInt(f.style.height || f.clientHeight, 10) || 0;
+          if (cur > cap) f.style.height = cap + 'px';
         });
 
         // Deep-link: ?tab=clips|editor|captions|hooks|reframe|broll|thumbs|posts

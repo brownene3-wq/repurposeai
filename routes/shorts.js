@@ -13258,9 +13258,13 @@ function renderMyClipsPage(user, teamPermissions, opts) {
   ${embed ? '' : getSidebar('my-clips', user, teamPermissions)}
 
   ${embed ? `<style>
-    html, body { background: transparent !important; height: auto !important; overflow: visible !important; }
-    .dashboard.embed { display: block; height: auto; overflow: visible; }
-    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; }
+    /* Embed mode — let the iframe scroll its own content when the
+       parent caps the iframe height. Modals inside (.confirm modal)
+       remain centered to the iframe's visible viewport this way. */
+    html, body { background: transparent !important; height: auto !important; }
+    body { overflow-y: auto !important; overflow-x: hidden !important; }
+    .dashboard.embed { display: block; height: auto; }
+    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; }
   </style>` : ''}
 
   <main class="main-content">
