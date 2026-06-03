@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { contentOps, outputOps, shortsOps, creditOps, storageOps } = require('../db/database');
+const { contentOps, outputOps, shortsOps, creditOps, storageOps, clipRenderOps, userRenderOps } = require('../db/database');
 const { capFor } = require('../middleware/credits');
 const { capForPlan: storageCapBytes, formatBytes, graceActive: storageGraceActive } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
@@ -107,18 +107,30 @@ router.get('/', requireAuth, async (req, res) => {
     if (usage) creditsUsed = usage.used || 0;
   } catch (e) { console.error('Dashboard credits read error:', e); }
   const creditsTotal = capFor(req.user.plan);
-  // Phase 2: real storage bytes from users.storage_bytes_used
+  // Storage card shows total file size of EVERYTHING currently in
+  // the Library — Clips tab (clip_renders, with R2 backup) + every
+  // other Library tab (user_renders: Edited Videos, Captioned,
+  // Hook, Reframed, B-Roll, Thumbnails). Replaces the legacy
+  // storage_bytes_used counter which was hand-maintained on
+  // uploads and never reflected the per-tool renders the Library
+  // now surfaces.
+  //
+  // Grace banner state still reads from the legacy column because
+  // the grace timer is set elsewhere (overage workflow). The displayed
+  // bytes/count come from the Library tables.
   let storageBytes = 0, storageCap = storageCapBytes(req.user.plan), graceUntilStr = null, graceActiveNow = false;
   try {
-    const su = await storageOps.getUsage(req.user.id);
-    if (su) {
-      storageBytes = su.bytes;
-      if (su.graceUntil) {
-        graceActiveNow = storageGraceActive(su.graceUntil);
-        if (graceActiveNow) graceUntilStr = new Date(su.graceUntil).toLocaleDateString();
-      }
+    const [clipS, libS, su] = await Promise.all([
+      clipRenderOps.totalStorageBytes(req.user.id).catch(() => ({ total: 0 })),
+      userRenderOps.totalStorageBytes(req.user.id, 'all').catch(() => ({ total: 0 })),
+      storageOps.getUsage(req.user.id).catch(() => null)
+    ]);
+    storageBytes = Number(clipS.total || 0) + Number(libS.total || 0);
+    if (su && su.graceUntil) {
+      graceActiveNow = storageGraceActive(su.graceUntil);
+      if (graceActiveNow) graceUntilStr = new Date(su.graceUntil).toLocaleDateString();
     }
-  } catch (e) { console.error('Dashboard storage read error:', e); }
+  } catch (e) { console.error('Dashboard library storage read error:', e); }
   const storageUsed = formatBytes(storageBytes);
   const storageTotal = formatBytes(storageCap);
   const storagePct = storageCap > 0 ? Math.min((storageBytes / storageCap) * 100, 100) : 0;

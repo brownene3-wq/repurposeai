@@ -2888,6 +2888,22 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
 
     clearTimeout(routeTimer);
     if (timedOut) return;
+
+    // Library — log each successful reframe so it appears under the
+    // 'Reframed Videos' tab. One row per output aspect ratio.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      results.forEach(function(r) {
+        const absPath = path.join(outputDir, r.filename);
+        recordRender(req.user.id, {
+          tool: 'ai-reframe',
+          absPath: absPath,
+          title: 'Reframed ' + r.ratio + ' (' + r.dimensions + ')',
+          metadata: { ratio: r.ratio, dimensions: r.dimensions, mode: r.mode }
+        }).catch(function(e){ console.warn('[ai-reframe] recordRender:', e && e.message); });
+      });
+    } catch (recErr) { console.warn('[ai-reframe] recordRender require failed:', recErr.message); }
+
     res.json({ success: true, files: results });
     featureUsageOps.log(req.user.id, 'ai_reframe').catch(() => {});
   } catch (error) {

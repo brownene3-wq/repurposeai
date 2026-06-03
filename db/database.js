@@ -328,6 +328,38 @@ const initDatabase = async () => {
     try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_clip_renders_filename ON clip_renders(filename)`); } catch (e) {}
     try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_clip_renders_status ON clip_renders(status)`); } catch (e) {}
 
+    // Library — universal per-tool render log. Mirrors clip_renders'
+    // shape but tagged with a 'tool' column so /repurpose/history can
+    // surface outputs from Video Editor, AI Captions, AI Hook, AI
+    // Reframe, AI Thumbnail, and AI B-Roll alongside Smart Shorts
+    // clips. r2_key columns let us serve files after Railway /tmp wipes.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_renders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        tool TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'video',
+        filename TEXT NOT NULL,
+        title TEXT,
+        source_url TEXT,
+        source_id TEXT,
+        thumbnail_url TEXT,
+        r2_key TEXT,
+        file_size BIGINT DEFAULT 0,
+        duration_seconds REAL,
+        status TEXT NOT NULL DEFAULT 'ready',
+        error_message TEXT,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_renders_user_tool ON user_renders(user_id, tool, created_at DESC)`); } catch (e) {}
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_renders_user_created ON user_renders(user_id, created_at DESC)`); } catch (e) {}
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_renders_filename ON user_renders(filename)`); } catch (e) {}
+
     // Brand kit table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS brand_kits (
@@ -1959,6 +1991,90 @@ module.exports = {
     },
     async countByUser(userId) {
       const result = await pool.query(`SELECT COUNT(*) FROM clip_renders WHERE user_id = $1 AND deleted_at IS NULL`, [userId]);
+      return parseInt(result.rows[0].count, 10);
+    }
+  },
+  // Universal per-tool render log used by the Library page tabs. Same
+  // shape as clipRenderOps but with a tool filter and a generic 'kind'
+  // (video|image) so AI Thumbnails can share the table.
+  userRenderOps: {
+    async create(userId, data) {
+      const id = uuidv4();
+      const result = await pool.query(
+        `INSERT INTO user_renders (id, user_id, tool, kind, filename, title, source_url, source_id, thumbnail_url, r2_key, file_size, duration_seconds, status, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        [
+          id, userId, data.tool, data.kind || 'video', data.filename,
+          data.title || null, data.sourceUrl || null, data.sourceId || null,
+          data.thumbnailUrl || null, data.r2Key || null,
+          data.fileSize == null ? 0 : Number(data.fileSize),
+          data.durationSeconds == null ? null : Number(data.durationSeconds),
+          data.status || 'ready',
+          data.metadata ? JSON.stringify(data.metadata) : null
+        ]
+      );
+      return result.rows[0];
+    },
+    async getByUser(userId, opts = {}) {
+      const limit = Math.min(Math.max(opts.limit || 100, 1), 500);
+      const offset = Math.max(opts.offset || 0, 0);
+      const tool = opts.tool; // single tool string OR comma-separated OR null = all
+      const status = opts.status; // 'ready' | 'rendering' | 'failed' | 'all'
+      let where = 'WHERE user_id = $1 AND deleted_at IS NULL';
+      const vals = [userId];
+      if (tool && tool !== 'all') {
+        const tools = String(tool).split(',').map(s => s.trim()).filter(Boolean);
+        if (tools.length === 1) { vals.push(tools[0]); where += ` AND tool = $${vals.length}`; }
+        else if (tools.length > 1) {
+          const ph = tools.map((_, i) => `$${vals.length + 1 + i}`);
+          vals.push(...tools);
+          where += ` AND tool IN (${ph.join(',')})`;
+        }
+      }
+      if (status && status !== 'all') {
+        vals.push(status);
+        where += ` AND status = $${vals.length}`;
+      }
+      const sortBy = opts.sortBy === 'size' ? 'file_size' : (opts.sortBy === 'title' ? 'title' : 'created_at');
+      const sortDir = opts.sortDir === 'asc' ? 'ASC' : 'DESC';
+      vals.push(limit, offset);
+      const sql = `SELECT * FROM user_renders ${where} ORDER BY ${sortBy} ${sortDir} NULLS LAST LIMIT $${vals.length - 1} OFFSET $${vals.length}`;
+      const result = await pool.query(sql, vals);
+      return result.rows;
+    },
+    async getById(id) {
+      return (await pool.query(`SELECT * FROM user_renders WHERE id = $1`, [id])).rows[0];
+    },
+    async updateStatus(id, status, opts = {}) {
+      const fields = ['status = $1', 'updated_at = CURRENT_TIMESTAMP'];
+      const vals = [status];
+      if (opts.errorMessage !== undefined) { vals.push(opts.errorMessage); fields.push(`error_message = $${vals.length}`); }
+      if (opts.fileSize !== undefined) { vals.push(opts.fileSize); fields.push(`file_size = $${vals.length}`); }
+      if (opts.thumbnailUrl !== undefined) { vals.push(opts.thumbnailUrl); fields.push(`thumbnail_url = $${vals.length}`); }
+      if (opts.r2Key !== undefined) { vals.push(opts.r2Key); fields.push(`r2_key = $${vals.length}`); }
+      vals.push(id);
+      const sql = `UPDATE user_renders SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`;
+      return (await pool.query(sql, vals)).rows[0];
+    },
+    async softDelete(id, userId) {
+      const result = await pool.query(
+        `UPDATE user_renders SET deleted_at = CURRENT_TIMESTAMP, status = 'deleted', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *`,
+        [id, userId]
+      );
+      return result.rows[0];
+    },
+    async totalStorageBytes(userId, tool) {
+      const vals = [userId];
+      let where = 'user_id = $1 AND deleted_at IS NULL AND status = \'ready\'';
+      if (tool && tool !== 'all') { vals.push(tool); where += ` AND tool = $${vals.length}`; }
+      const result = await pool.query(
+        `SELECT COALESCE(SUM(file_size), 0)::bigint AS total, COUNT(*) AS count FROM user_renders WHERE ${where}`,
+        vals
+      );
+      return { total: Number(result.rows[0].total || 0), count: Number(result.rows[0].count || 0) };
+    },
+    async countByUser(userId) {
+      const result = await pool.query(`SELECT COUNT(*) FROM user_renders WHERE user_id = $1 AND deleted_at IS NULL`, [userId]);
       return parseInt(result.rows[0].count, 10);
     }
   },

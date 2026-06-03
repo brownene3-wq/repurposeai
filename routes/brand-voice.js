@@ -7,6 +7,11 @@ const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = 
 
 // GET - Brand voice management page
 router.get('/', requireAuth, (req, res) => {
+  // embed=1 strips the sidebar + page-header chrome so the wizard
+  // can be iframed cleanly into other pages (Settings → Brand Voice
+  // tab). Same auth, same /brand-voice/api/* endpoints, same data
+  // store, same JS — no behavioral drift.
+  const embed = req.query.embed === '1' || req.query.embed === 'true';
   res.send(`${getHeadHTML('Brand Voice')}</title>
       <style>
         ${getBaseCSS()}
@@ -418,16 +423,26 @@ router.get('/', requireAuth, (req, res) => {
         }
       </style>
     </head>
-    <body>
-      <div class="dashboard">
-        ${getSidebar('brand-voice', req.user, req.teamPermissions)}
+    <body${embed ? ' style="background:transparent;height:auto;overflow:visible"' : ''}>
+      ${embed ? `<style>
+        /* Embed mode — strip layout chrome so this page can iframe
+           cleanly into Settings. min-height:0 prevents the base
+           theme's body { min-height: 100vh } from blowing out the
+           iframe height (same fix Library Clips tab needed). */
+        html, body { background: transparent !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+        html { overflow: hidden !important; }
+        .dashboard.embed { display: block !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+        .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+      </style>` : ''}
+      <div class="${embed ? 'dashboard embed' : 'dashboard'}">
+        ${embed ? '' : getSidebar('brand-voice', req.user, req.teamPermissions)}
 
         <div class="main-content">
-          ${getThemeToggle()}
-          <div class="header">
+          ${embed ? '' : getThemeToggle()}
+          ${embed ? '' : `<div class="header">
             <h1><img src="/images/section-icons/A-117.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Brand Voice</h1>
             <p>Create and manage your unique brand voice profiles</p>
-          </div>
+          </div>`}
 
           <div class="content-wrapper">
             <div class="form-section">
@@ -521,6 +536,28 @@ router.get('/', requireAuth, (req, res) => {
       <div class="success-feedback" id="successFeedback">✓ Success!</div>
 
       <script>
+    // Embed mode: report content height to the parent (Settings tab
+    // iframe) so it can auto-size without scrollbars or clipping.
+    (function() {
+      try {
+        if (window.parent === window) return;
+        if (!new URLSearchParams(location.search).has('embed')) return;
+        var report = function() {
+          var h = Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.offsetHeight
+          );
+          try { window.parent.postMessage({ type: 'brand-voice-height', height: h }, '*'); } catch(_) {}
+        };
+        window.addEventListener('load', report);
+        window.addEventListener('resize', report);
+        if ('ResizeObserver' in window) new ResizeObserver(report).observe(document.documentElement);
+        else setInterval(report, 1500);
+      } catch (_) {}
+    })();
+
         ${getThemeScript()}
         let allVoices = [];
 
