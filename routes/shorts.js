@@ -13047,14 +13047,18 @@ ${paginationHtml}
 // ---- My Clips page ----
 router.get('/clips', requireAuth, async (req, res) => {
   try {
-    res.send(renderMyClipsPage(req.user, req.teamPermissions));
+    // embed=1 strips the sidebar + page-header so the Library page can
+    // iframe this view as its Clips tab without showing duplicate chrome.
+    const embed = req.query.embed === '1' || req.query.embed === 'true';
+    res.send(renderMyClipsPage(req.user, req.teamPermissions, { embed }));
   } catch (err) {
     console.error('GET /shorts/clips error:', err);
     res.status(500).send('Failed to load My Clips page');
   }
 });
 
-function renderMyClipsPage(user, teamPermissions) {
+function renderMyClipsPage(user, teamPermissions, opts) {
+  const embed = !!(opts && opts.embed);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
