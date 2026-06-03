@@ -5843,17 +5843,31 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
         try {
           if (audioMix === 'replace') {
             // Replace: discard original audio, use only narration
+            // Stream-copy video, transcode only audio. The clip is
+            // already H.264 yuv420p from /shorts/clip so a re-encode
+            // is pure waste on Railway CPU.
             await runCommand(ffmpegPath, [
               '-i', clipPath, '-i', audioPath,
               '-map', '0:v', '-map', '1:a',
-              '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOutput
+              '-c:v', 'copy',
+              '-c:a', 'aac', '-b:a', '128k',
+              '-movflags', '+faststart',
+              '-shortest', '-y', tempOutput
             ], { timeout: 120000 });
           } else {
             // Mix: blend original audio (30%) with narration
+            // Stream-copy video; filter_complex only touches audio.
+            // libx264 re-encode here was the dominant cost in the
+            // Mix-audio path — usually 30-60s for a 30s clip on
+            // Railway. With -c:v copy it's just the audio mix +
+            // muxing, typically 2-5s.
             await runCommand(ffmpegPath, [
-              '-i', clipPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p',
+              '-i', clipPath, '-i', audioPath,
+              '-c:v', 'copy',
               '-filter_complex', '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest',
-              '-c:a', 'aac', '-shortest', '-y', tempOutput
+              '-c:a', 'aac', '-b:a', '128k',
+              '-movflags', '+faststart',
+              '-shortest', '-y', tempOutput
             ], { timeout: 120000 });
           }
           } catch (ffErr) {
@@ -12849,9 +12863,11 @@ ${paginationHtml}
           if (!genData.success) throw new Error(genData.error || 'Failed to generate clip');
 
           narrationState.clipFilename = genData.filename;
-          // Poll for clip to be ready
-          for (var i = 0; i < 150; i++) {
-            await new Promise(function(r) { setTimeout(r, 2000); });
+          // Poll for clip to be ready (1s tick — snappier UX than the
+        // old 2s tick; status endpoint is cheap, just a stat() on
+        // the progress file).
+          for (var i = 0; i < 300; i++) {
+            await new Promise(function(r) { setTimeout(r, 1000); });
             var statusResp = await fetch('/shorts/clip/status/' + genData.filename);
             var statusData = await statusResp.json();
             if (statusData.failed) throw new Error(statusData.message);
@@ -12893,9 +12909,9 @@ ${paginationHtml}
         if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; progress.textContent = 'Clip expired, regenerating...'; return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
 
         var filename = data.filename;
-        // Poll for narration to be ready
-        for (var attempts = 0; attempts < 150; attempts++) {
-          await new Promise(function(r) { setTimeout(r, 2000); });
+        // Poll for narration to be ready (1s tick).
+        for (var attempts = 0; attempts < 300; attempts++) {
+          await new Promise(function(r) { setTimeout(r, 1000); });
           var sResp = await fetch('/shorts/narrate/status/' + filename);
           var sData = await sResp.json();
           if (sData.failed) throw new Error(sData.message || 'Narration failed');
