@@ -1473,7 +1473,7 @@ async function downloadYouTubeVideo(videoUrl) {
           if (code === 0) resolve();
           else reject(new Error('yt-dlp exit ' + code));
         });
-        setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} reject(new Error('Download timed out')); }, 180000);
+        setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} reject(new Error('Download timed out')); }, 90000);
       });
 
       if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
@@ -1495,7 +1495,7 @@ async function downloadYouTubeVideo(videoUrl) {
         stream.on('error', reject);
         writeStream.on('finish', resolve);
         writeStream.on('error', reject);
-        setTimeout(() => { stream.destroy(); reject(new Error('ytdl-core download timed out')); }, 180000);
+        setTimeout(() => { stream.destroy(); reject(new Error('ytdl-core download timed out')); }, 60000);
       });
 
       if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
@@ -3346,7 +3346,9 @@ router.get('/', requireAuth, async (req, res) => {
       }
     });
 
-    // YouTube download handler
+    // YouTube download handler — with live progress feedback while the
+    // server walks through its fallback chain (yt-dlp + proxy → ytdl-core
+    // → ScrapingBee paid fallback). Worst-case chain takes ~3 min.
     async function downloadFromYouTube() {
       const url = document.getElementById('youtubeUrl').value.trim();
       if (!url) {
@@ -3354,7 +3356,30 @@ router.get('/', requireAuth, async (req, res) => {
         return;
       }
 
-      updateProgress(10, 'Downloading video...');
+      // Rotating status messages with elapsed time so the user sees the
+      // request is alive, not frozen. Each phase roughly corresponds to
+      // the server-side fallback layer being attempted.
+      const phases = [
+        { upTo: 25,  text: 'Connecting to YouTube...' },
+        { upTo: 60,  text: 'Downloading via residential proxy...' },
+        { upTo: 110, text: 'Switching to backup downloader...' },
+        { upTo: 200, text: 'Trying premium fallback (this can take a minute)...' },
+        { upTo: 9999, text: 'Almost there — final attempt...' }
+      ];
+      const t0 = Date.now();
+      let pollTimer = null;
+      function tick() {
+        const sec = Math.floor((Date.now() - t0) / 1000);
+        const phase = phases.find(p => sec <= p.upTo) || phases[phases.length - 1];
+        // Map elapsed time to a soft progress curve so the bar feels
+        // alive without lying about completion. Caps at 90% so the
+        // jump-to-100 on real success still feels rewarding.
+        const pct = Math.min(90, Math.round(10 + (sec * 0.6)));
+        updateProgress(pct, phase.text + ' (' + sec + 's)');
+      }
+      tick();
+      pollTimer = setInterval(tick, 1000);
+
       try {
         const res = await fetch('/ai-captions/download-yt', {
           method: 'POST',
@@ -3364,8 +3389,9 @@ router.get('/', requireAuth, async (req, res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Download failed');
 
+        clearInterval(pollTimer); pollTimer = null;
         uploadedVideoPath = data.videoPath;
-        updateProgress(80, 'Loading video...');
+        updateProgress(95, 'Loading video...');
 
         const videoPlayer = document.getElementById('videoPlayer');
         videoPlayer.src = data.serveUrl;
@@ -3378,7 +3404,15 @@ router.get('/', requireAuth, async (req, res) => {
         updateProgress(100, 'Ready');
         setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1000);
       } catch (err) {
-        showToast(err.message, 'error');
+        clearInterval(pollTimer); pollTimer = null;
+        // Friendlier error: tell the user *what* failed and what to do.
+        var msg = (err && err.message) ? err.message : 'Download failed';
+        if (/Failed to download YouTube/i.test(msg) || /YOUTUBE_DOWNLOAD_FAILED/i.test(msg)) {
+          msg = 'YouTube is blocking this video right now. Try uploading the file directly with the Choose File button above.';
+        }
+        showToast(msg, 'error');
+        updateProgress(0, '');
+        setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1500);
       }
     }
 
