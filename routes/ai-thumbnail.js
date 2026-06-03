@@ -4699,6 +4699,23 @@ router.post('/style', requireAuth, requireCredits('ai-thumbnail'), requireStorag
       return res.status(500).json({ success: false, message: 'Thumbnail generation failed' });
     }
 
+    // Library — log each generated thumbnail image so it appears
+    // under the 'Thumbnails' tab. kind:'image' so the Library card
+    // grid knows to render as an <img> rather than <video>.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      thumbnails.forEach(function(t) {
+        const absPath = path.join(outputDir, t.filename);
+        recordRender(req.user.id, {
+          tool: 'ai-thumbnail',
+          kind: 'image',
+          absPath: absPath,
+          title: (t.styleName || 'Thumbnail') + ' — ' + (t.description || ''),
+          metadata: { style: t.style, styleName: t.styleName }
+        }).catch(function(e){ console.warn('[ai-thumbnail] recordRender:', e && e.message); });
+      });
+    } catch (recErr) { console.warn('[ai-thumbnail] recordRender require failed:', recErr.message); }
+
     res.json({ success: true, thumbnails: thumbnails });
     featureUsageOps.log(req.user.id, 'ai_thumbnails').catch(() => {});
   } catch (error) {

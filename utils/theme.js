@@ -90,8 +90,8 @@ function getBaseCSS() {
        layout transitions); these handle every other surface. */
     .logo-light, .logo-dark{vertical-align:middle}
     .logo-dark{display:none}
-    body.light .logo-light, html.light .logo-light{display:none}
-    body.light .logo-dark, html.light .logo-dark{display:inline-block}
+    body.light .logo-light, html.light .logo-light{display:none !important}
+    body.light .logo-dark, html.light .logo-dark{display:inline-block !important}
     .sidebar .logo-full .logo-dark{display:none !important}
     body.light .sidebar .logo-full .logo-dark,html.light .sidebar .logo-full .logo-dark{display:block !important}
     body.light .sidebar .logo-full .logo-light,html.light .sidebar .logo-full .logo-light{display:none !important}
@@ -213,10 +213,14 @@ function getSidebar(activePage, user, teamPermissions) {
     // --- Core Content Tools ---
     { href: '/dashboard', icon: '<img src="/images/section-icons/A-21.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Dashboard', key: 'dashboard', perm: null },
     { href: '/distribute', icon: '<img src="/images/section-icons/A-12.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Repurpose', key: 'distribute', perm: null },
-    { href: '/repurpose', icon: '<img src="/images/section-icons/A-101.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/repurpose/history', icon: '<img src="/images/section-icons/A-112.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Library', key: 'library', perm: 'use_repurpose' },
+    { href: '/repurpose', icon: '<img src="/images/section-icons/A-101.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Create', key: 'repurpose', perm: 'use_repurpose' },
     { href: '/shorts', icon: '<img src="/images/section-icons/A-1.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Smart Shorts', key: 'shorts', perm: 'use_shorts' },
-    { href: '/shorts/clips', icon: '<img src="/images/section-icons/A-112.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'My Clips', key: 'my-clips', perm: 'use_shorts' },
+    // Hidden per Albert — My Clips now lives as the first tab inside
+    // the Library page. Keep this commented line intact so re-enabling
+    // is a one-line uncomment. /shorts/clips route stays mounted in
+    // server.js so the Library Clips tab iframe still works.
+    // { href: '/shorts/clips', icon: '<img src="/images/section-icons/A-112.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'My Clips', key: 'my-clips', perm: 'use_shorts' },
     { href: '/video-editor', icon: '<img src="/images/section-icons/A-2.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Video Editor', key: 'video-editor', perm: 'use_repurpose' },
     // --- AI & Creative Tools ---
     { href: '/ai-captions', icon: '<img src="/images/section-icons/A-3.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'AI Captions', key: 'ai-captions', perm: 'use_repurpose' },
@@ -233,7 +237,11 @@ function getSidebar(activePage, user, teamPermissions) {
     // server.js so the page still loads if anyone hits the URL directly.
     // { href: '/enhance-speech', icon: '<img src="/images/section-icons/A-113.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Enhance Audio', key: 'enhance-speech', perm: 'use_repurpose' },
     // --- Brand & Planning ---
-    { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
+    // Hidden per Albert — Brand Voice now lives as a tab inside
+    // /settings. /brand-voice route stays mounted in server.js so the
+    // Settings iframe + any other consumers (apply-voice endpoints,
+    // direct links) continue to work. One-line uncomment to revert.
+    // { href: '/brand-voice', icon: '<img src="/images/section-icons/A-117.png" alt="" style="width:20px;height:20px;border-radius:4px">', label: 'Brand Voice', key: 'brand-voice', perm: 'use_brand_voice' },
     // Brand Templates moved into /settings as a tab. The standalone
     // /brand-templates route is still mounted so the iframe + save
     // API + Brand Kit modal CTAs continue to work, but it's no longer
@@ -284,7 +292,7 @@ function getSidebar(activePage, user, teamPermissions) {
   return `
     <aside class="sidebar" id="mainSidebar">
       <div class="sidebar-header">
-        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:32px;"></a>
+        <a href="/dashboard" class="logo logo-full splicora-tt" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" style="padding:0;margin:0;text-decoration:none;border-left:none;"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:32px;display:none;"></a>
         <a href="/dashboard" class="logo logo-mini splicora-tt splicora-tt-right" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard" onclick="if(document.getElementById('mainSidebar').classList.contains('collapsed')){event.preventDefault();toggleSidebarCollapse();}"><img src="/images/icon-192.png?v=5" alt="S" style="height:32px;border-radius:6px;"></a>
         <button class="sidebar-toggle" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">&#x276E;</button>
       </div>

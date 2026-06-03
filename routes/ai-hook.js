@@ -1708,6 +1708,20 @@ router.post('/compose-clip', requireAuth, async (req, res) => {
       const veDest = path.join(veUploadDir, outputFilename);
       fs.copyFileSync(outputPath, veDest);
     } catch(e){ console.warn('[ai-hook compose v2] copy to uploads failed:', e.message); }
+
+    // Library — log this hook clip so it appears under the 'Hook Videos'
+    // tab on /repurpose/history. Fire-and-forget.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'ai-hook',
+        absPath: outputPath,
+        title: hookText.slice(0, 80),
+        durationSeconds: dur,
+        metadata: { visualStyle: visualStyle, sfx: sfxSpec || null }
+      }).catch(function(e){ console.warn('[ai-hook] recordRender:', e && e.message); });
+    } catch (recErr) { console.warn('[ai-hook] recordRender require failed:', recErr.message); }
+
     return res.json({
       success: true,
       mediaUrl: '/video-editor/download/' + outputFilename,

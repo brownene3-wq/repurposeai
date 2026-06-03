@@ -217,7 +217,7 @@ function authPage(type) {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:40px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:40px;"></a>
+ <a href="/" class="auth-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:40px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:40px;display:none;"></a>
  <h1>${isLogin ? 'Welcome Back' : 'Create Account'}</h1>
  <p class="subtitle">${isLogin ? 'Log in to your account to continue' : 'Start creating content in seconds'}</p>
  <div class="error-msg ${new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('error') ? 'show' : ''}" id="errorMsg"></div>
@@ -466,7 +466,7 @@ router.get('/forgot-password', (req, res) => {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:40px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:40px;"></a>
+ <a href="/" class="auth-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:40px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:40px;display:none;"></a>
  <h1>Reset Password</h1>
  <p class="subtitle">Enter your email and we'll send you a link to reset your password</p>
  <div class="error-msg" id="errorMsg"></div>
@@ -561,7 +561,7 @@ router.get('/reset-password', (req, res) => {
  <div class="auth-container">
  <div class="auth-left">
  <div class="auth-form-container">
- <a href="/" class="auth-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:40px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:40px;"></a>
+ <a href="/" class="auth-logo"><img class="logo-light" src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:40px;"><img class="logo-dark" src="/images/splicora-logo-wide-dark.png?v=5" alt="Splicora" style="height:40px;display:none;"></a>
  <h1>Create New Password</h1>
  <p class="subtitle">Enter your new password below</p>
  <div class="error-msg" id="errorMsg"></div>

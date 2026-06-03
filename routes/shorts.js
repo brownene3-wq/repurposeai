@@ -5843,17 +5843,31 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
         try {
           if (audioMix === 'replace') {
             // Replace: discard original audio, use only narration
+            // Stream-copy video, transcode only audio. The clip is
+            // already H.264 yuv420p from /shorts/clip so a re-encode
+            // is pure waste on Railway CPU.
             await runCommand(ffmpegPath, [
               '-i', clipPath, '-i', audioPath,
               '-map', '0:v', '-map', '1:a',
-              '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-y', tempOutput
+              '-c:v', 'copy',
+              '-c:a', 'aac', '-b:a', '128k',
+              '-movflags', '+faststart',
+              '-shortest', '-y', tempOutput
             ], { timeout: 120000 });
           } else {
             // Mix: blend original audio (30%) with narration
+            // Stream-copy video; filter_complex only touches audio.
+            // libx264 re-encode here was the dominant cost in the
+            // Mix-audio path — usually 30-60s for a 30s clip on
+            // Railway. With -c:v copy it's just the audio mix +
+            // muxing, typically 2-5s.
             await runCommand(ffmpegPath, [
-              '-i', clipPath, '-i', audioPath, '-c:v', 'libx264', '-crf', '17', '-preset', 'medium', '-pix_fmt', 'yuv420p',
+              '-i', clipPath, '-i', audioPath,
+              '-c:v', 'copy',
               '-filter_complex', '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest',
-              '-c:a', 'aac', '-shortest', '-y', tempOutput
+              '-c:a', 'aac', '-b:a', '128k',
+              '-movflags', '+faststart',
+              '-shortest', '-y', tempOutput
             ], { timeout: 120000 });
           }
           } catch (ffErr) {
@@ -12849,9 +12863,11 @@ ${paginationHtml}
           if (!genData.success) throw new Error(genData.error || 'Failed to generate clip');
 
           narrationState.clipFilename = genData.filename;
-          // Poll for clip to be ready
-          for (var i = 0; i < 150; i++) {
-            await new Promise(function(r) { setTimeout(r, 2000); });
+          // Poll for clip to be ready (1s tick — snappier UX than the
+        // old 2s tick; status endpoint is cheap, just a stat() on
+        // the progress file).
+          for (var i = 0; i < 300; i++) {
+            await new Promise(function(r) { setTimeout(r, 1000); });
             var statusResp = await fetch('/shorts/clip/status/' + genData.filename);
             var statusData = await statusResp.json();
             if (statusData.failed) throw new Error(statusData.message);
@@ -12893,9 +12909,9 @@ ${paginationHtml}
         if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; progress.textContent = 'Clip expired, regenerating...'; return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
 
         var filename = data.filename;
-        // Poll for narration to be ready
-        for (var attempts = 0; attempts < 150; attempts++) {
-          await new Promise(function(r) { setTimeout(r, 2000); });
+        // Poll for narration to be ready (1s tick).
+        for (var attempts = 0; attempts < 300; attempts++) {
+          await new Promise(function(r) { setTimeout(r, 1000); });
           var sResp = await fetch('/shorts/narrate/status/' + filename);
           var sData = await sResp.json();
           if (sData.failed) throw new Error(sData.message || 'Narration failed');
@@ -13047,14 +13063,18 @@ ${paginationHtml}
 // ---- My Clips page ----
 router.get('/clips', requireAuth, async (req, res) => {
   try {
-    res.send(renderMyClipsPage(req.user, req.teamPermissions));
+    // embed=1 strips the sidebar + page-header so the Library page can
+    // iframe this view as its Clips tab without showing duplicate chrome.
+    const embed = req.query.embed === '1' || req.query.embed === 'true';
+    res.send(renderMyClipsPage(req.user, req.teamPermissions, { embed }));
   } catch (err) {
     console.error('GET /shorts/clips error:', err);
     res.status(500).send('Failed to load My Clips page');
   }
 });
 
-function renderMyClipsPage(user, teamPermissions) {
+function renderMyClipsPage(user, teamPermissions, opts) {
+  const embed = !!(opts && opts.embed);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13233,15 +13253,30 @@ function renderMyClipsPage(user, teamPermissions) {
     .toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; background: rgba(0,0,0,0.85); color: #fff; border-radius: 8px; font-size: 13px; z-index: 9999; }
   </style>
 </head>
-<body class="dashboard">
-  ${getThemeToggle()}
-  ${getSidebar('my-clips', user, teamPermissions)}
+<body class="${embed ? 'dashboard embed' : 'dashboard'}"${embed ? ' style="background:transparent;height:auto;overflow:visible"' : ''}>
+  ${embed ? '' : getThemeToggle()}
+  ${embed ? '' : getSidebar('my-clips', user, teamPermissions)}
+
+  ${embed ? `<style>
+    /* Embed mode — iframe grows to natural content height via
+       postMessage; suppress this document's own scrollbar so the
+       parent page's single global scrollbar handles everything.
+       Critically: the base theme sets body { min-height: 100vh },
+       which inside an iframe resolves to the iframe ELEMENT's CSS
+       height. That created a feedback loop where the iframe never
+       shrank below its initial min-height even for one clip. Forcing
+       min-height:0 lets body collapse to actual content height. */
+    html { background: transparent !important; height: auto !important; overflow: hidden !important; min-height: 0 !important; }
+    body { background: transparent !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+    .dashboard.embed { display: block; height: auto; min-height: 0; overflow: visible; }
+    .dashboard.embed .main-content { margin-left: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+  </style>` : ''}
 
   <main class="main-content">
-    <div class="header">
+    ${embed ? '' : `<div class="header">
       <h1 class="header-title"><img src="/images/section-icons/A-112.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">My Clips</h1>
       <p class="header-subtitle">Every clip you have rendered — download, publish, delete, or send to Drive/Dropbox.</p>
-    </div>
+    </div>`}
 
     <div class="clips-toolbar">
       <label style="font-size:12px;color:var(--text-muted);font-weight:600;">Status
@@ -13300,6 +13335,28 @@ function renderMyClipsPage(user, teamPermissions) {
   <script>
     ${getPublishMomentModalJS()}
 
+    // Embedded mode: report content height to the parent (Library
+    // iframe) so it can auto-size without scrollbars or clipping.
+    (function() {
+      try {
+        if (window.parent === window) return;
+        if (!new URLSearchParams(location.search).has('embed')) return;
+        var report = function() {
+          var h = Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.offsetHeight
+          );
+          try { window.parent.postMessage({ type: 'my-clips-height', height: h }, '*'); } catch(_) {}
+        };
+        window.addEventListener('load', report);
+        window.addEventListener('resize', report);
+        if ('ResizeObserver' in window) new ResizeObserver(report).observe(document.documentElement);
+        else setInterval(report, 1500);
+      } catch (_) {}
+    })();
+
     // Themed replacement for window.confirm(). Returns a Promise that
     // resolves to true (OK) / false (Cancel / backdrop / Escape).
     // opts = { title?, message?, confirmLabel?, cancelLabel?, danger? }
@@ -13309,7 +13366,22 @@ function renderMyClipsPage(user, teamPermissions) {
     var _confirmResolve = null;
     function resolveConfirm(v) {
       var m = document.getElementById('confirmModal');
-      if (m) m.style.display = 'none';
+      if (m) {
+        m.style.display = 'none';
+        // Reset ONLY the inline properties that
+        // anchorConfirmToParentViewport actually overrode. Touching
+        // alignItems / justifyContent / panel styles here would wipe
+        // the modal's ORIGINAL inline align-items:center +
+        // justify-content:center attributes from the CSSOM, breaking
+        // flex centering on every subsequent open.
+        m.style.position = '';
+        m.style.top = '';
+        m.style.left = '';
+        m.style.right = '';
+        m.style.bottom = '';
+        m.style.width = '';
+        m.style.height = '';
+      }
       if (_confirmResolve) { var r = _confirmResolve; _confirmResolve = null; r(!!v); }
     }
     function showConfirm(opts) {
@@ -13336,10 +13408,70 @@ function renderMyClipsPage(user, teamPermissions) {
         iconWrap.style.color = '#a78bfa';
         iconWrap.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
       }
-      document.getElementById('confirmModal').style.display = 'flex';
+      var modalEl = document.getElementById('confirmModal');
+      modalEl.style.display = 'flex';
+      // Embed mode: position:fixed inside an iframe anchors to the
+      // iframe's own viewport, which is the tall content area, not
+      // the user's browser viewport. Re-anchor the panel to where the
+      // user is actually looking in the parent window so the modal
+      // appears in-view regardless of how far they've scrolled.
+      anchorConfirmToParentViewport(modalEl);
       // Focus the confirm button for keyboard users (Enter to accept).
       setTimeout(function() { try { okBtn.focus(); } catch (_) {} }, 30);
       return new Promise(function(resolve) { _confirmResolve = resolve; });
+    }
+
+    // Anchor the confirm modal to the parent window's currently
+    // visible viewport, not the iframe's full content area. Without
+    // this the modal centers at the middle of a possibly-very-tall
+    // iframe, and the user has to scroll the parent page to find it.
+    //
+    // Approach: turn the backdrop from a fixed full-iframe overlay
+    // into an absolute slab that exactly covers the parent's visible
+    // viewport, expressed in iframe-local coordinates. The existing
+    // flex centering then places the panel right in the user's view.
+    function anchorConfirmToParentViewport(modalEl) {
+      try {
+        if (window.parent === window || !window.frameElement) return;
+        var parentH = window.parent.innerHeight || 800;
+        var frameRect = window.frameElement.getBoundingClientRect();
+        var docH = document.documentElement.scrollHeight || parentH;
+        // Compute the VISIBLE portion of this iframe in iframe-local coords.
+        // The parent's visible viewport in iframe coords runs from
+        // -frameRect.top to -frameRect.top + parentH. Clamp to [0, docH]
+        // so the slab never extends past the iframe document itself.
+        var visibleTop = Math.max(0, -frameRect.top);
+        var visibleBottom = Math.min(docH, -frameRect.top + parentH);
+        var visibleHeight = Math.max(120, visibleBottom - visibleTop);
+        // Convert the backdrop into an absolute slab matching the visible
+        // portion of the iframe. The existing flex centering inside then
+        // places the panel right in the middle of the user's view —
+        // regardless of which clip they clicked Delete on.
+        modalEl.style.position = 'absolute';
+        modalEl.style.top = visibleTop + 'px';
+        modalEl.style.left = '0';
+        modalEl.style.right = '0';
+        modalEl.style.bottom = 'auto';
+        modalEl.style.width = '100%';
+        modalEl.style.height = visibleHeight + 'px';
+      } catch (_) { /* cross-origin or no frameElement — fall back to fixed */ }
+    }
+
+    // Track parent scroll while the modal is open so it follows along
+    // if the user scrolls the parent page mid-confirm. Bound once.
+    if (!window.__confirmScrollWired) {
+      window.__confirmScrollWired = true;
+      var _scrollTick = null;
+      function _reanchorIfOpen() {
+        if (_scrollTick) return;
+        _scrollTick = requestAnimationFrame(function() {
+          _scrollTick = null;
+          var m = document.getElementById('confirmModal');
+          if (m && m.style.display === 'flex') anchorConfirmToParentViewport(m);
+        });
+      }
+      try { window.parent.addEventListener('scroll', _reanchorIfOpen, { passive: true }); } catch(_) {}
+      try { window.parent.addEventListener('resize', _reanchorIfOpen); } catch(_) {}
     }
     // Escape closes (resolves false). Bound once.
     if (!window.__confirmEscWired) {

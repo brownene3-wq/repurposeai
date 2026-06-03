@@ -118,6 +118,7 @@ router.get('/', requireAuth, async (req, res) => {
           <button class="settings-nav-btn" data-section="privacy" onclick="switchSection('privacy',this)">Data & Privacy</button>
           <button class="settings-nav-btn" data-section="apikeys" onclick="switchSection('apikeys',this)">API Keys</button>
           <button class="settings-nav-btn" data-section="brandtemplates" onclick="switchSection('brandtemplates',this)">Brand Templates</button>
+          <button class="settings-nav-btn" data-section="brandvoice" onclick="switchSection('brandvoice',this)">Brand Voice</button>
         </div>
 
         <!-- ===== PROFILE SECTION ===== -->
@@ -574,6 +575,22 @@ router.get('/', requireAuth, async (req, res) => {
             </div>
             <p style="font-size:.75rem;color:var(--text-muted);margin-top:.65rem"><img src="/images/section-icons/A-105.png" alt="" style="height:16px;width:16px;vertical-align:middle;border-radius:3px;margin-right:4px"> Templates saved here also appear on the Brand Templates page, in the Video Editor, and in Smart Shorts.</p>
           </div>
+        </div>
+
+        <!-- ===== BRAND VOICE SECTION ===== -->
+        <!-- The wizard lives in an iframe to /brand-voice?embed=1
+             so this tab is guaranteed pixel-for-pixel identical
+             to the standalone page. Same auth, same API endpoints,
+             same data store — saves round-trip both ways. -->
+        <div class="settings-section" id="section-brandvoice">
+          <div class="settings-card">
+            <h2><span class="icon"><img src="/images/section-icons/A-117.png" alt="" style="height:24px;width:24px;vertical-align:middle;border-radius:6px"></span> Brand Voice</h2>
+            <p class="desc">Create and manage your unique brand voice profiles — tone, examples, and rules — and apply them anywhere copy is generated.</p>
+            <div style="margin-top:1.2rem;background:var(--dark-2,#0f0f0f);border-radius:14px;border:1px solid rgba(255,255,255,0.06);overflow:hidden;">
+              <iframe id="brandVoiceFrame" src="/brand-voice?embed=1" scrolling="no" style="width:100%;height:280px;min-height:0;border:0;display:block;background:transparent;overflow:hidden;" title="Brand Voice" loading="lazy"></iframe>
+            </div>
+            <p style="font-size:.75rem;color:var(--text-muted);margin-top:.65rem"><img src="/images/section-icons/A-105.png" alt="" style="height:16px;width:16px;vertical-align:middle;border-radius:3px;margin-right:4px"> Voices saved here are usable anywhere copy is generated — Create, AI Captions, AI Hooks, and the Library Posts tab.</p>
+          </div>
 
       </div>
     </div>
@@ -621,6 +638,15 @@ router.get('/', requireAuth, async (req, res) => {
         var iframe = document.getElementById('brandTemplatesFrame');
         if (!iframe) return;
         var h = Math.max(600, Math.min(4000, Number(e.data.height) || 0));
+        if (h && Math.abs(iframe.clientHeight - h) > 8) iframe.style.height = h + 'px';
+      });
+
+      // Brand Voice tab iframe — auto-size on postMessage.
+      window.addEventListener('message', function(e) {
+        if (!e || !e.data || e.data.type !== 'brand-voice-height') return;
+        var iframe = document.getElementById('brandVoiceFrame');
+        if (!iframe) return;
+        var h = Math.max(280, Math.min(4000, Number(e.data.height) || 0));
         if (h && Math.abs(iframe.clientHeight - h) > 8) iframe.style.height = h + 'px';
       });
 
