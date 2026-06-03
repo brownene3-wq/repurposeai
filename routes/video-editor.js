@@ -9516,6 +9516,21 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     }
 
     var totalSec = cursor;
+
+    // Library: log this export so it appears under the 'Edited Videos'
+    // tab on /repurpose/history. Fire-and-forget — failures here never
+    // block the response.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'video-editor',
+        absPath: outputPath,
+        title: (body && body.title) || outputFilename.replace(/\.[a-z0-9]+$/i, ''),
+        durationSeconds: totalSec,
+        metadata: { format: reqFormat, clipCount: v1.length }
+      }).catch(function(e){ console.warn('[video-editor export] recordRender:', e && e.message); });
+    } catch (recErr) { console.warn('[video-editor export] recordRender require failed:', recErr.message); }
+
     res.json({
       filename: outputFilename,
       downloadUrl: '/video-editor/download/' + outputFilename,

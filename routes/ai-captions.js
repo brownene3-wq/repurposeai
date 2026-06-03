@@ -3767,6 +3767,18 @@ router.post('/apply', requireAuth, async (req, res) => {
     // Generate serve URL using our serve endpoint
     const filename = path.basename(outputPath);
 
+    // Library — log this captioned export so it shows up under the
+    // 'Captioned Videos' tab. Fire-and-forget.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'ai-captions',
+        absPath: outputPath,
+        title: 'Captioned: ' + filename.replace(/\.[a-z0-9]+$/i, ''),
+        metadata: { preset: presetKey }
+      }).catch(function(e){ console.warn('[ai-captions apply] recordRender:', e && e.message); });
+    } catch (recErr) { console.warn('[ai-captions apply] recordRender require failed:', recErr.message); }
+
     res.json({
       outputPath: '/ai-captions/serve/' + filename,
       videoPath: outputPath

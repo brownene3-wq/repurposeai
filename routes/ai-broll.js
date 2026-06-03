@@ -3232,6 +3232,17 @@ router.post('/render-with-broll', requireAuth, async (req, res) => {
 
         // Log usage for storage breakdown
         try { featureUsageOps.log(req.user.id, 'ai_broll_render').catch(function(){}); } catch(_) {}
+
+        // Library — log this finished B-Roll assembly so it appears
+        // under the 'B-Roll Renders' tab.
+        try {
+          const { recordRender } = require('../utils/renderRecorder');
+          recordRender(req.user.id, {
+            tool: 'ai-broll',
+            absPath: outputPath,
+            title: 'B-Roll: ' + filename.replace(/\.[a-z0-9]+$/i, '')
+          }).catch(function(e){ console.warn('[ai-broll] recordRender:', e && e.message); });
+        } catch (recErr) { console.warn('[ai-broll] recordRender require failed:', recErr.message); }
       } catch (err) {
         clearTimeout(timeoutHandle);
         console.error('[ai-broll render]', err);
