@@ -8711,7 +8711,15 @@ ${paginationHtml}
         </div>
       </div>
 
-      <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">⚠️ Click Generate to create a narrated version of this clip. The clip will be processed automatically.</p>
+      <!-- Don't-close warning: the progress ticker + polling loops are
+           tied to the modal lifetime — closing the modal cancels the
+           generation. Surface this loudly in an amber chip so users
+           don't lose 30-60s of work by reflexively dismissing the
+           modal mid-flow. -->
+      <div style="display:flex;align-items:flex-start;gap:8px;background:rgba(243,156,18,0.10);border:1px solid rgba(243,156,18,0.40);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.5;color:#fde6b8;font-weight:500;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span><strong style="color:#ffd591;">Please keep this window open.</strong> Closing it will cancel the narration in progress and you'll have to start over.</span>
+      </div>
 
       <button id="narrate-generate-btn" onclick="generateNarration()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;">
         <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration
