@@ -328,6 +328,31 @@ const initDatabase = async () => {
     try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_clip_renders_filename ON clip_renders(filename)`); } catch (e) {}
     try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_clip_renders_status ON clip_renders(status)`); } catch (e) {}
 
+    // YouTube cookies pool — manually-warmed Gmail accounts whose
+    // cookies bypass YouTube's bot wall when downloading. Albert (or
+    // his team) creates and warms accounts in Multilogin, exports
+    // cookies.txt files, then pastes them in the /admin/cookies UI.
+    // The downloader picks the least-recently-rotated 'active' set
+    // per request, auto-disables sets that fail 3+ times in 24h.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS youtube_cookies (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        cookies_text TEXT NOT NULL,
+        status TEXT DEFAULT 'active',
+        fail_count INTEGER DEFAULT 0,
+        last_success_at TIMESTAMP,
+        last_failure_at TIMESTAMP,
+        last_failure_reason TEXT,
+        last_rotated_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT
+      )
+    `);
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_yt_cookies_status ON youtube_cookies(status, last_rotated_at NULLS FIRST)`); } catch (e) {}
+
+
     // Library — universal per-tool render log. Mirrors clip_renders'
     // shape but tagged with a 'tool' column so /repurpose/history can
     // surface outputs from Video Editor, AI Captions, AI Hook, AI
@@ -1887,6 +1912,88 @@ module.exports = {
   featureUsageOps,
   projectOps,
   pageContentOps,
+  youtubeCookieOps: {
+    async list() {
+      return (await pool.query(`SELECT id, label, status, fail_count, last_success_at, last_failure_at, last_failure_reason, last_rotated_at, created_at, updated_at, notes FROM youtube_cookies ORDER BY created_at DESC`)).rows;
+    },
+    async getById(id) {
+      return (await pool.query(`SELECT * FROM youtube_cookies WHERE id = $1`, [id])).rows[0];
+    },
+    async create(label, cookiesText, notes) {
+      const id = uuidv4();
+      return (await pool.query(
+        `INSERT INTO youtube_cookies (id, label, cookies_text, notes) VALUES ($1, $2, $3, $4) RETURNING id, label, status, created_at`,
+        [id, label, cookiesText, notes || null]
+      )).rows[0];
+    },
+    async update(id, fields) {
+      const allowed = ['label', 'status', 'cookies_text', 'notes'];
+      const sets = [];
+      const vals = [];
+      for (const k of allowed) {
+        if (fields[k] !== undefined) { sets.push(`${k} = $${vals.length + 1}`); vals.push(fields[k]); }
+      }
+      if (!sets.length) return null;
+      sets.push('updated_at = CURRENT_TIMESTAMP');
+      vals.push(id);
+      return (await pool.query(`UPDATE youtube_cookies SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals)).rows[0];
+    },
+    async delete(id) {
+      await pool.query(`DELETE FROM youtube_cookies WHERE id = $1`, [id]);
+    },
+    // Pick the active cookie set that has been rotated least recently.
+    // Updates last_rotated_at atomically so concurrent requests get
+    // different sets (best-effort round-robin under load).
+    async pickForRequest() {
+      const result = await pool.query(`
+        UPDATE youtube_cookies
+        SET last_rotated_at = CURRENT_TIMESTAMP
+        WHERE id = (
+          SELECT id FROM youtube_cookies
+          WHERE status = 'active'
+          ORDER BY last_rotated_at ASC NULLS FIRST, created_at ASC
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, label, cookies_text
+      `);
+      return result.rows[0] || null;
+    },
+    async markSuccess(id) {
+      await pool.query(
+        `UPDATE youtube_cookies SET fail_count = 0, last_success_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [id]
+      );
+    },
+    // Increment fail_count + record reason. If fails 3+ within 24h
+    // window, auto-expire the set so it's skipped until manually refreshed.
+    async markFailure(id, reason) {
+      const r = await pool.query(
+        `UPDATE youtube_cookies SET fail_count = fail_count + 1, last_failure_at = CURRENT_TIMESTAMP, last_failure_reason = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, label, fail_count, last_success_at`,
+        [String(reason || '').slice(0, 500), id]
+      );
+      const row = r.rows[0];
+      if (!row) return null;
+      // Auto-expire if 3+ failures and last success >24h ago (or never).
+      const lastSuccess = row.last_success_at ? new Date(row.last_success_at).getTime() : 0;
+      const hoursSinceSuccess = lastSuccess ? (Date.now() - lastSuccess) / 3600000 : Infinity;
+      if (row.fail_count >= 3 && hoursSinceSuccess >= 24) {
+        await pool.query(`UPDATE youtube_cookies SET status = 'expired' WHERE id = $1`, [id]);
+        row.status = 'expired';
+        row.justExpired = true;
+      }
+      return row;
+    },
+    async stats() {
+      const r = await pool.query(`SELECT status, COUNT(*)::int AS c FROM youtube_cookies GROUP BY status`);
+      const out = { active: 0, expired: 0, disabled: 0, total: 0 };
+      for (const row of r.rows) {
+        out[row.status] = Number(row.c);
+        out.total += Number(row.c);
+      }
+      return out;
+    }
+  },
   connectedAccountOps: {
     async create(userId, data) {
       const id = uuidv4();

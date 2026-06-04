@@ -44,6 +44,7 @@ function getAdminSidebar(activePage) {
     { href: '/admin/email', icon: '&#x1F4E7;', label: 'Email Inbox', key: 'email' },
     { href: '/admin/bugs', icon: '&#x1F41B;', label: 'Bug Reports', key: 'bugs' },
     { href: '/admin/usage', icon: '&#x1F4C8;', label: 'Usage', key: 'usage' },
+    { href: '/admin/cookies', icon: '&#x1F36A;', label: 'YT Cookies', key: 'cookies' },
     { href: '/admin/editor?page=homepage', icon: '&#x1F3A8;', label: 'Page Editor', key: 'editor' },
   ];
   const navLinks = links.map(l => {
@@ -1708,6 +1709,257 @@ router.get('/usage', requireAuth, requireAdmin, async (req, res) => {
     console.error('Usage page error:', e);
     res.status(500).send('Error: ' + e.message);
   }
+});
+
+
+// ============================================================
+// /admin/cookies — YouTube cookie pool management
+// ============================================================
+// Manages the warm-account Gmail cookies that get rotated through
+// yt-dlp on every YouTube download attempt. Albert (or his team)
+// adds cookie sets here after warming accounts in Multilogin.
+// The downloader picks the least-recently-used active set per
+// request; auto-expires sets that fail 3+ times in 24h; emails
+// when one goes stale.
+
+router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { youtubeCookieOps } = require('../db/database');
+    const list = await youtubeCookieOps.list();
+    const stats = await youtubeCookieOps.stats();
+
+    const fmtAge = (d) => {
+      if (!d) return '—';
+      const ms = Date.now() - new Date(d).getTime();
+      const m = Math.round(ms / 60000);
+      if (m < 60) return m + ' min ago';
+      if (m < 1440) return Math.round(m / 60) + ' hr ago';
+      return Math.round(m / 1440) + ' days ago';
+    };
+    const escapeHtml = (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+    const rows = list.map(c => {
+      const statusColor = c.status === 'active' ? '#22c55e' : c.status === 'expired' ? '#f59e0b' : '#94a3b8';
+      const statusBg = c.status === 'active' ? 'rgba(34,197,94,0.12)' : c.status === 'expired' ? 'rgba(245,158,11,0.12)' : 'rgba(148,163,184,0.12)';
+      return `
+        <tr data-cookie-id="${c.id}">
+          <td><strong>${escapeHtml(c.label)}</strong></td>
+          <td><span class="badge" style="background:${statusBg};color:${statusColor};">${c.status}</span></td>
+          <td style="text-align:center;">${c.fail_count}</td>
+          <td>${fmtAge(c.last_success_at)}</td>
+          <td>${fmtAge(c.last_failure_at)}</td>
+          <td title="${escapeHtml(c.last_failure_reason || '')}" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);font-size:.85rem;">${escapeHtml((c.last_failure_reason || '').slice(0, 80))}</td>
+          <td>${fmtAge(c.created_at)}</td>
+          <td style="text-align:right;white-space:nowrap;">
+            ${c.status === 'active'
+              ? `<button onclick="setStatus('${c.id}', 'disabled')" class="btn-sm">Disable</button>`
+              : `<button onclick="setStatus('${c.id}', 'active')" class="btn-sm btn-primary">Re-enable</button>`}
+            <button onclick="openRefresh('${c.id}', ${JSON.stringify(c.label).replace(/"/g, '&quot;')})" class="btn-sm">Refresh</button>
+            <button onclick="deleteCookie('${c.id}')" class="btn-sm btn-danger">Delete</button>
+          </td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">No cookie sets yet. Click "Add cookie set" above to paste your first one.</td></tr>';
+
+    res.send(`<!DOCTYPE html>
+<html lang="en"><head>
+  ${getHeadHTML('YT Cookie Pool – Admin')}
+  <style>${getBaseCSS()}${getAdminCSS()}
+    .cookies-wrap{display:flex;gap:0;min-height:100vh}
+    .cookies-main{flex:1;padding:32px 40px;}
+    .stat-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
+    .stat-pill{background:var(--surface);border:var(--border-subtle);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;min-width:120px;}
+    .stat-pill .v{font-size:1.8rem;font-weight:800;line-height:1;}
+    .stat-pill .l{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:4px;}
+    .btn-sm{padding:5px 10px;border-radius:6px;border:1px solid rgba(108,58,237,0.3);background:transparent;color:var(--text);font-size:.78rem;cursor:pointer;margin-left:4px;}
+    .btn-sm:hover{background:rgba(108,58,237,0.10);}
+    .btn-sm.btn-primary{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent;}
+    .btn-sm.btn-danger{color:#fca5a5;border-color:rgba(239,68,68,0.3);}
+    .btn-sm.btn-danger:hover{background:rgba(239,68,68,0.12);}
+    .add-btn{padding:9px 18px;border-radius:10px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;font-weight:600;cursor:pointer;font-size:.92rem;}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:99;}
+    .modal-bg.open{display:flex;}
+    .modal-card{background:#1a1430;border:1px solid rgba(108,58,237,0.25);border-radius:14px;padding:24px;max-width:680px;width:92%;max-height:90vh;overflow-y:auto;}
+    .modal-card h3{margin:0 0 6px;font-size:1.2rem;}
+    .modal-card label{display:block;margin-top:14px;font-size:.85rem;color:var(--text-muted);margin-bottom:4px;}
+    .modal-card input,.modal-card textarea{width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(108,58,237,0.3);border-radius:8px;padding:10px 12px;color:var(--text);font-family:monospace;font-size:.85rem;box-sizing:border-box;}
+    .modal-card textarea{min-height:200px;font-family:'SF Mono','Monaco','Consolas',monospace;}
+    .modal-actions{margin-top:18px;display:flex;gap:8px;justify-content:flex-end;}
+    .modal-actions button{padding:9px 18px;border-radius:10px;border:none;cursor:pointer;font-weight:600;}
+    .modal-actions button.primary{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;}
+    .modal-actions button.secondary{background:rgba(255,255,255,0.06);color:var(--text);}
+    .hint{background:rgba(108,58,237,0.08);border:1px solid rgba(108,58,237,0.20);border-radius:10px;padding:14px 18px;font-size:.88rem;color:var(--text-muted);margin-bottom:24px;line-height:1.55;}
+    .hint code{background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:4px;font-size:.85em;}
+  </style>
+</head>
+<body class="dashboard">
+  ${getThemeToggle()}
+  <div class="cookies-wrap">
+    ${getAdminSidebar('cookies')}
+    <main class="cookies-main">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h1 style="margin:0;font-size:1.6rem;">YouTube Cookie Pool</h1>
+          <p style="margin:4px 0 0;color:var(--text-muted);font-size:.92rem;">Warm-account cookies that bypass YouTube's bot wall on downloads.</p>
+        </div>
+        <button class="add-btn" onclick="openAdd()">+ Add cookie set</button>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-pill"><div class="v" style="color:#22c55e;">${stats.active}</div><div class="l">Active</div></div>
+        <div class="stat-pill"><div class="v" style="color:#f59e0b;">${stats.expired}</div><div class="l">Expired</div></div>
+        <div class="stat-pill"><div class="v" style="color:#94a3b8;">${stats.disabled}</div><div class="l">Disabled</div></div>
+        <div class="stat-pill"><div class="v">${stats.total}</div><div class="l">Total</div></div>
+      </div>
+
+      <div class="hint">
+        <strong>How this works:</strong> Each row is a Gmail account's YouTube cookies (exported from Multilogin via "Get cookies.txt LOCALLY" Chrome extension). The downloader picks the least-recently-used active set per video, marking failures and auto-expiring sets that fail 3+ times in 24h. Refresh expired sets by re-exporting cookies from that account and pasting in via the Refresh button.
+      </div>
+
+      <table class="data-table" id="cookieTable">
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Status</th>
+            <th style="text-align:center;">Fails</th>
+            <th>Last success</th>
+            <th>Last failure</th>
+            <th>Last error</th>
+            <th>Added</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </main>
+  </div>
+
+  <!-- Add modal -->
+  <div class="modal-bg" id="addModal" onclick="if(event.target===this) closeModal('addModal')">
+    <div class="modal-card">
+      <h3>Add cookie set</h3>
+      <p style="margin:0;color:var(--text-muted);font-size:.85rem;">Paste the contents of a <code>cookies.txt</code> exported from a logged-in YouTube account (Netscape format).</p>
+      <label>Label (e.g. "brownene3" or "gmail-account-3")</label>
+      <input type="text" id="addLabel" placeholder="my-account-1" autocomplete="off">
+      <label>cookies.txt contents</label>
+      <textarea id="addCookies" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;...&#10;..." spellcheck="false"></textarea>
+      <label>Notes (optional)</label>
+      <input type="text" id="addNotes" placeholder="Warmed 7 days, IP 1.2.3.4">
+      <div class="modal-actions">
+        <button class="secondary" onclick="closeModal('addModal')">Cancel</button>
+        <button class="primary" id="addSubmit" onclick="submitAdd()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Refresh modal -->
+  <div class="modal-bg" id="refreshModal" onclick="if(event.target===this) closeModal('refreshModal')">
+    <div class="modal-card">
+      <h3>Refresh cookie set</h3>
+      <p style="margin:0;color:var(--text-muted);font-size:.85rem;">Replace the cookies for <strong id="refreshLabel"></strong>. Paste the freshly-exported cookies.txt below. Status will reset to active and the fail count cleared.</p>
+      <label>cookies.txt contents</label>
+      <textarea id="refreshCookies" placeholder="..." spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button class="secondary" onclick="closeModal('refreshModal')">Cancel</button>
+        <button class="primary" onclick="submitRefresh()">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _refreshId = null;
+    function openAdd() { document.getElementById('addModal').classList.add('open'); }
+    function openRefresh(id, label) { _refreshId = id; document.getElementById('refreshLabel').textContent = label; document.getElementById('refreshCookies').value = ''; document.getElementById('refreshModal').classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    async function submitAdd() {
+      const label = document.getElementById('addLabel').value.trim();
+      const cookies = document.getElementById('addCookies').value.trim();
+      const notes = document.getElementById('addNotes').value.trim();
+      if (!label) return alert('Label is required');
+      if (!cookies || cookies.length < 50) return alert('Paste the full cookies.txt contents');
+      const btn = document.getElementById('addSubmit');
+      btn.disabled = true; btn.textContent = 'Adding…';
+      try {
+        const r = await fetch('/admin/api/cookies', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ label, cookies_text: cookies, notes }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+        location.reload();
+      } catch (e) { alert('Add failed: ' + e.message); btn.disabled = false; btn.textContent = 'Add'; }
+    }
+    async function submitRefresh() {
+      const cookies = document.getElementById('refreshCookies').value.trim();
+      if (!cookies || cookies.length < 50) return alert('Paste the full cookies.txt contents');
+      try {
+        const r = await fetch('/admin/api/cookies/' + _refreshId + '/refresh', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ cookies_text: cookies }) });
+        if (!r.ok) { const d = await r.json(); throw new Error(d.error || 'Failed'); }
+        location.reload();
+      } catch (e) { alert('Refresh failed: ' + e.message); }
+    }
+    async function setStatus(id, status) {
+      try {
+        const r = await fetch('/admin/api/cookies/' + id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status }) });
+        if (!r.ok) { const d = await r.json(); throw new Error(d.error || 'Failed'); }
+        location.reload();
+      } catch (e) { alert('Update failed: ' + e.message); }
+    }
+    async function deleteCookie(id) {
+      if (!confirm('Delete this cookie set permanently? Use Disable instead if you want to keep it for reference.')) return;
+      try {
+        const r = await fetch('/admin/api/cookies/' + id, { method:'DELETE' });
+        if (!r.ok) { const d = await r.json(); throw new Error(d.error || 'Failed'); }
+        location.reload();
+      } catch (e) { alert('Delete failed: ' + e.message); }
+    }
+    ${getThemeScript()}
+  </script>
+</body></html>`);
+  } catch (err) {
+    console.error('Admin cookies page error:', err);
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
+router.post('/api/cookies', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { youtubeCookieOps } = require('../db/database');
+    const { label, cookies_text, notes } = req.body || {};
+    if (!label || !cookies_text) return res.status(400).json({ error: 'label and cookies_text required' });
+    const created = await youtubeCookieOps.create(label, cookies_text, notes);
+    res.json({ ok: true, cookie: created });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/api/cookies/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { youtubeCookieOps } = require('../db/database');
+    const updated = await youtubeCookieOps.update(req.params.id, req.body || {});
+    if (!updated) return res.status(404).json({ error: 'Not found or no fields to update' });
+    res.json({ ok: true, cookie: updated });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/api/cookies/:id/refresh', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { youtubeCookieOps, pool } = require('../db/database');
+    const { cookies_text } = req.body || {};
+    if (!cookies_text) return res.status(400).json({ error: 'cookies_text required' });
+    // Replace cookies + reset status to active + clear fail count.
+    await pool.query(
+      `UPDATE youtube_cookies SET cookies_text = $1, status = 'active', fail_count = 0, last_failure_at = NULL, last_failure_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [cookies_text, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/api/cookies/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { youtubeCookieOps } = require('../db/database');
+    await youtubeCookieOps.delete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;
