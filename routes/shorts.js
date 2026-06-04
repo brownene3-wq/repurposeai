@@ -5857,14 +5857,16 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
           } else {
             // Mix: blend original audio (30%) with narration
             // Stream-copy video; filter_complex only touches audio.
-            // libx264 re-encode here was the dominant cost in the
-            // Mix-audio path — usually 30-60s for a 30s clip on
-            // Railway. With -c:v copy it's just the audio mix +
-            // muxing, typically 2-5s.
+            // Explicit -map for both streams is required when mixing
+            // -c:v copy with -filter_complex — ffmpeg's auto-mapping
+            // sometimes drops one of them and produces a 'no audio' or
+            // 'no output streams selected' failure. Naming the amix
+            // output [aout] and mapping 0:v + [aout] is unambiguous.
             await runCommand(ffmpegPath, [
               '-i', clipPath, '-i', audioPath,
+              '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1[narr];[orig][narr]amix=inputs=2:duration=longest[aout]',
+              '-map', '0:v', '-map', '[aout]',
               '-c:v', 'copy',
-              '-filter_complex', '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest',
               '-c:a', 'aac', '-b:a', '128k',
               '-movflags', '+faststart',
               '-shortest', '-y', tempOutput
@@ -12754,6 +12756,79 @@ ${paginationHtml}
       clipFilename: null
     };
 
+    // ── Narration progress ticker ────────────────────────────────────
+    // Stage messages alone produce a jittery bar (jumps from 6% straight
+    // to 30% the moment a status message arrives). The ticker reads
+    // elapsed time every 400ms and interpolates the percentage between
+    // the current stage's [pctStart..pctEnd] window using
+    // [stageStart..stageStart+expected] as the time window. ETA is
+    // derived from expected - elapsed. Stages are updated by the
+    // polling loops setting narrationState.currentStage; the ticker
+    // re-reads that on each tick.
+    var NARR_STAGES = {
+      'preparing clip in background': { pctStart: 4,  pctEnd: 28, expected: 22 },
+      'preparing clip: downloading':  { pctStart: 8,  pctEnd: 30, expected: 18 },
+      'preparing clip: encoding':     { pctStart: 28, pctEnd: 50, expected: 18 },
+      'preparing clip:':              { pctStart: 14, pctEnd: 50, expected: 22 },
+      'generating clip:':             { pctStart: 8,  pctEnd: 50, expected: 30 },
+      'waiting for background clip':  { pctStart: 50, pctEnd: 55, expected:  8 },
+      'waiting on clip':              { pctStart: 50, pctEnd: 55, expected:  8 },
+      'clip ready':                   { pctStart: 55, pctEnd: 58, expected:  1 },
+      'writing narration script':     { pctStart: 58, pctEnd: 70, expected:  3 },
+      'generating voice audio':       { pctStart: 70, pctEnd: 86, expected:  6 },
+      'generating elevenlabs voice':  { pctStart: 70, pctEnd: 86, expected:  6 },
+      'adding text captions':         { pctStart: 86, pctEnd: 95, expected:  3 },
+      'processing video':             { pctStart: 86, pctEnd: 96, expected:  4 },
+      'processing:':                  { pctStart: 92, pctEnd: 98, expected:  2 },
+      'downloading narrated':         { pctStart: 99, pctEnd: 100, expected: 1 }
+    };
+    function _matchNarrStage(message) {
+      if (!message) return null;
+      var m = String(message).toLowerCase();
+      // Match longest-prefix first by sorting keys by length desc.
+      var keys = Object.keys(NARR_STAGES).sort(function(a, b) { return b.length - a.length; });
+      for (var i = 0; i < keys.length; i++) {
+        if (m.indexOf(keys[i]) >= 0) return Object.assign({ key: keys[i] }, NARR_STAGES[keys[i]]);
+      }
+      return null;
+    }
+    function _startNarrationTicker() {
+      _stopNarrationTicker();
+      narrationState.stageStart = Date.now();
+      narrationState.stageKey = null;
+      narrationState.tickHandle = setInterval(_tickNarration, 400);
+      _tickNarration();
+    }
+    function _stopNarrationTicker() {
+      if (narrationState.tickHandle) {
+        clearInterval(narrationState.tickHandle);
+        narrationState.tickHandle = null;
+      }
+    }
+    function _tickNarration() {
+      var stage = narrationState.currentStage || 'Working…';
+      var info = _matchNarrStage(stage);
+      if (!info) {
+        // Unknown stage — keep the previous bar position.
+        _setNarrationProgress(null, stage, null, 'ok');
+        return;
+      }
+      // Reset the stage clock when the stage key changes.
+      if (narrationState.stageKey !== info.key) {
+        narrationState.stageKey = info.key;
+        narrationState.stageStart = Date.now();
+      }
+      var elapsed = (Date.now() - (narrationState.stageStart || Date.now())) / 1000;
+      var stageDur = info.expected || 5;
+      var frac = Math.min(1, elapsed / stageDur);
+      var pct = info.pctStart + (info.pctEnd - info.pctStart) * frac;
+      // Cap a hair below the stage's pctEnd so transitions look like
+      // momentum rather than a sudden snap to 100% on the last tick.
+      pct = Math.min(pct, info.pctEnd - 0.5);
+      var etaSec = Math.max(0, Math.round(stageDur - elapsed));
+      _setNarrationProgress(pct, stage, etaSec, 'ok');
+    }
+
     // Paints a structured progress bar inside #narration-progress.
     // Idempotent — first call builds the bar / pct / eta DOM, subsequent
     // calls just update text + width. Pass null for fields you don't
@@ -12855,6 +12930,8 @@ ${paginationHtml}
       // step (clip render + source download). If clipFilename is
       // already set, this is a no-op.
       if (!narrationState.clipFilename) {
+        narrationState.currentStage = 'Preparing clip in background…';
+        _startNarrationTicker();
         _prerenderClipForNarration();
       }
     }
@@ -12894,15 +12971,23 @@ ${paginationHtml}
           if (!genData.success) throw new Error(genData.error || 'Failed to start clip preparation');
 
           var filename = genData.filename;
+          var clipReady = false;
           for (var i = 0; i < 300; i++) {
             await new Promise(function(r) { setTimeout(r, 1000); });
             var statusResp = await fetch('/shorts/clip/status/' + filename);
             var statusData = await statusResp.json();
             if (statusData.failed) throw new Error(statusData.message || 'Clip preparation failed');
-            if (statusData.ready) break;
+            if (statusData.ready) { clipReady = true; break; }
             var _stage = 'Preparing clip: ' + (statusData.message || 'processing…');
-            var _prog = _narrationStageToProgress(_stage);
-            _setNarrationProgress(_prog.pct, _stage, _prog.etaSec, 'ok');
+            // Don't trust the stage map alone — let the time-based
+            // ticker keep advancing the bar smoothly in the background.
+            narrationState.currentStage = _stage;
+          }
+          if (!clipReady) {
+            // 5 minutes elapsed without ready or failed — the server is
+            // probably stuck (overloaded ffmpeg, source download hung).
+            // Fail loud rather than pretending the clip is ready.
+            throw new Error('Clip preparation timed out after 5 minutes. The source video may be unavailable.');
           }
           narrationState.clipFilename = filename;
           narrationState.clipPrerenderInFlight = false;
@@ -12916,6 +13001,7 @@ ${paginationHtml}
     }
 
     function closeNarrationModal() {
+      _stopNarrationTicker();
       document.getElementById('narrationModal').style.display = 'none';
     }
 
@@ -13030,15 +13116,17 @@ ${paginationHtml}
           if (!genData.success) throw new Error(genData.error || 'Failed to generate clip');
 
           narrationState.clipFilename = genData.filename;
+          var legacyClipReady = false;
           for (var i = 0; i < 300; i++) {
             await new Promise(function(r) { setTimeout(r, 1000); });
             var statusResp = await fetch('/shorts/clip/status/' + genData.filename);
             var statusData = await statusResp.json();
             if (statusData.failed) throw new Error(statusData.message);
-            if (statusData.ready) break;
-            var _legStage = 'Generating clip: ' + (statusData.message || 'Processing...');
-            var _legProg = _narrationStageToProgress(_legStage);
-            _setNarrationProgress(_legProg.pct, _legStage, _legProg.etaSec, 'ok');
+            if (statusData.ready) { legacyClipReady = true; break; }
+            narrationState.currentStage = 'Generating clip: ' + (statusData.message || 'Processing...');
+          }
+          if (!legacyClipReady) {
+            throw new Error('Clip generation timed out after 5 minutes.');
           }
         } catch (err) {
           _setNarrationProgress(100, 'Error: ' + err.message, null, 'error');
@@ -13047,6 +13135,10 @@ ${paginationHtml}
           return;
         }
       }
+
+      // Make sure the ticker is running (no-op if already started by
+      // openNarrationModal's prerender kick).
+      if (!narrationState.tickHandle) _startNarrationTicker();
 
       // Now generate narration
       btn.disabled = true;
@@ -13074,6 +13166,7 @@ ${paginationHtml}
         if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; _setNarrationProgress(20, 'Clip expired — regenerating…', 35, 'ok'); return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
 
         var filename = data.filename;
+        var narrReady = false;
         // Poll for narration to be ready (1s tick).
         for (var attempts = 0; attempts < 300; attempts++) {
           await new Promise(function(r) { setTimeout(r, 1000); });
@@ -13081,6 +13174,7 @@ ${paginationHtml}
           var sData = await sResp.json();
           if (sData.failed) throw new Error(sData.message || 'Narration failed');
           if (sData.ready) {
+            narrReady = true;
             if (sData.textOnly) {
               // Display narration script in the modal
               progress.innerHTML = '';
@@ -13103,16 +13197,21 @@ ${paginationHtml}
               document.body.appendChild(link);
               link.click();
               document.body.removeChild(link);
+              _stopNarrationTicker();
+              _setNarrationProgress(100, 'Done!', 0, 'ok');
               showToast('Narrated clip downloaded!');
               closeNarrationModal();
             }
             break;
           }
           var _nMsg = sData.message || 'Processing…';
-          var _nProg = _narrationStageToProgress(_nMsg);
-          _setNarrationProgress(_nProg.pct, _nMsg, _nProg.etaSec, 'ok');
+          narrationState.currentStage = _nMsg;
+        }
+        if (!narrReady) {
+          throw new Error('Narration timed out after 5 minutes. The server may be overloaded — try again.');
         }
       } catch (err) {
+        _stopNarrationTicker();
         _setNarrationProgress(100, 'Error: ' + err.message, null, 'error');
         showToast('Narration failed: ' + err.message, true);
       } finally {
