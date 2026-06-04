@@ -12757,6 +12757,7 @@ ${paginationHtml}
     function openNarrationModal(analysisId, momentIndex) {
       narrationState.analysisId = analysisId;
       narrationState.momentIndex = momentIndex;
+      narrationState.clipFilename = null; // reset; we'll re-find below
       // Try to find the most recent clip filename for this moment
       var clipBtn = document.getElementById('clip-btn-' + momentIndex);
       if (clipBtn && clipBtn.dataset.lastFilename) {
@@ -12767,6 +12768,86 @@ ${paginationHtml}
       document.querySelectorAll('.narr-style-btn').forEach(function(btn, i) {
         btn.style.borderColor = i === 0 ? '#00b894' : 'transparent';
       });
+      // Reset progress UI styling carried over from a previous attempt.
+      var progress = document.getElementById('narration-progress');
+      if (progress) {
+        progress.style.display = 'none';
+        progress.textContent = '';
+        progress.style.color = '';
+      }
+      // Pre-fire the clip render in the background. The user typically
+      // spends 5-15s picking style + mix + voice before clicking
+      // Generate — we want that time to overlap with the slowest
+      // step (clip render + source download). If clipFilename is
+      // already set, this is a no-op.
+      if (!narrationState.clipFilename) {
+        _prerenderClipForNarration();
+      }
+    }
+
+    // Kicks off /shorts/clip in the background so the narration flow
+    // doesn't have to start it serially after the user clicks Generate.
+    // Sets narrationState.clipPrerenderInFlight while running; the
+    // generateNarration() handler waits on this if it's still going.
+    function _prerenderClipForNarration() {
+      if (narrationState.clipPrerenderInFlight) return;
+      narrationState.clipPrerenderInFlight = true;
+      narrationState.clipPrerenderFailed = null;
+      var progress = document.getElementById('narration-progress');
+      if (progress) {
+        progress.style.display = 'block';
+        progress.style.color = 'var(--text-muted)';
+        progress.textContent = 'Preparing clip in background…';
+      }
+      (async function() {
+        try {
+          var styleSelect = document.getElementById('clip-style-' + narrationState.momentIndex);
+          var clipStyle = styleSelect ? styleSelect.value : 'blur';
+          var captionsCheck = document.getElementById('captions-' + narrationState.momentIndex);
+          var includeCaptions = captionsCheck ? captionsCheck.checked : true;
+          var brandSelect = document.getElementById('brand-template-' + narrationState.momentIndex);
+          var selectedBrandTemplateId = (brandSelect && brandSelect.value) ? brandSelect.value : null;
+          var applyBrandKit = !!selectedBrandTemplateId;
+
+          var genResp = await fetch('/shorts/clip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              analysisId: narrationState.analysisId,
+              momentIndex: narrationState.momentIndex,
+              includeCaptions: includeCaptions,
+              clipStyle: clipStyle,
+              applyBrandKit: applyBrandKit,
+              selectedBrandTemplateId: selectedBrandTemplateId
+            })
+          });
+          var genData = await genResp.json();
+          if (!genData.success) throw new Error(genData.error || 'Failed to start clip preparation');
+
+          var filename = genData.filename;
+          for (var i = 0; i < 300; i++) {
+            await new Promise(function(r) { setTimeout(r, 1000); });
+            var statusResp = await fetch('/shorts/clip/status/' + filename);
+            var statusData = await statusResp.json();
+            if (statusData.failed) throw new Error(statusData.message || 'Clip preparation failed');
+            if (statusData.ready) break;
+            if (progress) progress.textContent = 'Preparing clip: ' + (statusData.message || 'processing…');
+          }
+          narrationState.clipFilename = filename;
+          narrationState.clipPrerenderInFlight = false;
+          if (progress) {
+            progress.style.color = '#00cec9';
+            progress.textContent = '✓ Clip ready — click Generate to add narration';
+          }
+        } catch (err) {
+          narrationState.clipPrerenderInFlight = false;
+          narrationState.clipPrerenderFailed = err && err.message ? err.message : 'Clip preparation failed';
+          if (progress) {
+            progress.style.color = '#ff6b6b';
+            progress.textContent = 'Clip prep failed: ' + narrationState.clipPrerenderFailed;
+          }
+        }
+      })();
     }
 
     function closeNarrationModal() {
@@ -12834,9 +12915,34 @@ ${paginationHtml}
       var btn = document.getElementById('narrate-generate-btn');
       var progress = document.getElementById('narration-progress');
 
-      // First check if we need to generate the clip first
+      // If openNarrationModal already kicked off a background prerender,
+      // wait for it to finish instead of spawning a second one. This is
+      // where users gain the most time — by the time they pick style +
+      // mix + voice and click Generate, the clip is typically already
+      // done, and this loop exits immediately.
+      if (narrationState.clipPrerenderInFlight) {
+        progress.style.display = 'block';
+        progress.style.color = 'var(--text-muted)';
+        progress.textContent = 'Waiting for background clip prep to finish…';
+        btn.disabled = true;
+        btn.textContent = 'Waiting on clip…';
+        while (narrationState.clipPrerenderInFlight) {
+          await new Promise(function(r) { setTimeout(r, 300); });
+        }
+        if (narrationState.clipPrerenderFailed) {
+          progress.style.color = '#ff6b6b';
+          progress.textContent = 'Error: ' + narrationState.clipPrerenderFailed;
+          btn.disabled = false;
+          btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
+          return;
+        }
+      }
+
+      // Legacy path — only reachable if the prerender never started
+      // (e.g. clipFilename was already set when the modal opened from
+      // a previous Download Clip click). Same flow as before, just
+      // tightened to 1s polling.
       if (!narrationState.clipFilename) {
-        // Generate clip first
         progress.style.display = 'block';
         progress.textContent = 'Generating clip first...';
         btn.disabled = true;
@@ -12863,9 +12969,6 @@ ${paginationHtml}
           if (!genData.success) throw new Error(genData.error || 'Failed to generate clip');
 
           narrationState.clipFilename = genData.filename;
-          // Poll for clip to be ready (1s tick — snappier UX than the
-        // old 2s tick; status endpoint is cheap, just a stat() on
-        // the progress file).
           for (var i = 0; i < 300; i++) {
             await new Promise(function(r) { setTimeout(r, 1000); });
             var statusResp = await fetch('/shorts/clip/status/' + genData.filename);
