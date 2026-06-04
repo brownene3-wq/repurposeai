@@ -334,18 +334,31 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     }
 
-    await runDl(ytdlpPath, [
-      '--no-playlist',
-      '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
-      '--merge-output-format', 'mkv',
-      '-o', cachedVideoPath,
-      '--no-part',
-      '--force-overwrites',
-      ...getYoutubeCookiesArgs(),
-      ...getYoutubeProxyArgs(),
-      ...YTDLP_COMMON_ARGS,
-      videoUrl
-    ], { timeout: 240000 });
+    // Prefer a warm-account cookie from the pool; falls back to YT_COOKIES_PATH
+    // if no pool entries exist. Caller (the catch/success below) marks the
+    // outcome so the pool can auto-expire stale sets.
+    let __cookieHandle = null;
+    try { const { pickCookieHandle } = require('../utils/cookie-pool'); __cookieHandle = await pickCookieHandle(); } catch (e) {}
+    const __cookieArgs = __cookieHandle ? __cookieHandle.args : getYoutubeCookiesArgs();
+    console.log(`  yt-dlp cookie source: ${__cookieHandle ? 'pool:' + __cookieHandle.label : (__cookieArgs.length ? 'static' : 'none')}`);
+    try {
+      await runDl(ytdlpPath, [
+        '--no-playlist',
+        '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
+        '--merge-output-format', 'mkv',
+        '-o', cachedVideoPath,
+        '--no-part',
+        '--force-overwrites',
+        ...__cookieArgs,
+        ...getYoutubeProxyArgs(),
+        ...YTDLP_COMMON_ARGS,
+        videoUrl
+      ], { timeout: 240000 });
+      if (__cookieHandle) { await __cookieHandle.markSuccess(); __cookieHandle.cleanup(); }
+    } catch (__ytdlpErr) {
+      if (__cookieHandle) { await __cookieHandle.markFailure(String(__ytdlpErr && __ytdlpErr.message || __ytdlpErr).slice(0, 400)); __cookieHandle.cleanup(); }
+      throw __ytdlpErr;
+    }
 
     // yt-dlp may change extension — find the actual file
     if (!fs.existsSync(cachedVideoPath)) {
@@ -5857,14 +5870,16 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
           } else {
             // Mix: blend original audio (30%) with narration
             // Stream-copy video; filter_complex only touches audio.
-            // libx264 re-encode here was the dominant cost in the
-            // Mix-audio path — usually 30-60s for a 30s clip on
-            // Railway. With -c:v copy it's just the audio mix +
-            // muxing, typically 2-5s.
+            // Explicit -map for both streams is required when mixing
+            // -c:v copy with -filter_complex — ffmpeg's auto-mapping
+            // sometimes drops one of them and produces a 'no audio' or
+            // 'no output streams selected' failure. Naming the amix
+            // output [aout] and mapping 0:v + [aout] is unambiguous.
             await runCommand(ffmpegPath, [
               '-i', clipPath, '-i', audioPath,
+              '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1[narr];[orig][narr]amix=inputs=2:duration=longest[aout]',
+              '-map', '0:v', '-map', '[aout]',
               '-c:v', 'copy',
-              '-filter_complex', '[0:a]volume=0.3[original];[1:a]volume=1[narration];[original][narration]amix=inputs=2:duration=longest',
               '-c:a', 'aac', '-b:a', '128k',
               '-movflags', '+faststart',
               '-shortest', '-y', tempOutput
@@ -8709,7 +8724,15 @@ ${paginationHtml}
         </div>
       </div>
 
-      <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">⚠️ Click Generate to create a narrated version of this clip. The clip will be processed automatically.</p>
+      <!-- Don't-close warning: the progress ticker + polling loops are
+           tied to the modal lifetime — closing the modal cancels the
+           generation. Surface this loudly in an amber chip so users
+           don't lose 30-60s of work by reflexively dismissing the
+           modal mid-flow. -->
+      <div style="display:flex;align-items:flex-start;gap:8px;background:rgba(243,156,18,0.10);border:1px solid rgba(243,156,18,0.40);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.5;color:#fde6b8;font-weight:500;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span><strong style="color:#ffd591;">Please keep this window open.</strong> Closing it will cancel the narration in progress and you'll have to start over.</span>
+      </div>
 
       <button id="narrate-generate-btn" onclick="generateNarration()" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;">
         <img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration
@@ -12754,9 +12777,162 @@ ${paginationHtml}
       clipFilename: null
     };
 
+    // ── Narration progress ticker ────────────────────────────────────
+    // Stage messages alone produce a jittery bar (jumps from 6% straight
+    // to 30% the moment a status message arrives). The ticker reads
+    // elapsed time every 400ms and interpolates the percentage between
+    // the current stage's [pctStart..pctEnd] window using
+    // [stageStart..stageStart+expected] as the time window. ETA is
+    // derived from expected - elapsed. Stages are updated by the
+    // polling loops setting narrationState.currentStage; the ticker
+    // re-reads that on each tick.
+    var NARR_STAGES = {
+      'preparing clip in background': { pctStart: 4,  pctEnd: 28, expected: 22 },
+      'preparing clip: downloading':  { pctStart: 8,  pctEnd: 30, expected: 18 },
+      'preparing clip: encoding':     { pctStart: 28, pctEnd: 50, expected: 18 },
+      'preparing clip:':              { pctStart: 14, pctEnd: 50, expected: 22 },
+      'generating clip:':             { pctStart: 8,  pctEnd: 50, expected: 30 },
+      'waiting for background clip':  { pctStart: 50, pctEnd: 55, expected:  8 },
+      'waiting on clip':              { pctStart: 50, pctEnd: 55, expected:  8 },
+      'clip ready':                   { pctStart: 55, pctEnd: 58, expected:  1 },
+      'writing narration script':     { pctStart: 58, pctEnd: 70, expected:  3 },
+      'generating voice audio':       { pctStart: 70, pctEnd: 86, expected:  6 },
+      'generating elevenlabs voice':  { pctStart: 70, pctEnd: 86, expected:  6 },
+      'adding text captions':         { pctStart: 86, pctEnd: 95, expected:  3 },
+      'processing video':             { pctStart: 86, pctEnd: 96, expected:  4 },
+      'processing:':                  { pctStart: 92, pctEnd: 98, expected:  2 },
+      'downloading narrated':         { pctStart: 99, pctEnd: 100, expected: 1 }
+    };
+    function _matchNarrStage(message) {
+      if (!message) return null;
+      var m = String(message).toLowerCase();
+      // Match longest-prefix first by sorting keys by length desc.
+      var keys = Object.keys(NARR_STAGES).sort(function(a, b) { return b.length - a.length; });
+      for (var i = 0; i < keys.length; i++) {
+        if (m.indexOf(keys[i]) >= 0) return Object.assign({ key: keys[i] }, NARR_STAGES[keys[i]]);
+      }
+      return null;
+    }
+    function _startNarrationTicker() {
+      _stopNarrationTicker();
+      narrationState.stageStart = Date.now();
+      narrationState.stageKey = null;
+      narrationState.tickHandle = setInterval(_tickNarration, 400);
+      _tickNarration();
+    }
+    function _stopNarrationTicker() {
+      if (narrationState.tickHandle) {
+        clearInterval(narrationState.tickHandle);
+        narrationState.tickHandle = null;
+      }
+    }
+    function _tickNarration() {
+      var stage = narrationState.currentStage || 'Working…';
+      var info = _matchNarrStage(stage);
+      if (!info) {
+        // Unknown stage — keep the previous bar position.
+        _setNarrationProgress(null, stage, null, 'ok');
+        return;
+      }
+      // Reset the stage clock when the stage key changes.
+      if (narrationState.stageKey !== info.key) {
+        narrationState.stageKey = info.key;
+        narrationState.stageStart = Date.now();
+      }
+      var elapsed = (Date.now() - (narrationState.stageStart || Date.now())) / 1000;
+      var stageDur = info.expected || 5;
+      var frac = Math.min(1, elapsed / stageDur);
+      var pct = info.pctStart + (info.pctEnd - info.pctStart) * frac;
+      // Cap a hair below the stage's pctEnd so transitions look like
+      // momentum rather than a sudden snap to 100% on the last tick.
+      pct = Math.min(pct, info.pctEnd - 0.5);
+      var etaSec = Math.max(0, Math.round(stageDur - elapsed));
+      _setNarrationProgress(pct, stage, etaSec, 'ok');
+    }
+
+    // Paints a structured progress bar inside #narration-progress.
+    // Idempotent — first call builds the bar / pct / eta DOM, subsequent
+    // calls just update text + width. Pass null for fields you don't
+    // want to touch.
+    function _setNarrationProgress(pct, stage, etaSec, color) {
+      var p = document.getElementById('narration-progress');
+      if (!p) return;
+      p.style.display = 'block';
+      // Build the structured layout once. Subsequent calls reuse it.
+      if (!p.querySelector('.narr-progress-bar')) {
+        p.innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;margin-bottom:6px;">' +
+            '<span class="narr-progress-stage" style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">Starting…</span>' +
+            '<span class="narr-progress-pct" style="color:#00cec9;flex-shrink:0;">0%</span>' +
+          '</div>' +
+          '<div class="narr-progress-bar" style="width:100%;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;margin-bottom:6px;">' +
+            '<div class="narr-progress-fill" style="height:100%;width:5%;background:linear-gradient(90deg,#00b894,#00cec9);border-radius:4px;transition:width 0.4s ease;"></div>' +
+          '</div>' +
+          '<div class="narr-progress-eta" style="font-size:11px;color:var(--text-muted);text-align:right;letter-spacing:0.02em;">Calculating ETA…</div>';
+      }
+      var fill = p.querySelector('.narr-progress-fill');
+      var pctEl = p.querySelector('.narr-progress-pct');
+      var stageEl = p.querySelector('.narr-progress-stage');
+      var etaEl = p.querySelector('.narr-progress-eta');
+      if (typeof pct === 'number') {
+        var c = Math.max(2, Math.min(100, pct));
+        if (fill) fill.style.width = c + '%';
+        if (pctEl) pctEl.textContent = Math.round(c) + '%';
+      }
+      if (stage != null && stageEl) stageEl.textContent = stage;
+      if (etaEl) {
+        if (etaSec == null) etaEl.textContent = '';
+        else if (etaSec <= 0) etaEl.textContent = 'Almost done…';
+        else if (etaSec < 60) etaEl.textContent = '~' + Math.round(etaSec) + 's remaining';
+        else etaEl.textContent = '~' + Math.round(etaSec / 60) + 'm remaining';
+      }
+      // Recolor the pct/stage in red on error state.
+      if (color === 'error') {
+        if (pctEl) pctEl.style.color = '#ff6b6b';
+        if (stageEl) stageEl.style.color = '#fca5a5';
+        if (fill) fill.style.background = 'linear-gradient(90deg,#ef4444,#f97316)';
+      } else if (color === 'ok') {
+        if (pctEl) pctEl.style.color = '#00cec9';
+        if (stageEl) stageEl.style.color = 'var(--text-muted)';
+        if (fill) fill.style.background = 'linear-gradient(90deg,#00b894,#00cec9)';
+      }
+    }
+    // Clears the structured progress block so subsequent calls rebuild it.
+    function _resetNarrationProgress() {
+      var p = document.getElementById('narration-progress');
+      if (!p) return;
+      p.style.display = 'none';
+      p.innerHTML = '';
+    }
+    // Map a progress message (from the server or our own UX strings) to
+    // an approximate { pct, etaSec } pair. Estimates are rough averages;
+    // the bar tightens as the user advances through stages.
+    function _narrationStageToProgress(message) {
+      if (!message) return { pct: null, etaSec: null };
+      var m = String(message).toLowerCase();
+      // Clip prerender phase (slow — source download + libx264 encode).
+      if (m.indexOf('preparing clip in background') >= 0) return { pct: 6, etaSec: 45 };
+      if (m.indexOf('preparing clip') >= 0 && m.indexOf('download') >= 0) return { pct: 14, etaSec: 38 };
+      if (m.indexOf('preparing clip') >= 0 && (m.indexOf('encod') >= 0 || m.indexOf('process') >= 0)) return { pct: 30, etaSec: 26 };
+      if (m.indexOf('preparing clip') >= 0) return { pct: 22, etaSec: 32 };
+      if (m.indexOf('clip ready') >= 0) return { pct: 58, etaSec: 11 };
+      if (m.indexOf('waiting on clip') >= 0 || m.indexOf('waiting for background clip') >= 0) return { pct: 50, etaSec: 13 };
+      // Legacy clip-generation path.
+      if (m.indexOf('generating clip') >= 0) return { pct: 25, etaSec: 30 };
+      // Narration phase (after clip ready).
+      if (m.indexOf('writing narration') >= 0 || m.indexOf('narration script') >= 0) return { pct: 62, etaSec: 9 };
+      if (m.indexOf('voice audio') >= 0 || m.indexOf('elevenlabs voice') >= 0 || m.indexOf('generating voice') >= 0) return { pct: 78, etaSec: 5 };
+      if (m.indexOf('adding text') >= 0 || m.indexOf('text captions') >= 0) return { pct: 88, etaSec: 3 };
+      if (m.indexOf('processing video') >= 0) return { pct: 90, etaSec: 3 };
+      if (m.indexOf('processing:') >= 0) return { pct: 94, etaSec: 2 };
+      if (m.indexOf('downloading narrated') >= 0) return { pct: 99, etaSec: 0 };
+      return { pct: null, etaSec: null };
+    }
+
     function openNarrationModal(analysisId, momentIndex) {
       narrationState.analysisId = analysisId;
       narrationState.momentIndex = momentIndex;
+      narrationState.clipFilename = null; // reset; we'll re-find below
       // Try to find the most recent clip filename for this moment
       var clipBtn = document.getElementById('clip-btn-' + momentIndex);
       if (clipBtn && clipBtn.dataset.lastFilename) {
@@ -12767,9 +12943,86 @@ ${paginationHtml}
       document.querySelectorAll('.narr-style-btn').forEach(function(btn, i) {
         btn.style.borderColor = i === 0 ? '#00b894' : 'transparent';
       });
+      // Reset progress UI styling carried over from a previous attempt.
+      _resetNarrationProgress();
+      // Pre-fire the clip render in the background. The user typically
+      // spends 5-15s picking style + mix + voice before clicking
+      // Generate — we want that time to overlap with the slowest
+      // step (clip render + source download). If clipFilename is
+      // already set, this is a no-op.
+      if (!narrationState.clipFilename) {
+        narrationState.currentStage = 'Preparing clip in background…';
+        _startNarrationTicker();
+        _prerenderClipForNarration();
+      }
+    }
+
+    // Kicks off /shorts/clip in the background so the narration flow
+    // doesn't have to start it serially after the user clicks Generate.
+    // Sets narrationState.clipPrerenderInFlight while running; the
+    // generateNarration() handler waits on this if it's still going.
+    function _prerenderClipForNarration() {
+      if (narrationState.clipPrerenderInFlight) return;
+      narrationState.clipPrerenderInFlight = true;
+      narrationState.clipPrerenderFailed = null;
+      _setNarrationProgress(6, 'Preparing clip in background…', 45, 'ok');
+      (async function() {
+        try {
+          var styleSelect = document.getElementById('clip-style-' + narrationState.momentIndex);
+          var clipStyle = styleSelect ? styleSelect.value : 'blur';
+          var captionsCheck = document.getElementById('captions-' + narrationState.momentIndex);
+          var includeCaptions = captionsCheck ? captionsCheck.checked : true;
+          var brandSelect = document.getElementById('brand-template-' + narrationState.momentIndex);
+          var selectedBrandTemplateId = (brandSelect && brandSelect.value) ? brandSelect.value : null;
+          var applyBrandKit = !!selectedBrandTemplateId;
+
+          var genResp = await fetch('/shorts/clip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              analysisId: narrationState.analysisId,
+              momentIndex: narrationState.momentIndex,
+              includeCaptions: includeCaptions,
+              clipStyle: clipStyle,
+              applyBrandKit: applyBrandKit,
+              selectedBrandTemplateId: selectedBrandTemplateId
+            })
+          });
+          var genData = await genResp.json();
+          if (!genData.success) throw new Error(genData.error || 'Failed to start clip preparation');
+
+          var filename = genData.filename;
+          var clipReady = false;
+          for (var i = 0; i < 300; i++) {
+            await new Promise(function(r) { setTimeout(r, 1000); });
+            var statusResp = await fetch('/shorts/clip/status/' + filename);
+            var statusData = await statusResp.json();
+            if (statusData.failed) throw new Error(statusData.message || 'Clip preparation failed');
+            if (statusData.ready) { clipReady = true; break; }
+            var _stage = 'Preparing clip: ' + (statusData.message || 'processing…');
+            // Don't trust the stage map alone — let the time-based
+            // ticker keep advancing the bar smoothly in the background.
+            narrationState.currentStage = _stage;
+          }
+          if (!clipReady) {
+            // 5 minutes elapsed without ready or failed — the server is
+            // probably stuck (overloaded ffmpeg, source download hung).
+            // Fail loud rather than pretending the clip is ready.
+            throw new Error('Clip preparation timed out after 5 minutes. The source video may be unavailable.');
+          }
+          narrationState.clipFilename = filename;
+          narrationState.clipPrerenderInFlight = false;
+          _setNarrationProgress(58, '✓ Clip ready — click Generate', 11, 'ok');
+        } catch (err) {
+          narrationState.clipPrerenderInFlight = false;
+          narrationState.clipPrerenderFailed = err && err.message ? err.message : 'Clip preparation failed';
+          _setNarrationProgress(100, 'Clip prep failed: ' + narrationState.clipPrerenderFailed, null, 'error');
+        }
+      })();
     }
 
     function closeNarrationModal() {
+      _stopNarrationTicker();
       document.getElementById('narrationModal').style.display = 'none';
     }
 
@@ -12834,11 +13087,32 @@ ${paginationHtml}
       var btn = document.getElementById('narrate-generate-btn');
       var progress = document.getElementById('narration-progress');
 
-      // First check if we need to generate the clip first
+      // If openNarrationModal already kicked off a background prerender,
+      // wait for it to finish instead of spawning a second one. This is
+      // where users gain the most time — by the time they pick style +
+      // mix + voice and click Generate, the clip is typically already
+      // done, and this loop exits immediately.
+      if (narrationState.clipPrerenderInFlight) {
+        _setNarrationProgress(50, 'Waiting for background clip prep to finish…', 13, 'ok');
+        btn.disabled = true;
+        btn.textContent = 'Waiting on clip…';
+        while (narrationState.clipPrerenderInFlight) {
+          await new Promise(function(r) { setTimeout(r, 300); });
+        }
+        if (narrationState.clipPrerenderFailed) {
+          _setNarrationProgress(100, 'Error: ' + narrationState.clipPrerenderFailed, null, 'error');
+          btn.disabled = false;
+          btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
+          return;
+        }
+      }
+
+      // Legacy path — only reachable if the prerender never started
+      // (e.g. clipFilename was already set when the modal opened from
+      // a previous Download Clip click). Same flow as before, just
+      // tightened to 1s polling.
       if (!narrationState.clipFilename) {
-        // Generate clip first
-        progress.style.display = 'block';
-        progress.textContent = 'Generating clip first...';
+        _setNarrationProgress(8, 'Generating clip first…', 50, 'ok');
         btn.disabled = true;
         btn.textContent = 'Generating clip...';
 
@@ -12863,30 +13137,34 @@ ${paginationHtml}
           if (!genData.success) throw new Error(genData.error || 'Failed to generate clip');
 
           narrationState.clipFilename = genData.filename;
-          // Poll for clip to be ready (1s tick — snappier UX than the
-        // old 2s tick; status endpoint is cheap, just a stat() on
-        // the progress file).
+          var legacyClipReady = false;
           for (var i = 0; i < 300; i++) {
             await new Promise(function(r) { setTimeout(r, 1000); });
             var statusResp = await fetch('/shorts/clip/status/' + genData.filename);
             var statusData = await statusResp.json();
             if (statusData.failed) throw new Error(statusData.message);
-            if (statusData.ready) break;
-            progress.textContent = 'Generating clip: ' + (statusData.message || 'Processing...');
+            if (statusData.ready) { legacyClipReady = true; break; }
+            narrationState.currentStage = 'Generating clip: ' + (statusData.message || 'Processing...');
+          }
+          if (!legacyClipReady) {
+            throw new Error('Clip generation timed out after 5 minutes.');
           }
         } catch (err) {
-          progress.textContent = 'Error: ' + err.message;
+          _setNarrationProgress(100, 'Error: ' + err.message, null, 'error');
           btn.disabled = false;
           btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
           return;
         }
       }
 
+      // Make sure the ticker is running (no-op if already started by
+      // openNarrationModal's prerender kick).
+      if (!narrationState.tickHandle) _startNarrationTicker();
+
       // Now generate narration
       btn.disabled = true;
       btn.textContent = 'Generating narration...';
-      progress.style.display = 'block';
-      progress.textContent = 'Writing narration script...';
+      _setNarrationProgress(62, 'Writing narration script…', 9, 'ok');
 
       try {
         var body = {
@@ -12906,9 +13184,10 @@ ${paginationHtml}
           body: JSON.stringify(body)
         });
         var data = await resp.json();
-        if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; progress.textContent = 'Clip expired, regenerating...'; return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
+        if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; _setNarrationProgress(20, 'Clip expired — regenerating…', 35, 'ok'); return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
 
         var filename = data.filename;
+        var narrReady = false;
         // Poll for narration to be ready (1s tick).
         for (var attempts = 0; attempts < 300; attempts++) {
           await new Promise(function(r) { setTimeout(r, 1000); });
@@ -12916,6 +13195,7 @@ ${paginationHtml}
           var sData = await sResp.json();
           if (sData.failed) throw new Error(sData.message || 'Narration failed');
           if (sData.ready) {
+            narrReady = true;
             if (sData.textOnly) {
               // Display narration script in the modal
               progress.innerHTML = '';
@@ -12931,22 +13211,29 @@ ${paginationHtml}
               showToast('Narration script generated!');
             } else {
               // Download narrated clip
-              progress.textContent = 'Downloading narrated clip...';
+              _setNarrationProgress(100, 'Downloading narrated clip…', 0, 'ok');
               var link = document.createElement('a');
               link.href = '/shorts/narrate/download/' + filename;
               link.download = filename;
               document.body.appendChild(link);
               link.click();
               document.body.removeChild(link);
+              _stopNarrationTicker();
+              _setNarrationProgress(100, 'Done!', 0, 'ok');
               showToast('Narrated clip downloaded!');
               closeNarrationModal();
             }
             break;
           }
-          progress.textContent = sData.message || 'Processing...';
+          var _nMsg = sData.message || 'Processing…';
+          narrationState.currentStage = _nMsg;
+        }
+        if (!narrReady) {
+          throw new Error('Narration timed out after 5 minutes. The server may be overloaded — try again.');
         }
       } catch (err) {
-        progress.textContent = 'Error: ' + err.message;
+        _stopNarrationTicker();
+        _setNarrationProgress(100, 'Error: ' + err.message, null, 'error');
         showToast('Narration failed: ' + err.message, true);
       } finally {
         btn.disabled = false;
