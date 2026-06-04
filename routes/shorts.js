@@ -12754,6 +12754,85 @@ ${paginationHtml}
       clipFilename: null
     };
 
+    // Paints a structured progress bar inside #narration-progress.
+    // Idempotent — first call builds the bar / pct / eta DOM, subsequent
+    // calls just update text + width. Pass null for fields you don't
+    // want to touch.
+    function _setNarrationProgress(pct, stage, etaSec, color) {
+      var p = document.getElementById('narration-progress');
+      if (!p) return;
+      p.style.display = 'block';
+      // Build the structured layout once. Subsequent calls reuse it.
+      if (!p.querySelector('.narr-progress-bar')) {
+        p.innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;margin-bottom:6px;">' +
+            '<span class="narr-progress-stage" style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">Starting…</span>' +
+            '<span class="narr-progress-pct" style="color:#00cec9;flex-shrink:0;">0%</span>' +
+          '</div>' +
+          '<div class="narr-progress-bar" style="width:100%;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;margin-bottom:6px;">' +
+            '<div class="narr-progress-fill" style="height:100%;width:5%;background:linear-gradient(90deg,#00b894,#00cec9);border-radius:4px;transition:width 0.4s ease;"></div>' +
+          '</div>' +
+          '<div class="narr-progress-eta" style="font-size:11px;color:var(--text-muted);text-align:right;letter-spacing:0.02em;">Calculating ETA…</div>';
+      }
+      var fill = p.querySelector('.narr-progress-fill');
+      var pctEl = p.querySelector('.narr-progress-pct');
+      var stageEl = p.querySelector('.narr-progress-stage');
+      var etaEl = p.querySelector('.narr-progress-eta');
+      if (typeof pct === 'number') {
+        var c = Math.max(2, Math.min(100, pct));
+        if (fill) fill.style.width = c + '%';
+        if (pctEl) pctEl.textContent = Math.round(c) + '%';
+      }
+      if (stage != null && stageEl) stageEl.textContent = stage;
+      if (etaEl) {
+        if (etaSec == null) etaEl.textContent = '';
+        else if (etaSec <= 0) etaEl.textContent = 'Almost done…';
+        else if (etaSec < 60) etaEl.textContent = '~' + Math.round(etaSec) + 's remaining';
+        else etaEl.textContent = '~' + Math.round(etaSec / 60) + 'm remaining';
+      }
+      // Recolor the pct/stage in red on error state.
+      if (color === 'error') {
+        if (pctEl) pctEl.style.color = '#ff6b6b';
+        if (stageEl) stageEl.style.color = '#fca5a5';
+        if (fill) fill.style.background = 'linear-gradient(90deg,#ef4444,#f97316)';
+      } else if (color === 'ok') {
+        if (pctEl) pctEl.style.color = '#00cec9';
+        if (stageEl) stageEl.style.color = 'var(--text-muted)';
+        if (fill) fill.style.background = 'linear-gradient(90deg,#00b894,#00cec9)';
+      }
+    }
+    // Clears the structured progress block so subsequent calls rebuild it.
+    function _resetNarrationProgress() {
+      var p = document.getElementById('narration-progress');
+      if (!p) return;
+      p.style.display = 'none';
+      p.innerHTML = '';
+    }
+    // Map a progress message (from the server or our own UX strings) to
+    // an approximate { pct, etaSec } pair. Estimates are rough averages;
+    // the bar tightens as the user advances through stages.
+    function _narrationStageToProgress(message) {
+      if (!message) return { pct: null, etaSec: null };
+      var m = String(message).toLowerCase();
+      // Clip prerender phase (slow — source download + libx264 encode).
+      if (m.indexOf('preparing clip in background') >= 0) return { pct: 6, etaSec: 45 };
+      if (m.indexOf('preparing clip') >= 0 && m.indexOf('download') >= 0) return { pct: 14, etaSec: 38 };
+      if (m.indexOf('preparing clip') >= 0 && (m.indexOf('encod') >= 0 || m.indexOf('process') >= 0)) return { pct: 30, etaSec: 26 };
+      if (m.indexOf('preparing clip') >= 0) return { pct: 22, etaSec: 32 };
+      if (m.indexOf('clip ready') >= 0) return { pct: 58, etaSec: 11 };
+      if (m.indexOf('waiting on clip') >= 0 || m.indexOf('waiting for background clip') >= 0) return { pct: 50, etaSec: 13 };
+      // Legacy clip-generation path.
+      if (m.indexOf('generating clip') >= 0) return { pct: 25, etaSec: 30 };
+      // Narration phase (after clip ready).
+      if (m.indexOf('writing narration') >= 0 || m.indexOf('narration script') >= 0) return { pct: 62, etaSec: 9 };
+      if (m.indexOf('voice audio') >= 0 || m.indexOf('elevenlabs voice') >= 0 || m.indexOf('generating voice') >= 0) return { pct: 78, etaSec: 5 };
+      if (m.indexOf('adding text') >= 0 || m.indexOf('text captions') >= 0) return { pct: 88, etaSec: 3 };
+      if (m.indexOf('processing video') >= 0) return { pct: 90, etaSec: 3 };
+      if (m.indexOf('processing:') >= 0) return { pct: 94, etaSec: 2 };
+      if (m.indexOf('downloading narrated') >= 0) return { pct: 99, etaSec: 0 };
+      return { pct: null, etaSec: null };
+    }
+
     function openNarrationModal(analysisId, momentIndex) {
       narrationState.analysisId = analysisId;
       narrationState.momentIndex = momentIndex;
@@ -12769,12 +12848,7 @@ ${paginationHtml}
         btn.style.borderColor = i === 0 ? '#00b894' : 'transparent';
       });
       // Reset progress UI styling carried over from a previous attempt.
-      var progress = document.getElementById('narration-progress');
-      if (progress) {
-        progress.style.display = 'none';
-        progress.textContent = '';
-        progress.style.color = '';
-      }
+      _resetNarrationProgress();
       // Pre-fire the clip render in the background. The user typically
       // spends 5-15s picking style + mix + voice before clicking
       // Generate — we want that time to overlap with the slowest
@@ -12793,12 +12867,7 @@ ${paginationHtml}
       if (narrationState.clipPrerenderInFlight) return;
       narrationState.clipPrerenderInFlight = true;
       narrationState.clipPrerenderFailed = null;
-      var progress = document.getElementById('narration-progress');
-      if (progress) {
-        progress.style.display = 'block';
-        progress.style.color = 'var(--text-muted)';
-        progress.textContent = 'Preparing clip in background…';
-      }
+      _setNarrationProgress(6, 'Preparing clip in background…', 45, 'ok');
       (async function() {
         try {
           var styleSelect = document.getElementById('clip-style-' + narrationState.momentIndex);
@@ -12831,21 +12900,17 @@ ${paginationHtml}
             var statusData = await statusResp.json();
             if (statusData.failed) throw new Error(statusData.message || 'Clip preparation failed');
             if (statusData.ready) break;
-            if (progress) progress.textContent = 'Preparing clip: ' + (statusData.message || 'processing…');
+            var _stage = 'Preparing clip: ' + (statusData.message || 'processing…');
+            var _prog = _narrationStageToProgress(_stage);
+            _setNarrationProgress(_prog.pct, _stage, _prog.etaSec, 'ok');
           }
           narrationState.clipFilename = filename;
           narrationState.clipPrerenderInFlight = false;
-          if (progress) {
-            progress.style.color = '#00cec9';
-            progress.textContent = '✓ Clip ready — click Generate to add narration';
-          }
+          _setNarrationProgress(58, '✓ Clip ready — click Generate', 11, 'ok');
         } catch (err) {
           narrationState.clipPrerenderInFlight = false;
           narrationState.clipPrerenderFailed = err && err.message ? err.message : 'Clip preparation failed';
-          if (progress) {
-            progress.style.color = '#ff6b6b';
-            progress.textContent = 'Clip prep failed: ' + narrationState.clipPrerenderFailed;
-          }
+          _setNarrationProgress(100, 'Clip prep failed: ' + narrationState.clipPrerenderFailed, null, 'error');
         }
       })();
     }
@@ -12921,17 +12986,14 @@ ${paginationHtml}
       // mix + voice and click Generate, the clip is typically already
       // done, and this loop exits immediately.
       if (narrationState.clipPrerenderInFlight) {
-        progress.style.display = 'block';
-        progress.style.color = 'var(--text-muted)';
-        progress.textContent = 'Waiting for background clip prep to finish…';
+        _setNarrationProgress(50, 'Waiting for background clip prep to finish…', 13, 'ok');
         btn.disabled = true;
         btn.textContent = 'Waiting on clip…';
         while (narrationState.clipPrerenderInFlight) {
           await new Promise(function(r) { setTimeout(r, 300); });
         }
         if (narrationState.clipPrerenderFailed) {
-          progress.style.color = '#ff6b6b';
-          progress.textContent = 'Error: ' + narrationState.clipPrerenderFailed;
+          _setNarrationProgress(100, 'Error: ' + narrationState.clipPrerenderFailed, null, 'error');
           btn.disabled = false;
           btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
           return;
@@ -12943,8 +13005,7 @@ ${paginationHtml}
       // a previous Download Clip click). Same flow as before, just
       // tightened to 1s polling.
       if (!narrationState.clipFilename) {
-        progress.style.display = 'block';
-        progress.textContent = 'Generating clip first...';
+        _setNarrationProgress(8, 'Generating clip first…', 50, 'ok');
         btn.disabled = true;
         btn.textContent = 'Generating clip...';
 
@@ -12975,10 +13036,12 @@ ${paginationHtml}
             var statusData = await statusResp.json();
             if (statusData.failed) throw new Error(statusData.message);
             if (statusData.ready) break;
-            progress.textContent = 'Generating clip: ' + (statusData.message || 'Processing...');
+            var _legStage = 'Generating clip: ' + (statusData.message || 'Processing...');
+            var _legProg = _narrationStageToProgress(_legStage);
+            _setNarrationProgress(_legProg.pct, _legStage, _legProg.etaSec, 'ok');
           }
         } catch (err) {
-          progress.textContent = 'Error: ' + err.message;
+          _setNarrationProgress(100, 'Error: ' + err.message, null, 'error');
           btn.disabled = false;
           btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
           return;
@@ -12988,8 +13051,7 @@ ${paginationHtml}
       // Now generate narration
       btn.disabled = true;
       btn.textContent = 'Generating narration...';
-      progress.style.display = 'block';
-      progress.textContent = 'Writing narration script...';
+      _setNarrationProgress(62, 'Writing narration script…', 9, 'ok');
 
       try {
         var body = {
@@ -13009,7 +13071,7 @@ ${paginationHtml}
           body: JSON.stringify(body)
         });
         var data = await resp.json();
-        if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; progress.textContent = 'Clip expired, regenerating...'; return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
+        if (!data.success) { if (data.needsRegeneration) { narrationState.clipFilename = null; _setNarrationProgress(20, 'Clip expired — regenerating…', 35, 'ok'); return generateNarration(); } throw new Error(data.error || 'Narration failed'); }
 
         var filename = data.filename;
         // Poll for narration to be ready (1s tick).
@@ -13034,7 +13096,7 @@ ${paginationHtml}
               showToast('Narration script generated!');
             } else {
               // Download narrated clip
-              progress.textContent = 'Downloading narrated clip...';
+              _setNarrationProgress(100, 'Downloading narrated clip…', 0, 'ok');
               var link = document.createElement('a');
               link.href = '/shorts/narrate/download/' + filename;
               link.download = filename;
@@ -13046,10 +13108,12 @@ ${paginationHtml}
             }
             break;
           }
-          progress.textContent = sData.message || 'Processing...';
+          var _nMsg = sData.message || 'Processing…';
+          var _nProg = _narrationStageToProgress(_nMsg);
+          _setNarrationProgress(_nProg.pct, _nMsg, _nProg.etaSec, 'ok');
         }
       } catch (err) {
-        progress.textContent = 'Error: ' + err.message;
+        _setNarrationProgress(100, 'Error: ' + err.message, null, 'error');
         showToast('Narration failed: ' + err.message, true);
       } finally {
         btn.disabled = false;
