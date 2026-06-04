@@ -334,18 +334,31 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
       try { fs.unlinkSync(cachedVideoPath); } catch (e) {}
     }
 
-    await runDl(ytdlpPath, [
-      '--no-playlist',
-      '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
-      '--merge-output-format', 'mkv',
-      '-o', cachedVideoPath,
-      '--no-part',
-      '--force-overwrites',
-      ...getYoutubeCookiesArgs(),
-      ...getYoutubeProxyArgs(),
-      ...YTDLP_COMMON_ARGS,
-      videoUrl
-    ], { timeout: 240000 });
+    // Prefer a warm-account cookie from the pool; falls back to YT_COOKIES_PATH
+    // if no pool entries exist. Caller (the catch/success below) marks the
+    // outcome so the pool can auto-expire stale sets.
+    let __cookieHandle = null;
+    try { const { pickCookieHandle } = require('../utils/cookie-pool'); __cookieHandle = await pickCookieHandle(); } catch (e) {}
+    const __cookieArgs = __cookieHandle ? __cookieHandle.args : getYoutubeCookiesArgs();
+    console.log(`  yt-dlp cookie source: ${__cookieHandle ? 'pool:' + __cookieHandle.label : (__cookieArgs.length ? 'static' : 'none')}`);
+    try {
+      await runDl(ytdlpPath, [
+        '--no-playlist',
+        '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
+        '--merge-output-format', 'mkv',
+        '-o', cachedVideoPath,
+        '--no-part',
+        '--force-overwrites',
+        ...__cookieArgs,
+        ...getYoutubeProxyArgs(),
+        ...YTDLP_COMMON_ARGS,
+        videoUrl
+      ], { timeout: 240000 });
+      if (__cookieHandle) { await __cookieHandle.markSuccess(); __cookieHandle.cleanup(); }
+    } catch (__ytdlpErr) {
+      if (__cookieHandle) { await __cookieHandle.markFailure(String(__ytdlpErr && __ytdlpErr.message || __ytdlpErr).slice(0, 400)); __cookieHandle.cleanup(); }
+      throw __ytdlpErr;
+    }
 
     // yt-dlp may change extension — find the actual file
     if (!fs.existsSync(cachedVideoPath)) {

@@ -179,11 +179,13 @@ async function downloadYouTubeVideo(videoUrl) {
   // tv -> ios -> web_safari -> web -> mweb -> android, with POT tokens,
   // cookies, and proxy all attached. One success and we stop.
   if (ytdlpPath) {
-    const cookiesArgs = getYoutubeCookiesArgs();
+    const { pickCookieHandle } = require('../utils/cookie-pool');
+    const _cookieHandle = await pickCookieHandle();
+    const cookiesArgs = _cookieHandle ? _cookieHandle.args : getYoutubeCookiesArgs();
     const proxyArgs   = getYoutubeProxyArgs();
     try {
       console.log(`[AI Reframe] yt-dlp → ${videoUrl} ` +
-                  `(cookies=${cookiesArgs.length > 0} proxy=${proxyArgs.length > 0})`);
+                  `(pool=${_cookieHandle ? _cookieHandle.label : 'none'} cookies=${cookiesArgs.length > 0} proxy=${proxyArgs.length > 0})`);
       await new Promise((resolve, reject) => {
         const args = [
           '--no-playlist',
@@ -212,10 +214,13 @@ async function downloadYouTubeVideo(videoUrl) {
       const got = findOutputFile();
       if (got) {
         console.log(`[AI Reframe] yt-dlp succeeded: ${(fs.statSync(got).size / 1024 / 1024).toFixed(1)}MB`);
+        if (_cookieHandle) { await _cookieHandle.markSuccess(); _cookieHandle.cleanup(); }
         return got;
       }
       failures.push('yt-dlp: no file produced');
+      if (_cookieHandle) { await _cookieHandle.markFailure('no file produced'); _cookieHandle.cleanup(); }
     } catch (err) {
+      if (_cookieHandle) { await _cookieHandle.markFailure(err && err.message ? err.message : String(err)); _cookieHandle.cleanup(); }
       const msg = err && err.message ? err.message : String(err);
       failures.push('yt-dlp: ' + msg.slice(0, 400));
       // Print the full stderr trail server-side so Railway logs show

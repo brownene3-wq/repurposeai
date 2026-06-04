@@ -112,10 +112,13 @@ async function downloadYouTubeVideo(videoUrl) {
   // Clean up any existing file
   try { fs.unlinkSync(outputPath); } catch (e) {}
 
-  // Strategy 1: yt-dlp
+  // Strategy 1: yt-dlp (with cookie-pool warm-account cookies)
   if (ytdlpPath) {
+    const { pickCookieHandle } = require('../utils/cookie-pool');
+    const _cookieHandle = await pickCookieHandle();
+    const _cookieArgs = _cookieHandle ? _cookieHandle.args : getYoutubeCookiesArgs();
     try {
-      console.log(`[AI Thumbnail] Downloading ${videoUrl} via yt-dlp...`);
+      console.log(`[AI Thumbnail] Downloading ${videoUrl} via yt-dlp (pool=${_cookieHandle ? _cookieHandle.label : 'none'})...`);
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
@@ -128,7 +131,7 @@ async function downloadYouTubeVideo(videoUrl) {
           '--no-part',
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
-          ...getYoutubeCookiesArgs(),
+          ..._cookieArgs,
           ...getYoutubeProxyArgs(),
           videoUrl
         ]);
@@ -154,10 +157,13 @@ async function downloadYouTubeVideo(videoUrl) {
 
       if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
         console.log(`[AI Thumbnail] yt-dlp download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+        if (_cookieHandle) { await _cookieHandle.markSuccess(); _cookieHandle.cleanup(); }
         return outputPath;
       }
+      if (_cookieHandle) { await _cookieHandle.markFailure('no file produced'); _cookieHandle.cleanup(); }
     } catch (err) {
       console.log(`[AI Thumbnail] yt-dlp failed: ${err.message.slice(0, 200)}`);
+      if (_cookieHandle) { await _cookieHandle.markFailure(err.message); _cookieHandle.cleanup(); }
     }
   }
 

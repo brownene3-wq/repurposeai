@@ -1445,8 +1445,13 @@ async function downloadYouTubeVideo(videoUrl) {
   try { fs.unlinkSync(outputPath); } catch (e) {}
 
   if (ytdlpPath) {
+    // Try a cookie set from the warm-account pool first (highest reliability),
+    // fall back to YT_COOKIES_PATH if no pool entries exist.
+    const { pickCookieHandle } = require('../utils/cookie-pool');
+    const _cookieHandle = await pickCookieHandle();
+    const _cookieArgs = _cookieHandle ? _cookieHandle.args : getYoutubeCookiesArgs();
     try {
-      console.log(`[AI Captions] Downloading ${videoUrl} via yt-dlp...`);
+      console.log(`[AI Captions] Downloading ${videoUrl} via yt-dlp (pool=${_cookieHandle ? _cookieHandle.label : 'none'})...`);
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
@@ -1462,7 +1467,7 @@ async function downloadYouTubeVideo(videoUrl) {
           '--no-part',
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
-          ...getYoutubeCookiesArgs(),
+          ..._cookieArgs,
           ...getYoutubeProxyArgs(),
           videoUrl
         ]);
@@ -1471,17 +1476,20 @@ async function downloadYouTubeVideo(videoUrl) {
         proc.on('error', reject);
         proc.on('close', (code) => {
           if (code === 0) resolve();
-          else reject(new Error('yt-dlp exit ' + code));
+          else reject(new Error('yt-dlp exit ' + code + ': ' + stderr.slice(-300)));
         });
         setTimeout(() => { try { proc.kill('SIGKILL'); } catch(e) {} reject(new Error('Download timed out')); }, 90000);
       });
 
       if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
         console.log(`[AI Captions] yt-dlp download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
+        if (_cookieHandle) { await _cookieHandle.markSuccess(); _cookieHandle.cleanup(); }
         return outputPath;
       }
+      if (_cookieHandle) { await _cookieHandle.markFailure('no file produced'); _cookieHandle.cleanup(); }
     } catch (err) {
       console.log(`[AI Captions] yt-dlp failed: ${err.message.slice(0, 200)}`);
+      if (_cookieHandle) { await _cookieHandle.markFailure(err.message); _cookieHandle.cleanup(); }
     }
   }
 
