@@ -2285,6 +2285,91 @@ function showToast(message, type = 'success') {
       e.preventDefault();
     });
 
+    // Task #150 — Phased upload progress overlay. Stays pinned to the
+    // top-center of the viewport and shows: current phase label,
+    // optional network percent, elapsed seconds (driven by rAF — will
+    // visibly freeze when the main thread is stuck), and a pulsing
+    // dot (driven by CSS animation — also freezes with the main
+    // thread). The whole point is that if Chrome's "Page
+    // Unresponsive" dialog appears, the LAST phase label visible in
+    // the overlay tells us exactly which step of uploadVideo() locked
+    // the renderer. A screenshot pinpoints the freeze location.
+    function ensureUploadProgressOverlay(){
+      var o = document.getElementById('splicoraUploadProgress');
+      if (o) return o;
+      o = document.createElement('div');
+      o.id = 'splicoraUploadProgress';
+      o.style.cssText = [
+        'position:fixed','top:20px','left:50%','transform:translateX(-50%)',
+        'z-index:99999','min-width:420px','max-width:640px',
+        'background:linear-gradient(135deg,#1a0c2e,#2b1755)',
+        'border:1px solid rgba(124,58,237,.5)','border-radius:12px',
+        'padding:14px 18px','box-shadow:0 8px 32px rgba(0,0,0,.6)',
+        'color:#fff','font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
+        'font-size:13px','display:none','user-select:none'
+      ].join(';');
+      o.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+          '<span id="splicoraUpDot" style="width:10px;height:10px;border-radius:50%;background:#a78bfa;flex-shrink:0;animation:splicoraUpPulse 1s ease-in-out infinite"></span>' +
+          '<span id="splicoraUpPhase" style="flex:1;font-weight:600;letter-spacing:.2px">Starting upload…</span>' +
+          '<span id="splicoraUpElapsed" style="font-variant-numeric:tabular-nums;color:#c4b5fd;font-size:12px">0.0s</span>' +
+        '</div>' +
+        '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">' +
+          '<div id="splicoraUpBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width .2s linear;border-radius:3px"></div>' +
+        '</div>' +
+        '<div id="splicoraUpLog" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.55);max-height:90px;overflow-y:auto;line-height:1.5"></div>';
+      var kf = document.getElementById('splicoraUpKF');
+      if (!kf){
+        kf = document.createElement('style');
+        kf.id = 'splicoraUpKF';
+        kf.textContent = '@keyframes splicoraUpPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.5}}';
+        document.head.appendChild(kf);
+      }
+      document.body.appendChild(o);
+      return o;
+    }
+
+    var _upStartT = 0;
+    var _upRAF = null;
+    function setUploadPhase(label, pct){
+      var o = ensureUploadProgressOverlay();
+      o.style.display = 'block';
+      var ph = document.getElementById('splicoraUpPhase');
+      var bar = document.getElementById('splicoraUpBar');
+      var log = document.getElementById('splicoraUpLog');
+      if (ph && label) ph.textContent = label;
+      if (typeof pct === 'number' && bar){
+        bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      }
+      if (log && label){
+        var elapsed = ((performance.now() - _upStartT) / 1000).toFixed(2);
+        var line = document.createElement('div');
+        line.textContent = '[' + elapsed + 's] ' + label;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+      }
+    }
+    function startUploadProgressClock(){
+      _upStartT = performance.now();
+      var elEl = document.getElementById('splicoraUpElapsed');
+      function tick(){
+        if (!elEl) return;
+        elEl.textContent = ((performance.now() - _upStartT) / 1000).toFixed(1) + 's';
+        _upRAF = requestAnimationFrame(tick);
+      }
+      tick();
+    }
+    function stopUploadProgressOverlay(opts){
+      if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
+      var o = document.getElementById('splicoraUploadProgress');
+      if (!o) return;
+      if (opts && opts.keepVisibleMs){
+        setTimeout(function(){ if (o) o.style.display = 'none'; }, opts.keepVisibleMs);
+      } else {
+        o.style.display = 'none';
+      }
+    }
+
     async function uploadVideo(file) {
       // Task #149 — Set the V10 applyAll pause flag BEFORE any DOM
       // mutations so the MutationObserver fires for the upload-state
@@ -2301,6 +2386,10 @@ function showToast(message, type = 'success') {
       // Fetch's body-stream pipeline on large multipart bodies.
       try { window.__splicoraUploading = true; } catch(_){}
 
+      ensureUploadProgressOverlay();
+      startUploadProgressClock();
+      setUploadPhase('1. Preparing upload', 0);
+
       var uploadBtn = document.querySelector('.upload-button');
       var originalText = uploadBtn ? uploadBtn.textContent : 'Select Video';
       if (uploadBtn){
@@ -2313,6 +2402,8 @@ function showToast(message, type = 'success') {
       const formData = new FormData();
       formData.append('video', file);
 
+      setUploadPhase('2. Sending file to server', 0);
+
       try {
         const data = await new Promise(function(resolve, reject){
           var xhr = new XMLHttpRequest();
@@ -2322,8 +2413,13 @@ function showToast(message, type = 'success') {
             if (!e.lengthComputable || !uploadBtn) return;
             var pct = Math.floor((e.loaded / e.total) * 100);
             uploadBtn.textContent = 'Uploading ' + pct + '%';
+            setUploadPhase('2. Uploading bytes (' + pct + '%)', pct);
+          });
+          xhr.upload.addEventListener('load', function(){
+            setUploadPhase('3. Bytes sent — waiting on server', 100);
           });
           xhr.addEventListener('load', function(){
+            setUploadPhase('4. Server response received', 100);
             if (xhr.status >= 200 && xhr.status < 300){
               try { resolve(JSON.parse(xhr.responseText)); }
               catch(e){ reject(new Error('Upload returned invalid JSON')); }
@@ -2341,12 +2437,15 @@ function showToast(message, type = 'success') {
           xhr.addEventListener('abort', function(){ reject(new Error('Upload aborted')); });
           xhr.send(formData);
         });
+        setUploadPhase('5. Storing video metadata');
         currentVideoFile = data;
         originalVideoFile = { ...data }; // Save original for speed resets
         try { window.currentVideoFile = data; } catch(_){}
         videoDuration = data.duration || 0;
+        setUploadPhase('6. Initializing timeline');
         initTimeline();
 
+        setUploadPhase('7. Setting video player source');
         videoPlayer.src = data.serveUrl;
         // Task #146 — Single-fire loadedmetadata listener (was accumulating
         // one per upload, leaking handlers and re-running showFilmstrip
@@ -2366,8 +2465,10 @@ function showToast(message, type = 'success') {
             videoDuration = videoPlayer.duration;
           }
         });
+        setUploadPhase('8. Hiding upload zone, showing preview');
         uploadZone.classList.add('has-video');
         videoPreviewArea.classList.add('has-video');
+        setUploadPhase('9. Enabling sidebar tool buttons');
         (function(){var e=document.getElementById('trimButton');if(e)e.disabled=false;})();
         (function(){var e=document.getElementById('exportButton');if(e)e.disabled=false;})();
         (function(){var e=document.getElementById('splitButton');if(e)e.disabled=false;})();
@@ -2392,6 +2493,7 @@ function showToast(message, type = 'success') {
         // Add the uploaded file to the Media library ("All" + correct type
         // tab) as a raw asset. Do NOT create a Draft here — Media and
         // Projects are strictly separate.
+        setUploadPhase('10. Adding file to Media library');
         try {
           if (typeof window.addUploadedMediaItem === 'function') {
             window.addUploadedMediaItem({
@@ -2406,6 +2508,7 @@ function showToast(message, type = 'success') {
         // ALSO auto-place the uploaded video on V1, appended after any
         // existing clips. addClipToTimeline uses findRightmostClipEnd so
         // new clips sit back-to-back with whatever's already on the track.
+        setUploadPhase('11. Adding clip to V1 timeline');
         try {
           if (typeof window.addClipToTimeline === 'function') {
             window.addClipToTimeline(
@@ -2416,6 +2519,7 @@ function showToast(message, type = 'success') {
             );
           }
         } catch (_) {}
+        setUploadPhase('12. Resetting upload state');
 
         // Task #141 — Reset button + zone state on SUCCESS too, not
         // just in the catch. The success path used to leave
@@ -2427,12 +2531,16 @@ function showToast(message, type = 'success') {
         if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '';
         uploadZone.style.pointerEvents = '';
+        setUploadPhase('13. Done — upload complete', 100);
         showToast('Video uploaded successfully!', 'success');
+        stopUploadProgressOverlay({ keepVisibleMs: 4000 });
       } catch (error) {
         if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '1';
         uploadZone.style.pointerEvents = 'auto';
+        setUploadPhase('ERROR: ' + (error && error.message || 'unknown'));
         showToast('Failed to upload video: ' + error.message, 'error');
+        stopUploadProgressOverlay({ keepVisibleMs: 8000 });
       } finally {
         // Task #148 — Clear the V10 applyAll pause flag on BOTH success
         // and failure paths so the editor's normal patch cadence resumes
