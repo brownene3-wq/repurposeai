@@ -816,15 +816,7 @@ ${pageStyles}
         </div>
       </div>
 
-            <!-- Primary video status + B-roll selections + Create Project -->
-      <div id="projectStagingCard" style="background:var(--surface);border-radius:16px;padding:1.2rem 1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle);display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-          <div id="primaryStatusText" style="color:var(--text);font-size:0.95rem"></div>
-          <button type="button" id="createProjectBtn" style="padding:10px 22px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:700;font-size:0.95rem" disabled><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Open in Video Editor</button>
-        </div>
-        <div id="selectedBrollList" style="margin-top:0.8rem;display:flex;flex-wrap:wrap;gap:8px"></div>
-      </div>
-
+            <!-- Project Staging Card was removed — primary video status and the Open in Video Editor shortcut are no longer surfaced here. The full Render Final Video flow now happens entirely inside the B-Roll Suggestions modal. -->
 
 
 
