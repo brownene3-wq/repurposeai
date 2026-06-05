@@ -5094,6 +5094,16 @@
 
   function applyAll(){
     if (_applying) return;
+    // Task #148 — skip the periodic V10 DOM patches while a file
+    // upload is in flight. The upload code in routes/video-editor.js
+    // sets window.__splicoraUploading = true at the start of
+    // uploadVideo() and clears it in the finally block. Skipping
+    // applyAll during that window stops the media-library /
+    // right-panel re-patching from competing for main-thread time
+    // while Chrome's network layer is serializing the multipart
+    // body. Once upload finishes the next mutation or polling tick
+    // catches us up.
+    if (window.__splicoraUploading) return;
     _applying = true;
     try { injectCSS(); } catch(e){}
     try { patchMediaCorner(); } catch(e){}
@@ -5111,13 +5121,33 @@
 
   function boot(){
     applyAll();
+    // Task #148 — drastically reduced V10 background CPU usage so the
+    // upload pipeline isn't competing with applyAll() during the
+    // multipart POST. Two changes:
+    //   1. Poll interval lengthened from 600ms (60 ticks = 36s of
+    //      continuous applyAll churn after page load) to 2000ms with
+    //      a 15-tick cap (30s total). The previous cadence meant
+    //      applyAll was firing right as the user clicked Select Video
+    //      and again every 600ms while their 16MB upload was in
+    //      flight; each tick did a media-library + right-panel pass
+    //      that, combined with the upload's own DOM mutations,
+    //      pushed the renderer past Chrome's "Page Unresponsive"
+    //      threshold.
+    //   2. MutationObserver scoped to the editor container
+    //      (#mainEditor or .editor-container) instead of document.body
+    //      with subtree:true. The upload code mutates uploadBtn /
+    //      uploadZone outside the editor's panel/timeline DOM —
+    //      previously every one of those mutations woke scheduleApply
+    //      → applyAll for no reason. Now those mutations are ignored
+    //      and only mutations inside the editor area schedule a pass.
     var tries = 0;
     var iv = setInterval(function(){
       applyAll();
-      if (++tries > 60) clearInterval(iv);
-    }, 600);
+      if (++tries > 15) clearInterval(iv);
+    }, 2000);
     var obs = new MutationObserver(scheduleApply);
-    obs.observe(document.body, { childList: true, subtree: true });
+    var obsRoot = document.querySelector('.editor-container') || document.body;
+    obs.observe(obsRoot, { childList: true, subtree: true });
     document.addEventListener('loadedmetadata', function(e){
       if (e.target && e.target.tagName === 'VIDEO') scheduleApply();
     }, true);

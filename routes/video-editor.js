@@ -2293,6 +2293,13 @@ function showToast(message, type = 'success') {
       uploadZone.style.opacity = '0.6';
       uploadZone.style.pointerEvents = 'none';
 
+      // Task #148 — Signal to v10-editor-redesign.js's applyAll() that
+      // a multipart upload is in flight, so its periodic media-library /
+      // right-panel re-patching pauses and isn't competing with Chrome's
+      // multipart serializer for main-thread time. The flag is cleared
+      // in the finally block, so this is automatic on success or error.
+      try { window.__splicoraUploading = true; } catch(_){}
+
       const formData = new FormData();
       formData.append('video', file);
 
@@ -2403,6 +2410,12 @@ function showToast(message, type = 'success') {
         uploadZone.style.opacity = '1';
         uploadZone.style.pointerEvents = 'auto';
         showToast('Failed to upload video: ' + error.message, 'error');
+      } finally {
+        // Task #148 — Clear the V10 applyAll pause flag on BOTH success
+        // and failure paths so the editor's normal patch cadence resumes
+        // (otherwise a failed upload would leave the editor in a
+        // perpetually-skipped state).
+        try { window.__splicoraUploading = false; } catch(_){}
       }
     }
 
