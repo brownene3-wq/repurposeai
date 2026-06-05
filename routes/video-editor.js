@@ -748,19 +748,8 @@ async function renderEditor(req, res) {
        proportional button sizing. The grid still allocates a single
        'auto' row for it so the editor body below resizes to fill the
        remaining viewport height. */
-    /* Task #144 — Pixel-match the dashboard sidebar's Splicora logo
-       origin so navigating /dashboard → /video-editor keeps the
-       wordmark fixed on screen. The CINEMA SUITE block hides the
-       dashboard sidebar on this page, so the topbar hosts the
-       brand mark. Dashboard reference: x=18, y=18, 168x32.
-       padding-left:18 lands the logo at x=18; align-items:center
-       in the 56px topbar would naturally drop the 32px logo at
-       y=12, so the wrapping link is shifted down 6px via
-       position:relative;top:6px to hit y=18 without disturbing
-       the action buttons' vertical centering. */
-    .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px 0 18px;gap:12px;height:56px;z-index:100}
-    .editor-topbar .e-logo-link{position:relative;top:6px}
-    .e-logo{display:flex;align-items:center;margin-right:14px;cursor:pointer}
+    .editor-topbar{grid-area:topbar;background:#110d1c;border-bottom:1px solid rgba(108,58,237,.1);display:flex;align-items:center;padding:0 24px;gap:12px;height:56px;z-index:100}
+    .e-logo{margin-right:14px;cursor:pointer}
     .e-logo img{display:block}
     .e-sep{width:1px;height:16px;background:rgba(108,58,237,.12);margin:0 3px}
     .e-tb{padding:8px 16px;font-size:13px;font-weight:600;color:#a78bfa;background:transparent;border:1px solid rgba(108,58,237,.25);border-radius:8px;cursor:pointer;transition:all .2s}
@@ -1047,21 +1036,7 @@ async function renderEditor(req, res) {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <!-- Task #144 — Single Splicora wordmark in the editor
-                 topbar. The dashboard sidebar is hidden on this page
-                 (.dashboard .sidebar{display:none!important} in the
-                 CINEMA SUITE block), so the topbar is the only place
-                 the logo can live. The previous version of this link
-                 rendered BOTH logo-light AND logo-dark img tags with
-                 no theme CSS scoping them to .e-logo, so both images
-                 stacked vertically — that was the duplicated-logo
-                 effect users saw on load. Restored as a single img
-                 with no theme variant (editor is dark-only), and
-                 .e-logo is sized + aligned to match the dashboard's
-                 sidebar logo position (x≈18px, y≈18px from the
-                 viewport corner) so navigating dashboard → editor
-                 doesn't shift the wordmark. -->
-            <a href="/dashboard" class="splicora-tt e-logo-link" style="text-decoration:none;display:flex;align-items:center" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;display:block"></span></a><div class="e-sep"></div>
+            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
             <!-- Task #99 \u2014 Topbar Undo/Redo/Snap/Snapshot/Link Tracks
                  now proxy to the real handlers (timeline toolbar +
                  sidebar Edit > Freeze). Inline onclick removed; wiring
@@ -1153,7 +1128,7 @@ async function renderEditor(req, res) {
                    blocks programmatic clicks in WebKit; absolute-
                    off-screen sizing keeps the input clickable while
                    invisible to the user. -->
-              <input type="file" id="fileInput" accept="video/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none">
+              <input type="file" id="fileInput" style="display:none">
               <div style="display:flex;align-items:center;gap:8px;margin-top:12px;width:100%;max-width:560px">
                 <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
                 <span style="color:var(--text-muted);font-size:.8rem">or drop a link</span>
@@ -1684,22 +1659,7 @@ async function renderEditor(req, res) {
   </div>
 
   <script>
-    /* Task #145 — REMOVED the "safe getElementById noop" monkey-patch
-       that previously wrapped document.getElementById to return a fake
-       DIV-shaped object instead of null when an id wasn't found. The
-       patch was added April 2026 to silence null-reference errors but
-       it broke virtually anything that needed a real Node — most
-       visibly MutationObserver.observe() in v10-editor-redesign.js,
-       which threw "parameter 1 is not of type 'Node'" repeatedly and
-       prevented sidebar gating + observer-driven upload-state syncing
-       from working. The patch lived inside this inline script, which
-       was dead from Task #140 until Task #142 (root-cause regex fix)
-       reactivated the whole block. Now that the script runs end-to-
-       end, this monkey-patch was actively breaking the upload flow
-       and freezing the page after uploads — the actual cause of the
-       "Video Editor became unresponsive" report. document.getElementById
-       is restored to its native behavior; the surrounding code already
-       null-checks every lookup ( "if (e) e.disabled=false;" pattern). */
+    (function(){var orig=document.getElementById.bind(document);var noop={disabled:false,value:'',textContent:'',innerHTML:'',src:'',checked:false,selectedIndex:0,style:{},classList:{add:function(){},remove:function(){},toggle:function(){},contains:function(){return false}},addEventListener:function(){},removeEventListener:function(){},appendChild:function(){return this},removeChild:function(){},insertBefore:function(){},setAttribute:function(){},getAttribute:function(){return null},querySelector:function(){return null},querySelectorAll:function(){return[]},focus:function(){},blur:function(){},click:function(){},play:function(){return Promise.resolve()},pause:function(){},remove:function(){},replaceWith:function(){},cloneNode:function(){return this},contains:function(){return false},closest:function(){return null},matches:function(){return false},dispatchEvent:function(){return true},hasAttribute:function(){return false},removeAttribute:function(){},hasChildNodes:function(){return false},getBoundingClientRect:function(){return{top:0,left:0,right:0,bottom:0,width:0,height:0,x:0,y:0}},offsetWidth:0,offsetHeight:0,offsetTop:0,offsetLeft:0,scrollWidth:0,scrollHeight:0,children:[],childNodes:[],parentNode:null,parentElement:null,nextSibling:null,previousSibling:null,firstChild:null,lastChild:null,dataset:{},tagName:'DIV',nodeName:'DIV',nodeType:1};noop.style=new Proxy({},{set:function(){return true},get:function(){return''}});document.getElementById=function(id){return orig(id)||noop}})();
 
     // ═══ CINEMA SUITE PRO: Move timeline to grid root ═══
     (function(){
@@ -2202,31 +2162,7 @@ function showToast(message, type = 'success') {
 
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
-      if (!file) return;
-      // Task #151 — Mount the progress overlay BEFORE entering
-      // uploadVideo() and force a synchronous reflow so it's guaranteed
-      // to paint on the very first frame after file selection. If
-      // anything between here and the "1. Preparing upload" phase
-      // freezes the renderer, the user will still see Phase 0 sitting
-      // on screen and we'll know the lock-up is in the React/V10
-      // boot work that runs the instant the change event fires (not
-      // in uploadVideo at all). Also keeps the overlay visible for
-      // 30 seconds on success so the user can screenshot it after a
-      // fast upload completes.
-      try { window.__splicoraUploading = true; } catch(_){}
-      ensureUploadProgressOverlay();
-      startUploadProgressClock();
-      setUploadPhase('0. File selected: ' + (file.name || 'unnamed') + ' (' + Math.round(file.size/1024) + ' KB)', 0);
-      // Force a layout + paint so the overlay is visible BEFORE the
-      // synchronous JS inside uploadVideo can possibly block.
-      void document.getElementById('splicoraUploadProgress').offsetHeight;
-      await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
-      try {
-        await uploadVideo(file);
-      } catch (err){
-        setUploadPhase('ERROR (outer): ' + (err && err.message || 'unknown'));
-        console.error('[upload] outer error:', err);
-      }
+      if (file) await uploadVideo(file);
     });
 
     // Task #142 — Drop a file from the OS file picker / Finder /
@@ -2309,270 +2245,47 @@ function showToast(message, type = 'success') {
       e.preventDefault();
     });
 
-    // Task #150 — Phased upload progress overlay. Stays pinned to the
-    // top-center of the viewport and shows: current phase label,
-    // optional network percent, elapsed seconds (driven by rAF — will
-    // visibly freeze when the main thread is stuck), and a pulsing
-    // dot (driven by CSS animation — also freezes with the main
-    // thread). The whole point is that if Chrome's "Page
-    // Unresponsive" dialog appears, the LAST phase label visible in
-    // the overlay tells us exactly which step of uploadVideo() locked
-    // the renderer. A screenshot pinpoints the freeze location.
-    function ensureUploadProgressOverlay(){
-      var o = document.getElementById('splicoraUploadProgress');
-      if (o) return o;
-      o = document.createElement('div');
-      o.id = 'splicoraUploadProgress';
-      o.style.cssText = [
-        'position:fixed','top:20px','left:50%','transform:translateX(-50%)',
-        'z-index:99999','min-width:420px','max-width:640px',
-        'background:linear-gradient(135deg,#1a0c2e,#2b1755)',
-        'border:1px solid rgba(124,58,237,.5)','border-radius:12px',
-        'padding:14px 18px','box-shadow:0 8px 32px rgba(0,0,0,.6)',
-        'color:#fff','font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
-        'font-size:13px','display:none','user-select:none'
-      ].join(';');
-      o.innerHTML =
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
-          '<span id="splicoraUpDot" style="width:10px;height:10px;border-radius:50%;background:#a78bfa;flex-shrink:0;animation:splicoraUpPulse 1s ease-in-out infinite"></span>' +
-          '<span id="splicoraUpPhase" style="flex:1;font-weight:600;letter-spacing:.2px">Starting upload…</span>' +
-          '<span id="splicoraUpElapsed" style="font-variant-numeric:tabular-nums;color:#c4b5fd;font-size:12px">0.0s</span>' +
-          '<button id="splicoraUpClose" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center" title="Dismiss">×</button>' +
-        '</div>' +
-        '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">' +
-          '<div id="splicoraUpBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width .2s linear;border-radius:3px"></div>' +
-        '</div>' +
-        '<div id="splicoraUpLog" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.55);max-height:120px;overflow-y:auto;line-height:1.5"></div>';
-      var kf = document.getElementById('splicoraUpKF');
-      if (!kf){
-        kf = document.createElement('style');
-        kf.id = 'splicoraUpKF';
-        kf.textContent = '@keyframes splicoraUpPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.5}}';
-        document.head.appendChild(kf);
-      }
-      document.body.appendChild(o);
-      // Wire the dismiss button
-      var closeBtn = document.getElementById('splicoraUpClose');
-      if (closeBtn){
-        closeBtn.addEventListener('click', function(){
-          o.style.display = 'none';
-          if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
-        });
-      }
-      return o;
-    }
-
-    var _upStartT = 0;
-    var _upRAF = null;
-    var _upPhaseLog = [];
-    function setUploadPhase(label, pct){
-      var o = ensureUploadProgressOverlay();
-      o.style.display = 'block';
-      var ph = document.getElementById('splicoraUpPhase');
-      var bar = document.getElementById('splicoraUpBar');
-      var log = document.getElementById('splicoraUpLog');
-      if (ph && label) ph.textContent = label;
-      if (typeof pct === 'number' && bar){
-        bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
-      }
-      if (label){
-        var elapsed = ((performance.now() - _upStartT) / 1000).toFixed(2);
-        var line = '[' + elapsed + 's] ' + label;
-        _upPhaseLog.push(line);
-        if (log){
-          var d = document.createElement('div');
-          d.textContent = line;
-          log.appendChild(d);
-          log.scrollTop = log.scrollHeight;
-        }
-        // Task #152 — Persist every phase transition to localStorage
-        // so when the renderer freezes and the user has to force-quit
-        // the tab, the log survives. On the next page load, the
-        // editor auto-restores the overlay with the recovered log so
-        // we can SEE the last phase reached before the freeze even
-        // though no live screenshot is possible. Synchronous write
-        // is fine — JSON-stringifying ~14 short strings is sub-ms.
-        try {
-          localStorage.setItem('splicora_last_upload_log', JSON.stringify({
-            t: Date.now(),
-            phase: label,
-            pct: typeof pct === 'number' ? pct : null,
-            log: _upPhaseLog
-          }));
-        } catch(_){}
-      }
-    }
-    // Task #152 — On page load, if a recent upload log is sitting in
-    // localStorage (less than 10 minutes old), surface it in the
-    // overlay immediately. If the previous upload completed cleanly
-    // the log ends with "13. Done" and we just show it as
-    // informational; if it ends partway, the last entry IS the freeze
-    // point and the user can screenshot it for us.
-    (function restoreUploadLogFromStorage(){
-      try {
-        var raw = localStorage.getItem('splicora_last_upload_log');
-        if (!raw) return;
-        var saved = JSON.parse(raw);
-        if (!saved || !Array.isArray(saved.log) || !saved.log.length) return;
-        if (Date.now() - saved.t > 10 * 60 * 1000){
-          // Stale — older than 10 minutes, ignore.
-          try { localStorage.removeItem('splicora_last_upload_log'); } catch(_){}
-          return;
-        }
-        // Wait for DOM to be ready enough for the overlay element
-        function show(){
-          var o = ensureUploadProgressOverlay();
-          var ph = document.getElementById('splicoraUpPhase');
-          var log = document.getElementById('splicoraUpLog');
-          var bar = document.getElementById('splicoraUpBar');
-          var ago = Math.round((Date.now() - saved.t) / 1000);
-          if (ph) ph.textContent = 'Last upload (' + ago + 's ago) — last phase: ' + (saved.phase || '?');
-          if (bar && typeof saved.pct === 'number'){ bar.style.width = Math.max(0, Math.min(100, saved.pct)) + '%'; }
-          if (log){
-            log.innerHTML = '';
-            saved.log.forEach(function(line){ var d = document.createElement('div'); d.textContent = line; log.appendChild(d); });
-            log.scrollTop = log.scrollHeight;
-          }
-          o.style.display = 'block';
-          var dot = document.getElementById('splicoraUpDot');
-          if (dot) dot.style.animation = 'none';  // not live, don't pulse
-        }
-        if (document.body){
-          show();
-        } else {
-          document.addEventListener('DOMContentLoaded', show);
-        }
-      } catch(_){}
-    })();
-    function startUploadProgressClock(){
-      _upStartT = performance.now();
-      _upPhaseLog = [];  // fresh log per upload attempt
-      var elEl = document.getElementById('splicoraUpElapsed');
-      var dot = document.getElementById('splicoraUpDot');
-      // Restore the pulsing animation (the restore-from-storage path
-      // disables it because the log is historical, not live).
-      if (dot) dot.style.animation = 'splicoraUpPulse 1s ease-in-out infinite';
-      var logEl = document.getElementById('splicoraUpLog');
-      if (logEl) logEl.innerHTML = '';
-      var bar = document.getElementById('splicoraUpBar');
-      if (bar) bar.style.width = '0%';
-      function tick(){
-        if (!elEl) return;
-        elEl.textContent = ((performance.now() - _upStartT) / 1000).toFixed(1) + 's';
-        _upRAF = requestAnimationFrame(tick);
-      }
-      tick();
-    }
-    function stopUploadProgressOverlay(opts){
-      if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
-      var o = document.getElementById('splicoraUploadProgress');
-      if (!o) return;
-      if (opts && opts.keepVisibleMs){
-        setTimeout(function(){ if (o) o.style.display = 'none'; }, opts.keepVisibleMs);
-      } else {
-        o.style.display = 'none';
-      }
-    }
-
     async function uploadVideo(file) {
-      // Task #149 — Set the V10 applyAll pause flag BEFORE any DOM
-      // mutations so the MutationObserver fires for the upload-state
-      // UI changes (uploadBtn text + disabled, uploadZone style) never
-      // see those mutations land while applyAll is unguarded. Previous
-      // ordering meant 3-4 mutations fired before the flag was set,
-      // each scheduling a debounced applyAll pass that the guard
-      // couldn't catch. Also switched the network call from
-      // fetch + FormData to XMLHttpRequest with explicit upload.
-      // progress events: XHR (a) gives us real bytes-sent feedback to
-      // surface as a visible progress bar, (b) has a hard timeout so a
-      // hung server can't leave the editor stuck forever, and (c)
-      // routes through a code path with simpler main-thread cost than
-      // Fetch's body-stream pipeline on large multipart bodies.
-      try { window.__splicoraUploading = true; } catch(_){}
-
-      ensureUploadProgressOverlay();
-      startUploadProgressClock();
-      setUploadPhase('1. Preparing upload', 0);
-
       var uploadBtn = document.querySelector('.upload-button');
-      var originalText = uploadBtn ? uploadBtn.textContent : 'Select Video';
-      if (uploadBtn){
-        uploadBtn.textContent = 'Uploading 0%';
-        uploadBtn.disabled = true;
-      }
+      var originalText = uploadBtn.textContent;
+      uploadBtn.textContent = 'Uploading...';
+      uploadBtn.disabled = true;
       uploadZone.style.opacity = '0.6';
       uploadZone.style.pointerEvents = 'none';
 
       const formData = new FormData();
       formData.append('video', file);
 
-      setUploadPhase('2. Sending file to server', 0);
-
       try {
-        const data = await new Promise(function(resolve, reject){
-          var xhr = new XMLHttpRequest();
-          xhr.open('POST', '/video-editor/upload', true);
-          xhr.timeout = 180000;  // 3 min hard cap; longer than any reasonable upload
-          xhr.upload.addEventListener('progress', function(e){
-            if (!e.lengthComputable || !uploadBtn) return;
-            var pct = Math.floor((e.loaded / e.total) * 100);
-            uploadBtn.textContent = 'Uploading ' + pct + '%';
-            setUploadPhase('2. Uploading bytes (' + pct + '%)', pct);
-          });
-          xhr.upload.addEventListener('load', function(){
-            setUploadPhase('3. Bytes sent — waiting on server', 100);
-          });
-          xhr.addEventListener('load', function(){
-            setUploadPhase('4. Server response received', 100);
-            if (xhr.status >= 200 && xhr.status < 300){
-              try { resolve(JSON.parse(xhr.responseText)); }
-              catch(e){ reject(new Error('Upload returned invalid JSON')); }
-            } else {
-              var msg = 'Upload failed (status ' + xhr.status + ')';
-              try {
-                var err = JSON.parse(xhr.responseText);
-                if (err && err.error) msg = err.error;
-              } catch(_){}
-              reject(new Error(msg));
-            }
-          });
-          xhr.addEventListener('error', function(){ reject(new Error('Network error during upload')); });
-          xhr.addEventListener('timeout', function(){ reject(new Error('Upload timed out after 3 minutes')); });
-          xhr.addEventListener('abort', function(){ reject(new Error('Upload aborted')); });
-          xhr.send(formData);
+        const response = await fetch('/video-editor/upload', {
+          method: 'POST',
+          body: formData
         });
-        setUploadPhase('5. Storing video metadata');
+
+        if (!response.ok) {
+          var errData = {};
+          try { errData = await response.json(); } catch(e) {}
+          throw new Error(errData.error || 'Upload failed (status ' + response.status + ')');
+        }
+
+        const data = await response.json();
         currentVideoFile = data;
         originalVideoFile = { ...data }; // Save original for speed resets
         try { window.currentVideoFile = data; } catch(_){}
         videoDuration = data.duration || 0;
-        setUploadPhase('6. Initializing timeline');
         initTimeline();
 
-        setUploadPhase('7. Setting video player source');
         videoPlayer.src = data.serveUrl;
-        // Task #146 — Single-fire loadedmetadata listener (was accumulating
-        // one per upload, leaking handlers and re-running showFilmstrip
-        // N times). showFilmstrip is gated on a flag so the legacy
-        // hidden #fsThumbs extractor only runs once per video too — it
-        // was previously spawning a duplicate <video> element loading the
-        // same server URL alongside the main player + V10's
-        // captureVideoFrames + buildClipFilmstrip's probe, four video
-        // decoders racing on the same source. With the legacy strip
-        // hidden (.filmstrip-wrap{display:none!important} in the CINEMA
-        // SUITE block), nothing visible depends on this work, so we just
-        // skip it on uploads — the clip-level filmstrip on the V1 clip
-        // gives the user the actual visible frame preview.
-        videoPlayer?.addEventListener('loadedmetadata', function onMeta(){
-          videoPlayer.removeEventListener('loadedmetadata', onMeta);
-          if (videoPlayer?.duration && videoPlayer?.duration !== Infinity){
-            videoDuration = videoPlayer.duration;
+        videoPlayer?.addEventListener('loadedmetadata', function() {
+            // Show filmstrip when video loads
+            if (typeof showFilmstrip === "function") showFilmstrip(this.duration);
+
+          if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
+            videoDuration = videoPlayer?.duration;
           }
         });
-        setUploadPhase('8. Hiding upload zone, showing preview');
         uploadZone.classList.add('has-video');
         videoPreviewArea.classList.add('has-video');
-        setUploadPhase('9. Enabling sidebar tool buttons');
         (function(){var e=document.getElementById('trimButton');if(e)e.disabled=false;})();
         (function(){var e=document.getElementById('exportButton');if(e)e.disabled=false;})();
         (function(){var e=document.getElementById('splitButton');if(e)e.disabled=false;})();
@@ -2597,7 +2310,6 @@ function showToast(message, type = 'success') {
         // Add the uploaded file to the Media library ("All" + correct type
         // tab) as a raw asset. Do NOT create a Draft here — Media and
         // Projects are strictly separate.
-        setUploadPhase('10. Adding file to Media library');
         try {
           if (typeof window.addUploadedMediaItem === 'function') {
             window.addUploadedMediaItem({
@@ -2612,7 +2324,6 @@ function showToast(message, type = 'success') {
         // ALSO auto-place the uploaded video on V1, appended after any
         // existing clips. addClipToTimeline uses findRightmostClipEnd so
         // new clips sit back-to-back with whatever's already on the track.
-        setUploadPhase('11. Adding clip to V1 timeline');
         try {
           if (typeof window.addClipToTimeline === 'function') {
             window.addClipToTimeline(
@@ -2623,7 +2334,6 @@ function showToast(message, type = 'success') {
             );
           }
         } catch (_) {}
-        setUploadPhase('12. Resetting upload state');
 
         // Task #141 — Reset button + zone state on SUCCESS too, not
         // just in the catch. The success path used to leave
@@ -2632,30 +2342,17 @@ function showToast(message, type = 'success') {
         // button wasn't visible, but the moment the user deleted the
         // V1 clip and the zone reappeared, the button was unclickable
         // and clicking it did nothing.
-        if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
+        uploadBtn.textContent = originalText;
+        uploadBtn.disabled = false;
         uploadZone.style.opacity = '';
         uploadZone.style.pointerEvents = '';
-        setUploadPhase('13. Done — upload complete', 100);
         showToast('Video uploaded successfully!', 'success');
-        // Task #151 — Keep the overlay visible for 30 seconds (was 4)
-        // so the user can read every phase + timestamp after a fast
-        // upload completes. The × dismiss button hides it immediately
-        // when they're done reading.
-        stopUploadProgressOverlay({ keepVisibleMs: 30000 });
       } catch (error) {
-        if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
+        uploadBtn.textContent = originalText;
+        uploadBtn.disabled = false;
         uploadZone.style.opacity = '1';
         uploadZone.style.pointerEvents = 'auto';
-        setUploadPhase('ERROR: ' + (error && error.message || 'unknown'));
         showToast('Failed to upload video: ' + error.message, 'error');
-        // Errors stay visible until user dismisses — no auto-hide.
-        if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
-      } finally {
-        // Task #148 — Clear the V10 applyAll pause flag on BOTH success
-        // and failure paths so the editor's normal patch cadence resumes
-        // (otherwise a failed upload would leave the editor in a
-        // perpetually-skipped state).
-        try { window.__splicoraUploading = false; } catch(_){}
       }
     }
 
@@ -7549,41 +7246,6 @@ setTimeout(function sidebarLayoutFix(){
 }, 2000);
 
 
-    // ═══ AI HOOK PRELOAD ═══
-    // When the user clicks "Edit in Video Editor" on the AI Hook page, we
-    // arrive here with ?hookPreload=<filename>&hookTitle=<title>&hookDuration=<sec>.
-    // If no server-side __INITIAL_PROJECT__ was injected, synthesize one
-    // from the URL params so the bootFromProject IIFE below picks it up
-    // and drops the hook video onto the timeline + program monitor.
-    (function preloadFromHookParams() {
-      try {
-        if (window.__INITIAL_PROJECT__) return;
-        var qp = new URLSearchParams(window.location.search || '');
-        var preload = qp.get('hookPreload');
-        if (!preload) return;
-        // Strip any path traversal — only allow a plain basename.
-        // NOTE: this script block lives inside a Node template literal, so
-        // the backslash in '\\' must be double-escaped to survive intact
-        // in the served HTML (otherwise we'd ship '.split('\').pop()' which
-        // is an unterminated string literal and breaks the whole script).
-        var safeName = String(preload).split('/').pop().split('\\\\').pop();
-        if (!safeName) return;
-        var title = qp.get('hookTitle') || 'AI Hook';
-        var durRaw = parseFloat(qp.get('hookDuration') || '5');
-        var dur = isFinite(durRaw) && durRaw > 0 ? Math.min(60, durRaw) : 5;
-        window.__INITIAL_PROJECT__ = {
-          id: null,
-          name: title.slice(0, 80),
-          primary: {
-            filename: safeName,
-            duration: dur,
-            serveUrl: '/video-editor/download/' + encodeURIComponent(safeName)
-          },
-          broll: []
-        };
-      } catch (e) { console.warn('hookPreload bootstrap failed:', e); }
-    })();
-
     // ═══ INITIAL PROJECT BOOT ═══
     // If the user was redirected here from the AI B-Roll ingestion flow,
     // window.__INITIAL_PROJECT__ is injected by the /:projectId route and
@@ -9854,21 +9516,6 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     }
 
     var totalSec = cursor;
-
-    // Library: log this export so it appears under the 'Edited Videos'
-    // tab on /repurpose/history. Fire-and-forget — failures here never
-    // block the response.
-    try {
-      const { recordRender } = require('../utils/renderRecorder');
-      recordRender(req.user.id, {
-        tool: 'video-editor',
-        absPath: outputPath,
-        title: (body && body.title) || outputFilename.replace(/\.[a-z0-9]+$/i, ''),
-        durationSeconds: totalSec,
-        metadata: { format: reqFormat, clipCount: v1.length }
-      }).catch(function(e){ console.warn('[video-editor export] recordRender:', e && e.message); });
-    } catch (recErr) { console.warn('[video-editor export] recordRender require failed:', recErr.message); }
-
     res.json({
       filename: outputFilename,
       downloadUrl: '/video-editor/download/' + outputFilename,
@@ -10042,11 +9689,6 @@ router.get('/download/:filename', requireAuth, (req, res) => {
 
     const stat = fs.statSync(filePath);
     const range = req.headers.range;
-    // Optional ?download=1 → force download instead of inline playback.
-    const forceDownload = String(req.query.download || '') === '1';
-    const dispositionHeader = forceDownload
-      ? { 'Content-Disposition': 'attachment; filename="' + filename.replace(/[^A-Za-z0-9_.\-]/g, '_') + '"' }
-      : {};
 
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
@@ -10054,19 +9696,19 @@ router.get('/download/:filename', requireAuth, (req, res) => {
       const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
       const chunkSize = (end - start) + 1;
       const stream = fs.createReadStream(filePath, { start, end });
-      res.writeHead(206, Object.assign({
+      res.writeHead(206, {
         'Content-Range': 'bytes ' + start + '-' + end + '/' + stat.size,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': contentType
-      }, dispositionHeader));
+      });
       stream.pipe(res);
     } else {
-      res.writeHead(200, Object.assign({
+      res.writeHead(200, {
         'Content-Length': stat.size,
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes'
-      }, dispositionHeader));
+      });
       fs.createReadStream(filePath).pipe(res);
     }
   } catch (error) {

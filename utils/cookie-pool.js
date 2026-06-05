@@ -36,6 +36,30 @@ try { fs.mkdirSync(TMP_DIR, { recursive: true }); } catch (e) {}
 let _lastNotificationAt = 0;
 const NOTIFICATION_COOLDOWN_MS = 60 * 60 * 1000; // 1 hr — never spam more than once per hour
 
+// Resolve the proxy URL for a given cookie's geo region.
+// Lookup order:
+//   1. process.env.YT_PROXY_URL_<REGION>  (e.g. YT_PROXY_URL_US, YT_PROXY_URL_BG)
+//   2. process.env.YT_PROXY_URL           (legacy/default — current Bulgarian IPRoyal URL)
+//   3. none — empty args, no proxy
+// Returns ['--proxy', url] or [].
+function resolveProxyForRegion(region) {
+  if (region) {
+    const key = 'YT_PROXY_URL_' + String(region).toUpperCase().replace(/[^A-Z0-9_]/g, '');
+    const regionProxy = process.env[key];
+    if (regionProxy && regionProxy.trim()) {
+      // Support comma-separated proxy lists per region — pick at random per request
+      const pool = regionProxy.split(',').map(s => s.trim()).filter(Boolean);
+      if (pool.length) return ['--proxy', pool[Math.floor(Math.random() * pool.length)]];
+    }
+  }
+  const fallback = process.env.YT_PROXY_URL;
+  if (fallback && fallback.trim()) {
+    const pool = fallback.split(',').map(s => s.trim()).filter(Boolean);
+    if (pool.length) return ['--proxy', pool[Math.floor(Math.random() * pool.length)]];
+  }
+  return [];
+}
+
 async function sendExpiryNotification(label) {
   // Throttle so a burst of failures doesn't email a dozen times.
   const now = Date.now();
@@ -75,7 +99,9 @@ async function pickCookieHandle() {
     const handle = {
       id: picked.id,
       label: picked.label,
+      region: picked.region || null,
       args: ['--cookies', tmpPath],
+      proxyArgs: resolveProxyForRegion(picked.region),
       _path: tmpPath,
       _settled: false,
       async markSuccess() {
@@ -95,7 +121,7 @@ async function pickCookieHandle() {
         try { fs.unlinkSync(this._path); } catch (e) {}
       }
     };
-    console.log(`[CookiePool] picked '${picked.label}' (id=${picked.id.slice(0, 8)})`);
+    console.log(`[CookiePool] picked '${picked.label}' region=${picked.region || 'none'} (id=${picked.id.slice(0, 8)})`);
     return handle;
   } catch (e) {
     console.error('[CookiePool] pickCookieHandle error:', e.message);
@@ -132,4 +158,4 @@ function staticCookiesArgs() {
   return [];
 }
 
-module.exports = { pickCookieHandle, withCookiePool, staticCookiesArgs };
+module.exports = { pickCookieHandle, withCookiePool, staticCookiesArgs, resolveProxyForRegion };

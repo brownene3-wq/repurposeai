@@ -347,10 +347,12 @@ const initDatabase = async () => {
         last_rotated_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        notes TEXT
+        notes TEXT,
+        region TEXT
       )
     `);
     try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_yt_cookies_status ON youtube_cookies(status, last_rotated_at NULLS FIRST)`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE youtube_cookies ADD COLUMN IF NOT EXISTS region TEXT`); } catch (e) {}
 
 
     // Library — universal per-tool render log. Mirrors clip_renders'
@@ -1914,20 +1916,20 @@ module.exports = {
   pageContentOps,
   youtubeCookieOps: {
     async list() {
-      return (await pool.query(`SELECT id, label, status, fail_count, last_success_at, last_failure_at, last_failure_reason, last_rotated_at, created_at, updated_at, notes FROM youtube_cookies ORDER BY created_at DESC`)).rows;
+      return (await pool.query(`SELECT id, label, status, fail_count, last_success_at, last_failure_at, last_failure_reason, last_rotated_at, created_at, updated_at, notes, region FROM youtube_cookies ORDER BY created_at DESC`)).rows;
     },
     async getById(id) {
       return (await pool.query(`SELECT * FROM youtube_cookies WHERE id = $1`, [id])).rows[0];
     },
-    async create(label, cookiesText, notes) {
+    async create(label, cookiesText, notes, region) {
       const id = uuidv4();
       return (await pool.query(
-        `INSERT INTO youtube_cookies (id, label, cookies_text, notes) VALUES ($1, $2, $3, $4) RETURNING id, label, status, created_at`,
-        [id, label, cookiesText, notes || null]
+        `INSERT INTO youtube_cookies (id, label, cookies_text, notes, region) VALUES ($1, $2, $3, $4, $5) RETURNING id, label, status, region, created_at`,
+        [id, label, cookiesText, notes || null, region || null]
       )).rows[0];
     },
     async update(id, fields) {
-      const allowed = ['label', 'status', 'cookies_text', 'notes'];
+      const allowed = ['label', 'status', 'cookies_text', 'notes', 'region'];
       const sets = [];
       const vals = [];
       for (const k of allowed) {
@@ -1955,7 +1957,7 @@ module.exports = {
           LIMIT 1
           FOR UPDATE SKIP LOCKED
         )
-        RETURNING id, label, cookies_text
+        RETURNING id, label, cookies_text, region
       `);
       return result.rows[0] || null;
     },

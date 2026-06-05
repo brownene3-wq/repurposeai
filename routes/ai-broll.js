@@ -816,15 +816,7 @@ ${pageStyles}
         </div>
       </div>
 
-            <!-- Primary video status + B-roll selections + Create Project -->
-      <div id="projectStagingCard" style="background:var(--surface);border-radius:16px;padding:1.2rem 1.5rem;margin-bottom:2rem;border:1px solid var(--border-subtle);display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-          <div id="primaryStatusText" style="color:var(--text);font-size:0.95rem"></div>
-          <button type="button" id="createProjectBtn" style="padding:10px 22px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:700;font-size:0.95rem" disabled><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Open in Video Editor</button>
-        </div>
-        <div id="selectedBrollList" style="margin-top:0.8rem;display:flex;flex-wrap:wrap;gap:8px"></div>
-      </div>
-
+            <!-- Project Staging Card was removed — primary video status and the Open in Video Editor shortcut are no longer surfaced here. The full Render Final Video flow now happens entirely inside the B-Roll Suggestions modal. -->
 
 
 
@@ -1745,7 +1737,7 @@ async function confirmBrollSelection() {
             '<div style="text-align:center;padding:30px 20px;width:100%">' +
               '<div style="font-size:1.05rem;color:var(--text);font-weight:600;margin-bottom:10px">Your clip is ready</div>' +
               '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:18px">' + (Math.round(sd.sizeBytes / 1024 / 1024 * 10) / 10) + ' MB</div>' +
-              '<a href="' + sd.downloadUrl + '?download=1" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Final Video</a>' +
+              '<a href="' + sd.downloadUrl + '" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Final Video</a>' +
               '<div style="margin-top:14px;font-size:0.8rem;color:var(--text-muted)">You can also Cancel to close this modal and run another generation.</div>' +
             '</div>';
         }
@@ -1816,27 +1808,89 @@ async function confirmBrollSelection() {
   }
 
   // ---- Upload (local file) ----
+  // Render a progress indicator inside the upload-zone (replaces drop-text temporarily)
+  function _renderUploadProgress(state) {
+    var zone = document.getElementById('uploadContainer');
+    if (!zone) return;
+    if (state === 'start') {
+      zone.dataset.originalHtml = zone.dataset.originalHtml || zone.innerHTML;
+      zone.innerHTML =
+        '<div style="text-align:center;width:100%;padding:18px 8px">' +
+          '<div style="font-size:0.95rem;color:var(--text);font-weight:600;margin-bottom:10px" id="upPrimaryLabel">Preparing upload...</div>' +
+          '<div style="width:100%;max-width:480px;margin:0 auto;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden">' +
+            '<div id="upPrimaryBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width 0.15s ease-out;border-radius:4px"></div>' +
+          '</div>' +
+          '<div id="upPrimaryPct" style="font-size:0.75rem;color:var(--text-muted);margin-top:8px">0%</div>' +
+        '</div>';
+    } else if (state === 'done' || state === 'fail') {
+      // Restore the original drop-zone HTML so the next upload still works
+      if (zone.dataset.originalHtml) {
+        zone.innerHTML = zone.dataset.originalHtml;
+        delete zone.dataset.originalHtml;
+      }
+    }
+  }
+  function _setUploadProgress(loaded, total, phase) {
+    var bar = document.getElementById('upPrimaryBar');
+    var pct = document.getElementById('upPrimaryPct');
+    var lbl = document.getElementById('upPrimaryLabel');
+    if (!bar || !pct) return;
+    if (total > 0) {
+      var p = Math.min(100, Math.round((loaded / total) * 100));
+      bar.style.width = p + '%';
+      pct.textContent = p + '% (' + (loaded / 1024 / 1024).toFixed(1) + ' MB / ' + (total / 1024 / 1024).toFixed(1) + ' MB)';
+    }
+    if (lbl && phase) lbl.textContent = phase;
+  }
+
   function wireUpload() {
     var btn = document.getElementById('uploadPrimaryBtn');
     var input = document.getElementById('primaryFileInput');
     if (!btn || !input) return;
     btn.addEventListener('click', function () { input.click(); });
-    input.addEventListener('change', async function (e) {
-      var file = e.target.files && e.target.files[0];
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
       if (!file) return;
-      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Uploading…';
-      try {
-        var fd = new FormData(); fd.append('video', file);
-        var r = await fetch('/ai-broll/upload-primary', { method: 'POST', body: fd });
-        if (!r.ok) { var e2 = await r.json().catch(function(){return{};}); throw new Error(e2.error || ('Upload failed (' + r.status + ')')); }
-        var data = await r.json();
-        setPrimary(data);
-      } catch (err) {
-        toastMsg('Upload failed: ' + err.message);
-      } finally {
-        btn.disabled = false; btn.textContent = orig;
-        input.value = '';
-      }
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Uploading...';
+      _renderUploadProgress('start');
+      _setUploadProgress(0, file.size, 'Uploading ' + file.name);
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/ai-broll/upload-primary', true);
+      xhr.upload.addEventListener('progress', function (ev) {
+        if (ev.lengthComputable) {
+          _setUploadProgress(ev.loaded, ev.total, 'Uploading ' + file.name);
+        }
+      });
+      xhr.upload.addEventListener('load', function () {
+        // Bytes are fully sent — server is now probing duration etc.
+        _setUploadProgress(file.size, file.size, 'Processing on server...');
+      });
+      xhr.onerror = function () {
+        toastMsg('Upload failed: network error');
+        _renderUploadProgress('fail');
+        btn.disabled = false; btn.textContent = orig; input.value = '';
+      };
+      xhr.onload = function () {
+        btn.disabled = false; btn.textContent = orig; input.value = '';
+        if (xhr.status < 200 || xhr.status >= 300) {
+          var msg = 'Upload failed (' + xhr.status + ')';
+          try { var ej = JSON.parse(xhr.responseText); if (ej && ej.error) msg = ej.error; } catch (_) {}
+          toastMsg(msg);
+          _renderUploadProgress('fail');
+          return;
+        }
+        try {
+          var data = JSON.parse(xhr.responseText);
+          _renderUploadProgress('done');
+          setPrimary(data);
+        } catch (err) {
+          toastMsg('Upload succeeded but response was malformed');
+          _renderUploadProgress('fail');
+        }
+      };
+      var fd = new FormData(); fd.append('video', file);
+      xhr.send(fd);
     });
   }
 
@@ -2195,10 +2249,16 @@ router.post('/generate', requireAuth, requireCredits('ai-broll'), upload.single(
     }
 
     let contentDescription = '';
+    // The new ingestion flow stages files server-side via /upload-primary,
+    // /import-url, /googledrive-import, /dropbox-import — so /generate may
+    // get JSON with body.primary.filename referring to an already-staged file.
+    // Accept that as a valid content source.
     if (req.file) {
       contentDescription = `Video file: ${req.file.originalname}`;
     } else if (inputType === 'youtube' && url) {
       contentDescription = `YouTube video: ${url}`;
+    } else if (req.body && req.body.primary && req.body.primary.filename) {
+      contentDescription = `Staged video: ${req.body.primary.originalName || req.body.primary.filename}`;
     } else if (prompt) {
       contentDescription = prompt;
     } else {
@@ -3196,54 +3256,43 @@ router.post('/render-with-broll', requireAuth, async (req, res) => {
           return Object.assign({}, b, { insertAt: Math.max(0.5, Math.min(at, primaryDur - 0.5)) });
         }).sort(function (a, b) { return a.insertAt - b.insertAt; });
 
-        // STEP 4: split primary at each insertion point + interleave B-roll
-        writeProgress('Splicing B-roll into primary...');
-        var parts = [];
-        var cursor = 0;
-        for (var j = 0; j < sorted.length; j++) {
-          var br = sorted[j];
-          if (br.insertAt > cursor + 0.5) {
-            var pPart = outputPath + '.part_main_' + j + '.mp4';
-            tempFiles.push(pPart);
-            await runFFmpeg([
-              '-y', '-ss', String(cursor), '-i', primaryPath,
-              '-t', String(br.insertAt - cursor),
-              '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
-              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
-              '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-              '-movflags', '+faststart', pPart
-            ], 120000);
-            parts.push(pPart);
-          }
-          parts.push(br.path);
-          cursor = br.insertAt;
-        }
-        if (cursor < primaryDur - 0.5) {
-          var lastPart = outputPath + '.part_main_last.mp4';
-          tempFiles.push(lastPart);
-          await runFFmpeg([
-            '-y', '-ss', String(cursor), '-i', primaryPath,
-            '-t', String(primaryDur - cursor),
-            '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
-            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-            '-movflags', '+faststart', lastPart
-          ], 120000);
-          parts.push(lastPart);
-        }
-
-        // STEP 5: concat all parts
-        writeProgress('Combining final video...');
-        var concatList = outputPath + '.concat.txt';
-        tempFiles.push(concatList);
-        fs.writeFileSync(concatList, parts.map(function (p) { return "file '" + p.replace(/'/g, "'\\''") + "'"; }).join('\n'), 'utf8');
-        await runFFmpeg([
-          '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
-          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
-          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-          '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
-          outputPath
-        ], 240000);
+        // STEP 4: overlay each B-roll on top of the primary in a single ffmpeg pass.
+        // The primary's audio stays continuous and the primary keeps playing
+        // underneath — the B-roll just covers the visual frame during its window.
+        writeProgress('Overlaying B-roll on top of source...');
+        var ffArgs = ['-y', '-i', primaryPath];
+        // Add each B-roll as a separate input, time-shifted to its insertAt point.
+        sorted.forEach(function (b) {
+          ffArgs.push('-itsoffset', String(b.insertAt), '-i', b.path);
+        });
+        // Build filter_complex: scale every B-roll to the primary resolution,
+        // then chain overlay operations gated by the insert window.
+        var filterParts = [];
+        filterParts.push('[0:v]scale=' + W + ':' + H + ':flags=lanczos,setsar=1[v0]');
+        sorted.forEach(function (b, idx) {
+          var inputIdx = idx + 1; // 0 is primary
+          filterParts.push('[' + inputIdx + ':v]scale=' + W + ':' + H + ':force_original_aspect_ratio=increase:flags=lanczos,crop=' + W + ':' + H + ',setsar=1[b' + idx + ']');
+        });
+        // Chain: [vN][b_idx]overlay=enable=between(t,start,end):eof_action=pass[v(N+1)]
+        var prevLabel = '[v0]';
+        sorted.forEach(function (b, idx) {
+          var startT = b.insertAt;
+          var endT = b.insertAt + b.duration;
+          var nextLabel = (idx === sorted.length - 1) ? '[vout]' : '[v' + (idx + 1) + ']';
+          filterParts.push(prevLabel + '[b' + idx + "]overlay=eof_action=pass:enable='between(t," + startT.toFixed(3) + ',' + endT.toFixed(3) + ")'" + nextLabel);
+          prevLabel = nextLabel;
+        });
+        ffArgs.push('-filter_complex', filterParts.join(';'));
+        ffArgs.push('-map', '[vout]');
+        ffArgs.push('-map', '0:a?');           // keep primary's audio (continuous, unmuted)
+        ffArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20');
+        ffArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2');
+        ffArgs.push('-movflags', '+faststart', '-max_muxing_queue_size', '2048');
+        // Bound output duration by the primary so trailing silence from any
+        // B-roll past the primary's end doesn't extend it.
+        ffArgs.push('-t', String(primaryDur));
+        ffArgs.push(outputPath);
+        await runFFmpeg(ffArgs, 360000);
 
         clearTimeout(timeoutHandle);
         if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 50000) {
@@ -3260,12 +3309,18 @@ router.post('/render-with-broll', requireAuth, async (req, res) => {
         // under the 'B-Roll Renders' tab.
         try {
           const { recordRender } = require('../utils/renderRecorder');
-          recordRender(req.user.id, {
+          const recorded = await recordRender(req.user.id, {
             tool: 'ai-broll',
             absPath: outputPath,
             title: 'B-Roll: ' + filename.replace(/\.[a-z0-9]+$/i, '')
-          }).catch(function(e){ console.warn('[ai-broll] recordRender:', e && e.message); });
-        } catch (recErr) { console.warn('[ai-broll] recordRender require failed:', recErr.message); }
+          });
+          // Write a sidecar with the Library ID so the status endpoint can
+          // hand the client a download URL that survives Railway redeploys
+          // (Library download has R2 fallback; /video-editor/download does not).
+          if (recorded && recorded.id) {
+            try { fs.writeFileSync(outputPath + '.library-id', String(recorded.id)); } catch (_) {}
+          }
+        } catch (recErr) { console.warn('[ai-broll] recordRender failed:', recErr.message); }
       } catch (err) {
         clearTimeout(timeoutHandle);
         console.error('[ai-broll render]', err);
@@ -3293,9 +3348,19 @@ router.get('/render-status/:filename', requireAuth, function (req, res) {
     return res.json({ status: 'error', message: errMsg });
   }
   if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 50000) {
+    var libDownloadUrl = null;
+    try {
+      var libIdPath = outputPath + '.library-id';
+      if (fs.existsSync(libIdPath)) {
+        var libId = String(fs.readFileSync(libIdPath, 'utf8')).trim();
+        if (libId) libDownloadUrl = '/repurpose/api/library/' + encodeURIComponent(libId) + '/download';
+      }
+    } catch (_) {}
     return res.json({
       status: 'ready',
-      downloadUrl: '/video-editor/download/' + filename,
+      // Prefer the Library download URL — it always serves with attachment
+      // header AND has R2 fallback after Railway wipes /tmp.
+      downloadUrl: libDownloadUrl || ('/video-editor/download/' + filename + '?download=1'),
       sizeBytes: fs.statSync(outputPath).size
     });
   }
