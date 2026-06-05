@@ -3264,54 +3264,43 @@ router.post('/render-with-broll', requireAuth, async (req, res) => {
           return Object.assign({}, b, { insertAt: Math.max(0.5, Math.min(at, primaryDur - 0.5)) });
         }).sort(function (a, b) { return a.insertAt - b.insertAt; });
 
-        // STEP 4: split primary at each insertion point + interleave B-roll
-        writeProgress('Splicing B-roll into primary...');
-        var parts = [];
-        var cursor = 0;
-        for (var j = 0; j < sorted.length; j++) {
-          var br = sorted[j];
-          if (br.insertAt > cursor + 0.5) {
-            var pPart = outputPath + '.part_main_' + j + '.mp4';
-            tempFiles.push(pPart);
-            await runFFmpeg([
-              '-y', '-ss', String(cursor), '-i', primaryPath,
-              '-t', String(br.insertAt - cursor),
-              '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
-              '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
-              '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-              '-movflags', '+faststart', pPart
-            ], 120000);
-            parts.push(pPart);
-          }
-          parts.push(br.path);
-          cursor = br.insertAt;
-        }
-        if (cursor < primaryDur - 0.5) {
-          var lastPart = outputPath + '.part_main_last.mp4';
-          tempFiles.push(lastPart);
-          await runFFmpeg([
-            '-y', '-ss', String(cursor), '-i', primaryPath,
-            '-t', String(primaryDur - cursor),
-            '-vf', 'scale=' + W + ':' + H + ':flags=lanczos,setsar=1',
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
-            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-            '-movflags', '+faststart', lastPart
-          ], 120000);
-          parts.push(lastPart);
-        }
-
-        // STEP 5: concat all parts
-        writeProgress('Combining final video...');
-        var concatList = outputPath + '.concat.txt';
-        tempFiles.push(concatList);
-        fs.writeFileSync(concatList, parts.map(function (p) { return "file '" + p.replace(/'/g, "'\\''") + "'"; }).join('\n'), 'utf8');
-        await runFFmpeg([
-          '-y', '-f', 'concat', '-safe', '0', '-i', concatList,
-          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20',
-          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-          '-movflags', '+faststart', '-max_muxing_queue_size', '2048',
-          outputPath
-        ], 240000);
+        // STEP 4: overlay each B-roll on top of the primary in a single ffmpeg pass.
+        // The primary's audio stays continuous and the primary keeps playing
+        // underneath — the B-roll just covers the visual frame during its window.
+        writeProgress('Overlaying B-roll on top of source...');
+        var ffArgs = ['-y', '-i', primaryPath];
+        // Add each B-roll as a separate input, time-shifted to its insertAt point.
+        sorted.forEach(function (b) {
+          ffArgs.push('-itsoffset', String(b.insertAt), '-i', b.path);
+        });
+        // Build filter_complex: scale every B-roll to the primary resolution,
+        // then chain overlay operations gated by the insert window.
+        var filterParts = [];
+        filterParts.push('[0:v]scale=' + W + ':' + H + ':flags=lanczos,setsar=1[v0]');
+        sorted.forEach(function (b, idx) {
+          var inputIdx = idx + 1; // 0 is primary
+          filterParts.push('[' + inputIdx + ':v]scale=' + W + ':' + H + ':force_original_aspect_ratio=increase:flags=lanczos,crop=' + W + ':' + H + ',setsar=1[b' + idx + ']');
+        });
+        // Chain: [vN][b_idx]overlay=enable=between(t,start,end):eof_action=pass[v(N+1)]
+        var prevLabel = '[v0]';
+        sorted.forEach(function (b, idx) {
+          var startT = b.insertAt;
+          var endT = b.insertAt + b.duration;
+          var nextLabel = (idx === sorted.length - 1) ? '[vout]' : '[v' + (idx + 1) + ']';
+          filterParts.push(prevLabel + '[b' + idx + "]overlay=eof_action=pass:enable='between(t," + startT.toFixed(3) + ',' + endT.toFixed(3) + ")'" + nextLabel);
+          prevLabel = nextLabel;
+        });
+        ffArgs.push('-filter_complex', filterParts.join(';'));
+        ffArgs.push('-map', '[vout]');
+        ffArgs.push('-map', '0:a?');           // keep primary's audio (continuous, unmuted)
+        ffArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20');
+        ffArgs.push('-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2');
+        ffArgs.push('-movflags', '+faststart', '-max_muxing_queue_size', '2048');
+        // Bound output duration by the primary so trailing silence from any
+        // B-roll past the primary's end doesn't extend it.
+        ffArgs.push('-t', String(primaryDur));
+        ffArgs.push(outputPath);
+        await runFFmpeg(ffArgs, 360000);
 
         clearTimeout(timeoutHandle);
         if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 50000) {
