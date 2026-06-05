@@ -1603,10 +1603,25 @@ function _fallbackYtdlpTitle(videoId) {
 
 // Helper: Parse moment timestamp range (MM:SS-MM:SS format)
 function parseTimeRange(rangeStr) {
-  const [start, end] = rangeStr.split('-');
+  const [start, end] = String(rangeStr || '').split('-');
+  // Accepts MM:SS, MM:SS.mmm, HH:MM:SS, HH:MM:SS.mmm, or bare seconds.
+  // Whisper-backed uploads produce HH:MM:SS.mmm transcripts and GPT
+  // sometimes carries that format into moment.timeRange, so the old
+  // 2-part-only parser silently produced 83 seconds for '1:23:45'.
   const parseTime = (str) => {
-    const [mins, secs] = str.split(':').map(Number);
-    return mins * 60 + secs;
+    if (str == null) return 0;
+    const trimmed = String(str).trim();
+    if (!trimmed) return 0;
+    // Strip surrounding spaces, brackets, leading [/]
+    const cleaned = trimmed.replace(/^\[|\]$/g, '').trim();
+    const parts = cleaned.split(':').map(s => parseFloat(s));
+    if (parts.length === 3) {
+      return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    }
+    if (parts.length === 2) {
+      return (parts[0] || 0) * 60 + (parts[1] || 0);
+    }
+    return parts[0] || 0;
   };
   return { start: parseTime(start), end: parseTime(end) };
 }
@@ -3525,21 +3540,66 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
     if (!sourcePath) {
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
     }
-    let startSec, endSec;
+    let startSec = 0, endSec = 0;
     try {
       const r = parseTimeRange(moment.timeRange);
-      startSec = r.start; endSec = r.end;
-    } catch (e) { return res.status(400).end(); }
+      startSec = r.start || 0;
+      endSec = r.end || 0;
+    } catch (e) { /* fall through with defaults; we'll still try seek 0 */ }
     const midSec = (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec > startSec)
       ? startSec + (endSec - startSec) / 2
       : (Number.isFinite(startSec) ? startSec : 0);
-    try {
-      await extractFrameAt(sourcePath, midSec, outPath);
-    } catch (e) {
-      console.error('  upload-moment-thumbnail extract failed:', e.message);
+    // Try multiple seek positions in order: midSec → startSec → 1.0 → 0.
+    // Covers the failure modes where the moment's timeRange exceeds the
+    // source's actual duration, or where ffmpeg can't find a keyframe at
+    // a deep seek. Same defensive ladder the main upload-thumbnail uses.
+    const seekCandidates = [];
+    if (Number.isFinite(midSec) && midSec > 0) seekCandidates.push(midSec);
+    if (Number.isFinite(startSec) && startSec > 0 && startSec !== midSec) seekCandidates.push(startSec);
+    seekCandidates.push(1.0, 0);
+    let extracted = false;
+    let lastErr = null;
+    for (const seek of seekCandidates) {
+      try {
+        await extractFrameAt(sourcePath, seek, outPath);
+        if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+          extracted = true;
+          if (seek !== midSec) console.log(`  upload-moment-thumbnail: midSec=${midSec}s failed; succeeded at ${seek}s for moment ${momentIdx} (analysis ${analysisId})`);
+          break;
+        }
+      } catch (e) { lastErr = e; }
+    }
+    if (!extracted) {
+      console.error('  upload-moment-thumbnail: all seek positions failed for moment ' + momentIdx + ' of ' + analysisId + ':', lastErr && lastErr.message);
+      // Final graceful fallback: serve the analysis's main thumbnail so
+      // the card paints SOMETHING rather than going blank. This matches
+      // Albert's spec ('thumbnails match the main thumbnail').
+      try {
+        const mainDb = await shortsOps.getThumbnail(analysisId);
+        if (mainDb && mainDb.length > 256) return sendBytes(mainDb);
+        const mainDisk = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
+        if (fs.existsSync(mainDisk) && fs.statSync(mainDisk).size > 256) {
+          return sendBytes(fs.readFileSync(mainDisk));
+        }
+        // Last resort: extract a fresh main thumbnail at 1s.
+        const fallbackPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_fallback.jpg`);
+        try {
+          await extractFrameAt(sourcePath, 1.0, fallbackPath);
+        } catch (_) {
+          try { await extractFrameAt(sourcePath, 0, fallbackPath); } catch (__) {}
+        }
+        if (fs.existsSync(fallbackPath) && fs.statSync(fallbackPath).size > 256) {
+          const fb = fs.readFileSync(fallbackPath);
+          // Persist as both main and this moment's thumbnail.
+          shortsOps.setThumbnail(analysisId, fb).catch(() => {});
+          shortsOps.setMomentThumbnail(analysisId, momentIdx, fb).catch(() => {});
+          return sendBytes(fb);
+        }
+      } catch (fbErr) {
+        console.error('  upload-moment-thumbnail main-thumb fallback failed:', fbErr.message);
+      }
       return res.status(500).end();
     }
-    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
     const bytes = fs.readFileSync(outPath);
     shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
       console.warn('  upload-moment-thumbnail DB persist failed:', e.message));
