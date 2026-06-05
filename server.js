@@ -34,14 +34,18 @@ if (process.env.YT_COOKIES_BASE64 && !process.env.YT_COOKIES_PATH) {
 const { injectChatWidget } = require('./middleware/chatWidget');
 const { injectFeedbackWidget } = require('./middleware/feedbackWidget');
 
-// Middleware - skip JSON parsing for Stripe webhook (needs raw body)
+// Middleware - skip JSON parsing for Stripe webhook (needs raw body).
+// Raised limit from default 100kb to 5mb so the /admin/cookies UI can
+// accept full cookies.txt pastes (real Google account cookies often
+// run 100-200KB and the previous default silently 500'd before the
+// route handler ever ran).
 app.use((req, res, next) => {
   if (req.originalUrl === '/billing/webhook') return next();
-  express.json()(req, res, next)
+  express.json({ limit: '5mb' })(req, res, next)
 });
 app.use((req, res, next) => {
   if (req.originalUrl === '/billing/webhook') return next();
-  express.urlencoded({ extended: true })(req, res, next);
+  express.urlencoded({ extended: true, limit: '5mb' })(req, res, next);
 });
 app.use(cookieParser())
 
