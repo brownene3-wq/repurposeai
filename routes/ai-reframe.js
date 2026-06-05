@@ -183,7 +183,7 @@ async function downloadYouTubeVideo(videoUrl) {
     const { pickCookieHandle } = require('../utils/cookie-pool');
     const _cookieHandle = await pickCookieHandle();
     const cookiesArgs = _cookieHandle ? _cookieHandle.args : getYoutubeCookiesArgs();
-    const proxyArgs   = getYoutubeProxyArgs();
+    const proxyArgs   = (_cookieHandle && _cookieHandle.proxyArgs) ? _cookieHandle.proxyArgs : getYoutubeProxyArgs();
     try {
       console.log(`[AI Reframe] yt-dlp → ${videoUrl} ` +
                   `(pool=${_cookieHandle ? _cookieHandle.label : 'none'} cookies=${cookiesArgs.length > 0} proxy=${proxyArgs.length > 0})`);

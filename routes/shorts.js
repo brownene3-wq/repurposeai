@@ -350,7 +350,7 @@ async function getOrDownloadVideo(videoId, videoUrl, ytdlpPath, writeProgress) {
         '--no-part',
         '--force-overwrites',
         ...__cookieArgs,
-        ...getYoutubeProxyArgs(),
+        ...(__cookieHandle && __cookieHandle.proxyArgs ? __cookieHandle.proxyArgs : getYoutubeProxyArgs()),
         ...YTDLP_COMMON_ARGS,
         videoUrl
       ], { timeout: 240000 });

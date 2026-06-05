@@ -132,7 +132,7 @@ async function downloadYouTubeVideo(videoUrl) {
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
           ..._cookieArgs,
-          ...getYoutubeProxyArgs(),
+          ...(_cookieHandle && _cookieHandle.proxyArgs ? _cookieHandle.proxyArgs : getYoutubeProxyArgs()),
           videoUrl
         ]);
         let stderr = '';

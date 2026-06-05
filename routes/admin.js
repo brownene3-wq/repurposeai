@@ -1748,6 +1748,7 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
         <tr data-cookie-id="${c.id}">
           <td><strong>${escapeHtml(c.label)}</strong></td>
           <td><span class="badge" style="background:${statusBg};color:${statusColor};">${c.status}</span></td>
+          <td style="text-align:center;font-family:monospace;font-size:.85rem;">${c.region ? escapeHtml(c.region) : '<span style="color:var(--text-muted);">—</span>'}</td>
           <td style="text-align:center;">${c.fail_count}</td>
           <td>${fmtAge(c.last_success_at)}</td>
           <td>${fmtAge(c.last_failure_at)}</td>
@@ -1761,7 +1762,7 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
             <button onclick="deleteCookie('${c.id}')" class="btn-sm btn-danger">Delete</button>
           </td>
         </tr>`;
-    }).join('') || '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">No cookie sets yet. Click "Add cookie set" above to paste your first one.</td></tr>';
+    }).join('') || '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted);">No cookie sets yet. Click "Add cookie set" above to paste your first one.</td></tr>';
 
     res.send(`<!DOCTYPE html>
 <html lang="en"><head>
@@ -1821,6 +1822,7 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
           <tr>
             <th>Label</th>
             <th>Status</th>
+            <th>Region</th>
             <th style="text-align:center;">Fails</th>
             <th>Last success</th>
             <th>Last failure</th>
@@ -1843,6 +1845,16 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
       <input type="text" id="addLabel" placeholder="my-account-1" autocomplete="off">
       <label>cookies.txt contents</label>
       <textarea id="addCookies" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;...&#10;..." spellcheck="false"></textarea>
+      <label>Region (proxy geo to pair with)</label>
+      <select id="addRegion" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(108,58,237,0.3);background:var(--surface);color:var(--text);font-size:.9rem;">
+        <option value="">Default (use YT_PROXY_URL)</option>
+        <option value="US">US — pairs with YT_PROXY_URL_US</option>
+        <option value="BG">BG — pairs with YT_PROXY_URL_BG (or default)</option>
+        <option value="PH">PH — pairs with YT_PROXY_URL_PH</option>
+        <option value="UK">UK — pairs with YT_PROXY_URL_UK</option>
+        <option value="DE">DE — pairs with YT_PROXY_URL_DE</option>
+      </select>
+      <p style="margin:4px 0 0;color:var(--text-muted);font-size:.78rem;">Cookies are routed through the proxy matching this region. If no matching proxy env var is set, falls back to <code>YT_PROXY_URL</code>.</p>
       <label>Notes (optional)</label>
       <input type="text" id="addNotes" placeholder="Warmed 7 days, IP 1.2.3.4">
       <div class="modal-actions">
@@ -1881,7 +1893,8 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
       const btn = document.getElementById('addSubmit');
       btn.disabled = true; btn.textContent = 'Adding…';
       try {
-        const r = await fetch('/admin/api/cookies', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ label, cookies_text: cookies, notes }) });
+        const region = document.getElementById('addRegion').value;
+        const r = await fetch('/admin/api/cookies', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ label, cookies_text: cookies, notes, region }) });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'Failed');
         location.reload();
@@ -1928,9 +1941,10 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
 router.post('/api/cookies', requireAuth, requireAdmin, _largeJson, async (req, res) => {
   try {
     const { youtubeCookieOps } = require('../db/database');
-    const { label, cookies_text, notes } = req.body || {};
+    const { label, cookies_text, notes, region } = req.body || {};
     if (!label || !cookies_text) return res.status(400).json({ error: 'label and cookies_text required' });
-    const created = await youtubeCookieOps.create(label, cookies_text, notes);
+    const cleanRegion = region ? String(region).toUpperCase().slice(0, 8).replace(/[^A-Z0-9]/g, '') || null : null;
+    const created = await youtubeCookieOps.create(label, cookies_text, notes, cleanRegion);
     res.json({ ok: true, cookie: created });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
