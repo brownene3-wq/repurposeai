@@ -7345,7 +7345,11 @@ setTimeout(function sidebarLayoutFix(){
         var preload = qp.get('hookPreload');
         if (!preload) return;
         // Strip any path traversal — only allow a plain basename.
-        var safeName = String(preload).split('/').pop().split('\\').pop();
+        // NOTE: this script block lives inside a Node template literal, so
+        // the backslash in '\\' must be double-escaped to survive intact
+        // in the served HTML (otherwise we'd ship '.split('\').pop()' which
+        // is an unterminated string literal and breaks the whole script).
+        var safeName = String(preload).split('/').pop().split('\\\\').pop();
         if (!safeName) return;
         var title = qp.get('hookTitle') || 'AI Hook';
         var durRaw = parseFloat(qp.get('hookDuration') || '5');
