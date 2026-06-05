@@ -5140,6 +5140,25 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     }
 
     featureUsageOps.log(req.user.id, 'ai_thumbnails_ai').catch(() => {});
+
+    // Library — log each AI-generated thumbnail so it shows up under
+    // the 'Thumbnails' tab on /repurpose/history. kind:'image' so the
+    // card grid renders as <img>. Fire-and-forget — failures here
+    // never block the response.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      thumbnails.forEach(function(t) {
+        const absPath = path.join(outputDir, t.filename);
+        recordRender(req.user.id, {
+          tool: 'ai-thumbnail',
+          kind: 'image',
+          absPath: absPath,
+          title: (t.title || 'AI Thumbnail') + (hookTopic ? ' — ' + hookTopic : ''),
+          metadata: { preset: preset.key, aspect: aspect, hookTopic: hookTopic, source: 'ai-generate' }
+        }).catch(function(e){ console.warn('[ai-thumbnail ai-generate] recordRender:', e && e.message); });
+      });
+    } catch (recErr) { console.warn('[ai-thumbnail ai-generate] recordRender require failed:', recErr.message); }
+
     res.json({
       success: true,
       thumbnails,
