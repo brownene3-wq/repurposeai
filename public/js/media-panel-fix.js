@@ -180,6 +180,7 @@
   // placed on the correct timeline track (V1/A1) after any existing clips.
   function handleFiles(files) {
     if (!files || !files.length) return;
+    var firstVidItem = null;
     Array.from(files).forEach(function(file){
       var item = appendMediaItem({file: file});
       if (!item) return;
@@ -194,6 +195,20 @@
       estimateMediaDuration(url, mediaType, function(dur){
         if (dur > 0) item.dataset.duration = String(dur);
         try { addClipToTimeline(file.name, mediaType, dur, url); } catch(_){}
+        // Task #146 — Auto-load the FIRST uploaded video into the main
+        // preview so the Program Monitor / videoPlayer populates the
+        // same way it does for the upload-panel path. Previously the
+        // sidebar-upload flow added the file to the media library and
+        // dropped a V1 clip but left the preview/PGM empty until the
+        // user clicked the media item — which made sidebar uploads
+        // look broken next to the panel path. loadMediaItemIntoPreview
+        // already handles the blob→server promotion, so passing the
+        // blob-URL item is safe; only the first video in a batch wins
+        // the preview slot so a multi-select doesn't churn it.
+        if (mediaType === 'vid' && !firstVidItem){
+          firstVidItem = item;
+          try { loadMediaItemIntoPreview(item); } catch(_){}
+        }
       });
     });
     showToast('Added ' + files.length + ' file(s) to media library');

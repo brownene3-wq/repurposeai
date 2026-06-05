@@ -2316,12 +2316,22 @@ function showToast(message, type = 'success') {
         initTimeline();
 
         videoPlayer.src = data.serveUrl;
-        videoPlayer?.addEventListener('loadedmetadata', function() {
-            // Show filmstrip when video loads
-            if (typeof showFilmstrip === "function") showFilmstrip(this.duration);
-
-          if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
-            videoDuration = videoPlayer?.duration;
+        // Task #146 — Single-fire loadedmetadata listener (was accumulating
+        // one per upload, leaking handlers and re-running showFilmstrip
+        // N times). showFilmstrip is gated on a flag so the legacy
+        // hidden #fsThumbs extractor only runs once per video too — it
+        // was previously spawning a duplicate <video> element loading the
+        // same server URL alongside the main player + V10's
+        // captureVideoFrames + buildClipFilmstrip's probe, four video
+        // decoders racing on the same source. With the legacy strip
+        // hidden (.filmstrip-wrap{display:none!important} in the CINEMA
+        // SUITE block), nothing visible depends on this work, so we just
+        // skip it on uploads — the clip-level filmstrip on the V1 clip
+        // gives the user the actual visible frame preview.
+        videoPlayer?.addEventListener('loadedmetadata', function onMeta(){
+          videoPlayer.removeEventListener('loadedmetadata', onMeta);
+          if (videoPlayer?.duration && videoPlayer?.duration !== Infinity){
+            videoDuration = videoPlayer.duration;
           }
         });
         uploadZone.classList.add('has-video');
