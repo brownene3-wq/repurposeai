@@ -1745,7 +1745,7 @@ async function confirmBrollSelection() {
             '<div style="text-align:center;padding:30px 20px;width:100%">' +
               '<div style="font-size:1.05rem;color:var(--text);font-weight:600;margin-bottom:10px">Your clip is ready</div>' +
               '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:18px">' + (Math.round(sd.sizeBytes / 1024 / 1024 * 10) / 10) + ' MB</div>' +
-              '<a href="' + sd.downloadUrl + '?download=1" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Final Video</a>' +
+              '<a href="' + sd.downloadUrl + '" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Final Video</a>' +
               '<div style="margin-top:14px;font-size:0.8rem;color:var(--text-muted)">You can also Cancel to close this modal and run another generation.</div>' +
             '</div>';
         }
@@ -3328,12 +3328,18 @@ router.post('/render-with-broll', requireAuth, async (req, res) => {
         // under the 'B-Roll Renders' tab.
         try {
           const { recordRender } = require('../utils/renderRecorder');
-          recordRender(req.user.id, {
+          const recorded = await recordRender(req.user.id, {
             tool: 'ai-broll',
             absPath: outputPath,
             title: 'B-Roll: ' + filename.replace(/\.[a-z0-9]+$/i, '')
-          }).catch(function(e){ console.warn('[ai-broll] recordRender:', e && e.message); });
-        } catch (recErr) { console.warn('[ai-broll] recordRender require failed:', recErr.message); }
+          });
+          // Write a sidecar with the Library ID so the status endpoint can
+          // hand the client a download URL that survives Railway redeploys
+          // (Library download has R2 fallback; /video-editor/download does not).
+          if (recorded && recorded.id) {
+            try { fs.writeFileSync(outputPath + '.library-id', String(recorded.id)); } catch (_) {}
+          }
+        } catch (recErr) { console.warn('[ai-broll] recordRender failed:', recErr.message); }
       } catch (err) {
         clearTimeout(timeoutHandle);
         console.error('[ai-broll render]', err);
@@ -3361,9 +3367,19 @@ router.get('/render-status/:filename', requireAuth, function (req, res) {
     return res.json({ status: 'error', message: errMsg });
   }
   if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 50000) {
+    var libDownloadUrl = null;
+    try {
+      var libIdPath = outputPath + '.library-id';
+      if (fs.existsSync(libIdPath)) {
+        var libId = String(fs.readFileSync(libIdPath, 'utf8')).trim();
+        if (libId) libDownloadUrl = '/repurpose/api/library/' + encodeURIComponent(libId) + '/download';
+      }
+    } catch (_) {}
     return res.json({
       status: 'ready',
-      downloadUrl: '/video-editor/download/' + filename,
+      // Prefer the Library download URL — it always serves with attachment
+      // header AND has R2 fallback after Railway wipes /tmp.
+      downloadUrl: libDownloadUrl || ('/video-editor/download/' + filename + '?download=1'),
       sizeBytes: fs.statSync(outputPath).size
     });
   }
