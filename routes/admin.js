@@ -1887,7 +1887,7 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
         location.reload();
       } catch (e) {
         const msg = e && e.message ? e.message : 'Unknown error';
-        const help = /413|too large|payload/i.test(msg) ? '\n\nThe cookies file may be too big. Make sure you only pasted the cookies content, not the whole file with extra encoding.' : '';
+        const help = /413|too large|payload/i.test(msg) ? '\\n\\nThe cookies file may be too big. Make sure you only pasted the cookies content, not the whole file with extra encoding.' : '';
         alert('Add failed: ' + msg + help);
         btn.disabled = false; btn.textContent = 'Add';
       }
