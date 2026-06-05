@@ -5124,8 +5124,20 @@
     document.addEventListener('loadeddata', function(e){
       if (e.target && e.target.tagName === 'VIDEO'){
         scheduleApply();
-        setTimeout(captureVideoFrames, 500);
-        setTimeout(captureAudioWaveform, 600);
+        // Task #147 — heavy V10 capture work pushed well past the
+        // initial upload paint. Previously these ran 500/600 ms after
+        // loadeddata which collided with addClipToTimeline's filmstrip
+        // probe + Program Monitor cache video also loading. On a real
+        // 16MB+ source that combined to 4 simultaneous full-file
+        // downloads + decodes and the renderer locked long enough for
+        // Chrome's "Page Unresponsive" dialog. Deferring to 3.5/4 s
+        // (and via requestIdleCallback when supported) gives the
+        // upload UI room to settle and the main video to fully buffer
+        // first, so the second-pass captures cost nothing because the
+        // browser already has the bytes cached.
+        var idle = window.requestIdleCallback || function(fn){ return setTimeout(fn, 1); };
+        setTimeout(function(){ idle(captureVideoFrames, {timeout: 5000}); }, 3500);
+        setTimeout(function(){ idle(captureAudioWaveform, {timeout: 5000}); }, 4000);
       }
     }, true);
     document.addEventListener('play', function(e){
