@@ -3472,6 +3472,14 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
     if (!sourcePath) {
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
     }
+    // Probe for a usable video stream — audio-only podcast uploads
+    // would otherwise produce a black frame that's worse than no
+    // image. Same noVideoSource signal as the moment-thumbnail path.
+    const mainHasVideo = await _ffprobeHasVideo(sourcePath);
+    if (!mainHasVideo) {
+      console.log('  upload-thumbnail: source has no video stream (audio-only upload) for analysis ' + analysisId);
+      return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
+    }
     try {
       await extractFrameAt(sourcePath, 1.0, outPath);
     } catch (e) {
