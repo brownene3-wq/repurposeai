@@ -1128,7 +1128,7 @@ async function renderEditor(req, res) {
                    blocks programmatic clicks in WebKit; absolute-
                    off-screen sizing keeps the input clickable while
                    invisible to the user. -->
-              <input type="file" id="fileInput" accept="video/*" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none">
+              <input type="file" id="fileInput" style="display:none">
               <div style="display:flex;align-items:center;gap:8px;margin-top:12px;width:100%;max-width:560px">
                 <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
                 <span style="color:var(--text-muted);font-size:.8rem">or drop a link</span>
