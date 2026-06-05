@@ -2364,6 +2364,7 @@ function showToast(message, type = 'success') {
 
     var _upStartT = 0;
     var _upRAF = null;
+    var _upPhaseLog = [];
     function setUploadPhase(label, pct){
       var o = ensureUploadProgressOverlay();
       o.style.display = 'block';
@@ -2374,17 +2375,87 @@ function showToast(message, type = 'success') {
       if (typeof pct === 'number' && bar){
         bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
       }
-      if (log && label){
+      if (label){
         var elapsed = ((performance.now() - _upStartT) / 1000).toFixed(2);
-        var line = document.createElement('div');
-        line.textContent = '[' + elapsed + 's] ' + label;
-        log.appendChild(line);
-        log.scrollTop = log.scrollHeight;
+        var line = '[' + elapsed + 's] ' + label;
+        _upPhaseLog.push(line);
+        if (log){
+          var d = document.createElement('div');
+          d.textContent = line;
+          log.appendChild(d);
+          log.scrollTop = log.scrollHeight;
+        }
+        // Task #152 — Persist every phase transition to localStorage
+        // so when the renderer freezes and the user has to force-quit
+        // the tab, the log survives. On the next page load, the
+        // editor auto-restores the overlay with the recovered log so
+        // we can SEE the last phase reached before the freeze even
+        // though no live screenshot is possible. Synchronous write
+        // is fine — JSON-stringifying ~14 short strings is sub-ms.
+        try {
+          localStorage.setItem('splicora_last_upload_log', JSON.stringify({
+            t: Date.now(),
+            phase: label,
+            pct: typeof pct === 'number' ? pct : null,
+            log: _upPhaseLog
+          }));
+        } catch(_){}
       }
     }
+    // Task #152 — On page load, if a recent upload log is sitting in
+    // localStorage (less than 10 minutes old), surface it in the
+    // overlay immediately. If the previous upload completed cleanly
+    // the log ends with "13. Done" and we just show it as
+    // informational; if it ends partway, the last entry IS the freeze
+    // point and the user can screenshot it for us.
+    (function restoreUploadLogFromStorage(){
+      try {
+        var raw = localStorage.getItem('splicora_last_upload_log');
+        if (!raw) return;
+        var saved = JSON.parse(raw);
+        if (!saved || !Array.isArray(saved.log) || !saved.log.length) return;
+        if (Date.now() - saved.t > 10 * 60 * 1000){
+          // Stale — older than 10 minutes, ignore.
+          try { localStorage.removeItem('splicora_last_upload_log'); } catch(_){}
+          return;
+        }
+        // Wait for DOM to be ready enough for the overlay element
+        function show(){
+          var o = ensureUploadProgressOverlay();
+          var ph = document.getElementById('splicoraUpPhase');
+          var log = document.getElementById('splicoraUpLog');
+          var bar = document.getElementById('splicoraUpBar');
+          var ago = Math.round((Date.now() - saved.t) / 1000);
+          if (ph) ph.textContent = 'Last upload (' + ago + 's ago) — last phase: ' + (saved.phase || '?');
+          if (bar && typeof saved.pct === 'number'){ bar.style.width = Math.max(0, Math.min(100, saved.pct)) + '%'; }
+          if (log){
+            log.innerHTML = '';
+            saved.log.forEach(function(line){ var d = document.createElement('div'); d.textContent = line; log.appendChild(d); });
+            log.scrollTop = log.scrollHeight;
+          }
+          o.style.display = 'block';
+          var dot = document.getElementById('splicoraUpDot');
+          if (dot) dot.style.animation = 'none';  // not live, don't pulse
+        }
+        if (document.body){
+          show();
+        } else {
+          document.addEventListener('DOMContentLoaded', show);
+        }
+      } catch(_){}
+    })();
     function startUploadProgressClock(){
       _upStartT = performance.now();
+      _upPhaseLog = [];  // fresh log per upload attempt
       var elEl = document.getElementById('splicoraUpElapsed');
+      var dot = document.getElementById('splicoraUpDot');
+      // Restore the pulsing animation (the restore-from-storage path
+      // disables it because the log is historical, not live).
+      if (dot) dot.style.animation = 'splicoraUpPulse 1s ease-in-out infinite';
+      var logEl = document.getElementById('splicoraUpLog');
+      if (logEl) logEl.innerHTML = '';
+      var bar = document.getElementById('splicoraUpBar');
+      if (bar) bar.style.width = '0%';
       function tick(){
         if (!elEl) return;
         elEl.textContent = ((performance.now() - _upStartT) / 1000).toFixed(1) + 's';
