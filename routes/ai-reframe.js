@@ -10,6 +10,7 @@ const { requireCredits } = require('../middleware/credits');
 const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 const { featureUsageOps } = require('../db/database');
+const r2 = require('../utils/r2');
 
 function getYoutubeCookiesArgs() {
   const p = process.env.YT_COOKIES_PATH;
@@ -299,6 +300,12 @@ if (!fs.existsSync(uploadDir)) {
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });
 }
+
+// Render bookkeeping (R2 upload + Library row) is handled by the shared
+// utils/renderRecorder.js — see recordRender() calls in /process and
+// /render-grid below. The shared helper writes to user_renders so all
+// tools share the Library at /repurpose/history under the 'Reframed
+// Videos' tab.
 
 // Multer configuration
 const upload = multer({
@@ -1363,6 +1370,24 @@ router.post('/render-grid', requireAuth, async (req, res) => {
       dimensions: `${GRID_OUT_W}x${GRID_OUT_H}`,
       subjects: selected.length,
     });
+
+    // Library — same canonical helper as /process. Backs the grid render
+    // up to R2 and records it under 'Reframed Videos' in /repurpose/history.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'ai-reframe',
+        absPath: outputPath,
+        title: `Multi-Person Grid (${selected.length}-up)`,
+        metadata: {
+          dimensions: `${GRID_OUT_W}x${GRID_OUT_H}`,
+          mode: 'grid',
+          subjects: selected.length,
+          layout: config.layout || null,
+        },
+      }).catch(e => console.warn('[ai-reframe] recordRender (grid):', e && e.message));
+    } catch (recErr) { console.warn('[ai-reframe] recordRender require failed (grid):', recErr.message); }
+
     featureUsageOps.log(req.user.id, 'ai_reframe_grid').catch(() => {});
   } catch (e) {
     console.error('render-grid error:', e);
@@ -2916,7 +2941,9 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
     if (timedOut) return;
 
     // Library — log each successful reframe so it appears under the
-    // 'Reframed Videos' tab. One row per output aspect ratio.
+    // 'Reframed Videos' tab of /repurpose/history. recordRender also
+    // backs the file up to R2, so /ai-reframe/download/:filename can
+    // serve it after Railway wipes /tmp on the next dyno restart.
     try {
       const { recordRender } = require('../utils/renderRecorder');
       results.forEach(function(r) {
@@ -2925,6 +2952,7 @@ router.post('/process', requireAuth, upload.single('videoFile'), async (req, res
           tool: 'ai-reframe',
           absPath: absPath,
           title: 'Reframed ' + r.ratio + ' (' + r.dimensions + ')',
+          sourceUrl: youtubeUrl || null,
           metadata: { ratio: r.ratio, dimensions: r.dimensions, mode: r.mode }
         }).catch(function(e){ console.warn('[ai-reframe] recordRender:', e && e.message); });
       });
@@ -3004,7 +3032,8 @@ router.post('/api/publish-output', requireAuth, async (req, res) => {
 });
 
 // GET - Download processed file
-router.get('/download/:filename', requireAuth, (req, res) => {
+
+router.get('/download/:filename', requireAuth, async (req, res) => {
   try {
     const filename = req.params.filename;
     // Validate filename to prevent directory traversal
@@ -3012,15 +3041,30 @@ router.get('/download/:filename', requireAuth, (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid filename' });
     }
 
+    // 1. Try local /tmp first (fast, no R2 round-trip while the file's still warm)
     const filePath = path.join(outputDir, filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ success: false, message: 'File not found' });
+    if (fs.existsSync(filePath)) {
+      return res.download(filePath);
     }
 
-    res.download(filePath);
+    // 2. Local disk got wiped (Railway dyno restart). Stream from R2 using
+    //    the same key convention the shared renderRecorder writes to:
+    //    'library/<tool>/<filename>'. This is the path that previously
+    //    failed with a JSON 404 ("File not found") even though the user
+    //    successfully rendered the file moments earlier.
+    if (r2.isConfigured()) {
+      const r2Key = 'library/ai-reframe/' + filename;
+      const streamed = await r2.streamObjectToRes(r2Key, res, filename);
+      if (streamed) return;
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: 'File not found. The server may have restarted since it was rendered. Open Library > Reframed Videos or re-render and try again.',
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Download failed' });
+    console.error('[AI Reframe] download error:', error);
+    if (!res.headersSent) res.status(500).json({ success: false, message: 'Download failed' });
   }
 });
 

@@ -933,7 +933,7 @@ ${pageStyles}
       <div class="video-modal-actions" style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
         <span id="brollSelectionCount" style="color:var(--text-muted);font-size:0.85rem;margin-right:auto"></span>
         <button type="button" class="btn-cancel" onclick="closeBrollSelectionModal()">Cancel</button>
-        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">Download Clip with B-Roll</button>
+        <button type="button" class="btn-use-clip" id="brollConfirmBtn" onclick="confirmBrollSelection()">Render Final Video</button>
       </div>
     </div>
   </div>
@@ -1446,6 +1446,7 @@ function openBrollSelectionModal(items) {
       if (hintRaw === p[0] || (!hintRaw && p[0] === 'middle')) o.selected = true;
       posSel.appendChild(o);
     });
+    posSel.addEventListener('change', updateBrollSelectionCount);
     posWrap.appendChild(posSel);
     controls.appendChild(posWrap);
 
@@ -1548,11 +1549,33 @@ function updateBrollSelectionCount() {
   var countEl = document.getElementById('brollSelectionCount');
   var btn = document.getElementById('brollConfirmBtn');
   if (countEl) countEl.textContent = checked + ' of ' + total + ' selected';
+  // Detect duplicate timeline positions among CHECKED scenes
+  var positions = [];
+  document.querySelectorAll('#brollSelectionGrid [data-item-id]').forEach(function (card) {
+    var cb = card.querySelector('.broll-card-checkbox');
+    var posSel = card.querySelector('[data-role="position"]');
+    if (cb && cb.checked && posSel) positions.push(posSel.value);
+  });
+  var dupSet = {};
+  var hasDup = positions.some(function (p) { if (dupSet[p]) return true; dupSet[p] = 1; return false; });
+  var msg = document.getElementById('brollSelectionCount');
   if (btn) {
-    btn.textContent = checked > 0 ? ('Download Clip with B-Roll (' + checked + ')') : 'Download Clip with B-Roll';
-    btn.disabled = checked === 0;
-    btn.style.opacity = checked === 0 ? '0.5' : '1';
-    btn.style.cursor = checked === 0 ? 'not-allowed' : 'pointer';
+    if (checked === 0) {
+      btn.textContent = 'Render Final Video';
+      btn.disabled = true;
+      btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
+      if (msg) msg.style.color = 'var(--text-muted)';
+    } else if (hasDup) {
+      btn.textContent = 'Resolve duplicate positions';
+      btn.disabled = true;
+      btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed';
+      if (msg) { msg.textContent = checked + ' of ' + total + ' selected - duplicate timeline positions, please change one'; msg.style.color = '#EC4899'; }
+    } else {
+      btn.textContent = 'Render Final Video (' + checked + ')';
+      btn.disabled = false;
+      btn.style.opacity = '1'; btn.style.cursor = 'pointer';
+      if (msg) msg.style.color = 'var(--text-muted)';
+    }
   }
 }
 
@@ -1722,7 +1745,7 @@ async function confirmBrollSelection() {
             '<div style="text-align:center;padding:30px 20px;width:100%">' +
               '<div style="font-size:1.05rem;color:var(--text);font-weight:600;margin-bottom:10px">Your clip is ready</div>' +
               '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:18px">' + (Math.round(sd.sizeBytes / 1024 / 1024 * 10) / 10) + ' MB</div>' +
-              '<a href="' + sd.downloadUrl + '" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Clip with B-Roll</a>' +
+              '<a href="' + sd.downloadUrl + '?download=1" download class="btn-use-clip" style="display:inline-block;text-decoration:none;padding:0.9rem 2rem;font-size:0.95rem">Download Final Video</a>' +
               '<div style="margin-top:14px;font-size:0.8rem;color:var(--text-muted)">You can also Cancel to close this modal and run another generation.</div>' +
             '</div>';
         }

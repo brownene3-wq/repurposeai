@@ -2504,12 +2504,27 @@ router.get('/', requireAuth, (req, res) => {
         font-weight: 400;
         margin-left: 0.25rem;
       }
+      .wiz-validation-msg {
+        margin-top: 1rem;
+        padding: 0.65rem 0.9rem 0.65rem 0.9rem;
+        background: rgba(255, 165, 0, 0.08);
+        border: 1px solid rgba(255, 165, 0, 0.28);
+        border-left: 3px solid #ffb84d;
+        color: #ffb84d;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+      .wiz-validation-msg strong {
+        color: #ffd699;
+        font-weight: 700;
+      }
       .wiz-actions {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 0.5rem;
-        margin-top: 1.5rem;
+        margin-top: 0.75rem;
         padding-top: 1rem;
         border-top: 1px solid rgba(255, 255, 255, 0.06);
       }
@@ -2539,14 +2554,22 @@ router.get('/', requireAuth, (req, res) => {
         border-color: transparent;
         color: #fff;
       }
-      .wiz-next:hover:not(:disabled) {
+      .wiz-next:hover:not(:disabled):not(.wiz-next-locked) {
         transform: translateY(-1px);
         box-shadow: 0 4px 12px rgba(108, 58, 237, 0.35);
       }
       .wiz-back:disabled,
-      .wiz-next:disabled {
+      .wiz-next:disabled,
+      .wiz-next.wiz-next-locked {
         opacity: 0.45;
         cursor: not-allowed;
+      }
+      /* wiz-next-locked keeps pointer-events enabled so the click handler
+         still fires and can surface the validation message — unlike a real
+         :disabled button which swallows clicks entirely. */
+      .wiz-next.wiz-next-locked:hover {
+        transform: none;
+        box-shadow: none;
       }
       .wiz-analyze-status {
         display: flex;
@@ -3412,11 +3435,13 @@ ${pageStyles}
               </div>
 
               <!-- ============ WIZARD NAVIGATION ============ -->
+              <div id="wizValidationMsg" class="wiz-validation-msg" style="display:none;" aria-live="polite"></div>
+
               <div class="wiz-actions">
                 <button type="button" class="wiz-back" id="wizBackBtn" disabled>← Back</button>
                 <div class="wiz-actions-right">
                   <button type="button" class="wiz-skip" id="wizSkipBtn" style="display:none;">Skip</button>
-                  <button type="button" class="wiz-next" id="wizNextBtn" disabled>Continue →</button>
+                  <button type="button" class="wiz-next wiz-next-locked" id="wizNextBtn">Continue →</button>
                 </div>
               </div>
 
@@ -3851,6 +3876,8 @@ ${pageStyles}
           document.querySelectorAll('.hc-preset-card').forEach(c => c.classList.remove('active'));
           card.classList.add('active');
         }
+        // Re-run the Continue gate so the validation message updates immediately
+        if (typeof updateNextGating === 'function') updateNextGating();
       });
     });
     // Default: nothing pre-selected. Clear the initial .active class on mrbeast-bold so user makes a real choice.
@@ -3869,6 +3896,7 @@ ${pageStyles}
       if (!file) {
         if (hcFacePreview) hcFacePreview.style.display = 'none';
         if (hcFaceArea) hcFaceArea.style.display = '';
+        if (typeof updateNextGating === 'function') updateNextGating();
         return;
       }
       const reader = new FileReader();
@@ -3879,6 +3907,7 @@ ${pageStyles}
         if (hcFaceArea) hcFaceArea.style.display = 'none';
       };
       reader.readAsDataURL(file);
+      if (typeof updateNextGating === 'function') updateNextGating();
     }
 
     if (hcFaceInput) {
@@ -3974,15 +4003,51 @@ ${pageStyles}
       });
     }
 
-    function checkAIInputs() {
-      // On the wizard, Step 1's Continue button is what we gate on input validity.
-      const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
-      const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
-      const wizNextBtn = document.getElementById('wizNextBtn');
-      if (wizCurrentStep === 1 && wizNextBtn) {
-        wizNextBtn.disabled = !(hasUrl || hasFile);
+    // Central gating logic for the wizard's Continue button.
+    // On Steps 2 & 3 (the skippable steps) and Step 1 (URL/file required),
+    // Continue is "locked" until the user makes a required selection. The
+    // locked state is shown via a CSS class (NOT the HTML disabled attribute)
+    // so the click still fires — that lets us surface the validation message
+    // ONLY when the user actually attempts to click Continue without a
+    // selection. The message stays hidden otherwise. The reason text for the
+    // current step is stashed on nextBtn.dataset.lockReason so the click
+    // handler can render it on demand.
+    function updateNextGating() {
+      const nextBtn = document.getElementById('wizNextBtn');
+      const msg = document.getElementById('wizValidationMsg');
+      if (!nextBtn) return;
+      let locked = false;
+      let reasonHTML = '';
+      if (wizCurrentStep === 1) {
+        const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
+        const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
+        if (!hasUrl && !hasFile) {
+          locked = true;
+          reasonHTML = aiActiveSource === 'url'
+            ? '<strong>Continue is disabled.</strong> Paste a YouTube URL above to start the analysis.'
+            : '<strong>Continue is disabled.</strong> Upload a video file above to start the analysis.';
+        }
+      } else if (wizCurrentStep === 2) {
+        if (!aiActivePreset) {
+          locked = true;
+          reasonHTML = '<strong>Continue is disabled — pick a style preset above</strong> to lock in a look. Want the AI to choose for you? Click <strong>Skip</strong> instead.';
+        }
+      } else if (wizCurrentStep === 3) {
+        if (!aiFaceFile) {
+          locked = true;
+          reasonHTML = '<strong>Continue is disabled — upload a headshot above</strong> to enable face-in-thumbnail layouts. Do not want a face in the result? Click <strong>Skip</strong> instead.';
+        }
       }
+      nextBtn.classList.toggle('wiz-next-locked', locked);
+      // Stash the reason so the click handler can display it on demand
+      nextBtn.dataset.lockReason = locked ? reasonHTML : '';
+      // Always hide the message here — it's only shown after a click attempt
+      // on the locked button (handled in the nextBtn click listener).
+      if (msg) msg.style.display = 'none';
     }
+    // Backwards-compatible alias — existing callers in the URL/file input
+    // change handlers still call checkAIInputs().
+    function checkAIInputs() { updateNextGating(); }
 
     // Cycle progress messages while the backend is working.
     let aiProgressTimer = null;
@@ -4170,12 +4235,10 @@ ${pageStyles}
           nextBtn.innerHTML = 'Continue →';
         }
 
-        // Per-step Next gating
-        if (n === 1) {
-          checkAIInputs(); // gates on hasUrl || hasFile
-        } else {
-          nextBtn.disabled = false;
-        }
+        // Per-step Next gating — updateNextGating handles steps 1, 2, 3
+        // (the gated ones). Steps 4 and 5 fall through with disabled=false
+        // and no validation message.
+        updateNextGating();
 
         // Step 5: build review pane
         if (n === TOTAL_STEPS) {
@@ -4316,6 +4379,22 @@ ${pageStyles}
         showStep(Math.min(wizCurrentStep + 1, TOTAL_STEPS));
       });
       nextBtn.addEventListener('click', () => {
+        // If the Continue button is locked (current step's required selection
+        // hasn't been made), surface the validation message and stop here.
+        // The user must either make a selection or click Skip (on steps 2/3).
+        if (nextBtn.classList.contains('wiz-next-locked')) {
+          const msg = document.getElementById('wizValidationMsg');
+          const reason = nextBtn.dataset.lockReason || '';
+          if (msg && reason) {
+            msg.innerHTML = reason;
+            msg.style.display = 'block';
+            // Smooth-scroll the message into view so it's never hidden below the fold
+            if (typeof msg.scrollIntoView === 'function') {
+              msg.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            }
+          }
+          return;
+        }
         // Step 1: kick off analysis in the background, then immediately advance to Step 2
         if (wizCurrentStep === 1) {
           runAnalysis().catch(() => {});
@@ -5140,6 +5219,25 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     }
 
     featureUsageOps.log(req.user.id, 'ai_thumbnails_ai').catch(() => {});
+
+    // Library — log each AI-generated thumbnail so it shows up under
+    // the 'Thumbnails' tab on /repurpose/history. kind:'image' so the
+    // card grid renders as <img>. Fire-and-forget — failures here
+    // never block the response.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      thumbnails.forEach(function(t) {
+        const absPath = path.join(outputDir, t.filename);
+        recordRender(req.user.id, {
+          tool: 'ai-thumbnail',
+          kind: 'image',
+          absPath: absPath,
+          title: (t.title || 'AI Thumbnail') + (hookTopic ? ' — ' + hookTopic : ''),
+          metadata: { preset: preset.key, aspect: aspect, hookTopic: hookTopic, source: 'ai-generate' }
+        }).catch(function(e){ console.warn('[ai-thumbnail ai-generate] recordRender:', e && e.message); });
+      });
+    } catch (recErr) { console.warn('[ai-thumbnail ai-generate] recordRender require failed:', recErr.message); }
+
     res.json({
       success: true,
       thumbnails,

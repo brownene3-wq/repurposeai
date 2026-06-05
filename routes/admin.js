@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const _largeJson = express.json({ limit: '5mb' });
 const { google } = require('googleapis');
 const { requireAuth } = require('../middleware/auth');
 const { adminOps, blogOps, teamOps, userOps, contactOps, bugReportOps } = require('../db/database');
@@ -1766,8 +1767,6 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
 <html lang="en"><head>
   ${getHeadHTML('YT Cookie Pool – Admin')}
   <style>${getBaseCSS()}${getAdminCSS()}
-    .cookies-wrap{display:flex;gap:0;min-height:100vh}
-    .cookies-main{flex:1;padding:32px 40px;}
     .stat-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
     .stat-pill{background:var(--surface);border:var(--border-subtle);border-radius:12px;padding:12px 18px;display:flex;flex-direction:column;min-width:120px;}
     .stat-pill .v{font-size:1.8rem;font-weight:800;line-height:1;}
@@ -1793,11 +1792,11 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
     .hint code{background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:4px;font-size:.85em;}
   </style>
 </head>
-<body class="dashboard">
+<body>
   ${getThemeToggle()}
-  <div class="cookies-wrap">
+  <div class="dashboard">
     ${getAdminSidebar('cookies')}
-    <main class="cookies-main">
+    <div class="main-content" style="padding:32px 40px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:12px;">
         <div>
           <h1 style="margin:0;font-size:1.6rem;">YouTube Cookie Pool</h1>
@@ -1832,7 +1831,7 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
         </thead>
         <tbody>${rows}</tbody>
       </table>
-    </main>
+    </div>
   </div>
 
   <!-- Add modal -->
@@ -1886,7 +1885,12 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'Failed');
         location.reload();
-      } catch (e) { alert('Add failed: ' + e.message); btn.disabled = false; btn.textContent = 'Add'; }
+      } catch (e) {
+        const msg = e && e.message ? e.message : 'Unknown error';
+        const help = /413|too large|payload/i.test(msg) ? '\n\nThe cookies file may be too big. Make sure you only pasted the cookies content, not the whole file with extra encoding.' : '';
+        alert('Add failed: ' + msg + help);
+        btn.disabled = false; btn.textContent = 'Add';
+      }
     }
     async function submitRefresh() {
       const cookies = document.getElementById('refreshCookies').value.trim();
@@ -1921,7 +1925,7 @@ router.get('/cookies', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/api/cookies', requireAuth, requireAdmin, async (req, res) => {
+router.post('/api/cookies', requireAuth, requireAdmin, _largeJson, async (req, res) => {
   try {
     const { youtubeCookieOps } = require('../db/database');
     const { label, cookies_text, notes } = req.body || {};
@@ -1931,7 +1935,7 @@ router.post('/api/cookies', requireAuth, requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.patch('/api/cookies/:id', requireAuth, requireAdmin, async (req, res) => {
+router.patch('/api/cookies/:id', requireAuth, requireAdmin, _largeJson, async (req, res) => {
   try {
     const { youtubeCookieOps } = require('../db/database');
     const updated = await youtubeCookieOps.update(req.params.id, req.body || {});
@@ -1940,7 +1944,7 @@ router.patch('/api/cookies/:id', requireAuth, requireAdmin, async (req, res) => 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/api/cookies/:id/refresh', requireAuth, requireAdmin, async (req, res) => {
+router.post('/api/cookies/:id/refresh', requireAuth, requireAdmin, _largeJson, async (req, res) => {
   try {
     const { youtubeCookieOps, pool } = require('../db/database');
     const { cookies_text } = req.body || {};
