@@ -2504,12 +2504,27 @@ router.get('/', requireAuth, (req, res) => {
         font-weight: 400;
         margin-left: 0.25rem;
       }
+      .wiz-validation-msg {
+        margin-top: 1rem;
+        padding: 0.65rem 0.9rem 0.65rem 0.9rem;
+        background: rgba(255, 165, 0, 0.08);
+        border: 1px solid rgba(255, 165, 0, 0.28);
+        border-left: 3px solid #ffb84d;
+        color: #ffb84d;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+      .wiz-validation-msg strong {
+        color: #ffd699;
+        font-weight: 700;
+      }
       .wiz-actions {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 0.5rem;
-        margin-top: 1.5rem;
+        margin-top: 0.75rem;
         padding-top: 1rem;
         border-top: 1px solid rgba(255, 255, 255, 0.06);
       }
@@ -3412,6 +3427,8 @@ ${pageStyles}
               </div>
 
               <!-- ============ WIZARD NAVIGATION ============ -->
+              <div id="wizValidationMsg" class="wiz-validation-msg" style="display:none;" aria-live="polite"></div>
+
               <div class="wiz-actions">
                 <button type="button" class="wiz-back" id="wizBackBtn" disabled>← Back</button>
                 <div class="wiz-actions-right">
@@ -3851,6 +3868,8 @@ ${pageStyles}
           document.querySelectorAll('.hc-preset-card').forEach(c => c.classList.remove('active'));
           card.classList.add('active');
         }
+        // Re-run the Continue gate so the validation message updates immediately
+        if (typeof updateNextGating === 'function') updateNextGating();
       });
     });
     // Default: nothing pre-selected. Clear the initial .active class on mrbeast-bold so user makes a real choice.
@@ -3869,6 +3888,7 @@ ${pageStyles}
       if (!file) {
         if (hcFacePreview) hcFacePreview.style.display = 'none';
         if (hcFaceArea) hcFaceArea.style.display = '';
+        if (typeof updateNextGating === 'function') updateNextGating();
         return;
       }
       const reader = new FileReader();
@@ -3879,6 +3899,7 @@ ${pageStyles}
         if (hcFaceArea) hcFaceArea.style.display = 'none';
       };
       reader.readAsDataURL(file);
+      if (typeof updateNextGating === 'function') updateNextGating();
     }
 
     if (hcFaceInput) {
@@ -3974,15 +3995,50 @@ ${pageStyles}
       });
     }
 
-    function checkAIInputs() {
-      // On the wizard, Step 1's Continue button is what we gate on input validity.
-      const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
-      const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
-      const wizNextBtn = document.getElementById('wizNextBtn');
-      if (wizCurrentStep === 1 && wizNextBtn) {
-        wizNextBtn.disabled = !(hasUrl || hasFile);
+    // Central gating logic for the wizard's Continue button.
+    // On Steps 2 & 3 (the skippable steps), Continue is disabled until the
+    // user makes a selection — they have to explicitly click Skip to advance
+    // without picking. A visible validation message explains why Continue is
+    // disabled and points them at Skip.
+    function updateNextGating() {
+      const nextBtn = document.getElementById('wizNextBtn');
+      const msg = document.getElementById('wizValidationMsg');
+      if (!nextBtn) return;
+      let disabled = false;
+      let reasonHTML = '';
+      if (wizCurrentStep === 1) {
+        const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
+        const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
+        if (!hasUrl && !hasFile) {
+          disabled = true;
+          reasonHTML = aiActiveSource === 'url'
+            ? '<strong>Continue is disabled.</strong> Paste a YouTube URL above to start the analysis.'
+            : '<strong>Continue is disabled.</strong> Upload a video file above to start the analysis.';
+        }
+      } else if (wizCurrentStep === 2) {
+        if (!aiActivePreset) {
+          disabled = true;
+          reasonHTML = '<strong>Continue is disabled — pick a style preset above</strong> to lock in a look. Want the AI to choose for you? Click <strong>Skip</strong> instead.';
+        }
+      } else if (wizCurrentStep === 3) {
+        if (!aiFaceFile) {
+          disabled = true;
+          reasonHTML = '<strong>Continue is disabled — upload a headshot above</strong> to enable face-in-thumbnail layouts. Don\'t want a face in the result? Click <strong>Skip</strong> instead.';
+        }
+      }
+      nextBtn.disabled = disabled;
+      if (msg) {
+        if (disabled && reasonHTML) {
+          msg.innerHTML = reasonHTML;
+          msg.style.display = 'block';
+        } else {
+          msg.style.display = 'none';
+        }
       }
     }
+    // Backwards-compatible alias — existing callers in the URL/file input
+    // change handlers still call checkAIInputs().
+    function checkAIInputs() { updateNextGating(); }
 
     // Cycle progress messages while the backend is working.
     let aiProgressTimer = null;
@@ -4170,12 +4226,10 @@ ${pageStyles}
           nextBtn.innerHTML = 'Continue →';
         }
 
-        // Per-step Next gating
-        if (n === 1) {
-          checkAIInputs(); // gates on hasUrl || hasFile
-        } else {
-          nextBtn.disabled = false;
-        }
+        // Per-step Next gating — updateNextGating handles steps 1, 2, 3
+        // (the gated ones). Steps 4 and 5 fall through with disabled=false
+        // and no validation message.
+        updateNextGating();
 
         // Step 5: build review pane
         if (n === TOTAL_STEPS) {
