@@ -2421,6 +2421,48 @@ router.get('/', requireAuth, async (req, res) => {
                   0 6px 24px rgba(108, 58, 237, 0.25);
     }
 
+    /* Browse-more tile — last card in the Presets grid. Dashed border + big
+       '+' marks it as a slot you can fill (universal "add another of these"
+       pattern), not an action that mutates the video. Clicking navigates to
+       /caption-presets so the user can Add more styles to their library. */
+    .browse-styles-tile {
+      background: transparent;
+      border: 2px dashed var(--border-subtle);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 1rem;
+      min-height: 132px; /* matches preview-container 80 + preset-info ~52 */
+      color: var(--text-muted);
+      text-decoration: none;
+      text-align: center;
+    }
+    .browse-styles-tile:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: rgba(108, 58, 237, 0.04);
+      transform: translateY(-3px);
+    }
+    .browse-styles-tile-plus {
+      font-size: 1.8rem;
+      line-height: 1;
+      font-weight: 300;
+    }
+    .browse-styles-tile-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .browse-styles-tile-sub {
+      font-size: 0.7rem;
+      opacity: 0.75;
+    }
+
     /* Info row under the preview. Same padding + typography as the
        /caption-presets page (its h3.preset-name); the only difference here
        is no 'Use Style' button — clicking the whole card selects. */
@@ -2841,16 +2883,11 @@ router.get('/', requireAuth, async (req, res) => {
                 </div>
               </div>
 
-              <!-- Add Captions: jumps the user to the full Caption Styles
-                   catalog (/caption-presets) so they can Add more styles to
-                   their Presets tab. Rendered as a regular <a> so it works
-                   even before a video is uploaded (Generate Captions stays
-                   disabled until upload, but Add Captions is always live). -->
-              <a href="/caption-presets" class="btn-secondary" id="addCaptionsBtn"
-                 style="display: block; width: 100%; margin-bottom: 0.5rem; text-align: center; text-decoration: none;">
-                Add Captions
-              </a>
-
+              <!-- 'Browse Style Library' was previously here as a separate
+                   button — users mistook it for an apply/render action because
+                   of its proximity to Generate Captions. Moved into the Presets
+                   grid as a dashed '+' tile so it visually belongs with the
+                   style cards it manages, not the action buttons. -->
               <div class="actions">
                 <button class="btn-primary" style="flex: 1;" id="generateBtn" onclick="generateCaptions()" disabled>
                   <span class="spinner hidden" id="spinner"></span>
@@ -3018,7 +3055,11 @@ router.get('/', requireAuth, async (req, res) => {
       // may not be added.
       const defaultId = (PRESET_LIBRARY.find(p => p.id === 'karaoke') || PRESET_LIBRARY[0]).id;
 
-      grid.innerHTML = PRESET_LIBRARY.map(p => {
+      // Build all preset cards, then append the Browse-more tile as the
+      // LAST cell so users encounter it after scanning what they already
+      // have (natural exploration pattern). The tile is an <a> so it
+      // works the same as any link — middle-click, cmd-click, etc.
+      const presetCards = PRESET_LIBRARY.map(p => {
         const isStartSelected = p.id === defaultId;
         // Same card structure as /caption-presets: preview-container +
         // preset-info wrapper holding an h3.preset-name. The preview HTML
@@ -3029,6 +3070,16 @@ router.get('/', requireAuth, async (req, res) => {
           + '<div class="preset-info"><h3 class="preset-name">' + p.name + '</h3></div>'
           + '</div>';
       }).join('');
+
+      const browseTile =
+        '<a href="/caption-presets" class="browse-styles-tile" id="browseStylesTile"' +
+        ' title="Open the Caption Styles library to add more presets here">' +
+          '<div class="browse-styles-tile-plus" aria-hidden="true">+</div>' +
+          '<div class="browse-styles-tile-label">Browse Style Library</div>' +
+          '<div class="browse-styles-tile-sub">100+ presets to choose from</div>' +
+        '</a>';
+
+      grid.innerHTML = presetCards + browseTile;
 
       // Default-select the first card on the page
       currentPreset = defaultId;
@@ -3606,14 +3657,18 @@ router.get('/', requireAuth, async (req, res) => {
     }
 
     // ===== Export-section button state machine =====
-    // Three states drive the Apply / Download Video pair so the user always
-    // knows what the next click should be:
-    //   A = pre-generation     -> both look like neutral secondary buttons
+    // Three states drive the Apply / Download Video / Publish trio so the
+    // user always knows what the next click should be:
+    //   A = pre-generation     -> all three look like neutral secondary buttons
     //   B = captions ready     -> Apply becomes the primary purple CTA
-    //   C = post-processing    -> Apply steps back (locked), Download becomes purple
+    //   C = post-processing    -> Apply steps back (locked), Download becomes
+    //                             purple, AND Publish unlocks (a rendered file
+    //                             now exists at generatedVideoPath that the
+    //                             publish modal can hand off to social APIs).
     function setExportButtonState(state) {
       const exportBtn = document.getElementById('exportBtn');
       const downloadBtn = document.getElementById('downloadBtn');
+      const publishBtn = document.getElementById('acPublishBtn');
       if (!exportBtn || !downloadBtn) return;
 
       // Strip any state classes so the new state's class wins regardless of
@@ -3629,12 +3684,25 @@ router.get('/', requireAuth, async (req, res) => {
           downloadBtn.classList.add('btn-secondary');
           exportBtn.disabled = true;
           downloadBtn.disabled = true;
+          if (publishBtn) {
+            publishBtn.disabled = true;
+            publishBtn.style.opacity = '0.5';
+            publishBtn.style.cursor = 'not-allowed';
+          }
           break;
         case 'B': // captions ready, Apply is the next action
           exportBtn.classList.add('btn-primary');
           downloadBtn.classList.add('btn-secondary');
           exportBtn.disabled = false;
           downloadBtn.disabled = true;
+          if (publishBtn) {
+            // A rendered file from a PREVIOUS cycle may still be sitting in
+            // generatedVideoPath — but that's stale now that the user is
+            // re-applying. Lock publish until the new Apply completes.
+            publishBtn.disabled = true;
+            publishBtn.style.opacity = '0.5';
+            publishBtn.style.cursor = 'not-allowed';
+          }
           break;
         case 'C': // export complete, Download is the next action
           exportBtn.classList.add('btn-state-c');
@@ -3645,6 +3713,14 @@ router.get('/', requireAuth, async (req, res) => {
           // click cant fire it.
           exportBtn.disabled = true;
           downloadBtn.disabled = false;
+          // Publish unlocks the moment Apply renders a file — the publish
+          // modal pulls from generatedVideoPath, which is now populated, so
+          // the user can publish immediately without having to Download first.
+          if (publishBtn) {
+            publishBtn.disabled = false;
+            publishBtn.style.opacity = '';
+            publishBtn.style.cursor = '';
+          }
           break;
       }
     }
