@@ -2286,36 +2286,61 @@ function showToast(message, type = 'success') {
     });
 
     async function uploadVideo(file) {
+      // Task #149 — Set the V10 applyAll pause flag BEFORE any DOM
+      // mutations so the MutationObserver fires for the upload-state
+      // UI changes (uploadBtn text + disabled, uploadZone style) never
+      // see those mutations land while applyAll is unguarded. Previous
+      // ordering meant 3-4 mutations fired before the flag was set,
+      // each scheduling a debounced applyAll pass that the guard
+      // couldn't catch. Also switched the network call from
+      // fetch + FormData to XMLHttpRequest with explicit upload.
+      // progress events: XHR (a) gives us real bytes-sent feedback to
+      // surface as a visible progress bar, (b) has a hard timeout so a
+      // hung server can't leave the editor stuck forever, and (c)
+      // routes through a code path with simpler main-thread cost than
+      // Fetch's body-stream pipeline on large multipart bodies.
+      try { window.__splicoraUploading = true; } catch(_){}
+
       var uploadBtn = document.querySelector('.upload-button');
-      var originalText = uploadBtn.textContent;
-      uploadBtn.textContent = 'Uploading...';
-      uploadBtn.disabled = true;
+      var originalText = uploadBtn ? uploadBtn.textContent : 'Select Video';
+      if (uploadBtn){
+        uploadBtn.textContent = 'Uploading 0%';
+        uploadBtn.disabled = true;
+      }
       uploadZone.style.opacity = '0.6';
       uploadZone.style.pointerEvents = 'none';
-
-      // Task #148 — Signal to v10-editor-redesign.js's applyAll() that
-      // a multipart upload is in flight, so its periodic media-library /
-      // right-panel re-patching pauses and isn't competing with Chrome's
-      // multipart serializer for main-thread time. The flag is cleared
-      // in the finally block, so this is automatic on success or error.
-      try { window.__splicoraUploading = true; } catch(_){}
 
       const formData = new FormData();
       formData.append('video', file);
 
       try {
-        const response = await fetch('/video-editor/upload', {
-          method: 'POST',
-          body: formData
+        const data = await new Promise(function(resolve, reject){
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', '/video-editor/upload', true);
+          xhr.timeout = 180000;  // 3 min hard cap; longer than any reasonable upload
+          xhr.upload.addEventListener('progress', function(e){
+            if (!e.lengthComputable || !uploadBtn) return;
+            var pct = Math.floor((e.loaded / e.total) * 100);
+            uploadBtn.textContent = 'Uploading ' + pct + '%';
+          });
+          xhr.addEventListener('load', function(){
+            if (xhr.status >= 200 && xhr.status < 300){
+              try { resolve(JSON.parse(xhr.responseText)); }
+              catch(e){ reject(new Error('Upload returned invalid JSON')); }
+            } else {
+              var msg = 'Upload failed (status ' + xhr.status + ')';
+              try {
+                var err = JSON.parse(xhr.responseText);
+                if (err && err.error) msg = err.error;
+              } catch(_){}
+              reject(new Error(msg));
+            }
+          });
+          xhr.addEventListener('error', function(){ reject(new Error('Network error during upload')); });
+          xhr.addEventListener('timeout', function(){ reject(new Error('Upload timed out after 3 minutes')); });
+          xhr.addEventListener('abort', function(){ reject(new Error('Upload aborted')); });
+          xhr.send(formData);
         });
-
-        if (!response.ok) {
-          var errData = {};
-          try { errData = await response.json(); } catch(e) {}
-          throw new Error(errData.error || 'Upload failed (status ' + response.status + ')');
-        }
-
-        const data = await response.json();
         currentVideoFile = data;
         originalVideoFile = { ...data }; // Save original for speed resets
         try { window.currentVideoFile = data; } catch(_){}
@@ -2399,14 +2424,12 @@ function showToast(message, type = 'success') {
         // button wasn't visible, but the moment the user deleted the
         // V1 clip and the zone reappeared, the button was unclickable
         // and clicking it did nothing.
-        uploadBtn.textContent = originalText;
-        uploadBtn.disabled = false;
+        if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '';
         uploadZone.style.pointerEvents = '';
         showToast('Video uploaded successfully!', 'success');
       } catch (error) {
-        uploadBtn.textContent = originalText;
-        uploadBtn.disabled = false;
+        if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '1';
         uploadZone.style.pointerEvents = 'auto';
         showToast('Failed to upload video: ' + error.message, 'error');
