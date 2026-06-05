@@ -429,7 +429,7 @@ ${pageStyles}
               <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px"></span>
               <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
             </div>
-            <button type="button" id="heroImportBtn" onclick="document.getElementById('youtubeUrl').focus()" style="padding:9px 18px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;white-space:nowrap">▶ Import</button>
+            <button type="button" id="heroImportBtn" onclick="importUrlAndGenerate()" style="padding:9px 18px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;white-space:nowrap">▶ Import</button>
           </div>
         </div>
 
@@ -590,6 +590,31 @@ ${pageStyles}
       } else if (mode === 'text') {
         textPanel.style.display = 'block';
         textBtn.classList.add('active');
+      }
+    }
+
+    // The ▶ Import button used to just .focus() the URL field, which felt
+    // like a no-op to users. It now validates that a URL is present and
+    // triggers the same form-submit flow as Generate AI Hook (which runs
+    // the full validation for Hook Style / Voice / Platform and surfaces
+    // toast errors for anything still missing).
+    function importUrlAndGenerate() {
+      // Force URL mode in case the user is currently in a different panel.
+      setInputMode('youtube');
+      var urlInput = document.getElementById('youtubeUrl');
+      var url = (urlInput.value || '').trim();
+      if (!url) {
+        urlInput.focus();
+        showToast('Paste a YouTube / Rumble / Twitch / Zoom link first');
+        return;
+      }
+      var form = document.getElementById('hookForm');
+      if (form && typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else if (form) {
+        // Fallback for older browsers — dispatch a synthetic submit so the
+        // existing submit handler still runs.
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
       }
     }
 
