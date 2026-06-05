@@ -3528,6 +3528,37 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
   }
 });
 
+// GET /upload-source/:analysisId
+// Streams the raw uploaded source file with HTTP Range support so the
+// browser's <video> element can seek into it. Used by the moment
+// preview modal: instead of asking the server to ffmpeg-trim a clip
+// per moment (slow + breaks on audio-only edge cases), we serve the
+// whole file and let the client seek to startSec on loadedmetadata
+// and pause when currentTime hits endSec. Express's res.sendFile()
+// already implements Range / 206 responses, so this just needs to
+// resolve the source path and set MIME headers.
+router.get('/upload-source/:analysisId', requireAuth, async (req, res) => {
+  try {
+    const analysisId = req.params.analysisId;
+    const analysis = await shortsOps.getById(analysisId);
+    if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
+    if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
+    const sourcePath = findUploadedSourcePath(analysisId);
+    if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
+    // Best-effort MIME hint based on extension. Browsers tolerate
+    // 'video/mp4' even for .mov containers since they're H.264 internally.
+    const ext = path.extname(sourcePath).toLowerCase().replace('.', '');
+    const mime = ({ mp4: 'video/mp4', mov: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska', m4v: 'video/mp4' })[ext] || 'video/mp4';
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Accept-Ranges', 'bytes');
+    return res.sendFile(sourcePath);
+  } catch (err) {
+    console.error('upload-source error:', err);
+    return res.status(500).end();
+  }
+});
+
 // GET /upload-moment-thumbnail/:analysisId/:momentIdx
 // JPEG frame at the MIDDLE of a moment's [start, end] window, used
 // as the per-moment card thumbnail. Same DB → disk → live-extract
@@ -9591,19 +9622,51 @@ ${paginationHtml}
       var s = Math.max(0, Math.floor(Number(startSec) || 0));
       var e = Math.max(s + 1, Math.floor(Number(endSec) || (s + 30)));
       if (sourceType === 'upload') {
-        // Uploaded video: use the trimmed MP4 endpoint.
+        // Uploaded video: stream the raw source and seek client-side.
+        // The previous approach (ffmpeg-trim per moment via /moment-
+        // preview/:id/:idx) was slow and crashed on audio-only sources;
+        // /upload-source/:id streams the file with Range support so
+        // the browser can seek to startSec on loadedmetadata and we
+        // pause at endSec via a timeupdate listener.
         if (iframe) { iframe.src = ''; iframe.style.display = 'none'; }
         if (video) {
+          // Clear any previous listeners by cloning the element. Cheap
+          // and avoids leaks when the user opens multiple previews in
+          // the same session.
+          var fresh = video.cloneNode(false);
+          video.parentNode.replaceChild(fresh, video);
+          video = fresh;
           video.style.display = 'block';
-          video.src = '/shorts/moment-preview/' + encodeURIComponent(videoIdOrAnalysisId) +
-                      '/' + encodeURIComponent(momentIdx);
-          video.currentTime = 0;
-          var p = video.play();
-          if (p && typeof p.catch === 'function') p.catch(function(){});
+          video.src = '/shorts/upload-source/' + encodeURIComponent(videoIdOrAnalysisId);
+          video.dataset.endSec = String(e);
+          video.dataset.startSec = String(s);
+          // Seek to startSec once the metadata is in.
+          video.addEventListener('loadedmetadata', function() {
+            try { video.currentTime = s; } catch (_) {}
+          }, { once: true });
+          // Stop the moment at endSec — same bounding as YouTube's
+          // start=/end= iframe params.
+          video.addEventListener('timeupdate', function() {
+            var endAt = parseFloat(video.dataset.endSec || '0');
+            if (endAt > 0 && video.currentTime >= endAt) {
+              try { video.pause(); } catch (_) {}
+            }
+          });
+          // Autoplay once enough data is buffered.
+          video.addEventListener('canplay', function() {
+            var p = video.play();
+            if (p && typeof p.catch === 'function') p.catch(function(){});
+          }, { once: true });
+          // Surface load failures so the user isn't staring at a blank
+          // player (audio-only source, missing file, network error).
+          video.addEventListener('error', function() {
+            console.warn('moment preview: failed to load upload source for', videoIdOrAnalysisId);
+            if (titleEl) titleEl.textContent = (title || 'Moment preview') + ' — source unavailable';
+          }, { once: true });
         }
       } else {
         // YouTube: use the embed iframe with start=/end= bounding.
-        if (video) { try { video.pause(); } catch (_) {} video.src = ''; video.style.display = 'none'; }
+        if (video) { try { video.pause(); } catch (_) {} video.removeAttribute('src'); video.load(); video.style.display = 'none'; }
         if (iframe) {
           iframe.style.display = 'block';
           iframe.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoIdOrAnalysisId)
@@ -9624,7 +9687,12 @@ ${paginationHtml}
       var iframe = document.getElementById('momentPreviewIframe');
       var video = document.getElementById('momentPreviewVideo');
       if (iframe) iframe.src = '';
-      if (video) { try { video.pause(); } catch (_) {} video.src = ''; video.style.display = 'none'; }
+      if (video) {
+        try { video.pause(); } catch (_) {}
+        video.removeAttribute('src');
+        try { video.load(); } catch (_) {}
+        video.style.display = 'none';
+      }
       if (modal) modal.style.display = 'none';
     }
 
@@ -9968,9 +10036,12 @@ ${paginationHtml}
           // shared #momentPreviewModal which plays either a YouTube
           // embed (YT) or the local trimmed MP4 (upload).
           const isUploadAnalysis = (analysis.video_url || '').indexOf('upload://') === 0;
+          // For uploads, every moment thumbnail uses the SAME image as
+          // the main analysis card (Albert's spec). Per-moment frame
+          // extraction is gone — they all point at /upload-thumbnail/<id>.
           const _thumbSrc = videoId
             ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
-            : (isUploadAnalysis ? \`/shorts/upload-moment-thumbnail/\${id}/\${idx}\` : '');
+            : (isUploadAnalysis ? \`/shorts/upload-thumbnail/\${id}\` : '');
           const _safeRange = (moment.timeRange || '').replace(/'/g, "\\\\'");
           const _safeTitle = (moment.title || 'Moment').replace(/'/g, "\\\\'");
           const _previewArgs = videoId
