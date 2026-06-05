@@ -9825,6 +9825,11 @@ router.get('/download/:filename', requireAuth, (req, res) => {
 
     const stat = fs.statSync(filePath);
     const range = req.headers.range;
+    // Optional ?download=1 → force download instead of inline playback.
+    const forceDownload = String(req.query.download || '') === '1';
+    const dispositionHeader = forceDownload
+      ? { 'Content-Disposition': 'attachment; filename="' + filename.replace(/[^A-Za-z0-9_.\-]/g, '_') + '"' }
+      : {};
 
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
@@ -9832,19 +9837,19 @@ router.get('/download/:filename', requireAuth, (req, res) => {
       const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
       const chunkSize = (end - start) + 1;
       const stream = fs.createReadStream(filePath, { start, end });
-      res.writeHead(206, {
+      res.writeHead(206, Object.assign({
         'Content-Range': 'bytes ' + start + '-' + end + '/' + stat.size,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': contentType
-      });
+      }, dispositionHeader));
       stream.pipe(res);
     } else {
-      res.writeHead(200, {
+      res.writeHead(200, Object.assign({
         'Content-Length': stat.size,
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes'
-      });
+      }, dispositionHeader));
       fs.createReadStream(filePath).pipe(res);
     }
   } catch (error) {
