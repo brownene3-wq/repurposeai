@@ -3716,10 +3716,12 @@ router.get('/', requireAuth, async (req, res) => {
           // Publish unlocks the moment Apply renders a file — the publish
           // modal pulls from generatedVideoPath, which is now populated, so
           // the user can publish immediately without having to Download first.
+          // Set opacity/cursor explicitly (rather than clearing to '') so the
+          // inline values left behind by State A/B are unambiguously overridden.
           if (publishBtn) {
             publishBtn.disabled = false;
-            publishBtn.style.opacity = '';
-            publishBtn.style.cursor = '';
+            publishBtn.style.opacity = '1';
+            publishBtn.style.cursor = 'pointer';
           }
           break;
       }
