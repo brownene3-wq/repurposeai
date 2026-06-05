@@ -1684,7 +1684,22 @@ async function renderEditor(req, res) {
   </div>
 
   <script>
-    (function(){var orig=document.getElementById.bind(document);var noop={disabled:false,value:'',textContent:'',innerHTML:'',src:'',checked:false,selectedIndex:0,style:{},classList:{add:function(){},remove:function(){},toggle:function(){},contains:function(){return false}},addEventListener:function(){},removeEventListener:function(){},appendChild:function(){return this},removeChild:function(){},insertBefore:function(){},setAttribute:function(){},getAttribute:function(){return null},querySelector:function(){return null},querySelectorAll:function(){return[]},focus:function(){},blur:function(){},click:function(){},play:function(){return Promise.resolve()},pause:function(){},remove:function(){},replaceWith:function(){},cloneNode:function(){return this},contains:function(){return false},closest:function(){return null},matches:function(){return false},dispatchEvent:function(){return true},hasAttribute:function(){return false},removeAttribute:function(){},hasChildNodes:function(){return false},getBoundingClientRect:function(){return{top:0,left:0,right:0,bottom:0,width:0,height:0,x:0,y:0}},offsetWidth:0,offsetHeight:0,offsetTop:0,offsetLeft:0,scrollWidth:0,scrollHeight:0,children:[],childNodes:[],parentNode:null,parentElement:null,nextSibling:null,previousSibling:null,firstChild:null,lastChild:null,dataset:{},tagName:'DIV',nodeName:'DIV',nodeType:1};noop.style=new Proxy({},{set:function(){return true},get:function(){return''}});document.getElementById=function(id){return orig(id)||noop}})();
+    /* Task #145 — REMOVED the "safe getElementById noop" monkey-patch
+       that previously wrapped document.getElementById to return a fake
+       DIV-shaped object instead of null when an id wasn't found. The
+       patch was added April 2026 to silence null-reference errors but
+       it broke virtually anything that needed a real Node — most
+       visibly MutationObserver.observe() in v10-editor-redesign.js,
+       which threw "parameter 1 is not of type 'Node'" repeatedly and
+       prevented sidebar gating + observer-driven upload-state syncing
+       from working. The patch lived inside this inline script, which
+       was dead from Task #140 until Task #142 (root-cause regex fix)
+       reactivated the whole block. Now that the script runs end-to-
+       end, this monkey-patch was actively breaking the upload flow
+       and freezing the page after uploads — the actual cause of the
+       "Video Editor became unresponsive" report. document.getElementById
+       is restored to its native behavior; the surrounding code already
+       null-checks every lookup ( "if (e) e.disabled=false;" pattern). */
 
     // ═══ CINEMA SUITE PRO: Move timeline to grid root ═══
     (function(){
@@ -2270,47 +2285,190 @@ function showToast(message, type = 'success') {
       e.preventDefault();
     });
 
+    // Task #150 — Phased upload progress overlay. Stays pinned to the
+    // top-center of the viewport and shows: current phase label,
+    // optional network percent, elapsed seconds (driven by rAF — will
+    // visibly freeze when the main thread is stuck), and a pulsing
+    // dot (driven by CSS animation — also freezes with the main
+    // thread). The whole point is that if Chrome's "Page
+    // Unresponsive" dialog appears, the LAST phase label visible in
+    // the overlay tells us exactly which step of uploadVideo() locked
+    // the renderer. A screenshot pinpoints the freeze location.
+    function ensureUploadProgressOverlay(){
+      var o = document.getElementById('splicoraUploadProgress');
+      if (o) return o;
+      o = document.createElement('div');
+      o.id = 'splicoraUploadProgress';
+      o.style.cssText = [
+        'position:fixed','top:20px','left:50%','transform:translateX(-50%)',
+        'z-index:99999','min-width:420px','max-width:640px',
+        'background:linear-gradient(135deg,#1a0c2e,#2b1755)',
+        'border:1px solid rgba(124,58,237,.5)','border-radius:12px',
+        'padding:14px 18px','box-shadow:0 8px 32px rgba(0,0,0,.6)',
+        'color:#fff','font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif',
+        'font-size:13px','display:none','user-select:none'
+      ].join(';');
+      o.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+          '<span id="splicoraUpDot" style="width:10px;height:10px;border-radius:50%;background:#a78bfa;flex-shrink:0;animation:splicoraUpPulse 1s ease-in-out infinite"></span>' +
+          '<span id="splicoraUpPhase" style="flex:1;font-weight:600;letter-spacing:.2px">Starting upload…</span>' +
+          '<span id="splicoraUpElapsed" style="font-variant-numeric:tabular-nums;color:#c4b5fd;font-size:12px">0.0s</span>' +
+        '</div>' +
+        '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">' +
+          '<div id="splicoraUpBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width .2s linear;border-radius:3px"></div>' +
+        '</div>' +
+        '<div id="splicoraUpLog" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.55);max-height:90px;overflow-y:auto;line-height:1.5"></div>';
+      var kf = document.getElementById('splicoraUpKF');
+      if (!kf){
+        kf = document.createElement('style');
+        kf.id = 'splicoraUpKF';
+        kf.textContent = '@keyframes splicoraUpPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.5}}';
+        document.head.appendChild(kf);
+      }
+      document.body.appendChild(o);
+      return o;
+    }
+
+    var _upStartT = 0;
+    var _upRAF = null;
+    function setUploadPhase(label, pct){
+      var o = ensureUploadProgressOverlay();
+      o.style.display = 'block';
+      var ph = document.getElementById('splicoraUpPhase');
+      var bar = document.getElementById('splicoraUpBar');
+      var log = document.getElementById('splicoraUpLog');
+      if (ph && label) ph.textContent = label;
+      if (typeof pct === 'number' && bar){
+        bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      }
+      if (log && label){
+        var elapsed = ((performance.now() - _upStartT) / 1000).toFixed(2);
+        var line = document.createElement('div');
+        line.textContent = '[' + elapsed + 's] ' + label;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+      }
+    }
+    function startUploadProgressClock(){
+      _upStartT = performance.now();
+      var elEl = document.getElementById('splicoraUpElapsed');
+      function tick(){
+        if (!elEl) return;
+        elEl.textContent = ((performance.now() - _upStartT) / 1000).toFixed(1) + 's';
+        _upRAF = requestAnimationFrame(tick);
+      }
+      tick();
+    }
+    function stopUploadProgressOverlay(opts){
+      if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
+      var o = document.getElementById('splicoraUploadProgress');
+      if (!o) return;
+      if (opts && opts.keepVisibleMs){
+        setTimeout(function(){ if (o) o.style.display = 'none'; }, opts.keepVisibleMs);
+      } else {
+        o.style.display = 'none';
+      }
+    }
+
     async function uploadVideo(file) {
+      // Task #149 — Set the V10 applyAll pause flag BEFORE any DOM
+      // mutations so the MutationObserver fires for the upload-state
+      // UI changes (uploadBtn text + disabled, uploadZone style) never
+      // see those mutations land while applyAll is unguarded. Previous
+      // ordering meant 3-4 mutations fired before the flag was set,
+      // each scheduling a debounced applyAll pass that the guard
+      // couldn't catch. Also switched the network call from
+      // fetch + FormData to XMLHttpRequest with explicit upload.
+      // progress events: XHR (a) gives us real bytes-sent feedback to
+      // surface as a visible progress bar, (b) has a hard timeout so a
+      // hung server can't leave the editor stuck forever, and (c)
+      // routes through a code path with simpler main-thread cost than
+      // Fetch's body-stream pipeline on large multipart bodies.
+      try { window.__splicoraUploading = true; } catch(_){}
+
+      ensureUploadProgressOverlay();
+      startUploadProgressClock();
+      setUploadPhase('1. Preparing upload', 0);
+
       var uploadBtn = document.querySelector('.upload-button');
-      var originalText = uploadBtn.textContent;
-      uploadBtn.textContent = 'Uploading...';
-      uploadBtn.disabled = true;
+      var originalText = uploadBtn ? uploadBtn.textContent : 'Select Video';
+      if (uploadBtn){
+        uploadBtn.textContent = 'Uploading 0%';
+        uploadBtn.disabled = true;
+      }
       uploadZone.style.opacity = '0.6';
       uploadZone.style.pointerEvents = 'none';
 
       const formData = new FormData();
       formData.append('video', file);
 
+      setUploadPhase('2. Sending file to server', 0);
+
       try {
-        const response = await fetch('/video-editor/upload', {
-          method: 'POST',
-          body: formData
+        const data = await new Promise(function(resolve, reject){
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', '/video-editor/upload', true);
+          xhr.timeout = 180000;  // 3 min hard cap; longer than any reasonable upload
+          xhr.upload.addEventListener('progress', function(e){
+            if (!e.lengthComputable || !uploadBtn) return;
+            var pct = Math.floor((e.loaded / e.total) * 100);
+            uploadBtn.textContent = 'Uploading ' + pct + '%';
+            setUploadPhase('2. Uploading bytes (' + pct + '%)', pct);
+          });
+          xhr.upload.addEventListener('load', function(){
+            setUploadPhase('3. Bytes sent — waiting on server', 100);
+          });
+          xhr.addEventListener('load', function(){
+            setUploadPhase('4. Server response received', 100);
+            if (xhr.status >= 200 && xhr.status < 300){
+              try { resolve(JSON.parse(xhr.responseText)); }
+              catch(e){ reject(new Error('Upload returned invalid JSON')); }
+            } else {
+              var msg = 'Upload failed (status ' + xhr.status + ')';
+              try {
+                var err = JSON.parse(xhr.responseText);
+                if (err && err.error) msg = err.error;
+              } catch(_){}
+              reject(new Error(msg));
+            }
+          });
+          xhr.addEventListener('error', function(){ reject(new Error('Network error during upload')); });
+          xhr.addEventListener('timeout', function(){ reject(new Error('Upload timed out after 3 minutes')); });
+          xhr.addEventListener('abort', function(){ reject(new Error('Upload aborted')); });
+          xhr.send(formData);
         });
-
-        if (!response.ok) {
-          var errData = {};
-          try { errData = await response.json(); } catch(e) {}
-          throw new Error(errData.error || 'Upload failed (status ' + response.status + ')');
-        }
-
-        const data = await response.json();
+        setUploadPhase('5. Storing video metadata');
         currentVideoFile = data;
         originalVideoFile = { ...data }; // Save original for speed resets
         try { window.currentVideoFile = data; } catch(_){}
         videoDuration = data.duration || 0;
+        setUploadPhase('6. Initializing timeline');
         initTimeline();
 
+        setUploadPhase('7. Setting video player source');
         videoPlayer.src = data.serveUrl;
-        videoPlayer?.addEventListener('loadedmetadata', function() {
-            // Show filmstrip when video loads
-            if (typeof showFilmstrip === "function") showFilmstrip(this.duration);
-
-          if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
-            videoDuration = videoPlayer?.duration;
+        // Task #146 — Single-fire loadedmetadata listener (was accumulating
+        // one per upload, leaking handlers and re-running showFilmstrip
+        // N times). showFilmstrip is gated on a flag so the legacy
+        // hidden #fsThumbs extractor only runs once per video too — it
+        // was previously spawning a duplicate <video> element loading the
+        // same server URL alongside the main player + V10's
+        // captureVideoFrames + buildClipFilmstrip's probe, four video
+        // decoders racing on the same source. With the legacy strip
+        // hidden (.filmstrip-wrap{display:none!important} in the CINEMA
+        // SUITE block), nothing visible depends on this work, so we just
+        // skip it on uploads — the clip-level filmstrip on the V1 clip
+        // gives the user the actual visible frame preview.
+        videoPlayer?.addEventListener('loadedmetadata', function onMeta(){
+          videoPlayer.removeEventListener('loadedmetadata', onMeta);
+          if (videoPlayer?.duration && videoPlayer?.duration !== Infinity){
+            videoDuration = videoPlayer.duration;
           }
         });
+        setUploadPhase('8. Hiding upload zone, showing preview');
         uploadZone.classList.add('has-video');
         videoPreviewArea.classList.add('has-video');
+        setUploadPhase('9. Enabling sidebar tool buttons');
         (function(){var e=document.getElementById('trimButton');if(e)e.disabled=false;})();
         (function(){var e=document.getElementById('exportButton');if(e)e.disabled=false;})();
         (function(){var e=document.getElementById('splitButton');if(e)e.disabled=false;})();
@@ -2335,6 +2493,7 @@ function showToast(message, type = 'success') {
         // Add the uploaded file to the Media library ("All" + correct type
         // tab) as a raw asset. Do NOT create a Draft here — Media and
         // Projects are strictly separate.
+        setUploadPhase('10. Adding file to Media library');
         try {
           if (typeof window.addUploadedMediaItem === 'function') {
             window.addUploadedMediaItem({
@@ -2349,6 +2508,7 @@ function showToast(message, type = 'success') {
         // ALSO auto-place the uploaded video on V1, appended after any
         // existing clips. addClipToTimeline uses findRightmostClipEnd so
         // new clips sit back-to-back with whatever's already on the track.
+        setUploadPhase('11. Adding clip to V1 timeline');
         try {
           if (typeof window.addClipToTimeline === 'function') {
             window.addClipToTimeline(
@@ -2359,6 +2519,7 @@ function showToast(message, type = 'success') {
             );
           }
         } catch (_) {}
+        setUploadPhase('12. Resetting upload state');
 
         // Task #141 — Reset button + zone state on SUCCESS too, not
         // just in the catch. The success path used to leave
@@ -2367,17 +2528,25 @@ function showToast(message, type = 'success') {
         // button wasn't visible, but the moment the user deleted the
         // V1 clip and the zone reappeared, the button was unclickable
         // and clicking it did nothing.
-        uploadBtn.textContent = originalText;
-        uploadBtn.disabled = false;
+        if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '';
         uploadZone.style.pointerEvents = '';
+        setUploadPhase('13. Done — upload complete', 100);
         showToast('Video uploaded successfully!', 'success');
+        stopUploadProgressOverlay({ keepVisibleMs: 4000 });
       } catch (error) {
-        uploadBtn.textContent = originalText;
-        uploadBtn.disabled = false;
+        if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '1';
         uploadZone.style.pointerEvents = 'auto';
+        setUploadPhase('ERROR: ' + (error && error.message || 'unknown'));
         showToast('Failed to upload video: ' + error.message, 'error');
+        stopUploadProgressOverlay({ keepVisibleMs: 8000 });
+      } finally {
+        // Task #148 — Clear the V10 applyAll pause flag on BOTH success
+        // and failure paths so the editor's normal patch cadence resumes
+        // (otherwise a failed upload would leave the editor in a
+        // perpetually-skipped state).
+        try { window.__splicoraUploading = false; } catch(_){}
       }
     }
 
@@ -7271,6 +7440,41 @@ setTimeout(function sidebarLayoutFix(){
 }, 2000);
 
 
+    // ═══ AI HOOK PRELOAD ═══
+    // When the user clicks "Edit in Video Editor" on the AI Hook page, we
+    // arrive here with ?hookPreload=<filename>&hookTitle=<title>&hookDuration=<sec>.
+    // If no server-side __INITIAL_PROJECT__ was injected, synthesize one
+    // from the URL params so the bootFromProject IIFE below picks it up
+    // and drops the hook video onto the timeline + program monitor.
+    (function preloadFromHookParams() {
+      try {
+        if (window.__INITIAL_PROJECT__) return;
+        var qp = new URLSearchParams(window.location.search || '');
+        var preload = qp.get('hookPreload');
+        if (!preload) return;
+        // Strip any path traversal — only allow a plain basename.
+        // NOTE: this script block lives inside a Node template literal, so
+        // the backslash in '\\' must be double-escaped to survive intact
+        // in the served HTML (otherwise we'd ship '.split('\').pop()' which
+        // is an unterminated string literal and breaks the whole script).
+        var safeName = String(preload).split('/').pop().split('\\\\').pop();
+        if (!safeName) return;
+        var title = qp.get('hookTitle') || 'AI Hook';
+        var durRaw = parseFloat(qp.get('hookDuration') || '5');
+        var dur = isFinite(durRaw) && durRaw > 0 ? Math.min(60, durRaw) : 5;
+        window.__INITIAL_PROJECT__ = {
+          id: null,
+          name: title.slice(0, 80),
+          primary: {
+            filename: safeName,
+            duration: dur,
+            serveUrl: '/video-editor/download/' + encodeURIComponent(safeName)
+          },
+          broll: []
+        };
+      } catch (e) { console.warn('hookPreload bootstrap failed:', e); }
+    })();
+
     // ═══ INITIAL PROJECT BOOT ═══
     // If the user was redirected here from the AI B-Roll ingestion flow,
     // window.__INITIAL_PROJECT__ is injected by the /:projectId route and
@@ -9729,6 +9933,11 @@ router.get('/download/:filename', requireAuth, (req, res) => {
 
     const stat = fs.statSync(filePath);
     const range = req.headers.range;
+    // Optional ?download=1 → force download instead of inline playback.
+    const forceDownload = String(req.query.download || '') === '1';
+    const dispositionHeader = forceDownload
+      ? { 'Content-Disposition': 'attachment; filename="' + filename.replace(/[^A-Za-z0-9_.\-]/g, '_') + '"' }
+      : {};
 
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
@@ -9736,19 +9945,19 @@ router.get('/download/:filename', requireAuth, (req, res) => {
       const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
       const chunkSize = (end - start) + 1;
       const stream = fs.createReadStream(filePath, { start, end });
-      res.writeHead(206, {
+      res.writeHead(206, Object.assign({
         'Content-Range': 'bytes ' + start + '-' + end + '/' + stat.size,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': contentType
-      });
+      }, dispositionHeader));
       stream.pipe(res);
     } else {
-      res.writeHead(200, {
+      res.writeHead(200, Object.assign({
         'Content-Length': stat.size,
         'Content-Type': contentType,
         'Accept-Ranges': 'bytes'
-      });
+      }, dispositionHeader));
       fs.createReadStream(filePath).pipe(res);
     }
   } catch (error) {

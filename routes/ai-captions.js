@@ -2421,6 +2421,48 @@ router.get('/', requireAuth, async (req, res) => {
                   0 6px 24px rgba(108, 58, 237, 0.25);
     }
 
+    /* Browse-more tile — last card in the Presets grid. Dashed border + big
+       '+' marks it as a slot you can fill (universal "add another of these"
+       pattern), not an action that mutates the video. Clicking navigates to
+       /caption-presets so the user can Add more styles to their library. */
+    .browse-styles-tile {
+      background: transparent;
+      border: 2px dashed var(--border-subtle);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 1rem;
+      min-height: 132px; /* matches preview-container 80 + preset-info ~52 */
+      color: var(--text-muted);
+      text-decoration: none;
+      text-align: center;
+    }
+    .browse-styles-tile:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: rgba(108, 58, 237, 0.04);
+      transform: translateY(-3px);
+    }
+    .browse-styles-tile-plus {
+      font-size: 1.8rem;
+      line-height: 1;
+      font-weight: 300;
+    }
+    .browse-styles-tile-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .browse-styles-tile-sub {
+      font-size: 0.7rem;
+      opacity: 0.75;
+    }
+
     /* Info row under the preview. Same padding + typography as the
        /caption-presets page (its h3.preset-name); the only difference here
        is no 'Use Style' button — clicking the whole card selects. */
@@ -2585,6 +2627,72 @@ router.get('/', requireAuth, async (req, res) => {
       margin-top: 0.5rem;
     }
 
+    /* Upload-progress widget — separate from .progress-bar above because it
+       needs to be visible BEFORE #videoPreview exists, and it carries
+       additional structure (spinner, label, percentage, byte detail). */
+    .upload-progress {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .upload-progress.hidden { display: none; }
+    .upload-progress-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+    .upload-progress-label { flex: 1; }
+    .upload-progress-pct {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: var(--primary-light, #8B5CF6);
+    }
+    .upload-progress-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(108, 58, 237, 0.25);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: uploadProgressSpin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes uploadProgressSpin { to { transform: rotate(360deg); } }
+    .upload-progress-track {
+      width: 100%;
+      height: 6px;
+      background: var(--dark);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .upload-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #6C3AED, #ec4899);
+      transition: width 0.2s ease;
+    }
+    .upload-progress-detail {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      min-height: 1em;
+    }
+    /* Indeterminate state — used during the server-side processing phase
+       after bytes are uploaded but before the preview is ready. */
+    .upload-progress.indeterminate .upload-progress-fill {
+      width: 30%;
+      animation: uploadProgressIndeterminate 1.3s ease-in-out infinite;
+    }
+    @keyframes uploadProgressIndeterminate {
+      0%   { transform: translateX(-100%); width: 30%; }
+      50%  { width: 50%; }
+      100% { transform: translateX(330%); width: 30%; }
+    }
+
     .actions {
       display: flex;
       gap: 0.75rem;
@@ -2723,7 +2831,27 @@ router.get('/', requireAuth, async (req, res) => {
                 <input type="file" id="fileInput" style="display:none" accept="video/*">
               </div>
 
-              <div class="input-group">
+              <!-- Upload progress widget — shown only while a file is being
+                   uploaded or the server is processing it. Hidden again the
+                   moment the video preview is ready. Sits OUTSIDE #videoPreview
+                   on purpose so it's visible during the upload itself (the
+                   preview area is still hidden at that point). -->
+              <div class="upload-progress hidden" id="uploadProgress" role="status" aria-live="polite">
+                <div class="upload-progress-header">
+                  <span class="upload-progress-spinner" aria-hidden="true"></span>
+                  <span class="upload-progress-label" id="uploadProgressLabel">Uploading video…</span>
+                  <span class="upload-progress-pct" id="uploadProgressPct">0%</span>
+                </div>
+                <div class="upload-progress-track">
+                  <div class="upload-progress-fill" id="uploadProgressFill"></div>
+                </div>
+                <div class="upload-progress-detail" id="uploadProgressDetail"></div>
+              </div>
+
+              <!-- YouTube URL section — hidden alongside the upload zone the
+                   moment a file or URL is being processed, so the user isn't
+                   tempted to start a second source mid-flight. -->
+              <div class="input-group" id="youtubeSection">
                 <label class="input-label">YouTube URL</label>
                 <input type="text" class="input-field" id="youtubeUrl" placeholder="youtube.com/watch?v=… or youtube.com/shorts/…">
                 <button class="btn-primary" style="width: 100%; margin-top: 0.5rem;" onclick="downloadFromYouTube()">Load Video</button>
@@ -2841,16 +2969,11 @@ router.get('/', requireAuth, async (req, res) => {
                 </div>
               </div>
 
-              <!-- Add Captions: jumps the user to the full Caption Styles
-                   catalog (/caption-presets) so they can Add more styles to
-                   their Presets tab. Rendered as a regular <a> so it works
-                   even before a video is uploaded (Generate Captions stays
-                   disabled until upload, but Add Captions is always live). -->
-              <a href="/caption-presets" class="btn-secondary" id="addCaptionsBtn"
-                 style="display: block; width: 100%; margin-bottom: 0.5rem; text-align: center; text-decoration: none;">
-                Add Captions
-              </a>
-
+              <!-- 'Browse Style Library' was previously here as a separate
+                   button — users mistook it for an apply/render action because
+                   of its proximity to Generate Captions. Moved into the Presets
+                   grid as a dashed '+' tile so it visually belongs with the
+                   style cards it manages, not the action buttons. -->
               <div class="actions">
                 <button class="btn-primary" style="flex: 1;" id="generateBtn" onclick="generateCaptions()" disabled>
                   <span class="spinner hidden" id="spinner"></span>
@@ -3018,7 +3141,11 @@ router.get('/', requireAuth, async (req, res) => {
       // may not be added.
       const defaultId = (PRESET_LIBRARY.find(p => p.id === 'karaoke') || PRESET_LIBRARY[0]).id;
 
-      grid.innerHTML = PRESET_LIBRARY.map(p => {
+      // Build all preset cards, then append the Browse-more tile as the
+      // LAST cell so users encounter it after scanning what they already
+      // have (natural exploration pattern). The tile is an <a> so it
+      // works the same as any link — middle-click, cmd-click, etc.
+      const presetCards = PRESET_LIBRARY.map(p => {
         const isStartSelected = p.id === defaultId;
         // Same card structure as /caption-presets: preview-container +
         // preset-info wrapper holding an h3.preset-name. The preview HTML
@@ -3029,6 +3156,16 @@ router.get('/', requireAuth, async (req, res) => {
           + '<div class="preset-info"><h3 class="preset-name">' + p.name + '</h3></div>'
           + '</div>';
       }).join('');
+
+      const browseTile =
+        '<a href="/caption-presets" class="browse-styles-tile" id="browseStylesTile"' +
+        ' title="Open the Caption Styles library to add more presets here">' +
+          '<div class="browse-styles-tile-plus" aria-hidden="true">+</div>' +
+          '<div class="browse-styles-tile-label">Browse Style Library</div>' +
+          '<div class="browse-styles-tile-sub">100+ presets to choose from</div>' +
+        '</a>';
+
+      grid.innerHTML = presetCards + browseTile;
 
       // Default-select the first card on the page
       currentPreset = defaultId;
@@ -3319,39 +3456,140 @@ router.get('/', requireAuth, async (req, res) => {
       textEl.textContent = text;
     }
 
-    // File upload handler
-    document.getElementById('fileInput').addEventListener('change', async (e) => {
+    // ===== Upload progress widget helpers ============================
+    // Shared by both the file-upload and YouTube-download flows so any
+    // long-running ingest gets the same feedback treatment.
+    function showUploadProgress(label) {
+      const panel = document.getElementById('uploadProgress');
+      const labelEl = document.getElementById('uploadProgressLabel');
+      const pctEl = document.getElementById('uploadProgressPct');
+      const fillEl = document.getElementById('uploadProgressFill');
+      const detailEl = document.getElementById('uploadProgressDetail');
+      if (!panel) return;
+      panel.classList.remove('hidden', 'indeterminate');
+      if (labelEl) labelEl.textContent = label || 'Uploading video…';
+      if (pctEl) pctEl.textContent = '0%';
+      if (fillEl) fillEl.style.width = '0%';
+      if (detailEl) detailEl.textContent = '';
+      // Hide the YouTube URL section the moment a file starts uploading so
+      // users don't accidentally kick off a competing source mid-flight.
+      const yt = document.getElementById('youtubeSection');
+      if (yt) yt.classList.add('hidden');
+    }
+    function setUploadProgress(percent, detailText) {
+      const pctEl = document.getElementById('uploadProgressPct');
+      const fillEl = document.getElementById('uploadProgressFill');
+      const detailEl = document.getElementById('uploadProgressDetail');
+      const panel = document.getElementById('uploadProgress');
+      if (panel) panel.classList.remove('indeterminate');
+      if (pctEl) pctEl.textContent = Math.round(percent) + '%';
+      if (fillEl) fillEl.style.width = Math.max(0, Math.min(100, percent)) + '%';
+      if (detailEl && detailText !== undefined) detailEl.textContent = detailText;
+    }
+    function setUploadProgressIndeterminate(label, detailText) {
+      const panel = document.getElementById('uploadProgress');
+      const labelEl = document.getElementById('uploadProgressLabel');
+      const detailEl = document.getElementById('uploadProgressDetail');
+      const pctEl = document.getElementById('uploadProgressPct');
+      if (panel) panel.classList.add('indeterminate');
+      if (labelEl && label) labelEl.textContent = label;
+      if (pctEl) pctEl.textContent = '';
+      if (detailEl && detailText !== undefined) detailEl.textContent = detailText;
+    }
+    function hideUploadProgress() {
+      const panel = document.getElementById('uploadProgress');
+      if (panel) panel.classList.add('hidden');
+    }
+    function formatBytes(bytes) {
+      if (!bytes && bytes !== 0) return '';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+
+    // File upload handler — uses XHR so we can hook upload.onprogress for
+    // real bytes-uploaded feedback (fetch doesn't expose upload progress
+    // in any browser yet). The widget cycles through three phases:
+    //   1. 0..95%  determinate, driven by XHR upload progress
+    //   2. 95%     indeterminate, while the server saves + responds
+    //   3. hidden  once the preview is ready
+    document.getElementById('fileInput').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
       const formData = new FormData();
       formData.append('video', file);
 
-      updateProgress(10, 'Uploading video...');
-      try {
-        const res = await fetch('/ai-captions/upload', {
-          method: 'POST',
-          body: formData
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Upload failed');
+      showUploadProgress('Uploading ' + (file.name || 'video') + '…');
+      setUploadProgress(0, '0 B of ' + formatBytes(file.size));
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/ai-captions/upload');
+
+      // Real bytes-uploaded progress (cap at 95% so the bar doesn't sit at
+      // 100% while the server is still writing the file + responding).
+      xhr.upload.addEventListener('progress', (ev) => {
+        if (!ev.lengthComputable) return;
+        const pct = (ev.loaded / ev.total) * 95;
+        setUploadProgress(pct, formatBytes(ev.loaded) + ' of ' + formatBytes(ev.total));
+      });
+
+      // Once the browser finishes streaming bytes, flip to indeterminate
+      // because the server still has to save the file and return a path.
+      xhr.upload.addEventListener('load', () => {
+        setUploadProgressIndeterminate('Processing on server…', 'This usually takes a few seconds');
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          let errMsg = 'Upload failed (' + xhr.status + ')';
+          try { errMsg = JSON.parse(xhr.responseText).error || errMsg; } catch (e) {}
+          showToast(errMsg, 'error');
+          hideUploadProgress();
+          // Bring the YouTube section back so the user can try another route.
+          const yt = document.getElementById('youtubeSection');
+          if (yt) yt.classList.remove('hidden');
+          return;
+        }
+        let data;
+        try { data = JSON.parse(xhr.responseText); } catch (err) {
+          showToast('Upload returned malformed response', 'error');
+          hideUploadProgress();
+          return;
+        }
 
         uploadedVideoPath = data.videoPath;
-        updateProgress(80, 'Loading video...');
+        setUploadProgress(100, 'Done — loading preview…');
 
         const videoPlayer = document.getElementById('videoPlayer');
         videoPlayer.src = data.serveUrl;
         document.getElementById('videoPreview').classList.remove('hidden');
         document.getElementById('uploadZone').classList.add('hidden');
+        // YouTube section was hidden when we showed progress; keep it
+        // hidden now that a video is loaded.
         document.getElementById('generateBtn').disabled = false;
         showCaptionPreview();
 
         showToast('Video uploaded successfully!', 'success');
-        updateProgress(100, 'Ready');
-        setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1000);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+        // Give the user ~600ms to see the 100% / Done message before the
+        // widget disappears.
+        setTimeout(hideUploadProgress, 600);
+      });
+
+      xhr.addEventListener('error', () => {
+        showToast('Network error during upload', 'error');
+        hideUploadProgress();
+        const yt = document.getElementById('youtubeSection');
+        if (yt) yt.classList.remove('hidden');
+      });
+      xhr.addEventListener('abort', () => {
+        hideUploadProgress();
+        const yt = document.getElementById('youtubeSection');
+        if (yt) yt.classList.remove('hidden');
+      });
+
+      xhr.send(formData);
     });
 
     // YouTube download handler — with live progress feedback while the
@@ -3364,15 +3602,20 @@ router.get('/', requireAuth, async (req, res) => {
         return;
       }
 
+      // Same upload-progress widget the file flow uses, so the YouTube
+      // download gets identical visible feedback. We don't know bytes here
+      // (the server is doing the downloading), so we drive a soft elapsed-
+      // time curve and switch to indeterminate while we wait.
+      showUploadProgress('Downloading from YouTube…');
       // Rotating status messages with elapsed time so the user sees the
       // request is alive, not frozen. Each phase roughly corresponds to
       // the server-side fallback layer being attempted.
       const phases = [
-        { upTo: 25,  text: 'Connecting to YouTube...' },
-        { upTo: 60,  text: 'Downloading via residential proxy...' },
-        { upTo: 110, text: 'Switching to backup downloader...' },
-        { upTo: 200, text: 'Trying premium fallback (this can take a minute)...' },
-        { upTo: 9999, text: 'Almost there — final attempt...' }
+        { upTo: 25,  text: 'Connecting to YouTube…' },
+        { upTo: 60,  text: 'Downloading via residential proxy…' },
+        { upTo: 110, text: 'Switching to backup downloader…' },
+        { upTo: 200, text: 'Trying premium fallback (this can take a minute)…' },
+        { upTo: 9999, text: 'Almost there — final attempt…' }
       ];
       const t0 = Date.now();
       let pollTimer = null;
@@ -3383,7 +3626,7 @@ router.get('/', requireAuth, async (req, res) => {
         // alive without lying about completion. Caps at 90% so the
         // jump-to-100 on real success still feels rewarding.
         const pct = Math.min(90, Math.round(10 + (sec * 0.6)));
-        updateProgress(pct, phase.text + ' (' + sec + 's)');
+        setUploadProgress(pct, phase.text + ' · ' + sec + 's');
       }
       tick();
       pollTimer = setInterval(tick, 1000);
@@ -3399,7 +3642,7 @@ router.get('/', requireAuth, async (req, res) => {
 
         clearInterval(pollTimer); pollTimer = null;
         uploadedVideoPath = data.videoPath;
-        updateProgress(95, 'Loading video...');
+        setUploadProgress(100, 'Loaded — opening preview…');
 
         const videoPlayer = document.getElementById('videoPlayer');
         videoPlayer.src = data.serveUrl;
@@ -3409,8 +3652,7 @@ router.get('/', requireAuth, async (req, res) => {
         showCaptionPreview();
 
         showToast('Video downloaded successfully!', 'success');
-        updateProgress(100, 'Ready');
-        setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1000);
+        setTimeout(hideUploadProgress, 600);
       } catch (err) {
         clearInterval(pollTimer); pollTimer = null;
         // Friendlier error: tell the user *what* failed and what to do.
@@ -3419,8 +3661,10 @@ router.get('/', requireAuth, async (req, res) => {
           msg = 'YouTube is blocking this video right now. Try uploading the file directly with the Choose File button above.';
         }
         showToast(msg, 'error');
-        updateProgress(0, '');
-        setTimeout(() => document.getElementById('progressBar').classList.add('hidden'), 1500);
+        hideUploadProgress();
+        // Failure: bring the YouTube section back so the user can retry.
+        const yt = document.getElementById('youtubeSection');
+        if (yt) yt.classList.remove('hidden');
       }
     }
 
@@ -3606,14 +3850,18 @@ router.get('/', requireAuth, async (req, res) => {
     }
 
     // ===== Export-section button state machine =====
-    // Three states drive the Apply / Download Video pair so the user always
-    // knows what the next click should be:
-    //   A = pre-generation     -> both look like neutral secondary buttons
+    // Three states drive the Apply / Download Video / Publish trio so the
+    // user always knows what the next click should be:
+    //   A = pre-generation     -> all three look like neutral secondary buttons
     //   B = captions ready     -> Apply becomes the primary purple CTA
-    //   C = post-processing    -> Apply steps back (locked), Download becomes purple
+    //   C = post-processing    -> Apply steps back (locked), Download becomes
+    //                             purple, AND Publish unlocks (a rendered file
+    //                             now exists at generatedVideoPath that the
+    //                             publish modal can hand off to social APIs).
     function setExportButtonState(state) {
       const exportBtn = document.getElementById('exportBtn');
       const downloadBtn = document.getElementById('downloadBtn');
+      const publishBtn = document.getElementById('acPublishBtn');
       if (!exportBtn || !downloadBtn) return;
 
       // Strip any state classes so the new state's class wins regardless of
@@ -3629,12 +3877,25 @@ router.get('/', requireAuth, async (req, res) => {
           downloadBtn.classList.add('btn-secondary');
           exportBtn.disabled = true;
           downloadBtn.disabled = true;
+          if (publishBtn) {
+            publishBtn.disabled = true;
+            publishBtn.style.opacity = '0.5';
+            publishBtn.style.cursor = 'not-allowed';
+          }
           break;
         case 'B': // captions ready, Apply is the next action
           exportBtn.classList.add('btn-primary');
           downloadBtn.classList.add('btn-secondary');
           exportBtn.disabled = false;
           downloadBtn.disabled = true;
+          if (publishBtn) {
+            // A rendered file from a PREVIOUS cycle may still be sitting in
+            // generatedVideoPath — but that's stale now that the user is
+            // re-applying. Lock publish until the new Apply completes.
+            publishBtn.disabled = true;
+            publishBtn.style.opacity = '0.5';
+            publishBtn.style.cursor = 'not-allowed';
+          }
           break;
         case 'C': // export complete, Download is the next action
           exportBtn.classList.add('btn-state-c');
@@ -3645,6 +3906,16 @@ router.get('/', requireAuth, async (req, res) => {
           // click cant fire it.
           exportBtn.disabled = true;
           downloadBtn.disabled = false;
+          // Publish unlocks the moment Apply renders a file — the publish
+          // modal pulls from generatedVideoPath, which is now populated, so
+          // the user can publish immediately without having to Download first.
+          // Set opacity/cursor explicitly (rather than clearing to '') so the
+          // inline values left behind by State A/B are unambiguously overridden.
+          if (publishBtn) {
+            publishBtn.disabled = false;
+            publishBtn.style.opacity = '1';
+            publishBtn.style.cursor = 'pointer';
+          }
           break;
       }
     }
