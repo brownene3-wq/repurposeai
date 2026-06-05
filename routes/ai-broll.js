@@ -1816,27 +1816,89 @@ async function confirmBrollSelection() {
   }
 
   // ---- Upload (local file) ----
+  // Render a progress indicator inside the upload-zone (replaces drop-text temporarily)
+  function _renderUploadProgress(state) {
+    var zone = document.getElementById('uploadContainer');
+    if (!zone) return;
+    if (state === 'start') {
+      zone.dataset.originalHtml = zone.dataset.originalHtml || zone.innerHTML;
+      zone.innerHTML =
+        '<div style="text-align:center;width:100%;padding:18px 8px">' +
+          '<div style="font-size:0.95rem;color:var(--text);font-weight:600;margin-bottom:10px" id="upPrimaryLabel">Preparing upload...</div>' +
+          '<div style="width:100%;max-width:480px;margin:0 auto;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden">' +
+            '<div id="upPrimaryBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width 0.15s ease-out;border-radius:4px"></div>' +
+          '</div>' +
+          '<div id="upPrimaryPct" style="font-size:0.75rem;color:var(--text-muted);margin-top:8px">0%</div>' +
+        '</div>';
+    } else if (state === 'done' || state === 'fail') {
+      // Restore the original drop-zone HTML so the next upload still works
+      if (zone.dataset.originalHtml) {
+        zone.innerHTML = zone.dataset.originalHtml;
+        delete zone.dataset.originalHtml;
+      }
+    }
+  }
+  function _setUploadProgress(loaded, total, phase) {
+    var bar = document.getElementById('upPrimaryBar');
+    var pct = document.getElementById('upPrimaryPct');
+    var lbl = document.getElementById('upPrimaryLabel');
+    if (!bar || !pct) return;
+    if (total > 0) {
+      var p = Math.min(100, Math.round((loaded / total) * 100));
+      bar.style.width = p + '%';
+      pct.textContent = p + '% (' + (loaded / 1024 / 1024).toFixed(1) + ' MB / ' + (total / 1024 / 1024).toFixed(1) + ' MB)';
+    }
+    if (lbl && phase) lbl.textContent = phase;
+  }
+
   function wireUpload() {
     var btn = document.getElementById('uploadPrimaryBtn');
     var input = document.getElementById('primaryFileInput');
     if (!btn || !input) return;
     btn.addEventListener('click', function () { input.click(); });
-    input.addEventListener('change', async function (e) {
-      var file = e.target.files && e.target.files[0];
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
       if (!file) return;
-      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Uploading…';
-      try {
-        var fd = new FormData(); fd.append('video', file);
-        var r = await fetch('/ai-broll/upload-primary', { method: 'POST', body: fd });
-        if (!r.ok) { var e2 = await r.json().catch(function(){return{};}); throw new Error(e2.error || ('Upload failed (' + r.status + ')')); }
-        var data = await r.json();
-        setPrimary(data);
-      } catch (err) {
-        toastMsg('Upload failed: ' + err.message);
-      } finally {
-        btn.disabled = false; btn.textContent = orig;
-        input.value = '';
-      }
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Uploading...';
+      _renderUploadProgress('start');
+      _setUploadProgress(0, file.size, 'Uploading ' + file.name);
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/ai-broll/upload-primary', true);
+      xhr.upload.addEventListener('progress', function (ev) {
+        if (ev.lengthComputable) {
+          _setUploadProgress(ev.loaded, ev.total, 'Uploading ' + file.name);
+        }
+      });
+      xhr.upload.addEventListener('load', function () {
+        // Bytes are fully sent — server is now probing duration etc.
+        _setUploadProgress(file.size, file.size, 'Processing on server...');
+      });
+      xhr.onerror = function () {
+        toastMsg('Upload failed: network error');
+        _renderUploadProgress('fail');
+        btn.disabled = false; btn.textContent = orig; input.value = '';
+      };
+      xhr.onload = function () {
+        btn.disabled = false; btn.textContent = orig; input.value = '';
+        if (xhr.status < 200 || xhr.status >= 300) {
+          var msg = 'Upload failed (' + xhr.status + ')';
+          try { var ej = JSON.parse(xhr.responseText); if (ej && ej.error) msg = ej.error; } catch (_) {}
+          toastMsg(msg);
+          _renderUploadProgress('fail');
+          return;
+        }
+        try {
+          var data = JSON.parse(xhr.responseText);
+          _renderUploadProgress('done');
+          setPrimary(data);
+        } catch (err) {
+          toastMsg('Upload succeeded but response was malformed');
+          _renderUploadProgress('fail');
+        }
+      };
+      var fd = new FormData(); fd.append('video', file);
+      xhr.send(fd);
     });
   }
 
@@ -2195,10 +2257,16 @@ router.post('/generate', requireAuth, requireCredits('ai-broll'), upload.single(
     }
 
     let contentDescription = '';
+    // The new ingestion flow stages files server-side via /upload-primary,
+    // /import-url, /googledrive-import, /dropbox-import — so /generate may
+    // get JSON with body.primary.filename referring to an already-staged file.
+    // Accept that as a valid content source.
     if (req.file) {
       contentDescription = `Video file: ${req.file.originalname}`;
     } else if (inputType === 'youtube' && url) {
       contentDescription = `YouTube video: ${url}`;
+    } else if (req.body && req.body.primary && req.body.primary.filename) {
+      contentDescription = `Staged video: ${req.body.primary.originalName || req.body.primary.filename}`;
     } else if (prompt) {
       contentDescription = prompt;
     } else {
