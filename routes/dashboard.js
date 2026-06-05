@@ -107,17 +107,24 @@ router.get('/', requireAuth, async (req, res) => {
     if (usage) creditsUsed = usage.used || 0;
   } catch (e) { console.error('Dashboard credits read error:', e); }
   const creditsTotal = capFor(req.user.plan);
-  // Storage card shows total file size of EVERYTHING currently in
-  // the Library — Clips tab (clip_renders, with R2 backup) + every
-  // other Library tab (user_renders: Edited Videos, Captioned,
-  // Hook, Reframed, B-Roll, Thumbnails). Replaces the legacy
-  // storage_bytes_used counter which was hand-maintained on
-  // uploads and never reflected the per-tool renders the Library
-  // now surfaces.
+  // Storage card = total bytes the user currently has on file, summed
+  // across all three places renders + uploads land:
+  //   clip_renders.file_size   — Library Clips tab (R2-backed)
+  //   user_renders.file_size   — Library Edited/Captioned/Hook/
+  //                              Reframed/B-Roll/Thumbnails tabs
+  //   users.storage_bytes_used — the running counter that
+  //                              trackUploadBytes() middleware
+  //                              maintains for every raw file uploaded
+  //                              to Smart Shorts / Video Editor /
+  //                              Enhance Speech / AI Captions / AI
+  //                              Hooks / AI Reframe / AI Thumbnails.
+  //                              Decremented on file deletion via
+  //                              storageOps.subBytes().
   //
-  // Grace banner state still reads from the legacy column because
-  // the grace timer is set elsewhere (overage workflow). The displayed
-  // bytes/count come from the Library tables.
+  // Adding all three is correct because they represent different files
+  // (an uploaded source + a rendered output are two distinct bytes on
+  // disk). Grace banner expiry continues to read storage_grace_until,
+  // which the overage workflow sets independently.
   let storageBytes = 0, storageCap = storageCapBytes(req.user.plan), graceUntilStr = null, graceActiveNow = false;
   try {
     const [clipS, libS, su] = await Promise.all([
@@ -125,7 +132,9 @@ router.get('/', requireAuth, async (req, res) => {
       userRenderOps.totalStorageBytes(req.user.id, 'all').catch(() => ({ total: 0 })),
       storageOps.getUsage(req.user.id).catch(() => null)
     ]);
-    storageBytes = Number(clipS.total || 0) + Number(libS.total || 0);
+    storageBytes = Number(clipS.total || 0)
+                 + Number(libS.total || 0)
+                 + Number((su && su.bytes) || 0);
     if (su && su.graceUntil) {
       graceActiveNow = storageGraceActive(su.graceUntil);
       if (graceActiveNow) graceUntilStr = new Date(su.graceUntil).toLocaleDateString();
