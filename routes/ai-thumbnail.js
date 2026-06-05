@@ -4023,7 +4023,7 @@ ${pageStyles}
       } else if (wizCurrentStep === 3) {
         if (!aiFaceFile) {
           disabled = true;
-          reasonHTML = '<strong>Continue is disabled — upload a headshot above</strong> to enable face-in-thumbnail layouts. Don\'t want a face in the result? Click <strong>Skip</strong> instead.';
+          reasonHTML = '<strong>Continue is disabled — upload a headshot above</strong> to enable face-in-thumbnail layouts. Do not want a face in the result? Click <strong>Skip</strong> instead.';
         }
       }
       nextBtn.disabled = disabled;
