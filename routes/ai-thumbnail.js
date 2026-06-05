@@ -2554,14 +2554,22 @@ router.get('/', requireAuth, (req, res) => {
         border-color: transparent;
         color: #fff;
       }
-      .wiz-next:hover:not(:disabled) {
+      .wiz-next:hover:not(:disabled):not(.wiz-next-locked) {
         transform: translateY(-1px);
         box-shadow: 0 4px 12px rgba(108, 58, 237, 0.35);
       }
       .wiz-back:disabled,
-      .wiz-next:disabled {
+      .wiz-next:disabled,
+      .wiz-next.wiz-next-locked {
         opacity: 0.45;
         cursor: not-allowed;
+      }
+      /* wiz-next-locked keeps pointer-events enabled so the click handler
+         still fires and can surface the validation message — unlike a real
+         :disabled button which swallows clicks entirely. */
+      .wiz-next.wiz-next-locked:hover {
+        transform: none;
+        box-shadow: none;
       }
       .wiz-analyze-status {
         display: flex;
@@ -3433,7 +3441,7 @@ ${pageStyles}
                 <button type="button" class="wiz-back" id="wizBackBtn" disabled>← Back</button>
                 <div class="wiz-actions-right">
                   <button type="button" class="wiz-skip" id="wizSkipBtn" style="display:none;">Skip</button>
-                  <button type="button" class="wiz-next" id="wizNextBtn" disabled>Continue →</button>
+                  <button type="button" class="wiz-next wiz-next-locked" id="wizNextBtn">Continue →</button>
                 </div>
               </div>
 
@@ -3996,45 +4004,46 @@ ${pageStyles}
     }
 
     // Central gating logic for the wizard's Continue button.
-    // On Steps 2 & 3 (the skippable steps), Continue is disabled until the
-    // user makes a selection — they have to explicitly click Skip to advance
-    // without picking. A visible validation message explains why Continue is
-    // disabled and points them at Skip.
+    // On Steps 2 & 3 (the skippable steps) and Step 1 (URL/file required),
+    // Continue is "locked" until the user makes a required selection. The
+    // locked state is shown via a CSS class (NOT the HTML disabled attribute)
+    // so the click still fires — that lets us surface the validation message
+    // ONLY when the user actually attempts to click Continue without a
+    // selection. The message stays hidden otherwise. The reason text for the
+    // current step is stashed on nextBtn.dataset.lockReason so the click
+    // handler can render it on demand.
     function updateNextGating() {
       const nextBtn = document.getElementById('wizNextBtn');
       const msg = document.getElementById('wizValidationMsg');
       if (!nextBtn) return;
-      let disabled = false;
+      let locked = false;
       let reasonHTML = '';
       if (wizCurrentStep === 1) {
         const hasUrl = aiActiveSource === 'url' && aiYoutubeUrlEl && aiYoutubeUrlEl.value.trim().length > 0;
         const hasFile = aiActiveSource === 'upload' && aiFileInputEl && aiFileInputEl.files.length > 0;
         if (!hasUrl && !hasFile) {
-          disabled = true;
+          locked = true;
           reasonHTML = aiActiveSource === 'url'
             ? '<strong>Continue is disabled.</strong> Paste a YouTube URL above to start the analysis.'
             : '<strong>Continue is disabled.</strong> Upload a video file above to start the analysis.';
         }
       } else if (wizCurrentStep === 2) {
         if (!aiActivePreset) {
-          disabled = true;
+          locked = true;
           reasonHTML = '<strong>Continue is disabled — pick a style preset above</strong> to lock in a look. Want the AI to choose for you? Click <strong>Skip</strong> instead.';
         }
       } else if (wizCurrentStep === 3) {
         if (!aiFaceFile) {
-          disabled = true;
+          locked = true;
           reasonHTML = '<strong>Continue is disabled — upload a headshot above</strong> to enable face-in-thumbnail layouts. Do not want a face in the result? Click <strong>Skip</strong> instead.';
         }
       }
-      nextBtn.disabled = disabled;
-      if (msg) {
-        if (disabled && reasonHTML) {
-          msg.innerHTML = reasonHTML;
-          msg.style.display = 'block';
-        } else {
-          msg.style.display = 'none';
-        }
-      }
+      nextBtn.classList.toggle('wiz-next-locked', locked);
+      // Stash the reason so the click handler can display it on demand
+      nextBtn.dataset.lockReason = locked ? reasonHTML : '';
+      // Always hide the message here — it's only shown after a click attempt
+      // on the locked button (handled in the nextBtn click listener).
+      if (msg) msg.style.display = 'none';
     }
     // Backwards-compatible alias — existing callers in the URL/file input
     // change handlers still call checkAIInputs().
@@ -4370,6 +4379,22 @@ ${pageStyles}
         showStep(Math.min(wizCurrentStep + 1, TOTAL_STEPS));
       });
       nextBtn.addEventListener('click', () => {
+        // If the Continue button is locked (current step's required selection
+        // hasn't been made), surface the validation message and stop here.
+        // The user must either make a selection or click Skip (on steps 2/3).
+        if (nextBtn.classList.contains('wiz-next-locked')) {
+          const msg = document.getElementById('wizValidationMsg');
+          const reason = nextBtn.dataset.lockReason || '';
+          if (msg && reason) {
+            msg.innerHTML = reason;
+            msg.style.display = 'block';
+            // Smooth-scroll the message into view so it's never hidden below the fold
+            if (typeof msg.scrollIntoView === 'function') {
+              msg.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            }
+          }
+          return;
+        }
         // Step 1: kick off analysis in the background, then immediately advance to Step 2
         if (wizCurrentStep === 1) {
           runAnalysis().catch(() => {});
