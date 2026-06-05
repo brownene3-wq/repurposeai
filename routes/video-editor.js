@@ -1684,7 +1684,22 @@ async function renderEditor(req, res) {
   </div>
 
   <script>
-    (function(){var orig=document.getElementById.bind(document);var noop={disabled:false,value:'',textContent:'',innerHTML:'',src:'',checked:false,selectedIndex:0,style:{},classList:{add:function(){},remove:function(){},toggle:function(){},contains:function(){return false}},addEventListener:function(){},removeEventListener:function(){},appendChild:function(){return this},removeChild:function(){},insertBefore:function(){},setAttribute:function(){},getAttribute:function(){return null},querySelector:function(){return null},querySelectorAll:function(){return[]},focus:function(){},blur:function(){},click:function(){},play:function(){return Promise.resolve()},pause:function(){},remove:function(){},replaceWith:function(){},cloneNode:function(){return this},contains:function(){return false},closest:function(){return null},matches:function(){return false},dispatchEvent:function(){return true},hasAttribute:function(){return false},removeAttribute:function(){},hasChildNodes:function(){return false},getBoundingClientRect:function(){return{top:0,left:0,right:0,bottom:0,width:0,height:0,x:0,y:0}},offsetWidth:0,offsetHeight:0,offsetTop:0,offsetLeft:0,scrollWidth:0,scrollHeight:0,children:[],childNodes:[],parentNode:null,parentElement:null,nextSibling:null,previousSibling:null,firstChild:null,lastChild:null,dataset:{},tagName:'DIV',nodeName:'DIV',nodeType:1};noop.style=new Proxy({},{set:function(){return true},get:function(){return''}});document.getElementById=function(id){return orig(id)||noop}})();
+    /* Task #145 — REMOVED the "safe getElementById noop" monkey-patch
+       that previously wrapped document.getElementById to return a fake
+       DIV-shaped object instead of null when an id wasn't found. The
+       patch was added April 2026 to silence null-reference errors but
+       it broke virtually anything that needed a real Node — most
+       visibly MutationObserver.observe() in v10-editor-redesign.js,
+       which threw "parameter 1 is not of type 'Node'" repeatedly and
+       prevented sidebar gating + observer-driven upload-state syncing
+       from working. The patch lived inside this inline script, which
+       was dead from Task #140 until Task #142 (root-cause regex fix)
+       reactivated the whole block. Now that the script runs end-to-
+       end, this monkey-patch was actively breaking the upload flow
+       and freezing the page after uploads — the actual cause of the
+       "Video Editor became unresponsive" report. document.getElementById
+       is restored to its native behavior; the surrounding code already
+       null-checks every lookup ( "if (e) e.disabled=false;" pattern). */
 
     // ═══ CINEMA SUITE PRO: Move timeline to grid root ═══
     (function(){
