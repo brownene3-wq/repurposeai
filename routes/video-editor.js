@@ -2202,7 +2202,31 @@ function showToast(message, type = 'success') {
 
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
-      if (file) await uploadVideo(file);
+      if (!file) return;
+      // Task #151 — Mount the progress overlay BEFORE entering
+      // uploadVideo() and force a synchronous reflow so it's guaranteed
+      // to paint on the very first frame after file selection. If
+      // anything between here and the "1. Preparing upload" phase
+      // freezes the renderer, the user will still see Phase 0 sitting
+      // on screen and we'll know the lock-up is in the React/V10
+      // boot work that runs the instant the change event fires (not
+      // in uploadVideo at all). Also keeps the overlay visible for
+      // 30 seconds on success so the user can screenshot it after a
+      // fast upload completes.
+      try { window.__splicoraUploading = true; } catch(_){}
+      ensureUploadProgressOverlay();
+      startUploadProgressClock();
+      setUploadPhase('0. File selected: ' + (file.name || 'unnamed') + ' (' + Math.round(file.size/1024) + ' KB)', 0);
+      // Force a layout + paint so the overlay is visible BEFORE the
+      // synchronous JS inside uploadVideo can possibly block.
+      void document.getElementById('splicoraUploadProgress').offsetHeight;
+      await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
+      try {
+        await uploadVideo(file);
+      } catch (err){
+        setUploadPhase('ERROR (outer): ' + (err && err.message || 'unknown'));
+        console.error('[upload] outer error:', err);
+      }
     });
 
     // Task #142 — Drop a file from the OS file picker / Finder /
@@ -2313,11 +2337,12 @@ function showToast(message, type = 'success') {
           '<span id="splicoraUpDot" style="width:10px;height:10px;border-radius:50%;background:#a78bfa;flex-shrink:0;animation:splicoraUpPulse 1s ease-in-out infinite"></span>' +
           '<span id="splicoraUpPhase" style="flex:1;font-weight:600;letter-spacing:.2px">Starting upload…</span>' +
           '<span id="splicoraUpElapsed" style="font-variant-numeric:tabular-nums;color:#c4b5fd;font-size:12px">0.0s</span>' +
+          '<button id="splicoraUpClose" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center" title="Dismiss">×</button>' +
         '</div>' +
         '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">' +
           '<div id="splicoraUpBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width .2s linear;border-radius:3px"></div>' +
         '</div>' +
-        '<div id="splicoraUpLog" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.55);max-height:90px;overflow-y:auto;line-height:1.5"></div>';
+        '<div id="splicoraUpLog" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.55);max-height:120px;overflow-y:auto;line-height:1.5"></div>';
       var kf = document.getElementById('splicoraUpKF');
       if (!kf){
         kf = document.createElement('style');
@@ -2326,11 +2351,20 @@ function showToast(message, type = 'success') {
         document.head.appendChild(kf);
       }
       document.body.appendChild(o);
+      // Wire the dismiss button
+      var closeBtn = document.getElementById('splicoraUpClose');
+      if (closeBtn){
+        closeBtn.addEventListener('click', function(){
+          o.style.display = 'none';
+          if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
+        });
+      }
       return o;
     }
 
     var _upStartT = 0;
     var _upRAF = null;
+    var _upPhaseLog = [];
     function setUploadPhase(label, pct){
       var o = ensureUploadProgressOverlay();
       o.style.display = 'block';
@@ -2341,17 +2375,87 @@ function showToast(message, type = 'success') {
       if (typeof pct === 'number' && bar){
         bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
       }
-      if (log && label){
+      if (label){
         var elapsed = ((performance.now() - _upStartT) / 1000).toFixed(2);
-        var line = document.createElement('div');
-        line.textContent = '[' + elapsed + 's] ' + label;
-        log.appendChild(line);
-        log.scrollTop = log.scrollHeight;
+        var line = '[' + elapsed + 's] ' + label;
+        _upPhaseLog.push(line);
+        if (log){
+          var d = document.createElement('div');
+          d.textContent = line;
+          log.appendChild(d);
+          log.scrollTop = log.scrollHeight;
+        }
+        // Task #152 — Persist every phase transition to localStorage
+        // so when the renderer freezes and the user has to force-quit
+        // the tab, the log survives. On the next page load, the
+        // editor auto-restores the overlay with the recovered log so
+        // we can SEE the last phase reached before the freeze even
+        // though no live screenshot is possible. Synchronous write
+        // is fine — JSON-stringifying ~14 short strings is sub-ms.
+        try {
+          localStorage.setItem('splicora_last_upload_log', JSON.stringify({
+            t: Date.now(),
+            phase: label,
+            pct: typeof pct === 'number' ? pct : null,
+            log: _upPhaseLog
+          }));
+        } catch(_){}
       }
     }
+    // Task #152 — On page load, if a recent upload log is sitting in
+    // localStorage (less than 10 minutes old), surface it in the
+    // overlay immediately. If the previous upload completed cleanly
+    // the log ends with "13. Done" and we just show it as
+    // informational; if it ends partway, the last entry IS the freeze
+    // point and the user can screenshot it for us.
+    (function restoreUploadLogFromStorage(){
+      try {
+        var raw = localStorage.getItem('splicora_last_upload_log');
+        if (!raw) return;
+        var saved = JSON.parse(raw);
+        if (!saved || !Array.isArray(saved.log) || !saved.log.length) return;
+        if (Date.now() - saved.t > 10 * 60 * 1000){
+          // Stale — older than 10 minutes, ignore.
+          try { localStorage.removeItem('splicora_last_upload_log'); } catch(_){}
+          return;
+        }
+        // Wait for DOM to be ready enough for the overlay element
+        function show(){
+          var o = ensureUploadProgressOverlay();
+          var ph = document.getElementById('splicoraUpPhase');
+          var log = document.getElementById('splicoraUpLog');
+          var bar = document.getElementById('splicoraUpBar');
+          var ago = Math.round((Date.now() - saved.t) / 1000);
+          if (ph) ph.textContent = 'Last upload (' + ago + 's ago) — last phase: ' + (saved.phase || '?');
+          if (bar && typeof saved.pct === 'number'){ bar.style.width = Math.max(0, Math.min(100, saved.pct)) + '%'; }
+          if (log){
+            log.innerHTML = '';
+            saved.log.forEach(function(line){ var d = document.createElement('div'); d.textContent = line; log.appendChild(d); });
+            log.scrollTop = log.scrollHeight;
+          }
+          o.style.display = 'block';
+          var dot = document.getElementById('splicoraUpDot');
+          if (dot) dot.style.animation = 'none';  // not live, don't pulse
+        }
+        if (document.body){
+          show();
+        } else {
+          document.addEventListener('DOMContentLoaded', show);
+        }
+      } catch(_){}
+    })();
     function startUploadProgressClock(){
       _upStartT = performance.now();
+      _upPhaseLog = [];  // fresh log per upload attempt
       var elEl = document.getElementById('splicoraUpElapsed');
+      var dot = document.getElementById('splicoraUpDot');
+      // Restore the pulsing animation (the restore-from-storage path
+      // disables it because the log is historical, not live).
+      if (dot) dot.style.animation = 'splicoraUpPulse 1s ease-in-out infinite';
+      var logEl = document.getElementById('splicoraUpLog');
+      if (logEl) logEl.innerHTML = '';
+      var bar = document.getElementById('splicoraUpBar');
+      if (bar) bar.style.width = '0%';
       function tick(){
         if (!elEl) return;
         elEl.textContent = ((performance.now() - _upStartT) / 1000).toFixed(1) + 's';
@@ -2533,14 +2637,19 @@ function showToast(message, type = 'success') {
         uploadZone.style.pointerEvents = '';
         setUploadPhase('13. Done — upload complete', 100);
         showToast('Video uploaded successfully!', 'success');
-        stopUploadProgressOverlay({ keepVisibleMs: 4000 });
+        // Task #151 — Keep the overlay visible for 30 seconds (was 4)
+        // so the user can read every phase + timestamp after a fast
+        // upload completes. The × dismiss button hides it immediately
+        // when they're done reading.
+        stopUploadProgressOverlay({ keepVisibleMs: 30000 });
       } catch (error) {
         if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '1';
         uploadZone.style.pointerEvents = 'auto';
         setUploadPhase('ERROR: ' + (error && error.message || 'unknown'));
         showToast('Failed to upload video: ' + error.message, 'error');
-        stopUploadProgressOverlay({ keepVisibleMs: 8000 });
+        // Errors stay visible until user dismisses — no auto-hide.
+        if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
       } finally {
         // Task #148 — Clear the V10 applyAll pause flag on BOTH success
         // and failure paths so the editor's normal patch cadence resumes

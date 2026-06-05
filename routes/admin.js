@@ -1966,4 +1966,43 @@ router.delete('/api/cookies/:id', requireAuth, requireAdmin, async (req, res) =>
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /admin/api/cookies/:id/inspect — diagnostic: returns cookies text
+// sanity-check info (Netscape header? line count? domain breakdown? size?)
+// without exposing the raw values. Admin only.
+router.get('/api/cookies/:id/inspect', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { youtubeCookieOps } = require('../db/database');
+    const row = await youtubeCookieOps.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const ct = row.cookies_text || '';
+    const lines = ct.split('\n');
+    const dataLines = lines.filter(l => l.trim() && !l.startsWith('#'));
+    const domains = {};
+    for (const l of dataLines) {
+      const cols = l.split('\t');
+      if (cols.length >= 1) {
+        const d = cols[0].replace(/^\./, '');
+        domains[d] = (domains[d] || 0) + 1;
+      }
+    }
+    // Check critical auth cookies (their NAMES, not values)
+    const names = new Set(dataLines.map(l => l.split('\t')[5]).filter(Boolean));
+    const critical = ['SID', 'HSID', 'SSID', 'APISID', 'SAPISID', '__Secure-1PSID', '__Secure-3PSID', 'LOGIN_INFO'];
+    const presentCritical = critical.filter(n => names.has(n));
+    res.json({
+      label: row.label,
+      sizeBytes: ct.length,
+      lineCount: lines.length,
+      dataLineCount: dataLines.length,
+      hasNetscapeHeader: ct.includes('Netscape HTTP Cookie File'),
+      domains,
+      criticalCookiesPresent: presentCritical,
+      criticalCookiesMissing: critical.filter(n => !names.has(n)),
+      firstNonHeaderLineSample: dataLines[0] ? dataLines[0].split('\t').map((c, i) => i === 6 ? '<VALUE_REDACTED:' + c.length + 'chars>' : c).join('\t') : '(no data lines)'
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+
 module.exports = router;

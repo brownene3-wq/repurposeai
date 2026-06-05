@@ -2479,6 +2479,32 @@ router.post('/generate', requireAuth, requireCredits('ai-hook'), requireStorageH
         } catch (mirrorErr) {
           console.warn('[ai-hook] video editor mirror copy failed:', mirrorErr.message);
         }
+        // Library — record this hook video under Library > Hook Videos so
+        // the user can find it later (and re-download even after /tmp is
+        // wiped, via the R2 backup that renderRecorder does for us).
+        // Fire-and-forget — never let a logging failure break the render.
+        try {
+          const { recordRender } = require('../utils/renderRecorder');
+          recordRender(req.user.id, {
+            tool: 'ai-hook',
+            absPath: buildResult.videoPath,
+            kind: 'video',
+            title: (hookText || 'AI Hook').slice(0, 80),
+            durationSeconds: videoDurationSec,
+            sourceUrl: inputType === 'youtube' ? url : null,
+            metadata: {
+              style: style,
+              platform: platform,
+              visualStyle: visualStyle,
+              sfx: sfx,
+              cameraMovement: cameraMovement,
+              impactWords: impactWords,
+              inputType: inputType
+            }
+          }).catch(function (e) { console.warn('[ai-hook] recordRender:', e && e.message); });
+        } catch (recErr) {
+          console.warn('[ai-hook] recordRender require failed:', recErr.message);
+        }
       } catch (vErr) {
         console.warn('[ai-hook] Hook video build failed:', vErr.message);
         videoWarnings.push('Video build failed: ' + vErr.message);
