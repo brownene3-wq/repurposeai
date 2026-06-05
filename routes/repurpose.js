@@ -2779,11 +2779,22 @@ router.get('/history', requireAuth, (req, res) => {
           var html = head + '<div class="lib-grid">' + items.map(function(it) {
             var thumb;
             if (it.kind === 'image') {
-              thumb = '<div class="lib-card-thumb image"><img src="' + libEscape(it.downloadUrl) + '" alt=""></div>';
-            } else if (it.onDisk) {
-              thumb = '<div class="lib-card-thumb"><video src="' + libEscape(it.downloadUrl) + '" muted preload="metadata"></video></div>';
+              thumb = '<div class="lib-card-thumb image"><img src="' + libEscape(it.downloadUrl) + '" alt="" loading="lazy"></div>';
             } else {
-              thumb = '<div class="lib-card-thumb"><span>\u{1F3AC}</span></div>';
+              // Always render the <video> tag — the download endpoint
+              // handles R2 fallback automatically when the local /tmp
+              // file is gone (Railway redeploys), so 'onDisk' alone
+              // shouldn't gate the thumbnail.
+              //
+              // #t=0.5 forces the browser to seek to 0.5s and paint
+              // that frame as the poster. Without this, preload=
+              // metadata loads dimensions/duration only and leaves
+              // the player visually blank.
+              var src = libEscape(it.downloadUrl) + '#t=0.5';
+              thumb = '<div class="lib-card-thumb">' +
+                        '<video src="' + src + '" muted playsinline preload="metadata" ' +
+                          'onloadeddata="this.currentTime=0.5"></video>' +
+                      '</div>';
             }
             var actions = '';
             actions += '<a class="primary" href="' + libEscape(it.downloadUrl) + '" download="' + libEscape(it.filename) + '">⬇ Download</a>';
@@ -2847,6 +2858,18 @@ router.get('/history', requireAuth, (req, res) => {
           t.textContent = msg; t.classList.add('show');
           setTimeout(function(){ t.classList.remove('show'); }, 2800);
         }
+
+        // Delegated fallback for video thumbnails that fail to load
+        // (file no longer on /tmp AND no R2 backup). Replace the broken
+        // <video> with a film-clapper icon so the card still reads
+        // visually, instead of showing a blank/broken-video square.
+        document.addEventListener('error', function(e) {
+          var v = e.target;
+          if (!v || v.tagName !== 'VIDEO') return;
+          var card = v.closest && v.closest('.lib-card-thumb');
+          if (!card) return;
+          card.innerHTML = '<span style="font-size:28px;color:var(--text-muted)">\u{1F3AC}</span>';
+        }, true);
 
         // Auto-resize the embedded Clips iframe to its full natural
         // content height. We DON'T cap it — that would force an
