@@ -608,12 +608,14 @@ ${pageStyles}
         showToast('Paste a YouTube / Rumble / Twitch / Zoom link first');
         return;
       }
+      // Dispatch a synthetic submit event instead of form.requestSubmit().
+      // requestSubmit runs HTML5 constraint validation FIRST and silently
+      // blocks the event from ever firing when the required <select>s
+      // (Hook Style / Speaker Voice / Platform) are empty. Dispatching
+      // directly lets the existing JS submit handler run its own
+      // validation and surface a proper toast.
       var form = document.getElementById('hookForm');
-      if (form && typeof form.requestSubmit === 'function') {
-        form.requestSubmit();
-      } else if (form) {
-        // Fallback for older browsers — dispatch a synthetic submit so the
-        // existing submit handler still runs.
+      if (form) {
         form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
       }
     }
