@@ -2202,7 +2202,31 @@ function showToast(message, type = 'success') {
 
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
-      if (file) await uploadVideo(file);
+      if (!file) return;
+      // Task #151 — Mount the progress overlay BEFORE entering
+      // uploadVideo() and force a synchronous reflow so it's guaranteed
+      // to paint on the very first frame after file selection. If
+      // anything between here and the "1. Preparing upload" phase
+      // freezes the renderer, the user will still see Phase 0 sitting
+      // on screen and we'll know the lock-up is in the React/V10
+      // boot work that runs the instant the change event fires (not
+      // in uploadVideo at all). Also keeps the overlay visible for
+      // 30 seconds on success so the user can screenshot it after a
+      // fast upload completes.
+      try { window.__splicoraUploading = true; } catch(_){}
+      ensureUploadProgressOverlay();
+      startUploadProgressClock();
+      setUploadPhase('0. File selected: ' + (file.name || 'unnamed') + ' (' + Math.round(file.size/1024) + ' KB)', 0);
+      // Force a layout + paint so the overlay is visible BEFORE the
+      // synchronous JS inside uploadVideo can possibly block.
+      void document.getElementById('splicoraUploadProgress').offsetHeight;
+      await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
+      try {
+        await uploadVideo(file);
+      } catch (err){
+        setUploadPhase('ERROR (outer): ' + (err && err.message || 'unknown'));
+        console.error('[upload] outer error:', err);
+      }
     });
 
     // Task #142 — Drop a file from the OS file picker / Finder /
@@ -2313,11 +2337,12 @@ function showToast(message, type = 'success') {
           '<span id="splicoraUpDot" style="width:10px;height:10px;border-radius:50%;background:#a78bfa;flex-shrink:0;animation:splicoraUpPulse 1s ease-in-out infinite"></span>' +
           '<span id="splicoraUpPhase" style="flex:1;font-weight:600;letter-spacing:.2px">Starting upload…</span>' +
           '<span id="splicoraUpElapsed" style="font-variant-numeric:tabular-nums;color:#c4b5fd;font-size:12px">0.0s</span>' +
+          '<button id="splicoraUpClose" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center" title="Dismiss">×</button>' +
         '</div>' +
         '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">' +
           '<div id="splicoraUpBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6C3AED,#EC4899);transition:width .2s linear;border-radius:3px"></div>' +
         '</div>' +
-        '<div id="splicoraUpLog" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.55);max-height:90px;overflow-y:auto;line-height:1.5"></div>';
+        '<div id="splicoraUpLog" style="margin-top:8px;font-size:11px;color:rgba(255,255,255,.55);max-height:120px;overflow-y:auto;line-height:1.5"></div>';
       var kf = document.getElementById('splicoraUpKF');
       if (!kf){
         kf = document.createElement('style');
@@ -2326,6 +2351,14 @@ function showToast(message, type = 'success') {
         document.head.appendChild(kf);
       }
       document.body.appendChild(o);
+      // Wire the dismiss button
+      var closeBtn = document.getElementById('splicoraUpClose');
+      if (closeBtn){
+        closeBtn.addEventListener('click', function(){
+          o.style.display = 'none';
+          if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
+        });
+      }
       return o;
     }
 
@@ -2533,14 +2566,19 @@ function showToast(message, type = 'success') {
         uploadZone.style.pointerEvents = '';
         setUploadPhase('13. Done — upload complete', 100);
         showToast('Video uploaded successfully!', 'success');
-        stopUploadProgressOverlay({ keepVisibleMs: 4000 });
+        // Task #151 — Keep the overlay visible for 30 seconds (was 4)
+        // so the user can read every phase + timestamp after a fast
+        // upload completes. The × dismiss button hides it immediately
+        // when they're done reading.
+        stopUploadProgressOverlay({ keepVisibleMs: 30000 });
       } catch (error) {
         if (uploadBtn){ uploadBtn.textContent = originalText; uploadBtn.disabled = false; }
         uploadZone.style.opacity = '1';
         uploadZone.style.pointerEvents = 'auto';
         setUploadPhase('ERROR: ' + (error && error.message || 'unknown'));
         showToast('Failed to upload video: ' + error.message, 'error');
-        stopUploadProgressOverlay({ keepVisibleMs: 8000 });
+        // Errors stay visible until user dismisses — no auto-hide.
+        if (_upRAF){ cancelAnimationFrame(_upRAF); _upRAF = null; }
       } finally {
         // Task #148 — Clear the V10 applyAll pause flag on BOTH success
         // and failure paths so the editor's normal patch cadence resumes
