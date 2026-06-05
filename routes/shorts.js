@@ -1603,10 +1603,25 @@ function _fallbackYtdlpTitle(videoId) {
 
 // Helper: Parse moment timestamp range (MM:SS-MM:SS format)
 function parseTimeRange(rangeStr) {
-  const [start, end] = rangeStr.split('-');
+  const [start, end] = String(rangeStr || '').split('-');
+  // Accepts MM:SS, MM:SS.mmm, HH:MM:SS, HH:MM:SS.mmm, or bare seconds.
+  // Whisper-backed uploads produce HH:MM:SS.mmm transcripts and GPT
+  // sometimes carries that format into moment.timeRange, so the old
+  // 2-part-only parser silently produced 83 seconds for '1:23:45'.
   const parseTime = (str) => {
-    const [mins, secs] = str.split(':').map(Number);
-    return mins * 60 + secs;
+    if (str == null) return 0;
+    const trimmed = String(str).trim();
+    if (!trimmed) return 0;
+    // Strip surrounding spaces, brackets, leading [/]
+    const cleaned = trimmed.replace(/^\[|\]$/g, '').trim();
+    const parts = cleaned.split(':').map(s => parseFloat(s));
+    if (parts.length === 3) {
+      return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    }
+    if (parts.length === 2) {
+      return (parts[0] || 0) * 60 + (parts[1] || 0);
+    }
+    return parts[0] || 0;
   };
   return { start: parseTime(start), end: parseTime(end) };
 }
@@ -3412,6 +3427,34 @@ function extractFrameAt(sourcePath, atSec, outPath) {
   });
 }
 
+// Detects whether a video file actually has a video stream. Audio-only
+// uploads (podcasts saved as .mov / .mp4) match no Stream #N:M: Video:
+// line and every extractFrameAt call against them produces a black /
+// 0-byte file. We probe with ffmpeg -i and parse the stderr stream
+// summary; ffprobe isn't always on PATH on Railway. Runs in
+// ~50-150ms once per source.
+function _ffprobeHasVideo(sourcePath) {
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', sourcePath], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    var finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      // ffmpeg writes the stream summary to stderr in lines like
+      //   Stream #0:0: Video: h264, ...
+      //   Stream #0:0(eng): Audio: aac, ...
+      // For audio-only sources only the Audio line is present.
+      const hasVideo = /Stream #\d+:\d+(?:\(\w+\))?: Video:/i.test(stderr);
+      resolve(hasVideo);
+    };
+    proc.on('close', finish);
+    proc.on('error', finish);
+    setTimeout(finish, 5000);
+  });
+}
+
 // GET /upload-thumbnail/:analysisId
 // JPEG frame for an uploaded video's main analysis card hero image.
 // Lookup order:
@@ -3456,6 +3499,14 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
     const sourcePath = findUploadedSourcePath(analysisId);
     if (!sourcePath) {
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
+    }
+    // Probe for a usable video stream — audio-only podcast uploads
+    // would otherwise produce a black frame that's worse than no
+    // image. Same noVideoSource signal as the moment-thumbnail path.
+    const mainHasVideo = await _ffprobeHasVideo(sourcePath);
+    if (!mainHasVideo) {
+      console.log('  upload-thumbnail: source has no video stream (audio-only upload) for analysis ' + analysisId);
+      return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
     }
     try {
       await extractFrameAt(sourcePath, 1.0, outPath);
@@ -3525,21 +3576,74 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
     if (!sourcePath) {
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
     }
-    let startSec, endSec;
+    // Probe first: audio-only sources produce black frames at every
+    // seek position. Short-circuit with 404 + noVideoSource so the
+    // client paints the gradient/title placeholder instead.
+    const hasVideo = await _ffprobeHasVideo(sourcePath);
+    if (!hasVideo) {
+      console.log('  upload-moment-thumbnail: source has no video stream for analysis ' + analysisId);
+      return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
+    }
+    let startSec = 0, endSec = 0;
     try {
       const r = parseTimeRange(moment.timeRange);
-      startSec = r.start; endSec = r.end;
-    } catch (e) { return res.status(400).end(); }
+      startSec = r.start || 0;
+      endSec = r.end || 0;
+    } catch (e) { /* fall through with defaults; we'll still try seek 0 */ }
     const midSec = (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec > startSec)
       ? startSec + (endSec - startSec) / 2
       : (Number.isFinite(startSec) ? startSec : 0);
-    try {
-      await extractFrameAt(sourcePath, midSec, outPath);
-    } catch (e) {
-      console.error('  upload-moment-thumbnail extract failed:', e.message);
+    // Try multiple seek positions in order: midSec → startSec → 1.0 → 0.
+    // Covers the failure modes where the moment's timeRange exceeds the
+    // source's actual duration, or where ffmpeg can't find a keyframe at
+    // a deep seek. Same defensive ladder the main upload-thumbnail uses.
+    const seekCandidates = [];
+    if (Number.isFinite(midSec) && midSec > 0) seekCandidates.push(midSec);
+    if (Number.isFinite(startSec) && startSec > 0 && startSec !== midSec) seekCandidates.push(startSec);
+    seekCandidates.push(1.0, 0);
+    let extracted = false;
+    let lastErr = null;
+    for (const seek of seekCandidates) {
+      try {
+        await extractFrameAt(sourcePath, seek, outPath);
+        if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+          extracted = true;
+          if (seek !== midSec) console.log(`  upload-moment-thumbnail: midSec=${midSec}s failed; succeeded at ${seek}s for moment ${momentIdx} (analysis ${analysisId})`);
+          break;
+        }
+      } catch (e) { lastErr = e; }
+    }
+    if (!extracted) {
+      console.error('  upload-moment-thumbnail: all seek positions failed for moment ' + momentIdx + ' of ' + analysisId + ':', lastErr && lastErr.message);
+      // Final graceful fallback: serve the analysis's main thumbnail so
+      // the card paints SOMETHING rather than going blank. This matches
+      // Albert's spec ('thumbnails match the main thumbnail').
+      try {
+        const mainDb = await shortsOps.getThumbnail(analysisId);
+        if (mainDb && mainDb.length > 256) return sendBytes(mainDb);
+        const mainDisk = path.join(CLIPS_DIR, `_uthumb_${analysisId}.jpg`);
+        if (fs.existsSync(mainDisk) && fs.statSync(mainDisk).size > 256) {
+          return sendBytes(fs.readFileSync(mainDisk));
+        }
+        // Last resort: extract a fresh main thumbnail at 1s.
+        const fallbackPath = path.join(CLIPS_DIR, `_uthumb_${analysisId}_fallback.jpg`);
+        try {
+          await extractFrameAt(sourcePath, 1.0, fallbackPath);
+        } catch (_) {
+          try { await extractFrameAt(sourcePath, 0, fallbackPath); } catch (__) {}
+        }
+        if (fs.existsSync(fallbackPath) && fs.statSync(fallbackPath).size > 256) {
+          const fb = fs.readFileSync(fallbackPath);
+          // Persist as both main and this moment's thumbnail.
+          shortsOps.setThumbnail(analysisId, fb).catch(() => {});
+          shortsOps.setMomentThumbnail(analysisId, momentIdx, fb).catch(() => {});
+          return sendBytes(fb);
+        }
+      } catch (fbErr) {
+        console.error('  upload-moment-thumbnail main-thumb fallback failed:', fbErr.message);
+      }
       return res.status(500).end();
     }
-    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
     const bytes = fs.readFileSync(outPath);
     shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
       console.warn('  upload-moment-thumbnail DB persist failed:', e.message));
@@ -8352,7 +8456,7 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
                   onmouseover="this.style.background='#ef4444'; this.style.transform='scale(1.15)'"
                   onmouseout="this.style.background='rgba(239,68,68,0.9)'; this.style.transform='scale(1)'"
                 >&times;</button>
-                ${thumbSrc ? `<img src="${thumbSrc}" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;background:#000;" onerror="this.style.display='none'">` : ''}
+                ${thumbSrc ? `<div style="position:relative;width:100%;aspect-ratio:16/9;border-radius:8px;margin-bottom:12px;overflow:hidden;background:linear-gradient(135deg,#2a1f4a 0%,#1a1430 60%,#0a0612 100%);"><img src="${thumbSrc}" alt="Video thumbnail" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.onerror=null;this.style.display='none';var ovl=this.parentElement.querySelector('.card-thumb-fallback');if(ovl)ovl.style.display='flex';"><div class="card-thumb-fallback" style="display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;padding:16px;text-align:center;color:#e9d8ff;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-bottom:8px;opacity:0.85;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><div style="font-size:13px;font-weight:700;line-height:1.3;max-width:90%;">${(analysis.video_title || 'Audio upload').replace(/'/g, "&#39;").replace(/"/g, "&quot;").substring(0,60)}</div></div></div>` : ''}
                 <div class="card-header">
                   <div class="card-title">${analysis.video_title || 'YouTube Video'}</div>
                   <div class="card-meta">${new Date(analysis.created_at).toLocaleDateString()}</div>
@@ -9876,8 +9980,15 @@ ${paginationHtml}
             <button type="button" id="thumb-btn-\${idx}" onclick="openMomentPreview(\${_previewArgs})" title="Click to preview this moment"
               style="display:block; position:relative; text-decoration:none; aspect-ratio:16/9; width:100%; overflow:hidden; border-radius:8px; margin-bottom:12px; background:#000; border:none; cursor:pointer; padding:0;">
               <img src="\${_thumbSrc}" alt="Clip thumbnail"
-                onerror="this.onerror=null; this.style.display='none'; var bg=this.parentElement; if(bg) bg.style.background='linear-gradient(135deg,#1a1430,#0a0612)';"
+                onerror="this.onerror=null; this.style.display='none'; var bg=this.parentElement; if(bg){ bg.style.background='linear-gradient(135deg,#2a1f4a 0%,#1a1430 60%,#0a0612 100%)'; var ovl=bg.querySelector('.moment-thumb-fallback'); if(ovl) ovl.style.display='flex'; }"
                 style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy" />
+              <!-- Fallback overlay: visible when the img errors (audio-only
+                   source, missing file, etc.). Pointer-events:none so the
+                   parent button's click-to-preview still works. -->
+              <div class="moment-thumb-fallback" style="display:none; position:absolute; inset:0; flex-direction:column; align-items:center; justify-content:center; padding:14px; text-align:center; pointer-events:none; z-index:1;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-bottom:6px;opacity:0.85;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                <div style="font-size:12px;font-weight:700;color:#e9d8ff;line-height:1.3;max-width:90%;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">\${(moment.title || 'Audio moment').replace(/"/g,'&quot;')}</div>
+              </div>
               <div style="position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 50%,rgba(0,0,0,0.55) 100%); pointer-events:none;"></div>
               <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
                 width:54px; height:54px; background:rgba(108,58,237,0.92); border-radius:50%;
