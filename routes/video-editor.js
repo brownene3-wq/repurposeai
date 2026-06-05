@@ -7309,6 +7309,37 @@ setTimeout(function sidebarLayoutFix(){
 }, 2000);
 
 
+    // ═══ AI HOOK PRELOAD ═══
+    // When the user clicks "Edit in Video Editor" on the AI Hook page, we
+    // arrive here with ?hookPreload=<filename>&hookTitle=<title>&hookDuration=<sec>.
+    // If no server-side __INITIAL_PROJECT__ was injected, synthesize one
+    // from the URL params so the bootFromProject IIFE below picks it up
+    // and drops the hook video onto the timeline + program monitor.
+    (function preloadFromHookParams() {
+      try {
+        if (window.__INITIAL_PROJECT__) return;
+        var qp = new URLSearchParams(window.location.search || '');
+        var preload = qp.get('hookPreload');
+        if (!preload) return;
+        // Strip any path traversal — only allow a plain basename.
+        var safeName = String(preload).split('/').pop().split('\\').pop();
+        if (!safeName) return;
+        var title = qp.get('hookTitle') || 'AI Hook';
+        var durRaw = parseFloat(qp.get('hookDuration') || '5');
+        var dur = isFinite(durRaw) && durRaw > 0 ? Math.min(60, durRaw) : 5;
+        window.__INITIAL_PROJECT__ = {
+          id: null,
+          name: title.slice(0, 80),
+          primary: {
+            filename: safeName,
+            duration: dur,
+            serveUrl: '/video-editor/download/' + encodeURIComponent(safeName)
+          },
+          broll: []
+        };
+      } catch (e) { console.warn('hookPreload bootstrap failed:', e); }
+    })();
+
     // ═══ INITIAL PROJECT BOOT ═══
     // If the user was redirected here from the AI B-Roll ingestion flow,
     // window.__INITIAL_PROJECT__ is injected by the /:projectId route and

@@ -369,6 +369,51 @@ router.get('/', requireAuth, (req, res) => {
         color: #fff;
         border-color: var(--primary);
       }
+      /* Upload panel — matches the AI Reframe ingest-panel layout for
+         visual consistency across upload surfaces. */
+      .ingest-panel {
+        background: rgba(108, 58, 237, 0.05);
+        border: 2px dashed var(--primary);
+        border-radius: 12px;
+        padding: 1.75rem 1.75rem 1.5rem;
+      }
+      .ingest-head { text-align: center; margin-bottom: 1rem; }
+      .ingest-head h3 { color: var(--text); margin: 0 0 .35rem; font-size: 1.15rem; font-weight: 700; }
+      .ingest-head p { color: var(--text-muted); margin: 0; font-size: 0.85rem; }
+      .ingest-drop {
+        background: rgba(0, 0, 0, 0.15);
+        border: 1px dashed rgba(108, 58, 237, 0.45);
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+      }
+      .ingest-drop:hover, .ingest-drop.dragover {
+        background: rgba(108, 58, 237, 0.08);
+        border-color: var(--primary);
+      }
+      .ingest-icon { margin-bottom: 0.5rem; display: flex; justify-content: center; }
+      .ingest-text { color: var(--text); margin-bottom: 0.25rem; font-weight: 600; }
+      .ingest-subtext { color: var(--text-muted); font-size: 0.85rem; }
+      .ingest-filename {
+        margin-top: 1rem;
+        padding: .75rem 1rem;
+        background: var(--dark-2);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 0.85rem;
+        display: none;
+      }
+      .ingest-filename.has-file { display: block; }
+      .ingest-cloud-row {
+        display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+        margin-top: 1rem;
+      }
+      .ingest-footnote {
+        text-align: center; font-size: 0.8rem; color: var(--text-muted);
+        margin-top: 0.8rem;
+      }
     </style>
   `;
 
@@ -424,29 +469,34 @@ ${pageStyles}
 
         <!-- URL Input panel -->
         <div id="qibUrlPanel" style="display:block">
-          <div style="display:flex;gap:8px;width:100%;max-width:600px;margin:0 auto">
-            <div style="position:relative;flex:1">
+          <div style="width:100%;max-width:600px;margin:0 auto">
+            <div style="position:relative">
               <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px"></span>
               <input type="url" id="youtubeUrl" name="youtubeUrl" placeholder="Drop a YouTube link" style="width:100%;padding:12px 12px 12px 36px;background:var(--dark-2);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.95rem">
             </div>
-            <button type="button" id="heroImportBtn" onclick="importUrlAndGenerate()" style="padding:9px 18px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.8rem;white-space:nowrap">▶ Import</button>
           </div>
         </div>
 
-        <!-- Upload panel -->
+        <!-- Upload panel — matches AI Reframe's ingest-panel layout -->
         <div id="qibUploadPanel" style="display:none">
-          <div class="upload-zone" id="uploadContainer" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-            <h3><img src="/images/section-icons/A-82.png" alt="" style="height:24px;width:24px;border-radius:5px;vertical-align:middle;margin-right:4px"> Drop your video here</h3>
-            <p>Or click to browse</p>
-            <button type="button" class="upload-button" onclick="document.getElementById('videoFile').click()">Select Video</button>
-            <input type="file" id="videoFile" style="display:none" accept="video/*" onchange="handleFileSelect(event)">
-            <p id="fileName" style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;"></p>
+          <div class="ingest-panel">
+            <div class="ingest-head">
+              <h3>Drop your video file</h3>
+              <p>Paste a video file from your computer, Google Drive, or Dropbox</p>
+            </div>
+            <div class="ingest-drop" id="uploadContainer" onclick="document.getElementById('videoFile').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+              <div class="ingest-icon"><img src="/images/section-icons/A-61.png" alt="" style="height:48px;width:48px;border-radius:10px"></div>
+              <div class="ingest-text">Drop your video file here</div>
+              <div class="ingest-subtext">Or click to select • MP4, MOV, WebM supported</div>
+              <input type="file" id="videoFile" style="display:none" accept="video/*" onchange="handleFileSelect(event)">
+              <div id="fileName" class="ingest-filename"></div>
+            </div>
+            <div class="ingest-cloud-row">
+              <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-75.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Google Drive</button>
+              <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
+            </div>
+            <p class="ingest-footnote">You can upload videos up to 120 minutes long.</p>
           </div>
-          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:1rem">
-            <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#4285F4,#34A853);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-75.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Google Drive</button>
-            <button type="button" style="padding:10px 20px;background:linear-gradient(135deg,#0061FF,#0041B3);color:#fff;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:0.9rem"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
-          </div>
-          <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-top:0.8rem">You can upload videos up to 120 minutes long.</p>
         </div>
 
         <!-- Text/Transcript panel -->
@@ -509,12 +559,15 @@ ${pageStyles}
               <label for="platform">Platform</label>
               <select id="platform" name="platform" required>
                 <option value="">Select a platform</option>
-                <option value="TikTok">TikTok</option>
-                <option value="YouTube Shorts">YouTube Shorts</option>
-                <option value="Instagram Reels">Instagram Reels</option>
                 <option value="Instagram">Instagram</option>
-                <option value="Twitter/X">Twitter/X</option>
+                <option value="TikTok">TikTok</option>
+                <option value="Twitter">Twitter/X</option>
                 <option value="LinkedIn">LinkedIn</option>
+                <option value="Facebook">Facebook</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Threads">Threads</option>
+                <option value="Pinterest">Pinterest</option>
+                <option value="Blog">Blog Post</option>
               </select>
             </div>
           </div>
@@ -531,14 +584,19 @@ ${pageStyles}
         <div class="preview-label">Hook Preview</div>
         <div class="hook-preview">
           <div class="hook-preview-text" id="hookPreviewText"></div>
-          <div class="audio-preview">
+          <div class="video-preview" id="videoPreviewWrap" style="display:none;margin-bottom:1rem">
+            <div class="preview-label">Video Preview</div>
+            <video controls playsinline preload="metadata" id="hookVideo" style="width:100%;max-width:720px;border-radius:8px;background:#000"></video>
+            <p id="videoWarningLine" style="color:var(--warning);font-size:.8rem;margin-top:.5rem;display:none"></p>
+          </div>
+          <div class="audio-preview" id="audioPreviewWrap">
             <div class="preview-label">Audio Preview</div>
             <audio controls class="audio-player" id="hookAudio"></audio>
           </div>
         </div>
         <div class="preview-actions">
           <button type="button" class="btn-apply" id="applyBtn" onclick="downloadHookAssets()">⬇ Download Hook Assets</button>
-          <button type="button" class="btn-apply" onclick="openAhPublishModal()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;margin-left:10px;">✈️ Publish to…</button>
+          <button type="button" class="btn-apply" id="editInEditorBtn" onclick="openHookInVideoEditor()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;margin-left:10px;">✏️ Edit in Video Editor</button>
         </div>
       </div>
 
@@ -590,33 +648,6 @@ ${pageStyles}
       } else if (mode === 'text') {
         textPanel.style.display = 'block';
         textBtn.classList.add('active');
-      }
-    }
-
-    // The ▶ Import button used to just .focus() the URL field, which felt
-    // like a no-op to users. It now validates that a URL is present and
-    // triggers the same form-submit flow as Generate AI Hook (which runs
-    // the full validation for Hook Style / Voice / Platform and surfaces
-    // toast errors for anything still missing).
-    function importUrlAndGenerate() {
-      // Force URL mode in case the user is currently in a different panel.
-      setInputMode('youtube');
-      var urlInput = document.getElementById('youtubeUrl');
-      var url = (urlInput.value || '').trim();
-      if (!url) {
-        urlInput.focus();
-        showToast('Paste a YouTube / Rumble / Twitch / Zoom link first');
-        return;
-      }
-      // Dispatch a synthetic submit event instead of form.requestSubmit().
-      // requestSubmit runs HTML5 constraint validation FIRST and silently
-      // blocks the event from ever firing when the required <select>s
-      // (Hook Style / Speaker Voice / Platform) are empty. Dispatching
-      // directly lets the existing JS submit handler run its own
-      // validation and surface a proper toast.
-      var form = document.getElementById('hookForm');
-      if (form) {
-        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
       }
     }
 
@@ -717,20 +748,27 @@ ${pageStyles}
       document.getElementById('uploadContainer').classList.remove('dragover');
     }
 
+    function showSelectedFileName(name) {
+      var el = document.getElementById('fileName');
+      el.textContent = 'Selected: ' + name;
+      el.classList.add('has-file');
+    }
+
     function handleDrop(e) {
       e.preventDefault();
+      e.stopPropagation();
       document.getElementById('uploadContainer').classList.remove('dragover');
       const files = e.dataTransfer.files;
       if (files.length > 0) {
         currentVideoFile = files[0];
-        document.getElementById('fileName').textContent = 'Selected: ' + files[0].name;
+        showSelectedFileName(files[0].name);
       }
     }
 
     function handleFileSelect(e) {
       if (e.target.files.length > 0) {
         currentVideoFile = e.target.files[0];
-        document.getElementById('fileName').textContent = 'Selected: ' + e.target.files[0].name;
+        showSelectedFileName(e.target.files[0].name);
       }
     }
 
@@ -813,18 +851,45 @@ ${pageStyles}
         if (response.ok && data.hookText) {
           hookData = data;
           document.getElementById('hookPreviewText').textContent = data.hookText;
-          if (data.audioUrl && !data.voiceError) {
-            document.getElementById('hookAudio').src = data.audioUrl;
-            document.getElementById('hookAudio').style.display = 'block';
+
+          // Video preview — when a full hook video was rendered, show it
+          // and hide the audio-only player (the video already carries the
+          // voiceover). When video is missing, fall back to audio + show
+          // an inline warning explaining why.
+          var videoWrap = document.getElementById('videoPreviewWrap');
+          var audioWrap = document.getElementById('audioPreviewWrap');
+          var videoEl = document.getElementById('hookVideo');
+          var editBtn = document.getElementById('editInEditorBtn');
+          var warnLine = document.getElementById('videoWarningLine');
+          if (data.videoUrl) {
+            videoEl.src = data.videoUrl;
+            videoWrap.style.display = 'block';
+            audioWrap.style.display = 'none';
+            if (editBtn) editBtn.style.display = '';
+            if (Array.isArray(data.videoWarnings) && data.videoWarnings.length > 0) {
+              warnLine.textContent = 'Note: ' + data.videoWarnings.join('; ');
+              warnLine.style.display = 'block';
+            } else {
+              warnLine.style.display = 'none';
+            }
           } else {
-            document.getElementById('hookAudio').style.display = 'none';
-            if (data.voiceError === 'NO_API_KEY') {
-              document.getElementById('apiKeyNotice').style.display = 'block';
-              showToast('Hook text generated! Connect your ElevenLabs API key for voice audio.');
-            } else if (data.voiceError === 'FREE_TTS_ERROR') {
-              showToast('Hook text generated! Free voice audio could not be created on this server.');
+            videoWrap.style.display = 'none';
+            audioWrap.style.display = 'block';
+            if (editBtn) editBtn.style.display = 'none';
+            if (data.audioUrl && !data.voiceError) {
+              document.getElementById('hookAudio').src = data.audioUrl;
+              document.getElementById('hookAudio').style.display = 'block';
+            } else {
+              document.getElementById('hookAudio').style.display = 'none';
+              if (data.voiceError === 'NO_API_KEY') {
+                document.getElementById('apiKeyNotice').style.display = 'block';
+                showToast('Hook text generated! Connect your ElevenLabs API key for voice audio.');
+              } else if (data.voiceError === 'FREE_TTS_ERROR') {
+                showToast('Hook text generated! Free voice audio could not be created on this server.');
+              }
             }
           }
+
           document.getElementById('previewSection').classList.add('active');
           // If transcription couldn't be completed, let the user know the
           // hook was generated from limited context so they aren't surprised
@@ -887,21 +952,26 @@ ${pageStyles}
       try {
         const slug = slugify(hookData.hookText, 40);
 
-        // 1) Fetch the audio file as a Blob and force-download it. This
-        //    bypasses the audio player's inline-playback behavior so the
-        //    user actually gets a saved file in their Downloads folder.
-        if (hookData.audioUrl) {
+        // 1) Force-download the media asset. Prefer the full video MP4 if
+        //    one was rendered (it already contains the voiceover); fall
+        //    back to the audio MP3 otherwise. Either way the user gets a
+        //    real file saved to their Downloads folder, not the inline
+        //    player's playback-only stream.
+        var mediaUrl = hookData.videoUrl || hookData.audioUrl;
+        var mediaExt = hookData.videoUrl ? '.mp4' : '.mp3';
+        var mediaLabel = hookData.videoUrl ? 'video' : 'audio';
+        if (mediaUrl) {
           try {
-            const audioResp = await fetch(hookData.audioUrl);
-            if (!audioResp.ok) throw new Error('audio fetch ' + audioResp.status);
-            const audioBlob = await audioResp.blob();
-            triggerBlobDownload(audioBlob, 'hook-' + slug + '.mp3');
+            const mediaResp = await fetch(mediaUrl);
+            if (!mediaResp.ok) throw new Error(mediaLabel + ' fetch ' + mediaResp.status);
+            const mediaBlob = await mediaResp.blob();
+            triggerBlobDownload(mediaBlob, 'hook-' + slug + mediaExt);
           } catch (e) {
-            console.warn('Audio download failed:', e);
-            showToast('Audio could not be downloaded — text file will still be saved.');
+            console.warn('Media download failed:', e);
+            showToast(mediaLabel.charAt(0).toUpperCase() + mediaLabel.slice(1) + ' could not be downloaded — text file will still be saved.');
           }
         } else {
-          showToast('No audio was generated for this hook — saving text file only.');
+          showToast('No media was generated for this hook — saving text file only.');
         }
 
         // 2) Build a small text document with the hook spec the user can
@@ -940,9 +1010,16 @@ ${pageStyles}
           lines.push('');
         }
         lines.push('---');
-        lines.push('Drop hook-' + slug + '.mp3 into your editor as the first audio clip,');
-        lines.push('overlay the impact words on-screen during the spoken VO, and pair');
-        lines.push('with the recommended SFX/visual treatment for maximum scroll-stop.');
+        if (hookData.videoUrl) {
+          lines.push('Drop hook-' + slug + '.mp4 onto the start of your timeline as the');
+          lines.push('intro hook clip. The on-screen impact words, voiceover, and B-roll');
+          lines.push('are already burned in — use this asset as a reference or stack');
+          lines.push('your own footage on top.');
+        } else {
+          lines.push('Drop hook-' + slug + '.mp3 into your editor as the first audio clip,');
+          lines.push('overlay the impact words on-screen during the spoken VO, and pair');
+          lines.push('with the recommended SFX/visual treatment for maximum scroll-stop.');
+        }
 
         // NOTE: this entire script block lives inside a Node template
         // literal, so escape sequences need an extra backslash to survive.
@@ -972,6 +1049,27 @@ ${pageStyles}
         showToast('Failed to copy');
       });
     }
+
+    // Open the Video Editor in a new tab with the generated hook video
+    // preloaded on the timeline. Uses the editor's URL-param preload hook
+    // (?hookPreload=<filename>&hookTitle=<title>), which the editor reads
+    // on boot to synthesize an __INITIAL_PROJECT__ when no project id is
+    // present. Replaces the older "Publish to..." flow.
+    function openHookInVideoEditor() {
+      if (!hookData || !hookData.videoFilename) {
+        showToast('Generate a hook video first');
+        return;
+      }
+      var title = (hookData.hookText || 'AI Hook').slice(0, 80);
+      var params = new URLSearchParams();
+      params.set('hookPreload', hookData.videoFilename);
+      params.set('hookTitle', title);
+      params.set('hookDuration', String(hookData.videoDurationSec || 5));
+      var url = '/video-editor?' + params.toString();
+      window.open(url, '_blank', 'noopener');
+    }
+    // Expose to global so the inline onclick can find it.
+    try { window.openHookInVideoEditor = openHookInVideoEditor; } catch (_) {}
 
     ${themeScript}
   
@@ -1437,6 +1535,418 @@ async function generateHookSpeech(hookText, voiceNameOrId, apiKey) {
     req.end();
   });
 }
+
+// ---------------------------------------------------------------------------
+// Hook video pipeline
+// ---------------------------------------------------------------------------
+// Generates a full MP4 hook video by combining:
+//   1) AI B-roll footage from Pixabay matched to the hook's gold nuggets
+//   2) The TTS voiceover
+//   3) Animated impact-word overlays
+// And then concatenating the hook segment with the user's source video
+// (uploaded file or yt-dlp-downloaded YouTube video). For Text mode there
+// is no source video — we emit the hook segment alone.
+
+// Helper: HTTPS GET → Buffer (no fetch dependency, keeps node version flex)
+function downloadBufferHttps(url, timeoutMs) {
+  return new Promise(function(resolve, reject) {
+    var parsed;
+    try { parsed = new URL(url); } catch (e) { return reject(new Error('Invalid URL')); }
+    var lib = parsed.protocol === 'http:' ? require('http') : https;
+    var req = lib.get(url, function(res) {
+      // Follow redirects up to 3 hops
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return downloadBufferHttps(new URL(res.headers.location, url).toString(), timeoutMs)
+          .then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error('HTTP ' + res.statusCode));
+      }
+      var chunks = [];
+      res.on('data', function(c) { chunks.push(c); });
+      res.on('end', function() { resolve(Buffer.concat(chunks)); });
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs || 30000, function() { req.destroy(); reject(new Error('Download timed out')); });
+  });
+}
+
+// Helper: ffmpeg/ffprobe-equivalent duration probe via stderr parse
+async function probeMediaDuration(filePath) {
+  return new Promise(function(resolve) {
+    if (!ffmpegPath || !fs.existsSync(filePath)) return resolve(0);
+    var stderr = '';
+    var p = spawn(ffmpegPath, ['-i', filePath, '-hide_banner']);
+    p.stderr.on('data', function(d) { stderr += d.toString(); });
+    p.on('close', function() {
+      var m = /Duration:\s*(\d+):(\d+):(\d+\.\d+)/.exec(stderr);
+      resolve(m ? (+m[1] * 3600 + +m[2] * 60 + parseFloat(m[3])) : 0);
+    });
+    p.on('error', function() { resolve(0); });
+  });
+}
+
+// Helper: search Pixabay for video clips matching a query, return clip URLs
+async function fetchPixabayClips(query, count) {
+  count = count || 3;
+  var apiKey = process.env.PIXABAY_API_KEY;
+  if (!apiKey) throw new Error('NO_PIXABAY_KEY');
+  var qLimited = (query || 'cinematic').toString().slice(0, 100);
+  var url = 'https://pixabay.com/api/videos/?key=' + apiKey +
+            '&q=' + encodeURIComponent(qLimited) +
+            '&per_page=' + Math.max(3, Math.min(20, count * 3)) +
+            '&safesearch=true&video_type=film';
+  var buf = await downloadBufferHttps(url, 15000);
+  var data;
+  try { data = JSON.parse(buf.toString('utf8')); }
+  catch (e) { throw new Error('Pixabay JSON parse error'); }
+  var hits = data.hits || [];
+  if (hits.length === 0) throw new Error('No Pixabay results for query');
+  // Prefer medium size; fall back to small then large then tiny.
+  return hits.slice(0, count * 2).map(function(h) {
+    var v = h.videos || {};
+    var choice = v.medium || v.small || v.large || v.tiny;
+    return choice && choice.url ? { url: choice.url, duration: h.duration || 5 } : null;
+  }).filter(Boolean).slice(0, count);
+}
+
+// Helper: download a Pixabay clip to local disk
+async function downloadPixabayClipToFile(clipUrl) {
+  var localPath = path.join(uploadDir, 'broll-' + uuidv4() + '.mp4');
+  var buf = await downloadBufferHttps(clipUrl, 30000);
+  fs.writeFileSync(localPath, buf);
+  return localPath;
+}
+
+// Helper: download a YouTube source video via yt-dlp (capped quality + duration
+// limit so we don't blow the gateway timeout on long videos). Returns the
+// local path, or throws on failure.
+async function downloadYoutubeSourceVideo(youtubeUrl) {
+  if (!ytdlpPath) throw new Error('yt-dlp not available');
+  var outPath = path.join(uploadDir, 'yt-source-' + uuidv4() + '.mp4');
+  return new Promise(function(resolve, reject) {
+    var args = [
+      '-f', 'best[height<=720][ext=mp4]/best[ext=mp4]/best',
+      '--no-playlist',
+      '--max-filesize', '200M'
+    ].concat(YTDLP_COMMON_ARGS).concat([
+      '-o', outPath,
+      youtubeUrl
+    ]);
+    var p = spawn(ytdlpPath, args);
+    var stderr = '';
+    p.stderr.on('data', function(d) { stderr = (stderr + d.toString()).slice(-400); });
+    p.on('close', function(code) {
+      if (code === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 1000) resolve(outPath);
+      else reject(new Error('yt-dlp source download failed (code ' + code + '): ' + stderr));
+    });
+    p.on('error', function(e) { reject(e); });
+    setTimeout(function() { try { p.kill('SIGKILL'); } catch (_) {} reject(new Error('yt-dlp timed out')); }, 60000);
+  });
+}
+
+// Helper: build the impact-word drawtext chain used for the hook segment
+function buildImpactWordsDrawtext(impactWords, durationSec, W, H, fontFile) {
+  if (!Array.isArray(impactWords) || impactWords.length === 0) return '';
+  var words = impactWords.slice(0, 3).map(function(w) {
+    return String(w).toUpperCase().slice(0, 22).replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, '’');
+  });
+  var baseSize = Math.round(H * 0.14);
+  var peakSize = Math.round(H * 0.19);
+  var filters = words.map(function(word, idx) {
+    var winStart = (idx + 0.25) * (durationSec / (words.length + 0.5));
+    var winEnd = winStart + 1.1;
+    var parts = [
+      'drawtext=text=\'' + word + '\'',
+      'fontsize=' + (idx === words.length - 1 ? peakSize : baseSize),
+      'fontcolor=white',
+      'shadowx=0', 'shadowy=6', 'shadowcolor=black@0.9',
+      'borderw=3', 'bordercolor=black@0.6',
+      'x=(w-text_w)/2',
+      'y=(h-text_h)/2-h*0.02',
+      "enable='between(t\\," + winStart.toFixed(3) + "\\," + winEnd.toFixed(3) + ")'"
+    ];
+    if (fontFile) parts.splice(3, 0, 'fontfile=' + fontFile);
+    return parts.join(':');
+  }).join(',');
+  return filters;
+}
+
+// Helper: find a usable bold font file on disk (same fallback chain as
+// /compose-clip and the video-editor exporter).
+function findBoldFontFile() {
+  var candidates = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf',
+    '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf'
+  ];
+  for (var i = 0; i < candidates.length; i++) {
+    if (fs.existsSync(candidates[i])) {
+      return candidates[i].replace(/\\/g, '\\\\').replace(/:/g, '\\:');
+    }
+  }
+  return '';
+}
+
+// Helper: compose the hook segment from B-roll clips, voiceover, and
+// impact-word overlays. Hook length = voiceover length (clamped 3–8s).
+async function composeHookSegmentWithBroll(opts) {
+  var brollPaths = opts.brollPaths;
+  var audioPath = opts.audioPath;
+  var impactWords = opts.impactWords || [];
+  var durationSec = Math.max(2.5, Math.min(10, opts.durationSec || 5));
+  var outputPath = opts.outputPath;
+  var W = opts.width || 1280;
+  var H = opts.height || 720;
+
+  if (!ffmpegPath) throw new Error('FFmpeg not available');
+  if (!brollPaths || brollPaths.length === 0) throw new Error('No B-roll clips');
+
+  var fontFile = findBoldFontFile();
+  var impactChain = buildImpactWordsDrawtext(impactWords, durationSec, W, H, fontFile);
+
+  // Each B-roll clip gets an equal slice of the total duration. Scale + crop
+  // each to fill 1280x720 (preserves aspect), reset PTS so concat works.
+  var perClip = durationSec / brollPaths.length;
+  var inputs = [];
+  var labels = [];
+  brollPaths.forEach(function(p, i) {
+    inputs.push('-stream_loop', '-1', '-t', perClip.toFixed(3), '-i', p);
+    labels.push('[' + i + ':v]scale=' + W + ':' + H + ':force_original_aspect_ratio=increase,crop=' + W + ':' + H + ',setsar=1,fps=30,setpts=PTS-STARTPTS[v' + i + ']');
+  });
+  var concatInputs = brollPaths.map(function(_, i) { return '[v' + i + ']'; }).join('');
+  var n = brollPaths.length;
+
+  var filterGraph = labels.concat([
+    concatInputs + 'concat=n=' + n + ':v=1:a=0[concat]',
+    '[concat]format=yuv420p' + (impactChain ? ',' + impactChain : '') + '[v]'
+  ]);
+
+  var args = [].concat(inputs);
+  var hasAudio = !!audioPath && fs.existsSync(audioPath);
+  if (hasAudio) {
+    args = args.concat(['-i', audioPath]);
+    filterGraph.push('[' + n + ':a]volume=1.0,atrim=0:' + durationSec.toFixed(3) + ',asetpts=PTS-STARTPTS[a]');
+  }
+
+  args = args.concat([
+    '-filter_complex', filterGraph.join(';'),
+    '-map', '[v]'
+  ]);
+  if (hasAudio) args = args.concat(['-map', '[a]']);
+
+  args = args.concat([
+    '-t', durationSec.toFixed(3),
+    '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+    '-profile:v', 'high', '-level', '4.0',
+    '-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k',
+    '-movflags', '+faststart',
+    '-y', outputPath
+  ]);
+
+  await new Promise(function(resolve, reject) {
+    var p = spawn(ffmpegPath, args);
+    var stderrTail = '';
+    p.stderr.on('data', function(d) { stderrTail = (stderrTail + d.toString()).slice(-600); });
+    p.on('close', function(code) {
+      if (code === 0 && fs.existsSync(outputPath)) resolve();
+      else reject(new Error('ffmpeg compose failed (' + code + '): ' + stderrTail));
+    });
+    p.on('error', reject);
+    setTimeout(function() { try { p.kill('SIGKILL'); } catch (_) {} reject(new Error('ffmpeg compose timeout')); }, 90000);
+  });
+
+  return outputPath;
+}
+
+// Helper: concatenate hook segment + source video (with re-encode to match
+// resolution/codec — the two clips may differ wildly so we can't use
+// fast-concat).
+async function concatHookWithSource(hookPath, sourcePath, outputPath) {
+  if (!ffmpegPath) throw new Error('FFmpeg not available');
+  var W = 1280, H = 720;
+  var filter =
+    '[0:v]scale=' + W + ':' + H + ':force_original_aspect_ratio=decrease,pad=' + W + ':' + H + ':(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30[v0];' +
+    '[1:v]scale=' + W + ':' + H + ':force_original_aspect_ratio=decrease,pad=' + W + ':' + H + ':(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30[v1];' +
+    '[0:a]aresample=44100,aformat=channel_layouts=stereo[a0];' +
+    '[1:a]aresample=44100,aformat=channel_layouts=stereo[a1];' +
+    '[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]';
+  var args = [
+    '-i', hookPath,
+    '-i', sourcePath,
+    '-filter_complex', filter,
+    '-map', '[v]', '-map', '[a]',
+    '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+    '-profile:v', 'high', '-level', '4.0',
+    '-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k',
+    '-movflags', '+faststart',
+    '-y', outputPath
+  ];
+  await new Promise(function(resolve, reject) {
+    var p = spawn(ffmpegPath, args);
+    var stderrTail = '';
+    p.stderr.on('data', function(d) { stderrTail = (stderrTail + d.toString()).slice(-600); });
+    p.on('close', function(code) {
+      if (code === 0 && fs.existsSync(outputPath)) resolve();
+      else reject(new Error('ffmpeg concat failed (' + code + '): ' + stderrTail));
+    });
+    p.on('error', reject);
+    setTimeout(function() { try { p.kill('SIGKILL'); } catch (_) {} reject(new Error('ffmpeg concat timeout')); }, 120000);
+  });
+  return outputPath;
+}
+
+// Orchestrator: end-to-end hook video build. Returns { videoPath, warnings: [] }.
+// Each step degrades gracefully — if B-roll fails we fall back to the legacy
+// gradient hook (via the existing /compose-clip pattern, inlined below), and
+// if source-concat fails we still return the hook segment.
+async function buildHookVideo(opts) {
+  // opts: { audioPath, hookText, impactWords, inputType, sourcePath, youtubeUrl }
+  var warnings = [];
+
+  // 1) Determine voiceover duration
+  var voDuration = 5;
+  if (opts.audioPath) {
+    var d = await probeMediaDuration(opts.audioPath);
+    if (d > 0) voDuration = Math.max(2.5, Math.min(10, d));
+  }
+
+  // 2) Fetch B-roll matched to impact words + hook topic
+  var brollPaths = [];
+  var query = (opts.impactWords || []).join(' ') + ' ' + (opts.hookText || '');
+  query = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90);
+  if (!query) query = 'cinematic abstract';
+  try {
+    var clips = await fetchPixabayClips(query, 3);
+    for (var i = 0; i < clips.length; i++) {
+      try {
+        var p = await downloadPixabayClipToFile(clips[i].url);
+        brollPaths.push(p);
+      } catch (e) {
+        warnings.push('Pixabay clip download failed: ' + e.message);
+      }
+    }
+  } catch (e) {
+    warnings.push('Pixabay search failed: ' + e.message);
+  }
+
+  // 3) Compose hook segment
+  var hookSegmentPath = path.join(outputDir, 'hook-segment-' + uuidv4() + '.mp4');
+  if (brollPaths.length === 0) {
+    warnings.push('No B-roll available — using gradient fallback');
+    // Fallback: use the existing /compose-clip flow inline (gradient + impact
+    // words + audio). We synthesize a tiny "color" input and reuse the same
+    // drawtext chain.
+    await composeGradientFallback({
+      audioPath: opts.audioPath,
+      impactWords: opts.impactWords,
+      durationSec: voDuration,
+      outputPath: hookSegmentPath
+    });
+  } else {
+    await composeHookSegmentWithBroll({
+      brollPaths: brollPaths,
+      audioPath: opts.audioPath,
+      impactWords: opts.impactWords,
+      durationSec: voDuration,
+      outputPath: hookSegmentPath
+    });
+  }
+
+  // 4) Concatenate with source video where applicable
+  var finalPath = hookSegmentPath;
+  if (opts.inputType === 'upload' && opts.sourcePath && fs.existsSync(opts.sourcePath)) {
+    try {
+      var concatPath = path.join(outputDir, 'hook-full-' + uuidv4() + '.mp4');
+      await concatHookWithSource(hookSegmentPath, opts.sourcePath, concatPath);
+      finalPath = concatPath;
+    } catch (e) {
+      warnings.push('Source concat failed: ' + e.message);
+    }
+  } else if (opts.inputType === 'youtube' && opts.youtubeUrl) {
+    try {
+      var ytSourcePath = await downloadYoutubeSourceVideo(opts.youtubeUrl);
+      try {
+        var concatPath2 = path.join(outputDir, 'hook-full-' + uuidv4() + '.mp4');
+        await concatHookWithSource(hookSegmentPath, ytSourcePath, concatPath2);
+        finalPath = concatPath2;
+      } finally {
+        try { fs.unlinkSync(ytSourcePath); } catch (_) {}
+      }
+    } catch (e) {
+      warnings.push('YouTube source download/concat failed: ' + e.message);
+    }
+  }
+
+  // 5) Cleanup downloaded B-roll
+  brollPaths.forEach(function(p) { try { fs.unlinkSync(p); } catch (_) {} });
+
+  return { videoPath: finalPath, warnings: warnings, durationSec: voDuration };
+}
+
+// Fallback hook segment (no B-roll) — gradient bg + impact words + audio
+async function composeGradientFallback(opts) {
+  var durationSec = Math.max(2.5, Math.min(8, opts.durationSec || 5));
+  var W = 1280, H = 720;
+  var fontFile = findBoldFontFile();
+  var impactChain = buildImpactWordsDrawtext(opts.impactWords || [], durationSec, W, H, fontFile);
+  var hasAudio = !!opts.audioPath && fs.existsSync(opts.audioPath);
+
+  var args = [
+    '-f', 'lavfi', '-i',
+    'color=c=0x1a0f08:s=' + W + 'x' + H + ':r=30:d=' + durationSec.toFixed(3)
+  ];
+  if (hasAudio) args = args.concat(['-i', opts.audioPath]);
+
+  var filter = '[0:v]format=yuv420p' + (impactChain ? ',' + impactChain : '') + '[v]';
+  if (hasAudio) filter += ';[1:a]volume=1.0,atrim=0:' + durationSec.toFixed(3) + ',asetpts=PTS-STARTPTS[a]';
+
+  args = args.concat([
+    '-filter_complex', filter,
+    '-map', '[v]'
+  ]);
+  if (hasAudio) args = args.concat(['-map', '[a]']);
+
+  args = args.concat([
+    '-t', durationSec.toFixed(3),
+    '-c:v', 'libx264', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', '128k',
+    '-movflags', '+faststart',
+    '-y', opts.outputPath
+  ]);
+
+  await new Promise(function(resolve, reject) {
+    var p = spawn(ffmpegPath, args);
+    var stderrTail = '';
+    p.stderr.on('data', function(d) { stderrTail = (stderrTail + d.toString()).slice(-600); });
+    p.on('close', function(code) {
+      if (code === 0 && fs.existsSync(opts.outputPath)) resolve();
+      else reject(new Error('gradient fallback failed: ' + stderrTail));
+    });
+    p.on('error', reject);
+    setTimeout(function() { try { p.kill('SIGKILL'); } catch (_) {} reject(new Error('fallback timeout')); }, 60000);
+  });
+
+  return opts.outputPath;
+}
+
+// Serve generated video files
+router.get('/video/:filename', (req, res) => {
+  // Defense against path traversal — only allow plain basename
+  var name = path.basename(req.params.filename || '');
+  if (!name || name.indexOf('..') !== -1) return res.status(400).end();
+  var filePath = path.join(outputDir, name);
+  if (!fs.existsSync(filePath)) return res.status(404).end();
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  // Also serve from the editor's download path so the Video Editor can
+  // load it as a regular project asset.
+  res.sendFile(filePath);
+});
 
 // Serve generated audio files
 router.get('/audio/:filename', (req, res) => {
@@ -1923,9 +2433,65 @@ router.post('/generate', requireAuth, requireCredits('ai-hook'), requireStorageH
       }
     }
 
+    // ─── Full hook video pipeline ─────────────────────────────────────
+    // After audio + spec are in hand, build a real MP4 hook video using
+    // AI B-roll (Pixabay) + voiceover + impact-word overlays, then
+    // concatenate with the user's source video (Upload: req.file,
+    // YouTube: yt-dlp download, Text: hook segment only). Each step
+    // degrades gracefully and the overall pipeline is bounded by a
+    // wall-clock cap so we never hang the request.
+    let videoUrl = '';
+    let videoFilename = '';
+    let videoWarnings = [];
+    let videoDurationSec = 0;
+    if (audioUrl) {
+      // Map audioUrl back to a local file
+      let localAudioPath = null;
+      const audioMatch = /\/ai-hook\/audio\/([^?#]+)/.exec(audioUrl);
+      if (audioMatch) {
+        const candidate = path.join(outputDir, path.basename(decodeURIComponent(audioMatch[1])));
+        if (fs.existsSync(candidate)) localAudioPath = candidate;
+      }
+      try {
+        const VIDEO_BUILD_TIMEOUT_MS = 90000;
+        const buildResult = await Promise.race([
+          buildHookVideo({
+            audioPath: localAudioPath,
+            hookText: hookText,
+            impactWords: impactWords,
+            inputType: inputType,
+            sourcePath: (inputType === 'upload' && req.file) ? req.file.path : null,
+            youtubeUrl: inputType === 'youtube' ? url : null
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Video pipeline timed out')), VIDEO_BUILD_TIMEOUT_MS))
+        ]);
+        videoFilename = path.basename(buildResult.videoPath);
+        videoUrl = '/ai-hook/video/' + videoFilename;
+        videoWarnings = buildResult.warnings || [];
+        videoDurationSec = buildResult.durationSec || 0;
+        // Mirror the file into the Video Editor's upload dir so the editor
+        // can serve it through /video-editor/download/<filename> when the
+        // user opens the editor preloaded with this clip.
+        try {
+          const veUploadDir = path.join('/tmp', 'repurpose-uploads');
+          if (!fs.existsSync(veUploadDir)) fs.mkdirSync(veUploadDir, { recursive: true });
+          fs.copyFileSync(buildResult.videoPath, path.join(veUploadDir, videoFilename));
+        } catch (mirrorErr) {
+          console.warn('[ai-hook] video editor mirror copy failed:', mirrorErr.message);
+        }
+      } catch (vErr) {
+        console.warn('[ai-hook] Hook video build failed:', vErr.message);
+        videoWarnings.push('Video build failed: ' + vErr.message);
+      }
+    }
+
     res.json({
       hookText,
       audioUrl,
+      videoUrl,
+      videoFilename,
+      videoDurationSec,
+      videoWarnings,
       voiceError,
       transcriptWarning,
       transcriptLength: sourceTranscript.length,
