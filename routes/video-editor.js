@@ -7297,6 +7297,37 @@ setTimeout(function sidebarLayoutFix(){
     // We replay what uploadVideo() does for the primary, then append every
     // B-roll clip to V1 via the same addClipToTimeline path the media
     // library uses — so it naturally stacks after the primary.
+    // Task #164 — Rehydrate the Media library from the user's active
+    // server-side uploads. Runs on EVERY editor boot regardless of
+    // whether there's a saved project, so files the user uploaded
+    // in a prior session survive page reloads / logouts within the
+    // 3-day retention window. Fire-and-forget; failures don't block
+    // the rest of the editor.
+    (function rehydrateMediaUploads(){
+      function run(){
+        fetch('/video-editor/api/uploads', { credentials: 'same-origin' })
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(data){
+            if (!data || !Array.isArray(data.items) || !data.items.length) return;
+            if (typeof window.addUploadedMediaItem !== 'function') return;
+            data.items.forEach(function(it){
+              try {
+                window.addUploadedMediaItem({
+                  filename: it.filename,
+                  name:     it.name || it.filename,
+                  serveUrl: it.serveUrl,
+                  duration: it.duration,
+                  mediaType: it.mediaType || 'vid'
+                });
+              } catch(_){}
+            });
+          })
+          .catch(function(){ /* silent — Media library just stays empty */ });
+      }
+      if (document.readyState === 'complete') setTimeout(run, 100);
+      else window.addEventListener('load', function(){ setTimeout(run, 100); });
+    })();
+
     (function bootFromProject() {
       function run() {
         try {
@@ -7404,9 +7435,39 @@ setTimeout(function sidebarLayoutFix(){
             }
           });
 
+          // ——— 7. Task #162 — Save-as-Draft FULL restore ———
+          // If this project was created via Save-as-Draft, metadata
+          // carries a snapshot that describes EVERY .mt-clip across
+          // V1/A1/T1 (and the project aspect ratio). The primary +
+          // broll path above already loaded the headline asset; this
+          // block replaces the auto-spawned V1 clip(s) with the saved
+          // layout so positions, link-pairs, FX dataset attrs, and
+          // text overlays come back exactly.
+          if (proj.snapshot && Array.isArray(proj.snapshot.timelineClips) && proj.snapshot.timelineClips.length){
+            try {
+              if (proj.snapshot.aspect){
+                try { localStorage.setItem('splicora_project_aspect_v1', proj.snapshot.aspect); } catch(_){}
+              }
+              // Stash the draft id so subsequent Save-as-Draft clicks
+              // UPDATE this row instead of creating a new draft.
+              try { window.__currentDraftId = proj.id; } catch(_){}
+              // Defer restore one tick so the broll-auto-add and
+              // initTimeline DOM work above has fully landed.
+              setTimeout(function(){
+                try {
+                  if (typeof window.restoreTimelineFromSnapshot === 'function'){
+                    window.restoreTimelineFromSnapshot(proj.snapshot);
+                  }
+                } catch (e){ console.warn('[draft-restore] failed:', e); }
+              }, 250);
+            } catch (e){ console.warn('[draft-restore] setup failed:', e); }
+          }
           try {
             if (typeof showToast === 'function') {
-              showToast('Loaded project: ' + (proj.name || proj.id) + ' (' + broll.length + ' B-roll clip' + (broll.length === 1 ? '' : 's') + ')');
+              var msg = proj.isDraft
+                ? ('Draft loaded: ' + (proj.name || proj.id))
+                : ('Loaded project: ' + (proj.name || proj.id) + ' (' + broll.length + ' B-roll clip' + (broll.length === 1 ? '' : 's') + ')');
+              showToast(msg);
             }
           } catch (_) {}
         } catch (err) {
@@ -7998,10 +8059,53 @@ router.get('/:projectId(p_[a-f0-9]+)', requireAuth, async (req, res, next) => {
         name: b.name || b.filename,
         duration: Number(b.duration) || 0,
         serveUrl: b.serveUrl || ('/video-editor/download/' + b.filename)
-      }))
+      })),
+      // Task #162 — full timeline snapshot for Save-as-Draft restore.
+      // Falls through to undefined for AI B-Roll projects that only
+      // populate primary + broll; bootFromProject in the editor only
+      // applies snapshot if present.
+      snapshot: project.metadataObj && project.metadataObj.snapshot ? project.metadataObj.snapshot : null,
+      isDraft: project.status === 'draft'
     };
     return renderEditor(req, res);
   } catch (err) { next(err); }
+});
+
+// Task #162 — POST /video-editor/save-draft — persist a Save-as-Draft
+// snapshot of the editor timeline so it can be restored later from
+// the Library > Edited Videos tab. Accepts an optional `id` in the
+// body to update an existing draft in place; otherwise creates a
+// new draft row. The snapshot blob is stored verbatim inside
+// projects.metadata.snapshot so it survives schema changes without
+// requiring a migration each time we capture a new clip property.
+router.post('/save-draft', requireAuth, async (req, res) => {
+  try {
+    const { projectOps } = require('../db/database');
+    const body = req.body || {};
+    const snapshot = body.snapshot || {};
+    const payload = {
+      id: body.id || null,                 // upsert key
+      name: (body.name || snapshot.name || 'Untitled Draft').slice(0, 200),
+      primaryFilename: snapshot.filename || null,
+      primaryDuration: Number(snapshot.duration) || 0,
+      primaryServeUrl: snapshot.serveUrl || null,
+      broll: [],                            // draft snapshot covers broll inside metadata.snapshot
+      sourceHint: 'editor-draft',
+      metadata: { snapshot: snapshot }
+    };
+    const row = await projectOps.upsertDraft(req.user.id, payload);
+    if (!row) return res.status(500).json({ error: 'Failed to save draft' });
+    return res.json({
+      success: true,
+      id: row.id,
+      name: row.name,
+      updated_at: row.updated_at,
+      editorUrl: '/video-editor/' + row.id
+    });
+  } catch (err) {
+    console.error('[save-draft] error:', err);
+    return res.status(500).json({ error: 'Failed to save draft: ' + (err.message || 'unknown') });
+  }
 });
 
 // POST: Upload video
@@ -8041,15 +8145,64 @@ router.post('/upload', requireAuth, (req, res, next) => {
       return res.status(400).json({ error: 'This video format is not supported. Please try converting to MP4.' });
     }
 
+    const sizeBytes = fs.statSync(newPath).size;
+    // Task #164 — Insert into user_uploads so the cleanup job knows
+    // when to reap this file (3 days from now) and so the editor
+    // boot path can rehydrate the Media library on the next visit.
+    // Also accrue the bytes onto users.storage_bytes_used so the
+    // Dashboard storage card shows the upload immediately.
+    try {
+      const { userUploadOps, storageOps } = require('../db/database');
+      await userUploadOps.insert(req.user.id, {
+        filename:        newFilename,
+        originalName:    originalName,
+        serverPath:      newPath,
+        serveUrl:        `/video-editor/download/${newFilename}`,
+        sizeBytes:       sizeBytes,
+        mimeType:        req.file.mimetype || null,
+        durationSeconds: Number(metadata.duration) || 0,
+        mediaType:       'vid'
+      });
+      try { await storageOps.addBytes(req.user.id, sizeBytes); } catch(_){}
+    } catch (logErr){
+      console.warn('[upload] user_uploads insert failed:', logErr && logErr.message);
+    }
     res.json({
       filename: newFilename,
       originalName: originalName,
       duration: metadata.duration,
-      size: fs.statSync(newPath).size,
+      size: sizeBytes,
       serveUrl: `/video-editor/download/${newFilename}`
     });
   } catch (error) {
     res.status(500).json({ error: 'Upload failed: ' + (error.message || 'Unknown error') });
+  }
+});
+
+// Task #164 — GET /video-editor/api/uploads — returns the user's
+// active (non-expired) media uploads so the editor boot path can
+// rehydrate the Media library from the server. Files that have
+// crossed the 3-day expiry boundary are not returned (they get
+// reaped by the hourly cleanup job).
+router.get('/api/uploads', requireAuth, async (req, res) => {
+  try {
+    const { userUploadOps } = require('../db/database');
+    const rows = await userUploadOps.listActiveByUser(req.user.id, 200);
+    res.json({
+      items: rows.map(r => ({
+        id:       r.id,
+        filename: r.filename,
+        name:     r.original_name || r.filename,
+        serveUrl: r.serve_url || ('/video-editor/download/' + r.filename),
+        duration: Number(r.duration_seconds) || 0,
+        size:     Number(r.size_bytes) || 0,
+        mediaType: r.media_type || 'vid',
+        uploadedAt: r.uploaded_at,
+        expiresAt:  r.expires_at
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Uploads fetch failed' });
   }
 });
 
@@ -8174,6 +8327,20 @@ router.post('/export', requireAuth, async (req, res) => {
 
     await runFFmpeg(ffmpegArgs);
 
+    // Task #163 — Record this single-clip export in user_renders too,
+    // matching the timeline-export path so Library > Edited Videos
+    // covers BOTH export shapes the editor can produce. Fire-and-
+    // forget per renderRecorder's contract.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'video-editor',
+        kind: 'video',
+        absPath: outputPath,
+        title: outputFilename.replace(/\.[a-z0-9]+$/i, ''),
+        metadata: { source: 'export-single', format: format || null }
+      }).catch(function(e){ console.warn('[export] recordRender failed:', e && e.message); });
+    } catch (e){ console.warn('[export] recordRender threw:', e && e.message); }
     res.json({
       filename: outputFilename,
       downloadUrl: `/video-editor/download/${outputFilename}`,
@@ -9560,6 +9727,21 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     }
 
     var totalSec = cursor;
+    // Task #163 — Record this export in user_renders so it appears in
+    // Library > Edited Videos with a working Download button.
+    // Call is fire-and-forget per renderRecorder's contract — even
+    // if the DB insert fails the user's local download still works.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'video-editor',
+        kind: 'video',
+        absPath: outputPath,
+        title: customName || outputFilename.replace(/\.[a-z0-9]+$/i, ''),
+        durationSeconds: totalSec,
+        metadata: { clipCount: v1.length, format: reqFormat, source: 'export-timeline' }
+      }).catch(function(e){ console.warn('[export-timeline] recordRender failed:', e && e.message); });
+    } catch (e){ console.warn('[export-timeline] recordRender threw:', e && e.message); }
     res.json({
       filename: outputFilename,
       downloadUrl: '/video-editor/download/' + outputFilename,

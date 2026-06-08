@@ -2975,7 +2975,15 @@ router.get('/history', requireAuth, (req, res) => {
           var head = '<div class="lib-storage">Showing <strong>' + items.length + '</strong> ' + (items.length === 1 ? 'item' : 'items') + ' · <strong>' + libFmtBytes(totalBytes) + '</strong> used.</div>';
           var html = head + '<div class="lib-grid">' + items.map(function(it) {
             var thumb;
-            if (it.kind === 'image') {
+            // Task #162 — Drafts have no rendered file, so render a
+            // styled "Draft" tile that doubles as a click target into
+            // the editor for that project id.
+            if (it.isDraft){
+              thumb = '<a href="' + libEscape(it.editorUrl) + '" class="lib-card-thumb" style="background:linear-gradient(135deg,#1e1b4b,#7c3aed);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-decoration:none;gap:8px;cursor:pointer">' +
+                        '<span style="font-size:36px;line-height:1">✏️</span>' +
+                        '<span style="font-size:11px;letter-spacing:1.5px;font-weight:700;opacity:.85">DRAFT</span>' +
+                      '</a>';
+            } else if (it.kind === 'image') {
               thumb = '<div class="lib-card-thumb image"><img src="' + libEscape(it.downloadUrl) + '" alt="" loading="lazy"></div>';
             } else {
               // Always render the <video> tag — the download endpoint
@@ -2994,13 +3002,24 @@ router.get('/history', requireAuth, (req, res) => {
                       '</div>';
             }
             var actions = '';
-            actions += '<a class="primary" href="' + libEscape(it.downloadUrl) + '" download="' + libEscape(it.filename) + '">⬇ Download</a>';
-            actions += '<button onclick="libDelete(\\'' + it.id + '\\', this)" class="danger">\u{1F5D1} Delete</button>';
+            if (it.isDraft){
+              actions += '<a class="primary" href="' + libEscape(it.editorUrl) + '">✏️ Open in Editor</a>';
+              actions += '<button onclick="libDelete(\\'' + it.id + '\\', this)" class="danger">\u{1F5D1} Delete</button>';
+            } else {
+              actions += '<a class="primary" href="' + libEscape(it.downloadUrl) + '" download="' + libEscape(it.filename) + '">⬇ Download</a>';
+              actions += '<button onclick="libDelete(\\'' + it.id + '\\', this)" class="danger">\u{1F5D1} Delete</button>';
+            }
+            // Task #162 — Draft badge in the title row so users can
+            // scan the grid and distinguish drafts from rendered
+            // exports at a glance.
+            var draftBadge = it.isDraft
+              ? '<span style="display:inline-block;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;font-size:9px;font-weight:800;letter-spacing:.6px;padding:2px 7px;border-radius:999px;margin-right:6px;vertical-align:middle">DRAFT</span>'
+              : '';
             return (
-              '<div class="lib-card" data-render-id="' + libEscape(it.id) + '">' +
+              '<div class="lib-card' + (it.isDraft ? ' lib-card-draft' : '') + '" data-render-id="' + libEscape(it.id) + '">' +
                 thumb +
                 '<div class="lib-card-body">' +
-                  '<div class="lib-card-title">' + libEscape(it.title || it.filename) + '</div>' +
+                  '<div class="lib-card-title">' + draftBadge + libEscape(it.title || it.filename) + '</div>' +
                   '<div class="lib-card-meta">' +
                     (it.fileSize ? '<span>\u{1F4BE} ' + libFmtBytes(it.fileSize) + '</span>' : '') +
                     '<span>\u{1F552} ' + libFmtDate(it.createdAt) + '</span>' +
@@ -3547,9 +3566,45 @@ router.get('/api/library', requireAuth, async (req, res) => {
         downloadUrl: '/repurpose/api/library/' + encodeURIComponent(r.id) + '/download',
         onDisk,
         hasR2: !!r.r2_key,
-        metadata: r.metadata || null
+        metadata: r.metadata || null,
+        isDraft: false
       };
     });
+    // Task #162 — merge Save-as-Draft rows into the video-editor tab.
+    // Drafts are projects with status='draft'; they share the Library
+    // surface but render with a Draft badge + Open-in-Editor action
+    // (no Download URL) because the final file doesn't exist yet.
+    if (opts.tool === 'video-editor' || opts.tool === 'all'){
+      try {
+        const { projectOps } = require('../db/database');
+        const drafts = await projectOps.listDraftsByUser(req.user.id, 100);
+        const draftItems = drafts.map(d => ({
+          id: 'draft_' + d.id,
+          projectId: d.id,
+          tool: 'video-editor',
+          kind: 'video',
+          filename: d.primary_filename || (d.name + '.draft'),
+          title: d.name || 'Untitled Draft',
+          sourceUrl: null,
+          sourceId: null,
+          thumbnailUrl: null,
+          fileSize: 0,
+          durationSeconds: Number(d.primary_duration) || null,
+          status: 'draft',
+          createdAt: d.updated_at || d.created_at,
+          readyAt: d.updated_at || d.created_at,
+          downloadUrl: null,                            // no download — draft, not exported
+          onDisk: false,
+          hasR2: false,
+          metadata: null,
+          isDraft: true,
+          editorUrl: '/video-editor/' + d.id
+        }));
+        items.push(...draftItems);
+        // Re-sort newest first now that drafts are mixed in.
+        items.sort((a, b) => new Date(b.readyAt || b.createdAt) - new Date(a.readyAt || a.createdAt));
+      } catch (e){ console.warn('[library] draft merge failed:', e.message); }
+    }
     res.json({ items });
   } catch (err) {
     console.error('[GET /repurpose/api/library]', err);
@@ -3607,11 +3662,23 @@ router.get('/api/library/:id/download', requireAuth, async (req, res) => {
 
 // POST /repurpose/api/library/:id/delete — soft-delete a render row
 // and best-effort remove the local file + R2 object.
+//
+// Task #162 — Also handles draft rows: when id starts with 'draft_'
+// it's a synthetic id from the listing-merge in /api/library and
+// the real key is the underlying project id (the suffix). Drafts
+// are deleted by removing the projects row entirely.
 router.post('/api/library/:id/delete', requireAuth, async (req, res) => {
   try {
+    const rawId = req.params.id || '';
+    if (rawId.indexOf('draft_') === 0){
+      const projectId = rawId.slice('draft_'.length);
+      const { projectOps } = require('../db/database');
+      const ok = await projectOps.delete(projectId, req.user.id);
+      return res.json({ success: !!ok });
+    }
     const fs = require('fs');
     const path = require('path');
-    const row = await userRenderOps.getById(req.params.id);
+    const row = await userRenderOps.getById(rawId);
     if (!row || row.user_id !== req.user.id) return res.status(404).json({ error: 'Not found' });
     try { fs.unlinkSync(path.join('/tmp', 'repurpose-outputs', row.filename)); } catch (_) {}
     if (row.r2_key) {
@@ -3620,7 +3687,7 @@ router.post('/api/library/:id/delete', requireAuth, async (req, res) => {
         if (r2.isConfigured()) await r2.deleteObject(row.r2_key);
       } catch (_) {}
     }
-    await userRenderOps.softDelete(req.params.id, req.user.id);
+    await userRenderOps.softDelete(rawId, req.user.id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -86,6 +86,45 @@ app.use((req, res, next) => {
     await initDatabase();
     console.log('Database initialized');
 
+    // Task #164 — Hourly cleanup of expired media-panel uploads.
+    // Runs once on boot and every 60 minutes thereafter. Deletes the
+    // file from disk, drops the user_uploads row, AND subtracts the
+    // bytes from users.storage_bytes_used so the Dashboard storage
+    // card automatically shows the freed space. Best-effort — any
+    // single file failure logs and the loop continues.
+    (async function startUploadRetentionLoop(){
+      async function runOnce(){
+        try {
+          const fs = require('fs');
+          const { userUploadOps, storageOps } = require('./db/database');
+          const expired = await userUploadOps.claimExpired(500);
+          if (!expired || !expired.length) return;
+          console.log('[retention] reaping', expired.length, 'expired uploads');
+          for (const row of expired){
+            try {
+              if (row.server_path) {
+                try { fs.unlinkSync(row.server_path); } catch (e){
+                  if (e && e.code !== 'ENOENT') console.warn('[retention] unlink failed:', e.message);
+                }
+              }
+              const sz = Number(row.size_bytes) || 0;
+              if (sz > 0) {
+                try { await storageOps.subBytes(row.user_id, sz); } catch (e){ console.warn('[retention] subBytes failed:', e.message); }
+              }
+            } catch (rowErr){
+              console.warn('[retention] row cleanup failed:', rowErr && rowErr.message);
+            }
+          }
+        } catch (loopErr){
+          console.warn('[retention] cleanup pass failed:', loopErr && loopErr.message);
+        }
+      }
+      // First pass on boot (await it so any obviously-broken rows are
+      // surfaced in the deploy log), then hourly forever.
+      try { await runOnce(); } catch (_){}
+      setInterval(runOnce, 60 * 60 * 1000);
+    })();
+
       // Auto-promote specific users on startup
       try {
         const { userOps, adminOps } = require('./db/database');
