@@ -2115,15 +2115,23 @@ function showToast(message, type = 'success') {
     //     class selector — survives DOM rewires that might reorder
     //     .upload-button matches.
     function resetUploadZoneState(){
+      // Task #157 — Made idempotent. Each write is gated on the
+      // current state matching the dirty value, so calling reset
+      // when state is already clean produces ZERO DOM mutations
+      // and therefore zero downstream MutationObserver wake-ups.
+      // The previous unconditional textContent assignment was
+      // creating a new text node on every call, which was waking
+      // v10-editor-redesign.js's body-subtree observer and
+      // scheduling unnecessary applyAll() passes.
       if (uploadZone){
-        uploadZone.style.opacity = '';
-        uploadZone.style.pointerEvents = '';
-        uploadZone.classList.remove('dragover');
+        if (uploadZone.style.opacity !== '')        uploadZone.style.opacity = '';
+        if (uploadZone.style.pointerEvents !== '')  uploadZone.style.pointerEvents = '';
+        if (uploadZone.classList.contains('dragover')) uploadZone.classList.remove('dragover');
       }
       var b = document.getElementById('selectVideoBtn');
       if (b){
-        b.disabled = false;
-        b.textContent = 'Select Video';
+        if (b.disabled)                       b.disabled = false;
+        if (b.textContent !== 'Select Video') b.textContent = 'Select Video';
       }
     }
     // Run once on load.
@@ -2136,34 +2144,51 @@ function showToast(message, type = 'success') {
       _uzObs.observe(uploadZone, { attributes: true, attributeFilter: ['class'] });
     }
 
-    // Task #156 — Replaced the document-level capture-phase delegation
-    // with a direct button-level click handler, matching the working
-    // pattern used by the sidebar Media panel's +Upload button (see
-    // public/js/media-panel-fix.js triggerUpload). Three key
-    // differences vs. the old handler that was freezing Chrome on
-    // file-picker cancel:
-    //   1. e.preventDefault() removed. The button is type=button so
-    //      it had no default action to prevent, but on macOS Chrome
-    //      calling preventDefault on a click that opens a file picker
-    //      can leave the input in a state where Chrome's renderer
-    //      hangs trying to clean up after the picker dismisses.
-    //   2. Capture-phase document delegation replaced with a direct
-    //      uploadBtn.addEventListener — same as the sidebar +Upload
-    //      button which never freezes. Capture on document was
-    //      slowing every click on the page (cheap, but unnecessary)
-    //      and may have been interacting badly with the picker close.
-    //   3. fileInput.value = '' added before .click(). Without this,
-    //      re-clicking after a cancel keeps the input in its previous
-    //      state, which is a known Chrome quirk.
+    // Task #157 — Audit-driven fix. The previous Task #156 handler
+    // called resetUploadZoneState() between the trusted click and
+    // fileInput.click(). resetUploadZoneState() did
+    //   b.textContent = 'Select Video';   (no backticks here — they
+    // would break the surrounding Node template literal)
+    // UNCONDITIONALLY, which created a new text node + removed the
+    // old one on every click —
+    // a childList mutation that wakes v10-editor-redesign.js's
+    // document.body subtree MutationObserver. That observer queues
+    // applyAll() through scheduleApply(), and applyAll rebuilds the
+    // right panel and media corner (~50ms of synchronous DOM work).
+    // When that 250ms-debounced applyAll fires while the OS file
+    // picker is opening, it pegs the renderer thread at exactly the
+    // moment the user is interacting with the picker — producing
+    // the "freezes as soon as the picker interacts with the browser"
+    // symptom the user reported.
+    //
+    // The sidebar Media panel's +Upload button doesn't trigger this
+    // because its handler is just stopPropagation + value reset +
+    // .click() — no DOM mutation in the click path.
+    //
+    // Three corrections vs. Task #156:
+    //   1. resetUploadZoneState() removed from the click path. State
+    //      reset still runs on page load and inside the
+    //      MutationObserver-on-has-video path (those are necessary).
+    //      On every click it was just churning the same button-text
+    //      assignment and pinging v10's observer.
+    //   2. Listener bound with capture:true to match the sidebar
+    //      pattern exactly. Capture is harmless on a direct binding
+    //      but ensures we own the click before any later-registered
+    //      handler could stopImmediatePropagation us out.
+    //   3. 500ms throttle copied from the sidebar so a double-click
+    //      or rapid keyboard activation can't queue two file pickers
+    //      back-to-back (which could itself hang the renderer).
     var selectBtn = document.getElementById('selectVideoBtn');
     if (selectBtn){
       selectBtn.addEventListener('click', function(e){
         e.stopPropagation();
-        resetUploadZoneState();
+        var now = Date.now();
+        if (window.__splicoraLastSelectClick && (now - window.__splicoraLastSelectClick) < 500) return;
+        window.__splicoraLastSelectClick = now;
         try { fileInput.value = ''; } catch(_){}
         try { fileInput.click(); }
         catch (err){ console.error('[upload] fileInput.click() threw:', err); }
-      });
+      }, true);
     }
 
     uploadZone.addEventListener('click', (e) => {
