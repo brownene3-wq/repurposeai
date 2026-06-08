@@ -2485,7 +2485,20 @@
     _lastPreviewUrl = null;
     try { syncPreviewToPlayhead(); } catch(_){}
   }
-  try { window.tlGoToStart = tlGoToStart; window.tlGoToEnd = tlGoToEnd; } catch(_){}
+  // Task #159 — Stop = pause + snap to start. Functionally equivalent
+  // to tlGoToStart() today, but exposed as a separate named action so
+  // a future "Stop" could diverge from "Go to start" (e.g. reset
+  // playback speed, clear hover state, etc.) without breaking either
+  // call site. Also gives the Stop button a clearer intent string in
+  // tooltips and analytics.
+  function tlStop(){
+    tlPause();
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = '0px';
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+  try { window.tlGoToStart = tlGoToStart; window.tlGoToEnd = tlGoToEnd; window.tlStop = tlStop; } catch(_){}
 
   function transportTickAndRender(phSec){
     var ph = document.getElementById('mtPlayhead');
@@ -2640,9 +2653,15 @@
     // Task #135 \u2014 Dropped the "Start" and "End" text labels. Icon-only
     // chips read as compact transport glyphs; flexbox centering keeps
     // them aligned with the (wider) Play button between them.
-    var startBtn = makeStripBtn('tlGoStartBtn',   '\u23EE', 'Go to start of timeline', { iconOnly: true });
+    //
+    // Task #159 \u2014 Added a Stop button (\u23F9) between Play and End. Stop
+    // pauses playback AND snaps the playhead back to 0 in one click,
+    // which the previous transport strip required two clicks for
+    // (Pause + Go-to-start). Icon-only to match the other glyph chips.
+    var startBtn = makeStripBtn('tlGoStartBtn',   '\u23EE', 'Go to start of timeline',                  { iconOnly: true });
     var btn      = makeStripBtn('tlTransportBtn', '\u25B6 Play', 'Play / pause the timeline (Space)');
-    var endBtn   = makeStripBtn('tlGoEndBtn',     '\u23ED', 'Go to end of timeline',   { iconOnly: true });
+    var stopBtn  = makeStripBtn('tlStopBtn',      '\u23F9', 'Stop \u2014 pause and snap playhead to start', { iconOnly: true });
+    var endBtn   = makeStripBtn('tlGoEndBtn',     '\u23ED', 'Go to end of timeline',                    { iconOnly: true });
 
     if (!startBtn.dataset.v129){
       startBtn.dataset.v129 = '1';
@@ -2651,6 +2670,10 @@
     if (!btn.dataset.v14){
       btn.dataset.v14 = '1';
       btn.addEventListener('click', function(){ tlTogglePlay(); });
+    }
+    if (!stopBtn.dataset.v159){
+      stopBtn.dataset.v159 = '1';
+      stopBtn.addEventListener('click', function(){ tlStop(); });
     }
     if (!endBtn.dataset.v129){
       endBtn.dataset.v129 = '1';
