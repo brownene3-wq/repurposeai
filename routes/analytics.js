@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { getDb, contentOps, outputOps, shortsOps, creditOps, storageOps, featureUsageOps, workflowOps, connectedAccountOps, calendarOps } = require('../db/database');
+const { getDb, contentOps, outputOps, shortsOps, creditOps, storageOps, featureUsageOps, workflowOps, connectedAccountOps, calendarOps, clipRenderOps, userRenderOps, pool } = require('../db/database');
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', requireAuth, async (req, res) => {
@@ -26,8 +26,72 @@ router.get('/', requireAuth, async (req, res) => {
     const activePlatforms = platforms.filter(p => platformCounts[p] > 0).length;
 
     // ── Smart Shorts ──
-    let shortsCount = 0;
-    try { shortsCount = await shortsOps.countByUserId(userId); } catch(e) {}
+    // Now reports BOTH analyses started and finished moment clip
+    // renders, since both surface in the Library Clips tab and both
+    // represent "work the user did with Smart Shorts."
+    let shortsAnalyses = 0, shortsClips = 0;
+    try { shortsAnalyses = await shortsOps.countByUserId(userId); } catch(e) {}
+    try { shortsClips = await clipRenderOps.countByUser(userId); } catch(e) {}
+    const shortsCount = shortsAnalyses + shortsClips;
+
+    // ── Library renders (Edited/Captioned/Hook/Reframed/B-Roll/Thumbs)
+    //    Counts every successful render logged via recordRender().
+    let libraryRenders = 0;
+    let libraryByTool = {};
+    try {
+      const r = await pool.query(
+        `SELECT tool, COUNT(*) AS n FROM user_renders
+          WHERE user_id = $1 AND deleted_at IS NULL AND status = 'ready'
+          GROUP BY tool`,
+        [userId]
+      );
+      r.rows.forEach(row => { libraryByTool[row.tool] = Number(row.n); libraryRenders += Number(row.n); });
+    } catch(e) {}
+
+    // ── Connected accounts (Phase 2 unified system) ──
+    let connectedAccountsCount = 0, connectedPlatformsCount = 0;
+    try {
+      const accts = await connectedAccountOps.getByUser(userId);
+      connectedAccountsCount = (accts || []).length;
+      connectedPlatformsCount = new Set((accts || []).map(a => a.platform)).size;
+    } catch(e) {}
+
+    // ── Published vs scheduled (calendar_entries auto-publish path) ──
+    let publishedCount = 0, scheduledUpcomingCount = 0;
+    try {
+      const r1 = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM calendar_entries
+          WHERE user_id = $1 AND status = 'published'`,
+        [userId]
+      );
+      publishedCount = Number(r1.rows[0].n || 0);
+      const r2 = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM calendar_entries
+          WHERE user_id = $1 AND auto_publish = TRUE AND status <> 'published'
+            AND (scheduled_date::timestamp + scheduled_time::time) > NOW()`,
+        [userId]
+      );
+      scheduledUpcomingCount = Number(r2.rows[0].n || 0);
+    } catch(e) {}
+
+    // ── "Things worked on this month" — broadest definition so the
+    //    headline card reflects ALL platform activity, not just the
+    //    legacy Repurpose flow.
+    let thingsThisMonth = 0;
+    try {
+      const r = await pool.query(
+        `SELECT (
+            (SELECT COUNT(*) FROM content_items   WHERE user_id = $1 AND created_at >= date_trunc('month', NOW()))
+          + (SELECT COUNT(*) FROM smart_shorts    WHERE user_id = $1 AND created_at >= date_trunc('month', NOW()))
+          + (SELECT COUNT(*) FROM clip_renders    WHERE user_id = $1 AND created_at >= date_trunc('month', NOW()) AND deleted_at IS NULL)
+          + (SELECT COUNT(*) FROM user_renders    WHERE user_id = $1 AND created_at >= date_trunc('month', NOW()) AND deleted_at IS NULL)
+         )::int AS n`,
+        [userId]
+      );
+      thingsThisMonth = Number(r.rows[0].n || 0);
+    } catch(e) {
+      thingsThisMonth = videosThisMonth;  // fall back if anything errors
+    }
 
     // ── Workflows ──
     let workflows = [];
@@ -279,6 +343,10 @@ router.get('/', requireAuth, async (req, res) => {
     .stat-card:nth-child(4)::before { background: linear-gradient(90deg, #10B981, #06B6D4); }
     .stat-card:nth-child(5)::before { background: linear-gradient(90deg, #EC4899, #F97316); }
     .stat-card:nth-child(6)::before { background: linear-gradient(90deg, #EF4444, #F59E0B); }
+    .stat-card:nth-child(7)::before  { background: linear-gradient(90deg, #8B5CF6, #6366F1); }
+    .stat-card:nth-child(8)::before  { background: linear-gradient(90deg, #14B8A6, #10B981); }
+    .stat-card:nth-child(9)::before  { background: linear-gradient(90deg, #F97316, #EAB308); }
+    .stat-card:nth-child(10)::before { background: linear-gradient(90deg, #3B82F6, #06B6D4); }
     .stat-card .label { color: #888; font-size: 0.82em; margin-bottom: 6px; font-weight: 500; }
     .stat-card .value { font-size: 2em; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
     .stat-card .sub { font-size: 0.78em; color: #10B981; margin-top: 4px; font-weight: 600; }
@@ -371,12 +439,17 @@ router.get('/', requireAuth, async (req, res) => {
         <p style="color:#888;margin:0 0 8px">Performance metrics and usage insights across your entire workspace.</p>
       </div>
 
-      <!-- ═══ Top Stats ═══ -->
+      <!-- ═══ Top Stats — 10 cards across two rows.  Same .stat-card
+           class so look / typography / hover behaviour is identical to
+           the old layout. The four new cards (Library Renders,
+           Connected Accounts, Published Posts, Scheduled Posts) reflect
+           features added since the original Analytics page was built. -->
       <div class="stats-grid">
+        <!-- Row 1: activity & generation -->
         <div class="stat-card">
-          <div class="label">Videos This Month</div>
-          <div class="value">${videosThisMonth}</div>
-          <div class="sub">${videosThisMonth > 0 ? '&#x2705; Active' : 'No uploads yet'}</div>
+          <div class="label">Things Created This Month</div>
+          <div class="value">${thingsThisMonth}</div>
+          <div class="sub">${thingsThisMonth > 0 ? '&#x2705; Active' : 'No activity yet'}</div>
         </div>
         <div class="stat-card">
           <div class="label">Total Content Items</div>
@@ -396,12 +469,33 @@ router.get('/', requireAuth, async (req, res) => {
         <div class="stat-card">
           <div class="label">Smart Shorts</div>
           <div class="value">${shortsCount}</div>
-          <div class="sub">Clips analyzed</div>
+          <div class="sub">${shortsAnalyses} analyses · ${shortsClips} clips</div>
         </div>
         <div class="stat-card">
           <div class="label">Credits This Month</div>
           <div class="value">${totalCreditsThisMonth}</div>
           <div class="sub">AI processing credits</div>
+        </div>
+        <!-- Row 2: new feature metrics (Library + Connections + Publish) -->
+        <div class="stat-card">
+          <div class="label">Library Renders</div>
+          <div class="value">${libraryRenders}</div>
+          <div class="sub">${Object.keys(libraryByTool).length || 0} tool${Object.keys(libraryByTool).length === 1 ? '' : 's'} producing output</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Connected Accounts</div>
+          <div class="value">${connectedAccountsCount}</div>
+          <div class="sub">${connectedPlatformsCount} platform${connectedPlatformsCount === 1 ? '' : 's'} linked</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Published Posts</div>
+          <div class="value">${publishedCount}</div>
+          <div class="sub">Lifetime auto-publishes</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Scheduled Posts</div>
+          <div class="value">${scheduledUpcomingCount}</div>
+          <div class="sub">${scheduledUpcomingCount > 0 ? 'Upcoming queue' : 'Nothing queued'}</div>
         </div>
       </div>
 
