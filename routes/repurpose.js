@@ -3430,7 +3430,15 @@ router.post('/api/publish-output', requireAuth, async (req, res) => {
     // Schedule path - reuse calendar_entries + schedulePublisher cron.
     if (scheduledAt) {
       const when = new Date(scheduledAt);
-      if (!isNaN(when.getTime()) && when.getTime() > Date.now() + 60_000) {
+      if (isNaN(when.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid scheduled date/time.' });
+      }
+      if (when.getTime() <= Date.now() + 60_000) {
+        // Don't silently fall through to post-now — that path crashed
+        // with confusing fs errors when the user expected scheduling.
+        return res.status(400).json({ success: false, error: 'Scheduled time must be at least 1 minute in the future.' });
+      }
+      {
         const { calendarOps } = require('../db/database');
         const dateStr = when.toISOString().slice(0, 10);
         const timeStr = String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0');
