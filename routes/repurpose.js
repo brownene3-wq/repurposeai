@@ -925,6 +925,79 @@ router.get('/', requireAuth, (req, res) => {
           box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.1);
         }
 
+        /* ── Source toggle (URL ↔ Upload) ─────────────────────── */
+        .source-toggle {
+          display: flex;
+          gap: 6px;
+          padding: 4px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 10px;
+          margin-bottom: 14px;
+          max-width: 460px;
+        }
+        body.light .source-toggle { background: rgba(108,58,237,0.05); border-color: rgba(108,58,237,0.12); }
+        .source-tab {
+          flex: 1 1 auto;
+          padding: 9px 14px;
+          border: none;
+          border-radius: 8px;
+          background: transparent;
+          color: var(--text-muted);
+          font-size: 0.86rem;
+          font-weight: 600;
+          font-family: inherit;
+          cursor: pointer;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .source-tab:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+        .source-tab.active { background: linear-gradient(135deg, #6C3AED, #EC4899); color: #fff; }
+        .source-panel.hidden { display: none; }
+        /* Upload zone — modeled after AI Captions */
+        .upload-zone {
+          border: 2px dashed rgba(108,58,237,0.30);
+          background: rgba(108,58,237,0.04);
+          border-radius: 14px;
+          padding: 28px 20px 24px;
+          text-align: center;
+          color: var(--text);
+          cursor: pointer;
+          transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+          border-color: rgba(108,58,237,0.65);
+          background: rgba(108,58,237,0.10);
+        }
+        .upload-zone h3 { margin: 0 0 4px; font-size: 1rem; font-weight: 700; }
+        .upload-zone p  { margin: 0 0 12px; color: var(--text-muted); font-size: 0.85rem; }
+        .upload-zone .btn-secondary {
+          background: rgba(108,58,237,0.18);
+          border: 1px solid rgba(108,58,237,0.40);
+          color: #fff;
+          padding: 8px 18px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .upload-zone .btn-secondary:hover { background: rgba(108,58,237,0.30); }
+        .upload-file-name {
+          margin-top: 12px;
+          padding: 8px 12px;
+          background: rgba(16,185,129,0.10);
+          border: 1px solid rgba(16,185,129,0.30);
+          border-radius: 8px;
+          color: #6ee7b7;
+          font-size: 0.82rem;
+          font-weight: 600;
+        }
+        .upload-hint {
+          margin: 8px 0 0;
+          font-size: 0.78rem;
+          color: var(--text-muted);
+          line-height: 1.5;
+        }
+
         .platform-selector {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
@@ -1381,9 +1454,39 @@ router.get('/', requireAuth, (req, res) => {
           <div class="form-container">
             <div class="form-section">
               <h2>Step 1: Your Content</h2>
-              <div class="form-group">
+
+              <!-- Source toggle — mutually exclusive URL vs Upload, AI
+                   Captions style. Switching hides the other panel
+                   completely so users can't fill both. -->
+              <div class="source-toggle" role="tablist" aria-label="Content source">
+                <button type="button" id="srcTabUrl" class="source-tab active" role="tab" aria-selected="true" onclick="setSourceMode('url')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  YouTube URL
+                </button>
+                <button type="button" id="srcTabUpload" class="source-tab" role="tab" aria-selected="false" onclick="setSourceMode('upload')">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Upload File
+                </button>
+              </div>
+
+              <!-- URL panel — default visible -->
+              <div class="form-group source-panel" id="srcPanelUrl">
                 <label>YouTube URL</label>
                 <input type="url" id="youtubeUrl" name="yt_repurpose_url" autocomplete="one-time-code" data-form-type="other" data-lpignore="true" placeholder="https://www.youtube.com/watch?v=..." />
+              </div>
+
+              <!-- Upload panel — hidden until user picks 'Upload File' -->
+              <div class="form-group source-panel hidden" id="srcPanelUpload">
+                <label>Upload Video or Audio</label>
+                <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Choose a file to upload">
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-bottom:8px;opacity:.85"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <h3>Drop your file here</h3>
+                  <p>or click to browse — MP4, MOV, WebM, MP3, WAV, M4A</p>
+                  <button type="button" class="btn-secondary" onclick="document.getElementById('repFileInput').click()">Choose File</button>
+                  <input type="file" id="repFileInput" style="display:none" accept="video/*,audio/*" onchange="handleRepurposeFile(this)">
+                  <div id="repFileName" class="upload-file-name" style="display:none"></div>
+                </div>
+                <p class="upload-hint">Up to ~120 minutes. We'll extract the audio and transcribe it with the same engine that processes YouTube videos.</p>
               </div>
 
               <h2 style="margin-top: 30px;">Step 2: Choose Platforms</h2>
@@ -1548,21 +1651,83 @@ router.get('/', requireAuth, (req, res) => {
           }
         }
 
+        // Source mode state — 'url' (default) | 'upload'. Toggled by
+        // the Source pills above the input field. We pivot the
+        // repurposeContent() submit path on this value.
+        var _sourceMode = 'url';
+        var _pendingFile = null;
+        function setSourceMode(mode) {
+          _sourceMode = mode === 'upload' ? 'upload' : 'url';
+          document.getElementById('srcTabUrl').classList.toggle('active', _sourceMode === 'url');
+          document.getElementById('srcTabUpload').classList.toggle('active', _sourceMode === 'upload');
+          document.getElementById('srcTabUrl').setAttribute('aria-selected', _sourceMode === 'url' ? 'true' : 'false');
+          document.getElementById('srcTabUpload').setAttribute('aria-selected', _sourceMode === 'upload' ? 'true' : 'false');
+          // Mutually exclusive panels — hide the inactive one entirely.
+          document.getElementById('srcPanelUrl').classList.toggle('hidden', _sourceMode !== 'url');
+          document.getElementById('srcPanelUpload').classList.toggle('hidden', _sourceMode !== 'upload');
+        }
+        function handleRepurposeFile(input) {
+          var f = input && input.files && input.files[0];
+          if (!f) return;
+          _pendingFile = f;
+          var nameEl = document.getElementById('repFileName');
+          if (nameEl) {
+            nameEl.textContent = '✓ ' + f.name + ' (' + (f.size > 1024*1024 ? (f.size/1024/1024).toFixed(1) + ' MB' : Math.round(f.size/1024) + ' KB') + ')';
+            nameEl.style.display = 'block';
+          }
+        }
+        // Drag-and-drop on the upload zone.
+        (function(){
+          var z = document.getElementById('uploadZone');
+          if (!z) return;
+          ['dragenter','dragover'].forEach(function(ev){
+            z.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); z.classList.add('dragover'); });
+          });
+          ['dragleave','drop'].forEach(function(ev){
+            z.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); z.classList.remove('dragover'); });
+          });
+          z.addEventListener('drop', function(e){
+            var dt = e.dataTransfer;
+            if (dt && dt.files && dt.files[0]) {
+              var input = document.getElementById('repFileInput');
+              if (input) {
+                input.files = dt.files;
+                handleRepurposeFile(input);
+              }
+            }
+          });
+          z.addEventListener('click', function(e){
+            if (e.target === z || e.target.closest('svg') || e.target.tagName === 'H3' || e.target.tagName === 'P') {
+              document.getElementById('repFileInput').click();
+            }
+          });
+          z.addEventListener('keydown', function(e){
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              document.getElementById('repFileInput').click();
+            }
+          });
+        })();
+
         async function repurposeContent() {
           const url = document.getElementById('youtubeUrl').value.trim();
           const platforms = Array.from(document.querySelectorAll('input[name="platform"]:checked')).map(el => el.value);
           const tone = document.getElementById('toneValue').value || null;
           const brandVoiceId = document.getElementById('brandVoice').value;
 
-          if (!url) {
+          // Source-mode validation.
+          if (_sourceMode === 'url' && !url) {
             showError('Please enter a YouTube URL');
             return;
           }
-          if (platforms.length === 0) { 
+          if (_sourceMode === 'upload' && !_pendingFile) {
+            showError('Please choose a file to upload');
+            return;
+          }
+          if (platforms.length === 0) {
             showError('Please select at least one platform');
             return;
           }
-
           if (!tone && !brandVoiceId) {
             showError('Please select a tone or a brand voice');
             return;
@@ -1573,16 +1738,31 @@ router.get('/', requireAuth, (req, res) => {
             document.getElementById('resultsGrid').innerHTML = '';
             let resultCount = 0;
             let hadError = false;
-            const response = await fetch('/repurpose/process-stream', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                url,
-                platforms,
-                tone,
-                brandVoiceId: brandVoiceId || null
-              })
-            });
+            let response;
+            if (_sourceMode === 'upload') {
+              // Multipart POST so multer can pull the file out + we
+              // forward platforms/tone/brandVoiceId alongside it.
+              const fd = new FormData();
+              fd.append('file', _pendingFile);
+              fd.append('platforms', JSON.stringify(platforms));
+              fd.append('tone', tone || '');
+              if (brandVoiceId) fd.append('brandVoiceId', brandVoiceId);
+              response = await fetch('/repurpose/process-upload', {
+                method: 'POST',
+                body: fd
+              });
+            } else {
+              response = await fetch('/repurpose/process-stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  url,
+                  platforms,
+                  tone,
+                  brandVoiceId: brandVoiceId || null
+                })
+              });
+            }
 
             if (!response.ok) {
               const text = await response.text();
@@ -1819,8 +1999,25 @@ router.post('/process-upload', requireAuth, checkPlanLimit('creationsPerMonth'),
 
     filePath = req.file.path;
     const fileName = req.file.originalname || 'Uploaded Video';
-    const platforms = ['Instagram', 'Twitter', 'LinkedIn'];
-    const tone = 'Professional';
+    // Accept the same fields the URL flow does, with the same defaults.
+    // Form-encoded by multer alongside the file part. JSON-string for
+    // platforms (front-end sends JSON.stringify([...])); fall back to
+    // comma-separated for resilience.
+    let platforms = ['Instagram','TikTok','Twitter','LinkedIn','Facebook','YouTube','Blog'];
+    if (req.body && req.body.platforms) {
+      try {
+        const p = typeof req.body.platforms === 'string'
+          ? JSON.parse(req.body.platforms)
+          : req.body.platforms;
+        if (Array.isArray(p) && p.length) platforms = p;
+      } catch (_) {
+        const parts = String(req.body.platforms).split(',').map(s => s.trim()).filter(Boolean);
+        if (parts.length) platforms = parts;
+      }
+    }
+    const tone = (req.body && req.body.tone) || 'Professional';
+    const brandVoiceId = (req.body && req.body.brandVoiceId) || null;
+    const brandVoice = brandVoiceId ? await brandVoiceOps.getById(brandVoiceId).catch(() => null) : null;
     const userId = req.user.id;
 
     const totalStart = Date.now();
@@ -1866,7 +2063,7 @@ router.post('/process-upload', requireAuth, checkPlanLimit('creationsPerMonth'),
     const promises = platforms.map(async (platform) => {
       try {
         const generatedContent = await Promise.race([
-          generatePlatformContent(transcript, platform, tone, null),
+          generatePlatformContent(transcript, platform, tone, brandVoice),
           new Promise((_, reject) => setTimeout(() => reject(new Error('AI generation timed out for ' + platform)), 60000))
         ]);
         const output = await outputOps.create(content.id, userId, 'generated', generatedContent, platform, tone);
