@@ -2136,22 +2136,35 @@ function showToast(message, type = 'success') {
       _uzObs.observe(uploadZone, { attributes: true, attributeFilter: ['class'] });
     }
 
-    // Delegated click handler — catches the Select Video button no
-    // matter when it's added to the DOM. capture:true so we win
-    // against any other handler that might stopImmediatePropagation.
-    document.addEventListener('click', function(e){
-      var btn = e.target && e.target.closest && e.target.closest('#selectVideoBtn');
-      if (!btn) return;
-      e.stopPropagation();
-      e.preventDefault();
-      // Clear stale blockers, re-enable the button, then forward the
-      // click to the hidden file input. The reset runs FIRST so a
-      // bygone "Uploading..." text or .disabled flag can't block this
-      // user gesture from opening the file picker.
-      resetUploadZoneState();
-      try { fileInput.click(); }
-      catch (err){ console.error('[upload] fileInput.click() threw:', err); }
-    }, true);
+    // Task #156 — Replaced the document-level capture-phase delegation
+    // with a direct button-level click handler, matching the working
+    // pattern used by the sidebar Media panel's +Upload button (see
+    // public/js/media-panel-fix.js triggerUpload). Three key
+    // differences vs. the old handler that was freezing Chrome on
+    // file-picker cancel:
+    //   1. e.preventDefault() removed. The button is type=button so
+    //      it had no default action to prevent, but on macOS Chrome
+    //      calling preventDefault on a click that opens a file picker
+    //      can leave the input in a state where Chrome's renderer
+    //      hangs trying to clean up after the picker dismisses.
+    //   2. Capture-phase document delegation replaced with a direct
+    //      uploadBtn.addEventListener — same as the sidebar +Upload
+    //      button which never freezes. Capture on document was
+    //      slowing every click on the page (cheap, but unnecessary)
+    //      and may have been interacting badly with the picker close.
+    //   3. fileInput.value = '' added before .click(). Without this,
+    //      re-clicking after a cancel keeps the input in its previous
+    //      state, which is a known Chrome quirk.
+    var selectBtn = document.getElementById('selectVideoBtn');
+    if (selectBtn){
+      selectBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        resetUploadZoneState();
+        try { fileInput.value = ''; } catch(_){}
+        try { fileInput.click(); }
+        catch (err){ console.error('[upload] fileInput.click() threw:', err); }
+      });
+    }
 
     uploadZone.addEventListener('click', (e) => {
       if (e.target === fileInput) return;
