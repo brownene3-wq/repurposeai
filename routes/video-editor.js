@@ -8083,12 +8083,20 @@ router.post('/save-draft', requireAuth, async (req, res) => {
     const { projectOps } = require('../db/database');
     const body = req.body || {};
     const snapshot = body.snapshot || {};
+    // Coerce to plain string before calling .slice — body.name can
+    // arrive as an SVGAnimatedString or other DOM-like object if the
+    // client picked it up from a className / dataset accessor that
+    // returns a non-String type. (Reproduced via the user's "(...).slice
+    // is not a function" error.) String() converts any of the
+    // troublesome types to a real string we can .slice on.
+    const rawName = body.name || snapshot.name || 'Untitled Draft';
+    const safeName = String(rawName || 'Untitled Draft').slice(0, 200);
     const payload = {
       id: body.id || null,                 // upsert key
-      name: (body.name || snapshot.name || 'Untitled Draft').slice(0, 200),
-      primaryFilename: snapshot.filename || null,
+      name: safeName,
+      primaryFilename: snapshot.filename ? String(snapshot.filename) : null,
       primaryDuration: Number(snapshot.duration) || 0,
-      primaryServeUrl: snapshot.serveUrl || null,
+      primaryServeUrl: snapshot.serveUrl ? String(snapshot.serveUrl) : null,
       broll: [],                            // draft snapshot covers broll inside metadata.snapshot
       sourceHint: 'editor-draft',
       metadata: { snapshot: snapshot }
