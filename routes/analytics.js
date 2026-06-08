@@ -104,12 +104,31 @@ router.get('/', requireAuth, async (req, res) => {
     } catch(e) {}
 
     // ── Credits ──
+    // creditOps.breakdownThisMonth returns an ARRAY of
+    // { feature, credits } objects — not a key→number map. The old
+    // code looped with for…in over the array, which iterates string
+    // indices and gave each object as the 'value', producing
+    // '0[object Object][object Object]...' when concatenated.
+    // Normalize into a { feature: credits } map up front so both the
+    // total and the per-feature bars work correctly.
     let creditBreakdown = {};
     let totalCreditsThisMonth = 0;
     try {
-      creditBreakdown = await creditOps.breakdownThisMonth(userId);
-      for (const key in creditBreakdown) {
-        totalCreditsThisMonth += creditBreakdown[key] || 0;
+      const raw = await creditOps.breakdownThisMonth(userId);
+      if (Array.isArray(raw)) {
+        for (const row of raw) {
+          const key = row && row.feature;
+          const n = Number(row && row.credits) || 0;
+          if (key) creditBreakdown[key] = (creditBreakdown[key] || 0) + n;
+          totalCreditsThisMonth += n;
+        }
+      } else if (raw && typeof raw === 'object') {
+        // Defensive: handle the object-shape variant too.
+        for (const key of Object.keys(raw)) {
+          const n = Number(raw[key]) || 0;
+          creditBreakdown[key] = n;
+          totalCreditsThisMonth += n;
+        }
       }
     } catch(e) {}
 
