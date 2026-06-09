@@ -1060,24 +1060,73 @@ async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
 }
 
 async function publishPinterest(destAccount, sourceItem, mediaPath) {
-  // Create pin on Pinterest
-  const response = await httpsPostJson(
-    'https://api.pinterest.com/v5/pins',
-    {
-      title: sourceItem.title,
-      description: sourceItem.description,
-      link: sourceItem.url,
-      image_url: sourceItem.thumbnail,
-      board_id: destAccount.metadata?.board_id
-    },
-    { Authorization: `Bearer ${destAccount.access_token}` }
-  );
+  const accessToken = destAccount.access_token;
 
-  if (!response.body.id) {
-    throw new Error('Pinterest pin creation failed');
+  // Pinterest /v5/pins requires a board_id and a structured media_source.
+  // The previous implementation sent a flat `image_url` field which the API
+  // ignores, then errors with "media_source is required" — surfaced as a
+  // generic "Pinterest pin creation failed".
+  //
+  // Auto-pick the first board if none is configured on the destination
+  // account. We can add a UI to let users choose a specific board later;
+  // for now the default behaviour ("post to my first board") matches
+  // every other social platform that has a single feed.
+  let boardId = destAccount.metadata?.board_id;
+  if (!boardId) {
+    const boardsResponse = await httpsGet(
+      'https://api.pinterest.com/v5/boards?page_size=25',
+      { Authorization: `Bearer ${accessToken}` }
+    );
+    const boards = boardsResponse.items || boardsResponse.data || [];
+    if (!boards.length) {
+      throw new Error('Pinterest has no boards on the connected account. Create at least one board on pinterest.com, then retry the publish.');
+    }
+    boardId = boards[0].id;
+    console.log(`[WorkflowEngine] Pinterest: auto-selected first board '${boards[0].name || boards[0].id}' (id=${boardId})`);
   }
 
-  return { platform: 'pinterest', pinId: response.body.id };
+  // Build the pin payload using the v5 media_source structure.
+  // For repurposed-video content we post the thumbnail image with a link
+  // back to the source video — this is the standard Pinterest pattern for
+  // driving traffic from a Pin to long-form content. Native Pinterest
+  // video upload uses a separate multi-step /v5/media flow (register →
+  // S3 upload → wait → create pin with video_id) which we can wire up
+  // later once Pinterest's Standard tier is approved.
+  const imageUrl = sourceItem.thumbnail || sourceItem.image_url;
+  if (!imageUrl) {
+    throw new Error('Pinterest publish: source item has no thumbnail/image URL — cannot build the pin media.');
+  }
+
+  const pinPayload = {
+    board_id: boardId,
+    title: String(sourceItem.title || 'Untitled Pin').slice(0, 100),
+    description: String(sourceItem.description || '').slice(0, 500),
+    media_source: {
+      source_type: 'image_url',
+      url: imageUrl
+    }
+  };
+  const linkUrl = sourceItem.url || sourceItem.link;
+  if (linkUrl) pinPayload.link = linkUrl;
+
+  const response = await httpsPostJson(
+    'https://api.pinterest.com/v5/pins',
+    pinPayload,
+    { Authorization: `Bearer ${accessToken}` }
+  );
+
+  // Surface the real Pinterest API error so debugging isn't a black box.
+  const body = response.body || {};
+  if (!body.id) {
+    const status = response.status || 0;
+    const reason = body.message || body.error_description || body.error || (typeof body === 'string' ? body : JSON.stringify(body).slice(0, 300));
+    if (status === 401 || status === 403) {
+      throw new Error('Pinterest authentication failed (status ' + status + '). Reconnect Pinterest on /distribute/connections.');
+    }
+    throw new Error('Pinterest pin creation failed (status ' + status + '): ' + reason);
+  }
+
+  return { platform: 'pinterest', pinId: body.id };
 }
 
 // Process a single workflow
