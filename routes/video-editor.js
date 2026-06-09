@@ -859,6 +859,12 @@ async function renderEditor(req, res) {
     .mt-tool-btn:hover{color:#a78bfa;border-color:rgba(108,58,237,.25);background:rgba(108,58,237,.06)}
     .mt-tool-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
     .mt-tool-btn svg{flex-shrink:0}
+    /* Task #160 — Compact square footprint for icon-only timeline-toolbar
+       buttons (Undo/Redo). Removes the label-driven horizontal padding
+       so the buttons read as glyph chips alongside the Razor/Select
+       buttons that carry both icon + label. justify-content:center
+       keeps the lone glyph optically centered in the chip. */
+    .mt-tool-btn.mt-tool-btn-icon{justify-content:center;padding:4px 8px;min-width:30px;gap:0}
     .mt-toolbar-sep{display:inline-block;width:1px;align-self:stretch;background:rgba(108,58,237,.2);margin:0 4px}
     .mt-toolbar-left{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
     /* Task #79 — Timeline zoom slider styling. Compact pill that lives
@@ -1036,7 +1042,7 @@ async function renderEditor(req, res) {
       <div class="editor-container">
 
           <div class="editor-topbar">
-            <a href="/dashboard" class="splicora-tt" style="text-decoration:none" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png" alt="Splicora" style="height:24px;"></span></a><div class="e-sep"></div>
+            <a href="/dashboard" class="splicora-tt" style="text-decoration:none;display:flex;align-items:center" aria-label="Go to Dashboard" data-tooltip="Go to Dashboard"><span class="e-logo"><img src="/images/splicora-logo-wide.png?v=5" alt="Splicora" style="height:32px;display:block"></span></a><div class="e-sep"></div>
             <!-- Task #99 \u2014 Topbar Undo/Redo/Snap/Snapshot/Link Tracks
                  now proxy to the real handlers (timeline toolbar +
                  sidebar Edit > Freeze). Inline onclick removed; wiring
@@ -1612,8 +1618,8 @@ async function renderEditor(req, res) {
                   <button class="mt-tool-btn" id="mtRazorBtn" title="Razor Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.121 14.121L7.05 21.192a2 2 0 01-2.828 0l-.414-.414a2 2 0 010-2.828l7.07-7.071"/><path d="M16.243 11.999L21.9 6.343a2 2 0 000-2.829l-.707-.707a2 2 0 00-2.828 0L12.707 8.464"/><line x1="8" y1="8" x2="16" y2="16"/></svg> Razor</button>
                   <button class="mt-tool-btn active" id="mtSelectBtn" title="Select Tool"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg> Select</button>
                   <span class="mt-toolbar-sep"></span>
-                  <button class="mt-tool-btn" id="mtUndoBtn" title="Undo">\u21a9 Undo</button>
-                  <button class="mt-tool-btn" id="mtRedoBtn" title="Redo">\u21aa Redo</button>
+                  <button class="mt-tool-btn mt-tool-btn-icon" id="mtUndoBtn" title="Undo" aria-label="Undo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg></button>
+                  <button class="mt-tool-btn mt-tool-btn-icon" id="mtRedoBtn" title="Redo" aria-label="Redo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg></button>
                   <span class="mt-toolbar-sep"></span>
                   <button class="mt-tool-btn active" id="mtSnapBtn" title="Snap Toggle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Snap</button>
                   <button class="mt-tool-btn" id="mtSnapshotBtn" title="Snapshot" style="display:none">\ud83d\udcf7 Snapshot</button>
@@ -2115,15 +2121,23 @@ function showToast(message, type = 'success') {
     //     class selector — survives DOM rewires that might reorder
     //     .upload-button matches.
     function resetUploadZoneState(){
+      // Task #157 — Made idempotent. Each write is gated on the
+      // current state matching the dirty value, so calling reset
+      // when state is already clean produces ZERO DOM mutations
+      // and therefore zero downstream MutationObserver wake-ups.
+      // The previous unconditional textContent assignment was
+      // creating a new text node on every call, which was waking
+      // v10-editor-redesign.js's body-subtree observer and
+      // scheduling unnecessary applyAll() passes.
       if (uploadZone){
-        uploadZone.style.opacity = '';
-        uploadZone.style.pointerEvents = '';
-        uploadZone.classList.remove('dragover');
+        if (uploadZone.style.opacity !== '')        uploadZone.style.opacity = '';
+        if (uploadZone.style.pointerEvents !== '')  uploadZone.style.pointerEvents = '';
+        if (uploadZone.classList.contains('dragover')) uploadZone.classList.remove('dragover');
       }
       var b = document.getElementById('selectVideoBtn');
       if (b){
-        b.disabled = false;
-        b.textContent = 'Select Video';
+        if (b.disabled)                       b.disabled = false;
+        if (b.textContent !== 'Select Video') b.textContent = 'Select Video';
       }
     }
     // Run once on load.
@@ -2136,22 +2150,52 @@ function showToast(message, type = 'success') {
       _uzObs.observe(uploadZone, { attributes: true, attributeFilter: ['class'] });
     }
 
-    // Delegated click handler — catches the Select Video button no
-    // matter when it's added to the DOM. capture:true so we win
-    // against any other handler that might stopImmediatePropagation.
-    document.addEventListener('click', function(e){
-      var btn = e.target && e.target.closest && e.target.closest('#selectVideoBtn');
-      if (!btn) return;
-      e.stopPropagation();
-      e.preventDefault();
-      // Clear stale blockers, re-enable the button, then forward the
-      // click to the hidden file input. The reset runs FIRST so a
-      // bygone "Uploading..." text or .disabled flag can't block this
-      // user gesture from opening the file picker.
-      resetUploadZoneState();
-      try { fileInput.click(); }
-      catch (err){ console.error('[upload] fileInput.click() threw:', err); }
-    }, true);
+    // Task #157 — Audit-driven fix. The previous Task #156 handler
+    // called resetUploadZoneState() between the trusted click and
+    // fileInput.click(). resetUploadZoneState() did
+    //   b.textContent = 'Select Video';   (no backticks here — they
+    // would break the surrounding Node template literal)
+    // UNCONDITIONALLY, which created a new text node + removed the
+    // old one on every click —
+    // a childList mutation that wakes v10-editor-redesign.js's
+    // document.body subtree MutationObserver. That observer queues
+    // applyAll() through scheduleApply(), and applyAll rebuilds the
+    // right panel and media corner (~50ms of synchronous DOM work).
+    // When that 250ms-debounced applyAll fires while the OS file
+    // picker is opening, it pegs the renderer thread at exactly the
+    // moment the user is interacting with the picker — producing
+    // the "freezes as soon as the picker interacts with the browser"
+    // symptom the user reported.
+    //
+    // The sidebar Media panel's +Upload button doesn't trigger this
+    // because its handler is just stopPropagation + value reset +
+    // .click() — no DOM mutation in the click path.
+    //
+    // Three corrections vs. Task #156:
+    //   1. resetUploadZoneState() removed from the click path. State
+    //      reset still runs on page load and inside the
+    //      MutationObserver-on-has-video path (those are necessary).
+    //      On every click it was just churning the same button-text
+    //      assignment and pinging v10's observer.
+    //   2. Listener bound with capture:true to match the sidebar
+    //      pattern exactly. Capture is harmless on a direct binding
+    //      but ensures we own the click before any later-registered
+    //      handler could stopImmediatePropagation us out.
+    //   3. 500ms throttle copied from the sidebar so a double-click
+    //      or rapid keyboard activation can't queue two file pickers
+    //      back-to-back (which could itself hang the renderer).
+    var selectBtn = document.getElementById('selectVideoBtn');
+    if (selectBtn){
+      selectBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var now = Date.now();
+        if (window.__splicoraLastSelectClick && (now - window.__splicoraLastSelectClick) < 500) return;
+        window.__splicoraLastSelectClick = now;
+        try { fileInput.value = ''; } catch(_){}
+        try { fileInput.click(); }
+        catch (err){ console.error('[upload] fileInput.click() threw:', err); }
+      }, true);
+    }
 
     uploadZone.addEventListener('click', (e) => {
       if (e.target === fileInput) return;
@@ -7253,6 +7297,37 @@ setTimeout(function sidebarLayoutFix(){
     // We replay what uploadVideo() does for the primary, then append every
     // B-roll clip to V1 via the same addClipToTimeline path the media
     // library uses — so it naturally stacks after the primary.
+    // Task #164 — Rehydrate the Media library from the user's active
+    // server-side uploads. Runs on EVERY editor boot regardless of
+    // whether there's a saved project, so files the user uploaded
+    // in a prior session survive page reloads / logouts within the
+    // 3-day retention window. Fire-and-forget; failures don't block
+    // the rest of the editor.
+    (function rehydrateMediaUploads(){
+      function run(){
+        fetch('/video-editor/api/uploads', { credentials: 'same-origin' })
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(data){
+            if (!data || !Array.isArray(data.items) || !data.items.length) return;
+            if (typeof window.addUploadedMediaItem !== 'function') return;
+            data.items.forEach(function(it){
+              try {
+                window.addUploadedMediaItem({
+                  filename: it.filename,
+                  name:     it.name || it.filename,
+                  serveUrl: it.serveUrl,
+                  duration: it.duration,
+                  mediaType: it.mediaType || 'vid'
+                });
+              } catch(_){}
+            });
+          })
+          .catch(function(){ /* silent — Media library just stays empty */ });
+      }
+      if (document.readyState === 'complete') setTimeout(run, 100);
+      else window.addEventListener('load', function(){ setTimeout(run, 100); });
+    })();
+
     (function bootFromProject() {
       function run() {
         try {
@@ -7360,9 +7435,39 @@ setTimeout(function sidebarLayoutFix(){
             }
           });
 
+          // ——— 7. Task #162 — Save-as-Draft FULL restore ———
+          // If this project was created via Save-as-Draft, metadata
+          // carries a snapshot that describes EVERY .mt-clip across
+          // V1/A1/T1 (and the project aspect ratio). The primary +
+          // broll path above already loaded the headline asset; this
+          // block replaces the auto-spawned V1 clip(s) with the saved
+          // layout so positions, link-pairs, FX dataset attrs, and
+          // text overlays come back exactly.
+          if (proj.snapshot && Array.isArray(proj.snapshot.timelineClips) && proj.snapshot.timelineClips.length){
+            try {
+              if (proj.snapshot.aspect){
+                try { localStorage.setItem('splicora_project_aspect_v1', proj.snapshot.aspect); } catch(_){}
+              }
+              // Stash the draft id so subsequent Save-as-Draft clicks
+              // UPDATE this row instead of creating a new draft.
+              try { window.__currentDraftId = proj.id; } catch(_){}
+              // Defer restore one tick so the broll-auto-add and
+              // initTimeline DOM work above has fully landed.
+              setTimeout(function(){
+                try {
+                  if (typeof window.restoreTimelineFromSnapshot === 'function'){
+                    window.restoreTimelineFromSnapshot(proj.snapshot);
+                  }
+                } catch (e){ console.warn('[draft-restore] failed:', e); }
+              }, 250);
+            } catch (e){ console.warn('[draft-restore] setup failed:', e); }
+          }
           try {
             if (typeof showToast === 'function') {
-              showToast('Loaded project: ' + (proj.name || proj.id) + ' (' + broll.length + ' B-roll clip' + (broll.length === 1 ? '' : 's') + ')');
+              var msg = proj.isDraft
+                ? ('Draft loaded: ' + (proj.name || proj.id))
+                : ('Loaded project: ' + (proj.name || proj.id) + ' (' + broll.length + ' B-roll clip' + (broll.length === 1 ? '' : 's') + ')');
+              showToast(msg);
             }
           } catch (_) {}
         } catch (err) {
@@ -7954,10 +8059,61 @@ router.get('/:projectId(p_[a-f0-9]+)', requireAuth, async (req, res, next) => {
         name: b.name || b.filename,
         duration: Number(b.duration) || 0,
         serveUrl: b.serveUrl || ('/video-editor/download/' + b.filename)
-      }))
+      })),
+      // Task #162 — full timeline snapshot for Save-as-Draft restore.
+      // Falls through to undefined for AI B-Roll projects that only
+      // populate primary + broll; bootFromProject in the editor only
+      // applies snapshot if present.
+      snapshot: project.metadataObj && project.metadataObj.snapshot ? project.metadataObj.snapshot : null,
+      isDraft: project.status === 'draft'
     };
     return renderEditor(req, res);
   } catch (err) { next(err); }
+});
+
+// Task #162 — POST /video-editor/save-draft — persist a Save-as-Draft
+// snapshot of the editor timeline so it can be restored later from
+// the Library > Edited Videos tab. Accepts an optional `id` in the
+// body to update an existing draft in place; otherwise creates a
+// new draft row. The snapshot blob is stored verbatim inside
+// projects.metadata.snapshot so it survives schema changes without
+// requiring a migration each time we capture a new clip property.
+router.post('/save-draft', requireAuth, async (req, res) => {
+  try {
+    const { projectOps } = require('../db/database');
+    const body = req.body || {};
+    const snapshot = body.snapshot || {};
+    // Coerce to plain string before calling .slice — body.name can
+    // arrive as an SVGAnimatedString or other DOM-like object if the
+    // client picked it up from a className / dataset accessor that
+    // returns a non-String type. (Reproduced via the user's "(...).slice
+    // is not a function" error.) String() converts any of the
+    // troublesome types to a real string we can .slice on.
+    const rawName = body.name || snapshot.name || 'Untitled Draft';
+    const safeName = String(rawName || 'Untitled Draft').slice(0, 200);
+    const payload = {
+      id: body.id || null,                 // upsert key
+      name: safeName,
+      primaryFilename: snapshot.filename ? String(snapshot.filename) : null,
+      primaryDuration: Number(snapshot.duration) || 0,
+      primaryServeUrl: snapshot.serveUrl ? String(snapshot.serveUrl) : null,
+      broll: [],                            // draft snapshot covers broll inside metadata.snapshot
+      sourceHint: 'editor-draft',
+      metadata: { snapshot: snapshot }
+    };
+    const row = await projectOps.upsertDraft(req.user.id, payload);
+    if (!row) return res.status(500).json({ error: 'Failed to save draft' });
+    return res.json({
+      success: true,
+      id: row.id,
+      name: row.name,
+      updated_at: row.updated_at,
+      editorUrl: '/video-editor/' + row.id
+    });
+  } catch (err) {
+    console.error('[save-draft] error:', err);
+    return res.status(500).json({ error: 'Failed to save draft: ' + (err.message || 'unknown') });
+  }
 });
 
 // POST: Upload video
@@ -7997,15 +8153,64 @@ router.post('/upload', requireAuth, (req, res, next) => {
       return res.status(400).json({ error: 'This video format is not supported. Please try converting to MP4.' });
     }
 
+    const sizeBytes = fs.statSync(newPath).size;
+    // Task #164 — Insert into user_uploads so the cleanup job knows
+    // when to reap this file (3 days from now) and so the editor
+    // boot path can rehydrate the Media library on the next visit.
+    // Also accrue the bytes onto users.storage_bytes_used so the
+    // Dashboard storage card shows the upload immediately.
+    try {
+      const { userUploadOps, storageOps } = require('../db/database');
+      await userUploadOps.insert(req.user.id, {
+        filename:        newFilename,
+        originalName:    originalName,
+        serverPath:      newPath,
+        serveUrl:        `/video-editor/download/${newFilename}`,
+        sizeBytes:       sizeBytes,
+        mimeType:        req.file.mimetype || null,
+        durationSeconds: Number(metadata.duration) || 0,
+        mediaType:       'vid'
+      });
+      try { await storageOps.addBytes(req.user.id, sizeBytes); } catch(_){}
+    } catch (logErr){
+      console.warn('[upload] user_uploads insert failed:', logErr && logErr.message);
+    }
     res.json({
       filename: newFilename,
       originalName: originalName,
       duration: metadata.duration,
-      size: fs.statSync(newPath).size,
+      size: sizeBytes,
       serveUrl: `/video-editor/download/${newFilename}`
     });
   } catch (error) {
     res.status(500).json({ error: 'Upload failed: ' + (error.message || 'Unknown error') });
+  }
+});
+
+// Task #164 — GET /video-editor/api/uploads — returns the user's
+// active (non-expired) media uploads so the editor boot path can
+// rehydrate the Media library from the server. Files that have
+// crossed the 3-day expiry boundary are not returned (they get
+// reaped by the hourly cleanup job).
+router.get('/api/uploads', requireAuth, async (req, res) => {
+  try {
+    const { userUploadOps } = require('../db/database');
+    const rows = await userUploadOps.listActiveByUser(req.user.id, 200);
+    res.json({
+      items: rows.map(r => ({
+        id:       r.id,
+        filename: r.filename,
+        name:     r.original_name || r.filename,
+        serveUrl: r.serve_url || ('/video-editor/download/' + r.filename),
+        duration: Number(r.duration_seconds) || 0,
+        size:     Number(r.size_bytes) || 0,
+        mediaType: r.media_type || 'vid',
+        uploadedAt: r.uploaded_at,
+        expiresAt:  r.expires_at
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Uploads fetch failed' });
   }
 });
 
@@ -8130,6 +8335,20 @@ router.post('/export', requireAuth, async (req, res) => {
 
     await runFFmpeg(ffmpegArgs);
 
+    // Task #163 — Record this single-clip export in user_renders too,
+    // matching the timeline-export path so Library > Edited Videos
+    // covers BOTH export shapes the editor can produce. Fire-and-
+    // forget per renderRecorder's contract.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'video-editor',
+        kind: 'video',
+        absPath: outputPath,
+        title: outputFilename.replace(/\.[a-z0-9]+$/i, ''),
+        metadata: { source: 'export-single', format: format || null }
+      }).catch(function(e){ console.warn('[export] recordRender failed:', e && e.message); });
+    } catch (e){ console.warn('[export] recordRender threw:', e && e.message); }
     res.json({
       filename: outputFilename,
       downloadUrl: `/video-editor/download/${outputFilename}`,
@@ -9516,6 +9735,21 @@ router.post('/export-timeline', requireAuth, async (req, res) => {
     }
 
     var totalSec = cursor;
+    // Task #163 — Record this export in user_renders so it appears in
+    // Library > Edited Videos with a working Download button.
+    // Call is fire-and-forget per renderRecorder's contract — even
+    // if the DB insert fails the user's local download still works.
+    try {
+      const { recordRender } = require('../utils/renderRecorder');
+      recordRender(req.user.id, {
+        tool: 'video-editor',
+        kind: 'video',
+        absPath: outputPath,
+        title: customName || outputFilename.replace(/\.[a-z0-9]+$/i, ''),
+        durationSeconds: totalSec,
+        metadata: { clipCount: v1.length, format: reqFormat, source: 'export-timeline' }
+      }).catch(function(e){ console.warn('[export-timeline] recordRender failed:', e && e.message); });
+    } catch (e){ console.warn('[export-timeline] recordRender threw:', e && e.message); }
     res.json({
       filename: outputFilename,
       downloadUrl: '/video-editor/download/' + outputFilename,
