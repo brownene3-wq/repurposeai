@@ -1371,6 +1371,34 @@ router.get('/', requireAuth, (req, res) => {
           font-size: 16px;
         }
 
+        /* Toast — mirrors the AI Captions pattern. Bottom-right pill
+           that slides in and auto-dismisses. Used by Create's
+           validation so users get the same feedback they're used to
+           on AI Captions. */
+        .toast {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          background: #1a1a2e;
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 8px;
+          padding: 1rem 1.5rem;
+          font-size: 0.9rem;
+          z-index: 1000;
+          display: none;
+          color: #fff;
+          max-width: 400px;
+          animation: slideIn 0.3s ease-out;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+        }
+        .toast.show { display: block; }
+        .toast.success { border-color: #10B981; background: #064e3b; color: #6ee7b7; }
+        .toast.error   { border-color: #EF4444; background: #7f1d1d; color: #fca5a5; }
+        @keyframes slideIn {
+          from { transform: translateX(110%); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+
         .error {
           background: #4a1a1a;
           border: 1px solid #a22a2a;
@@ -1568,6 +1596,8 @@ router.get('/', requireAuth, (req, res) => {
             </div>
           </div>
 
+          <div class="toast" id="createToast" role="status" aria-live="polite"></div>
+
           <div class="results-container" id="resultsContainer">
             <div class="loading" id="loadingState">
               <div class="spinner"></div>
@@ -1715,21 +1745,21 @@ router.get('/', requireAuth, (req, res) => {
           const tone = document.getElementById('toneValue').value || null;
           const brandVoiceId = document.getElementById('brandVoice').value;
 
-          // Source-mode validation.
+          // Source-mode validation — bottom-right toast, same as AI Captions.
           if (_sourceMode === 'url' && !url) {
-            showError('Please enter a YouTube URL');
+            showToast('Please enter a YouTube URL', 'error');
             return;
           }
           if (_sourceMode === 'upload' && !_pendingFile) {
-            showError('Please choose a file to upload');
+            showToast('Please choose a file to upload', 'error');
             return;
           }
           if (platforms.length === 0) {
-            showError('Please select at least one platform');
+            showToast('Please select at least one platform', 'error');
             return;
           }
           if (!tone && !brandVoiceId) {
-            showError('Please select a tone or a brand voice');
+            showToast('Please select a tone or a brand voice', 'error');
             return;
           }
 
@@ -1938,6 +1968,18 @@ router.get('/', requireAuth, (req, res) => {
           const errorEl = document.getElementById('errorMessage');
           errorEl.textContent = message;
           errorEl.classList.add('show');
+        }
+        // Floating toast — same pattern AI Captions uses. Auto-dismisses
+        // after 3s so it never lingers, and replaces any earlier toast
+        // mid-flight so consecutive clicks don't queue up.
+        var _createToastTimer = null;
+        function showToast(message, type) {
+          var t = document.getElementById('createToast');
+          if (!t) return;
+          t.textContent = message;
+          t.className = 'toast show ' + (type || 'success');
+          if (_createToastTimer) clearTimeout(_createToastTimer);
+          _createToastTimer = setTimeout(function(){ t.classList.remove('show'); }, 3000);
         }
 
         function resetForm() {
