@@ -135,12 +135,13 @@ router.get('/callback', async (req, res) => {
 
     // Fetch user profile
     let username = '';
+    let profileData = null;
     try {
-      const profileData = await httpsGet(
+      profileData = await httpsGet(
         'https://api.pinterest.com/v5/user_account',
         { Authorization: 'Bearer ' + access_token }
       );
-      if (profileData.data) {
+      if (profileData && profileData.data) {
         username = profileData.data.username || '';
       }
     } catch (e) {
@@ -151,7 +152,7 @@ router.get('/callback', async (req, res) => {
     const db = getDb();
     const { userOps, connectedAccountOps } = db;
     await userOps.updatePinterest(userId, {
-      pinterestId: profileData.data?.id || '',
+      pinterestId: profileData?.data?.id || '',
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt: expiresAt,
@@ -169,7 +170,7 @@ router.get('/callback', async (req, res) => {
         });
       } else {
         await connectedAccountOps.create(userId, {
-          platform: 'pinterest', platformUserId: profileData.data?.id || '',
+          platform: 'pinterest', platformUserId: profileData?.data?.id || '',
           platformUsername: username, accountName: username || 'Pinterest Account',
           accessToken: access_token, refreshToken: refresh_token,
           tokenExpiresAt: expiresAt, accountType: 'destination'
