@@ -1371,33 +1371,6 @@ router.get('/', requireAuth, (req, res) => {
           font-size: 16px;
         }
 
-        /* Step-level validation — loud but on-brand. The MISSING
-           pill sits inline next to the offending Step heading, and the
-           heading text + step number both flip red. Both auto-clear
-           the moment the user starts filling the missing input. */
-        .step-num { color: var(--primary, #6C3AED); margin-right: 6px; font-weight: 800; }
-        .step-missing-pill { display: none; }
-        h2.step-invalid .step-missing-pill {
-          display: inline-block;
-          margin-left: 10px;
-          padding: 3px 10px;
-          background: rgba(239, 68, 68, 0.18);
-          border: 1px solid rgba(239, 68, 68, 0.45);
-          color: #fca5a5;
-          font-size: 0.7em;
-          font-weight: 700;
-          border-radius: 999px;
-          vertical-align: middle;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-        }
-        h2.step-invalid .step-missing-pill::before { content: '! Missing'; }
-        h2.step-invalid { color: #fca5a5; }
-        h2.step-invalid .step-num { color: #fca5a5; }
-        body.light h2.step-invalid { color: #b91c1c; }
-        body.light h2.step-invalid .step-num { color: #b91c1c; }
-        body.light h2.step-invalid .step-missing-pill { background: rgba(220, 38, 38, 0.10); color: #b91c1c; border-color: rgba(220, 38, 38, 0.40); }
-
         .error {
           background: #4a1a1a;
           border: 1px solid #a22a2a;
@@ -1480,7 +1453,7 @@ router.get('/', requireAuth, (req, res) => {
 
           <div class="form-container">
             <div class="form-section">
-              <h2 id="stepHead1"><span class="step-num">Step 1:</span> Your Content<span class="step-missing-pill" aria-live="polite"></span></h2>
+              <h2>Step 1: Your Content</h2>
 
               <!-- Source toggle — mutually exclusive URL vs Upload, AI
                    Captions style. Switching hides the other panel
@@ -1516,7 +1489,7 @@ router.get('/', requireAuth, (req, res) => {
                 <p class="upload-hint">Up to ~120 minutes. We'll extract the audio and transcribe it with the same engine that processes YouTube videos.</p>
               </div>
 
-              <h2 id="stepHead2" style="margin-top: 30px;"><span class="step-num">Step 2:</span> Choose Platforms<span class="step-missing-pill" aria-live="polite"></span></h2>
+              <h2 style="margin-top: 30px;">Step 2: Choose Platforms</h2>
               <div class="platform-selector">
                 <div class="platform-card" data-platform="Instagram">
                   <input type="checkbox" name="platform" value="Instagram" />
@@ -1558,7 +1531,7 @@ router.get('/', requireAuth, (req, res) => {
             </div>
 
             <div class="form-section">
-              <h2 id="stepHead3"><span class="step-num">Step 3:</span> Tone & Brand Voice<span class="step-missing-pill" aria-live="polite"></span></h2>
+              <h2>Step 3: Tone & Brand Voice</h2>
               <div class="form-group">
                 <label>Tone of Voice</label>
                 <input type="hidden" name="tone" id="toneValue" value="" />
@@ -1742,27 +1715,23 @@ router.get('/', requireAuth, (req, res) => {
           const tone = document.getElementById('toneValue').value || null;
           const brandVoiceId = document.getElementById('brandVoice').value;
 
-          // Loud step-by-step validation. Each failure names the
-          // specific Step + the missing input and lights the heading
-          // red with a MISSING pill so the user can't miss it.
+          // Source-mode validation.
           if (_sourceMode === 'url' && !url) {
-            showError('Step 1: Your Content — paste a YouTube URL, or switch to Upload File and pick one.', 1);
+            showError('Please enter a YouTube URL');
             return;
           }
           if (_sourceMode === 'upload' && !_pendingFile) {
-            showError('Step 1: Your Content — choose a video or audio file to upload.', 1);
+            showError('Please choose a file to upload');
             return;
           }
           if (platforms.length === 0) {
-            showError('Step 2: Choose Platforms — pick at least one platform to generate for.', 2);
+            showError('Please select at least one platform');
             return;
           }
           if (!tone && !brandVoiceId) {
-            showError('Step 3: Tone & Brand Voice — pick a tone, or attach a saved brand voice.', 3);
+            showError('Please select a tone or a brand voice');
             return;
           }
-          // All clear — wipe any leftover flags from earlier attempts.
-          clearStepFlags();
 
           try {
             showLoading();
@@ -1964,53 +1933,12 @@ router.get('/', requireAuth, (req, res) => {
           document.getElementById('errorMessage').classList.remove('show');
         }
 
-        function showError(message, stepNum) {
+        function showError(message) {
           document.getElementById('loadingState').classList.remove('show');
           const errorEl = document.getElementById('errorMessage');
           errorEl.textContent = message;
           errorEl.classList.add('show');
-          if (stepNum) flagStep(stepNum);
-          // Bring the offending step (or the error banner) into view so
-          // the user immediately sees which step is incomplete.
-          var scrollTarget = stepNum ? document.getElementById('stepHead' + stepNum) : errorEl;
-          if (scrollTarget && scrollTarget.scrollIntoView) {
-            try { scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(_) {}
-          }
         }
-        function flagStep(n) {
-          // Only the actually-missing step glows — wipe prior flags first.
-          ['1','2','3'].forEach(function(k){
-            var h = document.getElementById('stepHead' + k);
-            if (h) h.classList.remove('step-invalid');
-          });
-          var h = document.getElementById('stepHead' + n);
-          if (h) h.classList.add('step-invalid');
-        }
-        function clearStepFlags() {
-          ['1','2','3'].forEach(function(k){
-            var h = document.getElementById('stepHead' + k);
-            if (h) h.classList.remove('step-invalid');
-          });
-          var errorEl = document.getElementById('errorMessage');
-          if (errorEl) errorEl.classList.remove('show');
-        }
-        // Auto-clear the flag as soon as the user starts repairing the
-        // missing input. We listen broadly across every interactive
-        // element in the form so we don't have to know which specific
-        // control they touched.
-        function _wireAutoClear(){
-          var sel = '#youtubeUrl, #repFileInput, input[name="platform"], #toneValue, #brandVoice, .tone-card, .platform-card, #srcTabUrl, #srcTabUpload';
-          document.querySelectorAll(sel).forEach(function(el){
-            ['change','input','click'].forEach(function(ev){ el.addEventListener(ev, function(){
-              ['stepHead1','stepHead2','stepHead3'].forEach(function(id){
-                var x = document.getElementById(id);
-                if (x) x.classList.remove('step-invalid');
-              });
-            }); });
-          });
-        }
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wireAutoClear);
-        else _wireAutoClear();
 
         function resetForm() {
           document.getElementById('youtubeUrl').value = '';
