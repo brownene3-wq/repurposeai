@@ -826,21 +826,35 @@ async function publishTikTok(destAccount, sourceItem, mediaPath) {
 }
 
 async function publishTwitter(destAccount, sourceItem, mediaPath) {
-  // Upload media first using v1.1 API
-  const mediaFormData = new FormData();
-  mediaFormData.append('media_data', fs.readFileSync(mediaPath));
+  // Text-only fast path. When the caller passes no mediaPath (e.g.
+  // Library Posts > Publish To… is text-only by design), skip the
+  // media-upload step entirely. The old code unconditionally called
+  // fs.readFileSync(mediaPath) here and crashed with
+  // 'The "path" argument must be of type string ... Received null'
+  // before even attempting the tweet.
+  const tweetText = ((sourceItem.title ? sourceItem.title + '\n' : '') + (sourceItem.description || sourceItem.caption || '')).slice(0, 4000).trim()
+                 || (sourceItem.caption || sourceItem.title || '').slice(0, 4000);
+  if (!tweetText) throw new Error('Twitter requires text or media to post');
 
-  // For simplicity, just post text tweet for now
+  if (mediaPath) {
+    // Media-bearing branch — read the file. v1.1 media upload would
+    // normally happen here; today we just post the text (per the
+    // 'For simplicity' comment that's been here since the first
+    // pass) but we still validate the file is readable so future
+    // wiring can lift this branch verbatim.
+    try { fs.statSync(mediaPath); }
+    catch (e) { throw new Error('Twitter media file unreadable: ' + e.message); }
+  }
+
   const response = await httpsPostJson(
     'https://api.twitter.com/2/tweets',
-    {
-      text: sourceItem.title + '\n' + sourceItem.description
-    },
+    { text: tweetText },
     { Authorization: `Bearer ${destAccount.access_token}` }
   );
 
   if (!response.body.data?.id) {
-    throw new Error('Twitter post failed');
+    const detail = JSON.stringify(response.body || {}).slice(0, 300);
+    throw new Error('Twitter post failed: ' + detail);
   }
 
   return { platform: 'twitter', tweetId: response.body.data.id };
@@ -885,6 +899,38 @@ async function publishFacebook(destAccount, sourceItem, mediaPath) {
 async function publishLinkedIn(destAccount, sourceItem, mediaPath) {
   const personId = destAccount.platform_user_id;
   if (!personId) throw new Error('No LinkedIn person ID');
+
+  // Text-only fast path. UGC Posts API supports shareMediaCategory:
+  // NONE for plain text shares — used by the Library Posts > Publish
+  // flow which never attaches media. Skipping the asset registration
+  // + file upload entirely keeps us off fs and lets the post succeed.
+  if (!mediaPath) {
+    const text = (sourceItem.description || sourceItem.caption || sourceItem.title || '').slice(0, 3000).trim();
+    if (!text) throw new Error('LinkedIn requires text or media to post');
+    const ugcResp = await httpsPostJson(
+      'https://api.linkedin.com/v2/ugcPosts',
+      {
+        author: `urn:li:person:${personId}`,
+        lifecycleState: 'PUBLISHED',
+        specificContent: {
+          'com.linkedin.ugc.ShareContent': {
+            shareCommentary: { text: text },
+            shareMediaCategory: 'NONE'
+          }
+        },
+        visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
+      },
+      {
+        Authorization: `Bearer ${destAccount.access_token}`,
+        'X-Restli-Protocol-Version': '2.0.0'
+      }
+    );
+    if (!ugcResp.body || !ugcResp.body.id) {
+      const detail = JSON.stringify(ugcResp.body || {}).slice(0, 300);
+      throw new Error('LinkedIn text post failed: ' + detail);
+    }
+    return { platform: 'linkedin', postId: ugcResp.body.id };
+  }
 
   // Register asset first
   const registerResponse = await httpsPostJson(

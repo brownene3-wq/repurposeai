@@ -613,6 +613,9 @@ const initDatabase = async () => {
 
 
     // Projects table — used by AI B-Roll ingestion → Video Editor handoff
+    // AND by the editor's Save-as-Draft flow (Task #162). Drafts are
+    // rows with status='draft' and a full timeline snapshot serialized
+    // into metadata; AI B-Roll projects carry status='ingest'.
     await pool.query(`
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
@@ -624,13 +627,45 @@ const initDatabase = async () => {
         broll_clips TEXT DEFAULT '[]',
         source_hint TEXT,
         metadata TEXT DEFAULT '{}',
+        status TEXT DEFAULT 'draft',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+    // Task #162 — additive migration. Older Railway deploys created the
+    // table without the status column; ALTER if missing so the new
+    // /save-draft endpoint can write to it without a deploy-time crash.
+    try { await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'draft'`); } catch(_) {}
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)`);
+
+    // Task #164 — Per-file Media-panel upload registry. Used by the
+    // 3-day retention cleanup job + the editor boot path that
+    // rehydrates the Media library from the server on every load.
+    // Storage byte accounting still lives on users.storage_bytes_used
+    // (subBytes is called when a row here is reaped) so the Dashboard
+    // storage card keeps working without changes.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_uploads (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        original_name TEXT,
+        server_path TEXT NOT NULL,
+        serve_url TEXT,
+        size_bytes BIGINT DEFAULT 0,
+        mime_type TEXT,
+        duration_seconds REAL DEFAULT 0,
+        media_type TEXT DEFAULT 'vid',
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_uploads_user ON user_uploads(user_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_uploads_expires ON user_uploads(expires_at)`);
 
 console.log('Database initialized successfully');
   } catch (error) {
@@ -1704,9 +1739,10 @@ const projectOps = {
     const id = 'p_' + uuidv4().replace(/-/g, '').slice(0, 16);
     const brollJson = JSON.stringify(Array.isArray(data.broll) ? data.broll : []);
     const metaJson = JSON.stringify(data.metadata || {});
+    const status = data.status || 'draft';
     const result = await pool.query(
-      `INSERT INTO projects (id, user_id, name, primary_filename, primary_duration, primary_serve_url, broll_clips, source_hint, metadata)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      `INSERT INTO projects (id, user_id, name, primary_filename, primary_duration, primary_serve_url, broll_clips, source_hint, metadata, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [
         id,
         userId,
@@ -1716,10 +1752,47 @@ const projectOps = {
         data.primaryServeUrl || null,
         brollJson,
         data.sourceHint || null,
-        metaJson
+        metaJson,
+        status
       ]
     );
     return result.rows[0];
+  },
+  // Task #162 — Upsert a Save-as-Draft snapshot. If a draft already
+  // exists with the same id (returned by the editor on subsequent
+  // saves), update in place; otherwise create. Used by POST
+  // /video-editor/save-draft.
+  async upsertDraft(userId, payload) {
+    const brollJson = JSON.stringify(Array.isArray(payload.broll) ? payload.broll : []);
+    const metaJson = JSON.stringify(payload.metadata || {});
+    const name = payload.name || 'Untitled Draft';
+    if (payload.id) {
+      const upd = await pool.query(
+        `UPDATE projects
+           SET name = $1, primary_filename = $2, primary_duration = $3,
+               primary_serve_url = $4, broll_clips = $5, metadata = $6,
+               status = 'draft', updated_at = CURRENT_TIMESTAMP
+         WHERE id = $7 AND user_id = $8 RETURNING *`,
+        [name, payload.primaryFilename || null, payload.primaryDuration || 0,
+         payload.primaryServeUrl || null, brollJson, metaJson,
+         payload.id, userId]
+      );
+      if (upd.rows[0]) return upd.rows[0];
+      // fall through to create if the id wasn't recognized (e.g. stale)
+    }
+    return await this.create(userId, Object.assign({}, payload, { status: 'draft' }));
+  },
+  // Task #162 — Drafts feed for Library > Edited Videos tab.
+  async listDraftsByUser(userId, limit = 50) {
+    const result = await pool.query(
+      `SELECT id, name, primary_filename, primary_duration, primary_serve_url,
+              metadata, created_at, updated_at
+         FROM projects
+        WHERE user_id = $1 AND status = 'draft'
+        ORDER BY updated_at DESC LIMIT $2`,
+      [userId, limit]
+    );
+    return result.rows;
   },
   async getById(id, userId) {
     const params = userId ? [id, userId] : [id];
@@ -1892,6 +1965,67 @@ const storageOps = {
   }
 };
 
+// Task #164 — Media-panel upload registry. Backed by user_uploads.
+// On insert, expires_at is set to now()+3 days. cleanupExpired() is
+// called every hour from server.js to reap files whose retention
+// has elapsed; that path deletes the disk file AND calls
+// storageOps.subBytes so the Dashboard storage card reflects the
+// freed bytes immediately.
+const userUploadOps = {
+  async insert(userId, data) {
+    const id = 'up_' + uuidv4().replace(/-/g, '').slice(0, 16);
+    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // +3 days
+    const result = await pool.query(
+      `INSERT INTO user_uploads
+         (id, user_id, filename, original_name, server_path, serve_url,
+          size_bytes, mime_type, duration_seconds, media_type, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING *`,
+      [
+        id, userId,
+        data.filename,
+        data.originalName || data.filename,
+        data.serverPath,
+        data.serveUrl || null,
+        Number(data.sizeBytes) || 0,
+        data.mimeType || null,
+        Number(data.durationSeconds) || 0,
+        data.mediaType || 'vid',
+        expiresAt
+      ]
+    );
+    return result.rows[0];
+  },
+  // Active (not-yet-expired) uploads for the editor boot path to
+  // rehydrate the Media library.
+  async listActiveByUser(userId, limit = 200) {
+    const result = await pool.query(
+      `SELECT * FROM user_uploads
+        WHERE user_id = $1 AND expires_at > NOW()
+        ORDER BY uploaded_at DESC LIMIT $2`,
+      [userId, limit]
+    );
+    return result.rows;
+  },
+  // Reap expired rows. Returns the list of rows we deleted (caller
+  // is responsible for fs.unlinkSync + storageOps.subBytes per row).
+  async claimExpired(limit = 500) {
+    const result = await pool.query(
+      `DELETE FROM user_uploads
+        WHERE expires_at <= NOW()
+        RETURNING id, user_id, filename, server_path, size_bytes`
+    );
+    return result.rows.slice(0, limit);
+  },
+  async deleteById(id, userId) {
+    const r = await pool.query(
+      `DELETE FROM user_uploads WHERE id = $1 AND user_id = $2 RETURNING size_bytes, server_path`,
+      [id, userId]
+    );
+    return r.rows[0] || null;
+  }
+};
+
 
 module.exports = {
   initDatabase,
@@ -1914,6 +2048,7 @@ module.exports = {
   featureUsageOps,
   projectOps,
   pageContentOps,
+  userUploadOps,
   youtubeCookieOps: {
     async list() {
       return (await pool.query(`SELECT id, label, status, fail_count, last_success_at, last_failure_at, last_failure_reason, last_rotated_at, created_at, updated_at, notes, region FROM youtube_cookies ORDER BY created_at DESC`)).rows;

@@ -2485,7 +2485,20 @@
     _lastPreviewUrl = null;
     try { syncPreviewToPlayhead(); } catch(_){}
   }
-  try { window.tlGoToStart = tlGoToStart; window.tlGoToEnd = tlGoToEnd; } catch(_){}
+  // Task #159 — Stop = pause + snap to start. Functionally equivalent
+  // to tlGoToStart() today, but exposed as a separate named action so
+  // a future "Stop" could diverge from "Go to start" (e.g. reset
+  // playback speed, clear hover state, etc.) without breaking either
+  // call site. Also gives the Stop button a clearer intent string in
+  // tooltips and analytics.
+  function tlStop(){
+    tlPause();
+    var ph = document.getElementById('mtPlayhead');
+    if (ph) ph.style.left = '0px';
+    _lastPreviewUrl = null;
+    try { syncPreviewToPlayhead(); } catch(_){}
+  }
+  try { window.tlGoToStart = tlGoToStart; window.tlGoToEnd = tlGoToEnd; window.tlStop = tlStop; } catch(_){}
 
   function transportTickAndRender(phSec){
     var ph = document.getElementById('mtPlayhead');
@@ -2640,9 +2653,15 @@
     // Task #135 \u2014 Dropped the "Start" and "End" text labels. Icon-only
     // chips read as compact transport glyphs; flexbox centering keeps
     // them aligned with the (wider) Play button between them.
-    var startBtn = makeStripBtn('tlGoStartBtn',   '\u23EE', 'Go to start of timeline', { iconOnly: true });
+    //
+    // Task #159 \u2014 Added a Stop button (\u23F9) between Play and End. Stop
+    // pauses playback AND snaps the playhead back to 0 in one click,
+    // which the previous transport strip required two clicks for
+    // (Pause + Go-to-start). Icon-only to match the other glyph chips.
+    var startBtn = makeStripBtn('tlGoStartBtn',   '\u23EE', 'Go to start of timeline',                  { iconOnly: true });
     var btn      = makeStripBtn('tlTransportBtn', '\u25B6 Play', 'Play / pause the timeline (Space)');
-    var endBtn   = makeStripBtn('tlGoEndBtn',     '\u23ED', 'Go to end of timeline',   { iconOnly: true });
+    var stopBtn  = makeStripBtn('tlStopBtn',      '\u23F9', 'Stop \u2014 pause and snap playhead to start', { iconOnly: true });
+    var endBtn   = makeStripBtn('tlGoEndBtn',     '\u23ED', 'Go to end of timeline',                    { iconOnly: true });
 
     if (!startBtn.dataset.v129){
       startBtn.dataset.v129 = '1';
@@ -2651,6 +2670,10 @@
     if (!btn.dataset.v14){
       btn.dataset.v14 = '1';
       btn.addEventListener('click', function(){ tlTogglePlay(); });
+    }
+    if (!stopBtn.dataset.v159){
+      stopBtn.dataset.v159 = '1';
+      stopBtn.addEventListener('click', function(){ tlStop(); });
     }
     if (!endBtn.dataset.v129){
       endBtn.dataset.v129 = '1';
@@ -3373,20 +3396,103 @@
       timelineClips: clips
     };
   }
+  // Task #162 \u2014 Save-as-Draft now persists to the server. The snapshot
+  // captures every .mt-clip across all tracks (V1, A1, T1, M1) with
+  // its dataset attributes + computed left/width so a later restore
+  // can rebuild the exact same timeline. The button reflects upload
+  // progress and surfaces server-side errors via showToast.
+  //
+  // The old localStorage path (addDraftEntry) still fires alongside
+  // the server call so the in-app Drafts folder updates immediately
+  // \u2014 server source-of-truth, localStorage is a UI cache.
+  function snapshotTimelineStateRich(){
+    var clips = Array.from(document.querySelectorAll('.mt-clip')).map(function(c){
+      var track = c.parentElement;
+      var trackClass = track ? (track.className || '') : '';
+      // Map track DOM class \u2192 semantic track name the restore path will use
+      var trackName = 'video';
+      if (/mt-track-audio/.test(trackClass)) trackName = 'audio';
+      else if (/mt-track-text/.test(trackClass)) trackName = 'text';
+      else if (/mt-track-fx/.test(trackClass)) trackName = 'fx';
+      // Capture every dataset attribute verbatim so things like
+      // linkPair, sourceOffset, fxBlur, fontSize, fontColor, etc.
+      // survive the round-trip without us enumerating them by name.
+      var ds = {};
+      try { Object.keys(c.dataset).forEach(function(k){ ds[k] = c.dataset[k]; }); } catch(_){}
+      return {
+        track: trackName,
+        left: c.style.left || '0px',
+        width: c.style.width || '',
+        background: c.style.background || '',
+        zIndex: c.style.zIndex || '',
+        textContent: (trackName === 'text' || trackName === 'audio') ? (c.textContent || '') : '',
+        dataset: ds
+      };
+    });
+    var current = (typeof window.currentVideoFile === 'object' && window.currentVideoFile) || null;
+    var firstVid = clips.find(function(c){ return c.track === 'video'; });
+    // Project-level state that the restore path needs.
+    var aspect = null;
+    try { aspect = localStorage.getItem('splicora_project_aspect_v1'); } catch(_){}
+    var projInput = document.getElementById('projectNameInput');
+    var projectName = (projInput && projInput.value) || (current && current.filename) || (firstVid && firstVid.dataset && firstVid.dataset.fileName) || 'Untitled Draft';
+    return {
+      name:     projectName,
+      filename: current && current.filename,
+      serveUrl: current && current.serveUrl,
+      duration: current && current.duration,
+      aspect:   aspect,
+      timelineClips: clips,
+      savedAt: Date.now()
+    };
+  }
+
   function wireSaveAsDraft(){
     var btn = document.getElementById('saveAsDraftBtn');
-    if (!btn || btn.dataset.v14) return;
-    btn.dataset.v14 = '1';
-    btn.addEventListener('click', function(){
-      var state = snapshotTimelineState();
-      if (!state.timelineClips.length && !state.filename){
+    if (!btn || btn.dataset.v162) return;
+    btn.dataset.v162 = '1';
+    btn.addEventListener('click', async function(){
+      var snapshot = snapshotTimelineStateRich();
+      if (!snapshot.timelineClips.length && !snapshot.filename){
         showToast('Nothing to save yet \u2014 add a clip or upload a video first');
         return;
       }
-      if (typeof window.addDraftEntry === 'function'){
-        try { window.addDraftEntry(state); } catch(_){}
+      var originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Saving\u2026';
+      try {
+        var res = await fetch('/video-editor/save-draft', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: window.__currentDraftId || null,
+            name: snapshot.name,
+            snapshot: snapshot
+          })
+        });
+        if (!res.ok){
+          var msg = 'Save failed (' + res.status + ')';
+          try { var j = await res.json(); if (j && j.error) msg = j.error; } catch(_){}
+          throw new Error(msg);
+        }
+        var data = await res.json();
+        // Remember the id so subsequent saves UPDATE this draft instead
+        // of creating a new row each time.
+        try { window.__currentDraftId = data.id; } catch(_){}
+        // Mirror to the in-app localStorage Drafts folder so the user
+        // sees their draft in the media panel right away (legacy path).
+        if (typeof window.addDraftEntry === 'function'){
+          try { window.addDraftEntry(Object.assign({}, snapshot, { id: data.id, editorUrl: data.editorUrl })); } catch(_){}
+        }
+        showToast('Draft saved \u2014 view it in Library > Edited Videos');
+      } catch (err){
+        console.error('[save-draft] failed:', err);
+        showToast('Could not save draft: ' + (err && err.message || 'unknown error'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
       }
-      showToast('Draft saved (' + state.timelineClips.length + ' clip' + (state.timelineClips.length === 1 ? '' : 's') + ')');
     });
   }
   wireSaveAsDraft();
@@ -3438,6 +3544,61 @@
 
   // Expose so v10 draft loader and other callers reuse the sequenced version.
   try { window.addClipToTimeline = addClipToTimeline; } catch(_){}
+
+  // Task #162 — Rebuild the timeline from a Save-as-Draft snapshot.
+  // The snapshot shape is what snapshotTimelineStateRich() produces:
+  // { timelineClips: [{ track, left, width, background, zIndex,
+  //   textContent, dataset:{...} }, ...], aspect, name, ... }.
+  //
+  // Strategy: nuke every .mt-clip the boot path auto-created, then
+  // recreate each saved clip directly in its target track with the
+  // saved dataset attributes + styles restored verbatim. This keeps
+  // restore symmetric with snapshot — anything captured by snapshot
+  // is reproduced here.
+  function restoreTimelineFromSnapshot(snap){
+    if (!snap || !Array.isArray(snap.timelineClips)) return;
+    // Wipe whatever auto-spawned (primary load + broll appends) so we
+    // start from a clean slate before re-laying the saved clips.
+    document.querySelectorAll('.mt-clip').forEach(function(c){
+      try { c.parentElement && c.parentElement.removeChild(c); } catch(_){}
+    });
+    var trackMap = {
+      video: document.querySelector('.mt-track-video'),
+      audio: document.querySelector('.mt-track-audio'),
+      text:  document.querySelector('.mt-track-text'),
+      fx:    document.querySelector('.mt-track-fx')
+    };
+    snap.timelineClips.forEach(function(c){
+      var track = trackMap[c.track] || trackMap.video;
+      if (!track) return;
+      var clip = document.createElement('div');
+      clip.className = 'mt-clip ' +
+        (c.track === 'audio' ? 'mt-clip-audio' :
+         c.track === 'text'  ? 'mt-clip-text'  :
+         c.track === 'fx'    ? 'mt-clip-fx'    : 'mt-clip-video');
+      if (c.dataset){
+        Object.keys(c.dataset).forEach(function(k){
+          try { clip.dataset[k] = c.dataset[k]; } catch(_){}
+        });
+      }
+      if (c.left)        clip.style.left = c.left;
+      if (c.width)       clip.style.width = c.width;
+      if (c.background)  clip.style.background = c.background;
+      if (c.zIndex)      clip.style.zIndex = c.zIndex;
+      if (c.textContent && (c.track === 'text' || c.track === 'audio')){
+        clip.textContent = c.textContent;
+      }
+      track.appendChild(clip);
+      // Re-attach behavior (drag, trim handles, context menu, filmstrip).
+      try { makeClipInteractive(clip); } catch(_){}
+      if (c.track === 'video' && c.dataset && c.dataset.mediaUrl){
+        try { buildClipFilmstrip(clip, c.dataset.mediaUrl, parseFloat(c.dataset.duration) || 0); } catch(_){}
+      }
+    });
+    try { updateTimelineInfo(); } catch(_){}
+    try { pushTimelineHistory(); } catch(_){}
+  }
+  try { window.restoreTimelineFromSnapshot = restoreTimelineFromSnapshot; } catch(_){}
   try { window.pushTimelineHistory = pushTimelineHistory; } catch(_){}
   try { window.getActiveClips = getActiveClips; } catch(_){}
   try { window.syncPreviewToPlayhead = syncPreviewToPlayhead; } catch(_){}
