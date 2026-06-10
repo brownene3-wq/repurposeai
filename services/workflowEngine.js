@@ -542,6 +542,8 @@ async function publishToDestination(workflow, destAccount, sourceItem, mediaPath
       return await publishLinkedIn(destAccount, sourceItem, mediaPath);
     } else if (platform === 'pinterest') {
       return await publishPinterest(destAccount, sourceItem, mediaPath);
+    } else if (platform === 'threads') {
+      return await publishThreads(destAccount, sourceItem, mediaPath);
     } else {
       throw new Error(`Unsupported destination platform: ${platform}`);
     }
@@ -1278,6 +1280,46 @@ async function startWorkflowEngine() {
   }, POLL_INTERVAL);
 }
 
+// Threads publisher (Meta Threads API v1.0). Two-step flow:
+//   1) POST /{user-id}/threads with media_type=TEXT + text → returns
+//      a creation_id (media container)
+//   2) POST /{user-id}/threads_publish with creation_id → returns the
+//      final post id
+// Same shape routes/threads.js already documents for the API test
+// endpoint. mediaPath is currently ignored — Threads native media
+// upload uses a separate IMAGE/VIDEO container flow which we can
+// wire later. Text-only covers Library Posts and the Repurpose flow.
+async function publishThreads(destAccount, sourceItem, mediaPath) {
+  const accessToken = destAccount.access_token;
+  const userId = destAccount.platform_user_id;
+  if (!userId) throw new Error('No Threads user id on the connected account.');
+  const text = (sourceItem.description || sourceItem.caption || sourceItem.title || '').slice(0, 500).trim();
+  if (!text) throw new Error('Threads requires text to post.');
+
+  // Step 1: create a TEXT media container.
+  const createResp = await httpsPost(
+    `https://graph.threads.net/v1.0/${userId}/threads`,
+    { media_type: 'TEXT', text: text, access_token: accessToken }
+  );
+  const creationId = createResp && createResp.body && (createResp.body.id || (typeof createResp.body === 'string' && (() => { try { return JSON.parse(createResp.body).id; } catch (_) { return null; } })()));
+  if (!creationId) {
+    const detail = JSON.stringify((createResp && createResp.body) || {}).slice(0, 300);
+    throw new Error('Threads container create failed: ' + detail);
+  }
+
+  // Step 2: publish the container.
+  const pubResp = await httpsPost(
+    `https://graph.threads.net/v1.0/${userId}/threads_publish`,
+    { creation_id: creationId, access_token: accessToken }
+  );
+  const postId = pubResp && pubResp.body && (pubResp.body.id || (typeof pubResp.body === 'string' && (() => { try { return JSON.parse(pubResp.body).id; } catch (_) { return null; } })()));
+  if (!postId) {
+    const detail = JSON.stringify((pubResp && pubResp.body) || {}).slice(0, 300);
+    throw new Error('Threads publish failed: ' + detail);
+  }
+  return { platform: 'threads', postId };
+}
+
 module.exports = {
   startWorkflowEngine,
   publishToDestination,
@@ -1288,5 +1330,6 @@ module.exports = {
   publishFacebook,
   publishLinkedIn,
   publishPinterest,
+  publishThreads,
   refreshTokenIfNeeded
 };

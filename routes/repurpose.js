@@ -3379,7 +3379,7 @@ router.get('/history', requireAuth, (req, res) => {
             var j = await r.json();
             var accounts = (j && j.accounts) || [];
             // Text-only-capable platforms today.
-            var supported = ['twitter','linkedin','facebook'];
+            var supported = ['twitter','linkedin','facebook','threads'];
             accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
             // Prefer matching the source platform first.
             if (platform) {
