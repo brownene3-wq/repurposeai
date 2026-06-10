@@ -270,14 +270,22 @@ router.get('/boards', requireAuth, async (req, res) => {
       { Authorization: 'Bearer ' + accessToken }
     );
 
-    if (boardsData.error) {
-      console.error('Pinterest boards fetch failed:', JSON.stringify(boardsData));
+    // httpsGet returns { status, headers, body }. The real Pinterest
+    // payload lives at boardsData.body and uses .items, not .data.
+    // Read defensively so legacy shapes still work.
+    const body = (boardsData && boardsData.body) || {};
+    const parsed = typeof body === 'string'
+      ? (() => { try { return JSON.parse(body); } catch (_) { return {}; } })()
+      : body;
+    if (boardsData.status && (boardsData.status < 200 || boardsData.status >= 300)) {
+      console.error('Pinterest boards fetch failed:', boardsData.status, JSON.stringify(parsed).slice(0, 300));
       return res.status(400).json({
-        error: 'Failed to fetch boards: ' + (boardsData.error.message || 'unknown')
+        error: 'Failed to fetch boards (HTTP ' + boardsData.status + '): '
+          + (parsed.message || parsed.error_message || parsed.error || 'unknown')
       });
     }
 
-    const boards = (boardsData.data || []).map(b => ({
+    const boards = (parsed.items || parsed.data || []).map(b => ({
       id: b.id,
       name: b.name,
       url: b.url

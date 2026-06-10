@@ -1077,7 +1077,23 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
       'https://api.pinterest.com/v5/boards?page_size=25',
       { Authorization: `Bearer ${accessToken}` }
     );
-    const boards = boardsResponse.items || boardsResponse.data || [];
+    // httpsGet returns { status, headers, body }. Bug: previous code
+    // read boardsResponse.items / .data directly off the wrapper, which
+    // were always undefined — so 'boards' was always [] and triggered
+    // a false 'no boards' error even when the user had plenty.
+    // Pinterest v5's response shape is { items, bookmark }; fall back
+    // through a couple of legacy/defensive keys just in case.
+    const body = (boardsResponse && boardsResponse.body) || {};
+    const parsed = typeof body === 'string'
+      ? (() => { try { return JSON.parse(body); } catch (_) { return {}; } })()
+      : body;
+    // Bug 2: never checked status. A 401/403 would silently slip through
+    // and look like 'no boards'. Surface the real API error.
+    if (boardsResponse.status && (boardsResponse.status < 200 || boardsResponse.status >= 300)) {
+      const detail = parsed && (parsed.message || parsed.error_message || parsed.error || JSON.stringify(parsed).slice(0, 250));
+      throw new Error('Pinterest boards lookup failed (HTTP ' + boardsResponse.status + '): ' + (detail || 'no detail'));
+    }
+    const boards = parsed.items || parsed.data || [];
     if (!boards.length) {
       throw new Error('Pinterest has no boards on the connected account. Create at least one board on pinterest.com, then retry the publish.');
     }
