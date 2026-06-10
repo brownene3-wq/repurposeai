@@ -7,6 +7,20 @@ const { capForPlan: storageCapBytes, formatBytes, graceActive: storageGraceActiv
 const { getBaseCSS, getHeadHTML, getSidebar, getThemeToggle, getThemeScript } = require('../utils/theme');
 
 router.get('/', requireAuth, async (req, res) => {
+  // Fire-and-forget: kick off an AI tip generation pass on every
+  // dashboard load. ensureFreshTips() self-throttles to one batch per
+  // 24h, so this is cheap and idempotent. The page-side banner JS
+  // polls /notifications/api/ai-tips on load + every 5 min, so the
+  // fresh batch shows up the moment the OpenAI call returns.
+  try {
+    const tipGen = require('../services/aiTipGenerator');
+    if (tipGen && tipGen.ensureFreshTips) {
+      setImmediate(function(){
+        tipGen.ensureFreshTips(req.user.id).catch(function(){});
+      });
+    }
+  } catch (_) {}
+
   // Fetch real stats
   let videosProcessed = 0, postsGenerated = 0;
   try {
@@ -301,6 +315,27 @@ router.get('/', requireAuth, async (req, res) => {
       <div class="page-header">
         <h1><img src="/images/section-icons/A-21.png" alt="" style="height:36px;width:36px;vertical-align:middle;margin-right:8px;border-radius:8px;display:inline-block">Content Studio</h1>
         <p>Transform your content into viral posts for every platform</p>
+      </div>
+
+      <!-- AI Tip Banner. Loaded by initAiTipBanner() on dashboard load.
+           Shows the top-priority unread AI tip with a CTA. Hidden when
+           there are no unread tips. Dismissable in place — full list
+           always remains on /notifications. -->
+      <div id="aiTipBanner" hidden style="display:flex;align-items:flex-start;gap:14px;background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.10));border:1px solid rgba(108,58,237,0.55);border-radius:14px;padding:14px 18px;margin-bottom:1.4rem;position:relative;box-shadow:0 8px 28px -16px rgba(108,58,237,0.55);">
+        <div id="aiTipBannerIcon" style="flex-shrink:0;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:800">&#10024;</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+            <span id="aiTipBannerCat" style="font-size:.62rem;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:#a78bfa;background:rgba(108,58,237,0.14);padding:3px 8px;border-radius:999px">Tip</span>
+            <span id="aiTipBannerMore" style="font-size:.72rem;color:var(--text-muted)"></span>
+          </div>
+          <div id="aiTipBannerTitle" style="font-size:1rem;font-weight:800;color:var(--text);line-height:1.3;margin-bottom:4px"></div>
+          <div id="aiTipBannerBody" style="color:var(--text-muted);font-size:.88rem;line-height:1.5"></div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <a id="aiTipBannerCta" href="#" style="display:none;align-items:center;gap:6px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:7px 14px;border-radius:8px;font-weight:700;font-size:.82rem;box-shadow:0 4px 14px -6px rgba(108,58,237,0.50)"></a>
+            <a href="/notifications" style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">See all tips &rarr;</a>
+          </div>
+        </div>
+        <button id="aiTipBannerDismiss" title="Dismiss" style="position:absolute;top:8px;right:10px;background:transparent;border:none;color:var(--text-muted);width:26px;height:26px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center;opacity:.6">&times;</button>
       </div>
 
       <!-- Stats Row -->
@@ -890,6 +925,88 @@ router.get('/', requireAuth, async (req, res) => {
     });
   }
   document.querySelectorAll('.stat-card.clickable[data-modal]').forEach(attach);
+})();
+
+// ---- AI Tip Banner ----
+// Show the top unread AI tip front-and-centre on dashboard load so the
+// user sees today's recommendation immediately. Dismiss = mark this
+// specific tip "read", banner re-renders with the next unread tip (or
+// hides if none left).
+(function(){
+  var BANNER_CAT_ICON = { tip: '\u2728', suggestion: '\u{1F4A1}', idea: '\u{1F680}', warning: '\u26A0' };
+  function el(id){ return document.getElementById(id); }
+  var banner = el('aiTipBanner');
+  if (!banner) return;
+
+  function hideBanner(){ banner.setAttribute('hidden',''); }
+  function showBanner(){ banner.removeAttribute('hidden'); }
+
+  function applyTip(tip, remaining){
+    if (!tip){ hideBanner(); return; }
+    var cat = String(tip.category || 'tip').toLowerCase();
+    el('aiTipBannerIcon').innerHTML = BANNER_CAT_ICON[cat] || '\u2728';
+    el('aiTipBannerCat').textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+    el('aiTipBannerTitle').textContent = tip.title || '';
+    el('aiTipBannerBody').textContent = tip.body || '';
+    var more = remaining > 1 ? ('+' + (remaining - 1) + ' more tip' + (remaining > 2 ? 's' : '') + ' waiting') : '';
+    el('aiTipBannerMore').textContent = more;
+    var cta = el('aiTipBannerCta');
+    if (tip.action_url && tip.action_label){
+      cta.href = tip.action_url;
+      cta.textContent = tip.action_label + ' \u2192';
+      cta.style.display = 'inline-flex';
+      cta.onclick = function(){ markReadAndRefresh(tip.id, false); };
+    } else {
+      cta.style.display = 'none';
+      cta.onclick = null;
+    }
+    banner.dataset.tipId = tip.id;
+    showBanner();
+  }
+
+  function loadBanner(){
+    fetch('/notifications/api/ai-tips?ts=' + Date.now(), { credentials: 'same-origin' })
+      .then(function(r){ return r.ok ? r.json() : { tips: [] }; })
+      .then(function(data){
+        var tips = (data && Array.isArray(data.tips)) ? data.tips : [];
+        var unread = tips.filter(function(t){ return t.status === 'unread'; });
+        applyTip(unread[0], unread.length);
+      })
+      .catch(function(){ hideBanner(); });
+  }
+
+  function markReadAndRefresh(id, reloadBanner){
+    if (!id) return;
+    fetch('/notifications/api/ai-tips/mark-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ id: id })
+    }).then(function(){ if (reloadBanner) loadBanner(); }).catch(function(){});
+  }
+
+  var dismissBtn = el('aiTipBannerDismiss');
+  if (dismissBtn){
+    dismissBtn.addEventListener('click', function(){
+      var id = banner.dataset.tipId;
+      if (!id){ hideBanner(); return; }
+      banner.style.opacity = '0';
+      banner.style.transition = 'opacity .2s';
+      setTimeout(function(){
+        banner.style.opacity = '';
+        banner.style.transition = '';
+        markReadAndRefresh(id, true);
+      }, 180);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadBanner);
+  } else {
+    loadBanner();
+  }
+  // Quietly refresh in case a tip was added in another tab
+  setInterval(loadBanner, 300000);
 })();
 </script>
 </body>

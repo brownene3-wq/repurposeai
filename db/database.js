@@ -387,6 +387,40 @@ const initDatabase = async () => {
     try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_renders_user_created ON user_renders(user_id, created_at DESC)`); } catch (e) {}
     try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_renders_filename ON user_renders(filename)`); } catch (e) {}
 
+    // AI-generated personalized tips/suggestions/ideas shown on the
+    // Notifications page and the Dashboard banner. Distinct from
+    // calendar_entries-based reminders so the two can be styled,
+    // throttled, and dismissed independently.
+    //   category   - 'tip' | 'suggestion' | 'idea' | 'warning'
+    //   status     - 'unread' | 'read' | 'dismissed'
+    //   priority   - 1 (highest) .. 5 (lowest), used to sort the banner
+    //   batch_id   - uuid grouping all tips from a single generation pass,
+    //                used by the throttle ("don't generate more than 1
+    //                batch per user per 24h").
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'tip',
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        action_label TEXT,
+        action_url TEXT,
+        priority INTEGER NOT NULL DEFAULT 3,
+        status TEXT NOT NULL DEFAULT 'unread',
+        batch_id TEXT,
+        source TEXT NOT NULL DEFAULT 'ai',
+        metadata JSONB,
+        generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        read_at TIMESTAMP,
+        dismissed_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_notif_user_status ON ai_notifications(user_id, status, priority, generated_at DESC)`); } catch (e) {}
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_notif_user_batch ON ai_notifications(user_id, batch_id)`); } catch (e) {}
+    try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_notif_user_generated ON ai_notifications(user_id, generated_at DESC)`); } catch (e) {}
+
     // Brand kit table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS brand_kits (
@@ -2320,6 +2354,118 @@ module.exports = {
     async countByUser(userId) {
       const result = await pool.query(`SELECT COUNT(*) FROM user_renders WHERE user_id = $1 AND deleted_at IS NULL`, [userId]);
       return parseInt(result.rows[0].count, 10);
+    }
+  },
+  // AI-generated tips/suggestions/ideas surfaced on /notifications and
+  // the Dashboard. Backed by the ai_notifications table.
+  aiNotificationOps: {
+    async create(userId, data) {
+      const id = uuidv4();
+      const result = await pool.query(
+        `INSERT INTO ai_notifications
+          (id, user_id, category, title, body, action_label, action_url, priority, status, batch_id, source, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [
+          id,
+          userId,
+          (data.category || 'tip').slice(0, 32),
+          String(data.title || '').slice(0, 200),
+          String(data.body || '').slice(0, 2000),
+          data.actionLabel ? String(data.actionLabel).slice(0, 80) : null,
+          data.actionUrl ? String(data.actionUrl).slice(0, 500) : null,
+          Math.max(1, Math.min(5, Number(data.priority) || 3)),
+          (data.status || 'unread'),
+          data.batchId || null,
+          (data.source || 'ai').slice(0, 32),
+          data.metadata ? JSON.stringify(data.metadata) : null
+        ]
+      );
+      return result.rows[0];
+    },
+    async createMany(userId, batchId, rows) {
+      const out = [];
+      for (const r of (rows || [])) {
+        out.push(await this.create(userId, Object.assign({}, r, { batchId })));
+      }
+      return out;
+    },
+    // Return active (unread + read, NOT dismissed) tips, newest+highest
+    // priority first. Capped to 50.
+    async listActive(userId, opts = {}) {
+      const limit = Math.min(Math.max(opts.limit || 50, 1), 100);
+      const result = await pool.query(
+        `SELECT * FROM ai_notifications
+          WHERE user_id = $1 AND status != 'dismissed'
+          ORDER BY (status = 'unread') DESC, priority ASC, generated_at DESC
+          LIMIT $2`,
+        [userId, limit]
+      );
+      return result.rows;
+    },
+    async listUnread(userId, opts = {}) {
+      const limit = Math.min(Math.max(opts.limit || 20, 1), 50);
+      const result = await pool.query(
+        `SELECT * FROM ai_notifications
+          WHERE user_id = $1 AND status = 'unread'
+          ORDER BY priority ASC, generated_at DESC
+          LIMIT $2`,
+        [userId, limit]
+      );
+      return result.rows;
+    },
+    async countUnread(userId) {
+      const r = await pool.query(
+        `SELECT COUNT(*) AS c FROM ai_notifications WHERE user_id = $1 AND status = 'unread'`,
+        [userId]
+      );
+      return parseInt(r.rows[0].c, 10) || 0;
+    },
+    async markRead(id, userId) {
+      const r = await pool.query(
+        `UPDATE ai_notifications
+            SET status = 'read', read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+          WHERE id = $1 AND user_id = $2 AND status != 'dismissed'
+          RETURNING id`,
+        [id, userId]
+      );
+      return r.rowCount;
+    },
+    async markAllRead(userId) {
+      const r = await pool.query(
+        `UPDATE ai_notifications
+            SET status = 'read', read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+          WHERE user_id = $1 AND status = 'unread'
+          RETURNING id`,
+        [userId]
+      );
+      return r.rowCount;
+    },
+    async dismiss(id, userId) {
+      const r = await pool.query(
+        `UPDATE ai_notifications
+            SET status = 'dismissed', dismissed_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND user_id = $2
+          RETURNING id`,
+        [id, userId]
+      );
+      return r.rowCount;
+    },
+    // Time of last batch generation, used for the 24h throttle.
+    async lastBatchAt(userId) {
+      const r = await pool.query(
+        `SELECT MAX(generated_at) AS t FROM ai_notifications
+           WHERE user_id = $1 AND source = 'ai'`,
+        [userId]
+      );
+      return r.rows[0] && r.rows[0].t ? new Date(r.rows[0].t) : null;
+    },
+    // Purge dismissed rows older than 30 days. Best-effort housekeeping.
+    async purgeOldDismissed() {
+      try {
+        await pool.query(
+          `DELETE FROM ai_notifications WHERE status = 'dismissed' AND dismissed_at < NOW() - INTERVAL '30 days'`
+        );
+      } catch (_) {}
     }
   },
   workflowOps: {
