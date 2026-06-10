@@ -170,7 +170,23 @@
       delBtn.addEventListener('click', async function(e){
         e.stopPropagation();
         e.preventDefault();
-        if (!confirm('Delete "' + name + '" from your Media library? This frees the storage space and cannot be undone.')) return;
+        // Task #169 — use the themed Splicora confirm helper when it's
+        // loaded (it lives in v10-editor-redesign.js and is exposed as
+        // window.splicoraConfirm). Fall back to native confirm if the
+        // script hasn't initialized yet so deletes never silently no-op.
+        var ok;
+        if (typeof window.splicoraConfirm === 'function'){
+          ok = await window.splicoraConfirm({
+            title:       'Delete from Media library?',
+            message:     'Remove "' + name + '" from your Media library. This frees the storage space and cannot be undone.',
+            confirmText: 'Delete',
+            cancelText:  'Keep',
+            destructive: true
+          });
+        } else {
+          ok = confirm('Delete "' + name + '" from your Media library? This frees the storage space and cannot be undone.');
+        }
+        if (!ok) return;
         var uploadId = item.dataset.uploadId;
         if (!uploadId){ showToast('This item cannot be deleted (no server id).'); return; }
         delBtn.disabled = true;
