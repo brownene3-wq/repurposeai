@@ -1864,7 +1864,7 @@ router.get('/', requireAuth, (req, res) => {
               <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
                 <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
-                \${['Twitter', 'LinkedIn', 'Facebook', 'Threads'].includes(platform) ? \`<button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>\` : ''}
+                <button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>
                 <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')"><img src="/images/section-icons/A-83.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Regenerate</button>
               </div>
             \`;
@@ -1900,7 +1900,7 @@ router.get('/', requireAuth, (req, res) => {
             <div class="result-content">\${escapeHtml(content)}</div>
             <div class="result-actions">
               <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
-              \${['Twitter', 'LinkedIn', 'Facebook', 'Threads'].includes(platform) ? \`<button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>\` : ''}
+              <button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>
             </div>
           \`;
           grid.appendChild(card);
@@ -1941,7 +1941,7 @@ router.get('/', requireAuth, (req, res) => {
             <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
             <select id="rpPubAccount" onchange="rpOnAccountChange()" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;"><option value="">Loading…</option></select>\
-            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No connected accounts yet. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
             <div id="rpWorkflowChip" style="display:none;margin-bottom:14px;border-radius:10px;padding:10px 12px;font-size:0.78rem;line-height:1.45;letter-spacing:0.01em;"><div id="rpWorkflowChipBody"></div></div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
             <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
@@ -1994,8 +1994,11 @@ router.get('/', requireAuth, (req, res) => {
             var r = await fetch('/api/connections', { credentials: 'same-origin' });
             var j = await r.json();
             var accounts = (j && j.accounts) || [];
-            var supported = ['twitter','linkedin','facebook','threads'];
-            accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+            // Show every connected account. publishToConnection in
+            // utils/connections.js routes per platform — image/video-only
+            // destinations will surface their own error if the text-only
+            // post is rejected.
+            accounts = accounts.filter(function(c){ return !!c && !!c.platform; });
             if (platform) {
               accounts.sort(function(a, b){
                 if (a.platform === platform && b.platform !== platform) return -1;
@@ -3527,7 +3530,7 @@ router.get('/history', requireAuth, (req, res) => {
             <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
             <select id="rpPubAccount" onchange="rpOnAccountChange()" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;"><option value="">Loading…</option></select>\
-            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No connected accounts yet. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
             <div id="rpWorkflowChip" style="display:none;margin-bottom:14px;border-radius:10px;padding:10px 12px;font-size:0.78rem;line-height:1.45;letter-spacing:0.01em;"><div id="rpWorkflowChipBody"></div></div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
             <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
@@ -3568,8 +3571,11 @@ router.get('/history', requireAuth, (req, res) => {
             var j = await r.json();
             var accounts = (j && j.accounts) || [];
             // Text-only-capable platforms today.
-            var supported = ['twitter','linkedin','facebook','threads'];
-            accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+            // Show every connected account. publishToConnection in
+            // utils/connections.js routes per platform — image/video-only
+            // destinations will surface their own error if the text-only
+            // post is rejected.
+            accounts = accounts.filter(function(c){ return !!c && !!c.platform; });
             // Prefer matching the source platform first.
             if (platform) {
               accounts.sort(function(a, b){
