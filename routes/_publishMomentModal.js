@@ -330,7 +330,7 @@ function getPublishMomentModalJS() {
             var s = String(t || '').trim().replace(/^#+/, '');
             return s ? ('#' + s) : '';
           }).filter(Boolean).join(' ');
-          if (tags) captionText = (captionText + (captionText ? '\n\n' : '') + tags);
+          if (tags) captionText = (captionText + (captionText ? '\\n\\n' : '') + tags);
         }
         if (!captionText) throw new Error('Generator returned empty content');
         captionEl.value = captionText;
