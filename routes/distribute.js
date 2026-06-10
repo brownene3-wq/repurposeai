@@ -1470,6 +1470,49 @@ router.get('/api/connections', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/workflows-by-source/:connectionId
+// Returns the active auto-publish workflows that would fire when the
+// user publishes TO this connection (i.e. source_account_id matches).
+// Used by the Publish This Moment modal to surface the 'this publish
+// triggers a workflow' chip on Smart Shorts.
+router.get('/api/workflows-by-source/:connectionId', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db || !db.workflowOps) {
+      return res.status(500).json({ error: 'workflowOps unavailable' });
+    }
+    const connectionId = req.params.connectionId;
+    if (!connectionId) return res.status(400).json({ error: 'connectionId required' });
+
+    // Pull all of this user's workflows, then filter to the active ones
+    // whose source matches. workflowOps.getByUser already joins
+    // destination account info (dest_username + platform) so the chip
+    // can show 'Will republish to LinkedIn (@you)' without a second
+    // lookup.
+    const all = await db.workflowOps.getByUser(req.user.id);
+    const matching = (all || []).filter(function(w) {
+      return w.source_account_id === connectionId
+        && w.is_active !== false
+        && w.auto_publish !== false;
+    }).map(function(w) {
+      return {
+        id: w.id,
+        name: w.name || null,
+        sourceAccountId: w.source_account_id,
+        destinationAccountId: w.destination_account_id,
+        destinationPlatform: w.destination_platform || null,
+        destinationUsername: w.dest_username || null,
+        delayHours: Number(w.delay_hours) || 0,
+        delayMode: w.delay_mode || 'immediate'
+      };
+    });
+    res.json({ workflows: matching });
+  } catch (error) {
+    console.error('workflows-by-source error:', error && error.stack || error);
+    res.status(500).json({ error: 'Failed to fetch workflows' });
+  }
+});
+
 // Delete connection
 router.delete('/api/connections/:id', requireAuth, async (req, res) => {
   try {
