@@ -1246,7 +1246,17 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
     const status = response.status || 0;
     const reason = body.message || body.error_description || body.error || (typeof body === 'string' ? body : JSON.stringify(body).slice(0, 300));
     if (status === 401 || status === 403) {
-      throw new Error('Pinterest authentication failed (status ' + status + '). Reconnect Pinterest on /distribute/connections.');
+      // Surface refresh diagnostics so the user knows why this is
+      // happening — refresh disabled? refresh failed? token rotted?
+      let suffix = '';
+      if (destAccount.__refreshError) {
+        suffix = ' Token refresh attempted but failed (' + destAccount.__refreshError + '). Reconnect Pinterest on /distribute/connections.';
+      } else if (destAccount.__refreshAttempted) {
+        suffix = ' Token was refreshed but the new token was still rejected — your Pinterest app permissions may have changed. Reconnect Pinterest.';
+      } else {
+        suffix = ' Reconnect Pinterest on /distribute/connections so we can get a fresh access token.';
+      }
+      throw new Error('Pinterest authentication failed (status ' + status + ').' + suffix);
     }
     throw new Error('Pinterest pin creation failed (status ' + status + '): ' + reason);
   }
