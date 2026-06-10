@@ -274,11 +274,11 @@ router.get('/', requireAuth, (req, res) => {
         var idEsc = escHtml(t.id);
         var actionHtml = '';
         if (t.action_url && t.action_label){
-          actionHtml = '<a class="ai-tip-cta" href="' + escHtml(t.action_url) + '" onclick="markAiTipRead(\'' + idEsc + '\')">' + escHtml(t.action_label) + ' \u2192</a>';
+          actionHtml = '<a class="ai-tip-cta" href="' + escHtml(t.action_url) + '" onclick="markAiTipRead(\\'' + idEsc + '\\')">' + escHtml(t.action_label) + ' \u2192</a>';
         }
-        var markHtml = unread ? '<button class="ai-tip-link" onclick="markAiTipRead(\'' + idEsc + '\', true)">Mark as read</button>' : '';
+        var markHtml = unread ? '<button class="ai-tip-link" onclick="markAiTipRead(\\'' + idEsc + '\\', true)">Mark as read</button>' : '';
         return '<div class="ai-tip-card ' + (unread ? 'unread' : 'read') + '" data-id="' + idEsc + '">' +
-          '<button class="ai-tip-dismiss" title="Dismiss" onclick="dismissAiTip(\'' + idEsc + '\')">\u00d7</button>' +
+          '<button class="ai-tip-dismiss" title="Dismiss" onclick="dismissAiTip(\\'' + idEsc + '\\')">\u00d7</button>' +
           '<div class="ai-tip-icon">' + icon + '</div>' +
           '<div class="ai-tip-body">' +
             '<div class="ai-tip-cat ' + escHtml(cat) + '">' + escHtml(cat) + '</div>' +
