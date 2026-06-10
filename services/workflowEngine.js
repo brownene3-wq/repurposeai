@@ -250,6 +250,47 @@ async function refreshTokenIfNeeded(account) {
         console.log(`[WorkflowEngine] Refreshed Twitter token for account ${account.id}`);
         return { ...account, access_token: newTokenData.body.access_token, token_expires_at: newExpiresAt };
       }
+    } else if (platform === 'pinterest') {
+      // Pinterest v5 OAuth uses HTTP Basic auth with client_id:client_secret
+      // (base64) instead of posting them in the body. Same pattern
+      // routes/pinterest.js (refreshPinterestToken) already uses for
+      // the connect flow's per-user token; mirror it here so the
+      // unified publish path also refreshes instead of 401-ing.
+      const cid = process.env.PINTEREST_CLIENT_ID || '';
+      const csec = process.env.PINTEREST_CLIENT_SECRET || '';
+      if (!cid || !csec) {
+        console.warn('[WorkflowEngine] Pinterest refresh: PINTEREST_CLIENT_ID/SECRET not set, skipping');
+      } else {
+        const basicAuth = Buffer.from(cid + ':' + csec).toString('base64');
+        newTokenData = await httpsPost(
+          'https://api.pinterest.com/v5/oauth/token',
+          { grant_type: 'refresh_token', refresh_token: account.refresh_token },
+          { Authorization: 'Basic ' + basicAuth }
+        );
+        // httpsPost returns either { body } or a parsed body depending on
+        // shape. Normalize.
+        const body = newTokenData.body || newTokenData;
+        const parsed = typeof body === 'string'
+          ? (() => { try { return JSON.parse(body); } catch (_) { return {}; } })()
+          : body;
+        if (parsed && parsed.access_token) {
+          const expiresIn = parsed.expires_in || 2592000; // 30 days default
+          const newExpiresAt = new Date(Date.now() + (expiresIn * 1000));
+          await connectedAccountOps.update(account.id, {
+            accessToken: parsed.access_token,
+            refreshToken: parsed.refresh_token || account.refresh_token,
+            tokenExpiresAt: newExpiresAt
+          });
+          console.log(`[WorkflowEngine] Refreshed Pinterest token for account ${account.id}`);
+          return { ...account,
+                   access_token: parsed.access_token,
+                   refresh_token: parsed.refresh_token || account.refresh_token,
+                   token_expires_at: newExpiresAt };
+        } else {
+          console.warn('[WorkflowEngine] Pinterest refresh: no access_token in response —',
+                       JSON.stringify(parsed || {}).slice(0, 200));
+        }
+      }
     }
   } catch (err) {
     console.error(`[WorkflowEngine] Token refresh failed for ${account.platform} (${account.id}):`, err.message);
