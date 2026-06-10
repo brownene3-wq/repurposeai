@@ -1864,6 +1864,7 @@ router.get('/', requireAuth, (req, res) => {
               <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
                 <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
+                \${['Twitter', 'LinkedIn', 'Facebook', 'Threads'].includes(platform) ? \`<button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>\` : ''}
                 \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
                 <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')"><img src="/images/section-icons/A-83.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Regenerate</button>
               </div>
@@ -1900,6 +1901,7 @@ router.get('/', requireAuth, (req, res) => {
             <div class="result-content">\${escapeHtml(content)}</div>
             <div class="result-actions">
               <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
+              \${['Twitter', 'LinkedIn', 'Facebook', 'Threads'].includes(platform) ? \`<button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>\` : ''}
               \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
             </div>
           \`;
@@ -1953,6 +1955,160 @@ router.get('/', requireAuth, (req, res) => {
             feedback.classList.add('show');
             setTimeout(() => feedback.classList.remove('show'), 2000);
           });
+        }
+
+        // ── Publish Generated Post modal ────────────────────────────
+        // Mirrors the rpPublishModal used on /repurpose/history > Posts
+        // so users can publish a Create result directly to their
+        // connected text-capable accounts (Twitter/X, LinkedIn,
+        // Facebook, Threads). Uses the same backend endpoint:
+        // POST /repurpose/api/publish-output.
+        function ensureRpPublishModal(){
+          if (document.getElementById('rpPublishModal')) return;
+          var div = document.createElement('div');
+          div.id = 'rpPublishModal';
+          div.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px;';
+          div.addEventListener('click', function(e){ if (e.target === div) closeRpPublishModal(); });
+          div.innerHTML = '\
+          <div style="background:#16112a;border:1px solid rgba(108,58,237,0.30);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif">\
+            <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">✈️ Publish Generated Post</h3>\
+            <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
+            <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
+            <select id="rpPubAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;"><option value="">Loading…</option></select>\
+            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
+            <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
+            <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">\
+              <button id="rpPubTabNow" type="button" onclick="setRpPubMode(\\'now\\')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>\
+              <button id="rpPubTabLater" type="button" onclick="setRpPubMode(\\'later\\')" style="flex:1;background:transparent;color:#8e87b0;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>\
+            </div>\
+            <div id="rpPubLater" style="display:none;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label><input type="date" id="rpPubDate" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label><input type="time" id="rpPubTime" value="12:00" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div></div></div>\
+            <div id="rpPubStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>\
+            <div style="display:flex;justify-content:flex-end;gap:8px;"><button onclick="closeRpPublishModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#e2e0f0;padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button><button id="rpPubSubmit" onclick="submitRpPublish()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Publish</button></div>\
+          </div>';
+          document.body.appendChild(div);
+        }
+        var _rpPubMode = 'now';
+        var _rpPubCtx = { contentId: null, outputId: null, platform: null };
+        // openRpPublishModal supports two call shapes:
+        //   • btn with .output-card parent (the /history flow)
+        //   • btn with data-platform + data-text-b64 attributes
+        //     (Create-page result cards — no .output-card wrapper)
+        async function openRpPublishModal(btn){
+          var contentId = btn && btn.dataset ? btn.dataset.contentId : null;
+          var outputId  = btn && btn.dataset && btn.dataset.outputId ? btn.dataset.outputId : null;
+          ensureRpPublishModal();
+          var platform = '';
+          var text = '';
+          var card = btn && btn.closest && btn.closest('.output-card');
+          if (card) {
+            platform = (card.dataset && card.dataset.platform || '').toLowerCase();
+            text = (card.querySelector('.output-text') && card.querySelector('.output-text').textContent) || '';
+          } else if (btn && btn.dataset && btn.dataset.platform) {
+            platform = String(btn.dataset.platform).toLowerCase();
+            if (btn.dataset.textB64) {
+              try { text = decodeURIComponent(escape(atob(btn.dataset.textB64))); } catch (_) {}
+            }
+          }
+          _rpPubCtx = { contentId: contentId, outputId: outputId, platform: platform };
+          document.getElementById('rpPubText').value = text;
+          document.getElementById('rpPubSub').textContent = platform ? ('Source platform: ' + platform) : 'Pick a connected account.';
+          var d = new Date(); d.setMinutes(d.getMinutes() + 60);
+          document.getElementById('rpPubDate').value = d.toISOString().slice(0, 10);
+          document.getElementById('rpPubTime').value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+          document.getElementById('rpPubStatus').style.display = 'none';
+          setRpPubMode('now');
+          document.getElementById('rpPublishModal').style.display = 'flex';
+
+          var sel = document.getElementById('rpPubAccount');
+          var noAcct = document.getElementById('rpPubNoAcct');
+          sel.innerHTML = '<option value="">Loading…</option>';
+          try {
+            var r = await fetch('/api/connections', { credentials: 'same-origin' });
+            var j = await r.json();
+            var accounts = (j && j.accounts) || [];
+            var supported = ['twitter','linkedin','facebook','threads'];
+            accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+            if (platform) {
+              accounts.sort(function(a, b){
+                if (a.platform === platform && b.platform !== platform) return -1;
+                if (b.platform === platform && a.platform !== platform) return 1;
+                return 0;
+              });
+            }
+            if (accounts.length === 0) {
+              sel.style.display = 'none';
+              noAcct.style.display = 'block';
+            } else {
+              sel.style.display = '';
+              noAcct.style.display = 'none';
+              sel.innerHTML = accounts.map(function(c){
+                return '<option value="' + c.id + '">' + (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' — ' + (c.accountName || c.platformUsername || c.id) + '</option>';
+              }).join('');
+            }
+          } catch(e){
+            sel.innerHTML = '<option value="">Failed to load accounts</option>';
+          }
+        }
+        function closeRpPublishModal(){ var m = document.getElementById('rpPublishModal'); if (m) m.style.display = 'none'; }
+        function setRpPubMode(mode){
+          _rpPubMode = mode;
+          var nowBtn = document.getElementById('rpPubTabNow');
+          var laterBtn = document.getElementById('rpPubTabLater');
+          var laterFields = document.getElementById('rpPubLater');
+          var submitBtn = document.getElementById('rpPubSubmit');
+          if (mode === 'now') {
+            nowBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; nowBtn.style.color = '#fff';
+            laterBtn.style.background = 'transparent'; laterBtn.style.color = '#8e87b0';
+            laterFields.style.display = 'none';
+            submitBtn.textContent = 'Publish now';
+          } else {
+            laterBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; laterBtn.style.color = '#fff';
+            nowBtn.style.background = 'transparent'; nowBtn.style.color = '#8e87b0';
+            laterFields.style.display = 'block';
+            submitBtn.textContent = 'Schedule';
+          }
+        }
+        async function submitRpPublish(){
+          var btn = document.getElementById('rpPubSubmit');
+          var statusEl = document.getElementById('rpPubStatus');
+          var connectionId = document.getElementById('rpPubAccount').value;
+          if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
+          var text = document.getElementById('rpPubText').value.trim();
+          if (!text) { statusEl.style.display = 'block'; statusEl.textContent = 'Post body is empty.'; return; }
+          var payload = {
+            contentId: _rpPubCtx.contentId,
+            outputId: _rpPubCtx.outputId,
+            connectionId: connectionId,
+            text: text
+          };
+          if (_rpPubMode === 'later') {
+            var d = document.getElementById('rpPubDate').value;
+            var t = document.getElementById('rpPubTime').value || '12:00';
+            if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
+            payload.scheduledAt = d + 'T' + t + ':00';
+          }
+          btn.disabled = true; var orig = btn.textContent;
+          btn.textContent = _rpPubMode === 'now' ? 'Publishing…' : 'Scheduling…';
+          statusEl.style.display = 'block';
+          statusEl.textContent = _rpPubMode === 'now' ? 'Posting…' : 'Saving the scheduled post…';
+          try {
+            var resp = await fetch('/repurpose/api/publish-output', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            var data = await resp.json();
+            if (!resp.ok || !data.success) throw new Error(data.error || 'Failed');
+            statusEl.textContent = _rpPubMode === 'now'
+              ? ('Posted to ' + (data.platform || 'platform'))
+              : ('Scheduled for ' + (data.scheduledFor || payload.scheduledAt));
+            setTimeout(closeRpPublishModal, 1500);
+          } catch(e){
+            statusEl.textContent = 'Error: ' + e.message;
+          } finally {
+            btn.disabled = false; btn.textContent = orig;
+          }
         }
 
         function showLoading() {
