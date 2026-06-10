@@ -1133,6 +1133,12 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
     { Authorization: `Bearer ${accessToken}` }
   );
 
+  // Best-effort cleanup of the temp poster regardless of whether the
+  // API call succeeded — we never want to leak files on /tmp.
+  if (tempPosterPath) {
+    try { fs.unlinkSync(tempPosterPath); } catch (_) {}
+  }
+
   // Surface the real Pinterest API error so debugging isn't a black box.
   const body = response.body || {};
   if (!body.id) {
