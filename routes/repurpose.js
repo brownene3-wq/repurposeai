@@ -1940,8 +1940,9 @@ router.get('/', requireAuth, (req, res) => {
             <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">✈️ Publish Generated Post</h3>\
             <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
-            <select id="rpPubAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;"><option value="">Loading…</option></select>\
+            <select id="rpPubAccount" onchange="rpOnAccountChange()" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;"><option value="">Loading…</option></select>\
             <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <div id="rpWorkflowChip" style="display:none;margin-bottom:14px;border-radius:10px;padding:10px 12px;font-size:0.78rem;line-height:1.45;letter-spacing:0.01em;"><div id="rpWorkflowChipBody"></div></div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
             <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
             <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">\
@@ -2011,9 +2012,74 @@ router.get('/', requireAuth, (req, res) => {
               sel.innerHTML = accounts.map(function(c){
                 return '<option value="' + c.id + '">' + (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' — ' + (c.accountName || c.platformUsername || c.id) + '</option>';
               }).join('');
+              // Refresh the workflow chip for the auto-selected first option.
+              rpOnAccountChange();
             }
           } catch(e){
             sel.innerHTML = '<option value="">Failed to load accounts</option>';
+          }
+        }
+        // ── Workflow status chip ─────────────────────────────────────
+        // Same pattern as the Smart Shorts + Video Editor publish
+        // modals. Reuses the /distribute/api/workflows-by-source/<id>
+        // endpoint already shipped with those. Prefixed _rp to avoid
+        // colliding with their identifiers if multiple modals share
+        // the dashboard session.
+        var _rpWfCache = {};
+        function rpOnAccountChange() {
+          var sel = document.getElementById('rpPubAccount');
+          var chip = document.getElementById('rpWorkflowChip');
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!sel || !chip || !body) return;
+          var connectionId = sel.value;
+          if (!connectionId) { chip.style.display = 'none'; return; }
+          if (_rpWfCache[connectionId]) { _rpRenderWfChip(_rpWfCache[connectionId]); return; }
+          _rpSetWfChipTone('neutral');
+          body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#8e87b0;"><div style="width:10px;height:10px;border:2px solid rgba(255,255,255,0.18);border-top-color:#a78bfa;border-radius:50%;animation:spin 0.7s linear infinite;"></div><span>Checking workflows for this account...</span></div>';
+          chip.style.display = 'block';
+          fetch('/distribute/api/workflows-by-source/' + encodeURIComponent(connectionId), { credentials: 'same-origin' })
+            .then(function(r){ return r.ok ? r.json() : { workflows: [] }; })
+            .then(function(data){ var wfs = (data && data.workflows) || []; _rpWfCache[connectionId] = wfs; _rpRenderWfChip(wfs); })
+            .catch(function(){ _rpWfCache[connectionId] = []; _rpRenderWfChip([]); });
+        }
+        function _rpSetWfChipTone(tone) {
+          var chip = document.getElementById('rpWorkflowChip');
+          if (!chip) return;
+          if (tone === 'active') { chip.style.background = 'rgba(0,184,148,0.10)'; chip.style.border = '1px solid rgba(0,184,148,0.35)'; chip.style.color = '#a3e8c8'; }
+          else if (tone === 'none') { chip.style.background = 'rgba(108,58,237,0.10)'; chip.style.border = '1px solid rgba(108,58,237,0.30)'; chip.style.color = '#d8c9ff'; }
+          else { chip.style.background = 'rgba(255,255,255,0.04)'; chip.style.border = '1px solid rgba(255,255,255,0.08)'; chip.style.color = '#8e87b0'; }
+        }
+        function _rpFmtDelay(w) {
+          if (w.delayMode === 'immediate' || !w.delayHours) return 'immediately after this post';
+          var h = w.delayHours;
+          if (h < 1) return 'shortly after this post';
+          if (h === 1) return '1 hour after this post';
+          if (h < 24) return h + ' hours after this post';
+          var days = Math.round(h / 24);
+          return days === 1 ? '1 day after this post' : days + ' days after this post';
+        }
+        function _rpCapPlatform(p) {
+          if (!p) return 'another platform';
+          var map = { youtube:'YouTube', tiktok:'TikTok', instagram:'Instagram', facebook:'Facebook', twitter:'X (Twitter)', linkedin:'LinkedIn', pinterest:'Pinterest', threads:'Threads', bluesky:'Bluesky', snapchat:'Snapchat' };
+          return map[p] || (p.charAt(0).toUpperCase() + p.slice(1));
+        }
+        function _rpEscAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function _rpRenderWfChip(workflows) {
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!body) return;
+          if (workflows && workflows.length) {
+            _rpSetWfChipTone('active');
+            var lines = workflows.map(function(w) {
+              var dest = _rpCapPlatform(w.destinationPlatform);
+              var user = w.destinationUsername ? ('@' + w.destinationUsername) : '';
+              var when = _rpFmtDelay(w);
+              var name = w.name ? (' - <em style="font-style:normal;color:#fff;font-weight:600;">' + _rpEscAttr(w.name) + '</em>') : '';
+              return '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Will also publish to <strong style="color:#fff;">' + dest + (user ? ' (' + _rpEscAttr(user) + ')' : '') + '</strong> ' + when + name + '.</span></div>';
+            }).join('');
+            body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#9be3b9;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span>Active workflow triggered by this account</span></div>' + lines;
+          } else {
+            _rpSetWfChipTone('none');
+            body.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><div style="font-weight:600;color:#d8c9ff;margin-bottom:2px;">No workflow set for this account yet.</div><div style="color:#8e87b0;">Want this post auto-republished elsewhere? <a href="/distribute" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline;font-weight:600;">Set up a workflow</a> on the Repurpose page - then every future publish here will fire it.</div></div></div>';
           }
         }
         function closeRpPublishModal(){ var m = document.getElementById('rpPublishModal'); if (m) m.style.display = 'none'; }
@@ -3460,8 +3526,9 @@ router.get('/history', requireAuth, (req, res) => {
             <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">✈️ Publish Generated Post</h3>\
             <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
-            <select id="rpPubAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;"><option value="">Loading…</option></select>\
+            <select id="rpPubAccount" onchange="rpOnAccountChange()" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;"><option value="">Loading…</option></select>\
             <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <div id="rpWorkflowChip" style="display:none;margin-bottom:14px;border-radius:10px;padding:10px 12px;font-size:0.78rem;line-height:1.45;letter-spacing:0.01em;"><div id="rpWorkflowChipBody"></div></div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
             <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
             <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">\
@@ -3520,9 +3587,74 @@ router.get('/history', requireAuth, (req, res) => {
               sel.innerHTML = accounts.map(function(c){
                 return '<option value="' + c.id + '">' + (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' — ' + (c.accountName || c.platformUsername || c.id) + '</option>';
               }).join('');
+              // Refresh the workflow chip for the auto-selected first option.
+              rpOnAccountChange();
             }
           } catch(e){
             sel.innerHTML = '<option value="">Failed to load accounts</option>';
+          }
+        }
+        // ── Workflow status chip ─────────────────────────────────────
+        // Same pattern as the Smart Shorts + Video Editor publish
+        // modals. Reuses the /distribute/api/workflows-by-source/<id>
+        // endpoint already shipped with those. Prefixed _rp to avoid
+        // colliding with their identifiers if multiple modals share
+        // the dashboard session.
+        var _rpWfCache = {};
+        function rpOnAccountChange() {
+          var sel = document.getElementById('rpPubAccount');
+          var chip = document.getElementById('rpWorkflowChip');
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!sel || !chip || !body) return;
+          var connectionId = sel.value;
+          if (!connectionId) { chip.style.display = 'none'; return; }
+          if (_rpWfCache[connectionId]) { _rpRenderWfChip(_rpWfCache[connectionId]); return; }
+          _rpSetWfChipTone('neutral');
+          body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#8e87b0;"><div style="width:10px;height:10px;border:2px solid rgba(255,255,255,0.18);border-top-color:#a78bfa;border-radius:50%;animation:spin 0.7s linear infinite;"></div><span>Checking workflows for this account...</span></div>';
+          chip.style.display = 'block';
+          fetch('/distribute/api/workflows-by-source/' + encodeURIComponent(connectionId), { credentials: 'same-origin' })
+            .then(function(r){ return r.ok ? r.json() : { workflows: [] }; })
+            .then(function(data){ var wfs = (data && data.workflows) || []; _rpWfCache[connectionId] = wfs; _rpRenderWfChip(wfs); })
+            .catch(function(){ _rpWfCache[connectionId] = []; _rpRenderWfChip([]); });
+        }
+        function _rpSetWfChipTone(tone) {
+          var chip = document.getElementById('rpWorkflowChip');
+          if (!chip) return;
+          if (tone === 'active') { chip.style.background = 'rgba(0,184,148,0.10)'; chip.style.border = '1px solid rgba(0,184,148,0.35)'; chip.style.color = '#a3e8c8'; }
+          else if (tone === 'none') { chip.style.background = 'rgba(108,58,237,0.10)'; chip.style.border = '1px solid rgba(108,58,237,0.30)'; chip.style.color = '#d8c9ff'; }
+          else { chip.style.background = 'rgba(255,255,255,0.04)'; chip.style.border = '1px solid rgba(255,255,255,0.08)'; chip.style.color = '#8e87b0'; }
+        }
+        function _rpFmtDelay(w) {
+          if (w.delayMode === 'immediate' || !w.delayHours) return 'immediately after this post';
+          var h = w.delayHours;
+          if (h < 1) return 'shortly after this post';
+          if (h === 1) return '1 hour after this post';
+          if (h < 24) return h + ' hours after this post';
+          var days = Math.round(h / 24);
+          return days === 1 ? '1 day after this post' : days + ' days after this post';
+        }
+        function _rpCapPlatform(p) {
+          if (!p) return 'another platform';
+          var map = { youtube:'YouTube', tiktok:'TikTok', instagram:'Instagram', facebook:'Facebook', twitter:'X (Twitter)', linkedin:'LinkedIn', pinterest:'Pinterest', threads:'Threads', bluesky:'Bluesky', snapchat:'Snapchat' };
+          return map[p] || (p.charAt(0).toUpperCase() + p.slice(1));
+        }
+        function _rpEscAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function _rpRenderWfChip(workflows) {
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!body) return;
+          if (workflows && workflows.length) {
+            _rpSetWfChipTone('active');
+            var lines = workflows.map(function(w) {
+              var dest = _rpCapPlatform(w.destinationPlatform);
+              var user = w.destinationUsername ? ('@' + w.destinationUsername) : '';
+              var when = _rpFmtDelay(w);
+              var name = w.name ? (' - <em style="font-style:normal;color:#fff;font-weight:600;">' + _rpEscAttr(w.name) + '</em>') : '';
+              return '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Will also publish to <strong style="color:#fff;">' + dest + (user ? ' (' + _rpEscAttr(user) + ')' : '') + '</strong> ' + when + name + '.</span></div>';
+            }).join('');
+            body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#9be3b9;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span>Active workflow triggered by this account</span></div>' + lines;
+          } else {
+            _rpSetWfChipTone('none');
+            body.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><div style="font-weight:600;color:#d8c9ff;margin-bottom:2px;">No workflow set for this account yet.</div><div style="color:#8e87b0;">Want this post auto-republished elsewhere? <a href="/distribute" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline;font-weight:600;">Set up a workflow</a> on the Repurpose page - then every future publish here will fire it.</div></div></div>';
           }
         }
         function closeRpPublishModal(){ var m = document.getElementById('rpPublishModal'); if (m) m.style.display = 'none'; }
