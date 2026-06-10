@@ -7874,6 +7874,8 @@ setTimeout(function sidebarLayoutFix(){
             // read the picked account's platform without a second lookup.
             return '<option value="' + c.id + '" data-platform="' + c.platform + '">' + label + '</option>';
           }).join('');
+          // Refresh the workflow chip for the auto-selected first option.
+          veOnAccountChange();
         }
       } catch(e){
         sel.innerHTML = '<option value="">Failed to load accounts</option>';
