@@ -285,10 +285,34 @@ function getPublishMomentModalJS() {
         if (typeof showToast === 'function') showToast('No moment selected.');
         return;
       }
-      var analysis = window.lastAnalysisData || window.currentAnalysis;
-      var moment = (analysis && analysis.moments) ? analysis.moments[momentIdx] : null;
+      // Resolve the analysis from the page's in-memory cache. Smart
+      // Shorts sets window.__currentAnalysis (double underscore — the
+      // name used by viewAnalysis); other surfaces use
+      // window.lastAnalysisData or window.currentAnalysis. Check all
+      // three so the lookup works regardless of which page opened the
+      // modal.
+      var analysis = window.__currentAnalysis || window.lastAnalysisData || window.currentAnalysis;
+      // Confirm the cached analysis actually matches the open moment.
+      // If a user clicked into one analysis then navigated away to
+      // another in the same session, the cache could be stale.
+      if (analysis && analysis.id && analysis.id !== analysisId) analysis = null;
+      // Fallback: fetch the analysis on demand if the cache misses or
+      // doesn't match. Much friendlier than 'Refresh and try again'.
+      if (!analysis || !analysis.moments) {
+        try {
+          var ar = await fetch('/shorts/api/' + encodeURIComponent(analysisId), { credentials: 'same-origin' });
+          if (ar.ok) {
+            var aj = await ar.json();
+            analysis = aj && aj.analysis ? aj.analysis : null;
+            if (analysis && typeof analysis.moments === 'string') {
+              try { analysis.moments = JSON.parse(analysis.moments); } catch (_) {}
+            }
+          }
+        } catch (_) { /* swallow, handled below */ }
+      }
+      var moment = (analysis && Array.isArray(analysis.moments)) ? analysis.moments[momentIdx] : null;
       if (!moment || !moment.timeRange) {
-        if (typeof showToast === 'function') showToast('Moment data unavailable. Refresh and try again.');
+        if (typeof showToast === 'function') showToast('Unable to load moment data for this clip. Try opening the analysis again.');
         return;
       }
 
@@ -460,7 +484,7 @@ function getPublishMomentModalJS() {
             '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
             '<div>' +
               '<div style="font-weight:600;color:#d8c9ff;margin-bottom:2px;">No workflow set for this account yet.</div>' +
-              '<div style="color:var(--text-muted);">Want this post auto-republished elsewhere? <a href="/distribute/connections" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline;font-weight:600;">Set up a workflow</a> on the Repurpose page \u2014 then every future publish here will fire it.</div>' +
+              '<div style="color:var(--text-muted);">Want this post auto-republished elsewhere? <a href="/distribute" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline;font-weight:600;">Set up a workflow</a> on the Repurpose page \u2014 then every future publish here will fire it.</div>' +
             '</div>' +
           '</div>';
       }
