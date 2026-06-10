@@ -985,28 +985,55 @@ router.get('/', requireAuth, async (req, res) => {
     }).then(function(){ if (reloadBanner) loadBanner(); }).catch(function(){});
   }
 
+  // X = "close the whole banner". We:
+  //   1. Hide the banner with a tiny fade.
+  //   2. Mark the currently-shown tip as read on the server (best
+  //      effort — the badge count and /notifications page stay
+  //      accurate).
+  //   3. Set bannerClosed=true and skip every subsequent loadBanner()
+  //      call for the rest of this page lifetime. The /notifications
+  //      page still has the full list — this only closes the banner
+  //      surface on the dashboard.
+  // The previous behavior advanced to the next tip, which is why the
+  // banner could only be removed by exhausting every unread tip.
+  var bannerClosed = false;
+
+  function closeBannerForever(){
+    bannerClosed = true;
+    banner.style.opacity = '0';
+    banner.style.transition = 'opacity .2s';
+    setTimeout(function(){
+      hideBanner();
+      banner.style.opacity = '';
+      banner.style.transition = '';
+    }, 180);
+  }
+
   var dismissBtn = el('aiTipBannerDismiss');
   if (dismissBtn){
     dismissBtn.addEventListener('click', function(){
       var id = banner.dataset.tipId;
-      if (!id){ hideBanner(); return; }
-      banner.style.opacity = '0';
-      banner.style.transition = 'opacity .2s';
-      setTimeout(function(){
-        banner.style.opacity = '';
-        banner.style.transition = '';
-        markReadAndRefresh(id, true);
-      }, 180);
+      // Mark the displayed tip read so the unread badge updates, but
+      // do NOT call loadBanner() afterwards — that's what made it
+      // cycle.
+      if (id) markReadAndRefresh(id, false);
+      closeBannerForever();
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadBanner);
-  } else {
+  function loadBannerIfOpen(){
+    if (bannerClosed) return;
     loadBanner();
   }
-  // Quietly refresh in case a tip was added in another tab
-  setInterval(loadBanner, 300000);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadBannerIfOpen);
+  } else {
+    loadBannerIfOpen();
+  }
+  // Quietly refresh in case a tip was added in another tab, but only
+  // while the banner is still open on this page.
+  setInterval(loadBannerIfOpen, 300000);
 })();
 </script>
 </body>
