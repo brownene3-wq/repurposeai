@@ -2360,7 +2360,8 @@ function showToast(message, type = 'success') {
               name: (file && file.name) || data.filename,
               filename: data.filename,
               serveUrl: data.serveUrl,
-              duration: videoDuration
+              duration: videoDuration,
+              uploadId: data.uploadId        // Task #166 — enables × delete
             });
           }
         } catch (_) {}
@@ -7317,7 +7318,8 @@ setTimeout(function sidebarLayoutFix(){
                   name:     it.name || it.filename,
                   serveUrl: it.serveUrl,
                   duration: it.duration,
-                  mediaType: it.mediaType || 'vid'
+                  mediaType: it.mediaType || 'vid',
+                  uploadId: it.id                  // Task #166 — enables × delete button
                 });
               } catch(_){}
             });
@@ -8159,9 +8161,14 @@ router.post('/upload', requireAuth, (req, res, next) => {
     // boot path can rehydrate the Media library on the next visit.
     // Also accrue the bytes onto users.storage_bytes_used so the
     // Dashboard storage card shows the upload immediately.
+    // Task #166 — Echo the inserted row's id back in the response so
+    // the client can stamp it on the Media-library item, which
+    // makes the new × delete button work for items uploaded in the
+    // current session (not just rehydrated ones).
+    let uploadRowId = null;
     try {
       const { userUploadOps, storageOps } = require('../db/database');
-      await userUploadOps.insert(req.user.id, {
+      const row = await userUploadOps.insert(req.user.id, {
         filename:        newFilename,
         originalName:    originalName,
         serverPath:      newPath,
@@ -8171,6 +8178,7 @@ router.post('/upload', requireAuth, (req, res, next) => {
         durationSeconds: Number(metadata.duration) || 0,
         mediaType:       'vid'
       });
+      uploadRowId = row && row.id;
       try { await storageOps.addBytes(req.user.id, sizeBytes); } catch(_){}
     } catch (logErr){
       console.warn('[upload] user_uploads insert failed:', logErr && logErr.message);
@@ -8180,10 +8188,40 @@ router.post('/upload', requireAuth, (req, res, next) => {
       originalName: originalName,
       duration: metadata.duration,
       size: sizeBytes,
-      serveUrl: `/video-editor/download/${newFilename}`
+      serveUrl: `/video-editor/download/${newFilename}`,
+      uploadId: uploadRowId
     });
   } catch (error) {
     res.status(500).json({ error: 'Upload failed: ' + (error.message || 'Unknown error') });
+  }
+});
+
+// Task #166 — DELETE /video-editor/api/uploads/:id — let the user
+// remove a single Media-library asset before its 3-day expiry. Same
+// cleanup semantics as the retention loop: unlink the disk file +
+// storageOps.subBytes so the Dashboard card auto-updates. Returns
+// 404 if the id isn't owned by the requesting user (defensive vs
+// id-guessing). Best-effort on the file unlink — DB row removal
+// is what matters for the UI to stop listing the asset.
+router.delete('/api/uploads/:id', requireAuth, async (req, res) => {
+  try {
+    const fs = require('fs');
+    const { userUploadOps, storageOps } = require('../db/database');
+    const row = await userUploadOps.deleteById(req.params.id, req.user.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (row.server_path){
+      try { fs.unlinkSync(row.server_path); }
+      catch (e){ if (e && e.code !== 'ENOENT') console.warn('[delete-upload] unlink:', e.message); }
+    }
+    const sz = Number(row.size_bytes) || 0;
+    if (sz > 0){
+      try { await storageOps.subBytes(req.user.id, sz); }
+      catch (e){ console.warn('[delete-upload] subBytes:', e && e.message); }
+    }
+    return res.json({ success: true, bytesFreed: sz });
+  } catch (err) {
+    console.error('[delete-upload] error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to delete' });
   }
 });
 

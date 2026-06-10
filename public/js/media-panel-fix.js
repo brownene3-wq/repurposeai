@@ -129,13 +129,85 @@
     if (url)            item.dataset.mediaUrl   = url;
     if (opts.filename)  item.dataset.serverFilename = opts.filename;
     if (opts.duration)  item.dataset.duration   = String(opts.duration);
+    // Task #166 — Stash the user_uploads row id so the new × delete
+    // button can target the right server-side asset. Items uploaded
+    // BEFORE Task #164 (or local-only blob items) don't have an id;
+    // those silently fall back to "no delete affordance" — we only
+    // render the × when there's an id to target.
+    if (opts.uploadId)  item.dataset.uploadId = String(opts.uploadId);
+    // position:relative on the host so the × can absolutely-position
+    // itself in the top-right corner. ml-fitem already has cursor +
+    // hover styles that play nicely with this.
+    item.style.position = 'relative';
+    var deleteBtnHtml = opts.uploadId
+      ? '<button class="ml-del" type="button" title="Delete from Media library" aria-label="Delete" style="position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15);background:rgba(15,10,30,.85);color:#ef4444;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;z-index:2;opacity:0;transition:opacity .15s">×</button>'
+      : '';
     item.innerHTML = '<div class="ml-fth" style="background:#1a1028;display:flex;align-items:center;justify-content:center;font-size:18px">' + c.emoji + '</div>'
       + '<span class="ml-badge ' + c.badge + '">' + c.badge.toUpperCase() + '</span>'
       + '<span class="ml-fname" style="font-size:9px;color:#c4bfda;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + name + '</span>'
-      + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 4px;cursor:pointer;margin:2px 4px">+ Timeline</button>';
+      + '<button class="ml-add" style="font-size:9px;background:rgba(124,58,237,.15);color:#a78bfa;border:none;border-radius:4px;padding:2px 4px;cursor:pointer;margin:2px 4px">+ Timeline</button>'
+      + deleteBtnHtml;
+    // Task #166 — Reveal the × on hover (it stays opacity:0 by
+    // default so the grid stays uncluttered until the user goes
+    // looking for the delete affordance).
+    item.addEventListener('mouseenter', function(){
+      var x = item.querySelector('.ml-del');
+      if (x) x.style.opacity = '1';
+    });
+    item.addEventListener('mouseleave', function(){
+      var x = item.querySelector('.ml-del');
+      if (x) x.style.opacity = '0';
+    });
 
     grid.insertBefore(item, grid.firstChild);
     wireItem(item);
+    // Task #166 — Wire the × handler. Confirms with the user, hits
+    // DELETE /video-editor/api/uploads/:id, then removes the tile +
+    // any timeline clips that referenced this mediaUrl so the
+    // library and timeline stay in sync.
+    var delBtn = item.querySelector('.ml-del');
+    if (delBtn){
+      delBtn.addEventListener('click', async function(e){
+        e.stopPropagation();
+        e.preventDefault();
+        if (!confirm('Delete "' + name + '" from your Media library? This frees the storage space and cannot be undone.')) return;
+        var uploadId = item.dataset.uploadId;
+        if (!uploadId){ showToast('This item cannot be deleted (no server id).'); return; }
+        delBtn.disabled = true;
+        delBtn.style.opacity = '1';
+        delBtn.textContent = '…';
+        try {
+          var res = await fetch('/video-editor/api/uploads/' + encodeURIComponent(uploadId), {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          });
+          if (!res.ok){
+            var errMsg = 'Delete failed (' + res.status + ')';
+            try { var j = await res.json(); if (j && j.error) errMsg = j.error; } catch(_){}
+            throw new Error(errMsg);
+          }
+          // Pull any timeline clips that point at this media so the
+          // user doesn't end up with broken-reference clips. Match
+          // by serveUrl since that's what addClipToTimeline stamps.
+          var serveUrl = item.dataset.mediaUrl;
+          if (serveUrl){
+            document.querySelectorAll('.mt-clip').forEach(function(clip){
+              if (clip.dataset.mediaUrl === serveUrl){
+                try { clip.parentElement && clip.parentElement.removeChild(clip); } catch(_){}
+              }
+            });
+            try { if (typeof updateTimelineInfo === 'function') updateTimelineInfo(); } catch(_){}
+          }
+          try { item.parentElement && item.parentElement.removeChild(item); } catch(_){}
+          showToast('Removed from Media library');
+        } catch (err){
+          console.warn('[delete-upload] failed:', err);
+          showToast('Could not delete: ' + (err && err.message || 'unknown'));
+          delBtn.disabled = false;
+          delBtn.textContent = '×';
+        }
+      });
+    }
 
     // Re-apply whatever tab filter is currently active so the newly-added
     // item respects it (e.g. an audio upload while "Videos" is selected
@@ -3408,8 +3480,12 @@
   function snapshotTimelineStateRich(){
     var clips = Array.from(document.querySelectorAll('.mt-clip')).map(function(c){
       var track = c.parentElement;
-      var trackClass = track ? (track.className || '') : '';
-      // Map track DOM class \u2192 semantic track name the restore path will use
+      // String() coerces SVGAnimatedString (or anything else className
+      // could be on exotic track elements) to a real string before the
+      // regex matches \u2014 defends against the same kind of non-string
+      // bug that surfaced in Task #165.
+      var trackClass = '';
+      try { trackClass = String((track && track.className) || ''); } catch(_){}
       var trackName = 'video';
       if (/mt-track-audio/.test(trackClass)) trackName = 'audio';
       else if (/mt-track-text/.test(trackClass)) trackName = 'text';
@@ -3418,13 +3494,29 @@
       // linkPair, sourceOffset, fxBlur, fontSize, fontColor, etc.
       // survive the round-trip without us enumerating them by name.
       var ds = {};
-      try { Object.keys(c.dataset).forEach(function(k){ ds[k] = c.dataset[k]; }); } catch(_){}
+      try { Object.keys(c.dataset).forEach(function(k){
+        try { ds[k] = String(c.dataset[k] == null ? '' : c.dataset[k]); } catch(_){}
+      }); } catch(_){}
+      // Task #167 \u2014 Capture the FULL inline style.cssText (instead of
+      // hand-picking left/width/background/zIndex). Audio clips have
+      // color/padding/fontSize/overflow/textOverflow/whiteSpace/
+      // userSelect set inline that the old snapshot was throwing
+      // away \u2014 restore via cssText brings them all back in one
+      // assignment.
+      var cssText = '';
+      try { cssText = c.style && c.style.cssText ? String(c.style.cssText) : ''; } catch(_){}
       return {
         track: trackName,
+        // Legacy fields kept for back-compat with already-saved drafts.
         left: c.style.left || '0px',
         width: c.style.width || '',
         background: c.style.background || '',
         zIndex: c.style.zIndex || '',
+        // Full cssText is the source of truth for the restore.
+        cssText: cssText,
+        // Capture className too so any clip-state classes (.selected,
+        // .clip-link-paired, .clip-reverse-on, etc.) survive.
+        className: (function(){ try { return String(c.className || ''); } catch(_){ return ''; } })(),
         textContent: (trackName === 'text' || trackName === 'audio') ? (c.textContent || '') : '',
         dataset: ds
       };
@@ -3572,19 +3664,37 @@
       var track = trackMap[c.track] || trackMap.video;
       if (!track) return;
       var clip = document.createElement('div');
-      clip.className = 'mt-clip ' +
+      // Task #167 — Prefer the snapshot's saved className verbatim
+      // (it carries .selected / .clip-link-paired / .clip-reverse-on
+      // etc.), but always make sure the base .mt-clip + per-track
+      // class survive even if older snapshots didn't capture them.
+      var defaultCls = 'mt-clip ' +
         (c.track === 'audio' ? 'mt-clip-audio' :
          c.track === 'text'  ? 'mt-clip-text'  :
          c.track === 'fx'    ? 'mt-clip-fx'    : 'mt-clip-video');
+      if (c.className && /\bmt-clip\b/.test(c.className)){
+        clip.className = c.className;
+      } else {
+        clip.className = defaultCls;
+      }
       if (c.dataset){
         Object.keys(c.dataset).forEach(function(k){
           try { clip.dataset[k] = c.dataset[k]; } catch(_){}
         });
       }
-      if (c.left)        clip.style.left = c.left;
-      if (c.width)       clip.style.width = c.width;
-      if (c.background)  clip.style.background = c.background;
-      if (c.zIndex)      clip.style.zIndex = c.zIndex;
+      // Task #167 — Prefer the full cssText (captures every inline
+      // style — color, padding, fontSize, overflow, etc. — that
+      // audio + text clips depend on for their look). Fall back to
+      // the legacy per-prop fields so already-saved drafts still
+      // restore correctly.
+      if (c.cssText){
+        try { clip.style.cssText = c.cssText; } catch(_){}
+      } else {
+        if (c.left)        clip.style.left = c.left;
+        if (c.width)       clip.style.width = c.width;
+        if (c.background)  clip.style.background = c.background;
+        if (c.zIndex)      clip.style.zIndex = c.zIndex;
+      }
       if (c.textContent && (c.track === 'text' || c.track === 'audio')){
         clip.textContent = c.textContent;
       }
@@ -3593,6 +3703,14 @@
       try { makeClipInteractive(clip); } catch(_){}
       if (c.track === 'video' && c.dataset && c.dataset.mediaUrl){
         try { buildClipFilmstrip(clip, c.dataset.mediaUrl, parseFloat(c.dataset.duration) || 0); } catch(_){}
+      }
+      // Task #167 — Regenerate the audio waveform / image thumbnail
+      // visuals for non-video tracks the same way live edits do.
+      // attachFilmstripOrWaveform inspects the clip's mediaType /
+      // mediaUrl / src and rebuilds the right visualization
+      // (vertical-bar waveform for aud, thumbnail for img, etc.).
+      if (c.track === 'audio' && typeof attachFilmstripOrWaveform === 'function'){
+        try { attachFilmstripOrWaveform(clip); } catch(_){}
       }
     });
     try { updateTimelineInfo(); } catch(_){}
