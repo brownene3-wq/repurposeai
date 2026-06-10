@@ -938,8 +938,14 @@ router.get('/', requireAuth, async (req, res) => {
   var banner = el('aiTipBanner');
   if (!banner) return;
 
-  function hideBanner(){ banner.setAttribute('hidden',''); }
-  function showBanner(){ banner.removeAttribute('hidden'); }
+  function hideBanner(){
+    banner.setAttribute('hidden','');
+    banner.style.display = 'none';
+  }
+  function showBanner(){
+    banner.removeAttribute('hidden');
+    banner.style.display = 'flex';
+  }
 
   function applyTip(tip, remaining){
     if (!tip){ hideBanner(); return; }
