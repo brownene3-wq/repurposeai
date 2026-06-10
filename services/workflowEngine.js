@@ -16,6 +16,42 @@ if (!fs.existsSync(WORKFLOW_TEMP_DIR)) {
   fs.mkdirSync(WORKFLOW_TEMP_DIR, { recursive: true });
 }
 
+// ffmpeg detection — same fallback chain routes/shorts.js uses. Needed
+// by publishPinterest below to extract a poster frame from a video clip
+// when the sourceItem doesn't carry an explicit thumbnail URL.
+let __ffmpegPath = null;
+try {
+  const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
+  if (fs.existsSync(localFfmpeg)) __ffmpegPath = localFfmpeg;
+} catch (_) {}
+if (!__ffmpegPath) { try { __ffmpegPath = require('ffmpeg-static'); } catch (_) {} }
+if (!__ffmpegPath) {
+  try { require('child_process').execSync('which ffmpeg', { stdio: 'pipe' }); __ffmpegPath = 'ffmpeg'; }
+  catch (_) {}
+}
+
+// Extract a single still frame from a video at `atSec` seconds → JPEG
+// at outPath. Resolves on success, rejects on ffmpeg error/timeout.
+function extractPosterFrame(sourcePath, atSec, outPath) {
+  return new Promise((resolve, reject) => {
+    if (!__ffmpegPath) return reject(new Error('ffmpeg not available on this server'));
+    const args = ['-y', '-ss', String(Math.max(0, atSec)), '-i', sourcePath,
+                  '-frames:v', '1', '-q:v', '4', '-f', 'image2', outPath];
+    const proc = spawn(__ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', e => settle(reject, e));
+    proc.on('close', code => code === 0 ? settle(resolve)
+      : settle(reject, new Error('ffmpeg poster-frame exit ' + code + ': ' + stderr.slice(-200))));
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      settle(reject, new Error('ffmpeg poster-frame timeout (15s)'));
+    }, 15000);
+  });
+}
+
 function getYoutubeCookiesArgs() {
   const p = process.env.YT_COOKIES_PATH;
   if (p && require('fs').existsSync(p)) return ['--cookies', p];
@@ -1104,25 +1140,49 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
   }
 
   // Build the pin payload using the v5 media_source structure.
-  // For repurposed-video content we post the thumbnail image with a link
-  // back to the source video — this is the standard Pinterest pattern for
-  // driving traffic from a Pin to long-form content. Native Pinterest
-  // video upload uses a separate multi-step /v5/media flow (register →
-  // S3 upload → wait → create pin with video_id) which we can wire up
-  // later once Pinterest's Standard tier is approved.
-  const imageUrl = sourceItem.thumbnail || sourceItem.image_url;
-  if (!imageUrl) {
-    throw new Error('Pinterest publish: source item has no thumbnail/image URL — cannot build the pin media.');
+  //
+  // Pinterest's image-source choices:
+  //   • source_type:'image_url'    → needs a publicly accessible URL
+  //   • source_type:'image_base64' → inline JPEG bytes, no hosting
+  //
+  // We prefer image_base64 when the caller passes a local mediaPath
+  // (the Library Clips flow sends a .mp4 on /tmp). When the sourceItem
+  // already carries a thumbnail URL we use that. When neither is
+  // present, we error out clearly.
+  let mediaSource = null;
+  let tempPosterPath = null;
+  const explicitImageUrl = sourceItem.thumbnail || sourceItem.image_url;
+  if (explicitImageUrl) {
+    mediaSource = { source_type: 'image_url', url: explicitImageUrl };
+  } else if (mediaPath && fs.existsSync(mediaPath)) {
+    try {
+      tempPosterPath = path.join(WORKFLOW_TEMP_DIR, 'pin-poster-' + uuidv4() + '.jpg');
+      // Take the frame around the 1-second mark so we don't get a
+      // black/blank opening frame.
+      await extractPosterFrame(mediaPath, 1.0, tempPosterPath);
+      if (!fs.existsSync(tempPosterPath) || fs.statSync(tempPosterPath).size < 1024) {
+        throw new Error('extracted poster is empty');
+      }
+      const bytes = fs.readFileSync(tempPosterPath);
+      mediaSource = {
+        source_type: 'image_base64',
+        content_type: 'image/jpeg',
+        data: bytes.toString('base64')
+      };
+      console.log(`[WorkflowEngine] Pinterest: posted poster frame from ${path.basename(mediaPath)} (${bytes.length} bytes)`);
+    } catch (extractErr) {
+      if (tempPosterPath) { try { fs.unlinkSync(tempPosterPath); } catch (_) {} tempPosterPath = null; }
+      throw new Error('Pinterest publish: could not derive a pin image from the video (' + extractErr.message + '). Provide sourceItem.thumbnail or wire native video upload.');
+    }
+  } else {
+    throw new Error('Pinterest publish: source item has no thumbnail/image URL and no video mediaPath was provided — cannot build the pin media.');
   }
 
   const pinPayload = {
     board_id: boardId,
     title: String(sourceItem.title || 'Untitled Pin').slice(0, 100),
     description: String(sourceItem.description || '').slice(0, 500),
-    media_source: {
-      source_type: 'image_url',
-      url: imageUrl
-    }
+    media_source: mediaSource
   };
   const linkUrl = sourceItem.url || sourceItem.link;
   if (linkUrl) pinPayload.link = linkUrl;
