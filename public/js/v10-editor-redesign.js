@@ -50,6 +50,10 @@
     '.v10-mi-badge.vid{background:rgba(124,58,237,.18);color:#a78bfa}',
     '.v10-mi-badge.aud{background:rgba(59,130,246,.18);color:#60a5fa}',
     '.v10-mi-badge.img{background:rgba(34,197,94,.18);color:#4ade80}',
+    /* v10 × delete button (Task #168) */
+    '.v10-mi-del{position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15);background:rgba(15,10,30,.85);color:#ef4444;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;z-index:2;opacity:0;transition:opacity .15s}',
+    '.media-library .ml-fitem.v10-styled:hover .v10-mi-del{opacity:1}',
+    '.v10-mi-del:hover{background:rgba(239,68,68,.18);color:#fff;border-color:#ef4444}',
     '/* v10 project folders */',
     '.media-library .ml-folder.v10-proj{cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(255,255,255,.02);border:1px solid #2a2545;border-radius:7px;margin-bottom:5px;font-size:12px;font-weight:600;color:#e2e0f0}',
     '.media-library .ml-folder.v10-proj:hover{border-color:#8b5cf6;background:rgba(139,92,246,.05)}',
@@ -568,13 +572,64 @@
       var dur = durFromDs || parsed.dur;
       var subtitle = size ? (dur ? (size + ' \u00b7 ' + dur) : size) : (dur || '');
       it.classList.add('v10-styled');
+      // Task #168 — preserve the × delete button across restyles.
+      // appendMediaItem (in media-panel-fix.js) sets dataset.uploadId
+      // for server-backed items; we render the × inline here so V10's
+      // innerHTML rewrite doesn't nuke it. The button is hover-revealed
+      // via CSS (opacity transition wired below in restyle injection).
+      var deleteBtnHtml = it.dataset.uploadId
+        ? '<button class="v10-mi-del" type="button" title="Delete from Media library" aria-label="Delete" data-upload-id="'+escapeHtml(it.dataset.uploadId)+'">×</button>'
+        : '';
+      it.style.position = 'relative';
       it.innerHTML =
         '<div class="v10-mi-thumb '+cls+'">'+icon+'</div>'+
         '<div class="v10-mi-info">'+
           '<h5>'+escapeHtml(displayName)+'</h5>'+
           (subtitle ? '<small>'+escapeHtml(subtitle)+'</small>' : '')+
         '</div>'+
-        '<span class="v10-mi-badge '+cls+'">'+label+'</span>';
+        '<span class="v10-mi-badge '+cls+'">'+label+'</span>'+
+        deleteBtnHtml;
+      // Wire the × click handler. The actual DELETE round-trip lives in
+      // media-panel-fix.js's appendMediaItem, but V10 nuked that wiring
+      // when it rewrote innerHTML above — we re-wire here.
+      var delBtn = it.querySelector('.v10-mi-del');
+      if (delBtn && !delBtn.__v10Wired){
+        delBtn.__v10Wired = true;
+        delBtn.addEventListener('click', function(e){
+          e.stopPropagation();
+          e.preventDefault();
+          var uploadId = delBtn.getAttribute('data-upload-id');
+          if (!uploadId) return;
+          var displayLabel = displayName || 'this file';
+          if (!confirm('Delete "' + displayLabel + '" from your Media library? This frees the storage space and cannot be undone.')) return;
+          delBtn.disabled = true;
+          delBtn.textContent = '…';
+          fetch('/video-editor/api/uploads/' + encodeURIComponent(uploadId), {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          }).then(function(res){
+            if (!res.ok) return res.json().then(function(j){ throw new Error(j && j.error || ('Delete failed ('+res.status+')')); });
+            // Pull any timeline clips that reference this media so
+            // the library + timeline stay consistent.
+            var serveUrl = it.dataset.mediaUrl;
+            if (serveUrl){
+              document.querySelectorAll('.mt-clip').forEach(function(clip){
+                if (clip.dataset.mediaUrl === serveUrl){
+                  try { clip.parentElement && clip.parentElement.removeChild(clip); } catch(_){}
+                }
+              });
+              try { if (typeof window.updateTimelineInfo === 'function') window.updateTimelineInfo(); } catch(_){}
+            }
+            try { it.parentElement && it.parentElement.removeChild(it); } catch(_){}
+            try { if (typeof window.showToast === 'function') window.showToast('Removed from Media library'); } catch(_){}
+          }).catch(function(err){
+            console.warn('[v10-delete] failed:', err);
+            try { if (typeof window.showToast === 'function') window.showToast('Could not delete: ' + (err && err.message || 'unknown')); } catch(_){}
+            delBtn.disabled = false;
+            delBtn.textContent = '×';
+          });
+        });
+      }
     });
   }
 
@@ -702,30 +757,89 @@
 
   function buildDraftsListInto(list){
     var drafts = getDrafts();
+    // Always render localStorage drafts immediately (legacy path).
     if (drafts.length === 0){
       var empty = document.createElement('div');
       empty.className = 'v10-folder-note';
-      empty.textContent = 'No drafts yet. Uploaded projects will appear here until you export them.';
+      empty.textContent = 'Loading saved drafts\u2026';
+      empty.dataset.v10DraftsPlaceholder = '1';
       list.appendChild(empty);
-      return;
-    }
-    drafts.forEach(function(d){
-      var item = document.createElement('div');
-      item.className = 'v10-folder-item clickable';
-      var meta = [d.date, d.size, d.dur].filter(Boolean).join(' \u00b7 ');
-      item.innerHTML =
-        '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83c\udf9e\ufe0f</span>'+
-        '<div class="v10-fi-body">'+
-          '<div class="v10-fi-name">'+escapeHtml(d.name)+'</div>'+
-          (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
-        '</div>'+
-        '<span class="v10-fi-hint">LOAD</span>';
-      item.addEventListener('click', function(e){
-        e.stopPropagation();
-        loadDraftIntoEditor(d);
+    } else {
+      drafts.forEach(function(d){
+        var item = document.createElement('div');
+        item.className = 'v10-folder-item clickable';
+        var meta = [d.date, d.size, d.dur].filter(Boolean).join(' \u00b7 ');
+        item.innerHTML =
+          '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83c\udf9e\ufe0f</span>'+
+          '<div class="v10-fi-body">'+
+            '<div class="v10-fi-name">'+escapeHtml(d.name)+'</div>'+
+            (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
+          '</div>'+
+          '<span class="v10-fi-hint">LOAD</span>';
+        item.addEventListener('click', function(e){
+          e.stopPropagation();
+          loadDraftIntoEditor(d);
+        });
+        list.appendChild(item);
       });
-      list.appendChild(item);
-    });
+    }
+    // Task #168 \u2014 Also fetch server-side drafts (saved via the new
+    // POST /video-editor/save-draft endpoint) and append them with an
+    // OPEN affordance that navigates into the editor's projectId boot
+    // path, where bootFromProject + restoreTimelineFromSnapshot
+    // rehydrate the full timeline.
+    fetch('/video-editor/api/drafts', { credentials: 'same-origin' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        // Drop placeholder note if it was shown
+        var ph = list.querySelector('[data-v10-drafts-placeholder="1"]');
+        if (ph) ph.remove();
+        if (!data || !Array.isArray(data.items) || !data.items.length){
+          if (drafts.length === 0 && !list.querySelector('.v10-folder-item') && !list.querySelector('.v10-folder-note')){
+            var note = document.createElement('div');
+            note.className = 'v10-folder-note';
+            note.textContent = 'No drafts yet. Use "Save as Draft" in the top-right to save one.';
+            list.appendChild(note);
+          }
+          return;
+        }
+        data.items.forEach(function(d){
+          var item = document.createElement('div');
+          item.className = 'v10-folder-item clickable v10-server-draft';
+          item.dataset.draftId = d.id;
+          var bits = [];
+          if (d.updatedAt){
+            try {
+              var dt = new Date(d.updatedAt);
+              if (!isNaN(dt.getTime())) bits.push(dt.toLocaleDateString());
+            } catch(_){}
+          }
+          if (d.durationSeconds > 0){
+            bits.push(Math.floor(d.durationSeconds/60) + ':' + String(Math.floor(d.durationSeconds%60)).padStart(2,'0'));
+          }
+          var meta = bits.join(' \u00b7 ');
+          item.innerHTML =
+            '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83d\udcc4</span>'+
+            '<div class="v10-fi-body">'+
+              '<div class="v10-fi-name">'+escapeHtml(d.name || 'Untitled Draft')+'</div>'+
+              (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
+            '</div>'+
+            '<span class="v10-fi-hint">OPEN</span>';
+          item.addEventListener('click', function(e){
+            e.stopPropagation();
+            // Navigate to the editor's project boot URL \u2014 this triggers
+            // bootFromProject in routes/video-editor.js which sets
+            // window.__INITIAL_PROJECT__ from the saved snapshot, and
+            // restoreTimelineFromSnapshot rebuilds the full timeline.
+            try { window.location.href = d.editorUrl || ('/video-editor/' + d.id); } catch(_){}
+          });
+          list.appendChild(item);
+        });
+      })
+      .catch(function(){
+        var ph = list.querySelector('[data-v10-drafts-placeholder="1"]');
+        if (ph) ph.textContent = 'No drafts yet.';
+      });
   }
 
   function rebuildFolders(){

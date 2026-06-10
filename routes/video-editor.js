@@ -8073,6 +8073,37 @@ router.get('/:projectId(p_[a-f0-9]+)', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Task #168 — GET /video-editor/api/drafts — list the current
+// user's saved drafts so the editor's Media-library Drafts folder
+// can show them with an "Open" affordance that routes back into
+// the editor via /video-editor/:projectId.
+router.get('/api/drafts', requireAuth, async (req, res) => {
+  try {
+    const { projectOps } = require('../db/database');
+    const rows = await projectOps.listDraftsByUser(req.user.id);
+    const items = (rows || []).map(r => {
+      let meta = r.metadata;
+      if (typeof meta === 'string'){
+        try { meta = JSON.parse(meta); } catch(_){ meta = {}; }
+      }
+      meta = meta || {};
+      const snap = meta.snapshot || {};
+      return {
+        id:        r.id,
+        name:      r.name || 'Untitled Draft',
+        updatedAt: r.updated_at || r.created_at,
+        // Surface the lightweight bits the V10 Drafts row UI needs.
+        durationSeconds: Number(snap.totalDuration) || 0,
+        editorUrl: '/video-editor/' + r.id
+      };
+    });
+    res.json({ items: items });
+  } catch (err) {
+    console.error('[api/drafts] error:', err);
+    res.status(500).json({ error: err.message || 'Failed to list drafts' });
+  }
+});
+
 // Task #162 — POST /video-editor/save-draft — persist a Save-as-Draft
 // snapshot of the editor timeline so it can be restored later from
 // the Library > Edited Videos tab. Accepts an optional `id` in the
