@@ -593,7 +593,7 @@ router.get('/create', requireAuth, async (req, res) => {
             <h2 class="step-title">Select Source Platform</h2>
             <p class="step-desc">Which platform will you pull content from?</p>
             <div class="platform-grid" id="sourcePlatforms">
-              ${PLATFORMS.filter(p => p.type !== 'destination').map(p => `
+              ${PLATFORMS.map(p => `
                 <div class="platform-card" onclick="selectPlatform('source', '${p.id}', this)">
                   ${platformIconHTML(p, 'lg')}
                   <span class="p-label">${p.name}</span>
