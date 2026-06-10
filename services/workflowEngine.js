@@ -1299,6 +1299,19 @@ async function processWorkflow(workflow) {
           continue;
         }
 
+        // Delay gate — honour workflow.delay_hours for external sources.
+        // If the item was published less than delay_hours ago, skip it
+        // this tick; we'll pick it up on a subsequent tick once the
+        // delay has elapsed.
+        const delayHrs = Number(workflow.delay_hours) || 0;
+        if (delayHrs > 0 && sourceItem.publishedAt) {
+          const ageMs = Date.now() - new Date(sourceItem.publishedAt).getTime();
+          if (ageMs < delayHrs * 60 * 60 * 1000) {
+            console.log(`[WorkflowEngine] Content ${sourceItem.id} too fresh (${(ageMs / 60000).toFixed(1)}m old, needs ${delayHrs}h), skipping this tick`);
+            continue;
+          }
+        }
+
         // Download media
         console.log(`[WorkflowEngine] Downloading content ${sourceItem.id}...`);
         let mediaPath = await downloadMedia(sourceItem, workflow.id);
@@ -1373,15 +1386,124 @@ async function getActiveWorkflows() {
   }
 }
 
+// Process the internal scheduled queue.
+//
+// Splicora publishes (Library Posts > Publish to…, Smart Shorts >
+// Publish, Video Editor > Publish) insert a content_queue row with
+// status='scheduled' and scheduled_at = now + workflow.delay_hours
+// via utils/workflowQueue's enqueueDownstreamPublishes(). On every
+// cron tick we pull rows whose time has come and republish them to
+// each workflow's destination. This gives the user the
+// LinkedIn-publish → 1h delay → Pinterest-republish behaviour
+// without ever needing to poll LinkedIn (or any other source
+// platform) for new content.
+async function processScheduledQueue() {
+  let dbMod;
+  try { dbMod = require('../db/database'); }
+  catch (_) { return; }
+  if (!dbMod || !dbMod.contentQueueOps || !dbMod.connectedAccountOps) return;
+
+  let due = [];
+  try { due = await dbMod.contentQueueOps.getScheduled(); }
+  catch (e) { console.error('[WorkflowEngine] getScheduled failed:', e.message); return; }
+
+  if (!due.length) return;
+  console.log(`[WorkflowEngine] Scheduled queue: ${due.length} due item(s)`);
+
+  for (const row of due) {
+    let workflow;
+    try {
+      const wfRes = await getDb().query('SELECT * FROM workflows WHERE id = $1', [row.workflow_id]);
+      workflow = wfRes.rows[0];
+    } catch (e) { console.error('[WorkflowEngine] workflow lookup failed:', e.message); continue; }
+    if (!workflow || !workflow.is_active || !workflow.auto_publish) {
+      await dbMod.contentQueueOps.updateStatus(row.id, 'cancelled', 'Workflow inactive');
+      continue;
+    }
+
+    let destAccount;
+    try { destAccount = await dbMod.connectedAccountOps.getById(workflow.destination_account_id); }
+    catch (e) { console.error('[WorkflowEngine] dest lookup failed:', e.message); continue; }
+    if (!destAccount) {
+      await dbMod.contentQueueOps.updateStatus(row.id, 'failed', 'Destination account missing');
+      continue;
+    }
+
+    const refreshedDest = await refreshTokenIfNeeded(destAccount);
+    const meta = (typeof row.metadata === 'string')
+      ? (() => { try { return JSON.parse(row.metadata); } catch (_) { return {}; } })()
+      : (row.metadata || {});
+
+    const syntheticWorkflow = {
+      id: workflow.id,
+      destination_platform: workflow.destination_platform,
+      settings: workflow.settings || {}
+    };
+    const sourceItem = {
+      id: row.source_video_id || row.id,
+      title: row.title || meta.title || 'Cross-published post',
+      description: row.description || meta.description || meta.text || '',
+      caption: meta.caption || meta.text || row.description || '',
+      thumbnail: row.thumbnail_url || null,
+      url: row.source_url || null,
+      platform: workflow.source_platform,
+      publishedAt: new Date(row.created_at)
+    };
+
+    // Resolve a media path. If the original publish had a file on /tmp
+    // it's likely been wiped (Railway). When the row carries a
+    // mediaR2Key we restore it; otherwise the destination publisher
+    // takes its text-only branch.
+    let mediaPath = null;
+    if (meta.mediaPath && fs.existsSync(meta.mediaPath)) {
+      mediaPath = meta.mediaPath;
+    } else if (meta.mediaR2Key) {
+      try {
+        const r2 = require('../utils/r2');
+        if (r2 && r2.isConfigured && r2.isConfigured()) {
+          const got = await r2.getObject(meta.mediaR2Key);
+          if (got && got.ok && got.body && meta.mediaFilename) {
+            const restored = path.join(WORKFLOW_TEMP_DIR, 'requeue-' + meta.mediaFilename);
+            fs.writeFileSync(restored, got.body);
+            mediaPath = restored;
+          }
+        }
+      } catch (rErr) { console.warn('[WorkflowEngine] R2 restore failed:', rErr.message); }
+    }
+
+    try {
+      console.log(`[WorkflowEngine] Republishing queue item ${row.id} -> ${workflow.destination_platform} (workflow ${workflow.id})`);
+      const pubResult = await publishToDestination(syntheticWorkflow, refreshedDest, sourceItem, mediaPath);
+      await dbMod.contentQueueOps.updateStatus(row.id, 'published', null);
+      await workflowOps.incrementPostCount(workflow.id);
+      // Clean up restored media.
+      if (mediaPath && mediaPath.startsWith(WORKFLOW_TEMP_DIR)) {
+        try { fs.unlinkSync(mediaPath); } catch (_) {}
+      }
+    } catch (pubErr) {
+      console.error(`[WorkflowEngine] Republish failed for queue ${row.id}:`, pubErr.message);
+      await dbMod.contentQueueOps.updateStatus(row.id, 'failed', pubErr.message);
+    }
+  }
+}
+
 // Main polling loop
 async function startWorkflowEngine() {
   console.log('[WorkflowEngine] Starting workflow engine (polling every 60 seconds)');
 
   setInterval(async () => {
     try {
+      // First: the user-triggered scheduled queue (the new path that
+      // backs the Library Posts > Publish to… → workflow delay →
+      // destination flow).
+      try { await processScheduledQueue(); }
+      catch (e) { console.error('[WorkflowEngine] processScheduledQueue:', e.message); }
+
+      // Then: legacy external-source workflows (poll YouTube/IG/etc.
+      // and republish anything new past the configured delay).
       const workflows = await getActiveWorkflows();
       if (workflows.length === 0) {
-        console.log('[WorkflowEngine] No active workflows to process');
+        console.log('[WorkflowEngine] No active external-source workflows to process');
         return;
       }
 

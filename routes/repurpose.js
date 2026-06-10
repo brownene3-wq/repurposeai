@@ -3653,6 +3653,24 @@ router.post('/api/publish-output', requireAuth, async (req, res) => {
       // No mediaPath -> platform publishers take their text-only branch.
     });
     if (!result.success) return res.status(400).json(result);
+
+    // Workflow bridge — if the user has any active LinkedIn/Pinterest/
+    // etc. cross-publish workflows whose source is this connection,
+    // queue downstream entries so the cron will republish them after
+    // each workflow's configured delay_hours. Fire-and-forget so a
+    // queue hiccup never blocks the original response.
+    try {
+      const { enqueueDownstreamPublishes } = require('../utils/workflowQueue');
+      enqueueDownstreamPublishes(req.user.id, connectionId, {
+        sourceType: 'post',
+        title: (text || '').split('\n')[0].slice(0, 100),
+        description: text,
+        text: text,
+        sourceUrl: null,
+        dedupeKey: 'pubout-' + (outputId || Date.now())
+      }).catch(function(e){ console.warn('[publish-output] workflow enqueue:', e && e.message); });
+    } catch (qErr) { console.warn('[publish-output] workflow enqueue require failed:', qErr.message); }
+
     res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
   } catch (err) {
     console.error('[POST /repurpose/api/publish-output]', err.message);

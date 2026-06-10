@@ -4319,6 +4319,21 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
     });
     if (!result.success) return res.status(400).json(result);
 
+    // Workflow bridge — queue downstream republishes for any active
+    // workflows whose source is this connection. Fire-and-forget.
+    try {
+      const { enqueueDownstreamPublishes } = require('../utils/workflowQueue');
+      enqueueDownstreamPublishes(req.user.id, connectionId, {
+        sourceType: 'clip',
+        title: resolvedTitle,
+        description: description || caption || moment.description || '',
+        text: resolvedCaption,
+        mediaFilename: mediaPath ? require('path').basename(mediaPath) : null,
+        mediaPath: mediaPath,
+        dedupeKey: 'moment-' + analysisId + '-' + momentIndex
+      }).catch(function(e){ console.warn('[publish-moment] workflow enqueue:', e && e.message); });
+    } catch (qErr) { console.warn('[publish-moment] workflow enqueue require failed:', qErr.message); }
+
     // Auto-sync the successful Post Now into the project calendar so the
     // user can see everything they've published in one place. Uses the
     // client's local timestamp (req.body.clientNow ISO string) if it was
