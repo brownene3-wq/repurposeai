@@ -1865,7 +1865,6 @@ router.get('/', requireAuth, (req, res) => {
               <div class="result-actions">
                 <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
                 \${['Twitter', 'LinkedIn', 'Facebook', 'Threads'].includes(platform) ? \`<button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>\` : ''}
-                \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
                 <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')"><img src="/images/section-icons/A-83.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Regenerate</button>
               </div>
             \`;
@@ -1902,7 +1901,6 @@ router.get('/', requireAuth, (req, res) => {
             <div class="result-actions">
               <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
               \${['Twitter', 'LinkedIn', 'Facebook', 'Threads'].includes(platform) ? \`<button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>\` : ''}
-              \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
             </div>
           \`;
           grid.appendChild(card);
@@ -1915,38 +1913,6 @@ router.get('/', requireAuth, (req, res) => {
               setTimeout(() => feedback.classList.remove('show'), 2000);
             });
           });
-        }
-
-        function shareContent(platform, encodedContent) {
-          const text = decodeURIComponent(escape(atob(encodedContent)));
-          const encoded = encodeURIComponent(text);
-          let url = '';
-
-          switch(platform) {
-            case 'Twitter':
-              url = 'https://twitter.com/intent/tweet?text=' + encoded;
-              break;
-            case 'LinkedIn':
-              url = 'https://www.linkedin.com/sharing/share-offsite/?url=&summary=' + encoded;
-              break;
-            case 'Facebook':
-              url = 'https://www.facebook.com/sharer/sharer.php?quote=' + encoded;
-              break;
-            default:
-              // For Instagram, TikTok, YouTube, Blog — copy to clipboard instead
-              navigator.clipboard.writeText(text).then(() => {
-                const feedback = document.getElementById('successFeedback');
-                feedback.textContent = '✓ Copied! Now paste it in ' + platform;
-                feedback.classList.add('show');
-                setTimeout(() => {
-                  feedback.classList.remove('show');
-                  feedback.textContent = '✓ Copied to clipboard!';
-                }, 3000);
-              });
-              return;
-          }
-
-          window.open(url, '_blank', 'width=600,height=500');
         }
 
         function copyToClipboard(text) {
