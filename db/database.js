@@ -2531,19 +2531,22 @@ module.exports = {
     },
     async updateStatus(id, status, errorMessage) { return (await pool.query(`UPDATE content_queue SET status = $1, error_message = $2, published_at = CASE WHEN $1 = 'published' THEN CURRENT_TIMESTAMP ELSE published_at END WHERE id = $3 RETURNING *`, [status, errorMessage, id])).rows[0]; },
     async getScheduled() { return (await pool.query(`SELECT cq.*, w.destination_platform, w.settings FROM content_queue cq JOIN workflows w ON cq.workflow_id = w.id WHERE cq.status = 'scheduled' AND cq.scheduled_at <= CURRENT_TIMESTAMP ORDER BY cq.scheduled_at ASC`)).rows; },
-    getByWorkflowAndSourceId: async (workflowId, sourceId) => {
-      const result = await pool.query(
-        'SELECT * FROM content_queue WHERE workflow_id = $1 AND source_content_id = $2 LIMIT 1',
-        [workflowId, sourceId]
-      );
-      return result.rows[0] || null;
-    },
-    getPendingByWorkflow: async (workflowId) => {
-      const result = await pool.query(
-        'SELECT * FROM content_queue WHERE workflow_id = $1 AND status = $2 ORDER BY scheduled_at ASC',
-        [workflowId, 'pending']
-      );
-      return result.rows;
+    // Failed/cancelled rows from the last 7 days for a workflow — used
+    // by the /distribute UI to surface workflow-level errors that
+    // previously only showed up in server logs.
+    async getRecentByWorkflow(workflowId, limit = 25) {
+      return (await pool.query(
+        `SELECT * FROM content_queue
+          WHERE workflow_id = $1
+          ORDER BY COALESCE(published_at, scheduled_at, created_at) DESC
+          LIMIT $2`,
+        [workflowId, limit]
+      )).rows;
     }
+    // NOTE: getByWorkflowAndSourceId and getPendingByWorkflow used to
+    // appear here a second time with a broken `source_content_id`
+    // column — JS kept the duplicate (later wins) and threw on every
+    // dedup check. The earlier definitions higher up in this ops object
+    // are the correct ones; the duplicates have been removed.
   }
 };

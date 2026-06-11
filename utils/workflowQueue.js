@@ -20,6 +20,8 @@
 // destination account.
 
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const path = require('path');
 
 let workflowOps, contentQueueOps, pool;
 try {
@@ -28,6 +30,41 @@ try {
   contentQueueOps = db.contentQueueOps;
   pool = db.pool;
 } catch (_) {}
+
+let _r2 = null;
+try { _r2 = require('./r2'); } catch (_) {}
+
+// Push the media file backing a queue row to R2 so the workflow cron
+// can recover it after Railway wipes /tmp on the next deploy. Returns
+// the R2 key on success, null on any failure (we'll just leave the
+// queue row pointing at the disk path and hope the pod is still alive
+// when the cron tick fires). Best-effort by design — we never let an
+// R2 hiccup block the original publish that just succeeded.
+async function backupMediaToR2(absPath) {
+  if (!absPath) return null;
+  if (!_r2 || typeof _r2.isConfigured !== 'function' || !_r2.isConfigured()) return null;
+  if (!fs.existsSync(absPath)) return null;
+  try {
+    const stat = fs.statSync(absPath);
+    if (stat.size < 1024) return null;
+    const filename = path.basename(absPath);
+    const key = 'workflow-queue/' + Date.now() + '-' + filename;
+    const bytes = fs.readFileSync(absPath);
+    const ext = (path.extname(filename) || '').toLowerCase();
+    const contentType =
+      ext === '.mp4' ? 'video/mp4' :
+      ext === '.mov' ? 'video/quicktime' :
+      ext === '.webm' ? 'video/webm' :
+      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+      ext === '.png' ? 'image/png' :
+      'application/octet-stream';
+    const put = await _r2.putObject(key, bytes, contentType);
+    if (put && put.ok) return key;
+  } catch (e) {
+    console.warn('[workflowQueue] R2 backup failed for', absPath, '-', e.message);
+  }
+  return null;
+}
 
 // Generic enqueue. Best-effort — failures never block the originating
 // publish response.
@@ -57,6 +94,16 @@ async function enqueueDownstreamPublishes(userId, sourceConnectionId, payload = 
     );
     const matched = res.rows || [];
     if (!matched.length) return 0;
+
+    // One-shot R2 backup for the media file (if any). Reused across
+    // every matched workflow so a single publish event only uploads
+    // once even when several workflows fan out from it. We prefer an
+    // already-supplied mediaR2Key over re-uploading.
+    let mediaR2Key = payload.mediaR2Key || null;
+    if (!mediaR2Key && payload.mediaPath) {
+      mediaR2Key = await backupMediaToR2(payload.mediaPath);
+      if (mediaR2Key) console.log('[workflowQueue] media backed up to R2:', mediaR2Key);
+    }
 
     let queued = 0;
     for (const wf of matched) {
@@ -97,8 +144,8 @@ async function enqueueDownstreamPublishes(userId, sourceConnectionId, payload = 
           sourceType: payload.sourceType || 'post',
           text: payload.text || payload.description || '',
           caption: payload.caption || payload.text || payload.description || '',
-          mediaR2Key: payload.mediaR2Key || null,
-          mediaFilename: payload.mediaFilename || null,
+          mediaR2Key: mediaR2Key,
+          mediaFilename: payload.mediaFilename || (payload.mediaPath ? path.basename(payload.mediaPath) : null),
           mediaPath: payload.mediaPath || null,
           extras: payload.extras || null
         }
