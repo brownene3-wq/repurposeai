@@ -16,6 +16,42 @@ if (!fs.existsSync(WORKFLOW_TEMP_DIR)) {
   fs.mkdirSync(WORKFLOW_TEMP_DIR, { recursive: true });
 }
 
+// ffmpeg detection — same fallback chain routes/shorts.js uses. Needed
+// by publishPinterest below to extract a poster frame from a video clip
+// when the sourceItem doesn't carry an explicit thumbnail URL.
+let __ffmpegPath = null;
+try {
+  const localFfmpeg = path.join(__dirname, '..', 'bin', 'ffmpeg');
+  if (fs.existsSync(localFfmpeg)) __ffmpegPath = localFfmpeg;
+} catch (_) {}
+if (!__ffmpegPath) { try { __ffmpegPath = require('ffmpeg-static'); } catch (_) {} }
+if (!__ffmpegPath) {
+  try { require('child_process').execSync('which ffmpeg', { stdio: 'pipe' }); __ffmpegPath = 'ffmpeg'; }
+  catch (_) {}
+}
+
+// Extract a single still frame from a video at `atSec` seconds → JPEG
+// at outPath. Resolves on success, rejects on ffmpeg error/timeout.
+function extractPosterFrame(sourcePath, atSec, outPath) {
+  return new Promise((resolve, reject) => {
+    if (!__ffmpegPath) return reject(new Error('ffmpeg not available on this server'));
+    const args = ['-y', '-ss', String(Math.max(0, atSec)), '-i', sourcePath,
+                  '-frames:v', '1', '-q:v', '4', '-f', 'image2', outPath];
+    const proc = spawn(__ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', e => settle(reject, e));
+    proc.on('close', code => code === 0 ? settle(resolve)
+      : settle(reject, new Error('ffmpeg poster-frame exit ' + code + ': ' + stderr.slice(-200))));
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      settle(reject, new Error('ffmpeg poster-frame timeout (15s)'));
+    }, 15000);
+  });
+}
+
 function getYoutubeCookiesArgs() {
   const p = process.env.YT_COOKIES_PATH;
   if (p && require('fs').existsSync(p)) return ['--cookies', p];
@@ -213,6 +249,47 @@ async function refreshTokenIfNeeded(account) {
         });
         console.log(`[WorkflowEngine] Refreshed Twitter token for account ${account.id}`);
         return { ...account, access_token: newTokenData.body.access_token, token_expires_at: newExpiresAt };
+      }
+    } else if (platform === 'pinterest') {
+      // Pinterest v5 OAuth uses HTTP Basic auth with client_id:client_secret
+      // (base64) instead of posting them in the body. Same pattern
+      // routes/pinterest.js (refreshPinterestToken) already uses for
+      // the connect flow's per-user token; mirror it here so the
+      // unified publish path also refreshes instead of 401-ing.
+      const cid = process.env.PINTEREST_CLIENT_ID || '';
+      const csec = process.env.PINTEREST_CLIENT_SECRET || '';
+      if (!cid || !csec) {
+        console.warn('[WorkflowEngine] Pinterest refresh: PINTEREST_CLIENT_ID/SECRET not set, skipping');
+      } else {
+        const basicAuth = Buffer.from(cid + ':' + csec).toString('base64');
+        newTokenData = await httpsPost(
+          'https://api.pinterest.com/v5/oauth/token',
+          { grant_type: 'refresh_token', refresh_token: account.refresh_token },
+          { Authorization: 'Basic ' + basicAuth }
+        );
+        // httpsPost returns either { body } or a parsed body depending on
+        // shape. Normalize.
+        const body = newTokenData.body || newTokenData;
+        const parsed = typeof body === 'string'
+          ? (() => { try { return JSON.parse(body); } catch (_) { return {}; } })()
+          : body;
+        if (parsed && parsed.access_token) {
+          const expiresIn = parsed.expires_in || 2592000; // 30 days default
+          const newExpiresAt = new Date(Date.now() + (expiresIn * 1000));
+          await connectedAccountOps.update(account.id, {
+            accessToken: parsed.access_token,
+            refreshToken: parsed.refresh_token || account.refresh_token,
+            tokenExpiresAt: newExpiresAt
+          });
+          console.log(`[WorkflowEngine] Refreshed Pinterest token for account ${account.id}`);
+          return { ...account,
+                   access_token: parsed.access_token,
+                   refresh_token: parsed.refresh_token || account.refresh_token,
+                   token_expires_at: newExpiresAt };
+        } else {
+          console.warn('[WorkflowEngine] Pinterest refresh: no access_token in response —',
+                       JSON.stringify(parsed || {}).slice(0, 200));
+        }
       }
     }
   } catch (err) {
@@ -542,6 +619,8 @@ async function publishToDestination(workflow, destAccount, sourceItem, mediaPath
       return await publishLinkedIn(destAccount, sourceItem, mediaPath);
     } else if (platform === 'pinterest') {
       return await publishPinterest(destAccount, sourceItem, mediaPath);
+    } else if (platform === 'threads') {
+      return await publishThreads(destAccount, sourceItem, mediaPath);
     } else {
       throw new Error(`Unsupported destination platform: ${platform}`);
     }
@@ -1077,7 +1156,23 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
       'https://api.pinterest.com/v5/boards?page_size=25',
       { Authorization: `Bearer ${accessToken}` }
     );
-    const boards = boardsResponse.items || boardsResponse.data || [];
+    // httpsGet returns { status, headers, body }. Bug: previous code
+    // read boardsResponse.items / .data directly off the wrapper, which
+    // were always undefined — so 'boards' was always [] and triggered
+    // a false 'no boards' error even when the user had plenty.
+    // Pinterest v5's response shape is { items, bookmark }; fall back
+    // through a couple of legacy/defensive keys just in case.
+    const body = (boardsResponse && boardsResponse.body) || {};
+    const parsed = typeof body === 'string'
+      ? (() => { try { return JSON.parse(body); } catch (_) { return {}; } })()
+      : body;
+    // Bug 2: never checked status. A 401/403 would silently slip through
+    // and look like 'no boards'. Surface the real API error.
+    if (boardsResponse.status && (boardsResponse.status < 200 || boardsResponse.status >= 300)) {
+      const detail = parsed && (parsed.message || parsed.error_message || parsed.error || JSON.stringify(parsed).slice(0, 250));
+      throw new Error('Pinterest boards lookup failed (HTTP ' + boardsResponse.status + '): ' + (detail || 'no detail'));
+    }
+    const boards = parsed.items || parsed.data || [];
     if (!boards.length) {
       throw new Error('Pinterest has no boards on the connected account. Create at least one board on pinterest.com, then retry the publish.');
     }
@@ -1086,25 +1181,49 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
   }
 
   // Build the pin payload using the v5 media_source structure.
-  // For repurposed-video content we post the thumbnail image with a link
-  // back to the source video — this is the standard Pinterest pattern for
-  // driving traffic from a Pin to long-form content. Native Pinterest
-  // video upload uses a separate multi-step /v5/media flow (register →
-  // S3 upload → wait → create pin with video_id) which we can wire up
-  // later once Pinterest's Standard tier is approved.
-  const imageUrl = sourceItem.thumbnail || sourceItem.image_url;
-  if (!imageUrl) {
-    throw new Error('Pinterest publish: source item has no thumbnail/image URL — cannot build the pin media.');
+  //
+  // Pinterest's image-source choices:
+  //   • source_type:'image_url'    → needs a publicly accessible URL
+  //   • source_type:'image_base64' → inline JPEG bytes, no hosting
+  //
+  // We prefer image_base64 when the caller passes a local mediaPath
+  // (the Library Clips flow sends a .mp4 on /tmp). When the sourceItem
+  // already carries a thumbnail URL we use that. When neither is
+  // present, we error out clearly.
+  let mediaSource = null;
+  let tempPosterPath = null;
+  const explicitImageUrl = sourceItem.thumbnail || sourceItem.image_url;
+  if (explicitImageUrl) {
+    mediaSource = { source_type: 'image_url', url: explicitImageUrl };
+  } else if (mediaPath && fs.existsSync(mediaPath)) {
+    try {
+      tempPosterPath = path.join(WORKFLOW_TEMP_DIR, 'pin-poster-' + uuidv4() + '.jpg');
+      // Take the frame around the 1-second mark so we don't get a
+      // black/blank opening frame.
+      await extractPosterFrame(mediaPath, 1.0, tempPosterPath);
+      if (!fs.existsSync(tempPosterPath) || fs.statSync(tempPosterPath).size < 1024) {
+        throw new Error('extracted poster is empty');
+      }
+      const bytes = fs.readFileSync(tempPosterPath);
+      mediaSource = {
+        source_type: 'image_base64',
+        content_type: 'image/jpeg',
+        data: bytes.toString('base64')
+      };
+      console.log(`[WorkflowEngine] Pinterest: posted poster frame from ${path.basename(mediaPath)} (${bytes.length} bytes)`);
+    } catch (extractErr) {
+      if (tempPosterPath) { try { fs.unlinkSync(tempPosterPath); } catch (_) {} tempPosterPath = null; }
+      throw new Error('Pinterest publish: could not derive a pin image from the video (' + extractErr.message + '). Provide sourceItem.thumbnail or wire native video upload.');
+    }
+  } else {
+    throw new Error('Pinterest publish: source item has no thumbnail/image URL and no video mediaPath was provided — cannot build the pin media.');
   }
 
   const pinPayload = {
     board_id: boardId,
     title: String(sourceItem.title || 'Untitled Pin').slice(0, 100),
     description: String(sourceItem.description || '').slice(0, 500),
-    media_source: {
-      source_type: 'image_url',
-      url: imageUrl
-    }
+    media_source: mediaSource
   };
   const linkUrl = sourceItem.url || sourceItem.link;
   if (linkUrl) pinPayload.link = linkUrl;
@@ -1115,13 +1234,29 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
     { Authorization: `Bearer ${accessToken}` }
   );
 
+  // Best-effort cleanup of the temp poster regardless of whether the
+  // API call succeeded — we never want to leak files on /tmp.
+  if (tempPosterPath) {
+    try { fs.unlinkSync(tempPosterPath); } catch (_) {}
+  }
+
   // Surface the real Pinterest API error so debugging isn't a black box.
   const body = response.body || {};
   if (!body.id) {
     const status = response.status || 0;
     const reason = body.message || body.error_description || body.error || (typeof body === 'string' ? body : JSON.stringify(body).slice(0, 300));
     if (status === 401 || status === 403) {
-      throw new Error('Pinterest authentication failed (status ' + status + '). Reconnect Pinterest on /distribute/connections.');
+      // Surface refresh diagnostics so the user knows why this is
+      // happening — refresh disabled? refresh failed? token rotted?
+      let suffix = '';
+      if (destAccount.__refreshError) {
+        suffix = ' Token refresh attempted but failed (' + destAccount.__refreshError + '). Reconnect Pinterest on /distribute/connections.';
+      } else if (destAccount.__refreshAttempted) {
+        suffix = ' Token was refreshed but the new token was still rejected — your Pinterest app permissions may have changed. Reconnect Pinterest.';
+      } else {
+        suffix = ' Reconnect Pinterest on /distribute/connections so we can get a fresh access token.';
+      }
+      throw new Error('Pinterest authentication failed (status ' + status + ').' + suffix);
     }
     throw new Error('Pinterest pin creation failed (status ' + status + '): ' + reason);
   }
@@ -1162,6 +1297,19 @@ async function processWorkflow(workflow) {
         if (alreadyQueued) {
           console.log(`[WorkflowEngine] Content ${sourceItem.id} already queued, skipping`);
           continue;
+        }
+
+        // Delay gate — honour workflow.delay_hours for external sources.
+        // If the item was published less than delay_hours ago, skip it
+        // this tick; we'll pick it up on a subsequent tick once the
+        // delay has elapsed.
+        const delayHrs = Number(workflow.delay_hours) || 0;
+        if (delayHrs > 0 && sourceItem.publishedAt) {
+          const ageMs = Date.now() - new Date(sourceItem.publishedAt).getTime();
+          if (ageMs < delayHrs * 60 * 60 * 1000) {
+            console.log(`[WorkflowEngine] Content ${sourceItem.id} too fresh (${(ageMs / 60000).toFixed(1)}m old, needs ${delayHrs}h), skipping this tick`);
+            continue;
+          }
         }
 
         // Download media
@@ -1238,15 +1386,124 @@ async function getActiveWorkflows() {
   }
 }
 
+// Process the internal scheduled queue.
+//
+// Splicora publishes (Library Posts > Publish to…, Smart Shorts >
+// Publish, Video Editor > Publish) insert a content_queue row with
+// status='scheduled' and scheduled_at = now + workflow.delay_hours
+// via utils/workflowQueue's enqueueDownstreamPublishes(). On every
+// cron tick we pull rows whose time has come and republish them to
+// each workflow's destination. This gives the user the
+// LinkedIn-publish → 1h delay → Pinterest-republish behaviour
+// without ever needing to poll LinkedIn (or any other source
+// platform) for new content.
+async function processScheduledQueue() {
+  let dbMod;
+  try { dbMod = require('../db/database'); }
+  catch (_) { return; }
+  if (!dbMod || !dbMod.contentQueueOps || !dbMod.connectedAccountOps) return;
+
+  let due = [];
+  try { due = await dbMod.contentQueueOps.getScheduled(); }
+  catch (e) { console.error('[WorkflowEngine] getScheduled failed:', e.message); return; }
+
+  if (!due.length) return;
+  console.log(`[WorkflowEngine] Scheduled queue: ${due.length} due item(s)`);
+
+  for (const row of due) {
+    let workflow;
+    try {
+      const wfRes = await getDb().query('SELECT * FROM workflows WHERE id = $1', [row.workflow_id]);
+      workflow = wfRes.rows[0];
+    } catch (e) { console.error('[WorkflowEngine] workflow lookup failed:', e.message); continue; }
+    if (!workflow || !workflow.is_active || !workflow.auto_publish) {
+      await dbMod.contentQueueOps.updateStatus(row.id, 'cancelled', 'Workflow inactive');
+      continue;
+    }
+
+    let destAccount;
+    try { destAccount = await dbMod.connectedAccountOps.getById(workflow.destination_account_id); }
+    catch (e) { console.error('[WorkflowEngine] dest lookup failed:', e.message); continue; }
+    if (!destAccount) {
+      await dbMod.contentQueueOps.updateStatus(row.id, 'failed', 'Destination account missing');
+      continue;
+    }
+
+    const refreshedDest = await refreshTokenIfNeeded(destAccount);
+    const meta = (typeof row.metadata === 'string')
+      ? (() => { try { return JSON.parse(row.metadata); } catch (_) { return {}; } })()
+      : (row.metadata || {});
+
+    const syntheticWorkflow = {
+      id: workflow.id,
+      destination_platform: workflow.destination_platform,
+      settings: workflow.settings || {}
+    };
+    const sourceItem = {
+      id: row.source_video_id || row.id,
+      title: row.title || meta.title || 'Cross-published post',
+      description: row.description || meta.description || meta.text || '',
+      caption: meta.caption || meta.text || row.description || '',
+      thumbnail: row.thumbnail_url || null,
+      url: row.source_url || null,
+      platform: workflow.source_platform,
+      publishedAt: new Date(row.created_at)
+    };
+
+    // Resolve a media path. If the original publish had a file on /tmp
+    // it's likely been wiped (Railway). When the row carries a
+    // mediaR2Key we restore it; otherwise the destination publisher
+    // takes its text-only branch.
+    let mediaPath = null;
+    if (meta.mediaPath && fs.existsSync(meta.mediaPath)) {
+      mediaPath = meta.mediaPath;
+    } else if (meta.mediaR2Key) {
+      try {
+        const r2 = require('../utils/r2');
+        if (r2 && r2.isConfigured && r2.isConfigured()) {
+          const got = await r2.getObject(meta.mediaR2Key);
+          if (got && got.ok && got.body && meta.mediaFilename) {
+            const restored = path.join(WORKFLOW_TEMP_DIR, 'requeue-' + meta.mediaFilename);
+            fs.writeFileSync(restored, got.body);
+            mediaPath = restored;
+          }
+        }
+      } catch (rErr) { console.warn('[WorkflowEngine] R2 restore failed:', rErr.message); }
+    }
+
+    try {
+      console.log(`[WorkflowEngine] Republishing queue item ${row.id} -> ${workflow.destination_platform} (workflow ${workflow.id})`);
+      const pubResult = await publishToDestination(syntheticWorkflow, refreshedDest, sourceItem, mediaPath);
+      await dbMod.contentQueueOps.updateStatus(row.id, 'published', null);
+      await workflowOps.incrementPostCount(workflow.id);
+      // Clean up restored media.
+      if (mediaPath && mediaPath.startsWith(WORKFLOW_TEMP_DIR)) {
+        try { fs.unlinkSync(mediaPath); } catch (_) {}
+      }
+    } catch (pubErr) {
+      console.error(`[WorkflowEngine] Republish failed for queue ${row.id}:`, pubErr.message);
+      await dbMod.contentQueueOps.updateStatus(row.id, 'failed', pubErr.message);
+    }
+  }
+}
+
 // Main polling loop
 async function startWorkflowEngine() {
   console.log('[WorkflowEngine] Starting workflow engine (polling every 60 seconds)');
 
   setInterval(async () => {
     try {
+      // First: the user-triggered scheduled queue (the new path that
+      // backs the Library Posts > Publish to… → workflow delay →
+      // destination flow).
+      try { await processScheduledQueue(); }
+      catch (e) { console.error('[WorkflowEngine] processScheduledQueue:', e.message); }
+
+      // Then: legacy external-source workflows (poll YouTube/IG/etc.
+      // and republish anything new past the configured delay).
       const workflows = await getActiveWorkflows();
       if (workflows.length === 0) {
-        console.log('[WorkflowEngine] No active workflows to process');
+        console.log('[WorkflowEngine] No active external-source workflows to process');
         return;
       }
 
@@ -1262,6 +1519,46 @@ async function startWorkflowEngine() {
   }, POLL_INTERVAL);
 }
 
+// Threads publisher (Meta Threads API v1.0). Two-step flow:
+//   1) POST /{user-id}/threads with media_type=TEXT + text → returns
+//      a creation_id (media container)
+//   2) POST /{user-id}/threads_publish with creation_id → returns the
+//      final post id
+// Same shape routes/threads.js already documents for the API test
+// endpoint. mediaPath is currently ignored — Threads native media
+// upload uses a separate IMAGE/VIDEO container flow which we can
+// wire later. Text-only covers Library Posts and the Repurpose flow.
+async function publishThreads(destAccount, sourceItem, mediaPath) {
+  const accessToken = destAccount.access_token;
+  const userId = destAccount.platform_user_id;
+  if (!userId) throw new Error('No Threads user id on the connected account.');
+  const text = (sourceItem.description || sourceItem.caption || sourceItem.title || '').slice(0, 500).trim();
+  if (!text) throw new Error('Threads requires text to post.');
+
+  // Step 1: create a TEXT media container.
+  const createResp = await httpsPost(
+    `https://graph.threads.net/v1.0/${userId}/threads`,
+    { media_type: 'TEXT', text: text, access_token: accessToken }
+  );
+  const creationId = createResp && createResp.body && (createResp.body.id || (typeof createResp.body === 'string' && (() => { try { return JSON.parse(createResp.body).id; } catch (_) { return null; } })()));
+  if (!creationId) {
+    const detail = JSON.stringify((createResp && createResp.body) || {}).slice(0, 300);
+    throw new Error('Threads container create failed: ' + detail);
+  }
+
+  // Step 2: publish the container.
+  const pubResp = await httpsPost(
+    `https://graph.threads.net/v1.0/${userId}/threads_publish`,
+    { creation_id: creationId, access_token: accessToken }
+  );
+  const postId = pubResp && pubResp.body && (pubResp.body.id || (typeof pubResp.body === 'string' && (() => { try { return JSON.parse(pubResp.body).id; } catch (_) { return null; } })()));
+  if (!postId) {
+    const detail = JSON.stringify((pubResp && pubResp.body) || {}).slice(0, 300);
+    throw new Error('Threads publish failed: ' + detail);
+  }
+  return { platform: 'threads', postId };
+}
+
 module.exports = {
   startWorkflowEngine,
   publishToDestination,
@@ -1272,5 +1569,6 @@ module.exports = {
   publishFacebook,
   publishLinkedIn,
   publishPinterest,
+  publishThreads,
   refreshTokenIfNeeded
 };

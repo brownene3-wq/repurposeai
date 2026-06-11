@@ -1864,7 +1864,7 @@ router.get('/', requireAuth, (req, res) => {
               <div class="result-content">\${escapeHtml(content)}</div>
               <div class="result-actions">
                 <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
-                \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
+                <button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>
                 <button class="icon-btn" onclick="regenerate('\${contentId}', '\${platform}')"><img src="/images/section-icons/A-83.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Regenerate</button>
               </div>
             \`;
@@ -1900,7 +1900,7 @@ router.get('/', requireAuth, (req, res) => {
             <div class="result-content">\${escapeHtml(content)}</div>
             <div class="result-actions">
               <button class="icon-btn copy-btn" data-content="\${btoa(unescape(encodeURIComponent(content)))}"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Copy</button>
-              \${['Twitter', 'LinkedIn', 'Facebook'].includes(platform) ? \`<button class="icon-btn" onclick="shareContent('\${platform}', '\${btoa(unescape(encodeURIComponent(content)))}')"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Share</button>\` : ''}
+              <button class="icon-btn" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border-color:transparent" data-content-id="\${contentId}" data-output-id="\${output.id || ''}" data-platform="\${platform.toLowerCase()}" data-text-b64="\${btoa(unescape(encodeURIComponent(content)))}" onclick="openRpPublishModal(this)">✈️ Publish to…</button>
             </div>
           \`;
           grid.appendChild(card);
@@ -1915,44 +1915,235 @@ router.get('/', requireAuth, (req, res) => {
           });
         }
 
-        function shareContent(platform, encodedContent) {
-          const text = decodeURIComponent(escape(atob(encodedContent)));
-          const encoded = encodeURIComponent(text);
-          let url = '';
-
-          switch(platform) {
-            case 'Twitter':
-              url = 'https://twitter.com/intent/tweet?text=' + encoded;
-              break;
-            case 'LinkedIn':
-              url = 'https://www.linkedin.com/sharing/share-offsite/?url=&summary=' + encoded;
-              break;
-            case 'Facebook':
-              url = 'https://www.facebook.com/sharer/sharer.php?quote=' + encoded;
-              break;
-            default:
-              // For Instagram, TikTok, YouTube, Blog — copy to clipboard instead
-              navigator.clipboard.writeText(text).then(() => {
-                const feedback = document.getElementById('successFeedback');
-                feedback.textContent = '✓ Copied! Now paste it in ' + platform;
-                feedback.classList.add('show');
-                setTimeout(() => {
-                  feedback.classList.remove('show');
-                  feedback.textContent = '✓ Copied to clipboard!';
-                }, 3000);
-              });
-              return;
-          }
-
-          window.open(url, '_blank', 'width=600,height=500');
-        }
-
         function copyToClipboard(text) {
           navigator.clipboard.writeText(text).then(() => {
             const feedback = document.getElementById('successFeedback');
             feedback.classList.add('show');
             setTimeout(() => feedback.classList.remove('show'), 2000);
           });
+        }
+
+        // ── Publish Generated Post modal ────────────────────────────
+        // Mirrors the rpPublishModal used on /repurpose/history > Posts
+        // so users can publish a Create result directly to their
+        // connected text-capable accounts (Twitter/X, LinkedIn,
+        // Facebook, Threads). Uses the same backend endpoint:
+        // POST /repurpose/api/publish-output.
+        function ensureRpPublishModal(){
+          if (document.getElementById('rpPublishModal')) return;
+          var div = document.createElement('div');
+          div.id = 'rpPublishModal';
+          div.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;align-items:center;justify-content:center;padding:20px;';
+          div.addEventListener('click', function(e){ if (e.target === div) closeRpPublishModal(); });
+          div.innerHTML = '\
+          <div style="background:#16112a;border:1px solid rgba(108,58,237,0.30);border-radius:16px;width:100%;max-width:520px;padding:24px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e2e0f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif">\
+            <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">✈️ Publish Generated Post</h3>\
+            <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
+            <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
+            <select id="rpPubAccount" onchange="rpOnAccountChange()" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;"><option value="">Loading…</option></select>\
+            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No connected accounts yet. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <div id="rpWorkflowChip" style="display:none;margin-bottom:14px;border-radius:10px;padding:10px 12px;font-size:0.78rem;line-height:1.45;letter-spacing:0.01em;"><div id="rpWorkflowChipBody"></div></div>\
+            <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
+            <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
+            <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">\
+              <button id="rpPubTabNow" type="button" onclick="setRpPubMode(\\'now\\')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>\
+              <button id="rpPubTabLater" type="button" onclick="setRpPubMode(\\'later\\')" style="flex:1;background:transparent;color:#8e87b0;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Schedule for later</button>\
+            </div>\
+            <div id="rpPubLater" style="display:none;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Date</label><input type="date" id="rpPubDate" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div><div><label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Time</label><input type="time" id="rpPubTime" value="12:00" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;outline:none;"></div></div></div>\
+            <div id="rpPubStatus" style="display:none;background:rgba(108,58,237,0.10);border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;"></div>\
+            <div style="display:flex;justify-content:flex-end;gap:8px;"><button onclick="closeRpPublishModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.15);color:#e2e0f0;padding:0.5rem 1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Cancel</button><button id="rpPubSubmit" onclick="submitRpPublish()" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;">Publish</button></div>\
+          </div>';
+          document.body.appendChild(div);
+        }
+        var _rpPubMode = 'now';
+        var _rpPubCtx = { contentId: null, outputId: null, platform: null };
+        // openRpPublishModal supports two call shapes:
+        //   • btn with .output-card parent (the /history flow)
+        //   • btn with data-platform + data-text-b64 attributes
+        //     (Create-page result cards — no .output-card wrapper)
+        async function openRpPublishModal(btn){
+          var contentId = btn && btn.dataset ? btn.dataset.contentId : null;
+          var outputId  = btn && btn.dataset && btn.dataset.outputId ? btn.dataset.outputId : null;
+          ensureRpPublishModal();
+          var platform = '';
+          var text = '';
+          var card = btn && btn.closest && btn.closest('.output-card');
+          if (card) {
+            platform = (card.dataset && card.dataset.platform || '').toLowerCase();
+            text = (card.querySelector('.output-text') && card.querySelector('.output-text').textContent) || '';
+          } else if (btn && btn.dataset && btn.dataset.platform) {
+            platform = String(btn.dataset.platform).toLowerCase();
+            if (btn.dataset.textB64) {
+              try { text = decodeURIComponent(escape(atob(btn.dataset.textB64))); } catch (_) {}
+            }
+          }
+          _rpPubCtx = { contentId: contentId, outputId: outputId, platform: platform };
+          document.getElementById('rpPubText').value = text;
+          document.getElementById('rpPubSub').textContent = platform ? ('Source platform: ' + platform) : 'Pick a connected account.';
+          var d = new Date(); d.setMinutes(d.getMinutes() + 60);
+          document.getElementById('rpPubDate').value = d.toISOString().slice(0, 10);
+          document.getElementById('rpPubTime').value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+          document.getElementById('rpPubStatus').style.display = 'none';
+          setRpPubMode('now');
+          document.getElementById('rpPublishModal').style.display = 'flex';
+
+          var sel = document.getElementById('rpPubAccount');
+          var noAcct = document.getElementById('rpPubNoAcct');
+          sel.innerHTML = '<option value="">Loading…</option>';
+          try {
+            var r = await fetch('/api/connections', { credentials: 'same-origin' });
+            var j = await r.json();
+            var accounts = (j && j.accounts) || [];
+            // Show every connected account. publishToConnection in
+            // utils/connections.js routes per platform — image/video-only
+            // destinations will surface their own error if the text-only
+            // post is rejected.
+            accounts = accounts.filter(function(c){ return !!c && !!c.platform; });
+            if (platform) {
+              accounts.sort(function(a, b){
+                if (a.platform === platform && b.platform !== platform) return -1;
+                if (b.platform === platform && a.platform !== platform) return 1;
+                return 0;
+              });
+            }
+            if (accounts.length === 0) {
+              sel.style.display = 'none';
+              noAcct.style.display = 'block';
+            } else {
+              sel.style.display = '';
+              noAcct.style.display = 'none';
+              sel.innerHTML = accounts.map(function(c){
+                return '<option value="' + c.id + '">' + (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' — ' + (c.accountName || c.platformUsername || c.id) + '</option>';
+              }).join('');
+              // Refresh the workflow chip for the auto-selected first option.
+              rpOnAccountChange();
+            }
+          } catch(e){
+            sel.innerHTML = '<option value="">Failed to load accounts</option>';
+          }
+        }
+        // ── Workflow status chip ─────────────────────────────────────
+        // Same pattern as the Smart Shorts + Video Editor publish
+        // modals. Reuses the /distribute/api/workflows-by-source/<id>
+        // endpoint already shipped with those. Prefixed _rp to avoid
+        // colliding with their identifiers if multiple modals share
+        // the dashboard session.
+        var _rpWfCache = {};
+        function rpOnAccountChange() {
+          var sel = document.getElementById('rpPubAccount');
+          var chip = document.getElementById('rpWorkflowChip');
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!sel || !chip || !body) return;
+          var connectionId = sel.value;
+          if (!connectionId) { chip.style.display = 'none'; return; }
+          if (_rpWfCache[connectionId]) { _rpRenderWfChip(_rpWfCache[connectionId]); return; }
+          _rpSetWfChipTone('neutral');
+          body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#8e87b0;"><div style="width:10px;height:10px;border:2px solid rgba(255,255,255,0.18);border-top-color:#a78bfa;border-radius:50%;animation:spin 0.7s linear infinite;"></div><span>Checking workflows for this account...</span></div>';
+          chip.style.display = 'block';
+          fetch('/distribute/api/workflows-by-source/' + encodeURIComponent(connectionId), { credentials: 'same-origin' })
+            .then(function(r){ return r.ok ? r.json() : { workflows: [] }; })
+            .then(function(data){ var wfs = (data && data.workflows) || []; _rpWfCache[connectionId] = wfs; _rpRenderWfChip(wfs); })
+            .catch(function(){ _rpWfCache[connectionId] = []; _rpRenderWfChip([]); });
+        }
+        function _rpSetWfChipTone(tone) {
+          var chip = document.getElementById('rpWorkflowChip');
+          if (!chip) return;
+          if (tone === 'active') { chip.style.background = 'rgba(0,184,148,0.10)'; chip.style.border = '1px solid rgba(0,184,148,0.35)'; chip.style.color = '#a3e8c8'; }
+          else if (tone === 'none') { chip.style.background = 'rgba(108,58,237,0.10)'; chip.style.border = '1px solid rgba(108,58,237,0.30)'; chip.style.color = '#d8c9ff'; }
+          else { chip.style.background = 'rgba(255,255,255,0.04)'; chip.style.border = '1px solid rgba(255,255,255,0.08)'; chip.style.color = '#8e87b0'; }
+        }
+        function _rpFmtDelay(w) {
+          if (w.delayMode === 'immediate' || !w.delayHours) return 'immediately after this post';
+          var h = w.delayHours;
+          if (h < 1) return 'shortly after this post';
+          if (h === 1) return '1 hour after this post';
+          if (h < 24) return h + ' hours after this post';
+          var days = Math.round(h / 24);
+          return days === 1 ? '1 day after this post' : days + ' days after this post';
+        }
+        function _rpCapPlatform(p) {
+          if (!p) return 'another platform';
+          var map = { youtube:'YouTube', tiktok:'TikTok', instagram:'Instagram', facebook:'Facebook', twitter:'X (Twitter)', linkedin:'LinkedIn', pinterest:'Pinterest', threads:'Threads', bluesky:'Bluesky', snapchat:'Snapchat' };
+          return map[p] || (p.charAt(0).toUpperCase() + p.slice(1));
+        }
+        function _rpEscAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function _rpRenderWfChip(workflows) {
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!body) return;
+          if (workflows && workflows.length) {
+            _rpSetWfChipTone('active');
+            var lines = workflows.map(function(w) {
+              var dest = _rpCapPlatform(w.destinationPlatform);
+              var user = w.destinationUsername ? ('@' + w.destinationUsername) : '';
+              var when = _rpFmtDelay(w);
+              var name = w.name ? (' - <em style="font-style:normal;color:#fff;font-weight:600;">' + _rpEscAttr(w.name) + '</em>') : '';
+              return '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Will also publish to <strong style="color:#fff;">' + dest + (user ? ' (' + _rpEscAttr(user) + ')' : '') + '</strong> ' + when + name + '.</span></div>';
+            }).join('');
+            body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#9be3b9;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span>Active workflow triggered by this account</span></div>' + lines;
+          } else {
+            _rpSetWfChipTone('none');
+            body.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><div style="font-weight:600;color:#d8c9ff;margin-bottom:2px;">No workflow set for this account yet.</div><div style="color:#8e87b0;">Want this post auto-republished elsewhere? <a href="/distribute" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline;font-weight:600;">Set up a workflow</a> on the Repurpose page - then every future publish here will fire it.</div></div></div>';
+          }
+        }
+        function closeRpPublishModal(){ var m = document.getElementById('rpPublishModal'); if (m) m.style.display = 'none'; }
+        function setRpPubMode(mode){
+          _rpPubMode = mode;
+          var nowBtn = document.getElementById('rpPubTabNow');
+          var laterBtn = document.getElementById('rpPubTabLater');
+          var laterFields = document.getElementById('rpPubLater');
+          var submitBtn = document.getElementById('rpPubSubmit');
+          if (mode === 'now') {
+            nowBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; nowBtn.style.color = '#fff';
+            laterBtn.style.background = 'transparent'; laterBtn.style.color = '#8e87b0';
+            laterFields.style.display = 'none';
+            submitBtn.textContent = 'Publish now';
+          } else {
+            laterBtn.style.background = 'linear-gradient(135deg,#6C3AED,#EC4899)'; laterBtn.style.color = '#fff';
+            nowBtn.style.background = 'transparent'; nowBtn.style.color = '#8e87b0';
+            laterFields.style.display = 'block';
+            submitBtn.textContent = 'Schedule';
+          }
+        }
+        async function submitRpPublish(){
+          var btn = document.getElementById('rpPubSubmit');
+          var statusEl = document.getElementById('rpPubStatus');
+          var connectionId = document.getElementById('rpPubAccount').value;
+          if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
+          var text = document.getElementById('rpPubText').value.trim();
+          if (!text) { statusEl.style.display = 'block'; statusEl.textContent = 'Post body is empty.'; return; }
+          var payload = {
+            contentId: _rpPubCtx.contentId,
+            outputId: _rpPubCtx.outputId,
+            connectionId: connectionId,
+            text: text
+          };
+          if (_rpPubMode === 'later') {
+            var d = document.getElementById('rpPubDate').value;
+            var t = document.getElementById('rpPubTime').value || '12:00';
+            if (!d) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick a date and time.'; return; }
+            payload.scheduledAt = d + 'T' + t + ':00';
+          }
+          btn.disabled = true; var orig = btn.textContent;
+          btn.textContent = _rpPubMode === 'now' ? 'Publishing…' : 'Scheduling…';
+          statusEl.style.display = 'block';
+          statusEl.textContent = _rpPubMode === 'now' ? 'Posting…' : 'Saving the scheduled post…';
+          try {
+            var resp = await fetch('/repurpose/api/publish-output', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            var data = await resp.json();
+            if (!resp.ok || !data.success) throw new Error(data.error || 'Failed');
+            statusEl.textContent = _rpPubMode === 'now'
+              ? ('Posted to ' + (data.platform || 'platform'))
+              : ('Scheduled for ' + (data.scheduledFor || payload.scheduledAt));
+            setTimeout(closeRpPublishModal, 1500);
+          } catch(e){
+            statusEl.textContent = 'Error: ' + e.message;
+          } finally {
+            btn.disabled = false; btn.textContent = orig;
+          }
         }
 
         function showLoading() {
@@ -3338,8 +3529,9 @@ router.get('/history', requireAuth, (req, res) => {
             <h3 style="margin:0 0 4px;font-size:1.1rem;display:flex;align-items:center;gap:8px;">✈️ Publish Generated Post</h3>\
             <div id="rpPubSub" style="color:#8e87b0;font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>\
-            <select id="rpPubAccount" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;"><option value="">Loading…</option></select>\
-            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No text-capable accounts connected. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <select id="rpPubAccount" onchange="rpOnAccountChange()" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;"><option value="">Loading…</option></select>\
+            <div id="rpPubNoAcct" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">No connected accounts yet. <a href="/distribute/connections" target="_blank" style="background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;display:inline-block;margin-top:6px">Connect →</a></div>\
+            <div id="rpWorkflowChip" style="display:none;margin-bottom:14px;border-radius:10px;padding:10px 12px;font-size:0.78rem;line-height:1.45;letter-spacing:0.01em;"><div id="rpWorkflowChipBody"></div></div>\
             <label style="display:block;font-size:0.72rem;color:#8e87b0;margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Post text</label>\
             <textarea id="rpPubText" rows="6" style="width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:10px 12px;color:#e2e0f0;font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:120px;"></textarea>\
             <div style="display:flex;gap:8px;margin-bottom:14px;background:#0f0a1f;border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">\
@@ -3379,8 +3571,11 @@ router.get('/history', requireAuth, (req, res) => {
             var j = await r.json();
             var accounts = (j && j.accounts) || [];
             // Text-only-capable platforms today.
-            var supported = ['twitter','linkedin','facebook'];
-            accounts = accounts.filter(function(c){ return supported.indexOf(c.platform) !== -1; });
+            // Show every connected account. publishToConnection in
+            // utils/connections.js routes per platform — image/video-only
+            // destinations will surface their own error if the text-only
+            // post is rejected.
+            accounts = accounts.filter(function(c){ return !!c && !!c.platform; });
             // Prefer matching the source platform first.
             if (platform) {
               accounts.sort(function(a, b){
@@ -3398,9 +3593,74 @@ router.get('/history', requireAuth, (req, res) => {
               sel.innerHTML = accounts.map(function(c){
                 return '<option value="' + c.id + '">' + (c.platform.charAt(0).toUpperCase()+c.platform.slice(1)) + ' — ' + (c.accountName || c.platformUsername || c.id) + '</option>';
               }).join('');
+              // Refresh the workflow chip for the auto-selected first option.
+              rpOnAccountChange();
             }
           } catch(e){
             sel.innerHTML = '<option value="">Failed to load accounts</option>';
+          }
+        }
+        // ── Workflow status chip ─────────────────────────────────────
+        // Same pattern as the Smart Shorts + Video Editor publish
+        // modals. Reuses the /distribute/api/workflows-by-source/<id>
+        // endpoint already shipped with those. Prefixed _rp to avoid
+        // colliding with their identifiers if multiple modals share
+        // the dashboard session.
+        var _rpWfCache = {};
+        function rpOnAccountChange() {
+          var sel = document.getElementById('rpPubAccount');
+          var chip = document.getElementById('rpWorkflowChip');
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!sel || !chip || !body) return;
+          var connectionId = sel.value;
+          if (!connectionId) { chip.style.display = 'none'; return; }
+          if (_rpWfCache[connectionId]) { _rpRenderWfChip(_rpWfCache[connectionId]); return; }
+          _rpSetWfChipTone('neutral');
+          body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#8e87b0;"><div style="width:10px;height:10px;border:2px solid rgba(255,255,255,0.18);border-top-color:#a78bfa;border-radius:50%;animation:spin 0.7s linear infinite;"></div><span>Checking workflows for this account...</span></div>';
+          chip.style.display = 'block';
+          fetch('/distribute/api/workflows-by-source/' + encodeURIComponent(connectionId), { credentials: 'same-origin' })
+            .then(function(r){ return r.ok ? r.json() : { workflows: [] }; })
+            .then(function(data){ var wfs = (data && data.workflows) || []; _rpWfCache[connectionId] = wfs; _rpRenderWfChip(wfs); })
+            .catch(function(){ _rpWfCache[connectionId] = []; _rpRenderWfChip([]); });
+        }
+        function _rpSetWfChipTone(tone) {
+          var chip = document.getElementById('rpWorkflowChip');
+          if (!chip) return;
+          if (tone === 'active') { chip.style.background = 'rgba(0,184,148,0.10)'; chip.style.border = '1px solid rgba(0,184,148,0.35)'; chip.style.color = '#a3e8c8'; }
+          else if (tone === 'none') { chip.style.background = 'rgba(108,58,237,0.10)'; chip.style.border = '1px solid rgba(108,58,237,0.30)'; chip.style.color = '#d8c9ff'; }
+          else { chip.style.background = 'rgba(255,255,255,0.04)'; chip.style.border = '1px solid rgba(255,255,255,0.08)'; chip.style.color = '#8e87b0'; }
+        }
+        function _rpFmtDelay(w) {
+          if (w.delayMode === 'immediate' || !w.delayHours) return 'immediately after this post';
+          var h = w.delayHours;
+          if (h < 1) return 'shortly after this post';
+          if (h === 1) return '1 hour after this post';
+          if (h < 24) return h + ' hours after this post';
+          var days = Math.round(h / 24);
+          return days === 1 ? '1 day after this post' : days + ' days after this post';
+        }
+        function _rpCapPlatform(p) {
+          if (!p) return 'another platform';
+          var map = { youtube:'YouTube', tiktok:'TikTok', instagram:'Instagram', facebook:'Facebook', twitter:'X (Twitter)', linkedin:'LinkedIn', pinterest:'Pinterest', threads:'Threads', bluesky:'Bluesky', snapchat:'Snapchat' };
+          return map[p] || (p.charAt(0).toUpperCase() + p.slice(1));
+        }
+        function _rpEscAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function _rpRenderWfChip(workflows) {
+          var body = document.getElementById('rpWorkflowChipBody');
+          if (!body) return;
+          if (workflows && workflows.length) {
+            _rpSetWfChipTone('active');
+            var lines = workflows.map(function(w) {
+              var dest = _rpCapPlatform(w.destinationPlatform);
+              var user = w.destinationUsername ? ('@' + w.destinationUsername) : '';
+              var when = _rpFmtDelay(w);
+              var name = w.name ? (' - <em style="font-style:normal;color:#fff;font-weight:600;">' + _rpEscAttr(w.name) + '</em>') : '';
+              return '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Will also publish to <strong style="color:#fff;">' + dest + (user ? ' (' + _rpEscAttr(user) + ')' : '') + '</strong> ' + when + name + '.</span></div>';
+            }).join('');
+            body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#9be3b9;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span>Active workflow triggered by this account</span></div>' + lines;
+          } else {
+            _rpSetWfChipTone('none');
+            body.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><div style="font-weight:600;color:#d8c9ff;margin-bottom:2px;">No workflow set for this account yet.</div><div style="color:#8e87b0;">Want this post auto-republished elsewhere? <a href="/distribute" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline;font-weight:600;">Set up a workflow</a> on the Repurpose page - then every future publish here will fire it.</div></div></div>';
           }
         }
         function closeRpPublishModal(){ var m = document.getElementById('rpPublishModal'); if (m) m.style.display = 'none'; }
@@ -3531,6 +3791,24 @@ router.post('/api/publish-output', requireAuth, async (req, res) => {
       // No mediaPath -> platform publishers take their text-only branch.
     });
     if (!result.success) return res.status(400).json(result);
+
+    // Workflow bridge — if the user has any active LinkedIn/Pinterest/
+    // etc. cross-publish workflows whose source is this connection,
+    // queue downstream entries so the cron will republish them after
+    // each workflow's configured delay_hours. Fire-and-forget so a
+    // queue hiccup never blocks the original response.
+    try {
+      const { enqueueDownstreamPublishes } = require('../utils/workflowQueue');
+      enqueueDownstreamPublishes(req.user.id, connectionId, {
+        sourceType: 'post',
+        title: (text || '').split('\n')[0].slice(0, 100),
+        description: text,
+        text: text,
+        sourceUrl: null,
+        dedupeKey: 'pubout-' + (outputId || Date.now())
+      }).catch(function(e){ console.warn('[publish-output] workflow enqueue:', e && e.message); });
+    } catch (qErr) { console.warn('[publish-output] workflow enqueue require failed:', qErr.message); }
+
     res.json({ success: true, platform: acct.platform, externalId: result.externalId || null });
   } catch (err) {
     console.error('[POST /repurpose/api/publish-output]', err.message);

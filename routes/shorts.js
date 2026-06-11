@@ -2408,6 +2408,73 @@ router.post('/generate', requireAuth, async (req, res) => {
           "hashtags": ["hashtag1", "hashtag2"],
           "postingTips": "Thread posting strategy (timing, replies, engagement)",
           "threadStructure": "Numbered outline of each tweet's purpose"
+        }`,
+
+        youtube: `Create a YouTube long-form video description + optimization based on this moment: "${moment.script}"
+
+        Generate a JSON object with:
+        {
+          "hook": "Opening line for the description (max 15 words)",
+          "script": "Full YouTube description (200-400 words with timestamps placeholder, social links, and a clear CTA)",
+          "caption": "Video title suggestion (max 60 chars, click-worthy)",
+          "hashtags": ["youtube", "tag1", "tag2"],
+          "postingTips": "YouTube SEO, end-screen, and pinned-comment strategy",
+          "thumbnailSuggestion": "High-CTR thumbnail concept"
+        }`,
+
+        facebook: `Create a Facebook post optimized for the News Feed algorithm. The moment is: "${moment.script}"
+
+        Generate a JSON object with:
+        {
+          "hook": "Scroll-stopping opening line (max 12 words)",
+          "script": "Facebook post body (100-200 words, conversational, encourages comments)",
+          "caption": "Optional caption when posting as Reel",
+          "hashtags": ["hashtag1", "hashtag2"],
+          "postingTips": "Best times, engagement bait avoidance, native video tips"
+        }`,
+
+        pinterest: `Create a Pinterest Pin description optimized for search and saves. The moment is: "${moment.script}"
+
+        Generate a JSON object with:
+        {
+          "hook": "Pin title (max 100 chars, keyword-rich)",
+          "script": "Pin description (300-500 chars with searchable keywords, hashtags, and CTA)",
+          "caption": "Idea Pin caption alternative",
+          "hashtags": ["pinterest", "tag1", "tag2"],
+          "postingTips": "Board placement, repinning strategy, keyword density"
+        }`,
+
+        bluesky: `Create a Bluesky post optimized for the AT Protocol social graph. The moment is: "${moment.script}"
+
+        Generate a JSON object with:
+        {
+          "hook": "Opening (max 300 chars total for the post)",
+          "script": "Full Bluesky post body (must be under 300 characters)",
+          "caption": "Quote-skeet variant",
+          "hashtags": ["tag1", "tag2"],
+          "postingTips": "Bluesky engagement: feeds, starter packs, reply visibility"
+        }`,
+
+        snapchat: `Create a Snapchat Spotlight caption + optimization based on this video moment: "${moment.script}"
+
+        Generate a JSON object with:
+        {
+          "hook": "Caption hook (max 80 chars, casual + emoji-friendly)",
+          "script": "Full caption with topics tag suggestions",
+          "caption": "Story caption variant",
+          "hashtags": ["snap", "topic1", "topic2"],
+          "postingTips": "Spotlight monetization triggers, topic tagging, posting cadence"
+        }`,
+
+        threads: `Create a Threads post optimized for Meta's text social network. The moment is: "${moment.script}"
+
+        Generate a JSON object with:
+        {
+          "hook": "Opener (max 500 chars total)",
+          "script": "Full Threads post (under 500 chars, conversational, replies-friendly)",
+          "caption": "Follow-up reply text to seed the thread",
+          "hashtags": ["tag1", "tag2"],
+          "postingTips": "Threads engagement loop, reply strategy, cross-posting"
         }`
       };
 
@@ -4251,6 +4318,21 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
       mediaPath
     });
     if (!result.success) return res.status(400).json(result);
+
+    // Workflow bridge — queue downstream republishes for any active
+    // workflows whose source is this connection. Fire-and-forget.
+    try {
+      const { enqueueDownstreamPublishes } = require('../utils/workflowQueue');
+      enqueueDownstreamPublishes(req.user.id, connectionId, {
+        sourceType: 'clip',
+        title: resolvedTitle,
+        description: description || caption || moment.description || '',
+        text: resolvedCaption,
+        mediaFilename: mediaPath ? require('path').basename(mediaPath) : null,
+        mediaPath: mediaPath,
+        dedupeKey: 'moment-' + analysisId + '-' + momentIndex
+      }).catch(function(e){ console.warn('[publish-moment] workflow enqueue:', e && e.message); });
+    } catch (qErr) { console.warn('[publish-moment] workflow enqueue require failed:', qErr.message); }
 
     // Auto-sync the successful Post Now into the project calendar so the
     // user can see everything they've published in one place. Uses the
@@ -10301,50 +10383,132 @@ ${paginationHtml}
     }
 
     async function generateContent(analysisId, momentId) {
-      // Show content type selector
-      const html = \`
-        <div class="modal-header">
-          <h2 class="modal-title">Generate Content</h2>
-        </div>
-        <div style="padding: 16px;">
-          <p style="color: var(--text-muted); margin-bottom: 16px;">Choose what to generate:</p>
-          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px;">
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="tiktok" checked style="accent-color:#FF0050;"> TikTok
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="instagram" checked style="accent-color:#FF0050;"> Instagram
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="shorts" checked style="accent-color:#FF0050;"> YT Shorts
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="twitter" checked style="accent-color:#FF0050;"> Twitter/X
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="linkedin" checked style="accent-color:#FF0050;"> LinkedIn
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="thread" style="accent-color:#FF0050;"> X Thread
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="blog" style="accent-color:#FF0050;"> Blog Post
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;">
-              <input type="checkbox" class="content-type-cb" value="newsletter" style="accent-color:#FF0050;"> Newsletter
-            </label>
-          </div>
-          <button class="btn btn-primary" id="gen-content-btn" onclick="doGenerateContent('\${analysisId}', '\${momentId}')"
-            style="width:100%;">
-            Generate Selected Content
-          </button>
-        </div>
-      \`;
+      // GC_PLATFORMS mirrors the destination-capable list from
+      // routes/distribute.js PLATFORMS so users only see destinations
+      // the platform can actually publish to.
+      var GC_PLATFORMS = [
+        { value:'tiktok',    name:'TikTok',      color:'#25F4EE', svg:'M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.88-2.88 2.89 2.89 0 0 1 2.88-2.88c.28 0 .56.04.81.1v-3.5a6.37 6.37 0 0 0-.81-.05A6.34 6.34 0 0 0 3.15 15a6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.18 8.18 0 0 0 4.76 1.52V6.82a4.83 4.83 0 0 1-1-.13z' },
+        { value:'instagram', name:'Instagram',   color:'#E4405F', svg:'M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z' },
+        { value:'shorts',    name:'YT Shorts',   color:'#FF0000', svg:'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' },
+        { value:'youtube',   name:'YouTube',     color:'#FF0000', svg:'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' },
+        { value:'facebook',  name:'Facebook',    color:'#1877F2', svg:'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z' },
+        { value:'twitter',   name:'X (Twitter)', color:'#FFFFFF', svg:'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z' },
+        { value:'thread',    name:'X Thread',    color:'#FFFFFF', svg:'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z' },
+        { value:'linkedin',  name:'LinkedIn',    color:'#0A66C2', svg:'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z' },
+        { value:'pinterest', name:'Pinterest',   color:'#E60023', svg:'M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 01.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24 18.635 24 24.003 18.633 24.003 12.013 24.003 5.393 18.635.028 12.017.028z' },
+        { value:'threads',   name:'Threads',     color:'#FFFFFF', svg:'M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.59 12c.025 3.086.718 5.496 2.057 7.164 1.432 1.783 3.631 2.698 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.31-.71-.873-1.3-1.634-1.75-.192 1.352-.622 2.446-1.284 3.272-.886 1.102-2.14 1.704-3.73 1.79-1.202.065-2.361-.218-3.259-.801-1.063-.689-1.685-1.74-1.752-2.96-.065-1.182.408-2.256 1.33-3.022.812-.674 1.926-1.075 3.233-1.162 1.07-.07 2.065.03 2.967.291-.07-.59-.233-1.105-.492-1.538-.449-.746-1.206-1.14-2.253-1.173-1.008.019-1.71.306-2.146.88l-1.63-1.162c.748-1.074 1.998-1.668 3.52-1.737h.146c1.489.043 2.685.583 3.493 1.563.661.8 1.076 1.842 1.238 3.1.581.2 1.109.467 1.575.798 1.19.845 2.032 2.085 2.404 3.558.56 2.212.145 4.86-1.833 6.828C18.18 23.145 15.66 23.97 12.186 24z' },
+        { value:'bluesky',   name:'Bluesky',     color:'#0085FF', svg:'M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.785 2.627 3.601 3.497 6.267 3.248-4.67.699-8.776 2.455-3.76 8.504C8.292 27.584 10.6 18.21 12 14.042c1.4 4.168 3.218 13.14 8.87 7.957 5.015-6.049.91-7.805-3.76-8.504 2.665.249 5.482-.621 6.267-3.248C23.622 9.418 24 4.458 24 3.768c0-.69-.139-1.861-.902-2.203-.659-.299-1.664-.621-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z' },
+        { value:'snapchat',  name:'Snapchat',    color:'#FFFC00', svg:'M12.206.793c.99 0 4.347.276 5.93 3.821.529 1.193.403 3.219.299 4.847l-.003.06c-.012.18-.022.345-.03.51.075.045.203.09.401.09.3-.016.659-.12 1.033-.301.165-.088.344-.104.464-.104.182 0 .359.029.509.09.45.149.734.479.734.838.015.449-.39.839-1.213 1.168-.089.029-.209.075-.344.119-.45.135-1.139.36-1.333.81-.09.224-.061.524.12.868l.015.015c.06.136 1.526 3.475 4.791 4.014.255.044.435.27.42.509 0 .075-.015.149-.045.225-.24.569-1.273.988-3.146 1.271-.059.091-.12.375-.164.57-.029.179-.074.36-.134.553-.076.271-.27.405-.555.405h-.03c-.135 0-.313-.031-.538-.076-.375-.09-.84-.181-1.468-.181-.225 0-.435.015-.674.046-.811.106-1.439.5-2.144.955-1.019.659-2.189 1.41-4.029 1.41-1.84 0-3.01-.75-4.029-1.41-.705-.449-1.334-.85-2.144-.955-.24-.029-.449-.046-.674-.046-.629 0-1.093.091-1.468.181-.225.045-.39.076-.539.076h-.03c-.284 0-.48-.135-.555-.405-.06-.193-.105-.374-.134-.553-.045-.196-.105-.48-.165-.57C1.215 18.24.18 17.822-.06 17.254c-.03-.075-.045-.15-.045-.225-.015-.24.164-.465.42-.509 3.264-.54 4.73-3.879 4.791-4.02l.016-.029c.18-.345.224-.645.119-.869-.195-.434-.884-.674-1.333-.809-.136-.046-.254-.09-.345-.12C2.4 10.328 2 9.94 2.015 9.49c0-.359.255-.689.705-.838.15-.06.314-.09.494-.09.12 0 .314.016.479.104.374.181.733.302 1.048.302.194 0 .33-.045.406-.089-.009-.18-.019-.36-.034-.556l-.004-.074c-.104-1.628-.229-3.654.299-4.848C6.854 1.07 10.194.793 11.194.793h1.012z' }
+      ];
+      var GC_LONGFORM = [
+        { value:'blog',       name:'Blog Post',  desc:'500-800 word SEO article' },
+        { value:'newsletter', name:'Newsletter', desc:'300-500 word email body' }
+      ];
+      var GC_DEFAULTS = { tiktok:1, instagram:1, shorts:1, twitter:1, linkedin:1 };
+
+      function _gcPlatformCard(p) {
+        var checked = !!GC_DEFAULTS[p.value];
+        var iconBg = p.color + '22';
+        var iconColor = p.color === '#FFFFFF' ? '#e9d8ff' : p.color;
+        var borderC = checked ? p.color + '90' : 'rgba(255,255,255,0.08)';
+        var shadow = checked ? ('box-shadow:0 0 0 1px ' + p.color + '40 inset;') : '';
+        return '<label class="gc-card" data-color="' + p.color + '" data-value="' + p.value + '" ' +
+          'style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:14px 8px;background:rgba(255,255,255,0.04);border:1px solid ' + borderC + ';border-radius:12px;cursor:pointer;transition:border-color .2s, background .2s, box-shadow .2s;text-align:center;' + shadow + '">' +
+          '<input type="checkbox" class="content-type-cb" value="' + p.value + '"' + (checked ? ' checked' : '') + ' style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">' +
+          '<div style="display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:10px;background:' + iconBg + ';color:' + iconColor + ';flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="' + p.svg + '"/></svg></div>' +
+          '<div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.2;">' + p.name + '</div>' +
+          '<div class="gc-check" style="position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;background:' + p.color + ';display:' + (checked ? 'flex' : 'none') + ';align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--surface);"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' +
+          '</label>';
+      }
+      function _gcLongCard(p) {
+        return '<label class="gc-card" data-color="#a78bfa" data-value="' + p.value + '" ' +
+          'style="position:relative;display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;cursor:pointer;transition:border-color .2s, background .2s;">' +
+          '<input type="checkbox" class="content-type-cb" value="' + p.value + '" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">' +
+          '<div style="display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:10px;background:rgba(167,139,250,0.12);color:#c4b5fd;flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div>' +
+          '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:13px;font-weight:600;color:var(--text);">' + p.name + '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + p.desc + '</div>' +
+          '</div>' +
+          '<div class="gc-check" style="width:18px;height:18px;border-radius:50%;background:#a78bfa;display:none;align-items:center;justify-content:center;flex-shrink:0;"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' +
+          '</label>';
+      }
+
+      var html =
+        '<div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.08);">' +
+          '<div>' +
+            '<h2 class="modal-title" style="margin:0;font-size:1.1rem;font-weight:700;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Generate Content</h2>' +
+            '<p style="margin:4px 0 0;font-size:0.78rem;color:var(--text-muted);">Pick destinations to generate optimized content for. Only platforms available under Settings → Connected Accounts are listed.</p>' +
+          '</div>' +
+        '</div>' +
+        '<div style="padding:18px 4px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+            '<div style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);">Publish-ready platforms</div>' +
+            '<button type="button" id="gc-toggle-all" style="background:transparent;border:1px solid rgba(108,58,237,0.30);color:#c4b5fd;font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;cursor:pointer;letter-spacing:0.02em;">Select all</button>' +
+          '</div>' +
+          '<div id="gc-platforms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:22px;">' +
+            GC_PLATFORMS.map(_gcPlatformCard).join('') +
+          '</div>' +
+          '<div style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;">Long-form content</div>' +
+          '<div id="gc-longform" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:22px;">' +
+            GC_LONGFORM.map(_gcLongCard).join('') +
+          '</div>' +
+          '<button class="btn btn-primary" id="gen-content-btn" style="width:100%;padding:.75rem 1.5rem;font-weight:700;letter-spacing:0.02em;">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="margin-right:6px;vertical-align:middle;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>' +
+            'Generate Selected Content' +
+          '</button>' +
+        '</div>';
       // Snapshot the moments-view HTML so closing this Generate Content view
       // returns to the moments list instead of dismissing the whole modal.
       try { window.__modalPrevHTML = document.getElementById('modalBody').innerHTML; } catch (_) {}
       document.getElementById('modalBody').innerHTML = html;
       document.getElementById('analysisModal').classList.add('active');
+
+      // Post-render wiring: card click toggles the underlying checkbox
+      // + applies/removes the colored border + check chip; Select all
+      // button bulk-toggles; Generate button fires doGenerateContent
+      // with the captured analysisId + momentId (closure, no string
+      // interpolation).
+      function _gcUpdateCard(card) {
+        var inp = card.querySelector('input');
+        var chk = card.querySelector('.gc-check');
+        var color = card.dataset.color || '#a78bfa';
+        if (inp.checked) {
+          card.style.borderColor = color + '90';
+          card.style.boxShadow = '0 0 0 1px ' + color + '40 inset';
+          if (chk) chk.style.display = 'flex';
+        } else {
+          card.style.borderColor = 'rgba(255,255,255,0.08)';
+          card.style.boxShadow = 'none';
+          if (chk) chk.style.display = 'none';
+        }
+      }
+      document.querySelectorAll('#gc-platforms .gc-card, #gc-longform .gc-card').forEach(function(card) {
+        card.addEventListener('click', function(ev) {
+          // Prevent the native <label> toggle from firing — we manage state ourselves.
+          ev.preventDefault();
+          var inp = card.querySelector('input');
+          inp.checked = !inp.checked;
+          _gcUpdateCard(card);
+        });
+      });
+      var toggleBtn = document.getElementById('gc-toggle-all');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function() {
+          var all = document.querySelectorAll('#gc-platforms .gc-card');
+          var anyOff = Array.from(all).some(function(c) { return !c.querySelector('input').checked; });
+          all.forEach(function(c) {
+            c.querySelector('input').checked = anyOff;
+            _gcUpdateCard(c);
+          });
+          toggleBtn.textContent = anyOff ? 'Clear all' : 'Select all';
+        });
+      }
+      var genBtn = document.getElementById('gen-content-btn');
+      if (genBtn) {
+        genBtn.addEventListener('click', function() {
+          doGenerateContent(analysisId, momentId);
+        });
+      }
     }
 
     async function doGenerateContent(analysisId, momentId) {

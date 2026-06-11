@@ -50,6 +50,28 @@
     '.v10-mi-badge.vid{background:rgba(124,58,237,.18);color:#a78bfa}',
     '.v10-mi-badge.aud{background:rgba(59,130,246,.18);color:#60a5fa}',
     '.v10-mi-badge.img{background:rgba(34,197,94,.18);color:#4ade80}',
+    /* v10 × delete button (Task #168) */
+    '.v10-mi-del{position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15);background:rgba(15,10,30,.85);color:#ef4444;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;z-index:2;opacity:0;transition:opacity .15s}',
+    '.media-library .ml-fitem.v10-styled:hover .v10-mi-del{opacity:1}',
+    '.v10-mi-del:hover{background:rgba(239,68,68,.18);color:#fff;border-color:#ef4444}',
+    /* Themed confirm modal (Task #169) — matches the editor palette */
+    '.sp-confirm-backdrop{position:fixed;inset:0;background:rgba(8,5,18,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:99998;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .18s ease;font-family:inherit}',
+    '.sp-confirm-backdrop.sp-open{opacity:1}',
+    '.sp-confirm-card{width:min(420px,92vw);background:linear-gradient(180deg,#1a1430 0%,#120b24 100%);border:1px solid #2a2545;border-radius:12px;box-shadow:0 24px 80px rgba(0,0,0,.55),0 0 0 1px rgba(139,92,246,.08);padding:22px 22px 18px 22px;transform:translateY(8px) scale(.98);transition:transform .22s cubic-bezier(.16,1,.3,1);color:#e2e0f0}',
+    '.sp-confirm-backdrop.sp-open .sp-confirm-card{transform:translateY(0) scale(1)}',
+    '.sp-confirm-head{display:flex;align-items:center;gap:11px;margin-bottom:12px}',
+    '.sp-confirm-icon{width:34px;height:34px;border-radius:50%;background:rgba(239,68,68,.14);color:#ef4444;display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 auto;border:1px solid rgba(239,68,68,.28)}',
+    '.sp-confirm-title{font-size:15px;font-weight:700;color:#f4f1ff;letter-spacing:-.01em;margin:0}',
+    '.sp-confirm-body{font-size:13px;line-height:1.5;color:#c4bfda;margin:0 0 18px 0}',
+    '.sp-confirm-body strong{color:#e2e0f0;font-weight:600}',
+    '.sp-confirm-actions{display:flex;justify-content:flex-end;gap:8px}',
+    '.sp-confirm-btn{font-family:inherit;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:all .15s;letter-spacing:.01em}',
+    '.sp-confirm-cancel{background:transparent;border-color:#2a2545;color:#c4bfda}',
+    '.sp-confirm-cancel:hover{background:rgba(139,92,246,.08);border-color:#3a3160;color:#e2e0f0}',
+    '.sp-confirm-confirm{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border-color:transparent;box-shadow:0 2px 10px rgba(239,68,68,.28)}',
+    '.sp-confirm-confirm:hover{background:linear-gradient(135deg,#dc2626,#b91c1c);box-shadow:0 4px 14px rgba(239,68,68,.4)}',
+    '.sp-confirm-confirm.sp-primary{background:linear-gradient(135deg,#7c3aed,#a855f7);box-shadow:0 2px 10px rgba(124,58,237,.32)}',
+    '.sp-confirm-confirm.sp-primary:hover{background:linear-gradient(135deg,#6d28d9,#9333ea);box-shadow:0 4px 14px rgba(124,58,237,.4)}',
     '/* v10 project folders */',
     '.media-library .ml-folder.v10-proj{cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(255,255,255,.02);border:1px solid #2a2545;border-radius:7px;margin-bottom:5px;font-size:12px;font-weight:600;color:#e2e0f0}',
     '.media-library .ml-folder.v10-proj:hover{border-color:#8b5cf6;background:rgba(139,92,246,.05)}',
@@ -182,6 +204,90 @@
     s.appendChild(document.createTextNode(CSS));
     (document.head || document.documentElement).appendChild(s);
   }
+
+  /* ===================== THEMED CONFIRM (Task #169) =====================
+   * Replaces window.confirm() with a Splicora-styled modal so destructive
+   * actions (e.g. delete from Media library) look like part of the app
+   * instead of a beige system dialog. Returns a Promise that resolves
+   * true on confirm and false on cancel / Esc / backdrop click.
+   *
+   * Usage:
+   *   const ok = await window.splicoraConfirm({
+   *     title:   'Delete from Media library?',
+   *     message: 'This frees the storage space and cannot be undone.',
+   *     confirmText: 'Delete',
+   *     cancelText:  'Cancel',
+   *     destructive: true        // red gradient; false → purple primary
+   *   });
+   * The single argument may also be a plain string, which is used as the
+   * message with sensible defaults so the helper drops into legacy
+   * confirm() call sites without needing config-shape changes.
+   */
+  function splicoraConfirm(opts){
+    if (typeof opts === 'string') opts = { message: opts };
+    opts = opts || {};
+    var title       = opts.title       || 'Are you sure?';
+    var message     = opts.message     || '';
+    var confirmText = opts.confirmText || 'Confirm';
+    var cancelText  = opts.cancelText  || 'Cancel';
+    var destructive = opts.destructive !== false; // default true
+    return new Promise(function(resolve){
+      var backdrop = document.createElement('div');
+      backdrop.className = 'sp-confirm-backdrop';
+      backdrop.setAttribute('role', 'dialog');
+      backdrop.setAttribute('aria-modal', 'true');
+      backdrop.setAttribute('aria-labelledby', 'sp-confirm-title');
+      // The icon is purely decorative — an exclamation-circle for warnings
+      // and a question-circle for non-destructive prompts.
+      var iconChar = destructive ? '!' : '?';
+      backdrop.innerHTML =
+        '<div class="sp-confirm-card" role="document">' +
+          '<div class="sp-confirm-head">' +
+            '<div class="sp-confirm-icon" aria-hidden="true">' + iconChar + '</div>' +
+            '<h3 class="sp-confirm-title" id="sp-confirm-title">' + escapeHtml(title) + '</h3>' +
+          '</div>' +
+          '<p class="sp-confirm-body">' + escapeHtml(message) + '</p>' +
+          '<div class="sp-confirm-actions">' +
+            '<button type="button" class="sp-confirm-btn sp-confirm-cancel">' + escapeHtml(cancelText) + '</button>' +
+            '<button type="button" class="sp-confirm-btn sp-confirm-confirm' + (destructive ? '' : ' sp-primary') + '">' + escapeHtml(confirmText) + '</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(backdrop);
+      // Trigger the .sp-open transition in the next frame so the
+      // opacity/transform animation actually fires (without rAF the
+      // class lands at the same time as the initial paint).
+      requestAnimationFrame(function(){ backdrop.classList.add('sp-open'); });
+
+      var settled = false;
+      function close(value){
+        if (settled) return;
+        settled = true;
+        backdrop.classList.remove('sp-open');
+        document.removeEventListener('keydown', onKey, true);
+        // Let the fade-out finish before removing from the DOM.
+        setTimeout(function(){
+          try { backdrop.parentNode && backdrop.parentNode.removeChild(backdrop); } catch(_){}
+        }, 180);
+        resolve(value);
+      }
+      function onKey(e){
+        if (e.key === 'Escape'){ e.preventDefault(); close(false); }
+        else if (e.key === 'Enter'){ e.preventDefault(); close(true); }
+      }
+      document.addEventListener('keydown', onKey, true);
+      backdrop.addEventListener('click', function(e){
+        if (e.target === backdrop) close(false);
+      });
+      backdrop.querySelector('.sp-confirm-cancel').addEventListener('click', function(){ close(false); });
+      var confirmBtn = backdrop.querySelector('.sp-confirm-confirm');
+      confirmBtn.addEventListener('click', function(){ close(true); });
+      // Focus the confirm button so keyboard users get a fast yes path,
+      // and Tab/Shift+Tab stays inside the card naturally because
+      // there are only two focusable elements.
+      try { confirmBtn.focus(); } catch(_){}
+    });
+  }
+  try { window.splicoraConfirm = splicoraConfirm; } catch(_){}
 
   /* ===================== MEDIA CORNER ===================== */
 
@@ -568,13 +674,72 @@
       var dur = durFromDs || parsed.dur;
       var subtitle = size ? (dur ? (size + ' \u00b7 ' + dur) : size) : (dur || '');
       it.classList.add('v10-styled');
+      // Task #168 — preserve the × delete button across restyles.
+      // appendMediaItem (in media-panel-fix.js) sets dataset.uploadId
+      // for server-backed items; we render the × inline here so V10's
+      // innerHTML rewrite doesn't nuke it. The button is hover-revealed
+      // via CSS (opacity transition wired below in restyle injection).
+      var deleteBtnHtml = it.dataset.uploadId
+        ? '<button class="v10-mi-del" type="button" title="Delete from Media library" aria-label="Delete" data-upload-id="'+escapeHtml(it.dataset.uploadId)+'">×</button>'
+        : '';
+      it.style.position = 'relative';
       it.innerHTML =
         '<div class="v10-mi-thumb '+cls+'">'+icon+'</div>'+
         '<div class="v10-mi-info">'+
           '<h5>'+escapeHtml(displayName)+'</h5>'+
           (subtitle ? '<small>'+escapeHtml(subtitle)+'</small>' : '')+
         '</div>'+
-        '<span class="v10-mi-badge '+cls+'">'+label+'</span>';
+        '<span class="v10-mi-badge '+cls+'">'+label+'</span>'+
+        deleteBtnHtml;
+      // Wire the × click handler. The actual DELETE round-trip lives in
+      // media-panel-fix.js's appendMediaItem, but V10 nuked that wiring
+      // when it rewrote innerHTML above — we re-wire here.
+      var delBtn = it.querySelector('.v10-mi-del');
+      if (delBtn && !delBtn.__v10Wired){
+        delBtn.__v10Wired = true;
+        delBtn.addEventListener('click', async function(e){
+          e.stopPropagation();
+          e.preventDefault();
+          var uploadId = delBtn.getAttribute('data-upload-id');
+          if (!uploadId) return;
+          var displayLabel = displayName || 'this file';
+          // Task #169 — themed confirm instead of native confirm()
+          var ok = await splicoraConfirm({
+            title:       'Delete from Media library?',
+            message:     'Remove "' + displayLabel + '" from your Media library. This frees the storage space and cannot be undone.',
+            confirmText: 'Delete',
+            cancelText:  'Keep',
+            destructive: true
+          });
+          if (!ok) return;
+          delBtn.disabled = true;
+          delBtn.textContent = '…';
+          fetch('/video-editor/api/uploads/' + encodeURIComponent(uploadId), {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          }).then(function(res){
+            if (!res.ok) return res.json().then(function(j){ throw new Error(j && j.error || ('Delete failed ('+res.status+')')); });
+            // Pull any timeline clips that reference this media so
+            // the library + timeline stay consistent.
+            var serveUrl = it.dataset.mediaUrl;
+            if (serveUrl){
+              document.querySelectorAll('.mt-clip').forEach(function(clip){
+                if (clip.dataset.mediaUrl === serveUrl){
+                  try { clip.parentElement && clip.parentElement.removeChild(clip); } catch(_){}
+                }
+              });
+              try { if (typeof window.updateTimelineInfo === 'function') window.updateTimelineInfo(); } catch(_){}
+            }
+            try { it.parentElement && it.parentElement.removeChild(it); } catch(_){}
+            try { if (typeof window.showToast === 'function') window.showToast('Removed from Media library'); } catch(_){}
+          }).catch(function(err){
+            console.warn('[v10-delete] failed:', err);
+            try { if (typeof window.showToast === 'function') window.showToast('Could not delete: ' + (err && err.message || 'unknown')); } catch(_){}
+            delBtn.disabled = false;
+            delBtn.textContent = '×';
+          });
+        });
+      }
     });
   }
 
@@ -702,30 +867,89 @@
 
   function buildDraftsListInto(list){
     var drafts = getDrafts();
+    // Always render localStorage drafts immediately (legacy path).
     if (drafts.length === 0){
       var empty = document.createElement('div');
       empty.className = 'v10-folder-note';
-      empty.textContent = 'No drafts yet. Uploaded projects will appear here until you export them.';
+      empty.textContent = 'Loading saved drafts\u2026';
+      empty.dataset.v10DraftsPlaceholder = '1';
       list.appendChild(empty);
-      return;
-    }
-    drafts.forEach(function(d){
-      var item = document.createElement('div');
-      item.className = 'v10-folder-item clickable';
-      var meta = [d.date, d.size, d.dur].filter(Boolean).join(' \u00b7 ');
-      item.innerHTML =
-        '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83c\udf9e\ufe0f</span>'+
-        '<div class="v10-fi-body">'+
-          '<div class="v10-fi-name">'+escapeHtml(d.name)+'</div>'+
-          (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
-        '</div>'+
-        '<span class="v10-fi-hint">LOAD</span>';
-      item.addEventListener('click', function(e){
-        e.stopPropagation();
-        loadDraftIntoEditor(d);
+    } else {
+      drafts.forEach(function(d){
+        var item = document.createElement('div');
+        item.className = 'v10-folder-item clickable';
+        var meta = [d.date, d.size, d.dur].filter(Boolean).join(' \u00b7 ');
+        item.innerHTML =
+          '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83c\udf9e\ufe0f</span>'+
+          '<div class="v10-fi-body">'+
+            '<div class="v10-fi-name">'+escapeHtml(d.name)+'</div>'+
+            (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
+          '</div>'+
+          '<span class="v10-fi-hint">LOAD</span>';
+        item.addEventListener('click', function(e){
+          e.stopPropagation();
+          loadDraftIntoEditor(d);
+        });
+        list.appendChild(item);
       });
-      list.appendChild(item);
-    });
+    }
+    // Task #168 \u2014 Also fetch server-side drafts (saved via the new
+    // POST /video-editor/save-draft endpoint) and append them with an
+    // OPEN affordance that navigates into the editor's projectId boot
+    // path, where bootFromProject + restoreTimelineFromSnapshot
+    // rehydrate the full timeline.
+    fetch('/video-editor/api/drafts', { credentials: 'same-origin' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        // Drop placeholder note if it was shown
+        var ph = list.querySelector('[data-v10-drafts-placeholder="1"]');
+        if (ph) ph.remove();
+        if (!data || !Array.isArray(data.items) || !data.items.length){
+          if (drafts.length === 0 && !list.querySelector('.v10-folder-item') && !list.querySelector('.v10-folder-note')){
+            var note = document.createElement('div');
+            note.className = 'v10-folder-note';
+            note.textContent = 'No drafts yet. Use "Save as Draft" in the top-right to save one.';
+            list.appendChild(note);
+          }
+          return;
+        }
+        data.items.forEach(function(d){
+          var item = document.createElement('div');
+          item.className = 'v10-folder-item clickable v10-server-draft';
+          item.dataset.draftId = d.id;
+          var bits = [];
+          if (d.updatedAt){
+            try {
+              var dt = new Date(d.updatedAt);
+              if (!isNaN(dt.getTime())) bits.push(dt.toLocaleDateString());
+            } catch(_){}
+          }
+          if (d.durationSeconds > 0){
+            bits.push(Math.floor(d.durationSeconds/60) + ':' + String(Math.floor(d.durationSeconds%60)).padStart(2,'0'));
+          }
+          var meta = bits.join(' \u00b7 ');
+          item.innerHTML =
+            '<span class="v10-fi-ico" style="color:#8b5cf6">\ud83d\udcc4</span>'+
+            '<div class="v10-fi-body">'+
+              '<div class="v10-fi-name">'+escapeHtml(d.name || 'Untitled Draft')+'</div>'+
+              (meta ? '<span class="v10-fi-meta">'+escapeHtml(meta)+'</span>' : '')+
+            '</div>'+
+            '<span class="v10-fi-hint">OPEN</span>';
+          item.addEventListener('click', function(e){
+            e.stopPropagation();
+            // Navigate to the editor's project boot URL \u2014 this triggers
+            // bootFromProject in routes/video-editor.js which sets
+            // window.__INITIAL_PROJECT__ from the saved snapshot, and
+            // restoreTimelineFromSnapshot rebuilds the full timeline.
+            try { window.location.href = d.editorUrl || ('/video-editor/' + d.id); } catch(_){}
+          });
+          list.appendChild(item);
+        });
+      })
+      .catch(function(){
+        var ph = list.querySelector('[data-v10-drafts-placeholder="1"]');
+        if (ph) ph.textContent = 'No drafts yet.';
+      });
   }
 
   function rebuildFolders(){

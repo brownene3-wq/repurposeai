@@ -22,7 +22,7 @@
 //   }
 //
 // On 3+ failures within 24h the cookie set is auto-expired and an email
-// notification is sent to support@splicora.ai and brownene3@gmail.com
+// notification is sent to hello@splicora.ai and brownene3@gmail.com
 // so the operator knows to re-export from Multilogin.
 
 const fs = require('fs');
@@ -74,7 +74,7 @@ async function sendExpiryNotification(label) {
       <p style="color:#6b7280;font-size:13px;">This is one of multiple cookie sets — the pool continues working on the remaining active sets. Refresh at your convenience.</p>
     </body></html>`;
     await sendEmail({ to: 'brownene3@gmail.com', subject: `[Splicora] Cookie set expired: ${label}`, html });
-    await sendEmail({ to: 'support@splicora.ai', subject: `[Splicora] Cookie set expired: ${label}`, html });
+    await sendEmail({ to: 'hello@splicora.ai', subject: `[Splicora] Cookie set expired: ${label}`, html });
   } catch (e) {
     console.error('[CookiePool] notification email failed:', e.message);
   }
