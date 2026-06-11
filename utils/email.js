@@ -16,7 +16,7 @@ function getResend() {
                     return resend;
                     }
                     
-                    const FROM = () => process.env.SENDER_EMAIL || 'support@splicora.ai';
+                    const FROM = () => process.env.SENDER_EMAIL || 'hello@splicora.ai';
                     const FROM_NAME = 'Splicora';
                     
                     async function sendEmail({ to, subject, html }) {
