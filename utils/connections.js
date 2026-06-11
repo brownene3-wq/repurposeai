@@ -152,10 +152,22 @@ async function publishToConnection(userId, connectionId, payload = {}) {
   // added without changes here). refreshTokenIfNeeded is a no-op for
   // platforms that don't need it.
   let account = raw;
+  let refreshAttempted = false;
+  let refreshError = null;
   if (typeof engine.refreshTokenIfNeeded === 'function') {
-    try { account = (await engine.refreshTokenIfNeeded(raw)) || raw; }
-    catch (e) { console.error('[publishToConnection] token refresh:', e.message); }
+    try {
+      const before = raw.access_token;
+      const result = await engine.refreshTokenIfNeeded(raw);
+      account = result || raw;
+      refreshAttempted = account && account.access_token !== before;
+    } catch (e) {
+      refreshError = e && e.message;
+      console.error('[publishToConnection] token refresh:', refreshError);
+    }
   }
+  // Stash diagnostics so publishToDestination's error path can surface them.
+  account.__refreshAttempted = refreshAttempted;
+  account.__refreshError = refreshError;
 
   // Synthesize the 'workflow' + 'sourceItem' shapes the existing
   // publishToDestination expects. The workflow is only used for logging +

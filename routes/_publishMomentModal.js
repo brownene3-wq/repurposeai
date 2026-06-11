@@ -33,9 +33,18 @@ function getPublishMomentModalHTML() {
         <input type="hidden" id="publishMomentRef">
 
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>
-        <select id="publishAccount" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
+        <select id="publishAccount" onchange="publishOnAccountChange()" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;">
           <option value="">Loading your connected accounts...</option>
         </select>
+        <!-- Workflow status chip — visible whenever an account is
+             picked. Tells the user whether publishing to this account
+             triggers an active workflow (and where it republishes), or
+             how to set one up on the Repurpose page. publishUpdate
+             WorkflowChip(connectionId) refreshes the contents whenever
+             the picker changes. -->
+        <div id="publishWorkflowChip" style="display:none;margin-bottom:14px;border-radius:10px;padding:10px 12px;font-size:0.78rem;line-height:1.45;letter-spacing:0.01em;">
+          <div id="publishWorkflowChipBody"></div>
+        </div>
         <div id="publishNoAccounts" style="display:none;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.35);color:#ffd591;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.8rem;line-height:1.4;">
           You don't have any social accounts connected yet.
           <a href="/distribute/connections" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;text-decoration:none;padding:0.4rem 0.9rem;border-radius:6px;font-weight:600;font-size:0.78rem;margin-top:8px;">
@@ -46,8 +55,18 @@ function getPublishMomentModalHTML() {
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Title</label>
         <input type="text" id="publishTitle" maxlength="120" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;">
 
-        <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Caption / Description</label>
-        <textarea id="publishCaption" rows="4" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:14px;resize:vertical;min-height:80px;"></textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+          <label style="display:block;font-size:0.72rem;color:var(--text-muted);font-weight:600;letter-spacing:0.04em;text-transform:uppercase;margin:0;">Caption / Description</label>
+          <button id="publishGenBtn" type="button" onclick="publishGenerateCaption()" title="Use AI to write a caption optimized for the picked platform"
+            style="display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.18));border:1px solid rgba(108,58,237,0.40);color:#d8c9ff;font-size:0.72rem;font-weight:600;padding:5px 10px;border-radius:999px;cursor:pointer;letter-spacing:0.02em;transition:background .15s, transform .15s;"
+            onmouseenter="this.style.background='linear-gradient(135deg,rgba(108,58,237,0.32),rgba(236,72,153,0.32))';this.style.transform='translateY(-1px)'"
+            onmouseleave="this.style.background='linear-gradient(135deg,rgba(108,58,237,0.18),rgba(236,72,153,0.18))';this.style.transform='none'">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 7.4H22l-6.2 4.5L18.2 22 12 17.5 5.8 22l2.4-8.1L2 9.4h7.6z"/></svg>
+            Generate with AI
+          </button>
+        </div>
+        <textarea id="publishCaption" rows="4" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:6px;resize:vertical;min-height:80px;"></textarea>
+        <div id="publishGenHint" style="display:none;font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;line-height:1.4;"></div>
 
         <div style="display:flex;gap:8px;margin-bottom:14px;background:var(--dark);border-radius:10px;padding:4px;border:1px solid rgba(255,255,255,0.06);">
           <button id="publishTabNow" type="button" onclick="setPublishMode('now')" style="flex:1;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:600;font-size:0.82rem;cursor:pointer;">Post now</button>
@@ -150,6 +169,10 @@ function getPublishMomentModalJS() {
               ' \\u2014 ' + (c.accountName || c.platformUsername || c.id);
             return '<option value="' + c.id + '" data-platform="' + c.platform + '">' + label + '</option>';
           }).join('');
+          // Pre-populate the workflow chip for the first option so the
+          // user sees the workflow context immediately, not only after
+          // they touch the dropdown.
+          publishOnAccountChange();
         }
       } catch (e) {
         sel.innerHTML = '<option value="">Failed to load accounts</option>';
@@ -239,6 +262,235 @@ function getPublishMomentModalJS() {
       } finally {
         btn.disabled = false; btn.textContent = orig;
       }
+    }
+
+    // AI Generate handler for the Caption / Description field.
+    // Reads the picked account's platform from publishAccount, maps it
+    // to the /shorts/generate prompt key, calls the generator, and
+    // drops the caption + hashtags into the publishCaption textarea.
+    // No need to close the modal — user stays in the publish flow.
+    async function publishGenerateCaption() {
+      var btn = document.getElementById('publishGenBtn');
+      var hint = document.getElementById('publishGenHint');
+      var captionEl = document.getElementById('publishCaption');
+      if (!btn || !captionEl) return;
+
+      // Resolve the moment ref. publishMomentRef holds 'analysisId|momentIdx'
+      // set by openPublishModal. We need the moment's timeRange because
+      // the /shorts/generate endpoint keys moments by timeRange, not idx.
+      var refRaw = (document.getElementById('publishMomentRef').value || '').split('|');
+      var analysisId = refRaw[0];
+      var momentIdx = parseInt(refRaw[1], 10);
+      if (!analysisId || !Number.isFinite(momentIdx)) {
+        if (typeof showToast === 'function') showToast('No moment selected.');
+        return;
+      }
+      // Resolve the analysis from the page's in-memory cache. Smart
+      // Shorts sets window.__currentAnalysis (double underscore — the
+      // name used by viewAnalysis); other surfaces use
+      // window.lastAnalysisData or window.currentAnalysis. Check all
+      // three so the lookup works regardless of which page opened the
+      // modal.
+      var analysis = window.__currentAnalysis || window.lastAnalysisData || window.currentAnalysis;
+      // Confirm the cached analysis actually matches the open moment.
+      // If a user clicked into one analysis then navigated away to
+      // another in the same session, the cache could be stale.
+      if (analysis && analysis.id && analysis.id !== analysisId) analysis = null;
+      // Fallback: fetch the analysis on demand if the cache misses or
+      // doesn't match. Much friendlier than 'Refresh and try again'.
+      if (!analysis || !analysis.moments) {
+        try {
+          var ar = await fetch('/shorts/api/' + encodeURIComponent(analysisId), { credentials: 'same-origin' });
+          if (ar.ok) {
+            var aj = await ar.json();
+            analysis = aj && aj.analysis ? aj.analysis : null;
+            if (analysis && typeof analysis.moments === 'string') {
+              try { analysis.moments = JSON.parse(analysis.moments); } catch (_) {}
+            }
+          }
+        } catch (_) { /* swallow, handled below */ }
+      }
+      var moment = (analysis && Array.isArray(analysis.moments)) ? analysis.moments[momentIdx] : null;
+      if (!moment || !moment.timeRange) {
+        if (typeof showToast === 'function') showToast('Unable to load moment data for this clip. Try opening the analysis again.');
+        return;
+      }
+
+      // Pick a content type. Prefer the picked account's platform; if
+      // nothing is picked yet, fall back to 'tiktok' as a sensible
+      // default (most-common short-form destination).
+      var sel = document.getElementById('publishAccount');
+      var opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+      var platform = opt ? (opt.getAttribute('data-platform') || '') : '';
+      // Map platform → /shorts/generate prompt key. Keys here match the
+      // ones added to platformPrompts in routes/shorts.js.
+      var PLATFORM_TO_PROMPT = {
+        tiktok: 'tiktok', instagram: 'instagram', youtube: 'shorts',
+        facebook: 'facebook', twitter: 'twitter', linkedin: 'linkedin',
+        threads: 'threads', bluesky: 'bluesky', pinterest: 'pinterest',
+        snapchat: 'snapchat'
+      };
+      var contentType = PLATFORM_TO_PROMPT[platform] || 'tiktok';
+      var platformLabel = platform || 'TikTok-style';
+
+      // Disabled + spinner state.
+      var orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+      btn.style.cursor = 'wait';
+      btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 0.8s linear infinite;" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Generating\u2026';
+      hint.style.display = 'block';
+      hint.style.color = 'var(--text-muted)';
+      hint.textContent = 'Writing ' + platformLabel + ' caption\u2026';
+
+      try {
+        var resp = await fetch('/shorts/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            analysisId: analysisId,
+            momentId: moment.timeRange,
+            platforms: [contentType]
+          })
+        });
+        if (!resp.ok) throw new Error('Generator returned ' + resp.status);
+        var data = await resp.json();
+        if (!data.success || !Array.isArray(data.content) || !data.content.length) {
+          throw new Error('No content returned');
+        }
+        var c = data.content[0];
+        // Assemble caption from the most useful fields. caption is the
+        // headline string; hashtags get appended on a new line.
+        var captionText = (c.caption || c.script || c.hook || '').trim();
+        if (Array.isArray(c.hashtags) && c.hashtags.length) {
+          var tags = c.hashtags.map(function(t) {
+            var s = String(t || '').trim().replace(/^#+/, '');
+            return s ? ('#' + s) : '';
+          }).filter(Boolean).join(' ');
+          if (tags) captionText = (captionText + (captionText ? '\\n\\n' : '') + tags);
+        }
+        if (!captionText) throw new Error('Generator returned empty content');
+        captionEl.value = captionText;
+        hint.style.color = '#9be3b9';
+        hint.textContent = '\u2713 ' + platformLabel.charAt(0).toUpperCase() + platformLabel.slice(1) + ' caption generated. Edit as needed.';
+        if (typeof showToast === 'function') showToast('Caption generated');
+      } catch (err) {
+        hint.style.color = '#ff9b9b';
+        hint.textContent = 'Generation failed: ' + (err && err.message ? err.message : 'unknown error');
+        if (typeof showToast === 'function') showToast('Caption generation failed', true);
+      } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.innerHTML = orig;
+      }
+    }
+
+    // Workflow status chip — fires whenever the user picks a different
+    // connected account in the Publish modal. Reads the picked
+    // connection id, calls /distribute/api/workflows-by-source/<id>,
+    // and renders one of three states:
+    //   • workflow(s) match     → 'Publishing here triggers <name> —
+    //                              republishes to <Platform>@user
+    //                              <when>'
+    //   • no workflow matches   → 'Publishing here does NOT trigger
+    //                              any workflow. Set one up on the
+    //                              Repurpose page to auto-republish.'
+    //   • no account picked     → chip hidden
+    var _publishWorkflowCache = {};   // connectionId → workflows array
+    function publishOnAccountChange() {
+      var sel = document.getElementById('publishAccount');
+      var chip = document.getElementById('publishWorkflowChip');
+      var body = document.getElementById('publishWorkflowChipBody');
+      if (!sel || !chip || !body) return;
+      var connectionId = sel.value;
+      if (!connectionId) { chip.style.display = 'none'; return; }
+      // Cached?
+      if (_publishWorkflowCache[connectionId]) {
+        _renderPublishWorkflowChip(_publishWorkflowCache[connectionId]);
+        return;
+      }
+      // Show neutral pending state while fetching.
+      _setPublishWorkflowChipTone('neutral');
+      body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);"><div style="width:10px;height:10px;border:2px solid rgba(255,255,255,0.18);border-top-color:#a78bfa;border-radius:50%;animation:spin 0.7s linear infinite;"></div><span>Checking workflows for this account\\u2026</span></div>';
+      chip.style.display = 'block';
+      fetch('/distribute/api/workflows-by-source/' + encodeURIComponent(connectionId), { credentials: 'same-origin' })
+        .then(function(r) { return r.ok ? r.json() : { workflows: [] }; })
+        .then(function(data) {
+          var workflows = (data && data.workflows) || [];
+          _publishWorkflowCache[connectionId] = workflows;
+          _renderPublishWorkflowChip(workflows);
+        })
+        .catch(function() {
+          _publishWorkflowCache[connectionId] = [];
+          _renderPublishWorkflowChip([]);
+        });
+    }
+    function _setPublishWorkflowChipTone(tone) {
+      var chip = document.getElementById('publishWorkflowChip');
+      if (!chip) return;
+      if (tone === 'active') {
+        chip.style.background = 'rgba(0,184,148,0.10)';
+        chip.style.border = '1px solid rgba(0,184,148,0.35)';
+        chip.style.color = '#a3e8c8';
+      } else if (tone === 'none') {
+        chip.style.background = 'rgba(108,58,237,0.10)';
+        chip.style.border = '1px solid rgba(108,58,237,0.30)';
+        chip.style.color = '#d8c9ff';
+      } else {
+        chip.style.background = 'rgba(255,255,255,0.04)';
+        chip.style.border = '1px solid rgba(255,255,255,0.08)';
+        chip.style.color = 'var(--text-muted)';
+      }
+    }
+    function _formatPublishDelay(w) {
+      if (w.delayMode === 'immediate' || !w.delayHours) return 'immediately after this post';
+      var h = w.delayHours;
+      if (h < 1) return 'shortly after this post';
+      if (h === 1) return '1 hour after this post';
+      if (h < 24) return h + ' hours after this post';
+      var days = Math.round(h / 24);
+      return days === 1 ? '1 day after this post' : days + ' days after this post';
+    }
+    function _capPlatform(p) {
+      if (!p) return 'another platform';
+      var map = { youtube:'YouTube', tiktok:'TikTok', instagram:'Instagram', facebook:'Facebook', twitter:'X (Twitter)', linkedin:'LinkedIn', pinterest:'Pinterest', threads:'Threads', bluesky:'Bluesky', snapchat:'Snapchat' };
+      return map[p] || (p.charAt(0).toUpperCase() + p.slice(1));
+    }
+    function _renderPublishWorkflowChip(workflows) {
+      var body = document.getElementById('publishWorkflowChipBody');
+      if (!body) return;
+      if (workflows && workflows.length) {
+        _setPublishWorkflowChipTone('active');
+        var lines = workflows.map(function(w) {
+          var dest = _capPlatform(w.destinationPlatform);
+          var user = w.destinationUsername ? ('@' + w.destinationUsername) : '';
+          var when = _formatPublishDelay(w);
+          var name = w.name ? (' \u2014 <em style="font-style:normal;color:#fff;font-weight:600;">' + _escAttr(w.name) + '</em>') : '';
+          return '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:6px;">' +
+                   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><polyline points="20 6 9 17 4 12"></polyline></svg>' +
+                   '<span>Will also publish to <strong style="color:#fff;">' + dest + (user ? ' (' + _escAttr(user) + ')' : '') + '</strong> ' + when + name + '.</span>' +
+                 '</div>';
+        }).join('');
+        body.innerHTML =
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:700;color:#9be3b9;">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>' +
+            '<span>Active workflow triggered by this account</span>' +
+          '</div>' + lines;
+      } else {
+        _setPublishWorkflowChipTone('none');
+        body.innerHTML =
+          '<div style="display:flex;align-items:flex-start;gap:8px;">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
+            '<div>' +
+              '<div style="font-weight:600;color:#d8c9ff;margin-bottom:2px;">No workflow set for this account yet.</div>' +
+              '<div style="color:var(--text-muted);">Want this post auto-republished elsewhere? <a href="/distribute" target="_blank" rel="noopener" style="color:#c4b5fd;text-decoration:underline;font-weight:600;">Set up a workflow</a> on the Repurpose page \u2014 then every future publish here will fire it.</div>' +
+            '</div>' +
+          '</div>';
+      }
+    }
+    function _escAttr(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     // Peak-time suggestion for the publishModal — reads the picked

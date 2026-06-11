@@ -1012,7 +1012,7 @@ router.post('/messages/reply', requireAuth, requireAdmin, async (req, res) => {
     const replySubject = subject?.startsWith('Re:') ? subject : 'Re: ' + (subject || 'Your message');
 
     const rawEmail = [
-      'From: support@splicora.ai',
+      'From: hello@splicora.ai',
       'To: ' + to,
       'Subject: ' + replySubject,
       'Content-Type: text/plain; charset=utf-8',
@@ -1226,7 +1226,7 @@ router.post('/api/team/invite', requireAuth, requireAdmin, async (req, res) => {
         `;
 
         const rawEmail = [
-          'From: support@splicora.ai',
+          'From: hello@splicora.ai',
           'To: ' + email,
           'Subject: You\'re invited to join Splicora',
           'MIME-Version: 1.0',

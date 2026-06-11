@@ -593,7 +593,7 @@ router.get('/create', requireAuth, async (req, res) => {
             <h2 class="step-title">Select Source Platform</h2>
             <p class="step-desc">Which platform will you pull content from?</p>
             <div class="platform-grid" id="sourcePlatforms">
-              ${PLATFORMS.filter(p => p.type !== 'destination').map(p => `
+              ${PLATFORMS.map(p => `
                 <div class="platform-card" onclick="selectPlatform('source', '${p.id}', this)">
                   ${platformIconHTML(p, 'lg')}
                   <span class="p-label">${p.name}</span>
@@ -1246,11 +1246,20 @@ router.get('/workflow/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   let workflow = null;
 
+  let recentQueue = [];
   try {
     const db = getDb();
     workflow = await db.workflowOps.getById(id);
     if (!workflow || workflow.user_id !== user.id) {
       return res.status(404).send('Workflow not found');
+    }
+    try {
+      const { contentQueueOps } = require('../db/database');
+      if (contentQueueOps && contentQueueOps.getRecentByWorkflow) {
+        recentQueue = await contentQueueOps.getRecentByWorkflow(id, 25);
+      }
+    } catch (qErr) {
+      console.warn('Workflow queue load failed:', qErr.message);
     }
   } catch (e) {
     console.error('Workflow load error:', e);
@@ -1358,9 +1367,40 @@ router.get('/workflow/:id', requireAuth, async (req, res) => {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
             Content Queue
           </h3>
+          ${recentQueue.length === 0 ? `
           <div class="queue-empty">
             No content in queue yet. Once this workflow runs, scheduled and published content will appear here.
-          </div>
+          </div>` : `
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            ${recentQueue.map(function(r){
+              var status = (r.status || '').toLowerCase();
+              var color = status === 'published' ? '#10B981'
+                        : status === 'failed' ? '#EF4444'
+                        : status === 'cancelled' ? '#9CA3AF'
+                        : '#A78BFA';
+              var bg = status === 'published' ? 'rgba(16,185,129,0.08)'
+                     : status === 'failed' ? 'rgba(239,68,68,0.08)'
+                     : status === 'cancelled' ? 'rgba(156,163,175,0.08)'
+                     : 'rgba(167,139,250,0.08)';
+              var border = status === 'failed' ? 'rgba(239,68,68,0.45)'
+                         : status === 'published' ? 'rgba(16,185,129,0.30)'
+                         : 'rgba(167,139,250,0.30)';
+              var label = status === 'scheduled' ? 'Scheduled'
+                        : status === 'published' ? 'Published'
+                        : status === 'failed' ? 'Failed'
+                        : status === 'cancelled' ? 'Cancelled'
+                        : (r.status || 'pending');
+              var when = r.published_at || r.scheduled_at || r.created_at;
+              var whenStr = when ? new Date(when).toLocaleString() : '—';
+              var title = (r.title || r.description || 'Cross-published item').replace(/[<>]/g,'').slice(0, 120);
+              var err = r.error_message ? ('<div style="margin-top:4px;font-size:0.78rem;color:#fca5a5;line-height:1.4;"><strong>Error:</strong> ' + String(r.error_message).replace(/[<>]/g,'').slice(0, 300) + '</div>') : '';
+              return '<div style="background:' + bg + ';border:1px solid ' + border + ';border-radius:10px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;">' +
+                '<span style="flex-shrink:0;font-size:0.68rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:' + color + ';background:rgba(255,255,255,0.04);padding:3px 8px;border-radius:999px;margin-top:2px;">' + label + '</span>' +
+                '<div style="flex:1;min-width:0;"><div style="font-size:0.88rem;color:var(--text);font-weight:600;line-height:1.3;">' + title + '</div>' +
+                '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">' + whenStr + '</div>' + err + '</div>' +
+              '</div>';
+            }).join('')}
+          </div>`}
         </div>
 
         <div class="danger-zone">
@@ -1467,6 +1507,49 @@ router.get('/api/connections', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Get connections error:', error && error.stack || error);
     res.status(500).json({ error: 'Failed to fetch connections: ' + (error && error.message || 'unknown') });
+  }
+});
+
+// GET /api/workflows-by-source/:connectionId
+// Returns the active auto-publish workflows that would fire when the
+// user publishes TO this connection (i.e. source_account_id matches).
+// Used by the Publish This Moment modal to surface the 'this publish
+// triggers a workflow' chip on Smart Shorts.
+router.get('/api/workflows-by-source/:connectionId', requireAuth, async (req, res) => {
+  try {
+    const db = getDb();
+    if (!db || !db.workflowOps) {
+      return res.status(500).json({ error: 'workflowOps unavailable' });
+    }
+    const connectionId = req.params.connectionId;
+    if (!connectionId) return res.status(400).json({ error: 'connectionId required' });
+
+    // Pull all of this user's workflows, then filter to the active ones
+    // whose source matches. workflowOps.getByUser already joins
+    // destination account info (dest_username + platform) so the chip
+    // can show 'Will republish to LinkedIn (@you)' without a second
+    // lookup.
+    const all = await db.workflowOps.getByUser(req.user.id);
+    const matching = (all || []).filter(function(w) {
+      return w.source_account_id === connectionId
+        && w.is_active !== false
+        && w.auto_publish !== false;
+    }).map(function(w) {
+      return {
+        id: w.id,
+        name: w.name || null,
+        sourceAccountId: w.source_account_id,
+        destinationAccountId: w.destination_account_id,
+        destinationPlatform: w.destination_platform || null,
+        destinationUsername: w.dest_username || null,
+        delayHours: Number(w.delay_hours) || 0,
+        delayMode: w.delay_mode || 'immediate'
+      };
+    });
+    res.json({ workflows: matching });
+  } catch (error) {
+    console.error('workflows-by-source error:', error && error.stack || error);
+    res.status(500).json({ error: 'Failed to fetch workflows' });
   }
 });
 
