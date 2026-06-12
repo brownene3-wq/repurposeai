@@ -9804,15 +9804,63 @@ ${paginationHtml}
   </div>
 
   <!-- Narration Modal -->
-  <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:flex-start;justify-content:center;backdrop-filter:blur(4px);overflow-y:auto;padding:24px 12px;">
-    <div style="background:var(--surface);border-radius:16px;padding:24px;max-width:720px;width:100%;margin:auto;position:relative;">
-      <button onclick="closeNarrationModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;z-index:2;">&times;</button>
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Narration</h2>
-      <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;">Add a voiceover narration with full creative control.</p>
+  <style>
+    /* === AI Narration modal — premium polish =============================
+       Scoped to #narrationModal so we don't leak styles into the rest
+       of the app. Mirrors the Splicora brand: purple-pink gradient
+       accents, soft glows, refined typography. */
+    #narrationModal .narr-card{background:linear-gradient(180deg,rgba(108,58,237,0.04),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 16px;margin-bottom:14px;transition:border-color .25s ease, box-shadow .25s ease;}
+    #narrationModal .narr-card:hover{border-color:rgba(167,139,250,0.18);box-shadow:0 4px 16px rgba(108,58,237,0.08);}
+    #narrationModal .narr-section-label{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#cbb6ff;margin-bottom:10px;}
+    #narrationModal .narr-section-label .lbl-dot{width:5px;height:5px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#ec4899);box-shadow:0 0 8px rgba(167,139,250,0.65);}
+    #narrationModal .narr-section-label .lbl-hint{margin-left:auto;font-size:10px;font-weight:500;letter-spacing:0.04em;text-transform:none;color:var(--text-dim);}
+    #narrationModal .narr-style-btn{position:relative;overflow:hidden;}
+    #narrationModal .narr-style-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(108,58,237,0.12);}
+    #narrationModal .voice-type-btn:hover, #narrationModal .provider-btn:hover, #narrationModal .narr-intensity-btn:hover{filter:brightness(1.08);}
+    /* Slider thumbs — custom-styled across browsers. */
+    #narrationModal input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:24px;cursor:pointer;}
+    #narrationModal input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:6px;background:linear-gradient(90deg,#6c5ce7 0%,#ec4899 100%);box-shadow:inset 0 1px 2px rgba(0,0,0,0.30);}
+    #narrationModal input[type=range]::-moz-range-track{height:6px;border-radius:6px;background:linear-gradient(90deg,#6c5ce7 0%,#ec4899 100%);}
+    #narrationModal input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid #a78bfa;margin-top:-6px;box-shadow:0 0 8px rgba(167,139,250,0.55);transition:transform .15s ease;}
+    #narrationModal input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.10);}
+    #narrationModal input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid #a78bfa;box-shadow:0 0 8px rgba(167,139,250,0.55);}
+    /* Voice picker card hover. */
+    #narrationModal #voice-picker-grid > div{transition:transform .15s ease, box-shadow .25s ease, border-color .15s ease;}
+    #narrationModal #voice-picker-grid > div:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(108,58,237,0.10);border-color:rgba(167,139,250,0.35);}
+    #narrationModal .voice-sample-btn:hover{background:rgba(108,58,237,0.10) !important;border-color:rgba(167,139,250,0.45) !important;color:#fff !important;}
+    /* Direction select polish. */
+    #narrationModal #narration-direction-select{background-image:linear-gradient(45deg,transparent 50%,#a78bfa 50%),linear-gradient(135deg,#a78bfa 50%,transparent 50%);background-position:calc(100% - 18px) center,calc(100% - 12px) center;background-size:6px 6px,6px 6px;background-repeat:no-repeat;appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;}
+    #narrationModal #narration-direction-select:focus{outline:none;border-color:#a78bfa !important;box-shadow:0 0 0 3px rgba(167,139,250,0.20);}
+    /* Generate button — premium gradient + soft glow. */
+    #narrationModal #narrate-generate-btn{position:relative;overflow:hidden;letter-spacing:0.02em;}
+    #narrationModal #narrate-generate-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,0.18) 50%,transparent 70%);transform:translateX(-100%);transition:transform .65s ease;}
+    #narrationModal #narrate-generate-btn:hover::before{transform:translateX(100%);}
+    #narrationModal #narrate-generate-btn:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(0,184,148,0.30), 0 0 0 1px rgba(0,206,201,0.40);}
+    #narrationModal #narrate-generate-btn:active{transform:translateY(0);}
+    #narrationModal #narrate-generate-btn:disabled{opacity:0.65;cursor:not-allowed;transform:none;box-shadow:none;}
+    /* Modal panel: refined surface + subtle backdrop gradient. */
+    #narrationModal .narr-panel{background:linear-gradient(180deg,var(--surface) 0%,rgba(28,18,52,0.96) 100%);border:1px solid rgba(108,58,237,0.18);box-shadow:0 24px 60px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.02);}
+    #narrationModal .narr-hero{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+    #narrationModal .narr-hero-icon{width:38px;height:38px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#6c5ce7 0%,#ec4899 100%);box-shadow:0 6px 18px rgba(108,58,237,0.35);flex-shrink:0;}
+    #narrationModal .narr-hero-icon img{height:20px;width:20px;}
+    #narrationModal .narr-hero-title{font-size:22px;font-weight:800;line-height:1.1;background:linear-gradient(135deg,#fff 0%,#cbb6ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;letter-spacing:-0.01em;}
+    #narrationModal .narr-hero-sub{font-size:12px;color:var(--text-dim);margin:6px 0 18px;}
+    /* Close button polish. */
+    #narrationModal .narr-close{position:absolute;top:14px;right:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:var(--text-muted);width:32px;height:32px;border-radius:50%;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s ease;z-index:2;}
+    #narrationModal .narr-close:hover{background:rgba(239,68,68,0.10);border-color:rgba(239,68,68,0.30);color:#fca5a5;transform:rotate(90deg);}
+  </style>
+  <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(8,4,18,0.78);z-index:9999;align-items:flex-start;justify-content:center;backdrop-filter:blur(8px);overflow-y:auto;padding:24px 12px;">
+    <div class="narr-panel" style="border-radius:18px;padding:26px;max-width:720px;width:100%;margin:auto;position:relative;">
+      <button class="narr-close" onclick="closeNarrationModal()" aria-label="Close">&times;</button>
+      <div class="narr-hero">
+        <span class="narr-hero-icon" aria-hidden="true"><img src="/images/section-icons/A-78.png" alt=""></span>
+        <h2 class="narr-hero-title">AI Narration</h2>
+      </div>
+      <p class="narr-hero-sub">Add a studio-quality voiceover to your clip. Pick a style, voice, and direction — we'll handle the rest.</p>
 
       <!-- Style picker -->
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Style</label>
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Narration style</div>
         <div id="narration-styles" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
           <button class="narr-style-btn" data-style="funny"       style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F602}<br>Funny</button>
           <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F3AC}<br>Documentary</button>
@@ -9826,24 +9874,24 @@ ${paginationHtml}
       </div>
 
       <!-- Intensity sub-picker — populated by JS based on selected style -->
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Intensity</label>
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Intensity <span class="lbl-hint">Dial in the delivery</span></div>
         <div id="narration-intensities" style="display:flex;gap:8px;flex-wrap:wrap;">
           <!-- populated by JS -->
         </div>
       </div>
 
       <!-- Narration Direction preset -->
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Direction</label>
-        <select id="narration-direction-select" style="width:100%;padding:9px 12px;background:var(--surface-light);color:var(--text);border:1px solid rgba(255,255,255,0.10);border-radius:8px;font-size:12px;">
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Narration direction <span class="lbl-hint">Shapes the narrative arc</span></div>
+        <select id="narration-direction-select" style="width:100%;padding:11px 14px;background:rgba(255,255,255,0.03);color:var(--text);border:1px solid rgba(255,255,255,0.10);border-radius:10px;font-size:13px;font-weight:500;">
           <!-- populated by JS -->
         </select>
       </div>
 
       <!-- Voice Type: AI Voice / Text Only -->
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Type</label>
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Voice type</div>
         <div style="display:flex;gap:8px;">
           <button id="voice-type-ai"   class="voice-type-btn active" onclick="setVoiceType('ai')"   style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
           <button id="voice-type-text" class="voice-type-btn"        onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Only</button>
@@ -9851,8 +9899,8 @@ ${paginationHtml}
       </div>
 
       <!-- Voice picker — provider tabs + per-voice cards with Play 5s -->
-      <div id="voice-options" style="margin-bottom:14px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice</label>
+      <div id="voice-options" class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Voice <span class="lbl-hint">Click any card to pick. Tap Play 5s to preview.</span></div>
         <div style="display:flex;gap:8px;margin-bottom:10px;">
           <button id="provider-openai"     class="provider-btn active" onclick="setProvider('openai')"     style="flex:1;padding:8px;border-radius:8px;border:2px solid #6c5ce7;background:rgba(108,92,231,0.1);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">OpenAI TTS</button>
           <button id="provider-elevenlabs" class="provider-btn"         onclick="setProvider('elevenlabs')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">ElevenLabs</button>
@@ -9863,10 +9911,10 @@ ${paginationHtml}
         <p id="elevenlabs-empty" style="display:none;font-size:10px;color:var(--text-dim);margin-top:6px;">No ElevenLabs voices available. Add your API key in Settings.</p>
       </div>
 
-      <!-- Pro audio mix: narration level, original level, loudness target -->
-      <div id="audio-mix-options" style="margin-bottom:18px;padding:12px;background:var(--surface-light);border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:10px;">Pro Audio Mix</label>
-        <div style="display:flex;flex-direction:column;gap:12px;">
+      <!-- Pro audio mix: narration level, original level -->
+      <div id="audio-mix-options" class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Pro audio mix <span class="lbl-hint">Balance the levels</span></div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
           <div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
               <span style="font-size:12px;color:var(--text);font-weight:600;">Narration level</span>
