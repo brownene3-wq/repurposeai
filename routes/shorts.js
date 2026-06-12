@@ -1770,14 +1770,11 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
       // Don't abort the analysis — moments still get created, render will
       // just complain about missing source if the user clicks Download Clip.
     }
-    // Background: upload the source to R2 + pre-extract & persist the
-    // thumbnail to DB. Both are critical for surviving Railway /tmp
-    // wipes — without R2 the source vanishes on redeploy, and without
-    // a pre-persisted thumbnail the analysis card goes blank.
-    // We DON'T await this — analysis can finish first, and the user
-    // can use the just-uploaded local copy for an immediate Download
-    // Clip even if R2 isn't done yet.
+    // R2 backup is async (large file, doesn't block the UX).
+    // Thumbnail extraction is AWAITED at the end of this function
+    // so the client's page-reload always finds it in the DB.
     if (_persistedPath) {
+      console.log('  [analyze-upload] source persisted OK at ' + _persistedPath + ' — kicking off R2 backup');
       (async () => {
         try {
           const r2 = require('../utils/r2');
@@ -1788,9 +1785,13 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
                      : _persistedExt === '.mkv' ? 'video/x-matroska'
                      : _persistedExt === '.webm' ? 'video/webm'
                      : 'video/mp4';
-            await r2.putObject(r2Key, bytes, ct);
-            await shortsOps.setSourceR2Key(analysisId, r2Key);
-            console.log('  [analyze-upload] source backed up to R2 at ' + r2Key + ' (' + bytes.length + ' bytes)');
+            const putResult = await r2.putObject(r2Key, bytes, ct);
+            if (putResult && putResult.ok) {
+              await shortsOps.setSourceR2Key(analysisId, r2Key);
+              console.log('  [analyze-upload] source backed up to R2 at ' + r2Key + ' (' + bytes.length + ' bytes)');
+            } else {
+              console.error('  [analyze-upload] R2 putObject failed:', putResult && putResult.error);
+            }
           } else {
             console.warn('  [analyze-upload] R2 not configured — uploaded source will be lost on redeploy');
           }
@@ -1798,30 +1799,8 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
           console.error('  [analyze-upload] R2 backup failed:', r2Err.message);
         }
       })();
-      // Pre-extract thumbnail to DB so the analysis card always has
-      // something to show, independent of whether /tmp survives.
-      (async () => {
-        try {
-          // Probe for video stream first — audio-only uploads get a
-          // null thumbnail (the card has a fallback overlay for that).
-          const hasVid = await _ffprobeHasVideo(_persistedPath).catch(() => false);
-          if (!hasVid) {
-            console.log('  [analyze-upload] source has no video stream — skipping thumbnail');
-            return;
-          }
-          const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
-          // Try 1s offset first, then 0s as a fallback for short clips.
-          try { await extractFrameAt(_persistedPath, 1.0, thumbOut); }
-          catch (e1) { await extractFrameAt(_persistedPath, 0, thumbOut); }
-          if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
-            const thumbBytes = _fs.readFileSync(thumbOut);
-            await shortsOps.setThumbnail(analysisId, thumbBytes);
-            console.log('  [analyze-upload] thumbnail pre-persisted to DB (' + thumbBytes.length + ' bytes)');
-          }
-        } catch (tErr) {
-          console.warn('  [analyze-upload] pre-thumbnail extract failed:', tErr.message);
-        }
-      })();
+    } else {
+      console.error('  [analyze-upload] WARNING: _persistedPath is null — source NOT persisted, all downstream features will fail');
     }
     await shortsOps.updateStatus(analysisId, 'analyzing');
     sendUpdate({ status: 'analyzing', message: 'Analyzing with AI to identify viral moments...' });
@@ -1846,6 +1825,43 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
 
     await shortsOps.updateMoments(analysisId, moments);
     await shortsOps.updateStatus(analysisId, 'completed');
+
+    // SYNCHRONOUS thumbnail extraction — we await this so the client's
+    // page reload (which is triggered by the SSE 'completed' event
+    // we're about to send) always finds the thumbnail in the DB.
+    // Without this await, there was a race where the page reload hit
+    // /shorts/upload-thumbnail before the background extraction
+    // finished, the endpoint returned 404, and the card fell back to
+    // the music-note overlay.
+    if (_persistedPath) {
+      try {
+        const hasVid = await _ffprobeHasVideo(_persistedPath).catch((e) => {
+          console.warn('  [analyze-upload] ffprobe error:', e && e.message);
+          return false;
+        });
+        if (hasVid) {
+          const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
+          let extractOk = false;
+          try { await extractFrameAt(_persistedPath, 1.0, thumbOut); extractOk = true; }
+          catch (e1) {
+            console.warn('  [analyze-upload] thumb @1s failed, trying @0:', e1.message);
+            try { await extractFrameAt(_persistedPath, 0, thumbOut); extractOk = true; }
+            catch (e2) { console.error('  [analyze-upload] thumb @0 also failed:', e2.message); }
+          }
+          if (extractOk && _fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
+            const thumbBytes = _fs.readFileSync(thumbOut);
+            await shortsOps.setThumbnail(analysisId, thumbBytes);
+            console.log('  [analyze-upload] thumbnail pre-persisted to DB (' + thumbBytes.length + ' bytes) for ' + analysisId);
+          } else {
+            console.warn('  [analyze-upload] thumbnail extract produced no valid output for ' + analysisId);
+          }
+        } else {
+          console.log('  [analyze-upload] source has no video stream (audio-only) for ' + analysisId);
+        }
+      } catch (tErr) {
+        console.error('  [analyze-upload] sync thumbnail extract failed:', tErr.message);
+      }
+    }
 
     sendUpdate({ status: 'completed', message: 'Analysis complete!', analysisId, moments });
     res.end();
