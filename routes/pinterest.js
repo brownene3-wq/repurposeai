@@ -117,7 +117,7 @@ router.get('/callback', async (req, res) => {
     const basicAuth = Buffer.from(PINTEREST_CLIENT_ID + ':' + PINTEREST_CLIENT_SECRET).toString('base64');
 
     // Exchange authorization code for access token
-    const tokenData = await httpsPost('https://api.pinterest.com/v5/oauth/token', {
+    const tokenData = await httpsPost((process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/oauth/token', {
       grant_type: 'authorization_code',
       code: code,
       redirect_uri: BASE_URL + '/auth/pinterest/callback'
@@ -206,7 +206,7 @@ async function refreshPinterestToken(user) {
 
   const basicAuth = Buffer.from(PINTEREST_CLIENT_ID + ':' + PINTEREST_CLIENT_SECRET).toString('base64');
 
-  const tokenData = await httpsPost('https://api.pinterest.com/v5/oauth/token', {
+  const tokenData = await httpsPost((process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/oauth/token', {
     grant_type: 'refresh_token',
     refresh_token: user.pinterest_refresh_token
   }, {

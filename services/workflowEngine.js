@@ -263,7 +263,7 @@ async function refreshTokenIfNeeded(account) {
       } else {
         const basicAuth = Buffer.from(cid + ':' + csec).toString('base64');
         newTokenData = await httpsPost(
-          'https://api.pinterest.com/v5/oauth/token',
+          (process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/oauth/token',
           { grant_type: 'refresh_token', refresh_token: account.refresh_token },
           { Authorization: 'Basic ' + basicAuth }
         );
