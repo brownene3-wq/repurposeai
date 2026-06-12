@@ -3707,7 +3707,51 @@ function findUploadedSourcePath(analysisId) {
 async function resolveUploadedSourcePath(analysisId) {
   // 1) Cheap path — file is already on disk.
   const local = findUploadedSourcePath(analysisId);
-  if (local) return local;
+  if (local) {
+    // Lazy backfill — if this analysis was created before the R2
+    // backup pipeline shipped (or the backup failed silently), seed
+    // the backup now while the local file is still around. This
+    // makes ALL touched analyses durable across the next /tmp wipe.
+    (async () => {
+      try {
+        const r2 = require('../utils/r2');
+        if (!r2.isConfigured()) return;
+        const existingKey = await shortsOps.getSourceR2Key(analysisId);
+        if (existingKey) return; // already backed up
+        const ext = path.extname(local) || '.mp4';
+        const r2Key = 'uploads/' + analysisId + ext;
+        const bytes = fs.readFileSync(local);
+        const ct = ext === '.mov' ? 'video/quicktime'
+                 : ext === '.mkv' ? 'video/x-matroska'
+                 : ext === '.webm' ? 'video/webm'
+                 : 'video/mp4';
+        await r2.putObject(r2Key, bytes, ct);
+        await shortsOps.setSourceR2Key(analysisId, r2Key);
+        console.log('  [resolver] lazy R2 backfill OK for ' + analysisId + ' (' + bytes.length + ' bytes)');
+      } catch (e) {
+        console.warn('  [resolver] lazy R2 backfill failed for ' + analysisId + ':', e.message);
+      }
+    })();
+    // Same idea for the thumbnail — if it's missing in DB, seed it now.
+    (async () => {
+      try {
+        const existing = await shortsOps.getThumbnail(analysisId);
+        if (existing && existing.length > 256) return;
+        const hasVid = await _ffprobeHasVideo(local).catch(() => false);
+        if (!hasVid) return;
+        const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
+        try { await extractFrameAt(local, 1.0, thumbOut); }
+        catch (e1) { await extractFrameAt(local, 0, thumbOut); }
+        if (fs.existsSync(thumbOut) && fs.statSync(thumbOut).size > 256) {
+          await shortsOps.setThumbnail(analysisId, fs.readFileSync(thumbOut));
+          console.log('  [resolver] lazy thumbnail backfill OK for ' + analysisId);
+        }
+      } catch (e) {
+        console.warn('  [resolver] lazy thumbnail backfill failed for ' + analysisId + ':', e.message);
+      }
+    })();
+    return local;
+  }
 
   // 2) Slow path — pull from R2 if we have a key on file.
   try {
@@ -5535,14 +5579,24 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       });
     };
 
-    // Process in background (non-blocking - keeps event loop alive for health checks)
+    // Process in background (non-blocking - keeps event loop alive
+    // for health checks AND continues even if the client disconnects
+    // — tab switches / navigations / page refreshes won't interrupt
+    // the render; the client just reconnects to the .progress file
+    // when it returns.)
+    //
+    // Initial progress write — must happen before any work that
+    // might throw, so the status endpoint never reports the stale
+    // default 'Still processing...' (which polling code treats as
+    // 'no info yet' and stalls on).
+    writeProgress(uploadedSourcePath ? 'Using uploaded source video...' : 'Starting download...');
     (async () => {
       const timeout = setTimeout(() => {
         writeError('Clip generation timed out after 8 minutes. Try a shorter moment or one closer to the start.');
       }, 480000);
 
       try {
-        writeProgress('Downloading video...');
+        if (!uploadedSourcePath) writeProgress('Downloading video...');
 
         // Check if yt-dlp is available
         let ytdlpPath = 'yt-dlp';
