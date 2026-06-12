@@ -9789,25 +9789,6 @@ ${paginationHtml}
       <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Narration</h2>
       <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;">Add a voiceover narration with full creative control.</p>
 
-      <!-- Persistent preview area — stays at the top while users
-           adjust settings below. Shows the duration estimate +
-           pacing warning live as choices change. -->
-      <div id="narration-preview-area" style="background:linear-gradient(180deg,rgba(108,58,237,0.08),rgba(236,72,153,0.04));border:1px solid rgba(108,58,237,0.30);border-radius:12px;padding:14px 16px;margin-bottom:18px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-          <div style="min-width:0;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#a78bfa;text-transform:uppercase;margin-bottom:4px;">Live preview</div>
-            <div id="narration-preview-summary" style="font-size:13px;color:var(--text);font-weight:600;">Funny — Classic comedic · OpenAI Nova · Mix</div>
-          </div>
-          <div style="text-align:right;">
-            <div id="narration-preview-duration" style="font-size:13px;color:var(--text);font-weight:700;">~ — sec narration</div>
-            <div id="narration-preview-clip-len" style="font-size:11px;color:var(--text-dim);">Clip duration: — sec</div>
-          </div>
-        </div>
-        <div id="narration-pacing-warning" style="display:none;margin-top:10px;font-size:12px;color:#fbbf24;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.30);border-radius:8px;padding:8px 10px;font-weight:600;">
-          <span aria-hidden="true">\u26A0</span> <span id="narration-pacing-warning-text">Pacing will be tight.</span>
-        </div>
-      </div>
-
       <!-- Style picker -->
       <div style="margin-bottom:14px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Style</label>
