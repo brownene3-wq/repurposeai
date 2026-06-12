@@ -1153,7 +1153,7 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
   let boardId = destAccount.metadata?.board_id;
   if (!boardId) {
     const boardsResponse = await httpsGet(
-      'https://api.pinterest.com/v5/boards?page_size=25',
+      (process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/boards?page_size=25',
       { Authorization: `Bearer ${accessToken}` }
     );
     // httpsGet returns { status, headers, body }. Bug: previous code
@@ -1231,7 +1231,7 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
   const tokenPreview = accessToken ? (accessToken.slice(0, 8) + '...len=' + accessToken.length) : 'EMPTY/UNDEFINED';
   console.log('[Pinterest] POST /v5/pins board=' + boardId + ' token=' + tokenPreview + ' payloadKeys=' + Object.keys(pinPayload).join(','));
   const response = await httpsPostJson(
-    'https://api.pinterest.com/v5/pins',
+    (process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/pins',
     pinPayload,
     { Authorization: `Bearer ${accessToken}` }
   );
