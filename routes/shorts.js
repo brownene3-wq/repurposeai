@@ -4779,7 +4779,7 @@ router.get('/calendar', requireAuth, async (req, res) => {
 //   publishToConnection immediately.
 router.post('/api/publish-moment', requireAuth, async (req, res) => {
   try {
-    const { analysisId, momentIndex, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    const { analysisId, momentIndex, connectionId, title, caption, description, scheduledAt, customMediaFilename } = req.body || {};
     if (!analysisId || momentIndex == null) return res.status(400).json({ success: false, error: 'analysisId and momentIndex are required' });
     if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
 
@@ -4828,28 +4828,49 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
       }
     }
 
-    // Post-now path — we need a media path on disk. Use the shared
-    // resolver: it checks /tmp first (hot path), then waits out the
-    // rename race if a render is in flight, then falls back to the
-    // clip_renders DB row + R2 backup so the publish still works after
-    // Railway wipes /tmp on redeploy.
-    const { resolveClipPath } = require('../utils/clipResolver');
-    const resolved = await resolveClipPath(req.user.id, analysisId, momentIndex, clipRenderOps, { waitForInFlight: true });
-    if (!resolved || !resolved.path) {
-      // Tailor the error message based on why we couldn't resolve.
-      // 'no-db-row' means the user never rendered this clip → original
-      // message. Anything else means we tried R2 and failed → friendlier
-      // recovery hint.
-      const reason = resolved && resolved.reason || 'unknown';
-      const msg = reason === 'no-db-row' || reason === 'missing-args'
-        ? 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.'
-        : 'Your clip is on file but couldn\'t be restored to the server right now. Click "Re-render" on the clip in My Clips and try Publish again.';
-      console.warn('[publish-moment] resolveClipPath failed:', reason, 'analysis=' + analysisId + ' moment=' + momentIndex);
-      return res.status(409).json({ success: false, error: msg });
-    }
-    const mediaPath = resolved.path;
-    if (resolved.source === 'r2-restored') {
-      console.log('[publish-moment] restored clip from R2:', mediaPath);
+    // Post-now path — we need a media path on disk. Two ways to get it:
+    //   1. customMediaFilename — caller (e.g. AI Narration) supplies an
+    //      already-rendered file (the narrated mp4). We validate it's
+    //      a basename in CLIPS_DIR + that it sits next to a
+    //      *_narrated_* or matching analysisId pattern so a malicious
+    //      client can't publish someone else's clip.
+    //   2. resolveClipPath — the default flow. /tmp hot path, waits
+    //      out in-flight renders, then DB+R2 fallback.
+    let mediaPath = null;
+    if (customMediaFilename) {
+      const path = require('path');
+      const fs = require('fs');
+      const safeName = path.basename(String(customMediaFilename));
+      const candidate = path.join(CLIPS_DIR, safeName);
+      // Authorization: the file must include this analysis's ID in
+      // its name (clip filenames embed _a<analysisId>_ — see
+      // /shorts/clip's safeTitle + analysisTag construction) so a
+      // client can't supply someone else's filename.
+      const expectedTag = 'a' + analysisId;
+      if (safeName.indexOf(expectedTag) === -1) {
+        console.warn('[publish-moment] customMediaFilename ownership check failed:', safeName, 'expectedTag=' + expectedTag);
+        return res.status(403).json({ success: false, error: 'customMediaFilename does not match analysis' });
+      }
+      if (!fs.existsSync(candidate)) {
+        return res.status(404).json({ success: false, error: 'Custom media file not found on server. The render may have been cleaned up — re-generate and try again.' });
+      }
+      mediaPath = candidate;
+      console.log('[publish-moment] using customMediaFilename:', mediaPath);
+    } else {
+      const { resolveClipPath } = require('../utils/clipResolver');
+      const resolved = await resolveClipPath(req.user.id, analysisId, momentIndex, clipRenderOps, { waitForInFlight: true });
+      if (!resolved || !resolved.path) {
+        const reason = resolved && resolved.reason || 'unknown';
+        const msg = reason === 'no-db-row' || reason === 'missing-args'
+          ? 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.'
+          : 'Your clip is on file but couldn\'t be restored to the server right now. Click "Re-render" on the clip in My Clips and try Publish again.';
+        console.warn('[publish-moment] resolveClipPath failed:', reason, 'analysis=' + analysisId + ' moment=' + momentIndex);
+        return res.status(409).json({ success: false, error: msg });
+      }
+      mediaPath = resolved.path;
+      if (resolved.source === 'r2-restored') {
+        console.log('[publish-moment] restored clip from R2:', mediaPath);
+      }
     }
 
     const resolvedTitle = title || moment.title || ('Viral moment ' + (momentIndex + 1));
@@ -14321,6 +14342,70 @@ ${paginationHtml}
       p.style.display = 'none';
       p.innerHTML = '';
     }
+    // Render the post-render success state with Download + Publish
+    // buttons. Same UX as the Download Clip flow on viral moments —
+    // user picks what to do next instead of an automatic download.
+    function _showNarrationDoneActions(filename) {
+      var p = document.getElementById('narration-progress');
+      if (!p) return;
+      p.style.display = 'block';
+      // Don't blow away the progress bar — append the actions below it
+      // so the bar's 100% / Done state is still visible.
+      // Pull moment title/caption from the same client-side state the
+      // Publish modal already uses, so the user sees the moment's
+      // generated title preloaded.
+      var analysis = window.__currentAnalysis || window.currentAnalysis || window.lastAnalysisData;
+      var moment = null;
+      if (analysis && Array.isArray(analysis.moments)) {
+        moment = analysis.moments[narrationState.momentIndex];
+      }
+      var defaultTitle = (moment && moment.title) || ('Narrated moment ' + ((narrationState.momentIndex || 0) + 1));
+      var defaultCaption = (moment && (moment.description || moment.reason)) || '';
+
+      var panel = document.createElement('div');
+      panel.id = 'narration-done-actions';
+      panel.style.cssText = 'margin-top:14px;background:rgba(0,184,148,0.06);border:1px solid rgba(0,184,148,0.30);border-radius:10px;padding:14px;text-align:left;';
+      panel.innerHTML =
+        '<div style="font-size:13px;font-weight:700;color:#34d399;margin-bottom:4px;">\u2705 Your narrated video is ready</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Download it, or publish it directly to a connected account.</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<button id="narration-done-download" style="flex:1;min-width:140px;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.10);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">\u2B07 Download Video</button>' +
+          '<button id="narration-done-publish" style="flex:1;min-width:140px;padding:10px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">\u{1F4E4} Publish to account</button>' +
+        '</div>';
+      // Clean up any prior panel from a previous run before appending.
+      var prior = document.getElementById('narration-done-actions');
+      if (prior) prior.remove();
+      p.appendChild(panel);
+
+      document.getElementById('narration-done-download').addEventListener('click', function() {
+        var link = document.createElement('a');
+        link.href = '/shorts/narrate/download/' + filename;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Narrated clip downloaded!');
+      });
+      document.getElementById('narration-done-publish').addEventListener('click', function() {
+        // Open the same Publish modal used by viral-moment Download +
+        // /shorts/clips. The customMediaFilename override tells the
+        // backend to publish THIS narrated mp4 instead of resolving
+        // the raw clip via resolveClipPath.
+        if (typeof openPublishModal !== 'function') {
+          showToast('Publish modal not available on this page.');
+          return;
+        }
+        // Close the narration modal first so the publish modal isn't
+        // hidden behind it. The narrated file remains on the server
+        // for at least 15 min thanks to the deferred-unlink logic.
+        closeNarrationModal();
+        openPublishModal(narrationState.analysisId, narrationState.momentIndex, {
+          title: defaultTitle,
+          caption: defaultCaption,
+          customMediaFilename: filename
+        });
+      });
+    }
     // Map a progress message (from the server or our own UX strings) to
     // an approximate { pct, etaSec } pair. Estimates are rough averages;
     // the bar tightens as the user advances through stages.
@@ -14889,18 +14974,13 @@ ${paginationHtml}
               progress.appendChild(copyBtn);
               showToast('Narration script generated!');
             } else {
-              // Download narrated clip
-              _setNarrationProgress(100, 'Downloading narrated clip…', 0, 'ok');
-              var link = document.createElement('a');
-              link.href = '/shorts/narrate/download/' + filename;
-              link.download = filename;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
+              // Narrated clip is ready — give the user the choice of
+              // Download (the legacy behavior) OR Publish (parity with
+              // the Download Clip flow on viral moments). No auto-
+              // download — the user picks.
               _stopNarrationTicker();
-              _setNarrationProgress(100, 'Done!', 0, 'ok');
-              showToast('Narrated clip downloaded!');
-              closeNarrationModal();
+              _setNarrationProgress(100, 'Narrated clip ready!', 0, 'ok');
+              _showNarrationDoneActions(filename);
             }
             break;
           }

@@ -31,6 +31,7 @@ function getPublishMomentModalHTML() {
         </h3>
         <div id="publishSubtitle" style="color:var(--text-muted);font-size:0.82rem;margin-bottom:18px;">Pick a connected account.</div>
         <input type="hidden" id="publishMomentRef">
+        <input type="hidden" id="publishCustomMediaFilename">
 
         <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">Account</label>
         <select id="publishAccount" onchange="publishOnAccountChange()" style="width:100%;background:var(--dark);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;outline:none;margin-bottom:10px;">
@@ -140,6 +141,12 @@ function getPublishMomentModalJS() {
       document.getElementById('publishMomentRef').value = analysisId + '|' + momentIdx;
       document.getElementById('publishTitle').value = String(defaultTitle).slice(0, 120);
       document.getElementById('publishCaption').value = defaultCaption;
+      // Custom media filename — used by AI Narration to publish the
+      // narrated mp4 instead of resolving the raw moment clip on the
+      // server side. Cleared by default so callers without it use
+      // the legacy behavior.
+      var _cmf = document.getElementById('publishCustomMediaFilename');
+      if (_cmf) _cmf.value = defaults.customMediaFilename || '';
       var now = new Date(); now.setMinutes(now.getMinutes() + 60);
       document.getElementById('publishDate').value = now.toISOString().slice(0, 10);
       document.getElementById('publishTime').value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
@@ -205,6 +212,7 @@ function getPublishMomentModalJS() {
       var connectionId = document.getElementById('publishAccount').value;
       if (!connectionId) { statusEl.style.display = 'block'; statusEl.textContent = 'Pick an account first.'; return; }
       var ref = (document.getElementById('publishMomentRef').value || '').split('|');
+      var _customFn = (document.getElementById('publishCustomMediaFilename') || {}).value || '';
       var payload = {
         analysisId: ref[0] || null,
         momentIndex: ref[1] != null && ref[1] !== '' ? Number(ref[1]) : null,
@@ -212,6 +220,11 @@ function getPublishMomentModalJS() {
         title: document.getElementById('publishTitle').value.trim(),
         caption: document.getElementById('publishCaption').value.trim(),
         description: document.getElementById('publishCaption').value.trim(),
+        // Optional override — bypasses resolveClipPath and uses this
+        // file (must be a basename in CLIPS_DIR) as the publish media.
+        // Set by the AI Narration flow to publish the narrated mp4
+        // instead of the raw clip.
+        customMediaFilename: _customFn || undefined,
         // User's local wall-clock — server stamps the auto-synced
         // calendar entry with these so it shows up in the user's own
         // timezone rather than Railway's UTC. Sent as discrete date
