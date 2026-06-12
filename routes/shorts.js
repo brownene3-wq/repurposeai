@@ -1740,9 +1740,11 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
     }
     // Move the uploaded file into CLIPS_DIR so the render endpoint can find
     // it. Preserve the original extension (mp4 / mov / mkv / webm).
+    let _persistedPath = null;
+    let _persistedExt = '.mp4';
     try {
-      const _origExt = (path.extname(filePath || '') || '.mp4').toLowerCase();
-      const _persistedPath = path.join(CLIPS_DIR, 'upload-' + analysisId + _origExt);
+      _persistedExt = (path.extname(filePath || '') || '.mp4').toLowerCase();
+      _persistedPath = path.join(CLIPS_DIR, 'upload-' + analysisId + _persistedExt);
       _fs.renameSync(filePath, _persistedPath);
       // Update filePath so the finally-block doesn't try to delete the now
       // -moved file (renameSync invalidated the original path).
@@ -1750,8 +1752,62 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
       console.log('  [analyze-upload] persisted source video at ' + _persistedPath);
     } catch (mvErr) {
       console.error('  [analyze-upload] failed to persist source:', mvErr.message);
+      _persistedPath = null;
       // Don't abort the analysis — moments still get created, render will
       // just complain about missing source if the user clicks Download Clip.
+    }
+    // Background: upload the source to R2 + pre-extract & persist the
+    // thumbnail to DB. Both are critical for surviving Railway /tmp
+    // wipes — without R2 the source vanishes on redeploy, and without
+    // a pre-persisted thumbnail the analysis card goes blank.
+    // We DON'T await this — analysis can finish first, and the user
+    // can use the just-uploaded local copy for an immediate Download
+    // Clip even if R2 isn't done yet.
+    if (_persistedPath) {
+      (async () => {
+        try {
+          const r2 = require('../utils/r2');
+          if (r2.isConfigured()) {
+            const r2Key = 'uploads/' + analysisId + _persistedExt;
+            const bytes = _fs.readFileSync(_persistedPath);
+            const ct = _persistedExt === '.mov' ? 'video/quicktime'
+                     : _persistedExt === '.mkv' ? 'video/x-matroska'
+                     : _persistedExt === '.webm' ? 'video/webm'
+                     : 'video/mp4';
+            await r2.putObject(r2Key, bytes, ct);
+            await shortsOps.setSourceR2Key(analysisId, r2Key);
+            console.log('  [analyze-upload] source backed up to R2 at ' + r2Key + ' (' + bytes.length + ' bytes)');
+          } else {
+            console.warn('  [analyze-upload] R2 not configured — uploaded source will be lost on redeploy');
+          }
+        } catch (r2Err) {
+          console.error('  [analyze-upload] R2 backup failed:', r2Err.message);
+        }
+      })();
+      // Pre-extract thumbnail to DB so the analysis card always has
+      // something to show, independent of whether /tmp survives.
+      (async () => {
+        try {
+          // Probe for video stream first — audio-only uploads get a
+          // null thumbnail (the card has a fallback overlay for that).
+          const hasVid = await _ffprobeHasVideo(_persistedPath).catch(() => false);
+          if (!hasVid) {
+            console.log('  [analyze-upload] source has no video stream — skipping thumbnail');
+            return;
+          }
+          const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
+          // Try 1s offset first, then 0s as a fallback for short clips.
+          try { await extractFrameAt(_persistedPath, 1.0, thumbOut); }
+          catch (e1) { await extractFrameAt(_persistedPath, 0, thumbOut); }
+          if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
+            const thumbBytes = _fs.readFileSync(thumbOut);
+            await shortsOps.setThumbnail(analysisId, thumbBytes);
+            console.log('  [analyze-upload] thumbnail pre-persisted to DB (' + thumbBytes.length + ' bytes)');
+          }
+        } catch (tErr) {
+          console.warn('  [analyze-upload] pre-thumbnail extract failed:', tErr.message);
+        }
+      })();
     }
     await shortsOps.updateStatus(analysisId, 'analyzing');
     sendUpdate({ status: 'analyzing', message: 'Analyzing with AI to identify viral moments...' });
@@ -3643,6 +3699,42 @@ function findUploadedSourcePath(analysisId) {
   return match ? path.join(CLIPS_DIR, match) : null;
 }
 
+// Async version of the source resolver that falls back to R2 when
+// /tmp's copy is gone. Returns the local path (after rehydration) or
+// null if the source can't be recovered. The two main causes of a
+// /tmp miss are Railway redeploys (entire /tmp wiped) and disk
+// pressure cleanup (CLIPS_DIR shrinks under storage caps).
+async function resolveUploadedSourcePath(analysisId) {
+  // 1) Cheap path — file is already on disk.
+  const local = findUploadedSourcePath(analysisId);
+  if (local) return local;
+
+  // 2) Slow path — pull from R2 if we have a key on file.
+  try {
+    const r2 = require('../utils/r2');
+    if (!r2.isConfigured()) return null;
+    const r2Key = await shortsOps.getSourceR2Key(analysisId);
+    if (!r2Key) return null;
+    const ext = path.extname(r2Key) || '.mp4';
+    const restorePath = path.join(CLIPS_DIR, 'upload-' + analysisId + ext);
+    // Concurrency guard — if two requests rehydrate the same source
+    // at once, both will try to write the same file; the second one
+    // will overwrite the first but that's fine (idempotent).
+    console.log('  [resolveUploadedSourcePath] /tmp miss for ' + analysisId + ' — pulling from R2: ' + r2Key);
+    const bytes = await r2.getObject(r2Key);
+    if (!bytes || !bytes.length) {
+      console.warn('  [resolveUploadedSourcePath] R2 returned empty body for ' + r2Key);
+      return null;
+    }
+    fs.writeFileSync(restorePath, bytes);
+    console.log('  [resolveUploadedSourcePath] rehydrated ' + bytes.length + ' bytes to ' + restorePath);
+    return restorePath;
+  } catch (err) {
+    console.error('  [resolveUploadedSourcePath] R2 restore failed:', err.message);
+    return null;
+  }
+}
+
 // Extract a single JPEG frame from a video source at the given offset
 // (seconds). Used by the upload-thumbnail endpoints below; the output
 // is small (~10-40 KB) so we don't bother with a concurrency lock.
@@ -3742,7 +3834,7 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
     }
 
     // 3) Live extract from source.
-    const sourcePath = findUploadedSourcePath(analysisId);
+    const sourcePath = await resolveUploadedSourcePath(analysisId);
     if (!sourcePath) {
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
     }
@@ -3789,7 +3881,7 @@ router.get('/upload-source/:analysisId', requireAuth, async (req, res) => {
     const analysis = await shortsOps.getById(analysisId);
     if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
     if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
-    const sourcePath = findUploadedSourcePath(analysisId);
+    const sourcePath = await resolveUploadedSourcePath(analysisId);
     if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
     // Best-effort MIME hint based on extension. Browsers tolerate
     // 'video/mp4' even for .mov containers since they're H.264 internally.
@@ -3849,7 +3941,7 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
     }
 
     // 3) Live extract
-    const sourcePath = findUploadedSourcePath(analysisId);
+    const sourcePath = await resolveUploadedSourcePath(analysisId);
     if (!sourcePath) {
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
     }
@@ -4011,7 +4103,7 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     const isUpload = (analysis.video_url || '').startsWith('upload://');
     let videoId = null, videoUrl = analysis.video_url, sourceVideoPath = null;
     if (isUpload) {
-      sourceVideoPath = findUploadedSourcePath(analysisId);
+      sourceVideoPath = await resolveUploadedSourcePath(analysisId);
       if (!sourceVideoPath) return res.status(404).json({ error: 'Uploaded source missing — re-upload the video.' });
     } else {
       const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
@@ -5341,18 +5433,11 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
     // For YouTube URLs, this is unchanged from before.
     let videoId, videoUrl, uploadedSourcePath = null;
     if ((analysis.video_url || '').startsWith('upload://')) {
-      let _files = [];
-      try { _files = fs.readdirSync(CLIPS_DIR); } catch (e) {}
-      const _match = _files.find(f =>
-        f.startsWith('upload-' + analysisId + '.') &&
-        !f.endsWith('.mp3') &&
-        !f.endsWith('.progress') &&
-        !f.endsWith('.error')
-      );
-      if (!_match) {
+      // Use the durable resolver — pulls from R2 if /tmp's copy is gone.
+      uploadedSourcePath = await resolveUploadedSourcePath(analysisId);
+      if (!uploadedSourcePath) {
         return res.status(404).json({ error: 'Uploaded source file is missing on the server. The server may have restarted — please re-upload the video.' });
       }
-      uploadedSourcePath = path.join(CLIPS_DIR, _match);
       videoId = 'upload-' + analysisId;
       videoUrl = analysis.video_url;
     } else {
@@ -6810,10 +6895,23 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
     const endSec = rangeParts[1] ? parseTime(rangeParts[1]) : startSec + 60;
     const duration = Math.max(endSec - startSec, 5);
 
-    const videoId = extractVideoId(analysis.video_url);
-    if (!videoId) return res.status(400).json({ error: 'Invalid video URL' });
-
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    // Source can be a YouTube URL OR an uploaded file (upload://<id>).
+    // Uploads skip the download chain entirely and use the resolver to
+    // get a local path (rehydrating from R2 if /tmp's copy is gone).
+    const isUploadSource = (analysis.video_url || '').startsWith('upload://');
+    let videoId, videoUrl, brollUploadedPath = null;
+    if (isUploadSource) {
+      brollUploadedPath = await resolveUploadedSourcePath(analysisId);
+      if (!brollUploadedPath) {
+        return res.status(404).json({ error: 'Uploaded source file is missing on the server. The server may have restarted — please re-upload the video.' });
+      }
+      videoId = 'upload-' + analysisId;
+      videoUrl = analysis.video_url;
+    } else {
+      videoId = extractVideoId(analysis.video_url);
+      if (!videoId) return res.status(400).json({ error: 'Invalid video URL' });
+      videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    }
     const safeTitle = (moment.title || 'clip').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
     const filename = `${safeTitle}_broll_${Date.now()}.mp4`;
     const outputPath = path.join(CLIPS_DIR, filename);
@@ -6860,11 +6958,25 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
       const tempFiles = [];
 
       try {
-        // STEP 1: Download main video
-        writeProgress('Downloading main video...');
+        // STEP 1: Download main video (or use uploaded source).
         const tempDownload = outputPath + '.temp.mkv';
         tempFiles.push(tempDownload);
 
+        if (isUploadSource) {
+          writeProgress('Using uploaded source video...');
+          try {
+            // Hard-link if possible (cheap), copy as a fallback. The
+            // segment-extract step opens this read-only so either is fine.
+            try { fs.linkSync(brollUploadedPath, tempDownload); }
+            catch (linkErr) { fs.copyFileSync(brollUploadedPath, tempDownload); }
+          } catch (copyErr) {
+            console.log('  B-Roll: failed to stage uploaded source:', copyErr.message);
+            clearTimeout(timeout);
+            writeError('Could not read uploaded source — try re-uploading.');
+            return;
+          }
+        } else {
+        writeProgress('Downloading main video...');
         try {
           await runCommand('yt-dlp', [
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
@@ -6903,6 +7015,7 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
           }
         }
 
+        } // end YouTube-download branch
         // Find actual downloaded file
         let actualDownload = tempDownload;
         if (!fs.existsSync(tempDownload)) {

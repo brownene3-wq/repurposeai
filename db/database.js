@@ -286,6 +286,12 @@ const initDatabase = async () => {
     // with them, so re-extraction also fails. Persisting the JPEG
     // bytes here means cards stay populated indefinitely.
     try { await pool.query(`ALTER TABLE smart_shorts ADD COLUMN IF NOT EXISTS thumbnail_jpeg BYTEA`); } catch (e) {}
+    // R2 key for uploaded source videos. /tmp gets wiped on Railway
+    // redeploy, so any operation that needs the original upload
+    // (AI Narration, B-Roll, Download Clip) breaks. Persisting the
+    // file to R2 + remembering its key here makes the source
+    // recoverable indefinitely.
+    try { await pool.query(`ALTER TABLE smart_shorts ADD COLUMN IF NOT EXISTS source_r2_key TEXT`); } catch (e) {}
     try {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS smart_shorts_moment_thumbnails (
@@ -1197,6 +1203,24 @@ const shortsOps = {
     );
     const row = result.rows[0];
     return (row && row.thumbnail_jpeg) ? row.thumbnail_jpeg : null;
+  },
+  // R2 key for the uploaded source video. Set by the analyze-upload
+  // flow after the file is persisted to R2; read by the source
+  // resolver when /tmp's copy is missing.
+  async setSourceR2Key(id, key) {
+    if (!key) return;
+    await pool.query(
+      `UPDATE smart_shorts SET source_r2_key = $1 WHERE id = $2`,
+      [key, id]
+    );
+  },
+  async getSourceR2Key(id) {
+    const result = await pool.query(
+      `SELECT source_r2_key FROM smart_shorts WHERE id = $1`,
+      [id]
+    );
+    const row = result.rows[0];
+    return (row && row.source_r2_key) ? row.source_r2_key : null;
   },
   async setMomentThumbnail(analysisId, momentIdx, jpegBuffer) {
     if (!jpegBuffer || !Buffer.isBuffer(jpegBuffer)) return;
